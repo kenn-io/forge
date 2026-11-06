@@ -112,10 +112,7 @@ func (d *DB) ListActivity(
 // activityEventsQuery builds the filtered event union shared by feed and
 // cursor reads: a FROM clause through ORDER BY and LIMIT, plus its arguments.
 func activityEventsQuery(opts ListActivityOpts) (string, []any) {
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = 50
-	}
+	limit := activityLimit(opts.Limit)
 
 	var whereClauses []string
 	var args []any
@@ -247,6 +244,10 @@ func activityEventsQuery(opts ListActivityOpts) (string, []any) {
 	if opts.Since != nil {
 		whereClauses = append(whereClauses, "created_at >= ?")
 		args = append(args, *opts.Since)
+	}
+	if opts.createdBefore != nil {
+		whereClauses = append(whereClauses, "created_at < ?")
+		args = append(args, *opts.createdBefore)
 	}
 
 	if opts.BeforeTime != nil {
@@ -522,31 +523,81 @@ func activityEventCursorWithQueryer(
 	ctx context.Context, queryer queryer, opts ListActivityOpts,
 ) (string, error) {
 	opts.Limit = 1
+	cursors, err := readNewestActivity(ctx, queryer, opts, queryActivityEventCursorWithQueryer)
+	if err != nil || len(cursors) == 0 {
+		return "", err
+	}
+	return cursors[0], nil
+}
+
+func queryActivityEventCursorWithQueryer(
+	ctx context.Context, queryer queryer, opts ListActivityOpts,
+) ([]string, error) {
 	fromSQL, args := activityEventsQuery(opts)
 	rows, err := queryer.QueryContext(ctx, "SELECT created_at, source, source_id "+fromSQL, args...)
 	if err != nil {
-		return "", fmt.Errorf("activity event cursor: %w", err)
+		return nil, fmt.Errorf("activity event cursor: %w", err)
 	}
 	defer rows.Close()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
-			return "", fmt.Errorf("activity event cursor rows: %w", err)
+			return nil, fmt.Errorf("activity event cursor rows: %w", err)
 		}
-		return "", nil
+		return nil, nil
 	}
 	var createdAtStr, source string
 	var sourceID int64
 	if err := rows.Scan(&createdAtStr, &source, &sourceID); err != nil {
-		return "", fmt.Errorf("scan activity event cursor: %w", err)
+		return nil, fmt.Errorf("scan activity event cursor: %w", err)
 	}
 	createdAt, err := parseDBTime(createdAtStr)
 	if err != nil {
-		return "", fmt.Errorf("parse activity event cursor created_at %q: %w", createdAtStr, err)
+		return nil, fmt.Errorf("parse activity event cursor created_at %q: %w", createdAtStr, err)
 	}
-	return EncodeCursor(createdAt, source, sourceID), nil
+	return []string{EncodeCursor(createdAt, source, sourceID)}, nil
 }
 
 func listActivityWithQueryer(
+	ctx context.Context, queryer queryer, opts ListActivityOpts,
+) ([]ActivityItem, error) {
+	return readNewestActivity(ctx, queryer, opts, queryActivityWithQueryer)
+}
+
+func activityLimit(limit int) int {
+	if limit <= 0 {
+		return 50
+	}
+	return limit
+}
+
+func readNewestActivity[T any](ctx context.Context, q queryer, opts ListActivityOpts, read func(context.Context, queryer, ListActivityOpts) ([]T, error)) ([]T, error) {
+	hi := time.Now().UTC()
+	if opts.BeforeTime != nil {
+		hi = *opts.BeforeTime
+	}
+	if opts.AtOrBeforeTime != nil && (opts.BeforeTime == nil || opts.AtOrBeforeTime.Before(hi)) {
+		hi = *opts.AtOrBeforeTime
+	}
+	cut := hi.Add(-24 * time.Hour)
+	if opts.ParentItemNumber != 0 || (opts.Since != nil && !opts.Since.Before(cut)) || (opts.AfterTime != nil && !opts.AfterTime.Before(cut)) {
+		return read(ctx, q, opts)
+	}
+	recent := opts
+	recent.Since = &cut
+	items, err := read(ctx, q, recent)
+	if err != nil || len(items) >= activityLimit(opts.Limit) {
+		return items, err
+	}
+	opts.createdBefore = &cut
+	opts.Limit = activityLimit(opts.Limit) - len(items)
+	older, err := read(ctx, q, opts)
+	if err != nil {
+		return nil, err
+	}
+	return append(items, older...), nil
+}
+
+func queryActivityWithQueryer(
 	ctx context.Context, queryer queryer, opts ListActivityOpts,
 ) ([]ActivityItem, error) {
 	fromSQL, queryArgs := activityEventsQuery(opts)

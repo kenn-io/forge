@@ -107,8 +107,9 @@ Immediate merge, not a queue target
   Forge records a native stack as branch-inferred
   (`internal/server/pullapi/deferred_merge.go::Handler.enqueueDeferredMerge`).
 - A native stack deferral outside a merge queue also waits for CI on every unmerged pull request
-  below the target, since the stack merge lands them together. Each one goes through the target's
-  own check (`deferredMergeCheckState`): the checks pending on it at queue time must pass, and
+  below the target, since the stack merge lands them together. Each one's CI is refreshed when the
+  merge is queued, and then goes through the target's own check (`deferredMergeCheckState`): the
+  checks the provider reports pending on it at queue time must pass, and
   unknown CI fails closed, so one with no CI status is refused up front. It is also refused with
   `stack_member_not_ready` and its number when its CI failed, or it is closed, a draft, or
   conflicting. CI still running below makes a target whose own CI passed deferrable. On every

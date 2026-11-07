@@ -1,7 +1,11 @@
 package pullapi
 
 import (
+	"context"
 	"net/http"
+	"slices"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,19 +22,60 @@ import (
 // the provider. A deferred merge of #7 lands #6 with it.
 type nativeStackDeferFixture struct {
 	*autoMergeFixture
+	staged  *stagedCIProvider
 	stackID int64
+}
+
+// stagedCIProvider reports #6's checks as bottomChecks on the first read, made
+// when the merge is queued, and as later on every read after it. With hold
+// set, it holds the first read of #7's CI, which the worker makes, until hold
+// is closed.
+type stagedCIProvider struct {
+	*autoMergeTestProvider
+	later       []platform.CICheck
+	bottomReads atomic.Int32
+	hold        chan struct{}
+	started     chan struct{}
+	holdOnce    sync.Once
+}
+
+var _ platform.CIReader = (*stagedCIProvider)(nil)
+
+func (p *stagedCIProvider) ListCIChecks(
+	ctx context.Context, ref platform.RepoRef, sha string,
+) ([]platform.CICheck, error) {
+	if sha == "head-sha" && p.hold != nil {
+		first := false
+		p.holdOnce.Do(func() {
+			first = true
+			close(p.started)
+		})
+		if first {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-p.hold:
+			}
+		}
+	}
+	if sha == "bottom-head" && p.later != nil && p.bottomReads.Add(1) > 1 {
+		return slices.Clone(p.later), nil
+	}
+	return p.autoMergeTestProvider.ListCIChecks(ctx, ref, sha)
 }
 
 type nativeStackDeferOptions struct {
 	// bottom is #6 as stored; its PlatformHeadSHA is "bottom-head".
 	bottom db.MergeRequest
-	// bottomChecks are the checks the provider reports for #6.
-	bottomChecks []platform.CICheck
+	// bottomChecks are the checks the provider reports for #6 when the merge
+	// is queued, and bottomChecksLater, when set, the checks it reports after.
+	bottomChecks      []platform.CICheck
+	bottomChecksLater []platform.CICheck
 	// targetChecks replaces the passed checks the provider reports for #7.
 	targetChecks []platform.CICheck
 	// targetPassed stores #7 with its CI already passed instead of pending.
 	targetPassed bool
-	// holdCI holds the worker's first CI read until it is closed.
+	// holdCI holds the worker's first read of #7's CI until it is closed.
 	holdCI  chan struct{}
 	maxWait time.Duration
 }
@@ -74,16 +119,17 @@ func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nat
 		},
 		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
-	if opts.holdCI != nil {
-		inner.ciStarted, inner.ciRelease = make(chan struct{}), opts.holdCI
-	}
 	provider := &autoMergeTestProvider{
 		deferredMergeTestProvider: inner,
 		allowed:                   true,
 		enableCh:                  make(chan deferredMergeTestMergeCall, 2),
 	}
+	staged := &stagedCIProvider{
+		autoMergeTestProvider: provider, later: opts.bottomChecksLater,
+		hold: opts.holdCI, started: make(chan struct{}),
+	}
 	srv, database, repoID, client := newDeferredMergeRouteServer(
-		t, provider, ref, now,
+		t, staged, ref, now,
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
 		deferredMergeTestOptions{deferredMergeMaxWait: opts.maxWait},
 	)
@@ -113,6 +159,7 @@ func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nat
 		autoMergeFixture: &autoMergeFixture{
 			provider: provider, srv: srv, database: database, repoID: repoID, client: client, ref: ref,
 		},
+		staged:  staged,
 		stackID: stackID,
 	}
 }
@@ -121,6 +168,18 @@ func (f *nativeStackDeferFixture) deferTarget(t *testing.T) *generated.DeferMerg
 	t.Helper()
 	head := "head-sha"
 	return f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head})
+}
+
+// deferTargetPolling queues the same deferred merge with a short poll
+// interval, so the worker reads CI several times before maxWait ends it.
+func (f *nativeStackDeferFixture) deferTargetPolling(t *testing.T, maxWait time.Duration) {
+	t.Helper()
+	_, err := f.srv.handler.enqueueDeferredMerge(
+		t.Context(), "gitlab", f.ref.Host, f.ref.Owner, f.ref.Name, 7,
+		mergePRInputBody{Method: "squash", ExpectedHeadSHA: "head-sha"},
+		10*time.Millisecond, maxWait,
+	)
+	require.NoError(t, err)
 }
 
 func (f *nativeStackDeferFixture) assertNoAutoMergeRequest(t *testing.T) {
@@ -192,23 +251,27 @@ func TestDeferMergeInNativeStackRejectsAMemberBelowThatIsNotReady(t *testing.T) 
 	for _, tt := range []struct {
 		name   string
 		bottom db.MergeRequest
+		checks []platform.CICheck
 		want   string
 	}{
 		{
 			name: "failed CI",
-			bottom: db.MergeRequest{CIStatus: "failure", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
-				{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "failure"},
-			})},
-			want: "CI failed on #6",
+			// The stored copy says passed; the refresh when the merge is
+			// queued finds the failure.
+			bottom: db.MergeRequest{CIStatus: "success", CIChecksJSON: passedChecksJSON(t)},
+			checks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "failure"}},
+			want:   "CI failed on #6",
 		},
 		{
 			name:   "draft",
-			bottom: db.MergeRequest{IsDraft: true, CIStatus: "success", CIChecksJSON: passedChecksJSON(t)},
+			bottom: db.MergeRequest{IsDraft: true},
+			checks: passedChecks,
 			want:   "#6 is a draft",
 		},
 		{
 			name:   "conflicts",
-			bottom: db.MergeRequest{MergeableState: "dirty", CIStatus: "success", CIChecksJSON: passedChecksJSON(t)},
+			bottom: db.MergeRequest{MergeableState: "dirty"},
+			checks: passedChecks,
 			want:   "#6 has merge conflicts",
 		},
 		{
@@ -218,7 +281,7 @@ func TestDeferMergeInNativeStackRejectsAMemberBelowThatIsNotReady(t *testing.T) 
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			f := newNativeStackDeferFixture(t, nativeStackDeferOptions{bottom: tt.bottom})
+			f := newNativeStackDeferFixture(t, nativeStackDeferOptions{bottom: tt.bottom, bottomChecks: tt.checks})
 
 			resp := f.deferTarget(t)
 			require.Equal(t, http.StatusConflict, resp.StatusCode, string(resp.Body))
@@ -257,8 +320,8 @@ func TestDeferMergeInNativeStackWaitsForCIOnAMemberBelow(t *testing.T) {
 func TestDeferMergeInNativeStackFailsWhenAMemberBelowFailsWhileTheTargetRuns(t *testing.T) {
 	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
 		targetChecks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
-		bottom:       db.MergeRequest{CIStatus: "success", CIChecksJSON: passedChecksJSON(t)},
-		bottomChecks: []platform.CICheck{
+		bottomChecks: passedChecks,
+		bottomChecksLater: []platform.CICheck{
 			{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "failure"},
 		},
 		maxWait: 200 * time.Millisecond, //nolint:kennlint // deadlinetest: without the check below, the wait would end only by timing out
@@ -277,11 +340,9 @@ func TestDeferMergeInNativeStackFailsWhenAMemberBelowFailsWhileTheTargetRuns(t *
 // something to wait for.
 func TestDeferMergeInNativeStackWaitsForCIBelowATargetWhoseCIPassed(t *testing.T) {
 	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
-		targetPassed: true,
-		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
-			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
-		})},
-		bottomChecks: passedChecks,
+		targetPassed:      true,
+		bottomChecks:      []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+		bottomChecksLater: passedChecks,
 	})
 
 	resp := f.deferTarget(t)
@@ -295,10 +356,8 @@ func TestDeferMergeInNativeStackWaitsForCIBelowATargetWhoseCIPassed(t *testing.T
 // as it does for the target, instead of counting as no CI.
 func TestDeferMergeInNativeStackFailsWhenCIBelowDisappears(t *testing.T) {
 	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
-		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
-			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
-		})},
-		bottomChecks: []platform.CICheck{},
+		bottomChecks:      []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+		bottomChecksLater: []platform.CICheck{},
 	})
 
 	resp := f.deferTarget(t)
@@ -314,20 +373,22 @@ func TestDeferMergeInNativeStackFailsWhenCIBelowDisappears(t *testing.T) {
 // must; a refresh that drops it keeps the worker waiting.
 func TestDeferMergeInNativeStackWaitsForACheckBelowThatARefreshDrops(t *testing.T) {
 	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
-		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
+		// The stored copy says passed; the provider has two checks running
+		// when the merge is queued, and later reports only one, passed.
+		bottom: db.MergeRequest{CIStatus: "success", CIChecksJSON: passedChecksJSON(t)},
+		bottomChecks: []platform.CICheck{
 			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
 			{App: "GitLab", Name: "lint", Status: "in_progress"},
-		})},
-		bottomChecks: passedChecks,
-		maxWait:      100 * time.Millisecond, //nolint:kennlint // deadlinetest: the dropped check must still be outstanding when the wait expires
+		},
+		bottomChecksLater: passedChecks,
 	})
 
-	resp := f.deferTarget(t)
-	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
+	f.deferTargetPolling(t, 300*time.Millisecond) //nolint:kennlint // deadlinetest: the dropped check must still be outstanding after several worker passes
 
 	completed := f.completion(t)
 	assert.Equal(t, "failed", completed.Status)
 	assert.Contains(t, completed.Error, "timed out waiting for pending CI checks")
+	assert.Greater(t, f.staged.bottomReads.Load(), int32(2), "the worker read CI below more than once")
 	f.assertNoMerge(t)
 }
 
@@ -335,8 +396,8 @@ func TestDeferMergeInNativeStackWaitsForACheckBelowThatARefreshDrops(t *testing.
 // before the stack merge lands it.
 func TestDeferMergeInNativeStackFailsWhenAMemberBelowFailsBeforeTheMerge(t *testing.T) {
 	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
-		bottom: db.MergeRequest{CIStatus: "success", CIChecksJSON: passedChecksJSON(t)},
-		bottomChecks: []platform.CICheck{
+		bottomChecks: passedChecks,
+		bottomChecksLater: []platform.CICheck{
 			{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "failure"},
 		},
 	})
@@ -356,8 +417,8 @@ func TestDeferMergeInNativeStackFailsWhenAMemberBelowFailsBeforeTheMerge(t *test
 func TestDeferMergeInNativeStackChecksTheQueuedMembersWhenTheStackStopsBeingNative(t *testing.T) {
 	hold := make(chan struct{})
 	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
-		bottom: db.MergeRequest{CIStatus: "success", CIChecksJSON: passedChecksJSON(t)},
-		bottomChecks: []platform.CICheck{
+		bottomChecks: passedChecks,
+		bottomChecksLater: []platform.CICheck{
 			{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "failure"},
 		},
 		holdCI: hold,
@@ -366,7 +427,7 @@ func TestDeferMergeInNativeStackChecksTheQueuedMembersWhenTheStackStopsBeingNati
 	resp := f.deferTarget(t)
 	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
 	select {
-	case <-f.provider.ciStarted:
+	case <-f.staged.started:
 	case <-time.After(5 * time.Second):
 		require.FailNow(t, "the worker did not read CI")
 	}
@@ -399,4 +460,42 @@ func TestDeferredMergeRulesUseTheBottomMembersQueueInANativeStack(t *testing.T) 
 
 	assert.Equal(t, "blocked", rules)
 	assert.True(t, queue, "the queue on the bottom member's base exempts the stack merge")
+}
+
+// A stack member's reviewed head is what a merge of it from another member's
+// detail pins. It comes through the stack query and the detail response only
+// while that member's synced diff matches its current head and base.
+func TestPullDetailStackMembersCarryTheirReviewedHead(t *testing.T) {
+	for _, tt := range []struct {
+		name               string
+		diffHead, diffBase string
+		want               string
+	}{
+		{name: "current diff", diffHead: "bottom-head", diffBase: "base-sha", want: "bottom-head"},
+		{name: "no diff", want: ""},
+		{name: "stale head", diffHead: "older-head", diffBase: "base-sha", want: ""},
+		{name: "stale base", diffHead: "bottom-head", diffBase: "older-base", want: ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newNativeStackDeferFixture(t, nativeStackDeferOptions{})
+			if tt.diffHead != "" {
+				require.NoError(t, f.database.UpdateDiffSHAs(t.Context(), f.repoID, 6, tt.diffHead, tt.diffBase, tt.diffBase))
+			}
+
+			resp, err := f.client.HTTP.GetPullOnHostWithResponse(t.Context(), &generated.GetPullOnHostRequestOptions{
+				PathParams: &generated.GetPullOnHostPath{
+					PlatformHost: f.ref.Host, Provider: "gitlab", Owner: f.ref.Owner, Name: f.ref.Name, Number: 7,
+				},
+			})
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode, string(resp.Body))
+			require.NotNil(t, resp.JSON200.Stack)
+			require.True(t, resp.JSON200.Stack.Native)
+			idx := slices.IndexFunc(resp.JSON200.Stack.Members, func(m generated.StackMemberResponse) bool {
+				return m.Number == 6
+			})
+			require.GreaterOrEqual(t, idx, 0, "the stack lists #6")
+			assert.Equal(t, tt.want, resp.JSON200.Stack.Members[idx].ReviewedHeadSha)
+		})
+	}
 }

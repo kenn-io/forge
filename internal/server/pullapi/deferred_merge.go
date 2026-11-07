@@ -170,7 +170,7 @@ func (s *Handler) enqueueDeferredMerge(
 			return deferMergePRBody{Status: "queued"}, nil
 		}
 	}
-	below, belowPending, err := s.nativeStackWaitsBelow(ctx, repo.ID, stack, members, number)
+	below, belowPending, err := s.nativeStackWaitsBelow(ctx, repo.Repo, stack, members, number)
 	if err != nil {
 		return deferMergePRBody{}, err
 	}
@@ -612,13 +612,14 @@ type nativeStackWait struct {
 	keys   []deferredMergeCheckKey
 }
 
-// nativeStackWaitsBelow reads the unmerged pull requests below the target of
-// a native stack merge, which lands them with it, through the same check as
-// the target. It refuses the merge when one is closed, a draft, or
+// nativeStackWaitsBelow refreshes the CI of the unmerged pull requests below
+// the target of a native stack merge, which lands them with it, and reads
+// each through the same check as the target, so the checks it waits for come
+// from the provider rather than a stored copy. It refuses the merge when one is closed, a draft, or
 // conflicting, or its CI failed or is unknown, and reports whether CI still
 // runs on any of them.
 func (s *Handler) nativeStackWaitsBelow(
-	ctx context.Context, repoID int64, stack *db.Stack, members []db.StackMemberWithPR, number int,
+	ctx context.Context, repo db.Repo, stack *db.Stack, members []db.StackMemberWithPR, number int,
 ) ([]nativeStackWait, bool, error) {
 	if stack == nil || !stack.Native {
 		return nil, false, nil
@@ -632,7 +633,24 @@ func (s *Handler) nativeStackWaitsBelow(
 		if member.State == string(db.MergeRequestStateMerged) {
 			continue
 		}
-		mr, err := s.visibleMergeRequest(ctx, repoID, member.Number)
+		warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
+			ctx, mergeRequestRepoRef(repo), repo.ID, member.Number, member.PlatformHeadSHA,
+		)
+		if err != nil {
+			return nil, false, httpapi.ProviderCallProblemWithDetail(
+				err,
+				string(repoProviderKind(repo)), repoProviderHost(repo),
+				fmt.Sprintf("refresh CI on #%d before deferring merge: %s", member.Number, err),
+			)
+		}
+		if len(warnings) > 0 {
+			return nil, false, httpapi.Conflict(
+				httpapi.CodeConflict,
+				fmt.Sprintf("could not refresh CI checks on #%d before deferring merge", member.Number),
+				map[string]any{"reason": "ci_refresh_unavailable", "warnings": warnings, "blocking_number": member.Number},
+			)
+		}
+		mr, err := s.visibleMergeRequest(ctx, repo.ID, member.Number)
 		if err != nil {
 			return nil, false, httpapi.Internal("get stack member failed")
 		}

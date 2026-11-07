@@ -314,8 +314,9 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 func (a *ACP) endTurnLocked(stopReason string, err error) {
 	a.endTurnRecordLocked(stopReason, err)
 	// An empty stop reason is a Codex turn that ended with its idle thread,
-	// which is also how a stopped takeover ends.
-	if err == nil && !a.state.Stopping && (stopReason == "" || stopReason == string(acpsdk.StopReasonEndTurn)) {
+	// which is also how a stopped takeover ends. A stop counts until the next
+	// prompt, because a takeover can start after the stopped prompt ended.
+	if err == nil && !a.cancelling && (stopReason == "" || stopReason == string(acpsdk.StopReasonEndTurn)) {
 		a.backgroundRunningCommandsLocked()
 	}
 	a.state.Busy = false

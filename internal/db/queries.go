@@ -3296,7 +3296,12 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 	case "closed":
 		conds = append(conds, "i.state = 'closed'")
 	default:
-		conds = append(conds, "i.state = ?")
+		stateCond := "i.state = ?"
+		if opts.AllowedRepoIDs != nil && opts.Limit == 0 {
+			// Keep unpaged scoped reads seeking repositories instead of walking all open issues.
+			stateCond = "likely(i.state = ?)"
+		}
+		conds = append(conds, stateCond)
 		args = append(args, state)
 	}
 

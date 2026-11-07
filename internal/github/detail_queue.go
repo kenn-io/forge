@@ -331,10 +331,6 @@ func (s *Syncer) buildDetailQueueItems(
 		reposByID[repo.ID] = repo
 		repoIDs = append(repoIDs, repo.ID)
 	}
-	if len(repoIDs) == 0 {
-		return nil
-	}
-
 	// Gather watched MR numbers for matching.
 	s.watchMu.Lock()
 	watched := make(map[string]bool, len(s.watchedMRs))

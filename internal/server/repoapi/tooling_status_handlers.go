@@ -153,7 +153,7 @@ func (s *Handlers) probeToolingStatus(ctx context.Context) ToolingStatusBody {
 		)
 	})
 	probes.Go(func() {
-		status, source := s.githubHostToken(ctx, githubHost)
+		status, source, _ := s.githubHostToken(ctx, githubHost)
 		body.GitHubToken = status
 		if status == nil || status.Source == "" {
 			return
@@ -172,13 +172,13 @@ func (s *Handlers) probeToolingStatus(ctx context.Context) ToolingStatusBody {
 
 // githubHostToken uses the active unscoped host source. Pending config can
 // differ until restart when a reload changes GitHub App topology.
-func (s *Handlers) githubHostToken(ctx context.Context, host string) (*toolingTokenStatus, tokenauth.Source) {
+func (s *Handlers) githubHostToken(ctx context.Context, host string) (*toolingTokenStatus, tokenauth.Source, string) {
 	if s.Syncer == nil || *s.Syncer == nil {
-		return nil, nil
+		return nil, nil, ""
 	}
 	host, err := config.NormalizePlatformHost("github", host)
 	if err != nil {
-		return nil, nil
+		return nil, nil, ""
 	}
 	var desc tokenauth.Descriptor
 	var live *tokenauth.ManagedSource
@@ -206,14 +206,14 @@ func (s *Handlers) githubHostToken(ctx context.Context, host string) (*toolingTo
 		}
 	}
 	if status == nil {
-		return nil, nil
+		return nil, nil, ""
 	}
 	source := tokenauth.NewManagedSource(desc, tokenauth.Options{})
 	_, candidate, _ := source.Resolve(ctx)
 	if candidate.Kind == tokenauth.SourceKindEnv || candidate.Kind == tokenauth.SourceKindFile {
 		status.Source = cmp.Or(candidate.EnvName, candidate.FilePath)
 	}
-	return status, source
+	return status, source, host
 }
 
 func (s *Handlers) githubClient(source tokenauth.Source, host string) (platformgithub.UserRepositoriesAPI, error) {

@@ -78,7 +78,7 @@ func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 		repositoryToken bool
 		rejected        bool
 	}{
-		{name: "empty repository config"},
+		{name: "omitted platform host"},
 		{name: "uppercase public host", platformHost: "GITHUB.COM"},
 		{name: "public host with HTTPS port", platformHost: "github.com:443"},
 		{name: "repository token differs", repositoryToken: true},

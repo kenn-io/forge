@@ -379,7 +379,7 @@ describe("OnboardingFlow", () => {
   it("opens repository settings for GitHub and other providers", async () => {
     mocks.tooling.value = {
       git: { available: true, version: "2.50" },
-      gh: { available: false, authenticated: false },
+      gh: { available: false, authenticated: false, host: "github.com" },
       glab: { available: true, authenticated: true, host: "gitlab.example.com", user: "maintainer" },
     };
     const callbacks = renderFlow(storeFixture().stores);

@@ -147,7 +147,6 @@ func (l *daemonLifecycle) Start(
 
 func (l *daemonLifecycle) ensureBackgroundWithProgress(ctx context.Context, configPath string, cfg *config.Config, stdout io.Writer) (daemon.RuntimeRecord, error) {
 	reporter := newBackgroundLoopHandle(ctx)
-	var outputErr error
 	reporter.start(func(ctx context.Context) {
 		timer := time.NewTimer(2 * time.Second)
 		defer timer.Stop()
@@ -160,7 +159,7 @@ func (l *daemonLifecycle) ensureBackgroundWithProgress(ctx context.Context, conf
 				if ctx.Err() != nil {
 					return
 				}
-				if _, outputErr = fmt.Fprintln(stdout, message); outputErr != nil {
+				if _, err := fmt.Fprintln(stdout, message); err != nil {
 					return
 				}
 				message = "Still waiting for daemon startup…"
@@ -170,7 +169,7 @@ func (l *daemonLifecycle) ensureBackgroundWithProgress(ctx context.Context, conf
 	})
 	record, err := l.deps.ensureBackground(ctx, configPath, cfg)
 	stopErr := reporter.Stop(context.WithoutCancel(ctx))
-	return record, errors.Join(err, outputErr, stopErr)
+	return record, errors.Join(err, stopErr)
 }
 
 func (l *daemonLifecycle) Status(

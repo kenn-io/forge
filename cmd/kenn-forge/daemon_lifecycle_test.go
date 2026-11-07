@@ -60,17 +60,31 @@ func TestDaemonStartDirectsVersionMismatchToRestart(t *testing.T) {
 	assert.ErrorContains(t, err, "kenn-forge daemon restart")
 }
 
+type failFirstWrite struct {
+	io.Writer
+	failed bool
+}
+
+func (w *failFirstWrite) Write(p []byte) (int, error) {
+	if !w.failed {
+		w.failed = true
+		return 0, io.ErrClosedPipe
+	}
+	return w.Writer.Write(p)
+}
+
 func TestDaemonProgress(t *testing.T) {
 	const setup = "Setting up the database (first run)…\n"
 	const waiting = "Still waiting for daemon startup…\n"
 	const running = "kenn-forge running at http://127.0.0.1:8091 (pid 42)\n"
 	startupErr := errors.New("startup failed")
 	for _, tt := range []struct {
-		name     string
-		delay    time.Duration
-		progress string
-		err      error
-		cancel   bool
+		name         string
+		delay        time.Duration
+		progress     string
+		err          error
+		cancel       bool
+		writeFailure bool
 	}{
 		{name: "immediate"},
 		{name: "fast", delay: time.Second},
@@ -78,6 +92,7 @@ func TestDaemonProgress(t *testing.T) {
 		{name: "repeated", delay: 23 * time.Second, progress: setup + waiting + waiting},
 		{name: "failure", delay: 3 * time.Second, progress: setup, err: startupErr},
 		{name: "cancellation", delay: 3 * time.Second, progress: setup, err: context.Canceled, cancel: true},
+		{name: "progress write failure", delay: 23 * time.Second, writeFailure: true},
 	} {
 		for _, restart := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/restart=%t", tt.name, restart), func(t *testing.T) {
@@ -98,12 +113,16 @@ func TestDaemonProgress(t *testing.T) {
 						return daemonTestRuntime(42), tt.err
 					}
 					var out bytes.Buffer
+					var writer io.Writer = &out
+					if tt.writeFailure {
+						writer = &failFirstWrite{Writer: &out}
+					}
 					result := make(chan error, 1)
 					run := newDaemonLifecycle(deps).Start
 					if restart {
 						run = newDaemonLifecycle(deps).Restart
 					}
-					go func() { result <- run(ctx, "/config.toml", &out) }()
+					go func() { result <- run(ctx, "/config.toml", writer) }()
 					synctest.Wait()
 					time.Sleep(tt.delay)
 					synctest.Wait()

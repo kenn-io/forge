@@ -196,11 +196,10 @@
   const immediateAllowed = $derived(!targetImmediateBlocked || (targetCanBypass && bypassRules));
   // Only Forge's worker merges over the rules; GitHub auto-merge cannot.
   const sendsBypass = $derived(targetImmediateBlocked && targetCanBypass && bypassRules);
-  // The workspace belongs to this pull request, so it goes only if this
-  // pull request merges.
-  const workspaceLands = $derived(
-    workspaceId !== undefined && (mergingThis || (nativeStackMerge?.landing.includes(number) ?? false)),
-  );
+  // The workspace belongs to this pull request. Deleting it is offered only
+  // for a merge of this pull request, whose request replaces any deletion an
+  // earlier merge of it kept; a merge up to another member leaves it alone.
+  const workspaceLands = $derived(workspaceId !== undefined && mergingThis);
   // The primary action merges immediately unless it queues a deferred merge.
   const primaryBlocked = $derived(mergeBlocked || (!offerDeferredMerge && !immediateAllowed));
 

@@ -10,8 +10,8 @@ supersession, completion events, or pending-state presentation.
 - The merge dialog for a native stack with more than one open member chooses the merge target,
   starting at the current pull request. Another target pins its stack entry's
   `reviewed_head_sha` as it was when the dialog opened, while its CI and draft state follow
-  detail refreshes. The current pull request's workspace is deleted only if the merge
-  lands it. A merge queue merge still skips the dialog when it asks nothing, unless a
+  detail refreshes. Deleting the current pull request's workspace is offered only for a merge of
+  that pull request, whose request replaces a deletion an earlier merge of it kept. A merge queue merge still skips the dialog when it asks nothing, unless a
   member below has failed CI (`frontend/src/lib/components/detail/MergeModal.svelte`). The detail
   store orders a merge of another member under that member's mutation key and refreshes the
   shown pull request (`frontend/src/lib/stores/detail.svelte.ts::runPullAction`).
@@ -106,14 +106,15 @@ Immediate merge, not a queue target
   worker; auto-merge already on still counts as the deferral. With the native stack preview off,
   Forge records a native stack as branch-inferred
   (`internal/server/pullapi/deferred_merge.go::Handler.enqueueDeferredMerge`).
-- A native stack deferral outside a merge queue also waits for CI on every unmerged member below
-  the target, since the stack merge lands them together. It is refused with
-  `stack_member_not_ready` and the member's number when waiting cannot make one ready: its CI
-  failed, or it is closed, a draft, or conflicting. On every pass the worker refreshes the members
-  recorded at queue time, not the current stack projection. It waits while CI runs on one of them,
-  and fails when one is no longer ready. One check reads each member from its current state, with
-  no captured checks: a member whose checks all passed, or that has no CI, is ready
-  (`internal/server/pullapi/deferred_merge.go::nativeStackMemberReadiness`).
+- A native stack deferral outside a merge queue also waits for CI on every unmerged pull request
+  below the target, since the stack merge lands them together. Each one goes through the target's
+  own check (`deferredMergeCheckState`): the checks pending on it at queue time must pass, and
+  unknown CI fails closed, so one with no CI status is refused up front. It is also refused with
+  `stack_member_not_ready` and its number when its CI failed, or it is closed, a draft, or
+  conflicting. CI still running below makes a target whose own CI passed deferrable. On every
+  pass the worker refreshes the pull requests recorded at queue time, not the current stack
+  projection, waits while one still runs, and fails when one fails or stops being mergeable
+  (`internal/server/pullapi/deferred_merge.go::Handler.nativeStackWaitsBelow`).
 - The lowest unmerged member's base branch decides whether a native stack merge goes to a merge
   queue, for the merge endpoint and the worker alike
   (`internal/server/pullapi/stack_merge.go::mergeQueueOwner`).

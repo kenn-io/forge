@@ -28,6 +28,8 @@ type nativeStackDeferOptions struct {
 	bottomChecks []platform.CICheck
 	// targetChecks replaces the passed checks the provider reports for #7.
 	targetChecks []platform.CICheck
+	// targetPassed stores #7 with its CI already passed instead of pending.
+	targetPassed bool
 	// holdCI holds the worker's first CI read until it is closed.
 	holdCI  chan struct{}
 	maxWait time.Duration
@@ -85,6 +87,9 @@ func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nat
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
 		deferredMergeTestOptions{deferredMergeMaxWait: opts.maxWait},
 	)
+	if opts.targetPassed {
+		require.NoError(t, database.UpdateMRCIStatus(ctx, repoID, 7, "success", passedChecksJSON(t)))
+	}
 	bottom := opts.bottom
 	bottom.RepoID, bottom.PlatformID, bottom.Number = repoID, 6001, 6
 	bottom.Title, bottom.Author = "Bottom", "ada"
@@ -206,6 +211,11 @@ func TestDeferMergeInNativeStackRejectsAMemberBelowThatIsNotReady(t *testing.T) 
 			bottom: db.MergeRequest{MergeableState: "dirty", CIStatus: "success", CIChecksJSON: passedChecksJSON(t)},
 			want:   "#6 has merge conflicts",
 		},
+		{
+			// Unknown CI fails closed, as it does for the target.
+			name: "no CI status",
+			want: "Forge has no CI status for #6",
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newNativeStackDeferFixture(t, nativeStackDeferOptions{bottom: tt.bottom})
@@ -263,14 +273,62 @@ func TestDeferMergeInNativeStackFailsWhenAMemberBelowFailsWhileTheTargetRuns(t *
 	f.assertNoMerge(t)
 }
 
-func TestDeferMergeInNativeStackMergesWithAMemberBelowThatHasNoCI(t *testing.T) {
-	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{})
+// The target's own CI has passed, so only CI below it gives the merge
+// something to wait for.
+func TestDeferMergeInNativeStackWaitsForCIBelowATargetWhoseCIPassed(t *testing.T) {
+	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
+		targetPassed: true,
+		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
+			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
+		})},
+		bottomChecks: passedChecks,
+	})
 
 	resp := f.deferTarget(t)
 	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
 
 	completed := f.completion(t)
 	assert.Equal(t, "merged", completed.Status, completed.Error)
+}
+
+// CI that a refresh no longer reports on a pull request below fails closed,
+// as it does for the target, instead of counting as no CI.
+func TestDeferMergeInNativeStackFailsWhenCIBelowDisappears(t *testing.T) {
+	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
+		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
+			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
+		})},
+		bottomChecks: []platform.CICheck{},
+	})
+
+	resp := f.deferTarget(t)
+	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
+
+	completed := f.completion(t)
+	assert.Equal(t, "failed", completed.Status)
+	assert.Contains(t, completed.Error, "CI status of #6 is unavailable")
+	f.assertNoMerge(t)
+}
+
+// A check pending below when the merge was queued must pass, as the target's
+// must; a refresh that drops it keeps the worker waiting.
+func TestDeferMergeInNativeStackWaitsForACheckBelowThatARefreshDrops(t *testing.T) {
+	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
+		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
+			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
+			{App: "GitLab", Name: "lint", Status: "in_progress"},
+		})},
+		bottomChecks: passedChecks,
+		maxWait:      100 * time.Millisecond, //nolint:kennlint // deadlinetest: the dropped check must still be outstanding when the wait expires
+	})
+
+	resp := f.deferTarget(t)
+	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
+
+	completed := f.completion(t)
+	assert.Equal(t, "failed", completed.Status)
+	assert.Contains(t, completed.Error, "timed out waiting for pending CI checks")
+	f.assertNoMerge(t)
 }
 
 // A member below that was ready when the merge was queued is checked again

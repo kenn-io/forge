@@ -213,6 +213,25 @@ describe("MergeModal native stack target", () => {
     });
   });
 
+  it("leaves this pull request's workspace alone when merging up to a member above it", async () => {
+    render(MergeModal, {
+      props: {
+        ...baseProps,
+        number: 12,
+        expectedHeadSha: "head-12",
+        workspaceId: "ws-12",
+        nativeStack: nativeStack([{ number: 11 }, { number: 12 }, { number: 13 }]),
+      },
+    });
+
+    await chooseTarget(/#13 Change 13/);
+    expect(screen.queryByRole("checkbox", { name: "Delete workspace after merge" })).toBeNull();
+    await fireEvent.click(screen.getByText(/Squash and merge/, { selector: ".kit-modal-footer button" }));
+
+    expect(mockMergePull.mock.calls[0]?.[1]).toBe(13);
+    expect(mockMergePull.mock.calls[0]?.[2]).not.toHaveProperty("delete_workspace_id");
+  });
+
   it("merges a chosen member now once its CI passes while the dialog is open", async () => {
     const props = {
       ...baseProps,

@@ -251,7 +251,7 @@ func TestExitedMirrorHandsTheSessionToAForgeRunAgent(t *testing.T) {
 
 // startRealMirror returns a mirror of an exited agent whose handoff starts a
 // real owner on the fixture agent, and the fixture's directory.
-func startRealMirror(t *testing.T, agent, transcriptText string) (*Manager, *DormantACP, string, string) {
+func startRealMirror(t *testing.T, agent, transcriptText string) (*DormantACP, string) {
 	t.Helper()
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
@@ -286,7 +286,7 @@ func startRealMirror(t *testing.T, agent, transcriptText string) (*Manager, *Dor
 		},
 	})
 	t.Cleanup(func() { _ = manager.Stop(context.WithoutCancel(t.Context()), "workspace", key) })
-	return manager, chat, dir, key
+	return chat, dir
 }
 
 // awaitIdleMessages waits for the started chat to finish its turn with count
@@ -307,7 +307,7 @@ func awaitIdleMessages(t *testing.T, chat *DormantACP, count int) ACPState {
 // and agent: nothing else proves the owner finds what it needs to load the session.
 func TestExitedMirrorLoadsItsSessionInARealAgent(t *testing.T) {
 	assert := assert.New(t)
-	_, chat, dir, _ := startRealMirror(t, "claude", claudeTranscriptFixture)
+	chat, dir := startRealMirror(t, "claude", claudeTranscriptFixture)
 	mirrored := dormantState(t, chat).Messages
 	require.NotEmpty(t, mirrored)
 
@@ -325,7 +325,7 @@ func TestExitedMirrorLoadsItsSessionInARealAgent(t *testing.T) {
 // Forge reads no transcript for this agent, so the history the agent replays on
 // load is the only record of the earlier conversation.
 func TestExitedMirrorWithoutATranscriptReaderShowsTheAgentsHistory(t *testing.T) {
-	_, chat, _, _ := startRealMirror(t, "gemini", "")
+	chat, _ := startRealMirror(t, "gemini", "")
 	require.Empty(t, dormantState(t, chat).Messages)
 
 	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", ID: "p1", Text: "continue here"}))

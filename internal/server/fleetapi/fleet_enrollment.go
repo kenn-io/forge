@@ -545,6 +545,15 @@ func (h *Handler) joinFederation(
 		return nil, httpapi.Validation("body.enrollment_token", "enrollment token is required")
 	}
 
+	// A join replaces the revoked enrollment that retried cleanup depends on,
+	// so finish that cleanup first. Preparation for the new enrollment would
+	// otherwise find the old one's binding in the database.
+	if existing, ok := h.enrollments.Local(); ok && existing.State == federation.EnrollmentRevoked {
+		if err := RevokeLocalEnrollment(ctx, h.enrollments, h.credentials, h.db, existing); err != nil {
+			return nil, httpapi.Internal("finish previous enrollment revocation: " + err.Error())
+		}
+	}
+
 	local, err := HubJoiner{
 		Enrollments: h.enrollments, Credentials: h.credentials,
 		NodeID: h.nodeID, HTTPClient: h.federationHTTPClient,

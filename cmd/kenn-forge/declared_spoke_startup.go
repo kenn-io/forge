@@ -253,11 +253,11 @@ func preparationBlockers(report spokeapi.SpokePreparationReport) string {
 		blockers = append(blockers, fmt.Sprintf("%d workspaces without launch specifications", len(report.Unprepared)))
 	}
 	if len(report.HandoffConflicts) != 0 {
-		blockers = append(blockers, fmt.Sprintf("%d provider state handoff conflicts", len(report.HandoffConflicts)))
+		blockers = append(blockers, fmt.Sprintf("%d review drafts or workflows conflict with the hub", len(report.HandoffConflicts)))
 	}
 	blockers = append(blockers, report.HandoffErrors...)
 	if len(blockers) == 0 {
-		return "the provider write drain has not finished"
+		return "provider updates are still pending"
 	}
 	return strings.Join(blockers, "; ")
 }

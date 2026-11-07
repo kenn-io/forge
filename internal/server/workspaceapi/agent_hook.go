@@ -16,6 +16,10 @@ import (
 type receiveAgentHookInput struct {
 	Agent             string                  `path:"agent"`
 	RuntimeSessionKey string                  `header:"X-Kenn-Forge-Runtime-Session-Key"`
+	AgentPID          string                  `header:"X-Kenn-Forge-Agent-Pid"`
+	AgentStart        string                  `header:"X-Kenn-Forge-Agent-Start"`
+	HerdrPane         string                  `header:"X-Kenn-Forge-Herdr-Pane"`
+	HerdrSocket       string                  `header:"X-Kenn-Forge-Herdr-Socket"`
 	Body              agentactivity.HookEvent `json:"body"`
 }
 
@@ -52,6 +56,7 @@ func (s *Handler) receiveAgentHook(
 		}
 	}
 	s.recordAgentConversation(ctx, string(integration), input.Body, input.RuntimeSessionKey)
+	s.recordExternalAgentHook(ctx, string(integration), input)
 
 	output := &receiveAgentHookOutput{}
 	if integration != agenthook.AgentClaude ||

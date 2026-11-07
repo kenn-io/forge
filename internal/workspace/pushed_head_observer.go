@@ -540,7 +540,8 @@ func (o *PushedHeadObserver) reserveMergeRequestHeadRefFetch(
 	ctx context.Context, ws *Workspace, mr db.MergeRequest,
 ) (*HeadRefFetch, error) {
 	providerSHA := strings.TrimSpace(mr.PlatformHeadSHA)
-	if ws.ItemType != db.WorkspaceItemTypePullRequest || o.headRefs == nil || providerSHA == "" {
+	// Forge writes no refs into a checkout it did not create.
+	if ws.ItemType != db.WorkspaceItemTypePullRequest || o.headRefs == nil || providerSHA == "" || ws.ExternalWorktree {
 		return nil, nil
 	}
 	ref := platform.MergeRequestHeadRef(workspaceProviderKind(ws), ws.ItemNumber)
@@ -619,7 +620,7 @@ func (o *PushedHeadObserver) configureMissingUpstream(
 	trackingCache map[string]trackingLookup,
 ) (bool, error) {
 	head := strings.TrimSpace(mr.HeadBranch)
-	if head == "" {
+	if head == "" || ws.ExternalWorktree {
 		return false, nil
 	}
 	if strings.TrimSpace(mr.HeadRepoCloneURL) == "" || WorkspaceHeadRepo(

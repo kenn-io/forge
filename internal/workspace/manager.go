@@ -464,25 +464,7 @@ func (m *Manager) Create(
 func (m *Manager) CreateFromLaunchSpec(
 	ctx context.Context, spec WorkspaceLaunchSpec,
 ) (*Workspace, error) {
-	if spec.ItemType != db.WorkspaceItemTypePullRequest {
-		return nil, errors.New("pull-request workspace requires a pull launch specification")
-	}
-	if err := validateLaunchSpecForCreation(spec); err != nil {
-		return nil, err
-	}
-	if err := spec.RequireVisible(m.launchSpecNow()); err != nil {
-		return nil, err
-	}
-	if existing, err := m.GetByLaunchSpecIdentity(ctx, spec); err != nil {
-		return nil, err
-	} else if existing != nil {
-		return nil, fmt.Errorf("%w: %s", ErrWorkspaceDuplicate, existing.ID)
-	}
-	repo, err := m.repositoryForLaunchSpec(ctx, spec)
-	if err != nil {
-		return nil, err
-	}
-	id, err := newWorkspaceID()
+	repo, err := m.prepareLaunchSpecPullWorkspace(ctx, spec)
 	if err != nil {
 		return nil, err
 	}
@@ -498,24 +480,67 @@ func (m *Manager) CreateFromLaunchSpec(
 	if err != nil {
 		return nil, err
 	}
+	return m.insertPullWorkspace(ctx, spec, repo.ID, worktreePath, workspaceBranchUnknown, false)
+}
 
+// CreateExternalFromLaunchSpec persists a PR-backed workspace on a worktree
+// Forge did not create, already checked out on branch. Setup only verifies the
+// worktree, and deleting the workspace leaves it and the branch alone.
+func (m *Manager) CreateExternalFromLaunchSpec(
+	ctx context.Context, spec WorkspaceLaunchSpec, worktreePath, branch string,
+) (*Workspace, error) {
+	repo, err := m.prepareLaunchSpecPullWorkspace(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	return m.insertPullWorkspace(ctx, spec, repo.ID, worktreePath, branch, true)
+}
+
+// prepareLaunchSpecPullWorkspace checks spec can back a new pull request
+// workspace and returns its repository.
+func (m *Manager) prepareLaunchSpecPullWorkspace(ctx context.Context, spec WorkspaceLaunchSpec) (*db.Repo, error) {
+	if spec.ItemType != db.WorkspaceItemTypePullRequest {
+		return nil, errors.New("pull-request workspace requires a pull launch specification")
+	}
+	if err := validateLaunchSpecForCreation(spec); err != nil {
+		return nil, err
+	}
+	if err := spec.RequireVisible(m.launchSpecNow()); err != nil {
+		return nil, err
+	}
+	if existing, err := m.GetByLaunchSpecIdentity(ctx, spec); err != nil {
+		return nil, err
+	} else if existing != nil {
+		return nil, fmt.Errorf("%w: %s", ErrWorkspaceDuplicate, existing.ID)
+	}
+	return m.repositoryForLaunchSpec(ctx, spec)
+}
+
+func (m *Manager) insertPullWorkspace(
+	ctx context.Context, spec WorkspaceLaunchSpec, repoID int64, worktreePath, branch string, external bool,
+) (*Workspace, error) {
+	id, err := newWorkspaceID()
+	if err != nil {
+		return nil, err
+	}
 	ws := &Workspace{
-		ID:              id,
-		Platform:        spec.Repository.Provider,
-		PlatformHost:    spec.Repository.PlatformHost,
-		RepoOwner:       spec.Repository.Owner,
-		RepoName:        spec.Repository.Name,
-		RepoID:          repo.ID,
-		ItemType:        db.WorkspaceItemTypePullRequest,
-		ItemNumber:      spec.ItemNumber,
-		ItemKey:         spec.ItemKey,
-		GitHeadRef:      spec.GitHeadRef,
-		MRHeadRepo:      workspaceHeadRepoFromLaunchSpec(spec),
-		WorkspaceBranch: workspaceBranchUnknown,
-		WorktreePath:    worktreePath,
-		TmuxSession:     "forge-" + id,
-		TerminalBackend: m.PreferredTerminalBackend(),
-		Status:          "creating",
+		ID:               id,
+		Platform:         spec.Repository.Provider,
+		PlatformHost:     spec.Repository.PlatformHost,
+		RepoOwner:        spec.Repository.Owner,
+		RepoName:         spec.Repository.Name,
+		RepoID:           repoID,
+		ItemType:         db.WorkspaceItemTypePullRequest,
+		ItemNumber:       spec.ItemNumber,
+		ItemKey:          spec.ItemKey,
+		GitHeadRef:       spec.GitHeadRef,
+		MRHeadRepo:       workspaceHeadRepoFromLaunchSpec(spec),
+		WorkspaceBranch:  branch,
+		WorktreePath:     worktreePath,
+		TmuxSession:      "forge-" + id,
+		TerminalBackend:  m.PreferredTerminalBackend(),
+		Status:           "creating",
+		ExternalWorktree: external,
 	}
 
 	if err := m.db.CreateWorkspaceWithLaunchSpec(ctx, ws, spec); err != nil {
@@ -1422,6 +1447,9 @@ func (m *Manager) SetupWithOptions(
 	// stable repository identity before any Git or provider access.
 	if err := m.verifyWorkspaceRepository(ctx, ws); err != nil {
 		return m.failSetup(ctx, ws.ID, workspaceSetupStageSetup, err)
+	}
+	if ws.ExternalWorktree {
+		return m.setupExternalWorktree(ctx, ws)
 	}
 	if recoveryPending {
 		if err := m.validateExistingWorkspaceDirectory(ctx, ws); err != nil {
@@ -3499,7 +3527,8 @@ func (m *Manager) Delete(
 		return nil, ErrWorkspaceNotFound
 	}
 
-	if !force {
+	// Deleting a workspace on an external worktree leaves its files in place.
+	if !force && !ws.ExternalWorktree {
 		files, checkErr := dirtyFiles(ctx, ws.WorktreePath)
 		if checkErr != nil {
 			// Worktree may be missing/corrupt — surface as a
@@ -3667,7 +3696,7 @@ func (m *Manager) cleanupWorkspaceArtifactsForDelete(
 	if err := m.cleanupTmuxSession(ctx, ws); err != nil {
 		return err
 	}
-	if workspaceRequiresExistingDirectory(ws) {
+	if workspaceRequiresExistingDirectory(ws) || ws.ExternalWorktree {
 		return nil
 	}
 

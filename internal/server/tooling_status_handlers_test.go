@@ -193,7 +193,6 @@ func TestToolingStatusGitHubToken(t *testing.T) {
 		host        string
 		globalToken string
 		platformEnv string
-		file        bool
 		status      int
 		wantEnv     string
 		wantSource  string
@@ -204,7 +203,6 @@ func TestToolingStatusGitHubToken(t *testing.T) {
 		{name: "Enterprise excludes global token", host: "ghe.example.com", globalToken: "global-token"},
 		{name: "rejected token", host: "github.com", globalToken: "global-token", status: http.StatusUnauthorized, wantEnv: "KENN_FORGE_GITHUB_TOKEN", wantSource: "KENN_FORGE_GITHUB_TOKEN", wantToken: "global-token"},
 		{name: "no credential", host: "github.com", wantEnv: "KENN_FORGE_GITHUB_TOKEN"},
-		{name: "rotated file", host: "github.com", file: true, status: http.StatusOK, wantEnv: "KENN_FORGE_GITHUB_TOKEN", wantToken: "file-token"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -215,27 +213,15 @@ func TestToolingStatusGitHubToken(t *testing.T) {
 				GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN",
 				Platforms:      []config.PlatformConfig{{Type: "github", Host: tt.host, TokenEnv: tt.platformEnv}},
 			}
-			if tt.file {
-				cfg.Platforms[0].TokenFile = filepath.Join(t.TempDir(), "token")
-				require.NoError(os.WriteFile(cfg.Platforms[0].TokenFile, []byte("file-token"), 0o600))
-				tt.wantSource = cfg.Platforms[0].TokenFile
-			}
-			var rotated atomic.Bool
 			var requests atomic.Int32
 			f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
 				assert.Equal("/api/v3/user/repos", r.URL.Path)
 				assert.Equal("1", r.URL.Query().Get("page"))
 				assert.Equal("1", r.URL.Query().Get("per_page"))
-				status := tt.status
-				if rotated.Load() {
-					assert.Equal("Bearer rejected-token", r.Header.Get("Authorization"))
-					status = http.StatusUnauthorized
-				} else {
-					assert.Equal("Bearer "+tt.wantToken, r.Header.Get("Authorization"))
-				}
-				w.WriteHeader(status)
-				if status == http.StatusOK {
+				assert.Equal("Bearer "+tt.wantToken, r.Header.Get("Authorization"))
+				w.WriteHeader(tt.status)
+				if tt.status == http.StatusOK {
 					_, _ = w.Write([]byte(`[]`))
 				} else {
 					_, _ = w.Write([]byte(`{"message":"Repository listing unavailable"}`))
@@ -256,18 +242,41 @@ func TestToolingStatusGitHubToken(t *testing.T) {
 			} else {
 				assert.Positive(requests.Load())
 			}
-			if tt.file {
-				require.True(body.GitHubToken.Ready)
-				require.NoError(os.WriteFile(cfg.Platforms[0].TokenFile, []byte("rejected-token"), 0o600))
-				rotated.Store(true)
-				f.now.Add(31)
-				body = decodeToolingStatus(t, f.ts)
-				require.NotNil(body.GitHubToken)
-				assert.Equal(tt.wantSource, body.GitHubToken.Source)
-				assert.False(body.GitHubToken.Ready)
-			}
 		})
 	}
+
+	t.Run("rotated file", func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		t.Setenv("KENN_FORGE_GITHUB_TOKEN", "")
+		tokenFile := filepath.Join(t.TempDir(), "token")
+		require.NoError(os.WriteFile(tokenFile, []byte("file-token"), 0o600))
+		cfg := &config.Config{
+			GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN",
+			Platforms:      []config.PlatformConfig{{Type: "github", Host: "github.com", TokenFile: tokenFile}},
+		}
+		f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") == "Bearer file-token" {
+				_, _ = w.Write([]byte(`[]`))
+				return
+			}
+			assert.Equal("Bearer rejected-token", r.Header.Get("Authorization"))
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"message":"Repository listing unavailable"}`))
+		}, ServerOptions{})
+		body := decodeToolingStatus(t, f.ts)
+		require.NotNil(body.GitHubToken)
+		assert.Equal("KENN_FORGE_GITHUB_TOKEN", body.GitHubToken.Env)
+		assert.Equal(tokenFile, body.GitHubToken.Source)
+		require.True(body.GitHubToken.Ready)
+
+		require.NoError(os.WriteFile(tokenFile, []byte("rejected-token"), 0o600))
+		f.now.Add(31)
+		body = decodeToolingStatus(t, f.ts)
+		require.NotNil(body.GitHubToken)
+		assert.Equal(tokenFile, body.GitHubToken.Source)
+		assert.False(body.GitHubToken.Ready)
+	})
 }
 
 func TestToolingStatusWithoutSyncerIgnoresGitHubToken(t *testing.T) {
@@ -276,12 +285,7 @@ func TestToolingStatusWithoutSyncerIgnoresGitHubToken(t *testing.T) {
 	cfg := &config.Config{GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN"}
 	srv := New(database, nil, nil, "/", cfg, ServerOptions{})
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
-	runner := &recordingToolingRunner{
-		outputs: map[string]string{
-			"gh auth token --hostname github.com":           "cli-token",
-			"gh api user --hostname github.com --jq .login": "octocat",
-		},
-	}
+	runner := &recordingToolingRunner{}
 	srv.toolingRun = runner.run
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)

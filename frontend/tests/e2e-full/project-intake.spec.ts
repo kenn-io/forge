@@ -28,7 +28,7 @@ test.describe("project intake", () => {
           json: {
             git: { available: true },
             gh: { available: false, authenticated: false },
-            github_token: { source: "KENN_FORGE_GITHUB_TOKEN", ready: true },
+            github_token: { env: "KENN_FORGE_GITHUB_TOKEN", source: "KENN_FORGE_GITHUB_TOKEN", ready: true },
           },
         }),
       );

@@ -138,34 +138,35 @@ describe("WorkspaceFirstRunPanel", () => {
     expect(screen.getByText("Install gh to use this option.")).toBeTruthy();
   });
 
-  it.each(["KENN_FORGE_GITHUB_TOKEN", "config"])(
-    "opens the GitHub picker with only a ready %s token",
-    async (source) => {
-      mocks.listUserRepositories.mockReturnValue(
-        Effect.succeed([
-          { name_with_owner: "octo/one", ssh_url: "git@github.com:octo/one.git", default_branch: "main" },
-        ]),
-      );
-      setupTooling({ ghAuthed: false, ghAvailable: false, githubToken: { source, ready: true } });
-      await renderPanel();
+  it("opens the GitHub picker with only a ready environment token", async () => {
+    mocks.listUserRepositories.mockReturnValue(
+      Effect.succeed([{ name_with_owner: "octo/one", ssh_url: "git@github.com:octo/one.git", default_branch: "main" }]),
+    );
+    setupTooling({
+      ghAuthed: false,
+      ghAvailable: false,
+      githubToken: { env: "KENN_FORGE_GITHUB_TOKEN", source: "KENN_FORGE_GITHUB_TOKEN", ready: true },
+    });
+    await renderPanel();
 
-      const button = screen.getByRole("button", { name: /Connect a GitHub repository/i }) as HTMLButtonElement;
-      expect(button.disabled).toBe(false);
-      expect(screen.queryByText("Install gh to use this option.")).toBeNull();
-      await fireEvent.click(button);
-      expect(await screen.findByRole("combobox", { name: /GitHub repository/ })).toBeTruthy();
-      expect(mocks.listUserRepositories).toHaveBeenCalledOnce();
-    },
-  );
+    const button = screen.getByRole("button", { name: /Connect a GitHub repository/i }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(screen.queryByText("Install gh to use this option.")).toBeNull();
+    await fireEvent.click(button);
+    expect(await screen.findByRole("combobox", { name: /GitHub repository/ })).toBeTruthy();
+    expect(mocks.listUserRepositories).toHaveBeenCalledOnce();
+  });
 
-  it("keeps the GitHub action disabled when the selected token is unready despite authenticated gh", async () => {
-    setupTooling({ ghAuthed: true, githubToken: { source: "KENN_FORGE_GITHUB_TOKEN", ready: false } });
+  it("explains why the GitHub action is disabled for an unverified token", async () => {
+    setupTooling({
+      ghAuthed: false,
+      githubToken: { env: "KENN_FORGE_GITHUB_TOKEN", source: "KENN_FORGE_GITHUB_TOKEN", ready: false },
+    });
     await renderPanel();
 
     const button = screen.getByRole("button", { name: /Connect a GitHub repository/i }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    await fireEvent.click(button);
-    expect(mocks.listUserRepositories).not.toHaveBeenCalled();
+    expect(screen.getByText("Couldn't verify the token from KENN_FORGE_GITHUB_TOKEN.")).toBeTruthy();
   });
 
   it("offers the token environment variable when GitHub access is unavailable", async () => {

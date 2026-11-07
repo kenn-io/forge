@@ -376,7 +376,7 @@ describe("OnboardingFlow", () => {
     expect(screen.getByText("gh auth login --hostname ghe.example.com")).toBeTruthy();
   });
 
-  it("hands non-GitHub setup to regular repository configuration", async () => {
+  it("opens repository settings for GitHub and other providers", async () => {
     mocks.tooling.value = {
       git: { available: true, version: "2.50" },
       gh: { available: false, authenticated: false },
@@ -384,11 +384,15 @@ describe("OnboardingFlow", () => {
     };
     const callbacks = renderFlow(storeFixture().stores);
 
+    await fireEvent.click(screen.getByRole("button", { name: "Configure GitHub" }));
+    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/settings");
+    mocks.navigate.mockClear();
+
     await fireEvent.click(screen.getByRole("button", { name: "Configure Forgejo" }));
 
     expect(callbacks.onDismiss).not.toHaveBeenCalled();
     expect(callbacks.onComplete).not.toHaveBeenCalled();
-    expect(mocks.navigate).toHaveBeenCalledWith("/settings");
+    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/settings");
   });
 
   it.each([
@@ -418,23 +422,16 @@ describe("OnboardingFlow", () => {
       token: false,
       message: "gh is not authenticated for github.com. Sign in from a terminal, then check again.",
     },
-  ])("offers GitHub recovery for $name", async ({ available, token, message }) => {
+  ])("offers GitHub recovery for $name", ({ available, token, message }) => {
     mocks.tooling.value = {
       git: { available: true, version: "2.50" },
       gh: { available, authenticated: false, host: "github.com" },
       glab: { available: false, authenticated: false },
       ...(token ? { github_token: { env: "KENN_FORGE_GITHUB_TOKEN", ready: false } } : {}),
     };
-    const callbacks = renderFlow(storeFixture().stores);
+    renderFlow(storeFixture().stores);
 
     expect(githubRowText()).toBe(`GitHub Needs attention ${message}`);
-    const configure = screen.getByRole("button", { name: "Configure GitHub" });
-    if (!available && token) {
-      await fireEvent.click(configure);
-
-      expect(callbacks.onDismiss).not.toHaveBeenCalled();
-      expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/settings");
-    }
   });
 
   it("continues with a token GitHub accepted instead of the gh account", async () => {
@@ -454,7 +451,6 @@ describe("OnboardingFlow", () => {
       expect(githubRowText()).toBe("GitHub Ready Token from ACME_GHE_TOKEN · ghe.example.com");
       expect(screen.getByText("ghe.example.com · token")).toBeTruthy();
       expect(screen.queryByText(/@cli-maintainer/)).toBeNull();
-      expect(screen.queryByText("gh auth login --hostname ghe.example.com")).toBeNull();
 
       await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
 

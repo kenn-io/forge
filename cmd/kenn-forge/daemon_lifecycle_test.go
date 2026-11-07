@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -57,6 +58,72 @@ func TestDaemonStartDirectsVersionMismatchToRestart(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "kenn-forge daemon restart")
+}
+
+func TestDaemonStartProgress(t *testing.T) {
+	const setup = "Setting up the database (first run)…\n"
+	const waiting = "Still waiting for daemon startup…\n"
+	const running = "kenn-forge running at http://127.0.0.1:8091 (pid 42)\n"
+	startupErr := errors.New("startup failed")
+	for _, tt := range []struct {
+		name     string
+		delay    time.Duration
+		progress string
+		err      error
+		cancel   bool
+	}{
+		{name: "immediate"},
+		{name: "fast", delay: time.Second},
+		{name: "slow", delay: 3 * time.Second, progress: setup},
+		{name: "repeated", delay: 23 * time.Second, progress: setup + waiting + waiting},
+		{name: "failure", delay: 3 * time.Second, progress: setup, err: startupErr},
+		{name: "cancellation", delay: 3 * time.Second, progress: setup, err: context.Canceled, cancel: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				assert := assert.New(t)
+				deps, _ := daemonLifecycleTestDeps(t)
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				ready := make(chan struct{})
+				deps.ensureBackground = func(ctx context.Context, _ string, _ *config.Config) (daemon.RuntimeRecord, error) {
+					if tt.delay > 0 {
+						select {
+						case <-ready:
+						case <-ctx.Done():
+							return daemon.RuntimeRecord{}, ctx.Err()
+						}
+					}
+					return daemonTestRuntime(42), tt.err
+				}
+				var out bytes.Buffer
+				result := make(chan error, 1)
+				go func() { result <- newDaemonLifecycle(deps).Start(ctx, "/config.toml", &out) }()
+				synctest.Wait()
+				time.Sleep(tt.delay)
+				synctest.Wait()
+				if tt.delay > 0 {
+					assert.Equal(tt.progress, out.String())
+				}
+				if tt.cancel {
+					cancel()
+				}
+				close(ready)
+				err := <-result
+				want := tt.progress
+				if tt.err == nil {
+					require.NoError(t, err)
+					want += running
+				} else {
+					require.ErrorIs(t, err, tt.err)
+				}
+				assert.Equal(want, out.String())
+				time.Sleep(30 * time.Second)
+				synctest.Wait()
+				assert.Equal(want, out.String())
+			})
+		})
+	}
 }
 
 func TestDaemonStartRetriesWhenConfigDataDirectoryChangesUnderLock(t *testing.T) {

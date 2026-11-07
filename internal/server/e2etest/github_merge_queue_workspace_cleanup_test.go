@@ -97,13 +97,15 @@ func (f mergeQueueWorkspaceE2E) requireWorkspaceKept(t *testing.T) {
 
 func (f mergeQueueWorkspaceE2E) requireWorkspaceDeleted(t *testing.T) {
 	t.Helper()
-	require.Eventually(t, func() bool {
+	// Workspace deletion and forgetting the request run in separate goroutines.
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		ws, err := f.database.GetWorkspace(t.Context(), f.workspaceID)
-		return err == nil && ws == nil
+		require.NoError(collect, err)
+		assert.Nil(collect, ws)
+		kept, err := f.database.ListMergeWorkspaceCleanups(t.Context())
+		require.NoError(collect, err)
+		assert.Empty(collect, kept, "a resolved request is forgotten")
 	}, 5*time.Second, 10*time.Millisecond)
-	kept, err := f.database.ListMergeWorkspaceCleanups(t.Context())
-	require.NoError(t, err)
-	assert.Empty(t, kept, "a resolved request is forgotten")
 }
 
 // syncPullRequest re-reads the pull request through sync's close-detection

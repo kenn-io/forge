@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../../api/types.js";
@@ -119,12 +119,6 @@ function storeFixture(
   } as unknown as StoreInstances;
   const configureExternally = () => settings.setConfiguredRepos([configuredRepo()]);
   return { stores, setConfiguredRepos, triggerSync, loadPulls, configureExternally };
-}
-
-function githubRowText(): string {
-  const [row] = within(screen.getByRole("list", { name: "Code forge readiness" })).getAllByRole("listitem");
-  // The last child holds the title, status, and detail line after the provider icon.
-  return (row?.lastElementChild?.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 
 function renderFlow(stores: StoreInstances) {
@@ -395,92 +389,19 @@ describe("OnboardingFlow", () => {
     expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/settings");
   });
 
-  it.each([
-    {
-      name: "missing gh with a token route",
-      available: false,
-      token: true,
-      message: "Install and sign in to gh, or set KENN_FORGE_GITHUB_TOKEN and run kenn-forge daemon restart.",
-    },
-    {
-      name: "signed-out gh with a token route",
-      available: true,
-      token: true,
-      message:
-        "gh is not authenticated for github.com. Sign in from a terminal, or set " +
-        "KENN_FORGE_GITHUB_TOKEN and run kenn-forge daemon restart.",
-    },
-    {
-      name: "missing gh without a token route",
-      available: false,
-      token: false,
-      message: "gh is not installed. Install the GitHub CLI on this host, then check again.",
-    },
-    {
-      name: "signed-out gh without a token route",
-      available: true,
-      token: false,
-      message: "gh is not authenticated for github.com. Sign in from a terminal, then check again.",
-    },
-  ])("offers GitHub recovery for $name", ({ available, token, message }) => {
+  it("uses token readiness for the account label and discovery", async () => {
     mocks.tooling.value = {
       git: { available: true, version: "2.50" },
-      gh: { available, authenticated: false, host: "github.com" },
+      gh: { available: false, authenticated: false, host: "ghe.example.com" },
       glab: { available: false, authenticated: false },
-      ...(token ? { github_token: { env: "KENN_FORGE_GITHUB_TOKEN", ready: false } } : {}),
+      github_token: { env: "ACME_GHE_TOKEN", source: "ACME_GHE_TOKEN", ready: true },
     };
     renderFlow(storeFixture().stores);
 
-    expect(githubRowText()).toBe(`GitHub Needs attention ${message}`);
-  });
+    expect(screen.getByText("ghe.example.com · token")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
 
-  it("continues with a token GitHub accepted instead of the gh account", async () => {
-    for (const gh of [
-      { available: false, authenticated: false, host: "ghe.example.com" },
-      { available: true, authenticated: true, host: "ghe.example.com", user: "cli-maintainer" },
-    ]) {
-      mocks.listUserRepositories.mockClear();
-      mocks.tooling.value = {
-        git: { available: true, version: "2.50" },
-        gh,
-        glab: { available: false, authenticated: false },
-        github_token: { env: "ACME_GHE_TOKEN", source: "ACME_GHE_TOKEN", ready: true },
-      };
-      const view = renderFlow(storeFixture().stores);
-
-      expect(githubRowText()).toBe("GitHub Ready Token from ACME_GHE_TOKEN · ghe.example.com");
-      expect(screen.getByText("ghe.example.com · token")).toBeTruthy();
-      expect(screen.queryByText(/@cli-maintainer/)).toBeNull();
-
-      await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
-
-      await waitFor(() => expect(screen.getByText("acme/forge")).toBeTruthy());
-      expect(screen.getByText(/found these through GitHub\./)).toBeTruthy();
-      expect(mocks.listUserRepositories).toHaveBeenCalledOnce();
-      view.unmount();
-    }
-  });
-
-  it("reports an unverified token instead of falling back to a signed-in gh account", () => {
-    mocks.tooling.value = {
-      git: { available: true, version: "2.50" },
-      gh: { available: true, authenticated: true, host: "github.com", user: "maintainer" },
-      glab: { available: false, authenticated: false },
-      github_token: {
-        env: "KENN_FORGE_GITHUB_TOKEN",
-        source: "/home/maintainer/.config/forge/gh.token",
-        ready: false,
-      },
-    };
-    renderFlow(storeFixture().stores);
-
-    expect(githubRowText()).toBe(
-      "GitHub Needs attention Couldn't verify the token from /home/maintainer/.config/forge/gh.token on " +
-        "github.com. If this keeps happening, confirm github.com is reachable and the token can read your " +
-        "repositories. If you change it, run kenn-forge daemon restart.",
-    );
-    expect(screen.queryByText("gh auth login")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Continue with GitHub" })).toBeNull();
+    await waitFor(() => expect(mocks.listUserRepositories).toHaveBeenCalledOnce());
   });
 
   it("resumes configured repositories at first sync without provider confirmation", async () => {

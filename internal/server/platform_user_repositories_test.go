@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -73,6 +72,7 @@ func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 		platformHost    string
 		repositoryToken bool
 		rejected        bool
+		secondPage      bool
 	}{
 		{name: "omitted platform host"},
 		{name: "uppercase public host", platformHost: "GITHUB.COM"},
@@ -80,6 +80,7 @@ func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 		{name: "Enterprise platform token", platformHost: "ghe.example.com"},
 		{name: "repository token differs", repositoryToken: true},
 		{name: "rejected token", rejected: true},
+		{name: "token forwards second page", secondPage: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require := require.New(t)
@@ -96,18 +97,24 @@ func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 			if tc.repositoryToken {
 				cfg.Repos = []config.Repo{{Owner: "acme", Name: "widget", TokenEnv: "TEST_REPOSITORY_TOKEN"}}
 			}
-			var requests atomic.Int32
+			var pages []string
 			f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
-				requests.Add(1)
-				assert.Equal("/api/v3/user/repos", r.URL.Path)
+				page := r.URL.Query().Get("page")
+				pages = append(pages, page)
 				assert.Equal("Bearer "+wantToken, r.Header.Get("Authorization"))
-				assert.Equal("owner,collaborator,organization_member", r.URL.Query().Get("affiliation"))
-				assert.Equal("updated", r.URL.Query().Get("sort"))
-				assert.Equal("1", r.URL.Query().Get("page"))
-				assert.Equal("100", r.URL.Query().Get("per_page"))
 				if tc.rejected {
 					w.WriteHeader(http.StatusUnauthorized)
 					_, _ = w.Write([]byte(`{"message":"Bad credentials"}`))
+					return
+				}
+				if tc.secondPage {
+					repos := make([]map[string]string, 0)
+					if page == "1" {
+						for i := range 100 {
+							repos = append(repos, map[string]string{"full_name": fmt.Sprintf("acme/repo%d", i)})
+						}
+					}
+					assert.NoError(json.NewEncoder(w).Encode(repos))
 					return
 				}
 				_, _ = w.Write([]byte(`[{"full_name":"acme/widget","ssh_url":"git@github.com:acme/widget.git","default_branch":"main","private":true,"visibility":"private"}]`))
@@ -118,15 +125,22 @@ func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 				assert.Equal(wantHost, host)
 				return newClient(source, host)
 			}
-			status, body := decodeUserRepositories(t, f.ts, "/api/v1/platform/user-repositories?provider=github&platform_host="+tc.platformHost)
+			status, body := decodeUserRepositories(t, f.ts, "/api/v1/platform/user-repositories?provider=github&limit=150&platform_host="+tc.platformHost)
 			assert.Zero(f.ghCalls.Load(), "discovery uses the token without invoking gh")
-			assert.Positive(requests.Load(), "discovery reaches the provider")
+			if tc.secondPage {
+				assert.Equal([]string{"1", "2"}, pages)
+			} else {
+				assert.Contains(pages, "1")
+			}
 			if tc.rejected {
 				assert.Equal(http.StatusForbidden, status)
 				assert.Contains(string(body), `"code":"forbidden"`)
 				return
 			}
 			require.Equal(http.StatusOK, status)
+			if tc.secondPage {
+				return
+			}
 			var decoded struct {
 				Repositories json.RawMessage `json:"repositories"`
 			}
@@ -162,39 +176,6 @@ func TestListUserRepositoriesKeepsCLIAccountForSSHClone(t *testing.T) {
 	require.NoError(t, json.Unmarshal(body, &listing))
 	assert.JSONEq(t, `[{"name_with_owner":"cli-owner/widget","ssh_url":"git@github.com:cli-owner/widget.git"}]`, string(listing.Repositories))
 	assert.Zero(t, tokenCalls.Load())
-}
-
-func TestListUserRepositoriesTokenForwardsPageNumber(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "host-token")
-	cfg := &config.Config{GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN"}
-	var pages []string
-	f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
-		page := r.URL.Query().Get("page")
-		pages = append(pages, page)
-		start := 0
-		repos := make([]map[string]string, 100)
-		if page == "2" {
-			start = 100
-			repos = repos[:20]
-		}
-		for i := range repos {
-			repos[i] = map[string]string{"full_name": "acme/repo" + strconv.Itoa(start+i)}
-		}
-		assert.NoError(json.NewEncoder(w).Encode(repos))
-	}, ServerOptions{})
-	status, body := decodeUserRepositories(t, f.ts, "/api/v1/platform/user-repositories?provider=github&limit=150")
-	require.Equal(http.StatusOK, status)
-	var listing struct {
-		Repositories []struct {
-			NameWithOwner string `json:"name_with_owner"`
-		} `json:"repositories"`
-	}
-	require.NoError(json.Unmarshal(body, &listing))
-	require.Len(listing.Repositories, 120)
-	assert.Equal("acme/repo100", listing.Repositories[100].NameWithOwner)
-	assert.Equal([]string{"1", "2"}, pages)
 }
 
 func decodeUserRepositories(

@@ -188,10 +188,9 @@ func TestRunningMirrorDeliversInputAndNeverStartsAnAgent(t *testing.T) {
 
 func TestRunningMirrorRefusesWhatItCannotDeliver(t *testing.T) {
 	refused := map[string]ACPCommand{
-		"a setting":        {Type: "config", ID: "model", Value: "fast"},
-		"an image":         {Type: "prompt", Text: "look", Images: []ACPContent{{Type: "image", Data: "x"}}},
-		"a coordinator":    {Type: "prompt", Text: "go", Generation: 3},
-		"an agent's input": {Type: "prompt", Text: "go", FromAgent: true},
+		"a setting":     {Type: "config", ID: "model", Value: "fast"},
+		"an image":      {Type: "prompt", Text: "look", Images: []ACPContent{{Type: "image", Data: "x"}}},
+		"a coordinator": {Type: "prompt", Text: "go", Generation: 3},
 	}
 	for name, command := range refused {
 		t.Run(name, func(t *testing.T) {

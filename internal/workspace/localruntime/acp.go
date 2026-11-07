@@ -276,6 +276,10 @@ type ACPState struct {
 	// true while that start runs. Only the daemon sets them.
 	Dormant  bool `json:"dormant,omitempty"`
 	Starting bool `json:"starting,omitempty"`
+	// ExternalReadOnly marks a chat mirroring an agent that runs outside Forge in
+	// a terminal Forge cannot type into, so it takes no input until that agent
+	// exits.
+	ExternalReadOnly bool `json:"externalReadOnly,omitempty"`
 	// Notices explain a degraded but usable session start. They are not
 	// errors: the chat works, and they last for the life of the session.
 	Notices []string `json:"notices,omitempty"`

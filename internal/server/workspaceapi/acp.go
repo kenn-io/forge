@@ -318,11 +318,19 @@ func (s *Handler) storedWorkspaceChat(ctx context.Context, ws *db.Workspace, key
 	if err != nil {
 		return nil, fmt.Errorf("list runtime sessions: %w", err)
 	}
-	if _, ok := storedChat(stored, key); !ok {
+	item, ok := storedChat(stored, key)
+	if !ok {
 		return nil, localruntime.ErrSessionNotFound
 	}
 	if s.runtime.Exited(key) {
 		return nil, errChatNotRunning
+	}
+	mirrored, err := s.mirroredWorkspaceChat(ctx, ws, item)
+	if err != nil {
+		return nil, err
+	}
+	if mirrored != nil {
+		return mirrored, nil
 	}
 	return s.runtime.DormantACP(ws.ID, key, func() (localruntime.ACPChat, error) {
 		return s.startWorkspaceChat(ctx, ws, key)

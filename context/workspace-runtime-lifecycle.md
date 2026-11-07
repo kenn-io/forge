@@ -285,6 +285,8 @@ Processes on the execution host:
 
 - Coding-agent session IDs are hook-authoritative and live-only: expose only fresh, supported
   reports matched to a live `agent` runtime.
+- A hook with no runtime key comes from an agent Forge did not launch; see External Agent Sessions
+  in [`workspace-apis.md`](./workspace-apis.md).
 - Hook reports own workspace activity where they exist: such a workspace is never probed by tmux
   pane capture until the session ends, its last activity is the report's timestamp, and reports
   have no time-based expiry.

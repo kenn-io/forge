@@ -4946,7 +4946,7 @@ func scanWorkspaceRow(
 		&ws.ItemType, &ws.ItemNumber, &ws.ItemKey, &ws.AssociatedPRNumber,
 		&ws.GitHeadRef, &ws.MRHeadRepo, &ws.WorkspaceBranch,
 		&ws.WorktreePath, &ws.TmuxSession, &ws.TerminalBackend, &ws.Status,
-		&ws.ErrorMessage, &ws.CreatedAt, &kataMetadataJSON,
+		&ws.ErrorMessage, &ws.CreatedAt, &kataMetadataJSON, &ws.ExternalWorktree,
 	)
 	if err != nil {
 		return nil, err
@@ -5045,15 +5045,15 @@ func insertPreparedWorkspace(
 		     item_type, item_number, item_key, associated_pr_number,
 		     git_head_ref, mr_head_repo, workspace_branch,
 		     worktree_path, tmux_session, terminal_backend, status,
-		     error_message, kata_metadata)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		     error_message, kata_metadata, external_worktree)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		ws.ID, ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName,
 		sql.NullInt64{Int64: prepared.repoID, Valid: prepared.repoID != 0},
 		prepared.repoOwnerKey, prepared.repoNameKey, prepared.repoPathKey,
 		ws.ItemType, ws.ItemNumber, prepared.itemKey, ws.AssociatedPRNumber,
 		ws.GitHeadRef, ws.MRHeadRepo, ws.WorkspaceBranch,
 		ws.WorktreePath, ws.TmuxSession, ws.TerminalBackend, ws.Status,
-		ws.ErrorMessage, prepared.kataMetadataJSON,
+		ws.ErrorMessage, prepared.kataMetadataJSON, ws.ExternalWorktree,
 	)
 	if err != nil {
 		return fmt.Errorf("insert workspace: %w", err)
@@ -5070,7 +5070,7 @@ func (d *DB) GetWorkspace(
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
+		       error_message, created_at, kata_metadata, external_worktree
 		FROM forge_workspaces WHERE id = ?`, id,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -5130,7 +5130,7 @@ func (d *DB) GetWorkspaceLinkedToMRForProvider(
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
+		       error_message, created_at, kata_metadata, external_worktree
 			FROM forge_workspaces
 			WHERE (` + predicate + `)
 			  AND (
@@ -5184,7 +5184,7 @@ func (d *DB) getWorkspaceByMR(
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
+		       error_message, created_at, kata_metadata, external_worktree
 			FROM forge_workspaces
 			WHERE item_type = ? AND item_number = ?
 			  AND (` + predicate + `)`
@@ -5242,7 +5242,7 @@ func (d *DB) getWorkspaceByIssue(
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
+		       error_message, created_at, kata_metadata, external_worktree
 		FROM forge_workspaces
 		WHERE item_type = ? AND item_number = ?
 		  AND (` + predicate + `)`
@@ -5282,7 +5282,7 @@ func (d *DB) GetWorkspaceByItemKeyForProvider(
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
+		       error_message, created_at, kata_metadata, external_worktree
 		FROM forge_workspaces
 		WHERE item_type = ? AND item_key = ?
 		  AND (` + predicate + `)`
@@ -5314,7 +5314,7 @@ func (d *DB) GetKataWorkspaceByIssue(
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
+		       error_message, created_at, kata_metadata, external_worktree
 		FROM forge_workspaces
 		WHERE item_type = ?
 		  AND json_extract(kata_metadata, '$.daemon_id') = ?
@@ -5346,7 +5346,7 @@ func (d *DB) ListWorkspaces(
 		       w.item_type, w.item_number, w.item_key, w.associated_pr_number,
 		       w.git_head_ref, w.mr_head_repo, w.workspace_branch,
 		       w.worktree_path, w.tmux_session, w.terminal_backend, w.status,
-		       w.error_message, w.created_at, w.kata_metadata
+		       w.error_message, w.created_at, w.kata_metadata, w.external_worktree
 		FROM forge_workspaces w
 		LEFT JOIN forge_repos r
 		  ON r.id = w.repo_id AND r.lifecycle_state = 'active'
@@ -6080,7 +6080,7 @@ const workspaceSummaryColumns = `
 	w.item_type, w.item_number, w.item_key, w.associated_pr_number,
 	w.git_head_ref, w.mr_head_repo, w.workspace_branch,
 	w.worktree_path, w.tmux_session, w.terminal_backend, w.status,
-	w.error_message, w.created_at, w.kata_metadata,
+	w.error_message, w.created_at, w.kata_metadata, w.external_worktree,
 	r.id, r.platform_repo_id, r.bitbucket_repository_uuid, r.is_private,
 	CASE
 	    WHEN r.id IS NULL THEN 0
@@ -6186,7 +6186,7 @@ func scanWorkspaceSummary(
 		&s.ItemType, &s.ItemNumber, &s.ItemKey, &s.AssociatedPRNumber,
 		&s.GitHeadRef, &s.MRHeadRepo, &s.WorkspaceBranch,
 		&s.WorktreePath, &s.TmuxSession, &s.TerminalBackend, &s.Status,
-		&s.ErrorMessage, &s.CreatedAt, &kataMetadataJSON,
+		&s.ErrorMessage, &s.CreatedAt, &kataMetadataJSON, &s.ExternalWorktree,
 		&repoID, keyID, keyUUID, &s.RepoPrivate,
 		&s.SourceItemVisible, &s.AssociatedPRVisible,
 		&s.SourceTitle, &s.SourceState, &s.SourceURL,

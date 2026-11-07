@@ -135,6 +135,7 @@ type Handler struct {
 	clipboard           systemclipboard.Writer
 	pasteImages         *terminalpaste.Store
 	agentActivity       *agentactivity.Store
+	externalSessions    externalSessionTracker
 	tmuxCmd             []string
 	now                 func() time.Time
 	broadcast           func(Event) uint64

@@ -15,5 +15,6 @@ export interface HookEvent {
   session_id: string;
   source?: string;
   tool_name?: string;
+  transcript_path?: string;
   [key: string]: unknown;
 }

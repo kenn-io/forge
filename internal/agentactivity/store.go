@@ -63,6 +63,7 @@ type storedReport struct {
 type HookEvent struct {
 	SessionID        string `json:"session_id"`
 	CWD              string `json:"cwd"`
+	TranscriptPath   string `json:"transcript_path,omitempty"`
 	HookEventName    string `json:"hook_event_name"`
 	ToolName         string `json:"tool_name,omitempty"`
 	NotificationType string `json:"notification_type,omitempty"`

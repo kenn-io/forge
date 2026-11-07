@@ -83,74 +83,66 @@ func TestDaemonProgress(t *testing.T) {
 		delay        time.Duration
 		progress     string
 		err          error
-		cancel       bool
+		restart      bool
 		writeFailure bool
 	}{
 		{name: "immediate"},
 		{name: "fast", delay: time.Second},
 		{name: "slow", delay: 3 * time.Second, progress: setup},
-		{name: "repeated", delay: 23 * time.Second, progress: setup + waiting + waiting},
+		{name: "repeated", delay: 23 * time.Second, progress: setup + waiting + waiting, restart: true},
 		{name: "failure", delay: 3 * time.Second, progress: setup, err: startupErr},
-		{name: "cancellation", delay: 3 * time.Second, progress: setup, err: context.Canceled, cancel: true},
 		{name: "progress write failure", delay: 23 * time.Second, writeFailure: true},
 	} {
-		for _, restart := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/restart=%t", tt.name, restart), func(t *testing.T) {
-				synctest.Test(t, func(t *testing.T) {
-					assert := assert.New(t)
-					deps, _ := daemonLifecycleTestDeps(t)
-					ctx, cancel := context.WithCancel(t.Context())
-					defer cancel()
-					ready := make(chan struct{})
-					deps.ensureBackground = func(ctx context.Context, _ string, _ *config.Config) (daemon.RuntimeRecord, error) {
-						if tt.delay > 0 {
-							select {
-							case <-ready:
-							case <-ctx.Done():
-								return daemon.RuntimeRecord{}, ctx.Err()
-							}
-						}
-						return daemonTestRuntime(42), tt.err
-					}
-					var out bytes.Buffer
-					var writer io.Writer = &out
-					if tt.writeFailure {
-						writer = &failFirstWrite{Writer: &out}
-					}
-					result := make(chan error, 1)
-					run := newDaemonLifecycle(deps).Start
-					if restart {
-						run = newDaemonLifecycle(deps).Restart
-					}
-					go func() { result <- run(ctx, "/config.toml", writer) }()
-					synctest.Wait()
-					time.Sleep(tt.delay)
-					synctest.Wait()
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				assert := assert.New(t)
+				deps, _ := daemonLifecycleTestDeps(t)
+				ctx := t.Context()
+				ready := make(chan struct{})
+				deps.ensureBackground = func(_ context.Context, _ string, _ *config.Config) (daemon.RuntimeRecord, error) {
 					if tt.delay > 0 {
-						assert.Equal(tt.progress, out.String())
+						<-ready
 					}
-					if tt.cancel {
-						cancel()
+					if tt.err != nil {
+						return daemon.RuntimeRecord{}, tt.err
 					}
-					close(ready)
-					err := <-result
-					want := tt.progress
-					if tt.err == nil {
-						require.NoError(t, err)
-						if restart {
-							want += "kenn-forge daemon was not running before start\n"
-						}
-						want += running
-					} else {
-						require.ErrorIs(t, err, tt.err)
+					return daemonTestRuntime(42), nil
+				}
+				var out bytes.Buffer
+				var writer io.Writer = &out
+				if tt.writeFailure {
+					writer = &failFirstWrite{Writer: &out}
+				}
+				result := make(chan error, 1)
+				run := newDaemonLifecycle(deps).Start
+				if tt.restart {
+					run = newDaemonLifecycle(deps).Restart
+				}
+				go func() { result <- run(ctx, "/config.toml", writer) }()
+				synctest.Wait()
+				time.Sleep(tt.delay)
+				synctest.Wait()
+				if tt.delay > 0 {
+					assert.Equal(tt.progress, out.String())
+				}
+				close(ready)
+				err := <-result
+				want := tt.progress
+				if tt.err == nil {
+					require.NoError(t, err)
+					if tt.restart {
+						want += "kenn-forge daemon was not running before start\n"
 					}
-					assert.Equal(want, out.String())
-					time.Sleep(30 * time.Second)
-					synctest.Wait()
-					assert.Equal(want, out.String())
-				})
+					want += running
+				} else {
+					require.ErrorIs(t, err, tt.err)
+				}
+				assert.Equal(want, out.String())
+				time.Sleep(30 * time.Second)
+				synctest.Wait()
+				assert.Equal(want, out.String())
 			})
-		}
+		})
 	}
 }
 

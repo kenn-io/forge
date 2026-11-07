@@ -19,8 +19,8 @@ func TestWorkspaceViewStateUpgradeAndPersistence(t *testing.T) {
 	require.NoError(raw.Close())
 	previous, err := OpenPreparedForTest(dbPath)
 	require.NoError(err)
-	// Schema 60 has no bitbucket_repository_uuid column, so the current
-	// catalog helpers cannot seed this upgrade fixture.
+	// Schema 60 lacks columns the current catalog and workspace helpers write,
+	// so they cannot seed this upgrade fixture.
 	_, err = previous.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_repos (
 			platform, platform_host, platform_repo_id,
@@ -39,7 +39,17 @@ func TestWorkspaceViewStateUpgradeAndPersistence(t *testing.T) {
 		ItemKey: "7", GitHeadRef: "feature/seven", WorkspaceBranch: "feature/seven",
 		WorktreePath: "/tmp/work-a", TmuxSession: "work-a", Status: "ready",
 	}
-	require.NoError(previous.InsertWorkspace(t.Context(), workspace))
+	_, err = previous.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_workspaces (
+			id, platform, platform_host, repo_owner, repo_name,
+			item_type, item_number, item_key, git_head_ref,
+			workspace_branch, worktree_path, tmux_session, status
+		) VALUES (
+			'work-a', 'github', 'github.com', 'acme', 'widget',
+			'pull_request', 7, '7', 'feature/seven',
+			'feature/seven', '/tmp/work-a', 'work-a', 'ready'
+		)`)
+	require.NoError(err)
 	require.NoError(previous.Close())
 
 	database, err := Open(dbPath)

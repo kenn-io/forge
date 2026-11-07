@@ -3186,21 +3186,21 @@ func TestActivityEventsSeekTheWindow(t *testing.T) {
 	var repoID int64
 	for _, name := range []string{"project-a", "project-b"} {
 		repoID = insertTestRepo(t, d, "org-a", name)
-		var mrEvents []MREvent
-		var issueEvents []IssueEvent
-		for number := 1; number <= 50; number++ {
-			mrID := insertTestMR(t, d, repoID, number, "Pull", baseTime())
-			issueID := insertTestIssue(t, d, repoID, number, "Issue", baseTime())
-			// Pin event-window seeks before parent lookups even with a long history.
-			for event := range 200 {
-				createdAt := baseTime().Add(time.Duration(event) * time.Hour)
-				key := fmt.Sprintf("comment-%d", event)
-				mrEvents = append(mrEvents, MREvent{MergeRequestID: mrID, EventType: "issue_comment", Author: "alice", CreatedAt: createdAt, DedupeKey: key})
-				issueEvents = append(issueEvents, IssueEvent{IssueID: issueID, EventType: "issue_comment", Author: "alice", CreatedAt: createdAt, DedupeKey: key})
-			}
+		for number := 1; number <= 20; number++ {
+			insertTestMR(t, d, repoID, number, "Pull", baseTime())
+			insertTestIssue(t, d, repoID, number, "Issue", baseTime())
 		}
-		require.NoError(t, d.UpsertMREvents(ctx, mrEvents))
-		require.NoError(t, d.UpsertIssueEvents(ctx, issueEvents))
+		// Pin event-window seeks before parent lookups even with a long history.
+		for _, table := range []struct{ events, parent, parentID string }{
+			{"forge_mr_events", "forge_merge_requests", "merge_request_id"},
+			{"forge_issue_events", "forge_issues", "issue_id"},
+		} {
+			execPageFixtureNumbers(t, d, 200, fmt.Sprintf(`
+				INSERT INTO %s (%s, repo_id, platform_id, event_type, author, created_at, dedupe_key)
+				SELECT parent.id, parent.repo_id, 0, 'issue_comment', 'alice',
+				       datetime('2024-01-15 12:00:00', '+' || (n - 1) || ' hours') || ' +0000 UTC', 'comment-' || (n - 1)
+				FROM %s parent CROSS JOIN numbers WHERE parent.repo_id = ?1`, table.events, table.parentID, table.parent), repoID)
+		}
 	}
 	require.NoError(t, d.Optimize(ctx))
 	opts := ListActivityOpts{Since: new(baseTime().Add(197 * time.Hour)), Limit: 1}

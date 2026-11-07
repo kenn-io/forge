@@ -100,8 +100,10 @@ func TestListPagesTrackedRepositoryPlans(t *testing.T) {
 		offset        int
 		limit         int
 	}{
-		{"newer_untracked/negative_offset/tracked=30", 30, 200, 60000, false, "", false, -51, 50},
-		{"dense_history/tracked=27", 27, 2000, 0, true, "", false, 0, 50},
+		// Newer excluded rows fill the entire activity probe bound.
+		{"newer_untracked/negative_offset/tracked=30", 30, 200, 50 * activityPageScanFactor, false, "", false, -51, 50},
+		// Keep enough history for both PR and issue plans to require the activity walk.
+		{"dense_history/tracked=27", 27, 700, 0, true, "", false, 0, 50},
 		{"recent_search/tracked=60", 60, 100, 0, true, "user-a", false, 0, 50},
 		{"partial_page/tracked=51", 51, 10, 300, false, "", true, 0, 50},
 		{"unlimited_issues/tracked=2", 2, 100, 6000, false, "", false, 0, 0},

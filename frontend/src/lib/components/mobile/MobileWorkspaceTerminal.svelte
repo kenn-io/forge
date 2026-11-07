@@ -332,7 +332,7 @@
       pending?.phase !== "queued" || isWorkspaceDeletionPending(workspaceId, hostKey) ||
       (hostKey === undefined && isWorkspaceIdDeleted(workspaceId))
     ) return;
-    if (next.sessions.length > 0) {
+    if (pending.origin === "create" && next.sessions.length > 0) {
       discardWorkspaceLaunch(workspaceId, hostKey);
       return;
     }

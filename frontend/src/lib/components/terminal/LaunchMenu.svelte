@@ -16,6 +16,8 @@
      *  so its window listeners don't outlive the visible surface. */
     hostVisible?: boolean;
     onLaunch?: (targetKey: string) => void;
+    /** False renders only the quick-actions trigger, beside a launch control the host already has. */
+    showLaunch?: boolean;
     quickActions?: QuickAction[];
     quickActionBusy?: boolean;
     onQuickAction?: (action: QuickAction) => void;
@@ -27,6 +29,7 @@
     disabled = false,
     hostVisible = true,
     onLaunch,
+    showLaunch = true,
     quickActions = [],
     quickActionBusy = false,
     onQuickAction,
@@ -78,6 +81,7 @@
 </script>
 
 <div class="launch-menu" bind:this={rootEl}>
+  {#if showLaunch}
   <button
     class="launch-trigger"
     type="button"
@@ -104,6 +108,7 @@
       aria-hidden="true"
     />
   </button>
+  {/if}
   {#if sortedQuickActions.length > 0 && onQuickAction}
     <button
       class="launch-trigger quick-actions-trigger"

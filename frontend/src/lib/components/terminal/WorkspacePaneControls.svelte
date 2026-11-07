@@ -14,21 +14,12 @@
   } from "../../stores/workspace-host.svelte.ts";
 
   interface Props {
-    /**
-     * Whether this instance renders the owner-only strip actions (Delete). One
-     * popover per related leaf is fine - it acts on the workspace wherever it
-     * opens - but the owner-only actions are visible destructive controls, and a
-     * workspace split across leaves (its pane in one, a promoted session in
-     * another) must not grow one Delete per leaf. The surface passes true only for
-     * the leaf holding the workspace pane itself.
-     */
-    showStripActions?: boolean;
     leaf?: TabbedPanelLeaf | undefined;
     controls?: HostedWorkspaceControls | null;
     busy?: boolean;
   }
 
-  const { showStripActions = true, leaf, controls: providedControls, busy: providedBusy }: Props = $props();
+  const { leaf, controls: providedControls, busy: providedBusy }: Props = $props();
   const runtime = getAppRuntime();
 
   // One button in a pane's tab strip, replacing the three bars that used to stack
@@ -154,9 +145,6 @@
 {#if controls}
   <div class="workspace-pane-controls">
     {@render controls.paneActions?.(leaf)}
-    {#if showStripActions}
-      {@render controls.stripActions?.()}
-    {/if}
     <button
       bind:this={triggerEl}
       class="controls-trigger"

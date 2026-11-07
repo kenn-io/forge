@@ -53,6 +53,12 @@ type PendingWorkspaceLaunch = {
   workspaceId: string;
   workspaceHostKey: string | undefined;
   targetKey: string;
+  /**
+   * "create" launches the first session of a new workspace, so a session already
+   * there means another view did it. "existing" is a session the user asked for in
+   * a workspace that has sessions; those never satisfy it.
+   */
+  origin: "create" | "existing";
   phase: "queued" | "launching" | "awaiting_session";
   claimToken: symbol | null;
   sessionKey?: string;
@@ -117,12 +123,13 @@ export function queueWorkspaceLaunch(
   workspaceId: string,
   targetKey: string,
   workspaceHostKey: string | undefined,
+  origin: PendingWorkspaceLaunch["origin"] = "create",
 ): void {
   const normalized = targetKey.trim();
   if (!workspaceId || !normalized) return;
   pendingWorkspaceLaunches = [
     ...pendingWorkspaceLaunches.filter((entry) => !workspaceLaunchMatches(entry, workspaceId, workspaceHostKey)),
-    { workspaceId, workspaceHostKey, targetKey: normalized, phase: "queued", claimToken: null },
+    { workspaceId, workspaceHostKey, targetKey: normalized, origin, phase: "queued", claimToken: null },
   ];
 }
 

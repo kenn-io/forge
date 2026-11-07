@@ -571,10 +571,9 @@ Who owns what, under `frontend/src/lib/` (no single file shows the split):
 - Workspace metadata lives behind the info button, never a Home tab; info preserves the selected terminal.
 - Workspace-wide controls sit beside the title; compact Launch controls sit at each pane's top-right and
   add a tab to the initiating pane even if focus moves.
-- Every workspace pane keeps non-destructive actions such as launch; destructive actions only on the
-  workspace-owner leaf.
-- Delete lives in exactly one strip action on the leaf holding the workspace pane; every Delete entry
-  opens the same confirmation before any request, and a 409 force prompt is a second gate.
+- Every pane of a workspace, promoted session panes included, carries Launch, quick actions, and
+  Delete in its strip; every Delete entry opens the same confirmation before any request, and a 409
+  force prompt is a second gate.
 - State handed from the embedded view to a detail pane is keyed by `(workspaceId, hostKey)`; app-wide
   terminal settings writes are not keyed per workspace.
 - The workspace view renders by liveness, not cached presence, so A's ready toolbar never shows while B

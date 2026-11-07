@@ -2018,6 +2018,16 @@
     });
   }
 
+  // Runs in the workspace this pull request already has, then shows it the way
+  // a create does: the inline pane, or the workspace route.
+  function runQuickActionInWorkspace(workspaceId: string, action: QuickAction): void {
+    closeActionMenu();
+    runWorkspaceQuickAction(runtime, workspaceId, "pull_request", action);
+    if (inlineWorkspace) inlineWorkspace.revealWorkspace();
+    else if (onOpenWorkspace) onOpenWorkspace(workspaceId);
+    else navigate(`/terminal/${workspaceId}`);
+  }
+
   // A quick action never queues a frontend launch: the server launches the
   // agent and delivers the prompt once the workspace is ready.
   function createWorkspace(launchTargetKey?: string, quickAction?: QuickAction): void {
@@ -3073,22 +3083,38 @@
       {#snippet workspaceActionButton(compactLabels = false)}
         {#if workspace}
           {#if inlineWorkspace}
-            <Button
-              class="btn--workspace"
-              disabled={stalePR || workspaceDeletionLifecycle}
-              onclick={() => {
-                if (stalePR || workspaceDeletionLifecycle) return;
-                closeActionMenu();
-                inlineWorkspace.focusTerminal();
-              }}
-              tone="info"
-              surface="soft"
+            <WorkspaceCreateSplitButton
+              label="Focus Terminal"
               size="sm"
-              ariaLabel={compactLabels ? "Focus Terminal" : undefined}
-              label={compactLabels ? "Terminal" : "Focus Terminal"}
+              launchTargets={settings.getLaunchTargets()}
+              disabled={stalePR || workspaceDeletionLifecycle}
+              launchBusy={inlineWorkspace.sessionLaunching()}
+              onCreate={(targetKey) => {
+                closeActionMenu();
+                if (targetKey !== undefined) inlineWorkspace.launchSession(targetKey);
+              }}
+              quickActions={settings.getQuickActions()}
+              onQuickAction={(action) => runQuickActionInWorkspace(workspace.id, action)}
             >
-              <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </Button>
+              {#snippet primary()}
+                <Button
+                  class="btn--workspace create-primary"
+                  disabled={stalePR || workspaceDeletionLifecycle}
+                  onclick={() => {
+                    if (stalePR || workspaceDeletionLifecycle) return;
+                    closeActionMenu();
+                    inlineWorkspace.focusTerminal();
+                  }}
+                  tone="info"
+                  surface="soft"
+                  size="sm"
+                  ariaLabel={compactLabels ? "Focus Terminal" : undefined}
+                  label={compactLabels ? "Terminal" : "Focus Terminal"}
+                >
+                  <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                </Button>
+              {/snippet}
+            </WorkspaceCreateSplitButton>
             <Button
               class="btn--workspace-secondary"
               disabled={stalePR}
@@ -3114,33 +3140,46 @@
               <ExternalLinkIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </Button>
           {:else}
-            <Button
-              class="btn--workspace"
-              disabled={stalePR}
-              onclick={() => {
-                if (stalePR) return;
-                closeActionMenu();
-                if (workspaceDeletionLifecycle) {
-                  if (onViewWorkspaces) onViewWorkspaces();
-                  else navigate("/workspaces");
-                } else if (onOpenWorkspace) {
-                  onOpenWorkspace(workspace.id);
-                } else {
-                  navigate(`/terminal/${workspace.id}`);
-                }
-              }}
-              tone="info"
-              surface="soft"
+            <!-- No hosted view here to launch a session in, so only quick
+                 actions, which the server runs. -->
+            <WorkspaceCreateSplitButton
+              label="Open Workspace"
               size="sm"
-              ariaLabel={compactLabels
-                ? workspaceDeletionLifecycle ? "View in Workspaces" : "Open Workspace"
-                : undefined}
-              label={workspaceDeletionLifecycle
-                ? compactLabels ? "Workspaces" : "View in Workspaces"
-                : compactLabels ? "Workspace" : "Open Workspace"}
+              launchTargets={settings.getLaunchTargets()}
+              disabled={stalePR || workspaceDeletionLifecycle}
+              quickActions={settings.getQuickActions()}
+              onQuickAction={(action) => runQuickActionInWorkspace(workspace.id, action)}
             >
-              <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </Button>
+              {#snippet primary()}
+                <Button
+                  class="btn--workspace create-primary"
+                  disabled={stalePR}
+                  onclick={() => {
+                    if (stalePR) return;
+                    closeActionMenu();
+                    if (workspaceDeletionLifecycle) {
+                      if (onViewWorkspaces) onViewWorkspaces();
+                      else navigate("/workspaces");
+                    } else if (onOpenWorkspace) {
+                      onOpenWorkspace(workspace.id);
+                    } else {
+                      navigate(`/terminal/${workspace.id}`);
+                    }
+                  }}
+                  tone="info"
+                  surface="soft"
+                  size="sm"
+                  ariaLabel={compactLabels
+                    ? workspaceDeletionLifecycle ? "View in Workspaces" : "Open Workspace"
+                    : undefined}
+                  label={workspaceDeletionLifecycle
+                    ? compactLabels ? "Workspaces" : "View in Workspaces"
+                    : compactLabels ? "Workspace" : "Open Workspace"}
+                >
+                  <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                </Button>
+              {/snippet}
+            </WorkspaceCreateSplitButton>
           {/if}
         {:else}
           <WorkspaceCreateSplitButton
@@ -3335,9 +3374,19 @@
           {#if !hideWorkspaceAction}
             {#if workspace}
               {#if inlineWorkspace}
-                <Button size="sm" label={compactLabels ? "Terminal" : "Focus Terminal"}>
-                  <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                </Button>
+                <div class="workspace-create-measure">
+                  <Button
+                    class="workspace-create-measure__primary"
+                    size="sm"
+                    label={compactLabels ? "Terminal" : "Focus Terminal"}
+                  >
+                    <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                  </Button>
+                  {#if settings.getQuickActions().length > 0}
+                    <span class="workspace-create-measure__options"></span>
+                  {/if}
+                  <span class="workspace-create-measure__options"></span>
+                </div>
                 <Button
                   size="sm"
                   label={compactLabels
@@ -3347,14 +3396,20 @@
                   <ExternalLinkIcon size="14" strokeWidth="2.2" aria-hidden="true" />
                 </Button>
               {:else}
-                <Button
-                  size="sm"
-                  label={workspaceDeletionLifecycle
-                    ? compactLabels ? "Workspaces" : "View in Workspaces"
-                    : compactLabels ? "Workspace" : "Open Workspace"}
-                >
-                  <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                </Button>
+                <div class="workspace-create-measure">
+                  <Button
+                    class="workspace-create-measure__primary"
+                    size="sm"
+                    label={workspaceDeletionLifecycle
+                      ? compactLabels ? "Workspaces" : "View in Workspaces"
+                      : compactLabels ? "Workspace" : "Open Workspace"}
+                  >
+                    <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                  </Button>
+                  {#if settings.getQuickActions().length > 0}
+                    <span class="workspace-create-measure__options"></span>
+                  {/if}
+                </div>
               {/if}
             {:else}
               <div class="workspace-create-measure">

@@ -265,6 +265,35 @@ describe("MobileWorkspaceTerminal", () => {
     else expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    ["create", 0],
+    ["existing", 1],
+  ] as const)(
+    "starts a queued %s launch in a workspace that already has sessions %i times",
+    async (origin, launches) => {
+      const session: RuntimeSession = {
+        key: "helper-session",
+        workspace_id: "ws-a",
+        target_key: "helper",
+        label: "Helper",
+        kind: "agent",
+        display_region: "workflow",
+        status: "running",
+        created_at: workspace.created_at,
+      };
+      mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue({ ...runtime, sessions: [session] });
+      mocks.runtimeClient.launchWorkspaceRuntimeSession.mockResolvedValue({ ...session, key: "helper-session-2" });
+      queueWorkspaceLaunch("ws-a", "helper", undefined, origin);
+      render(MobileWorkspaceTerminal, { props });
+      if (launches === 0) {
+        await waitFor(() => expect(pendingWorkspaceLaunch("ws-a", undefined)).toBeNull());
+      } else {
+        await waitFor(() => expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).toHaveBeenCalledOnce());
+      }
+      expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).toHaveBeenCalledTimes(launches);
+    },
+  );
+
   it("reports one launch error when an accepted mobile session expires", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     mocks.runtimeClient.launchWorkspaceRuntimeSession.mockResolvedValue({

@@ -812,6 +812,15 @@
     });
   }
 
+  // Runs in the workspace this issue already has, then shows it the way a
+  // create does: the inline pane, or the workspace route.
+  function runQuickActionInWorkspace(workspaceId: string, action: QuickAction): void {
+    runWorkspaceQuickAction(runtime, workspaceId, "issue", action);
+    if (inlineWorkspace) inlineWorkspace.revealWorkspace();
+    else if (onOpenWorkspace) onOpenWorkspace(workspaceId);
+    else navigate(`/terminal/${workspaceId}`);
+  }
+
   function createWorkspace(
     options: CreateWorkspaceOptions = {},
   ): void {
@@ -1419,42 +1428,68 @@
       {#snippet workspaceAction()}
         {#if workspace}
           {#if inlineWorkspace}
-            <Button
-              class="btn--workspace"
-              disabled={staleIssue || workspaceDeletionLifecycle}
-              onclick={() => {
-                if (staleIssue || workspaceDeletionLifecycle) return;
-                inlineWorkspace.focusTerminal();
-              }}
-              tone="info"
-              surface="soft"
+            <WorkspaceCreateSplitButton
               label="Focus Terminal"
-              shortLabel="Terminal"
-            >
-              <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </Button>
-          {:else}
-            <Button
-              class="btn--workspace"
-              disabled={staleIssue}
-              onclick={() => {
-                if (staleIssue) return;
-                if (workspaceDeletionLifecycle) {
-                  if (onViewWorkspaces) onViewWorkspaces();
-                  else navigate("/workspaces");
-                } else if (onOpenWorkspace) {
-                  onOpenWorkspace(workspace.id);
-                } else {
-                  navigate(`/terminal/${workspace.id}`);
-                }
+              launchTargets={settings.getLaunchTargets()}
+              disabled={staleIssue || workspaceDeletionLifecycle}
+              launchBusy={inlineWorkspace.sessionLaunching()}
+              onCreate={(targetKey) => {
+                if (targetKey !== undefined) inlineWorkspace.launchSession(targetKey);
               }}
-              tone="info"
-              surface="soft"
-              label={workspaceDeletionLifecycle ? "View in Workspaces" : "Open Workspace"}
-              shortLabel={workspaceDeletionLifecycle ? "Workspaces" : "Workspace"}
+              quickActions={settings.getQuickActions()}
+              onQuickAction={(action) => runQuickActionInWorkspace(workspace.id, action)}
             >
-              <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-            </Button>
+              {#snippet primary()}
+                <Button
+                  class="btn--workspace create-primary"
+                  disabled={staleIssue || workspaceDeletionLifecycle}
+                  onclick={() => {
+                    if (staleIssue || workspaceDeletionLifecycle) return;
+                    inlineWorkspace.focusTerminal();
+                  }}
+                  tone="info"
+                  surface="soft"
+                  label="Focus Terminal"
+                  shortLabel="Terminal"
+                >
+                  <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                </Button>
+              {/snippet}
+            </WorkspaceCreateSplitButton>
+          {:else}
+            <!-- No hosted view here to launch a session in, so only quick
+                 actions, which the server runs. -->
+            <WorkspaceCreateSplitButton
+              label="Open Workspace"
+              launchTargets={settings.getLaunchTargets()}
+              disabled={staleIssue || workspaceDeletionLifecycle}
+              quickActions={settings.getQuickActions()}
+              onQuickAction={(action) => runQuickActionInWorkspace(workspace.id, action)}
+            >
+              {#snippet primary()}
+                <Button
+                  class="btn--workspace create-primary"
+                  disabled={staleIssue}
+                  onclick={() => {
+                    if (staleIssue) return;
+                    if (workspaceDeletionLifecycle) {
+                      if (onViewWorkspaces) onViewWorkspaces();
+                      else navigate("/workspaces");
+                    } else if (onOpenWorkspace) {
+                      onOpenWorkspace(workspace.id);
+                    } else {
+                      navigate(`/terminal/${workspace.id}`);
+                    }
+                  }}
+                  tone="info"
+                  surface="soft"
+                  label={workspaceDeletionLifecycle ? "View in Workspaces" : "Open Workspace"}
+                  shortLabel={workspaceDeletionLifecycle ? "Workspaces" : "Workspace"}
+                >
+                  <MonitorUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                </Button>
+              {/snippet}
+            </WorkspaceCreateSplitButton>
           {/if}
         {:else}
           <WorkspaceCreateSplitButton

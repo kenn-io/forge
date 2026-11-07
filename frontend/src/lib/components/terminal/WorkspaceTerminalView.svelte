@@ -65,7 +65,9 @@
     publishHostedSessions,
     registerWorkspaceControls,
     registerWorkspaceLauncher,
+    registerWorkspaceSessionLauncher,
     setWorkspaceControlsBusy,
+    setWorkspaceSessionLaunchBusy,
   } from "../../stores/workspace-host.svelte.ts";
   import {
     beginWorkspaceSwitch,
@@ -161,6 +163,7 @@
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
     claimWorkspaceLaunch,
+    queueWorkspaceLaunch,
     acceptWorkspaceLaunch,
     completeAcceptedWorkspaceLaunch,
     discardWorkspaceLaunch,
@@ -1092,8 +1095,24 @@
   // finds no session to focus. The registry belongs to embedded detail surfaces.
   $effect(() => {
     if (!embeddedWorkspace) return;
-    untrack(() => registerWorkspaceLauncher(openLauncher));
-    return () => untrack(() => registerWorkspaceLauncher(null));
+    untrack(() => {
+      registerWorkspaceLauncher(openLauncher);
+      registerWorkspaceSessionLauncher(launchFromDetail);
+    });
+    return () =>
+      untrack(() => {
+        registerWorkspaceLauncher(null);
+        registerWorkspaceSessionLauncher(null);
+      });
+  });
+
+  // handleLaunch ignores a launch while one is starting, and a second queued launch
+  // replaces the first, so the detail header must not offer another until this settles.
+  $effect(() => {
+    if (!embeddedWorkspace) return;
+    const busy = launchingKey !== null || pendingWorkspaceLaunch(workspaceId, workspaceHostKey)?.phase === "queued";
+    untrack(() => setWorkspaceSessionLaunchBusy(busy));
+    return () => untrack(() => setWorkspaceSessionLaunchBusy(false));
   });
 
   $effect(() => {
@@ -1547,7 +1566,6 @@
       registerWorkspaceControls({
         snippet: workspaceControls,
         paneActions: workspacePaneActions,
-        stripActions: workspaceStripActions,
         dockRow: workspaceDockRow,
         workspacePaneRowOnly: rowOnly,
         workspaceKey,
@@ -3074,6 +3092,13 @@
     quickActionLaunches.has(quickActionWorkspaceKey(workspaceId, workspaceHostKey)),
   );
 
+  // A launch picked in the detail header. A workspace still being set up takes it
+  // the way a create does: queued, and launched once the workspace is ready.
+  function launchFromDetail(targetKey: string): void {
+    if (workspaceLive && workspace?.status === "ready") handleLaunch(targetKey);
+    else queueWorkspaceLaunch(workspaceId, targetKey, workspaceHostKey, "existing");
+  }
+
   function handleQuickAction(action: QuickAction, leaf?: WorkspaceRuntimeLaunchLeaf): void {
     if (!workspaceId || actionsBlocked) return;
     runWorkspaceQuickAction(appRuntime, workspaceId, workspace?.item_type, action, workspaceHostKey, undefined, leaf);
@@ -4564,11 +4589,13 @@
   });
 
   function reconcileQueuedWorkspaceLaunch(admissionRuntime: WorkspaceRuntimeState): void {
-    if (!workspaceLive || workspace?.status !== "ready" || actionsBlocked ||
+    // handleLaunch ignores a claim while another launch is starting, which would leave
+    // it stuck in "launching". Left queued, it is read again once that launch settles.
+    if (!workspaceLive || workspace?.status !== "ready" || actionsBlocked || launchingKey !== null ||
       (workspaceHostKey === undefined && isWorkspaceIdDeleted(workspaceId))) return;
     const pending = pendingWorkspaceLaunch(workspaceId, workspaceHostKey);
     if (pending?.phase !== "queued") return;
-    if (admissionRuntime.sessions.length > 0) {
+    if (pending.origin === "create" && admissionRuntime.sessions.length > 0) {
       discardWorkspaceLaunch(workspaceId, workspaceHostKey);
       return;
     }
@@ -5474,7 +5501,7 @@
 {/snippet}
 
 {#snippet workspaceDockHeaderActions()}
-  <WorkspacePaneControls showStripActions={true} />
+  <WorkspacePaneControls />
 {/snippet}
 
 <!-- The workspace's own controls, defined here because every one of them is wired
@@ -5621,9 +5648,12 @@
   {/if}
 {/snippet}
 
-<!-- Sits in every related pane's tab strip. Launching is non-destructive and useful
-     from a promoted session too, so it must not disappear with owner-only actions. -->
+<!-- Sits in every related pane's tab strip, so each pane of the workspace can launch,
+     run a quick action, and delete without opening the controls popover. -->
 {#snippet workspacePaneActions(leaf: TabbedPanelLeaf | undefined)}
+  {@const launchLeaf = leaf === undefined || leaf.activeTabKey === "workspace"
+    ? undefined
+    : { surface: "detail" as const, id: leaf.id }}
   {@render workspaceInfo()}
   <!-- Ready only. A workspace whose setup failed renders its own actions beside the
        Retry in the error panel, which is where the user is already looking, and one
@@ -5635,18 +5665,21 @@
       disabled={actionsBlocked}
       ariaLabel="Launch session"
       title="Launch session"
-      onclick={() => openLauncher(leaf === undefined || leaf.activeTabKey === "workspace"
-        ? undefined
-        : { surface: "detail", id: leaf.id })}
+      onclick={() => openLauncher(launchLeaf)}
     >
       <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
     </IconButton>
+    <LaunchMenu
+      showLaunch={false}
+      {launchTargets}
+      {launchingKey}
+      disabled={actionsBlocked}
+      hostVisible={interactionVisible}
+      quickActions={workspaceQuickActions}
+      {quickActionBusy}
+      onQuickAction={(action) => handleQuickAction(action, launchLeaf)}
+    />
   {/if}
-{/snippet}
-
-<!-- The workspace pane alone owns destructive strip actions. A workspace split
-     across promoted session panes must still present exactly one Delete button. -->
-{#snippet workspaceStripActions()}
   {#if workspaceLive && workspace?.status === "ready"}
     <IconButton
       size="sm"

@@ -4786,6 +4786,75 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.getByRole("status", { name: "Launching Codex..." })).toBeTruthy();
   });
 
+  it("launches an agent picked in the detail header while the workspace loads, beside its running sessions", async () => {
+    const metadata = deferred<Response>();
+    const fallback = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname.endsWith("/workspaces/ws-1")) return metadata.promise;
+      return fallback(input, init);
+    });
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    mocks.launchWorkspaceSession.mockResolvedValue({
+      ...runningSession,
+      key: "ws-1:codex",
+      target_key: "codex",
+      label: "Codex",
+    });
+    claimForPrs();
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+
+    getInlineWorkspaceController("prs").launchSession("codex");
+    expect(pendingWorkspaceLaunch("ws-1", undefined)).toMatchObject({ phase: "queued", targetKey: "codex" });
+    metadata.resolve(Response.json(workspaceResponse));
+
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "codex", expect.anything()));
+  });
+
+  it("keeps a queued launch waiting while another launch starts during its admission read", async () => {
+    const ready = runtimeWithCodexTarget(true, [runningSession]);
+    mocks.getWorkspaceRuntime.mockResolvedValue(ready);
+    const competing = deferred<typeof runningSession>();
+    const launched = { ...runningSession, key: "ws-1:codex", target_key: "codex", label: "Codex" };
+    mocks.launchWorkspaceSession.mockReturnValueOnce(competing.promise).mockResolvedValue(launched);
+    claimForPrs();
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+    await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
+
+    const admission = deferred<typeof ready>();
+    mocks.getWorkspaceRuntime.mockReturnValueOnce(admission.promise);
+    const reads = mocks.getWorkspaceRuntime.mock.calls.length;
+    queueWorkspaceLaunch("ws-1", "codex", undefined, "existing");
+    await waitFor(() => expect(mocks.getWorkspaceRuntime.mock.calls.length).toBeGreaterThan(reads));
+    getInlineWorkspaceController("prs").launchSession("codex");
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+
+    admission.resolve(ready);
+    await waitFor(() => expect(mocks.getWorkspaceRuntime.mock.calls.length).toBeGreaterThan(reads + 1));
+    expect(pendingWorkspaceLaunch("ws-1", undefined)?.phase).toBe("queued");
+
+    competing.resolve(launched);
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(2));
+  });
+
+  it("tells the detail header a session is starting until its launch settles", async () => {
+    const launchRequest = deferred<typeof runningSession>();
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    mocks.launchWorkspaceSession.mockReturnValue(launchRequest.promise);
+    claimForPrs();
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    const controller = getInlineWorkspaceController("prs");
+    expect(controller.sessionLaunching()).toBe(false);
+
+    controller.launchSession("codex");
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+    expect(controller.sessionLaunching()).toBe(true);
+
+    launchRequest.resolve({ ...runningSession, key: "ws-1:codex", target_key: "codex", label: "Codex" });
+    await waitFor(() => expect(controller.sessionLaunching()).toBe(false));
+  });
+
   it("keeps an accepted create-and-launch intent across an empty refresh and remount", async () => {
     const eventSources = installEventSourceRecorder();
     queueWorkspaceLaunch("ws-1", "codex", undefined);
@@ -5216,7 +5285,6 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
     const controls = render(WorkspacePaneControls, {
       props: {
-        showStripActions: false,
         leaf: { type: "leaf", id: leafID, tabs: [anchor, existingPane], activeTabKey: existingPane },
       },
     });
@@ -6419,7 +6487,7 @@ describe("WorkspaceTerminalView", () => {
       ).toBe("true");
     });
 
-    it.each(["workflow", "detail"] as const)(
+    it.each(["workflow", "detail", "detail menu"] as const)(
       "honors a requested %s pane after runtime discovers a quick-action session",
       async (surface) => {
         localStorage.setItem(
@@ -6445,6 +6513,10 @@ describe("WorkspaceTerminalView", () => {
         noteWorkspacePaneRendered("prs");
         const layout = getPaneLayoutStore("prs");
         const detailLeaf = layout.leafIDForTab("conversation")!;
+        // The detail pane's strip shows these controls only once it holds a session
+        // of the workspace, so promote one there first.
+        const promotedPane = sessionPaneKey("ws-1", undefined, runningSession.key);
+        if (surface !== "workflow") layout.promoteTab(promotedPane, { kind: "tab", leafID: detailLeaf });
         render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
         const reviewer = await screen.findByRole("tab", { name: /Reviewer/ });
         if (surface === "workflow") {
@@ -6454,14 +6526,17 @@ describe("WorkspaceTerminalView", () => {
         } else {
           const controls = render(WorkspacePaneControls, {
             props: {
-              showStripActions: false,
-              leaf: { type: "leaf", id: detailLeaf, tabs: ["conversation"], activeTabKey: "conversation" },
+              leaf: { type: "leaf", id: detailLeaf, tabs: ["conversation", promotedPane], activeTabKey: promotedPane },
             },
           });
-          await fireEvent.click(await within(controls.container).findByRole("button", { name: "Launch session" }));
+          await fireEvent.click(
+            await within(controls.container).findByRole("button", {
+              name: surface === "detail menu" ? "Quick actions" : "Launch session",
+            }),
+          );
         }
         const dialog = screen.getByRole("dialog", {
-          name: surface === "workflow" ? "Quick actions" : "Launch a session",
+          name: surface === "detail" ? "Launch a session" : "Quick actions",
         });
         const review = within(dialog).getByRole("button", { name: "Review" });
         expect(review.hasAttribute("disabled")).toBe(false);
@@ -7815,8 +7890,10 @@ describe("WorkspaceTerminalView", () => {
       expect(layout.externalInputActive()).toBe(false);
       expect(externalDock.classList.contains("input-active")).toBe(false);
 
-      render(WorkspacePaneControls, { props: { showStripActions: false } });
-      expect(screen.getAllByRole("button", { name: /^Delete workspace / })).toHaveLength(1);
+      // Delete sits in every pane of the workspace, so a second pane's controls
+      // offer it too.
+      render(WorkspacePaneControls);
+      expect(screen.getAllByRole("button", { name: /^Delete workspace / })).toHaveLength(2);
       expect(screen.getAllByRole("button", { name: "Workspace controls" })).toHaveLength(2);
 
       await fireEvent.click(within(externalDock).getByRole("button", { name: /^Delete workspace / }));

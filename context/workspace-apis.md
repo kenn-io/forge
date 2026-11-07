@@ -347,9 +347,9 @@ Resolution is deliberately exact (`internal/server/kata/workspace.go::Handler.re
 
 ### Quick actions and agent handoff
 
-- Quick actions are the one backend-owned launch: after creation the header posts the agent and
-  prompt to `POST /workspaces/{id}/runtime/agent-handoffs`; existing local and devbox workspaces offer
-  them too, fleet peers do not (no handoff route).
+- Quick actions are the one backend-owned launch: the header posts the agent and prompt to
+  `POST /workspaces/{id}/runtime/agent-handoffs`, creating the item's workspace first only when it has
+  none; local and devbox workspaces offer them, fleet peers do not (no handoff route).
 - The endpoint waits for readiness and launches in the workflow region; `acp_options` are refused
   for non-ACP targets before waiting, and input validation always precedes waiting.
 - Native Claude prompt arguments are recorded as delivered so retries never type them twice; other

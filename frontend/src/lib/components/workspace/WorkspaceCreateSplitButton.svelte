@@ -16,7 +16,7 @@
   import { launchTargetHarness } from "../terminal/agentHarness";
   import LaunchTargetName from "../terminal/LaunchTargetName.svelte";
   import { Effect } from "effect";
-  import { tick } from "svelte";
+  import { tick, type Snippet } from "svelte";
   import type { LaunchTarget, QuickAction } from "../../api/types.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -37,11 +37,20 @@
     surface?: "soft" | "solid";
     size?: "sm" | "md";
     primaryType?: "button" | "submit";
-    onCreate: (targetKey?: string) => void;
+    /** Create the workspace, launching `targetKey` when given; the launch menu renders only with this. */
+    onCreate?: (targetKey?: string) => void;
     /** Configured quick actions; the lightning segment renders only when non-empty. */
     quickActions?: QuickAction[];
     /** Create the workspace, launch the action's agent, and deliver its prompt. */
     onQuickAction?: (action: QuickAction) => void;
+    /**
+     * The caller's control for a workspace that already exists, in place of
+     * Create. Give it the `create-primary` class so it joins the menu segments.
+     * The menus then launch into that workspace and say so.
+     */
+    primary?: Snippet;
+    /** A session launch is starting: the launch menu waits for it, quick actions do not. */
+    launchBusy?: boolean;
   }
 
   let {
@@ -58,6 +67,8 @@
     onCreate,
     quickActions = [],
     onQuickAction,
+    primary,
+    launchBusy = false,
   }: Props = $props();
   const runtime = getAppRuntime();
 
@@ -76,6 +87,11 @@
   const blocked = $derived(disabled || busy);
   const showQuickActions = $derived(quickActions.length > 0 && onQuickAction !== undefined);
   const sortedQuickActions = $derived(sortQuickActionsByLabel(quickActions));
+  const quickActionsTitle = $derived(
+    primary ? "Launch an agent and send a preset prompt" : "Create, launch an agent, and send a preset prompt",
+  );
+  const launchMenuLabel = $derived(primary ? "Launch an agent" : `${label} options`);
+  const launchMenuTitle = $derived(primary ? "Launch an agent" : "Create and launch an agent");
 
   function quickActionTarget(action: QuickAction): LaunchTarget | undefined {
     return findQuickActionTarget(action, launchTargets);
@@ -213,6 +229,9 @@
 </script>
 
 <div class="workspace-create-split workspace-create-split--{size}" bind:this={root}>
+  {#if primary}
+    {@render primary()}
+  {:else}
   <Button
     type={primaryType}
     class="create-primary"
@@ -224,12 +243,13 @@
     title={disabledReason || label}
     disabled={blocked}
     onclick={() => {
-      if (primaryType === "button") onCreate(undefined);
+      if (primaryType === "button") onCreate?.(undefined);
     }}
   >
     <PackagePlusIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-    <span>{busy ? busyLabel : label}</span>
+    <span class="create-primary-label">{busy ? busyLabel : label}</span>
   </Button>
+  {/if}
   {#if showQuickActions}
     <span class="create-options create-quick-actions" {@attach optionsButton}>
       <Button
@@ -238,7 +258,7 @@
         {size}
         class="create-options-button create-quick-actions-button"
         ariaLabel="Quick actions"
-        title={disabledReason || "Create, launch an agent, and send a preset prompt"}
+        title={disabledReason || quickActionsTitle}
         ariaExpanded={open}
         disabled={blocked}
         onclick={() => {
@@ -250,8 +270,9 @@
       </Button>
     </span>
   {/if}
+  {#if onCreate}
   <Menu bind:open={agentMenuOpen} align="end" class="agent-create-menu" onopenchange={(next) => { if (next) closeMenu(); }}>
-    <MenuTrigger ariaLabel={`${label} options`} title={disabledReason || "Create and launch an agent"} disabled={blocked || agentTargets.length === 0}>
+    <MenuTrigger ariaLabel={launchMenuLabel} title={disabledReason || launchMenuTitle} disabled={blocked || launchBusy || agentTargets.length === 0}>
       {#snippet child({ attachment })}
         <span class="create-options" {@attach (node) => {
           const button = node.querySelector("button");
@@ -262,9 +283,9 @@
             tone="info"
             {size}
             class="create-options-button create-agent-options-button"
-            ariaLabel={`${label} options`}
+            ariaLabel={launchMenuLabel}
             ariaExpanded={agentMenuOpen}
-            disabled={blocked || agentTargets.length === 0}
+            disabled={blocked || launchBusy || agentTargets.length === 0}
           >
             <ChevronDownIcon size="12" strokeWidth="2" aria-hidden="true" />
           </Button>
@@ -276,9 +297,9 @@
         const content = node.querySelector<HTMLElement>('[role="menu"]');
         return content ? portalMenu(content) : undefined;
       }}>
-        <MenuContent ariaLabel="Create and launch">
+        <MenuContent ariaLabel={primary ? "Launch an agent" : "Create and launch"}>
           {#each agentTargets as target (target.key)}
-            <MenuItem onselect={() => onCreate(target.key)} textValue={target.label}>
+            <MenuItem onselect={() => onCreate?.(target.key)} textValue={target.label}>
               {#snippet icon()}
                 {@const harness = launchTargetHarness(target)}
                 {#if harness}<HarnessIcon {harness} size={12} decorative />{/if}
@@ -290,6 +311,7 @@
       </div>
     {/if}
   </Menu>
+  {/if}
   {#if open}
     <ul
       bind:this={menu}
@@ -351,7 +373,12 @@
     border-radius: var(--kit-control-radius, var(--radius-sm)) 0 0 var(--kit-control-radius, var(--radius-sm));
   }
 
-  .workspace-create-split :global(.create-primary span) {
+  /* A caller's control with no menu segment beside it keeps all its corners. */
+  .workspace-create-split :global(.create-primary:last-child) {
+    border-radius: var(--kit-control-radius, var(--radius-sm));
+  }
+
+  .create-primary-label {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -380,6 +407,11 @@
    * chevron, so it is square on both sides. */
   .create-quick-actions :global(.create-quick-actions-button) {
     border-radius: 0;
+  }
+
+  /* Without the launch menu the quick-actions segment ends the control. */
+  .create-quick-actions:last-child :global(.create-quick-actions-button) {
+    border-radius: 0 var(--kit-control-radius, var(--radius-sm)) var(--kit-control-radius, var(--radius-sm)) 0;
   }
 
   /* A trigger stays visibly down while its menu is open. The kit's soft

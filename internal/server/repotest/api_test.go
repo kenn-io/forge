@@ -1514,7 +1514,7 @@ func TestAPIValidationErrorEnvelope(t *testing.T) {
 	assert.Equal("validationError", problem.Code)
 	require.NotNil(problem.Details)
 	assert.Equal("query.state", problem.Details["field"])
-	assert.Equal([]any{"open", "closed", "all"}, problem.Details["allowed"])
+	assert.Equal([]any{"open", "closed", "merged", "closed_unmerged", "all"}, problem.Details["allowed"])
 }
 
 // TestAPIResolveItemMapsLookupOutcomes drives GitHub item resolution

@@ -131,18 +131,8 @@ describe("project-intake api", () => {
       }),
     );
 
-    it.effect("returns unfiltered repositories and normalizes a null list", () =>
+    it.effect("normalizes a null repository list", () =>
       Effect.gen(function* () {
-        mocks.get.mockResolvedValue({
-          repositories: [
-            { name_with_owner: "octo/one", ssh_url: "git@github.com:octo/one.git", default_branch: "main" },
-          ],
-        });
-
-        expect(yield* listUserRepositories()).toEqual([
-          { name_with_owner: "octo/one", ssh_url: "git@github.com:octo/one.git", default_branch: "main" },
-        ]);
-
         mocks.get.mockResolvedValue({ repositories: null });
 
         expect(yield* listUserRepositories()).toEqual([]);

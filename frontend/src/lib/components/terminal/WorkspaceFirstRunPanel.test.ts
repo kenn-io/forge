@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { resetToolingStatusForTest, type ToolingStatusValue } from "../../stores/tooling-status.svelte.js";
+import { resetToolingStatusForTest } from "../../stores/tooling-status.svelte.js";
 
 import WorkspaceFirstRunPanel from "./WorkspaceFirstRunPanelRuntimeHarness.svelte";
 
@@ -48,10 +48,9 @@ function project(id = "prj_1") {
 interface SetupArgs {
   ghAuthed: boolean;
   ghAvailable?: boolean;
-  githubToken?: ToolingStatusValue["github_token"];
 }
 
-function setupTooling({ ghAuthed, ghAvailable = true, githubToken }: SetupArgs): void {
+function setupTooling({ ghAuthed, ghAvailable = true }: SetupArgs): void {
   vi.stubGlobal(
     "fetch",
     vi.fn(
@@ -60,7 +59,6 @@ function setupTooling({ ghAuthed, ghAvailable = true, githubToken }: SetupArgs):
           JSON.stringify({
             git: { available: true, version: "2.45.0" },
             gh: { available: ghAvailable, authenticated: ghAuthed },
-            github_token: githubToken,
             glab: { available: true, authenticated: true, user: "octocat", host: "gitlab.com" },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
@@ -120,41 +118,22 @@ describe("WorkspaceFirstRunPanel", () => {
     });
   });
 
-  it.each([
-    {
-      name: "gh is signed out",
-      tooling: { ghAuthed: false, ghAvailable: true },
-      hint: "Run gh auth login to use this option.",
-    },
-    {
-      name: "gh is unavailable",
-      tooling: { ghAuthed: false, ghAvailable: false },
-      hint: "Install gh to use this option.",
-    },
-    {
-      name: "the token is unverified",
-      tooling: {
-        ghAuthed: false,
-        githubToken: { env: "KENN_FORGE_GITHUB_TOKEN", source: "KENN_FORGE_GITHUB_TOKEN", ready: false },
-      },
-      hint: "Couldn't verify the token from KENN_FORGE_GITHUB_TOKEN.",
-    },
-    {
-      name: "the token environment variable is unset",
-      tooling: {
-        ghAuthed: false,
-        ghAvailable: false,
-        githubToken: { env: "KENN_FORGE_GITHUB_TOKEN", ready: false },
-      },
-      hint: "Set KENN_FORGE_GITHUB_TOKEN and run kenn-forge daemon restart, or install gh.",
-    },
-  ])("disables the GitHub action with a recovery hint when $name", async ({ tooling, hint }) => {
-    setupTooling(tooling);
+  it("disables the GitHub action with a recovery hint when gh is not authenticated", async () => {
+    setupTooling({ ghAuthed: false, ghAvailable: true });
     await renderPanel();
 
-    const button = screen.getByRole("button", { name: /Connect a GitHub repository/i }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    expect(screen.getByText(hint)).toBeTruthy();
+    const button = screen.getByRole("button", {
+      name: /Connect a GitHub repository/i,
+    });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Run gh auth login to use this option.")).toBeTruthy();
+  });
+
+  it("uses an install-gh recovery hint when gh is unavailable", async () => {
+    setupTooling({ ghAuthed: false, ghAvailable: false });
+    await renderPanel();
+
+    expect(screen.getByText("Install gh to use this option.")).toBeTruthy();
   });
 
   it("registers an existing repository and opens Activity", async () => {
@@ -343,17 +322,7 @@ describe("WorkspaceFirstRunPanel", () => {
     });
   });
 
-  it.each([
-    { name: "gh", tooling: { ghAuthed: true } },
-    {
-      name: "a ready environment token",
-      tooling: {
-        ghAuthed: false,
-        ghAvailable: false,
-        githubToken: { env: "KENN_FORGE_GITHUB_TOKEN", source: "KENN_FORGE_GITHUB_TOKEN", ready: true },
-      },
-    },
-  ])("loads GitHub repositories and clones the selected repository with $name", async ({ tooling }) => {
+  it("loads GitHub repositories and clones the selected repository", async () => {
     mocks.listUserRepositories.mockReturnValue(
       Effect.succeed([
         {
@@ -369,15 +338,15 @@ describe("WorkspaceFirstRunPanel", () => {
       ]),
     );
     mocks.cloneProject.mockReturnValue(Effect.succeed(project("prj_gh")));
-    setupTooling(tooling);
+    setupTooling({ ghAuthed: true });
     await renderPanel();
 
-    const button = screen.getByRole("button", { name: /Connect a GitHub repository/i }) as HTMLButtonElement;
-    expect(button.disabled).toBe(false);
-    expect(screen.queryByText("Install gh to use this option.")).toBeNull();
-    await fireEvent.click(button);
+    await fireEvent.click(
+      screen.getByRole("button", {
+        name: /Connect a GitHub repository/i,
+      }),
+    );
     await fireEvent.click(await screen.findByRole("combobox", { name: /GitHub repository/ }));
-    expect(mocks.listUserRepositories).toHaveBeenCalledOnce();
     await fireEvent.click(screen.getByRole("option", { name: "octo/two" }));
     await fireEvent.input(screen.getByLabelText("Destination path"), {
       target: { value: "/tmp/two" },

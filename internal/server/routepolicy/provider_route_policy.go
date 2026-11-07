@@ -188,6 +188,7 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "federation-clear-worklist-marks", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "federation-filter-unassigned-activity-subjects", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "federation-get-diff-descriptor", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
+	{OperationID: "federation-get-pulls", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "federation-get-provider-settings", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "federation-get-repository-descriptor", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "federation-resolve-github-repository-id", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},

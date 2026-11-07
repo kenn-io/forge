@@ -28,6 +28,11 @@ func (f failingPullSource) GetPull(context.Context, ItemIdentity) (MergeRequestD
 	return MergeRequestDetailResponse{}, f.err
 }
 
+func (f failingPullSource) GetPulls(context.Context, []ItemIdentity) ([]MergeRequestDetailResponse, error) {
+	<-f.snapshotStarted
+	return nil, f.err
+}
+
 func (failingPullSource) GetDiffDescriptor(context.Context, ItemIdentity) (providerplane.DiffDescriptor, error) {
 	return providerplane.DiffDescriptor{}, errors.New("not used")
 }
@@ -39,6 +44,10 @@ func TestFailedProviderReadCancelsLocalWorkspaceSnapshot(t *testing.T) {
 	}{
 		{name: "list", call: func(ctx context.Context, h *Handler) error {
 			_, err := h.ListService(ctx, ListQuery{})
+			return err
+		}},
+		{name: "batch", call: func(ctx context.Context, h *Handler) error {
+			_, err := h.GetServices(ctx, []ItemIdentity{{Number: 42}})
 			return err
 		}},
 		{name: "detail", call: func(ctx context.Context, h *Handler) error {

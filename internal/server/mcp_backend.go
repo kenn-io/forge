@@ -230,7 +230,11 @@ func (b mcpBackend) GetPull(
 	if err != nil {
 		return mcpserver.PullDetail{}, err
 	}
-	return mcpPullDetail(ctx, pulls, mcpapi.ItemAtResolvedRoute(item, resolved.Repo))
+	detail, err := pulls.GetService(ctx, mcpapi.PullServiceIdentity(mcpapi.ItemAtResolvedRoute(item, resolved.Repo)))
+	if err != nil {
+		return mcpserver.PullDetail{}, mcpapi.McpBackendError(err)
+	}
+	return mcpPullDetail(detail), nil
 }
 
 // GetPulls resolves each distinct repository once. On a spoke every
@@ -243,7 +247,7 @@ func (b mcpBackend) GetPulls(
 		return nil, err
 	}
 	routes := map[mcpserver.RepositoryIdentity]*db.Repo{}
-	out := make([]mcpserver.PullDetail, 0, len(items))
+	identities := make([]pullapi.ItemIdentity, 0, len(items))
 	for _, item := range items {
 		identity := item.Repository()
 		repo, ok := routes[identity]
@@ -255,22 +259,20 @@ func (b mcpBackend) GetPulls(
 			repo = resolved.Repo
 			routes[identity] = repo
 		}
-		detail, err := mcpPullDetail(ctx, pulls, mcpapi.ItemAtResolvedRoute(item, repo))
-		if err != nil {
-			return nil, fmt.Errorf("PR %d context: %w", item.Number, err)
-		}
-		out = append(out, detail)
+		identities = append(identities, mcpapi.PullServiceIdentity(mcpapi.ItemAtResolvedRoute(item, repo)))
+	}
+	details, err := pulls.GetServices(ctx, identities)
+	if err != nil {
+		return nil, mcpapi.McpBackendError(err)
+	}
+	out := make([]mcpserver.PullDetail, 0, len(details))
+	for _, detail := range details {
+		out = append(out, mcpPullDetail(detail))
 	}
 	return out, nil
 }
 
-func mcpPullDetail(
-	ctx context.Context, pulls *pullapi.Handler, item mcpserver.ItemIdentity,
-) (mcpserver.PullDetail, error) {
-	detail, err := pulls.GetService(ctx, mcpapi.PullServiceIdentity(item))
-	if err != nil {
-		return mcpserver.PullDetail{}, mcpapi.McpBackendError(err)
-	}
+func mcpPullDetail(detail pullapi.MergeRequestDetailResponse) mcpserver.PullDetail {
 	out := mcpserver.PullDetail{
 		DetailLoaded: detail.DetailLoaded, DetailFetchedAt: detail.DetailFetchedAt,
 		Workspace: mcpapi.McpWorkspaceRef(detail.Workspace),
@@ -321,7 +323,7 @@ func mcpPullDetail(
 		out.Stack = &stack
 	}
 	out.Checks = mcpapi.McpChecks(detail.Checks)
-	return out, nil
+	return out
 }
 
 func (b mcpBackend) GetIssue(

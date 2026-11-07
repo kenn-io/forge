@@ -2183,6 +2183,31 @@ func (o *FederationResolveGithubRepositoryIDRequestOptions) GetHeader() (map[str
 	return nil, nil
 }
 
+// FederationGetPullsRequestOptions is the options needed to make a request to FederationGetPulls.
+type FederationGetPullsRequestOptions struct {
+	Body *FederationGetPullsBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *FederationGetPullsRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *FederationGetPullsRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *FederationGetPullsRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *FederationGetPullsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // FederationGetRepositoryDescriptorRequestOptions is the options needed to make a request to FederationGetRepositoryDescriptor.
 type FederationGetRepositoryDescriptorRequestOptions struct {
 	Body *FederationGetRepositoryDescriptorBody
@@ -13101,6 +13126,7 @@ type ClientInterface interface {
 	FederationFilterUnassignedActivitySubjectsWithResponse(ctx context.Context, options *FederationFilterUnassignedActivitySubjectsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationFilterUnassignedActivitySubjectsResp, error)
 	FederationGetDiffDescriptorWithResponse(ctx context.Context, options *FederationGetDiffDescriptorRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationGetDiffDescriptorResp, error)
 	FederationResolveGithubRepositoryIDWithResponse(ctx context.Context, options *FederationResolveGithubRepositoryIDRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationResolveGithubRepositoryIDResp, error)
+	FederationGetPullsWithResponse(ctx context.Context, options *FederationGetPullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationGetPullsResp, error)
 	FederationGetRepositoryDescriptorWithResponse(ctx context.Context, options *FederationGetRepositoryDescriptorRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationGetRepositoryDescriptorResp, error)
 	FederationGetProviderSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*FederationGetProviderSettingsResp, error)
 	FederationUpdateProviderSettingsWithResponse(ctx context.Context, options *FederationUpdateProviderSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationUpdateProviderSettingsResp, error)
@@ -18718,6 +18744,75 @@ func (c *Client) FederationResolveGithubRepositoryIDWithResponse(ctx context.Con
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "FederationResolveGithubRepositoryIDErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// FederationGetPulls Read cached pull details for a Forge spoke
+func (c *Client) FederationGetPullsWithResponse(ctx context.Context, options *FederationGetPullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationGetPullsResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/pulls/query",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/federation/provider/pulls/query")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &FederationGetPullsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(FederationGetPullsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(FederationGetPullsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationGetPullsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(FederationGetPullsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationGetPullsErrorResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -43512,6 +43607,22 @@ func (c *Client) FederationResolveGithubRepositoryIDRaw(ctx context.Context, htt
 	return httpClient.Do(req)
 }
 
+// FederationGetPullsRaw returns an unread response. The caller must close its body.
+func (c *Client) FederationGetPullsRaw(ctx context.Context, httpClient *http.Client, options *FederationGetPullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/pulls/query",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // FederationGetRepositoryDescriptorRaw returns an unread response. The caller must close its body.
 func (c *Client) FederationGetRepositoryDescriptorRaw(ctx context.Context, httpClient *http.Client, options *FederationGetRepositoryDescriptorRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -50833,6 +50944,23 @@ func NewFederationResolveGithubRepositoryIDRequest(ctx context.Context, baseURL 
 
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/github-repository-id",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewFederationGetPullsRequest constructs a typed request for a caller-owned transport.
+func NewFederationGetPullsRequest(ctx context.Context, baseURL string, options *FederationGetPullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/pulls/query",
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
@@ -59918,6 +60046,8 @@ type FederationGetDiffDescriptorBody = FederationDiffDescriptorRequest
 
 type FederationResolveGithubRepositoryIDBody = GitHubRepositoryIDRequest
 
+type FederationGetPullsBody = GetPullsInputBody
+
 type FederationGetRepositoryDescriptorBody = RepositoryDescriptorRequest
 
 type FederationUpdateProviderSettingsBody = ProviderSettingsUpdate
@@ -61282,6 +61412,10 @@ type FederationGetDiffDescriptorErrorResponse = ProblemError
 type FederationResolveGithubRepositoryIDResponse = GitHubRepositoryIDResponse
 
 type FederationResolveGithubRepositoryIDErrorResponse = ProblemError
+
+type FederationGetPullsResponse []MergeRequestDetailResponse
+
+type FederationGetPullsErrorResponse = ProblemError
 
 type FederationGetRepositoryDescriptorResponse = RepositoryDescriptor
 
@@ -63250,6 +63384,15 @@ type FederationResolveGithubRepositoryIDResp struct {
 	Error                             *FederationResolveGithubRepositoryIDErrorResponse
 	JSON200                           *FederationResolveGithubRepositoryIDResponse
 	ApplicationProblemPlusJSONDefault *FederationResolveGithubRepositoryIDErrorResponse
+}
+
+type FederationGetPullsResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationGetPullsErrorResponse
+	JSON200                           *FederationGetPullsResponse
+	ApplicationProblemPlusJSONDefault *FederationGetPullsErrorResponse
 }
 
 type FederationGetRepositoryDescriptorResp struct {
@@ -67878,6 +68021,12 @@ type FleetSettingsResponse struct {
 	Sessions        FleetSessions `json:"sessions"`
 }
 
+type GetPullsInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string        `json:"$schema,omitempty"`
+	Items  []ItemIdentity `json:"items"`
+}
+
 type GhShimResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema  *string `json:"$schema,omitempty"`
@@ -68326,6 +68475,14 @@ type ItemAssigneesResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema    *string  `json:"$schema,omitempty"`
 	Assignees []string `json:"assignees"`
+}
+
+type ItemIdentity struct {
+	Name         string `json:"name"`
+	Number       int64  `json:"number"`
+	Owner        string `json:"owner"`
+	PlatformHost string `json:"platform_host"`
+	Provider     string `json:"provider"`
 }
 
 type ItemLabelsResponse struct {

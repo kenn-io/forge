@@ -2,6 +2,7 @@ package pullapi
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -17,6 +18,7 @@ import (
 type ProviderSource interface {
 	ListPulls(context.Context, ListQuery) ([]MergeRequestResponse, error)
 	GetPull(context.Context, ItemIdentity) (MergeRequestDetailResponse, error)
+	GetPulls(context.Context, []ItemIdentity) ([]MergeRequestDetailResponse, error)
 	GetDiffDescriptor(context.Context, ItemIdentity) (providerplane.DiffDescriptor, error)
 }
 
@@ -35,11 +37,11 @@ type ListQuery struct {
 }
 
 type ItemIdentity struct {
-	Provider     string
-	PlatformHost string
-	Owner        string
-	Name         string
-	Number       int
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int    `json:"number" minimum:"1"`
 }
 
 type StackContext struct {
@@ -150,6 +152,42 @@ func (s *Handler) GetService(
 	}
 	detail.Workspace = nil
 	return s.overlayLocalPullDetail(detail, subjects), nil
+}
+
+// GetServices reads an ordered batch and applies this node's workspace snapshot once.
+func (s *Handler) GetServices(ctx context.Context, items []ItemIdentity) ([]MergeRequestDetailResponse, error) {
+	if len(items) == 0 {
+		return []MergeRequestDetailResponse{}, nil
+	}
+	subjects, discardSubjects := s.startWorkspaceSubjects(ctx)
+	defer discardSubjects()
+	var details []MergeRequestDetailResponse
+	var err error
+	if s.providerSource != nil {
+		details, err = s.providerSource.GetPulls(ctx, items)
+	} else {
+		details, err = s.getProviderPulls(ctx, items)
+	}
+	if err != nil {
+		return nil, err
+	}
+	for i := range details {
+		details[i].Workspace = nil
+		details[i] = s.overlayLocalPullDetail(details[i], subjects)
+	}
+	return details, nil
+}
+
+func (s *Handler) getProviderPulls(ctx context.Context, items []ItemIdentity) ([]MergeRequestDetailResponse, error) {
+	details := make([]MergeRequestDetailResponse, 0, len(items))
+	for _, item := range items {
+		detail, err := s.GetProviderService(ctx, item)
+		if err != nil {
+			return nil, fmt.Errorf("PR %d context: %w", item.Number, err)
+		}
+		details = append(details, detail)
+	}
+	return details, nil
 }
 
 // GetProviderService returns hub-owned pull detail without a

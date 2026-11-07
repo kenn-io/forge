@@ -43,6 +43,9 @@ export const schemaConstraints = {
   FederationDiffDescriptorRequest: {
     pull_number: { minimum: 1 },
   },
+  ItemIdentity: {
+    number: { minimum: 1 },
+  },
   NeutralHost: {
     generation: { minimum: 0 },
   },

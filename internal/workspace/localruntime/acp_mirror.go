@@ -92,7 +92,10 @@ func (m *Manager) saveMirroredSession(dormant *DormantACP, mirror ACPMirror) err
 	}
 	dormant.pollMirror()
 	dormant.saved.mu.Lock()
-	saved := acpSavedSession{SessionID: mirror.SessionID, LoadSession: true, State: ACPState{Messages: slices.Clone(dormant.saved.state.Messages)}}
+	saved := acpSavedSession{
+		SessionID: mirror.SessionID, LoadSession: true, ImportHistory: dormant.mirror.reader == nil,
+		State: ACPState{Messages: slices.Clone(dormant.saved.state.Messages)},
+	}
 	dormant.saved.mu.Unlock()
 	data, err := json.Marshal(saved, json.Deterministic(true))
 	if err != nil {

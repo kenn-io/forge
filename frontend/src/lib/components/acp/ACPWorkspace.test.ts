@@ -1247,7 +1247,7 @@ describe("ACPWorkspace chat status and transcript", () => {
     const composer = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
     expect(composer.disabled).toBe(true);
     expect(composer.placeholder).toBe("Running in another terminal");
-    expect((screen.getByRole("button", { name: "Stop reply" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Stop reply" })).toBeNull();
   });
 
   it("sends input and stops a replying agent mirrored from a Herdr pane", async () => {

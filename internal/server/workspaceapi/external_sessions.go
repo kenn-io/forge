@@ -258,7 +258,9 @@ func (s *Handler) externalWorkspace(ctx context.Context, match *workspace.Extern
 		if !agentactivity.SameWorkspace(workspaces[i].WorktreePath, match.WorktreePath) {
 			continue
 		}
-		if workspaces[i].ExternalWorktree {
+		// A checkout that moved to another pull request's branch keeps its
+		// first workspace, which the new conversation does not belong in.
+		if workspaces[i].ExternalWorktree && externalWorkspaceHolds(&workspaces[i], match) {
 			return &workspaces[i], false, nil
 		}
 		return nil, false, nil
@@ -282,6 +284,12 @@ func (s *Handler) externalWorkspace(ctx context.Context, match *workspace.Extern
 		return nil, false, fmt.Errorf("create workspace: %w", err)
 	}
 	return ws, true, nil
+}
+
+func externalWorkspaceHolds(ws *db.Workspace, match *workspace.ExternalWorktreePR) bool {
+	return ws.ItemType == db.WorkspaceItemTypePullRequest && ws.ItemNumber == match.Number &&
+		strings.EqualFold(ws.Platform, match.Identity.Platform) && strings.EqualFold(ws.PlatformHost, match.Identity.Host) &&
+		strings.EqualFold(ws.RepoOwner, match.Identity.Owner) && strings.EqualFold(ws.RepoName, match.Identity.Name)
 }
 
 // externalChatTarget finds the configured chat agent of an agent family, which
@@ -398,7 +406,7 @@ func (s *Handler) startMirroredChat(
 ) (localruntime.ACPChat, error) {
 	target, ok := s.externalChatTarget(session.Agent)
 	if !ok {
-		return nil, fmt.Errorf("add an ACP agent named %s in Settings to continue this session here", session.Agent)
+		return nil, fmt.Errorf("To continue this session in Forge, add a chat agent in Settings whose key starts with %q, such as %s-chat.", session.Agent, session.Agent) //nolint:staticcheck // ST1005: the chat shows this text verbatim as a full sentence.
 	}
 	if target.Key != item.TargetKey {
 		item.TargetKey, item.Label = target.Key, target.Label

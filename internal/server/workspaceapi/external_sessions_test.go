@@ -224,6 +224,36 @@ func TestTwoAgentsReportedBeforeOnePassShareOneChat(t *testing.T) {
 	assert.Len(t, rows, 1, "a worktree's chat follows one running agent")
 }
 
+// A worktree can move to another pull request's branch after its first agent
+// exits. The next agent's conversation never appears under the first pull request.
+func TestAgentOnAnotherPullRequestIsNotAddedToTheOldWorkspace(t *testing.T) {
+	f := newExternalSessionFixture(t)
+	f.openPull(t, "feature/login", f.head)
+	f.hook(t, "claude", "session-1", "UserPromptSubmit", runningAgentHeaders())
+	f.pass(t)
+	f.adopted(t)
+	f.hook(t, "claude", "session-1", "SessionEnd", nil)
+
+	gitfixture.Run(t, f.worktree, "checkout", "-b", "feature/logout")
+	require.NoError(t, os.WriteFile(filepath.Join(f.worktree, "logout.txt"), []byte("logout\n"), 0o600))
+	gitfixture.Run(t, f.worktree, "add", "logout.txt")
+	gitfixture.Run(t, f.worktree, "commit", "-m", "logout")
+	head := strings.TrimSpace(string(gitfixture.Run(t, f.worktree, "rev-parse", "HEAD")))
+	now := time.Now().UTC()
+	_, err := f.database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: f.repoID, PlatformID: 4300, Number: 43, URL: "https://github.com/acme/widget/pull/43",
+		Title: "Fix logout", Author: "alice", State: "open", HeadBranch: "feature/logout", BaseBranch: "main",
+		HeadRepoCloneURL: "https://github.com/acme/widget.git", PlatformHeadSHA: head,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(t, err)
+	f.hook(t, "claude", "session-2", "UserPromptSubmit", runningAgentHeaders())
+	f.pass(t)
+
+	_, rows := f.adopted(t)
+	assert.Len(t, rows, 1, "the pull request 43 session joined pull request 42's workspace")
+}
+
 func TestExternalSessionsThatAreNotAdopted(t *testing.T) {
 	t.Run("an agent Forge launched", func(t *testing.T) {
 		f := newExternalSessionFixture(t)
@@ -337,7 +367,7 @@ func TestExitedExternalAgentNeedsAChatAgentToContinue(t *testing.T) {
 	state := chatState(t, chat)
 	assert.False(state.ExternalReadOnly)
 	assert.NotEmpty(state.Messages)
-	assert.ErrorContains(chat.Command(localruntime.ACPCommand{Type: "prompt", Text: "continue"}), "add an ACP agent named claude")
+	assert.ErrorContains(chat.Command(localruntime.ACPCommand{Type: "prompt", Text: "continue"}), `add a chat agent in Settings whose key starts with "claude"`)
 }
 
 // This runtime has no way to run an owner, so the start stops there: past the

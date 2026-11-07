@@ -80,6 +80,12 @@ func TestFindExternalWorktreePR(t *testing.T) {
 		commitInWorktree(t, worktree, "more.txt")
 		assert.NotNil(t, find(t, worktree, pull(head)))
 	})
+	t.Run("commits past the pushed head match without an upstream", func(t *testing.T) {
+		worktree, head := setup(t)
+		runWorkspaceTestGit(t, worktree, "branch", "--unset-upstream")
+		commitInWorktree(t, worktree, "more.txt")
+		assert.NotNil(t, find(t, worktree, pull(head)))
+	})
 	t.Run("a reused branch name without the head commit does not match", func(t *testing.T) {
 		worktree, _ := setup(t)
 		assert.Nil(t, find(t, worktree, pull(strings.Repeat("a", 40))))
@@ -178,4 +184,25 @@ func TestDeleteLeavesAnExternalWorktreeAndBranch(t *testing.T) {
 			assert.Nil(stored)
 		})
 	}
+}
+
+// Forge did not create an external worktree, so launching an agent in it writes
+// no instruction file and changes no Git exclude.
+func TestPrepareAgentLaunchContextLeavesAnExternalWorktreeAlone(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	manager, _, ws, root := externalWorkspaceFixture(t)
+	require.NoError(manager.Setup(t.Context(), ws))
+	exclude := filepath.Join(root, ".git", "info", "exclude")
+	before, err := os.ReadFile(exclude)
+	require.NoError(err)
+
+	require.NoError(manager.PrepareAgentLaunchContext(t.Context(), PrepareAgentLaunchContextOptions{
+		WorkspaceID: ws.ID, TargetKey: "codex",
+	}))
+
+	assert.NoFileExists(filepath.Join(root, "AGENTS.override.md"))
+	after, err := os.ReadFile(exclude)
+	require.NoError(err)
+	assert.Equal(string(before), string(after))
 }

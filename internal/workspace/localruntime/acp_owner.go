@@ -55,6 +55,10 @@ type acpSavedSession struct {
 	// LoadSession records that the agent can load this session back, so a
 	// replacement owner keeps the agent's context.
 	LoadSession bool
+	// ImportHistory marks a session Forge kept no transcript of, as for an agent
+	// mirrored without a transcript reader. Its load replays the conversation
+	// into the chat instead of being dropped.
+	ImportHistory bool `json:",omitempty"`
 }
 
 func (m *Manager) acpSessionPath(key string) string {

@@ -37,6 +37,10 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 		if !a.appendContentLocked("assistant", u.AgentMessageChunk.Content, deref(u.AgentMessageChunk.MessageId)) {
 			return nil
 		}
+	case u.UserMessageChunk != nil && a.importingHistory:
+		if !a.appendContentLocked("user", u.UserMessageChunk.Content, deref(u.UserMessageChunk.MessageId)) {
+			return nil
+		}
 	case u.AgentThoughtChunk != nil:
 		if !a.appendContentLocked("thought", u.AgentThoughtChunk.Content, deref(u.AgentThoughtChunk.MessageId)) {
 			return nil

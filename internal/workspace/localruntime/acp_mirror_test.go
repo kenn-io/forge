@@ -1,6 +1,7 @@
 package localruntime
 
 import (
+	"context"
 	"encoding/json/v2"
 	"errors"
 	"os"
@@ -249,35 +250,35 @@ func TestExitedMirrorHandsTheSessionToAForgeRunAgent(t *testing.T) {
 	assert.Equal(t, before[0].ID, saved.State.Messages[0].ID)
 }
 
-// A mirrored chat never launched an agent, so the handoff runs on a real owner
-// and agent: nothing else proves the owner finds what it needs to load the session.
-func TestExitedMirrorLoadsItsSessionInARealAgent(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
+// startRealMirror returns a mirror of an exited agent whose handoff starts a
+// real owner on the fixture agent, and the fixture's directory.
+func startRealMirror(t *testing.T, agent, transcriptText string) (*Manager, *DormantACP, string, string) {
+	t.Helper()
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
 	dir := t.TempDir()
 	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
 	executable, err := os.Executable()
-	require.NoError(err)
+	require.NoError(t, err)
 	owner := &ptyowner.Client{Root: filepath.Join(t.TempDir(), "pty-owner"), InProcess: true}
+	targetKey := agent + "-chat"
 	manager := newACPTestManager(t, Options{
 		ACPSessionsDir: filepath.Join(dir, "acp"), PtyOwnerRuntime: ptyownerruntime.New(owner, nil),
-		Targets: ResolveLaunchTargets([]config.Agent{{Key: "claude-chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil),
+		Targets: ResolveLaunchTargets([]config.Agent{{Key: targetKey, Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil),
 	})
 	key, err := NewSessionKey("workspace")
-	require.NoError(err)
+	require.NoError(t, err)
 	transcript := filepath.Join(t.TempDir(), "session.jsonl")
-	require.NoError(os.WriteFile(transcript, []byte(claudeTranscriptFixture), 0o600))
+	require.NoError(t, os.WriteFile(transcript, []byte(transcriptText), 0o600))
 	chat := manager.MirrorACP(ACPMirror{
-		Key: key, Agent: "claude", SessionID: "fixture-session", TranscriptPath: transcript,
+		Key: key, Agent: agent, SessionID: "fixture-session", TranscriptPath: transcript,
 		Status: func() ACPMirrorStatus { return ACPMirrorStatus{} },
 		Start: func() (ACPChat, error) {
-			if err := manager.PrepareMirroredACP(t.Context(), "claude-chat", "workspace", key, dir); err != nil {
+			if err := manager.PrepareMirroredACP(t.Context(), targetKey, "workspace", key, dir); err != nil {
 				return nil, err
 			}
 			err := manager.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{
-				WorkspaceID: "workspace", SessionKey: key, TargetKey: "claude-chat", Kind: LaunchTargetACP, CWD: dir, CreatedAt: time.Now().UTC(),
+				WorkspaceID: "workspace", SessionKey: key, TargetKey: targetKey, Kind: LaunchTargetACP, CWD: dir, CreatedAt: time.Now().UTC(),
 			}})
 			if err != nil {
 				return nil, err
@@ -285,24 +286,61 @@ func TestExitedMirrorLoadsItsSessionInARealAgent(t *testing.T) {
 			return manager.ACP("workspace", key)
 		},
 	})
-	mirrored := dormantState(t, chat).Messages
-	require.NotEmpty(mirrored)
+	t.Cleanup(func() { _ = manager.Stop(context.WithoutCancel(t.Context()), "workspace", key) })
+	return manager, chat, dir, key
+}
 
-	require.NoError(chat.Command(ACPCommand{Type: "prompt", ID: "p1", Text: "continue here"}))
-
+// awaitIdleMessages waits for the started chat to finish its turn with count
+// messages.
+func awaitIdleMessages(t *testing.T, chat *DormantACP, count int) ACPState {
+	t.Helper()
 	live := chat.Live()
-	require.NotNil(live)
+	require.NotNil(t, live)
 	var state ACPState
-	require.Eventually(func() bool {
+	require.Eventually(t, func() bool {
 		data, err := live.Snapshot()
-		return err == nil && json.Unmarshal(data, &state) == nil && !state.Busy && len(state.Messages) == len(mirrored)+2
+		return err == nil && json.Unmarshal(data, &state) == nil && !state.Busy && len(state.Messages) == count
 	}, 5*time.Second, 10*time.Millisecond)
+	return state
+}
+
+// A mirrored chat never launched an agent, so the handoff runs on a real owner
+// and agent: nothing else proves the owner finds what it needs to load the session.
+func TestExitedMirrorLoadsItsSessionInARealAgent(t *testing.T) {
+	assert := assert.New(t)
+	_, chat, dir, _ := startRealMirror(t, "claude", claudeTranscriptFixture)
+	mirrored := dormantState(t, chat).Messages
+	require.NotEmpty(t, mirrored)
+
+	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", ID: "p1", Text: "continue here"}))
+
+	state := awaitIdleMessages(t, chat, len(mirrored)+2)
 	log, err := os.ReadFile(filepath.Join(dir, "sessions"))
-	require.NoError(err)
+	require.NoError(t, err)
 	assert.Equal("session/load\n", string(log), "the agent loads the session and opens no other")
 	assert.Equal(mirrored[0].ID, state.Messages[0].ID)
 	assert.Equal("continue here", state.Messages[len(mirrored)].Text)
-	require.NoError(manager.Stop(t.Context(), "workspace", key))
+	assert.NotContains(messageTexts(state), "restored answer", "the mirrored transcript already holds the history")
+}
+
+// Forge reads no transcript for this agent, so the history the agent replays on
+// load is the only record of the earlier conversation.
+func TestExitedMirrorWithoutATranscriptReaderShowsTheAgentsHistory(t *testing.T) {
+	_, chat, _, _ := startRealMirror(t, "gemini", "")
+	require.Empty(t, dormantState(t, chat).Messages)
+
+	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", ID: "p1", Text: "continue here"}))
+
+	state := awaitIdleMessages(t, chat, 4)
+	assert.Equal(t, []string{"remember", "restored answer", "continue here"}, messageTexts(state)[:3])
+}
+
+func messageTexts(state ACPState) []string {
+	texts := make([]string, 0, len(state.Messages))
+	for _, message := range state.Messages {
+		texts = append(texts, message.Text)
+	}
+	return texts
 }
 
 func TestMirrorThatCannotStartKeepsShowingItsTranscript(t *testing.T) {

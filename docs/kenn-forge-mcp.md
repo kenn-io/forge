@@ -13,6 +13,10 @@ lowered limits, with
 `every_word_required`, or `limit_lowered`), `message`, and an optional `retry_with`
 object containing retry arguments.
 
+The tool list is about 40 KB of JSON, including output schemas, with 23 tools by default and 24 when Kata task targets are available.
+`TestRegisteredToolsResourcesAndPromptsAreCurated` holds the Kata-enabled list to 44,000 bytes.
+Changes that exceed the budget must raise it in review.
+
 ## On by default
 
 With `mcp.enabled` and `mcp.port` omitted, the companion runs on Forge's own

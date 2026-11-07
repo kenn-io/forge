@@ -3,10 +3,12 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -14,14 +16,44 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// The Kata-enabled catalog measured 39,833 bytes on the base. Add 10%, rounded
+// up to the next 1,000 bytes; raising this budget requires review.
+const toolCatalogBudgetBytes = 44_000
+
+func toolCatalogSize(t *testing.T, cs *mcp.ClientSession) (*mcp.ListToolsResult, int, string) {
+	t.Helper()
+	jsonSize := func(value any) int {
+		var buf strings.Builder
+		encoder := json.NewEncoder(&buf)
+		encoder.SetEscapeHTML(false) // Match the SDK's JSON-RPC result encoding.
+		require.NoError(t, encoder.Encode(value))
+		return buf.Len() - 1 // Exclude the encoder's trailing newline.
+	}
+	tools, err := cs.ListTools(t.Context(), nil)
+	require.NoError(t, err)
+	n := jsonSize(tools)
+	if n <= toolCatalogBudgetBytes {
+		return tools, n, ""
+	}
+	var report strings.Builder
+	fmt.Fprintf(&report, "tools/list: %d bytes exceeds budget of %d bytes\n", n, toolCatalogBudgetBytes)
+	for _, tool := range tools.Tools {
+		fmt.Fprintf(&report, "%7d %s\n", jsonSize(tool), tool.Name)
+	}
+	return tools, n, report.String()
+}
+
 func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	s := newMCPTestServer(t, &fakeBackend{})
 	cs := connectMCPTestSession(t, s)
-
 	tools, err := cs.ListTools(t.Context(), nil)
 	require.NoError(err)
+	kataServer := newMCPTestServer(t, &fakeBackend{kataTargetsAvailableFn: func() bool { return true }})
+	_, _, report := toolCatalogSize(t, connectMCPTestSession(t, kataServer))
+	assert.Empty(report)
+
 	var toolNames []string
 	for _, tool := range tools.Tools {
 		toolNames = append(toolNames, tool.Name)
@@ -71,6 +103,31 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 	content, ok := prompt.Messages[0].Content.(*mcp.TextContent)
 	require.True(ok)
 	assert.Contains(content.Text, "kenn_forge_get_item_diff")
+}
+
+func TestToolCatalogBudgetFailsOneByteOver(t *testing.T) {
+	assert := assert.New(t)
+	s := &Server{mcp: mcp.NewServer(&mcp.Implementation{Name: "budget-fixture", Version: "test"}, nil)}
+	cs := connectMCPTestSession(t, s)
+	tool := &mcp.Tool{
+		Name: "kenn_forge_budget_fixture", Description: "x",
+		InputSchema: map[string]any{"type": "object"},
+	}
+	handler := func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return &mcp.CallToolResult{}, nil
+	}
+	s.mcp.AddTool(tool, handler)
+	_, n, _ := toolCatalogSize(t, cs)
+	tool.Description = "<>&" + strings.Repeat("x", 1+toolCatalogBudgetBytes-n-3)
+	s.mcp.AddTool(tool, handler)
+	_, n, report := toolCatalogSize(t, cs)
+	assert.Equal(toolCatalogBudgetBytes, n)
+	assert.Empty(report)
+	tool.Description += "x"
+	s.mcp.AddTool(tool, handler)
+	_, n, report = toolCatalogSize(t, cs)
+	assert.Equal(toolCatalogBudgetBytes+1, n)
+	assert.Contains(report, "kenn_forge_budget_fixture")
 }
 
 func TestServerUses20260728ProtocolCapabilities(t *testing.T) {

@@ -122,6 +122,10 @@ type ViewerAPI interface {
 	AuthenticatedViewerLogin(ctx context.Context) (string, error)
 }
 
+type UserRepositoriesAPI interface {
+	ListUserRepositoriesPage(ctx context.Context, page, perPage int) ([]*gh.Repository, error)
+}
+
 type ViewerCacheKeyAPI interface {
 	AuthenticatedViewerCacheKey() string
 }

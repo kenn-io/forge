@@ -235,8 +235,9 @@ type Server struct {
 
 	// toolingStatus caches the assembled CLI tooling probe;
 	// toolingRun overrides the probe subprocess runner in tests.
-	toolingStatus repoapi.ToolingStatusCache
-	toolingRun    repoapi.ToolingRunner
+	toolingStatus   repoapi.ToolingStatusCache
+	toolingRun      repoapi.ToolingRunner
+	newGitHubClient func(tokenauth.Source, string) (ghclient.Client, error)
 
 	daemonRequests authapi.DaemonRequestPolicy
 	federationAuth *federationauth.Authenticator

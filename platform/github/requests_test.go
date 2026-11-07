@@ -28,6 +28,31 @@ func newEnterpriseGHClient(hc *http.Client, baseURL, uploadURL string) (*gh.Clie
 	return gh.NewClient(gh.WithHTTPClient(hc), gh.WithEnterpriseURLs(baseURL, uploadURL))
 }
 
+func TestListUserRepositoriesPage(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(http.MethodGet, r.Method)
+		assert.Equal("/api/v3/user/repos", r.URL.Path)
+		assert.Equal("owner,collaborator,organization_member", r.URL.Query().Get("affiliation"))
+		assert.Equal("updated", r.URL.Query().Get("sort"))
+		assert.Equal("2", r.URL.Query().Get("page"))
+		assert.Equal("37", r.URL.Query().Get("per_page"))
+		_, _ = w.Write([]byte(`[{"full_name":"acme/widget"}]`))
+	}))
+	t.Cleanup(server.Close)
+	client, err := NewClient(ClientConfig{
+		Host: "ghe.example.com", APIBase: server.URL + "/api/v3/",
+		Read: server.Client(), Write: server.Client(), Notifications: server.Client(), Clock: time.Now,
+	})
+	require.NoError(err)
+
+	repos, err := client.ListUserRepositoriesPage(t.Context(), 2, 37)
+	require.NoError(err)
+	require.Len(repos, 1)
+	assert.Equal("acme/widget", repos[0].GetFullName())
+}
+
 func TestAuthenticatedViewerLoginRefreshesExpiredCache(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

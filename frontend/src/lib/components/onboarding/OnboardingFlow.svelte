@@ -29,7 +29,7 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { buildProviderPullRequestRoute } from "../../routes.js";
   import { navigate } from "../../stores/router.svelte.ts";
-  import { resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
+  import { githubAccount, resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
   import { recordWorkspaceCreated } from "../../stores/workspace-create-pending.svelte.js";
   import { createDefaultWorkspaceTarget } from "../../stores/workspace-target.svelte.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
@@ -104,11 +104,13 @@
   const tooling = $derived(resolveToolingStatus(runtime));
   const gh = $derived(tooling?.gh);
   const hasConfiguredRepos = $derived(stores.settings.hasConfiguredRepos());
-  const ghReady = $derived(
-    hasConfiguredRepos
-      || ghVerified
-      || (gh?.available === true && gh.authenticated === true),
-  );
+  const github = $derived(githubAccount(tooling));
+  const ghReady = $derived(hasConfiguredRepos || ghVerified || github.ready);
+  const githubLabel = $derived.by(() => {
+    const host = gh?.host || "github.com";
+    if (tooling?.github_token?.source) return `${host} · token`;
+    return github.user ? `${host} · @${github.user}` : host;
+  });
   const activeStep = $derived<StepId>(
     hasConfiguredRepos || providerConfirmed ? phase : "auth",
   );
@@ -620,7 +622,7 @@
           <CircleCheckIcon size={16} aria-hidden="true" />
           <div>
             <strong>Code forge available</strong>
-            <span>{gh?.host || "github.com"}{gh?.user ? ` · @${gh.user}` : ""}</span>
+            <span>{githubLabel}</span>
           </div>
         {:else}
           <AlertTriangleIcon size={16} aria-hidden="true" />
@@ -661,8 +663,7 @@
           >
             {#snippet before()}<p class="step-number">STEP 2 OF 5</p>{/snippet}
             {#snippet description()}
-              Kenn Forge found these through your existing <code>gh</code> session. Start small; you can
-              add more later.
+              Kenn Forge found these through GitHub. Start small; you can add more later.
             {/snippet}
           </PageHeader>
         </div>
@@ -703,7 +704,7 @@
             {#if visibleRepositories.length === 0}
               <p class="no-results">
                 {repositories.length === 0
-                  ? "No repositories are available to this gh account."
+                  ? "No repositories are available to this GitHub account."
                   : `No repositories match “${repositoryFilter}”.`}
               </p>
             {/if}

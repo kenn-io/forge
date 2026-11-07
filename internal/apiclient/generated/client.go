@@ -30573,7 +30573,7 @@ func (c *Client) MarkNotificationsUndoneWithResponse(ctx context.Context, option
 	}
 }
 
-// ListUserRepositories List the authenticated platform CLI user's repositories
+// ListUserRepositories List repositories using gh, or the active host token for an explicit GitHub provider
 func (c *Client) ListUserRepositoriesWithResponse(ctx context.Context, options *ListUserRepositoriesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListUserRepositoriesResp, error) {
 	var err error
 
@@ -38923,7 +38923,7 @@ func (c *Client) StoreTerminalPasteImageWithResponse(ctx context.Context, option
 	}
 }
 
-// GetToolingStatus Report git/gh/glab CLI availability and auth
+// GetToolingStatus Report git/gh/glab availability, CLI auth, and active GitHub token readiness
 func (c *Client) GetToolingStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetToolingStatusResp, error) {
 	var err error
 
@@ -70830,10 +70830,17 @@ type ToolingGitStatus struct {
 
 type ToolingStatusBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string          `json:"$schema,omitempty"`
-	Gh     ToolingCLIStatus `json:"gh"`
-	Git    ToolingGitStatus `json:"git"`
-	Glab   ToolingCLIStatus `json:"glab"`
+	Schema      *string             `json:"$schema,omitempty"`
+	Gh          ToolingCLIStatus    `json:"gh"`
+	Git         ToolingGitStatus    `json:"git"`
+	GithubToken *ToolingTokenStatus `json:"github_token,omitempty"`
+	Glab        ToolingCLIStatus    `json:"glab"`
+}
+
+type ToolingTokenStatus struct {
+	Env    *string `json:"env,omitempty"`
+	Ready  bool    `json:"ready"`
+	Source *string `json:"source,omitempty"`
 }
 
 type UnpreparedWorkspace struct {

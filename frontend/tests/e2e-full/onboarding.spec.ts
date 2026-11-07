@@ -229,8 +229,9 @@ test("missing gh stays usable on the mobile entry route", async ({ page }) => {
         contentType: "application/json",
         body: JSON.stringify({
           git: { available: true, version: "2.50" },
-          gh: { available: false, authenticated: false },
+          gh: { available: false, authenticated: false, host: "github.com" },
           glab: { available: false, authenticated: false },
+          github_token: { env: "KENN_FORGE_GITHUB_TOKEN", ready: false },
         }),
       });
     });
@@ -238,6 +239,10 @@ test("missing gh stays usable on the mobile entry route", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${server.info.base_url}/m`);
     await expect(page.getByRole("heading", { name: "Connect a code forge" })).toBeVisible();
+    const command = page.locator("code").filter({ hasText: /^kenn-forge daemon restart$/ });
+    await expect(command).toBeVisible();
+    await expect(command).toHaveCSS("display", "inline");
+    await expect(command).toHaveCSS("white-space", "normal");
     await expect(page.getByRole("listitem", { name: "Code forge: current" })).toBeVisible();
     for (const provider of ["GitHub", "GitLab", "Forgejo", "Gitea"]) {
       await expect(page.getByRole("img", { name: provider })).toBeVisible();

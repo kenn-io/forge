@@ -89,11 +89,12 @@ a working local workspace:
 <figure class="workflow-shot">
   <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/first-run-light.svg" alt="Forge code forge readiness step in light mode">
   <img class="workflow-shot__image workflow-shot__image--dark" src="assets/generated/first-run-dark.svg" alt="Forge code forge readiness step in dark mode">
-  <figcaption>First run checks the GitHub CLI and routes other providers through repository setup.</figcaption>
+  <figcaption>First run accepts a GitHub token or CLI session. Configure GitHub opens Settings.</figcaption>
 </figure>
 
-1. **Connect a code forge.** Continue with an authenticated GitHub CLI, or
-   open Settings for another provider or host.
+1. **Connect a code forge.** Continue with an authenticated GitHub CLI or
+   `KENN_FORGE_GITHUB_TOKEN`, or choose **Configure GitHub** to open Settings.
+   Other provider buttons open Settings for that provider or host.
 2. **Choose repositories.** GitHub users can select discovered repositories.
    Other providers use the Repositories panel in Settings.
 3. **Run the first sync.** Forge loads pull requests, issues, and activity

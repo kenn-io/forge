@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button, Spinner } from "@kenn-io/kit-ui";
 
-  import type { ToolingStatusValue } from "../../stores/tooling-status.svelte.ts";
+  import { githubAccount, type ToolingStatusValue } from "../../stores/tooling-status.svelte.ts";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
 
   interface Props {
@@ -24,7 +24,8 @@
 
   const gh = $derived(tooling?.gh);
   const glab = $derived(tooling?.glab);
-  const ghReady = $derived(gh?.available === true && gh.authenticated === true);
+  const token = $derived(tooling?.github_token);
+  const ghReady = $derived(githubAccount(tooling).ready);
   const glabReady = $derived(glab?.available === true && glab.authenticated === true);
   const ghHost = $derived(gh?.host || "github.com");
   const ghLoginCommand = $derived(ghHost === "github.com" ? "gh auth login" : `gh auth login --hostname ${ghHost}`);
@@ -52,10 +53,27 @@
         </div>
         {#if tooling === undefined}
           <span>Checking this host for an authenticated <code>gh</code> installation.</span>
+        {:else if token?.source && ghReady}
+          <span>Token from <code>{token.source}</code>&nbsp;· {ghHost}</span>
+        {:else if token?.source}
+          <span>
+            Couldn't verify the token from <code>{token.source}</code> on {ghHost}. If this keeps happening, check connectivity and the token's repository access. If you change it, run
+            <code>kenn-forge daemon restart</code>.
+          </span>
         {:else if ghReady}
           <span><code>gh</code> authenticated · {accountLabel(gh, "github.com")}</span>
+        {:else if gh?.available && token?.env}
+          <span>
+            <code>gh</code> is not authenticated for <code>{ghHost}</code>. Sign in from a terminal, or set
+            <code>{token.env}</code> and run <code>kenn-forge daemon restart</code>.
+          </span>
         {:else if gh?.available}
           <span><code>gh</code> is not authenticated for <code>{ghHost}</code>. Sign in from a terminal, then check again.</span>
+        {:else if token?.env}
+          <span>
+            Install and sign in to <code>gh</code>, or set <code>{token.env}</code> and run
+            <code>kenn-forge daemon restart</code>.
+          </span>
         {:else}
           <span><code>gh</code> is not installed. Install the GitHub CLI on this host, then check again.</span>
         {/if}
@@ -110,7 +128,7 @@
     </div>
   </div>
 
-  {#if !ghReady && gh?.available}
+  {#if !ghReady && !token?.source && (gh?.available || token?.env)}
     <pre class="command"><code>{ghLoginCommand}</code></pre>
   {/if}
 
@@ -126,6 +144,7 @@
         {#if retrying}<Spinner size={13} />{/if}
         Check again
       </Button>
+      <Button onclick={onOpenSettings}>Configure GitHub</Button>
     {/if}
     <Button onclick={onOpenSettings}>Configure GitLab</Button>
     <Button onclick={onOpenSettings}>Configure Forgejo</Button>

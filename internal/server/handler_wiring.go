@@ -118,15 +118,17 @@ func (s *Server) wireHandlers() {
 		WorkspaceAPI:                            &s.workspaceAPI,
 	}
 	s.repoapi = &repoapi.Handlers{
-		Cfg:           &s.cfg,
-		CfgMu:         &s.cfgMu,
-		CfgPath:       &s.cfgPath,
-		Db:            s.db,
-		Now:           &s.now,
-		RepoResolver:  s.repoResolver,
-		Syncer:        &s.syncer,
-		ToolingRun:    &s.toolingRun,
-		ToolingStatus: &s.toolingStatus,
+		Cfg:             &s.cfg,
+		CfgMu:           &s.cfgMu,
+		CfgPath:         &s.cfgPath,
+		Db:              s.db,
+		Now:             &s.now,
+		RepoResolver:    s.repoResolver,
+		Syncer:          &s.syncer,
+		ToolingRun:      &s.toolingRun,
+		ToolingStatus:   &s.toolingStatus,
+		TokenSources:    &s.tokenSources,
+		NewGitHubClient: &s.newGitHubClient,
 	}
 	s.roborevapi = &roborevapi.Handlers{
 		Cfg:                 &s.cfg,

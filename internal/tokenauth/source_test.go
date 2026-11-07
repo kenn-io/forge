@@ -47,21 +47,24 @@ func TestManagedSourceFallsThroughEmptyFileAndEnv(t *testing.T) {
 		},
 	}, Options{})
 
-	got, err := src.Token(t.Context())
+	got, candidate, err := src.Resolve(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "from-env", got)
+	assert.Equal(t, Candidate{Kind: SourceKindEnv, EnvName: "SECONDARY_TOKEN"}, candidate)
 }
 
 func TestManagedSourceUnreadableFileDoesNotExposeToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing")
 	src := NewManagedSource(Descriptor{
 		Key: Key{Platform: "github", Host: "github.com"},
 		Candidates: []Candidate{
-			{Kind: SourceKindFile, FilePath: filepath.Join(t.TempDir(), "missing")},
+			{Kind: SourceKindFile, FilePath: path},
 		},
 	}, Options{})
 
-	_, err := src.Token(t.Context())
+	_, candidate, err := src.Resolve(t.Context())
 	require.Error(t, err)
+	assert.Equal(t, Candidate{Kind: SourceKindFile, FilePath: path}, candidate)
 	assert.NotContains(t, err.Error(), "ghp_sentinel_secret")
 	assert.Contains(t, err.Error(), "token file")
 }

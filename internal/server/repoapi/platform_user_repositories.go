@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/internal/server/httpapi"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -26,13 +27,12 @@ const (
 )
 
 type listUserRepositoriesInput struct {
-	// Provider selects the platform CLI to list through. Only
-	// "github" (the default) is implemented today; other providers
-	// return an unsupportedCapability problem rather than silently
-	// listing the wrong platform.
+	// Provider selects setup discovery. Explicit "github" uses the active
+	// host token when configured; empty uses gh for the SSH clone picker.
+	// Other providers return an unsupportedCapability problem.
 	Provider string `query:"provider"`
 	// PlatformHost targets a specific platform host (e.g. a GitHub
-	// Enterprise deployment); empty uses the CLI's default host.
+	// Enterprise deployment); empty uses the configured token host or gh's default.
 	PlatformHost string `query:"platform_host"`
 	// Limit caps how many repositories are returned; values outside
 	// (0, 1000] fall back to the default of 100.
@@ -50,16 +50,6 @@ type listUserRepositoriesOutput struct {
 	Body struct {
 		Repositories []userRepository `json:"repositories"`
 	}
-}
-
-// ghUserRepository mirrors the REST repository fields consumed from
-// `gh api user/repos`.
-type ghUserRepository struct {
-	FullName      string  `json:"full_name"`
-	SSHURL        string  `json:"ssh_url"`
-	DefaultBranch string  `json:"default_branch"`
-	Private       *bool   `json:"private"`
-	Visibility    *string `json:"visibility"`
 }
 
 func (s *Handlers) ListUserRepositories(
@@ -89,23 +79,44 @@ func (s *Handlers) ListUserRepositories(
 		run = defaultToolingRunner
 	}
 
+	tokenHost := platformHost
+	if tokenHost == "" {
+		tokenHost, _ = s.toolingPlatformHosts()
+	}
+	var client platformgithub.UserRepositoriesAPI
+	if provider == "github" {
+		if status, source, host := s.githubHostToken(ctx, tokenHost); status != nil && status.Source != "" {
+			tokenClient, err := s.githubClient(source, host)
+			if err != nil {
+				return nil, httpapi.ProviderCallProblem(err, "github", tokenHost)
+			}
+			client = tokenClient.(platformgithub.UserRepositoriesAPI)
+		}
+	}
 	resp := &listUserRepositoriesOutput{}
 	resp.Body.Repositories = make([]userRepository, 0, limit)
 	// per_page stays constant across pages: GitHub page offsets are
 	// per_page-relative, so shrinking the final request would re-fetch
 	// earlier items instead of the tail. Truncate after appending.
 	for page := 1; len(resp.Body.Repositories) < limit; page++ {
-		raw, err := s.fetchUserRepositoriesPage(
-			ctx, run, platformHost, userRepositoriesPageSize, page,
-		)
+		var raw []*gh.Repository
+		var err error
+		if client != nil {
+			pageCtx, cancel := context.WithTimeout(ctx, userRepositoriesTimeout)
+			raw, err = client.ListUserRepositoriesPage(pageCtx, page, userRepositoriesPageSize)
+			cancel()
+			err = httpapi.ProviderCallProblem(err, "github", tokenHost)
+		} else {
+			raw, err = s.fetchUserRepositoriesPage(ctx, run, platformHost, userRepositoriesPageSize, page)
+		}
 		if err != nil {
 			return nil, err
 		}
 		for _, r := range raw {
 			resp.Body.Repositories = append(resp.Body.Repositories, userRepository{
-				NameWithOwner: r.FullName,
-				SSHURL:        r.SSHURL,
-				DefaultBranch: r.DefaultBranch,
+				NameWithOwner: r.GetFullName(),
+				SSHURL:        r.GetSSHURL(),
+				DefaultBranch: r.GetDefaultBranch(),
 				Private:       platformgithub.RepositoryPrivate(r.Visibility, r.Private),
 			})
 		}
@@ -130,7 +141,7 @@ func (s *Handlers) fetchUserRepositoriesPage(
 	run ToolingRunner,
 	platformHost string,
 	pageSize, page int,
-) ([]ghUserRepository, error) {
+) ([]*gh.Repository, error) {
 	args := []string{"api"}
 	if platformHost != "" {
 		args = append(args, "--hostname", platformHost)
@@ -151,7 +162,7 @@ func (s *Handlers) fetchUserRepositoriesPage(
 		}
 		return nil, userRepositoriesProblem(err, platformHost)
 	}
-	var raw []ghUserRepository
+	var raw []*gh.Repository
 	if err := json.Unmarshal(out, &raw); err != nil {
 		return nil, httpapi.Internal(
 			"decode repository listing: " + err.Error(),

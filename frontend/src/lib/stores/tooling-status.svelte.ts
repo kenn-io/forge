@@ -21,6 +21,14 @@ export function resolveToolingStatus(runtime: AppRuntime): ToolingStatusValue | 
   return fetched;
 }
 
+// A token the credential chain selects decides GitHub readiness, as it does for
+// sync; gh decides only when no token is selected.
+export function githubAccount(tooling: ToolingStatusValue | undefined): { ready: boolean; user?: string | undefined } {
+  if (tooling?.github_token?.source) return { ready: tooling.github_token.ready };
+  const gh = tooling?.gh;
+  return { ready: gh?.available === true && gh.authenticated === true, user: gh?.user };
+}
+
 // Tests dispose their application runtime before resetting this projection.
 export function resetToolingStatusForTest(): void {
   fetched = undefined;

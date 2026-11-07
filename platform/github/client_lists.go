@@ -9,6 +9,17 @@ import (
 	gh "github.com/google/go-github/v93/github"
 )
 
+func (c *Client) ListUserRepositoriesPage(ctx context.Context, page, perPage int) ([]*gh.Repository, error) {
+	repos, resp, err := c.gh.Repositories.ListByAuthenticatedUser(ctx, &gh.RepositoryListByAuthenticatedUserOptions{
+		Affiliation: "owner,collaborator,organization_member",
+		Sort:        "updated",
+		Page:        page,
+		PerPage:     perPage,
+	})
+	c.trackRate(resp)
+	return repos, mapGitHubReadError(c.platformHost, c.now, "", err)
+}
+
 func (c *Client) ListOpenPullRequests(ctx context.Context, owner, repo string) ([]*gh.PullRequest, error) {
 	opts := &gh.PullRequestListOptions{
 		State:   "open",

@@ -35,7 +35,8 @@ vi.mock("../../api/project-intake.ts", () => ({
 vi.mock("../../stores/router.svelte.ts", () => ({
   navigate: mocks.navigate,
 }));
-vi.mock("../../stores/tooling-status.svelte.ts", () => ({
+vi.mock("../../stores/tooling-status.svelte.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../stores/tooling-status.svelte.ts")>()),
   resolveToolingStatus: () => mocks.tooling.value,
 }));
 vi.mock("../../app/runtime-context.js", () => ({
@@ -369,33 +370,38 @@ describe("OnboardingFlow", () => {
     expect(screen.getByText("gh auth login --hostname ghe.example.com")).toBeTruthy();
   });
 
-  it("hands non-GitHub setup to regular repository configuration", async () => {
+  it("opens repository settings for GitHub and other providers", async () => {
     mocks.tooling.value = {
       git: { available: true, version: "2.50" },
-      gh: { available: false, authenticated: false },
+      gh: { available: false, authenticated: false, host: "github.com" },
       glab: { available: true, authenticated: true, host: "gitlab.example.com", user: "maintainer" },
     };
     const callbacks = renderFlow(storeFixture().stores);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Configure GitHub" }));
+    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/settings");
+    mocks.navigate.mockClear();
 
     await fireEvent.click(screen.getByRole("button", { name: "Configure Forgejo" }));
 
     expect(callbacks.onDismiss).not.toHaveBeenCalled();
     expect(callbacks.onComplete).not.toHaveBeenCalled();
-    expect(mocks.navigate).toHaveBeenCalledWith("/settings");
+    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/settings");
   });
 
-  it("keeps a missing gh installation on the provider readiness step", () => {
+  it("discovers repositories with a verified token when gh is missing", async () => {
     mocks.tooling.value = {
       git: { available: true, version: "2.50" },
-      gh: { available: false, authenticated: false },
+      gh: { available: false, authenticated: false, host: "ghe.example.com" },
       glab: { available: false, authenticated: false },
+      github_token: { env: "ACME_GHE_TOKEN", source: "ACME_GHE_TOKEN", ready: true },
     };
     renderFlow(storeFixture().stores);
 
-    expect(screen.getByRole("heading", { name: "Connect a code forge" })).toBeTruthy();
-    expect(screen.getByText(/is not installed/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Check again" })).toBeTruthy();
-    expect(mocks.listUserRepositories).not.toHaveBeenCalled();
+    expect(screen.getByText("ghe.example.com · token")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
+
+    await waitFor(() => expect(mocks.listUserRepositories).toHaveBeenCalledOnce());
   });
 
   it("resumes configured repositories at first sync without provider confirmation", async () => {

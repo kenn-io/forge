@@ -274,21 +274,25 @@ func (s *ManagedSource) Invalidate(rejectedToken string) {
 }
 
 func (s *ManagedSource) Token(ctx context.Context) (string, error) {
+	token, _, err := s.Resolve(ctx)
+	return token, err
+}
+
+// Resolve returns the token and its selected candidate. A resolution error
+// retains the candidate that failed so callers can report its provenance.
+func (s *ManagedSource) Resolve(ctx context.Context) (string, Candidate, error) {
 	desc := s.Descriptor()
-	if len(desc.Candidates) == 0 {
-		return "", missingTokenError(desc)
-	}
 	for _, candidate := range desc.Candidates {
 		token, used, err := s.tokenFromCandidate(ctx, candidate)
 		if err != nil {
-			return "", err
+			return "", candidate, err
 		}
 		if used && token != "" {
 			RegisterKnownSecret(token)
-			return token, nil
+			return token, candidate, nil
 		}
 	}
-	return "", missingTokenError(desc)
+	return "", Candidate{}, missingTokenError(desc)
 }
 
 func (s *ManagedSource) tokenFromCandidate(

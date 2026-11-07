@@ -222,14 +222,14 @@ func (s *Server) registerAPI(api huma.API) {
 		OperationID: "list-user-repositories",
 		Method:      http.MethodGet,
 		Path:        "/platform/user-repositories",
-		Summary:     "List the authenticated platform CLI user's repositories",
+		Summary:     "List repositories using gh, or the active host token for an explicit GitHub provider",
 		Tags:        []string{"System"},
 	}, s.repoapi.ListUserRepositories)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-tooling-status",
 		Method:      http.MethodGet,
 		Path:        "/tooling-status",
-		Summary:     "Report git/gh/glab CLI availability and auth",
+		Summary:     "Report git/gh/glab availability, CLI auth, and active GitHub token readiness",
 		Tags:        []string{"System"},
 	}, s.repoapi.GetToolingStatus)
 	huma.Register(api, huma.Operation{

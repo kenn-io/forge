@@ -11010,12 +11010,26 @@ components:
           $ref: "#/components/schemas/ToolingCLIStatus"
         git:
           $ref: "#/components/schemas/ToolingGitStatus"
+        github_token:
+          $ref: "#/components/schemas/ToolingTokenStatus"
         glab:
           $ref: "#/components/schemas/ToolingCLIStatus"
       required:
         - git
         - gh
         - glab
+      type: object
+    ToolingTokenStatus:
+      additionalProperties: false
+      properties:
+        env:
+          type: string
+        ready:
+          type: boolean
+        source:
+          type: string
+      required:
+        - ready
       type: object
     UnpreparedWorkspace:
       additionalProperties: false
@@ -24195,7 +24209,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
-      summary: List the authenticated platform CLI user's repositories
+      summary: List repositories using gh, or the active host token for an explicit GitHub provider
       tags:
         - System
   /projects:
@@ -28977,7 +28991,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
-      summary: Report git/gh/glab CLI availability and auth
+      summary: Report git/gh/glab availability, CLI auth, and active GitHub token readiness
       tags:
         - System
   /ui/active-worktree:

@@ -1,13 +1,17 @@
 package repoapi
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"strings"
 	"sync"
 	"time"
 
+	"go.kenn.io/forge/internal/config"
+	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 // toolingProbeTimeout bounds each probe subprocess. A hung credential
@@ -35,10 +39,17 @@ type toolingCLIStatus struct {
 	Host          string `json:"host,omitempty"`
 }
 
+type toolingTokenStatus struct {
+	Env    string `json:"env,omitempty"`
+	Source string `json:"source,omitempty"`
+	Ready  bool   `json:"ready"`
+}
+
 type ToolingStatusBody struct {
-	Git  toolingGitStatus `json:"git"`
-	Gh   toolingCLIStatus `json:"gh"`
-	Glab toolingCLIStatus `json:"glab"`
+	GitHubToken *toolingTokenStatus `json:"github_token,omitempty"`
+	Git         toolingGitStatus    `json:"git"`
+	Gh          toolingCLIStatus    `json:"gh"`
+	Glab        toolingCLIStatus    `json:"glab"`
 }
 
 type toolingStatusOutput struct {
@@ -140,8 +151,67 @@ func (s *Handlers) probeToolingStatus(ctx context.Context) ToolingStatusBody {
 			},
 		)
 	})
+	probes.Go(func() {
+		status, source, host := s.githubHostToken(ctx, githubHost)
+		body.GitHubToken = status
+		if status == nil || status.Source == "" {
+			return
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, toolingProbeTimeout)
+		defer cancel()
+		client, err := s.githubClient(source, host)
+		if err == nil {
+			_, err = client.GetUser(probeCtx, "")
+		}
+		status.Ready = err == nil
+	})
 	probes.Wait()
 	return body
+}
+
+// githubHostToken uses the active unscoped host source. Pending config can
+// differ until restart when a reload changes GitHub App topology.
+func (s *Handlers) githubHostToken(ctx context.Context, host string) (*toolingTokenStatus, tokenauth.Source, string) {
+	if s.Syncer == nil || *s.Syncer == nil || s.TokenSources == nil || *s.TokenSources == nil {
+		return nil, nil, ""
+	}
+	host, err := config.NormalizePlatformHost("github", host)
+	if err != nil {
+		return nil, nil, ""
+	}
+	live, ok := (*s.TokenSources).Get(tokenauth.Key{Platform: "github", Host: host})
+	if !ok {
+		return nil, nil, ""
+	}
+	desc := live.Descriptor()
+	var status *toolingTokenStatus
+	for _, candidate := range desc.Candidates {
+		if candidate.Kind != tokenauth.SourceKindEnv && candidate.Kind != tokenauth.SourceKindFile {
+			continue
+		}
+		if status == nil {
+			status = &toolingTokenStatus{}
+		}
+		if candidate.Kind == tokenauth.SourceKindEnv && status.Env == "" {
+			status.Env = candidate.EnvName
+		}
+	}
+	if status == nil {
+		return nil, nil, ""
+	}
+	source := tokenauth.NewManagedSource(desc, tokenauth.Options{})
+	_, candidate, _ := source.Resolve(ctx)
+	if candidate.Kind == tokenauth.SourceKindEnv || candidate.Kind == tokenauth.SourceKindFile {
+		status.Source = cmp.Or(candidate.EnvName, candidate.FilePath)
+	}
+	return status, source, host
+}
+
+func (s *Handlers) githubClient(source tokenauth.Source, host string) (ghclient.Client, error) {
+	if *s.NewGitHubClient != nil {
+		return (*s.NewGitHubClient)(source, host)
+	}
+	return ghclient.NewClient(source, host, nil, nil)
 }
 
 // toolingPlatformHosts picks the platform host each CLI is probed
@@ -226,7 +296,7 @@ func probeToolingCLI(
 	user func(context.Context) string,
 ) toolingCLIStatus {
 	if _, err := runToolingProbe(ctx, run, cli, "--version"); err != nil {
-		return toolingCLIStatus{}
+		return toolingCLIStatus{Host: host}
 	}
 	status := toolingCLIStatus{Available: true, Host: host}
 	if !authenticated(ctx) {

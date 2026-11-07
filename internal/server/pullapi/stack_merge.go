@@ -17,6 +17,12 @@ func midStackBlocker(
 	if stack == nil || stack.Native {
 		return db.StackMemberWithPR{}, false
 	}
+	return lowestUnmergedBelow(members, number)
+}
+
+// lowestUnmergedBelow returns the lowest unmerged member below number.
+// Members must be ordered by position.
+func lowestUnmergedBelow(members []db.StackMemberWithPR, number int) (db.StackMemberWithPR, bool) {
 	for _, member := range members {
 		if member.Number == number {
 			break
@@ -62,13 +68,8 @@ func mergeQueueOwner(
 	if stack == nil || !stack.Native {
 		return number, baseBranch
 	}
-	for _, member := range members {
-		if member.Number == number {
-			break
-		}
-		if member.State != string(db.MergeRequestStateMerged) {
-			return member.Number, member.BaseBranch
-		}
+	if member, ok := lowestUnmergedBelow(members, number); ok {
+		return member.Number, member.BaseBranch
 	}
 	return number, baseBranch
 }

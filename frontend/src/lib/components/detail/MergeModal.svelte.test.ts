@@ -276,6 +276,28 @@ describe("MergeModal native stack target", () => {
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
   });
 
+  it("waits for CI before adding a native stack to the merge queue", async () => {
+    render(MergeModal, {
+      props: {
+        ...baseProps,
+        number: 12,
+        expectedHeadSha: "head-12",
+        mergeQueue: true,
+        deferUntilChecksPass: true,
+        nativeStack: nativeStack([{ number: 11, ci_status: "pending" }, { number: 12 }]),
+      },
+    });
+
+    expect(normalized(screen.getByText(/CI is still running on/).textContent)).toBe(
+      "CI is still running on #11 and #12. Forge adds the stack to the merge queue once every included pull " +
+        "request passes CI, and stops waiting if it restarts.",
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Add to queue after CI" }));
+
+    expect(mockMergePull.mock.calls[0]?.[1]).toBe(12);
+    expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
+  });
+
   it("names a member below whose CI failed instead of offering to wait", () => {
     render(MergeModal, {
       props: {

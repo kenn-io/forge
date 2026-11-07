@@ -107,7 +107,7 @@ func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 					_, _ = w.Write([]byte(`{"message":"Bad credentials"}`))
 					return
 				}
-				_, _ = w.Write([]byte(`[{"full_name":"acme/widget","ssh_url":"git@github.com:acme/widget.git","default_branch":"main","private":false,"visibility":"private"}]`))
+				_, _ = w.Write([]byte(`[{"full_name":"acme/widget","ssh_url":"git@github.com:acme/widget.git","default_branch":"main","private":true,"visibility":"private"}]`))
 			}, ServerOptions{})
 			newClient := f.srv.newGitHubClient
 			f.srv.newGitHubClient = func(source tokenauth.Source, host string) (platformgithub.UserRepositoriesAPI, error) {

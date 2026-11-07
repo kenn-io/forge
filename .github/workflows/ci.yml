@@ -15,6 +15,7 @@ env:
   KENN_FORGE_CI_WORKERS: "2"
 
 permissions:
+  actions: read
   checks: write
   contents: read
   issues: read
@@ -947,6 +948,39 @@ jobs:
             ' tmp/test-race-timing-events.json | sort -rn | sed -n '1,40p'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Warn about newly slow race tests
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && hashFiles('tmp/test-race-timing-events.json') != '' }}
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RACE_SHARD: ${{ matrix.shard }}
+        run: |
+          baseline=$(mktemp -d)
+          trap 'rm -rf "$baseline"' EXIT
+          trap 'echo "::notice::Race timing comparison unavailable."' ERR
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=100" --jq '.workflow_runs[].id')
+          count=0
+          for run in $runs; do
+            artifacts=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" --jq "[.artifacts[] | select(.expired == false and (.name | test(\"^go-race-timing-$RACE_SHARD-[12]$\")))] | length")
+            if [[ "$artifacts" == 2 ]]; then
+              gh run download "$run" --repo "$GITHUB_REPOSITORY" --pattern "go-race-timing-$RACE_SHARD-*" --dir "$baseline/$run"
+              count=$((count + 1))
+              if (( count == 5 )); then break; fi
+            fi
+          done
+          find "$baseline" -name test-race-timing-events.json -exec cat {} + > "$baseline/main.json"
+          test -s "$baseline/main.json"
+          jq -sr --slurpfile main "$baseline/main.json" '
+            def timings:
+              map(select(.Package and .Test and .Elapsed))
+              | group_by([.Package, .Test]) | map(max_by(.Elapsed));
+            ($main | timings | map({key: ([.Package, .Test] | tojson), value: .Elapsed}) | from_entries) as $baseline
+            | timings | map(. + {previous: $baseline[[.Package, .Test] | tojson]})
+            | map(select(.Elapsed > 60 and (.previous == null or .previous <= 60)))[]
+            | "::warning title=Slow race test::\(.Package) \(.Test): \(.Elapsed)s; main max: \(if .previous == null then "absent" else "\(.previous)s" end)"
+          ' tmp/test-race-timing-events.json
 
       - name: Publish race test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}

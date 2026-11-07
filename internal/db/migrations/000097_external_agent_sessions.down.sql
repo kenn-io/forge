@@ -1,0 +1,3 @@
+DROP INDEX forge_external_agent_sessions_runtime_key_idx;
+DROP TABLE forge_external_agent_sessions;
+ALTER TABLE forge_workspaces DROP COLUMN external_worktree;

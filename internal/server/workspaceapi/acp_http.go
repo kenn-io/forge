@@ -174,6 +174,9 @@ func chatCommandProblem(err error) error {
 	if code := localruntime.ACPErrorCode(err); code != "" {
 		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": code})
 	}
+	if _, refused := errors.AsType[localruntime.ACPMirrorRefusal](err); refused {
+		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": "external_agent"})
+	}
 	if errors.Is(err, localruntime.ErrACPAgentUnavailable) {
 		return httpapi.ServiceUnavailable(err.Error())
 	}

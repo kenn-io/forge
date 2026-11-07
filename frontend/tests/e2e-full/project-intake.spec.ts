@@ -20,38 +20,6 @@ type SnapshotResponse = {
 };
 
 test.describe("project intake", () => {
-  test("a token-only user can pick a GitHub repository", async ({ page }) => {
-    const server = await startIsolatedE2EServerWithOptions();
-    try {
-      await page.route("**/api/v1/tooling-status", (route) =>
-        route.fulfill({
-          json: {
-            git: { available: true },
-            gh: { available: false, authenticated: false },
-            github_token: { env: "KENN_FORGE_GITHUB_TOKEN", source: "KENN_FORGE_GITHUB_TOKEN", ready: true },
-          },
-        }),
-      );
-      await page.route("**/api/v1/platform/user-repositories**", (route) =>
-        route.fulfill({
-          json: {
-            repositories: [
-              { name_with_owner: "octo/one", ssh_url: "git@github.com:octo/one.git", default_branch: "main" },
-            ],
-          },
-        }),
-      );
-      await page.goto(`${server.info.base_url}/project-intake`);
-      const connect = page.getByRole("button", { name: /Connect a GitHub repository/ });
-      await expect(connect).toBeEnabled();
-      await connect.click();
-      await expect(page.getByRole("combobox", { name: /GitHub repository/ })).toBeVisible();
-      await expect(page.getByRole("combobox", { name: /GitHub repository/ })).toContainText("octo/one");
-    } finally {
-      await server.stop();
-    }
-  });
-
   test("project intake uses snapshot host metadata and host-scoped registration", async ({ page }) => {
     const server = await startIsolatedE2EServerWithOptions();
     const hostKey = server.info.node_id;

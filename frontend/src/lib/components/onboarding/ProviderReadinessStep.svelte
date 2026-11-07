@@ -32,7 +32,7 @@
 
   function accountLabel(tool: { host?: string; user?: string } | undefined, fallbackHost: string): string {
     const host = tool?.host || fallbackHost;
-    return tool?.user ? `${host}\u00a0· @${tool.user}` : host;
+    return tool?.user ? `${host} · @${tool.user}` : host;
   }
 </script>
 
@@ -62,7 +62,7 @@
             <code class="command-inline">kenn-forge daemon restart</code>.
           </span>
         {:else if ghReady}
-          <span><code>gh</code> authenticated&nbsp;· {accountLabel(gh, "github.com")}</span>
+          <span><code>gh</code> authenticated · {accountLabel(gh, "github.com")}</span>
         {:else if gh?.available && token?.env}
           <span>
             <code>gh</code> is not authenticated for <code>{ghHost}</code>. Sign in from a terminal, or set
@@ -97,7 +97,7 @@
           {/if}
         </div>
         {#if glabReady}
-          <span><code>glab</code> authenticated&nbsp;· {accountLabel(glab, "gitlab.com")}</span>
+          <span><code>glab</code> authenticated · {accountLabel(glab, "gitlab.com")}</span>
         {:else if glab?.available}
           <span><code>glab</code> is installed but not authenticated. Configure repositories in Settings.</span>
         {:else}

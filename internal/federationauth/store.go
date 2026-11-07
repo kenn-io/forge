@@ -364,6 +364,23 @@ func (s *Store) RevokeInboundNode(nodeID string) error {
 	})
 }
 
+// RestrictInboundNode narrows every inbound credential of nodeID to scopes.
+// It is a no-op for a node without inbound credentials, so a retried
+// revocation can call it again.
+func (s *Store) RestrictInboundNode(nodeID string, scopes []Scope) error {
+	normalized, err := validateCredentialScopes(nodeID, scopes)
+	if err != nil {
+		return err
+	}
+	return s.mutate(func(state *persistedStore) {
+		for index := range state.Inbound {
+			if state.Inbound[index].NodeID == nodeID {
+				state.Inbound[index].Scopes = slices.Clone(normalized)
+			}
+		}
+	})
+}
+
 // RevokeOutbound removes the outbound credential for nodeID.
 func (s *Store) RevokeOutbound(nodeID string) error {
 	return s.mutate(func(state *persistedStore) {

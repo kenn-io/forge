@@ -1004,6 +1004,18 @@ type FleetHub struct {
 	NodeID  string `toml:"node_id" json:"node_id"`
 	Name    string `toml:"name,omitempty" json:"name,omitempty"`
 	BaseURL string `toml:"base_url" json:"base_url"`
+	// EnrollmentSecretFile declares this spoke's membership: at startup the
+	// spoke joins the hub with the one-time secret in this file. NodeID stays
+	// empty until that join records the hub's identity.
+	EnrollmentSecretFile string `toml:"enrollment_secret_file,omitempty" json:"-"`
+}
+
+// FleetDeclaredSpoke is a hub-side membership declaration. The spoke joins
+// with the one-time secret in EnrollmentSecretFile from exactly BaseURL.
+type FleetDeclaredSpoke struct {
+	Name                 string `toml:"name" json:"name"`
+	BaseURL              string `toml:"base_url" json:"base_url"`
+	EnrollmentSecretFile string `toml:"enrollment_secret_file" json:"-"`
 }
 
 type FleetMember struct {
@@ -1023,6 +1035,9 @@ type Fleet struct {
 	Members     []FleetMember `toml:"members,omitempty" json:"members,omitempty"`
 	PeerTimeout string        `toml:"peer_timeout,omitempty" json:"peer_timeout,omitempty"`
 	Sessions    FleetSessions `toml:"sessions" json:"sessions"`
+	// DeclaredSpokes is operator-owned; Forge never writes it. Members holds
+	// the enrolled state Forge records for declared and CLI-enrolled spokes.
+	DeclaredSpokes []FleetDeclaredSpoke `toml:"declared_spokes,omitempty" json:"-"`
 }
 
 func (f *Fleet) RoleOrDefault() FleetRole {
@@ -2112,8 +2127,14 @@ func (f *Fleet) Validate() error {
 		f.Hub.NodeID = strings.TrimSpace(f.Hub.NodeID)
 		f.Hub.Name = strings.TrimSpace(f.Hub.Name)
 		f.Hub.BaseURL = strings.TrimSpace(f.Hub.BaseURL)
-		if !validFleetNodeID(f.Hub.NodeID) {
+		f.Hub.EnrollmentSecretFile = strings.TrimSpace(f.Hub.EnrollmentSecretFile)
+		// A declared spoke learns the hub's node ID when it joins.
+		if (f.Hub.NodeID != "" || f.Hub.EnrollmentSecretFile == "") &&
+			!validFleetNodeID(f.Hub.NodeID) {
 			return errors.New("fleet.hub.node_id must be 32 lowercase hexadecimal characters")
+		}
+		if f.Hub.EnrollmentSecretFile != "" && role != FleetRoleSpoke {
+			return errors.New("fleet.hub.enrollment_secret_file is only valid when fleet.role is spoke")
 		}
 		baseURL, err := federation.CanonicalOrigin(f.Hub.BaseURL)
 		if err != nil {
@@ -2123,6 +2144,9 @@ func (f *Fleet) Validate() error {
 	}
 	if role == FleetRoleSpoke && len(f.Members) > 0 {
 		return errors.New("fleet.members is only valid when fleet.role is hub")
+	}
+	if err := f.validateDeclaredSpokes(role); err != nil {
+		return err
 	}
 	memberIDs := make(map[string]struct{}, len(f.Members))
 	memberOrigins := make(map[string]struct{}, len(f.Members))
@@ -2161,6 +2185,52 @@ func (f *Fleet) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (f *Fleet) validateDeclaredSpokes(role FleetRole) error {
+	if role == FleetRoleSpoke && len(f.DeclaredSpokes) > 0 {
+		return errors.New("fleet.declared_spokes is only valid when fleet.role is hub")
+	}
+	names := make(map[string]struct{}, len(f.DeclaredSpokes))
+	origins := make(map[string]struct{}, len(f.DeclaredSpokes))
+	for index := range f.DeclaredSpokes {
+		spoke := &f.DeclaredSpokes[index]
+		spoke.Name = strings.TrimSpace(spoke.Name)
+		spoke.EnrollmentSecretFile = strings.TrimSpace(spoke.EnrollmentSecretFile)
+		if spoke.Name == "" {
+			return fmt.Errorf("fleet.declared_spokes[%d].name is required", index)
+		}
+		if spoke.EnrollmentSecretFile == "" {
+			return fmt.Errorf("fleet.declared_spokes[%d].enrollment_secret_file is required", index)
+		}
+		baseURL, err := federation.CanonicalOrigin(spoke.BaseURL)
+		if err != nil {
+			return fmt.Errorf("fleet.declared_spokes[%d].base_url: %w", index, err)
+		}
+		spoke.BaseURL = baseURL
+		if baseURL == f.BaseURL {
+			return fmt.Errorf("fleet.declared_spokes[%d].base_url is this hub's fleet.base_url", index)
+		}
+		if _, duplicate := names[spoke.Name]; duplicate {
+			return fmt.Errorf("fleet.declared_spokes contains duplicate name %q", spoke.Name)
+		}
+		names[spoke.Name] = struct{}{}
+		if _, duplicate := origins[baseURL]; duplicate {
+			return fmt.Errorf("fleet.declared_spokes contains duplicate origin %q", baseURL)
+		}
+		origins[baseURL] = struct{}{}
+	}
+	return nil
+}
+
+// DeclaredSpokeForOrigin returns the declared spoke at a canonical origin.
+func (f *Fleet) DeclaredSpokeForOrigin(origin string) (FleetDeclaredSpoke, bool) {
+	for _, spoke := range f.DeclaredSpokes {
+		if spoke.BaseURL == origin {
+			return spoke, true
+		}
+	}
+	return FleetDeclaredSpoke{}, false
 }
 
 func validFleetNodeID(nodeID string) bool {
@@ -3554,6 +3624,16 @@ func (c *Config) normalizeTokenFilePaths(configDir string) {
 			configDir, c.GitHubApps[i].PrivateKeyPath,
 		)
 	}
+	if c.Fleet.Hub != nil {
+		c.Fleet.Hub.EnrollmentSecretFile = normalizeTokenFilePath(
+			configDir, c.Fleet.Hub.EnrollmentSecretFile,
+		)
+	}
+	for i := range c.Fleet.DeclaredSpokes {
+		c.Fleet.DeclaredSpokes[i].EnrollmentSecretFile = normalizeTokenFilePath(
+			configDir, c.Fleet.DeclaredSpokes[i].EnrollmentSecretFile,
+		)
+	}
 }
 
 func normalizeTokenFilePath(configDir, raw string) string {
@@ -3918,6 +3998,44 @@ type configFile struct {
 	Embeddings                  *embedconfig.Embedder    `toml:"embeddings,omitempty"`
 }
 
+// CheckSavable reports whether Save could replace the config at path. It
+// leaves the config unchanged but, like Save, creates a missing directory.
+func CheckSavable(path string) error {
+	file, err := createConfigReplacement(path)
+	if err != nil {
+		return err
+	}
+	return file.Abort()
+}
+
+// createConfigReplacement opens the temporary file that atomically replaces
+// the config at path. A symlinked config is written through to its target.
+func createConfigReplacement(path string) (*atomicfile.File, error) {
+	savePath := path
+	info, err := os.Lstat(path)
+	if err == nil && info.Mode()&os.ModeSymlink != 0 {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return nil, fmt.Errorf("resolving config symlink: %w", err)
+		}
+		savePath = resolved
+	} else if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("checking config path: %w", err)
+	}
+
+	dir := filepath.Dir(savePath)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, fmt.Errorf("creating config directory: %w", err)
+		}
+	}
+	file, err := atomicfile.Create(savePath)
+	if err != nil {
+		return nil, fmt.Errorf("creating temp config: %w", err)
+	}
+	return file, nil
+}
+
 // Save writes the current config to the given path.
 func (c *Config) Save(path string) error {
 	cfg := c.copyForSave()
@@ -3992,30 +4110,9 @@ func (c *Config) Save(path string) error {
 		f.IssueWorkspaceBranchStyle = cfg.IssueWorkspaceBranchStyle
 	}
 
-	savePath := path
-	info, err := os.Lstat(path)
-	if err == nil && info.Mode()&os.ModeSymlink != 0 {
-		resolved, err := filepath.EvalSymlinks(path)
-		if err != nil {
-			return fmt.Errorf("resolving config symlink: %w", err)
-		}
-		savePath = resolved
-	} else if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("checking config path: %w", err)
-	}
-
-	dir := filepath.Dir(savePath)
-	if dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return fmt.Errorf("creating config directory: %w", err)
-		}
-	}
-
-	// savePath is already resolved, so a symlinked config is written
-	// through to its target.
-	file, err := atomicfile.Create(savePath)
+	file, err := createConfigReplacement(path)
 	if err != nil {
-		return fmt.Errorf("creating temp config: %w", err)
+		return err
 	}
 	defer func() { _ = file.Abort() }()
 	if err := toml.NewEncoder(file).Encode(f); err != nil {
@@ -4060,6 +4157,7 @@ func (c *Config) copyForSave() Config {
 		cfg.Fleet.Hub = &hub
 	}
 	cfg.Fleet.Members = slices.Clone(c.Fleet.Members)
+	cfg.Fleet.DeclaredSpokes = slices.Clone(c.Fleet.DeclaredSpokes)
 	if cfg.SyncInterval == "" {
 		cfg.SyncInterval = defaultSyncInterval
 	}

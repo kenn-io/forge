@@ -5,10 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -241,17 +244,15 @@ func TestFleetJoinPersistsBothCredentialDirectionsAndHubBinding(t *testing.T) {
 
 func TestSendJoinRequestDoesNotRetryAmbiguousTransportFailure(t *testing.T) {
 	var attempts int
-	handler := &Handler{
-		federationHTTPClient: &http.Client{Transport: roundTripFunc(func(
-			*http.Request,
-		) (*http.Response, error) {
-			attempts++
-			return nil, errors.New("response unavailable")
-		})},
-	}
+	client := &http.Client{Transport: roundTripFunc(func(
+		*http.Request,
+	) (*http.Response, error) {
+		attempts++
+		return nil, errors.New("response unavailable")
+	})}
 
-	_, err := handler.sendJoinRequest(
-		t.Context(), "https://hub.example", "one-time-token",
+	_, err := sendJoinRequest(
+		t.Context(), client, "https://hub.example", "one-time-token",
 		federation.JoinRequest{},
 	)
 
@@ -304,6 +305,269 @@ func TestFleetJoinReplacesRevokedLocalEnrollment(t *testing.T) {
 	assert.Equal(federation.EnrollmentPending, local.State)
 	_, authenticated := spoke.credentials.Authenticate("revocation-only-token")
 	assert.False(authenticated)
+}
+
+// joinFixture is a spoke whose store holds a given local enrollment and a
+// hub it can join. newToken issues a one-time token on the hub, and join runs
+// fleet join on the spoke with a token.
+type joinFixture struct {
+	spoke, hub enrollmentHandlerFixture
+	hubURL     string
+	hubClient  *http.Client
+	newToken   func() string
+	join       func(string) *http.Response
+}
+
+func joinFromLocal(
+	t *testing.T, local federation.LocalEnrollment,
+	transport func(http.RoundTripper) http.RoundTripper,
+) joinFixture {
+	t.Helper()
+	hub := newEnrollmentHandlerFixture(t, enrollmentHubID, nil)
+	hubServer := httptest.NewTLSServer(hub.mux)
+	t.Cleanup(hubServer.Close)
+	hubClient := &http.Client{Transport: transport(hubServer.Client().Transport)}
+	local.HubURL = hubServer.URL
+	spoke := newEnrollmentHandlerFixture(t, enrollmentNodeID, func(deps *Deps) {
+		deps.FederationHTTPClient = hubClient
+		deps.PersistHubBinding = func(context.Context, config.FleetHub) error { return nil }
+		require.NoError(t, deps.Enrollments.SaveLocal(t.Context(), local))
+		require.NoError(t, deps.Credentials.StoreInbound(
+			enrollmentHubID, "revocation-only-token",
+			[]federationauth.Scope{federationauth.ScopeEnrollmentActivate},
+		))
+	})
+	spokeServer := httptest.NewServer(spoke.mux)
+	t.Cleanup(spokeServer.Close)
+	return joinFixture{
+		spoke: spoke, hub: hub, hubURL: hubServer.URL, hubClient: hubClient,
+		newToken: func() string {
+			oneTime, err := hub.enrollments.CreateOneTimeToken(federation.Identity{
+				NodeID: enrollmentHubID, BaseURL: hubServer.URL,
+			}, time.Now().Add(time.Minute))
+			require.NoError(t, err)
+			return oneTime.Token
+		},
+		join: func(token string) *http.Response {
+			response := doEnrollmentJSON(
+				t, spokeServer.Client(), http.MethodPost,
+				spokeServer.URL+"/api/v1/fleet/join", map[string]any{
+					"hub_base_url": hubServer.URL, "spoke_base_url": "https://spoke.example",
+					"enrollment_token": token,
+				}, "",
+			)
+			t.Cleanup(func() { _ = response.Body.Close() })
+			return response
+		},
+	}
+}
+
+func passthrough(next http.RoundTripper) http.RoundTripper { return next }
+
+func revokedLocalEnrollment() federation.LocalEnrollment {
+	return federation.LocalEnrollment{
+		EnrollmentID: enrollmentRequestID, NodeID: enrollmentNodeID,
+		SpokePlatform: "linux", SpokeBaseURL: "https://spoke.example",
+		HubID: enrollmentHubID, HubURL: "https://hub.example",
+		ProtocolVersion: federation.ProtocolVersion, State: federation.EnrollmentRevoked,
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+}
+
+func TestFleetJoinKeepsRevokedLocalEnrollmentWhenHubRefuses(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := joinFromLocal(t, revokedLocalEnrollment(), passthrough)
+	spoke := fixture.spoke
+
+	response := fixture.join("unknown-enrollment-token")
+	require.Equal(http.StatusUnauthorized, response.StatusCode)
+	local, ok := spoke.enrollments.Local()
+	require.True(ok)
+	assert.Equal(enrollmentRequestID, local.EnrollmentID)
+	assert.Equal(federation.EnrollmentRevoked, local.State, "fleet leave still finds the revocation")
+	_, authenticated := spoke.credentials.Authenticate("revocation-only-token")
+	assert.True(authenticated, "the hub can still repeat its revocation")
+}
+
+func TestFleetJoinReplacingRevokedEnrollmentResumesAfterLostReply(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dropResponse := true
+	fixture := joinFromLocal(t, revokedLocalEnrollment(), func(next http.RoundTripper) http.RoundTripper {
+		return roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			response, err := next.RoundTrip(request)
+			if err != nil || !dropResponse {
+				return response, err
+			}
+			dropResponse = false
+			response.Body.Close()
+			return nil, errors.New("hub response lost")
+		})
+	})
+
+	spoke := fixture.spoke
+	require.Equal(http.StatusServiceUnavailable, fixture.join(fixture.newToken()).StatusCode)
+	revoked, ok := spoke.enrollments.Local()
+	require.True(ok)
+	assert.Equal(federation.EnrollmentRevoked, revoked.State)
+	require.NotEmpty(revoked.ReplacementEnrollmentID)
+
+	// The hub accepted the lost join, so a retry with a new token resumes it.
+	response := fixture.join(fixture.newToken())
+	require.Equal(http.StatusOK, response.StatusCode)
+	var local federation.LocalEnrollment
+	require.NoError(json.NewDecoder(response.Body).Decode(&local))
+	assert.Equal(revoked.ReplacementEnrollmentID, local.EnrollmentID)
+	assert.Equal(federation.EnrollmentPending, local.State)
+	_, authenticated := spoke.credentials.Authenticate("revocation-only-token")
+	assert.False(authenticated, "the accepted join drops the old hub credential")
+}
+
+func TestFleetJoinReplacesPendingEnrollmentTheHubDropped(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	expired := revokedLocalEnrollment()
+	expired.State = federation.EnrollmentPending
+	expired.ExpiresAt = time.Now().Add(-time.Minute)
+	fixture := joinFromLocal(t, expired, passthrough)
+	spoke := fixture.spoke
+
+	response := fixture.join(fixture.newToken())
+	require.Equal(http.StatusOK, response.StatusCode)
+	local, ok := spoke.enrollments.Local()
+	require.True(ok)
+	assert.NotEqual(enrollmentRequestID, local.EnrollmentID)
+	assert.Equal(federation.EnrollmentPending, local.State)
+	assert.True(local.ExpiresAt.After(time.Now()))
+}
+
+func TestFleetJoinStartsAgainWhenTheHubRevokedItsReplacement(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	const revokedReplacement = "33333333333333333333333333333333"
+	revoked := revokedLocalEnrollment()
+	revoked.ReplacementEnrollmentID = revokedReplacement
+	fixture := joinFromLocal(t, revoked, passthrough)
+	// The hub accepted that replacement, its reply was lost, and the hub
+	// revoked it before the spoke tried again.
+	_, err := fixture.hub.enrollments.Begin(t.Context(), fixture.newToken(), federation.JoinRequest{
+		EnrollmentID: revokedReplacement, NodeID: enrollmentNodeID, Platform: "linux",
+		BaseURL: "https://spoke.example", ProtocolVersion: federation.ProtocolVersion,
+		HubCredential: strings.Repeat("c", 48),
+	})
+	require.NoError(err)
+	require.NoError(fixture.hub.enrollments.Revoke(t.Context(), revokedReplacement))
+
+	response := fixture.join(fixture.newToken())
+	require.Equal(http.StatusOK, response.StatusCode)
+	local, ok := fixture.spoke.enrollments.Local()
+	require.True(ok)
+	assert.NotEqual(revokedReplacement, local.EnrollmentID)
+	assert.Equal(federation.EnrollmentPending, local.State)
+}
+
+func TestFleetJoinFinishesRevocationCleanupThatFailedEarlier(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := joinFromLocal(t, revokedLocalEnrollment(), passthrough)
+	_, err := fixture.spoke.database.BeginSpokePreparation(t.Context(), db.SpokePreparationBinding{
+		EnrollmentID: enrollmentRequestID, HubNodeID: enrollmentHubID,
+		LocalNodeID: enrollmentNodeID, ProtocolVersion: federation.ProtocolVersion,
+	})
+	require.NoError(err)
+
+	response := fixture.join(fixture.newToken())
+	require.Equal(http.StatusOK, response.StatusCode)
+	local, ok := fixture.spoke.enrollments.Local()
+	require.True(ok)
+	_, err = fixture.spoke.database.BeginSpokePreparation(t.Context(), db.SpokePreparationBinding{
+		EnrollmentID: local.EnrollmentID, HubNodeID: enrollmentHubID,
+		LocalNodeID: enrollmentNodeID, ProtocolVersion: federation.ProtocolVersion,
+	})
+	assert.NoError(err, "the new enrollment can start preparation")
+}
+
+func TestFleetJoinInstallsNothingWhileRevocationCleanupRuns(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	replied := make(chan struct{})
+	fixture := joinFromLocal(t, revokedLocalEnrollment(), func(next http.RoundTripper) http.RoundTripper {
+		return roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			response, err := next.RoundTrip(request)
+			if err == nil && strings.HasSuffix(request.URL.Path, "/federation/enrollments") {
+				response.Body = closeNotifier{ReadCloser: response.Body, closed: replied}
+			}
+			return response, err
+		})
+	})
+	token := fixture.newToken()
+	// Stand in for a revocation cleanup of the old enrollment that is running.
+	localEnrollmentMu.Lock()
+	unlock := sync.OnceFunc(localEnrollmentMu.Unlock)
+	t.Cleanup(unlock)
+	done := make(chan error, 1)
+	go func() {
+		_, err := HubJoiner{
+			Enrollments: fixture.spoke.enrollments, Credentials: fixture.spoke.credentials,
+			NodeID: enrollmentNodeID, HTTPClient: fixture.hubClient,
+			PersistHubBinding: func(context.Context, config.FleetHub) error { return nil },
+		}.Join(t.Context(), fixture.hubURL, "https://spoke.example", "", token)
+		done <- err
+	}()
+
+	// The spoke has read the hub's acceptance and must not finish the join.
+	<-replied
+	require.Never(func() bool { return len(done) != 0 }, 200*time.Millisecond, 10*time.Millisecond)
+	require.True(slices.ContainsFunc(fixture.hub.enrollments.List(), func(enrollment federation.Enrollment) bool {
+		return enrollment.NodeID == enrollmentNodeID && enrollment.State == federation.EnrollmentPending
+	}))
+	_, authenticated := fixture.spoke.credentials.Authenticate("revocation-only-token")
+	assert.True(authenticated, "the join leaves the old credentials to the cleanup")
+
+	unlock()
+	require.NoError(<-done)
+	local, ok := fixture.spoke.enrollments.Local()
+	require.True(ok)
+	assert.Equal(federation.EnrollmentPending, local.State)
+}
+
+// closeNotifier closes closed when the response body is closed.
+type closeNotifier struct {
+	io.ReadCloser
+	closed chan struct{}
+}
+
+func (c closeNotifier) Close() error {
+	defer close(c.closed)
+	return c.ReadCloser.Close()
+}
+
+func TestLateRevocationReplyLeavesReplacementEnrollment(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	enrollments, err := federation.Open(filepath.Join(dir, "enrollments.json"), federation.StoreOptions{})
+	require.NoError(err)
+	credentials, err := federationauth.Open(filepath.Join(dir, "credentials.json"))
+	require.NoError(err)
+	stale := revokedLocalEnrollment()
+	stale.State = federation.EnrollmentActive
+	replacement := stale
+	replacement.EnrollmentID = "22222222222222222222222222222222"
+	replacement.State = federation.EnrollmentPending
+	require.NoError(enrollments.SaveLocal(t.Context(), replacement))
+	require.NoError(credentials.StoreOutbound(enrollmentHubID, "replacement-token", federationauth.PendingSpokeToHubScopes()))
+
+	// A renewal sent for the old enrollment reports the revocation after the
+	// spoke joined again.
+	require.NoError(RevokeLocalEnrollment(t.Context(), enrollments, credentials, nil, stale))
+	local, ok := enrollments.Local()
+	require.True(ok)
+	assert.Equal(replacement.EnrollmentID, local.EnrollmentID)
+	assert.Equal(federation.EnrollmentPending, local.State)
+	_, ok = credentials.Outbound(enrollmentHubID)
+	assert.True(ok, "the replacement keeps its hub credential")
 }
 
 func TestFleetJoinReusesUnboundProvisionalAfterLostAcceptedResponse(t *testing.T) {
@@ -920,7 +1184,7 @@ func TestSpokeEnrollmentRevocationStopsAtPeerTimeout(t *testing.T) {
 	callerContext, cancelCaller := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancelCaller()
 	started := time.Now()
-	err := hub.handler.requestSpokeEnrollmentRevocation(callerContext, federation.Enrollment{
+	_, err := hub.handler.requestSpokeEnrollmentRevocation(callerContext, federation.Enrollment{
 		ID: enrollmentRequestID, NodeID: enrollmentNodeID,
 		SpokeBaseURL: spokeServer.URL, HubID: enrollmentHubID,
 		State: federation.EnrollmentActive,

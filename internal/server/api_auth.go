@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -302,14 +303,29 @@ func (s *Server) allowsActivationLeaseHandshake(
 		s.bootCfgSnapshot.FleetRole != config.FleetRoleHub {
 		return false
 	}
+	identity := r.Method == http.MethodGet && canonicalPath == "/api/v1/federation/identity"
 	enrollment, ok := s.options.FederationEnrollments.EnrollmentForSpoke(principal.NodeID)
-	if !ok || enrollment.State != federation.EnrollmentActive {
+	if !ok {
+		// A declared spoke removed while the hub could not tell it keeps an
+		// activation-only credential, so its next lease renewal or, before it
+		// sealed, its next preparation reaches a route that reports the
+		// revocation.
+		rest, enrollmentRoute := strings.CutPrefix(canonicalPath, "/api/v1/federation/enrollments/")
+		enrollmentID, step, _ := strings.Cut(rest, "/")
+		handshake := r.Method == http.MethodPost && enrollmentRoute &&
+			slices.Contains([]string{"activate", "preparation/begin", "preparation/seal"}, step)
+		return (identity || handshake) && slices.ContainsFunc(
+			s.options.FederationEnrollments.List(), func(revoked federation.Enrollment) bool {
+				return revoked.NodeID == principal.NodeID && revoked.Declared &&
+					revoked.State == federation.EnrollmentRevoked &&
+					(identity || url.PathEscape(revoked.ID) == enrollmentID)
+			},
+		)
+	}
+	if enrollment.State != federation.EnrollmentActive {
 		return false
 	}
-	if r.Method == http.MethodGet && canonicalPath == "/api/v1/federation/identity" {
-		return true
-	}
-	return r.Method == http.MethodPost && canonicalPath ==
+	return identity || r.Method == http.MethodPost && canonicalPath ==
 		"/api/v1/federation/enrollments/"+url.PathEscape(enrollment.ID)+"/activate"
 }
 

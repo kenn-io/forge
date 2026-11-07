@@ -1253,6 +1253,15 @@ func newServer(
 	return s
 }
 
+// ReconcileDeclaredSpokes applies fleet.declared_spokes to the hub's
+// enrollments. Config reloads run it; the daemon also runs it at startup
+// because the list may have changed while the daemon was stopped.
+func (s *Server) ReconcileDeclaredSpokes(ctx context.Context) {
+	if err := s.fleetAPI.ReconcileDeclaredSpokes(ctx); err != nil {
+		slog.Warn("reconcile declared fleet spokes", "err", err)
+	}
+}
+
 func preferPtyOwnerForWorkspaces(
 	runtimeGOOS string,
 	tmuxAvailable bool,

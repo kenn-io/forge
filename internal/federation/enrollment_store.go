@@ -37,7 +37,11 @@ type persistedEnrollmentStore struct {
 	Version     int                  `json:"version"`
 	Tokens      []oneTimeTokenRecord `json:"tokens"`
 	Enrollments []Enrollment         `json:"enrollments"`
-	Local       *LocalEnrollment     `json:"local,omitempty"`
+	// ConsumedDeclaredSecrets holds digests of declared enrollment secrets
+	// that already started an enrollment. They are never forgotten, so a
+	// declared secret stays single-use like a one-time token.
+	ConsumedDeclaredSecrets []string         `json:"consumed_declared_secrets,omitempty"`
+	Local                   *LocalEnrollment `json:"local,omitempty"`
 }
 
 type StoreOptions struct {
@@ -208,6 +212,178 @@ func (s *Store) Begin(
 		return nil
 	})
 	return result, err
+}
+
+// DeclaredSecretConsumed reports whether a declared enrollment secret already
+// started an enrollment.
+func (s *Store) DeclaredSecretConsumed(secret string) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return declaredSecretConsumed(s.state.ConsumedDeclaredSecrets, secret)
+}
+
+// DeclaredJoinReplacements checks a declared join against the stored
+// enrollments without changing them. It returns the live enrollments at the
+// request's origin that the join would replace, and an error when the join
+// cannot be admitted, so the caller revokes nothing for a rejected join. The
+// caller then revokes the returned enrollments and calls BeginDeclared.
+func (s *Store) DeclaredJoinReplacements(
+	hub Identity, request JoinRequest,
+) ([]Enrollment, error) {
+	if s == nil {
+		return nil, errors.New("federation enrollment store is nil")
+	}
+	hub, request, err := normalizeDeclaredJoin(hub, request)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, replaced, err := checkDeclaredJoin(s.state.Enrollments, hub, request)
+	return replaced, err
+}
+
+// BeginDeclared starts an enrollment for a spoke the hub's config declares,
+// consuming its secret. A retry of a pending declared enrollment whose reply
+// the spoke never saw resumes it with the new secret, as Begin resumes a
+// pending enrollment. The caller must have revoked every enrollment that
+// DeclaredJoinReplacements returned; a remaining one is a conflict.
+func (s *Store) BeginDeclared(
+	ctx context.Context, secret string, hub Identity, request JoinRequest,
+) (Enrollment, error) {
+	if err := ctx.Err(); err != nil {
+		return Enrollment{}, err
+	}
+	hub, request, err := normalizeDeclaredJoin(hub, request)
+	if err != nil {
+		return Enrollment{}, err
+	}
+	now := s.now().UTC()
+	var result Enrollment
+	err = s.mutate(func(state *persistedEnrollmentStore) error {
+		if declaredSecretConsumed(state.ConsumedDeclaredSecrets, secret) {
+			return ErrEnrollmentTokenConsumed
+		}
+		resume, replaced, err := checkDeclaredJoin(state.Enrollments, hub, request)
+		if err != nil {
+			return err
+		}
+		if len(replaced) != 0 {
+			return ErrDuplicateOrigin
+		}
+		state.ConsumedDeclaredSecrets = append(
+			state.ConsumedDeclaredSecrets, digestEnrollmentToken(secret),
+		)
+		if resume >= 0 {
+			existing := &state.Enrollments[resume]
+			existing.ExpiresAt = now.Add(DeclaredEnrollmentPendingDuration)
+			existing.UpdatedAt = now
+			result = *existing
+			return nil
+		}
+		result = Enrollment{
+			ID:     request.EnrollmentID,
+			NodeID: request.NodeID, SpokeName: request.Name,
+			SpokePlatform: request.Platform, SpokeBaseURL: request.BaseURL,
+			HubID: hub.NodeID, HubName: hub.Name, HubURL: hub.BaseURL,
+			ProtocolVersion: ProtocolVersion, State: EnrollmentPending,
+			ExpiresAt: now.Add(DeclaredEnrollmentPendingDuration),
+			Declared:  true, CreatedAt: now, UpdatedAt: now,
+		}
+		state.Enrollments = append(state.Enrollments, result)
+		return nil
+	})
+	return result, err
+}
+
+func normalizeDeclaredJoin(
+	hub Identity, request JoinRequest,
+) (Identity, JoinRequest, error) {
+	hub, err := normalizeIdentity(hub)
+	if err != nil {
+		return Identity{}, JoinRequest{}, err
+	}
+	request, err = normalizeJoinRequest(request)
+	if err != nil {
+		return Identity{}, JoinRequest{}, err
+	}
+	if request.NodeID == hub.NodeID {
+		return Identity{}, JoinRequest{}, ErrEnrollmentConflict
+	}
+	return hub, request, nil
+}
+
+// checkDeclaredJoin returns the index of the pending declared enrollment a
+// retried join resumes, or -1, and the live enrollments at the request's
+// origin that a new enrollment would replace. A live enrollment of the same
+// node at another origin is a conflict, because replacing it would let one
+// origin's secret revoke another origin's spoke.
+func checkDeclaredJoin(
+	enrollments []Enrollment, hub Identity, request JoinRequest,
+) (int, []Enrollment, error) {
+	resume := enrollmentIndexByID(enrollments, request.EnrollmentID)
+	if resume >= 0 {
+		existing := enrollments[resume]
+		if existing.NodeID != request.NodeID ||
+			existing.SpokeBaseURL != request.BaseURL ||
+			existing.HubID != hub.NodeID || existing.HubURL != hub.BaseURL {
+			return -1, nil, ErrEnrollmentConflict
+		}
+		// The spoke retries a join whose reply it lost, and the hub revoked
+		// that enrollment since. Saying so lets it join with a new ID.
+		if existing.State == EnrollmentRevoked {
+			return -1, nil, ErrEnrollmentRevoked
+		}
+		if existing.State != EnrollmentPending || !existing.Declared {
+			return -1, nil, ErrEnrollmentConflict
+		}
+	}
+	var replaced []Enrollment
+	for index, existing := range enrollments {
+		if index == resume || existing.State == EnrollmentRevoked {
+			continue
+		}
+		if existing.SpokeBaseURL == request.BaseURL {
+			replaced = append(replaced, existing)
+		} else if existing.NodeID == request.NodeID {
+			return -1, nil, ErrDuplicateNodeID
+		}
+	}
+	return resume, replaced, nil
+}
+
+// MarkDeclared adopts an existing enrollment as declared membership.
+func (s *Store) MarkDeclared(ctx context.Context, enrollmentID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.mutate(func(state *persistedEnrollmentStore) error {
+		index := enrollmentIndexByID(state.Enrollments, enrollmentID)
+		if index < 0 {
+			return ErrEnrollmentNotFound
+		}
+		enrollment := &state.Enrollments[index]
+		if enrollment.State == EnrollmentRevoked {
+			return ErrEnrollmentRevoked
+		}
+		enrollment.Declared = true
+		enrollment.UpdatedAt = s.now().UTC()
+		return nil
+	})
+}
+
+func declaredSecretConsumed(digests []string, secret string) bool {
+	digest := digestEnrollmentToken(secret)
+	found := false
+	for _, consumed := range digests {
+		if subtle.ConstantTimeCompare([]byte(digest), []byte(consumed)) == 1 {
+			found = true
+		}
+	}
+	return found
 }
 
 func (s *Store) Resume(
@@ -475,6 +651,22 @@ func (s *Store) InvalidateLocalActivationLease(
 	})
 }
 
+// RevokeLocal records that the hub revoked the local enrollment
+// enrollmentID. It returns ErrEnrollmentConflict when another enrollment
+// replaced it, so a late revocation reply cannot overwrite the replacement.
+func (s *Store) RevokeLocal(ctx context.Context, enrollmentID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.mutate(func(state *persistedEnrollmentStore) error {
+		if state.Local == nil || state.Local.EnrollmentID != enrollmentID {
+			return ErrEnrollmentConflict
+		}
+		state.Local.State = EnrollmentRevoked
+		return nil
+	})
+}
+
 func (s *Store) Local() (LocalEnrollment, bool) {
 	if s == nil {
 		return LocalEnrollment{}, false
@@ -599,6 +791,9 @@ func normalizeLocalEnrollmentVersioned(
 	if local.HubID != "" && !validID(local.HubID) {
 		return LocalEnrollment{}, errors.New("local federation enrollment has invalid hub identity")
 	}
+	if local.ReplacementEnrollmentID != "" && !validID(local.ReplacementEnrollmentID) {
+		return LocalEnrollment{}, errors.New("local federation enrollment has invalid replacement identity")
+	}
 	if requireCurrentProtocol && local.ProtocolVersion != ProtocolVersion {
 		return LocalEnrollment{}, ErrProtocolMismatch
 	}
@@ -706,6 +901,12 @@ func randomEnrollmentToken() (string, error) {
 	return hex.EncodeToString(raw), nil
 }
 
+// DigestDeclaredSecret returns the digest under which the hub records a
+// consumed declared enrollment secret.
+func DigestDeclaredSecret(secret string) string {
+	return digestEnrollmentToken(secret)
+}
+
 func digestEnrollmentToken(token string) string {
 	digest := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(digest[:])
@@ -791,6 +992,12 @@ func validateEnrollmentStore(state *persistedEnrollmentStore) error {
 			return fmt.Errorf("federation enrollment token %d has non-canonical hub origin", index)
 		}
 	}
+	for index, consumed := range state.ConsumedDeclaredSecrets {
+		digest, err := hex.DecodeString(consumed)
+		if err != nil || len(digest) != sha256.Size || consumed != strings.ToLower(consumed) {
+			return fmt.Errorf("consumed declared enrollment secret %d has invalid digest", index)
+		}
+	}
 	ids := make(map[string]struct{}, len(state.Enrollments))
 	nodeIDs := make(map[string]struct{}, len(state.Enrollments))
 	origins := make(map[string]struct{}, len(state.Enrollments))
@@ -872,6 +1079,7 @@ func cloneEnrollmentStore(state persistedEnrollmentStore) persistedEnrollmentSto
 	clone := persistedEnrollmentStore{
 		Version: state.Version,
 		Tokens:  slices.Clone(state.Tokens), Enrollments: slices.Clone(state.Enrollments),
+		ConsumedDeclaredSecrets: slices.Clone(state.ConsumedDeclaredSecrets),
 	}
 	if state.Local != nil {
 		local := cloneLocalEnrollment(*state.Local)
@@ -895,4 +1103,5 @@ func sortEnrollmentStore(state *persistedEnrollmentStore) {
 	slices.SortFunc(state.Enrollments, func(left, right Enrollment) int {
 		return strings.Compare(left.ID, right.ID)
 	})
+	slices.Sort(state.ConsumedDeclaredSecrets)
 }

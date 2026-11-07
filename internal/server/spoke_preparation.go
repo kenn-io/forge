@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/fleetapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/tracing"
@@ -118,30 +119,120 @@ func (s *Server) prepareFederationSpoke(
 		s.options.FederationSpokeID == "" {
 		return nil, httpapi.ServiceUnavailable("federation enrollment is unavailable")
 	}
-	local, ok := s.options.FederationEnrollments.Local()
+	report, err := s.spokePreparer().Prepare(ctx)
+	// The report already lists the failed hub calls; the operator reruns.
+	if err != nil && !errors.Is(err, ErrPreparationHubOutage) {
+		return nil, err
+	}
+	return &spokeapi.PrepareFederationSpokeOutput{Body: report}, nil
+}
+
+// ErrPreparationHubOutage marks a preparation pass that stopped because the
+// hub was unreachable or failing after it pinned the enrollment. Prepare
+// returns it with a complete report, so a caller can retry the pass.
+var ErrPreparationHubOutage = errors.New("the hub became unavailable during spoke preparation")
+
+// hubOutageRecorder remembers the last hub call that failed in a way a later
+// attempt can clear, because the handoff steps report failures only as text.
+type hubOutageRecorder struct {
+	providerplane.Client
+	outage error
+}
+
+func (r *hubOutageRecorder) Do(
+	ctx context.Context, scope federationauth.Scope, request *http.Request,
+) (*http.Response, error) {
+	response, err := r.Client.Do(ctx, scope, request)
+	switch {
+	case errors.Is(err, providerplane.ErrHubUnavailable):
+		r.outage = err
+	case err == nil && federation.RetryableHubStatus(response.StatusCode):
+		r.outage = fmt.Errorf("hub returned HTTP %d", response.StatusCode)
+	}
+	if err == nil {
+		// A connection that breaks while the body streams is an outage too.
+		response.Body = &outageRecordingBody{ReadCloser: response.Body, recorder: r}
+	}
+	return response, err
+}
+
+type outageRecordingBody struct {
+	io.ReadCloser
+	recorder *hubOutageRecorder
+}
+
+func (b *outageRecordingBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) {
+		b.recorder.outage = fmt.Errorf("%w: read hub response: %w", providerplane.ErrHubUnavailable, err)
+	}
+	return n, err
+}
+
+func hubOutage(err error) bool {
+	if errors.Is(err, providerplane.ErrHubUnavailable) {
+		return true
+	}
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
+	return ok && federation.RetryableHubStatus(problem.Status)
+}
+
+func (s *Server) spokePreparer() SpokePreparer {
+	return SpokePreparer{
+		DB: s.db, WriteGate: s.providerWriteGate, Spoke: s.spokeapi,
+		Enrollments: s.options.FederationEnrollments,
+		Credentials: s.options.FederationCredentials,
+		HTTPClient:  s.options.FederationHTTPClient,
+		Now:         s.now,
+		PersistRole: s.persistPreparedSpokeRole,
+	}
+}
+
+// SpokePreparer quiesces provider writes, hands provider state to the hub,
+// and stores the hub-issued preparation seal. The daemon's prepare-spoke
+// route and a declared spoke's startup both run it, so a declared spoke
+// carries the same handoff guarantee as one prepared by hand. Prepare is
+// resumable: a report that is not ReadyToActivate names what blocks it.
+type SpokePreparer struct {
+	DB          *db.DB
+	WriteGate   *providerplane.ProviderWriteGate
+	Spoke       *spokeapi.Handlers
+	Enrollments *federation.Store
+	Credentials *federationauth.Store
+	HTTPClient  *http.Client
+	Now         func() time.Time
+	// PersistRole records the spoke role once the seal is stored.
+	PersistRole func(context.Context, federation.LocalEnrollment, db.SpokePreparationSeal) error
+}
+
+// Prepare runs one preparation pass for the pending local enrollment.
+func (p SpokePreparer) Prepare(
+	ctx context.Context,
+) (spokeapi.SpokePreparationReport, error) {
+	local, ok := p.Enrollments.Local()
 	if !ok || local.State != federation.EnrollmentPending ||
 		local.HubID == "" {
-		return nil, httpapi.Conflict(
+		return spokeapi.SpokePreparationReport{}, httpapi.Conflict(
 			httpapi.CodeConflict,
 			"a pending hub enrollment is required before spoke preparation",
 			map[string]any{"reason": "pendingEnrollmentRequired"},
 		)
 	}
-	if err := s.pinHubEnrollment(ctx, local); err != nil {
-		return nil, spokeapi.SpokePreparationHubProblem(err)
+	if err := p.pinHubEnrollment(ctx, local); err != nil {
+		return spokeapi.SpokePreparationReport{}, spokeapi.SpokePreparationHubProblem(err)
 	}
-	if _, err := s.providerWriteGate.BeginQuiesce(ctx, db.SpokePreparationBinding{
+	if _, err := p.WriteGate.BeginQuiesce(ctx, db.SpokePreparationBinding{
 		EnrollmentID:    local.EnrollmentID,
 		HubNodeID:       local.HubID,
 		LocalNodeID:     local.NodeID,
 		ProtocolVersion: local.ProtocolVersion,
 	}); err != nil {
 		if errors.Is(err, db.ErrSpokePreparationConflict) {
-			return nil, httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{
+			return spokeapi.SpokePreparationReport{}, httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{
 				"reason": "spokePreparationConflict",
 			})
 		}
-		return nil, httpapi.Internal("begin spoke preparation: " + err.Error())
+		return spokeapi.SpokePreparationReport{}, httpapi.Internal("begin spoke preparation: " + err.Error())
 	}
 
 	report := spokeapi.SpokePreparationReport{
@@ -149,38 +240,41 @@ func (s *Server) prepareFederationSpoke(
 		HandoffConflicts: []db.ProviderStateConflict{},
 		HandoffErrors:    []string{},
 	}
-	status, err := s.providerWriteGate.Status(ctx)
+	status, err := p.WriteGate.Status(ctx)
 	if err != nil {
-		return nil, httpapi.Internal("read spoke preparation status: " + err.Error())
+		return spokeapi.SpokePreparationReport{}, httpapi.Internal("read spoke preparation status: " + err.Error())
 	}
 	report.InFlightProviderWrites = status.InFlightProviderWrites
 	report.ActiveDeferredMerges = status.ActiveDeferredMerges
 	report.UndrainedAcks = status.UndrainedAcks
 	if status.InFlightProviderWrites != 0 || status.ActiveDeferredMerges != 0 ||
 		status.DrainAckGeneration == nil {
-		return &spokeapi.PrepareFederationSpokeOutput{Body: report}, nil
+		return report, nil
 	}
-	client, err := s.spokePreparationProviderClient(local)
+	var outage error
+	client, err := p.providerClient(local)
 	if err != nil {
 		report.HandoffErrors = append(report.HandoffErrors, err.Error())
 	} else {
-		s.spokeapi.ReconcileSpokePreparationProjects(ctx, client, &report)
-		s.spokeapi.RefreshSpokePreparationLaunchSpecs(ctx, client, &report)
-		s.spokeapi.HandoffSpokeProviderState(ctx, client, &report)
+		recorder := &hubOutageRecorder{Client: client}
+		p.Spoke.ReconcileSpokePreparationProjects(ctx, recorder, &report)
+		p.Spoke.RefreshSpokePreparationLaunchSpecs(ctx, recorder, &report)
+		p.Spoke.HandoffSpokeProviderState(ctx, recorder, &report)
+		outage = recorder.outage
 	}
 
-	report.Unprepared, err = s.db.ListUnpreparedProviderWorkspacesAt(ctx, s.now().UTC())
+	report.Unprepared, err = p.DB.ListUnpreparedProviderWorkspacesAt(ctx, p.Now().UTC())
 	if err != nil {
-		return nil, httpapi.Internal("list unprepared workspaces: " + err.Error())
+		return spokeapi.SpokePreparationReport{}, httpapi.Internal("list unprepared workspaces: " + err.Error())
 	}
-	total, err := s.db.CountProviderBackedWorkspaces(ctx)
+	total, err := p.DB.CountProviderBackedWorkspaces(ctx)
 	if err != nil {
-		return nil, httpapi.Internal(err.Error())
+		return spokeapi.SpokePreparationReport{}, httpapi.Internal(err.Error())
 	}
 	report.ReadyLaunchSpecs = total - len(report.Unprepared)
-	status, err = s.providerWriteGate.Status(ctx)
+	status, err = p.WriteGate.Status(ctx)
 	if err != nil {
-		return nil, httpapi.Internal("read spoke preparation status: " + err.Error())
+		return spokeapi.SpokePreparationReport{}, httpapi.Internal("read spoke preparation status: " + err.Error())
 	}
 	report.InFlightProviderWrites = status.InFlightProviderWrites
 	report.ActiveDeferredMerges = status.ActiveDeferredMerges
@@ -189,15 +283,18 @@ func (s *Server) prepareFederationSpoke(
 		len(report.HandoffErrors) != 0 || status.InFlightProviderWrites != 0 ||
 		status.ActiveDeferredMerges != 0 || status.UndrainedAcks != 0 ||
 		status.DrainAckGeneration == nil {
-		return &spokeapi.PrepareFederationSpokeOutput{Body: report}, nil
+		if outage != nil {
+			return report, fmt.Errorf("%w: %w", ErrPreparationHubOutage, outage)
+		}
+		return report, nil
 	}
-	receipts, err := s.db.ListSpokePreparationReceipts(ctx)
+	receipts, err := p.DB.ListSpokePreparationReceipts(ctx)
 	if err != nil {
-		return nil, httpapi.Internal("list provider state receipts: " + err.Error())
+		return spokeapi.SpokePreparationReport{}, httpapi.Internal("list provider state receipts: " + err.Error())
 	}
 	receiptsDigest, err := db.SpokePreparationReceiptsDigest(receipts)
 	if err != nil {
-		return nil, httpapi.Internal(err.Error())
+		return spokeapi.SpokePreparationReport{}, httpapi.Internal(err.Error())
 	}
 	sealRequest := db.SpokePreparationSealRequest{
 		EnrollmentID: local.EnrollmentID, NodeID: local.NodeID,
@@ -209,23 +306,32 @@ func (s *Server) prepareFederationSpoke(
 	}
 	sealRequest.PreparationDigest, err = db.SpokePreparationSealDigest(sealRequest)
 	if err != nil {
-		return nil, httpapi.Internal(err.Error())
+		return spokeapi.SpokePreparationReport{}, httpapi.Internal(err.Error())
 	}
-	seal, err := s.requestHubPreparationSeal(ctx, local, sealRequest)
+	seal, err := p.requestHubPreparationSeal(ctx, local, sealRequest)
+	if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok &&
+		problem.Details["reason"] == "enrollmentRevoked" {
+		// The hub revoked the enrollment after preparation pinned it. The
+		// caller records the revocation, as for a refused pin.
+		return report, err
+	}
 	if err != nil {
 		report.HandoffErrors = append(report.HandoffErrors, err.Error())
-		return &spokeapi.PrepareFederationSpokeOutput{Body: report}, nil
+		if hubOutage(err) {
+			return report, fmt.Errorf("%w: %w", ErrPreparationHubOutage, err)
+		}
+		return report, nil
 	}
 	if err := spokeapi.ValidateHubPreparationSeal(sealRequest, seal); err != nil {
 		report.HandoffErrors = append(report.HandoffErrors, err.Error())
-		return &spokeapi.PrepareFederationSpokeOutput{Body: report}, nil
+		return report, nil
 	}
-	if err := s.db.StoreLocalSpokePreparationSeal(
+	if err := p.DB.StoreLocalSpokePreparationSeal(
 		ctx, sealRequest.PreparationDigest, seal.Seal,
 	); err != nil {
-		return nil, httpapi.Internal("store spoke preparation seal: " + err.Error())
+		return spokeapi.SpokePreparationReport{}, httpapi.Internal("store spoke preparation seal: " + err.Error())
 	}
-	if err := s.options.FederationEnrollments.SaveLocalPreparationSeal(
+	if err := p.Enrollments.SaveLocalPreparationSeal(
 		ctx, federation.LocalPreparationSeal{
 			EnrollmentID: seal.EnrollmentID, NodeID: seal.NodeID,
 			HubID:             seal.HubNodeID,
@@ -234,15 +340,15 @@ func (s *Server) prepareFederationSpoke(
 			Seal:              seal.Seal,
 		},
 	); err != nil {
-		return nil, httpapi.Internal("persist spoke preparation seal: " + err.Error())
+		return spokeapi.SpokePreparationReport{}, httpapi.Internal("persist spoke preparation seal: " + err.Error())
 	}
-	if err := s.persistPreparedSpokeRole(ctx, local, seal); err != nil {
-		return nil, httpapi.Internal("persist fleet spoke role: " + err.Error())
+	if err := p.PersistRole(ctx, local, seal); err != nil {
+		return spokeapi.SpokePreparationReport{}, httpapi.Internal("persist fleet spoke role: " + err.Error())
 	}
 	report.ReadyToActivate = true
 	report.PreparationSeal = seal.Seal
 	report.RestartRequired = true
-	return &spokeapi.PrepareFederationSpokeOutput{Body: report}, nil
+	return report, nil
 }
 
 func (s *Server) persistPreparedSpokeRole(
@@ -279,7 +385,7 @@ func (s *Server) persistPreparedSpokeRole(
 	})
 }
 
-func (s *Server) spokePreparationProviderClient(
+func (p SpokePreparer) providerClient(
 	local federation.LocalEnrollment,
 ) (providerplane.Client, error) {
 	return providerplane.NewClient(providerplane.Options{
@@ -287,12 +393,12 @@ func (s *Server) spokePreparationProviderClient(
 		Hub: providerplane.Hub{
 			NodeID: local.HubID, BaseURL: local.HubURL,
 		},
-		Credentials: s.options.FederationCredentials,
-		HTTPClient:  s.options.FederationHTTPClient,
+		Credentials: p.Credentials,
+		HTTPClient:  p.HTTPClient,
 	})
 }
 
-func (s *Server) pinHubEnrollment(
+func (p SpokePreparer) pinHubEnrollment(
 	ctx context.Context,
 	local federation.LocalEnrollment,
 ) error {
@@ -301,7 +407,7 @@ func (s *Server) pinHubEnrollment(
 	if err != nil {
 		return err
 	}
-	if err := s.postHubEnrollmentJSON(ctx, local, httpRequest, &response); err != nil {
+	if err := p.postHubEnrollmentJSON(ctx, local, httpRequest, &response); err != nil {
 		return err
 	}
 	if response.ID != local.EnrollmentID || response.NodeID != local.NodeID ||
@@ -309,12 +415,12 @@ func (s *Server) pinHubEnrollment(
 		response.State != federation.EnrollmentPending || !response.PreparationStarted {
 		return errors.New("hub pinned a different enrollment")
 	}
-	return s.options.FederationEnrollments.MarkLocalPreparationStarted(
+	return p.Enrollments.MarkLocalPreparationStarted(
 		ctx, local.EnrollmentID,
 	)
 }
 
-func (s *Server) requestHubPreparationSeal(
+func (p SpokePreparer) requestHubPreparationSeal(
 	ctx context.Context,
 	local federation.LocalEnrollment,
 	request db.SpokePreparationSealRequest,
@@ -333,7 +439,7 @@ func (s *Server) requestHubPreparationSeal(
 	if err != nil {
 		return db.SpokePreparationSeal{}, err
 	}
-	err = s.postHubEnrollmentJSON(ctx, local, httpRequest, &seal)
+	err = p.postHubEnrollmentJSON(ctx, local, httpRequest, &seal)
 	return seal, err
 }
 
@@ -345,16 +451,16 @@ func (s *Server) requestHubEnrollmentAbort(
 	if err != nil {
 		return err
 	}
-	return s.postHubEnrollmentJSON(ctx, local, httpRequest, &response)
+	return s.spokePreparer().postHubEnrollmentJSON(ctx, local, httpRequest, &response)
 }
 
-func (s *Server) postHubEnrollmentJSON(
+func (p SpokePreparer) postHubEnrollmentJSON(
 	ctx context.Context,
 	local federation.LocalEnrollment,
 	request *http.Request,
 	target any,
 ) error {
-	credential, ok := s.options.FederationCredentials.Outbound(local.HubID)
+	credential, ok := p.Credentials.Outbound(local.HubID)
 	if !ok || !slices.Contains(credential.Scopes, federationauth.ScopeEnrollmentActivate) {
 		return providerplane.ErrCredentialUnavailable
 	}
@@ -362,8 +468,8 @@ func (s *Server) postHubEnrollmentJSON(
 	request.Header.Set(federationauth.NodeIDHeader, local.NodeID)
 	request.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 15 * time.Second}
-	if s.options.FederationHTTPClient != nil {
-		*client = *s.options.FederationHTTPClient
+	if p.HTTPClient != nil {
+		*client = *p.HTTPClient
 		if client.Timeout <= 0 || client.Timeout > 15*time.Second {
 			client.Timeout = 15 * time.Second
 		}
@@ -381,7 +487,7 @@ func (s *Server) postHubEnrollmentJSON(
 		response.Body, spokeapi.MaxSpokePreparationResponseBytes+1,
 	))
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: read hub response: %w", providerplane.ErrHubUnavailable, err)
 	}
 	if len(encodedResponse) > spokeapi.MaxSpokePreparationResponseBytes {
 		return providerplane.ErrResponseBodyTooLarge
@@ -391,7 +497,11 @@ func (s *Server) postHubEnrollmentJSON(
 		if json.Unmarshal(encodedResponse, &problem) == nil && problem.Status != 0 {
 			return &problem
 		}
-		return fmt.Errorf("hub returned HTTP %d", response.StatusCode)
+		// A proxy in front of the hub answers outages without a problem body.
+		return httpapi.NewProblem(
+			response.StatusCode, "", fmt.Sprintf("hub returned HTTP %d", response.StatusCode),
+			map[string]any{"reason": fleetapi.ReasonHubReplyWithoutProblem},
+		)
 	}
 	if target == nil || len(encodedResponse) == 0 {
 		return nil

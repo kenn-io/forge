@@ -3128,6 +3128,8 @@ components:
         created_at:
           format: date-time
           type: string
+        declared:
+          type: boolean
         expires_at:
           format: date-time
           type: string
@@ -5463,6 +5465,8 @@ components:
         activation_valid_until:
           format: date-time
           type: string
+        declared_secret_digest:
+          type: string
         enrollment_id:
           type: string
         expires_at:
@@ -5485,6 +5489,8 @@ components:
         protocol_version:
           format: int64
           type: integer
+        replacement_enrollment_id:
+          type: string
         spoke_base_url:
           type: string
         spoke_name:

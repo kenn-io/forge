@@ -473,6 +473,11 @@ func (s *Handlers) HandleConfigFileChanged() {
 		Type: "config.changed",
 		Data: event,
 	})
+	// Revocation persists membership changes to the config file, so it runs
+	// after this reload releases the config locks.
+	if event.Valid && s.ReconcileDeclaredSpokes != nil {
+		s.RunBackground(s.ReconcileDeclaredSpokes)
+	}
 }
 
 // applyConfigChange reloads the config file, copies hot-reloadable fields
@@ -867,6 +872,7 @@ func CloneReloadedConfig(in *config.Config) config.Config {
 	}
 	out.Shell.Command = slices.Clone(in.Shell.Command)
 	out.Fleet.Members = slices.Clone(in.Fleet.Members)
+	out.Fleet.DeclaredSpokes = slices.Clone(in.Fleet.DeclaredSpokes)
 	if in.Fleet.Hub != nil {
 		hub := *in.Fleet.Hub
 		out.Fleet.Hub = &hub

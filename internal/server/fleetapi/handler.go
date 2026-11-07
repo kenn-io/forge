@@ -198,6 +198,7 @@ func New(deps Deps) *Handler {
 func cloneConfigSnapshot(in ConfigSnapshot) ConfigSnapshot {
 	out := in
 	out.Fleet.Members = slices.Clone(in.Fleet.Members)
+	out.Fleet.DeclaredSpokes = slices.Clone(in.Fleet.DeclaredSpokes)
 	out.TmuxCommand = slices.Clone(in.TmuxCommand)
 	out.PlatformAuthConfig.Repos = slices.Clone(in.PlatformAuthConfig.Repos)
 	out.PlatformAuthConfig.Platforms = slices.Clone(in.PlatformAuthConfig.Platforms)

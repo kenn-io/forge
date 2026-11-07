@@ -104,9 +104,7 @@ func (s *Handlers) ListUserRepositories(
 			pageCtx, cancel := context.WithTimeout(ctx, userRepositoriesTimeout)
 			raw, err = client.ListUserRepositoriesPage(pageCtx, page, userRepositoriesPageSize)
 			cancel()
-			if err != nil {
-				return nil, httpapi.ProviderCallProblem(err, "github", tokenHost)
-			}
+			err = httpapi.ProviderCallProblem(err, "github", tokenHost)
 		} else {
 			raw, err = s.fetchUserRepositoriesPage(ctx, run, platformHost, userRepositoriesPageSize, page)
 		}

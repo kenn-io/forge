@@ -78,6 +78,10 @@ type nativeStackDeferOptions struct {
 	// holdCI holds the worker's first read of #7's CI until it is closed.
 	holdCI  chan struct{}
 	maxWait time.Duration
+	// queue gives the stack's base branch a merge queue.
+	queue bool
+	// targetNoCI stores #7 with no CI, and the provider reports none for it.
+	targetNoCI bool
 }
 
 func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nativeStackDeferFixture {
@@ -97,8 +101,13 @@ func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nat
 	if opts.targetChecks != nil {
 		targetChecks = opts.targetChecks
 	}
+	if opts.targetNoCI {
+		targetChecks = []platform.CICheck{}
+	}
 	inner := &deferredMergeTestProvider{
-		ref: ref,
+		ref:        ref,
+		mergeQueue: opts.queue,
+		enqueueCh:  make(chan int, 1),
 		mergeRequests: []platform.MergeRequest{
 			{
 				Repo: ref, PlatformID: 7001, Number: 7, Title: "Defer merge", Author: "ada", State: "open",
@@ -135,6 +144,15 @@ func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nat
 	)
 	if opts.targetPassed {
 		require.NoError(t, database.UpdateMRCIStatus(ctx, repoID, 7, "success", passedChecksJSON(t)))
+	}
+	if opts.targetNoCI {
+		require.NoError(t, database.UpdateMRCIStatus(ctx, repoID, 7, "", "[]"))
+	}
+	if opts.queue {
+		_, err := database.UpsertMergeQueueState(ctx, repoID, db.MergeQueueState{
+			Number: 6, BaseBranch: "main", Enabled: true, MergeMethod: "squash", ObservedAt: now,
+		})
+		require.NoError(t, err)
 	}
 	bottom := opts.bottom
 	bottom.RepoID, bottom.PlatformID, bottom.Number = repoID, 6001, 6
@@ -438,6 +456,106 @@ func TestDeferMergeInNativeStackChecksTheQueuedMembersWhenTheStackStopsBeingNati
 	completed := f.completion(t)
 	assert.Equal(t, "failed", completed.Status)
 	assert.Contains(t, completed.Error, "CI failed on #6")
+	f.assertNoMerge(t)
+}
+
+// A merge queue tests what it merges, so a pull request with no CI, as a
+// workflow limited to the default branch leaves a stacked one, does not stop a
+// stack going to a queue, and the other members' CI still holds it back.
+func TestDeferMergeIntoQueueDoesNotWaitForAMemberWithNoCI(t *testing.T) {
+	running := []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}}
+	for _, tt := range []struct {
+		name string
+		opts nativeStackDeferOptions
+	}{
+		{
+			name: "target has no CI and CI runs below",
+			opts: nativeStackDeferOptions{targetNoCI: true, bottomChecks: running, bottomChecksLater: passedChecks},
+		},
+		{
+			name: "CI runs on the target and the member below has none",
+			opts: nativeStackDeferOptions{bottomChecks: []platform.CICheck{}},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := tt.opts
+			opts.queue = true
+			f := newNativeStackDeferFixture(t, opts)
+
+			resp := f.deferTarget(t)
+			require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
+
+			completed := f.completion(t)
+			assert.Equal(t, "queued", completed.Status, completed.Error)
+			assert.Equal(t, 7, <-f.provider.enqueueCh)
+			f.assertNoMerge(t)
+		})
+	}
+}
+
+// Without a queue nothing tests a pull request with no CI before it merges, so
+// a target with no CI cannot wait on the members below.
+func TestDeferMergeWithoutQueueRefusesATargetWithNoCI(t *testing.T) {
+	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
+		targetNoCI:   true,
+		bottomChecks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+	})
+
+	resp := f.deferTarget(t)
+
+	require.Equal(t, http.StatusConflict, resp.StatusCode, string(resp.Body))
+	assert.Contains(t, string(resp.Body), `"reason":"no_pending_checks"`)
+	assert.False(t, f.workerQueued(t))
+}
+
+// CI that starts on a member after the merge was queued counts from then on.
+func TestDeferMergeIntoQueueFailsWhenAMemberWithNoCILaterFails(t *testing.T) {
+	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
+		queue:        true,
+		bottomChecks: []platform.CICheck{},
+		bottomChecksLater: []platform.CICheck{
+			{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "failure"},
+		},
+	})
+
+	resp := f.deferTarget(t)
+	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
+
+	completed := f.completion(t)
+	assert.Equal(t, "failed", completed.Status)
+	assert.Contains(t, completed.Error, "CI failed on #6")
+	assert.Empty(t, f.provider.enqueueCh)
+	f.assertNoMerge(t)
+}
+
+// A queue that goes away while the worker waits must not turn the wait into a
+// direct merge of a pull request nothing has tested.
+func TestDeferMergeFailsWhenTheQueueGoesAwayDuringTheWait(t *testing.T) {
+	hold := make(chan struct{})
+	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
+		queue:        true,
+		bottomChecks: []platform.CICheck{},
+		holdCI:       hold,
+	})
+
+	resp := f.deferTarget(t)
+	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
+	select {
+	case <-f.staged.started:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for the worker's first CI read")
+	}
+	_, err := f.database.UpsertMergeQueueState(t.Context(), f.repoID, db.MergeQueueState{
+		Number: 6, BaseBranch: "main", Enabled: false, MergeMethod: "squash",
+		ObservedAt: time.Date(2026, 11, 4, 12, 1, 0, 0, time.UTC),
+	})
+	require.NoError(t, err)
+	close(hold)
+
+	completed := f.completion(t)
+	assert.Equal(t, "failed", completed.Status)
+	assert.Contains(t, completed.Error, "no longer has a merge queue")
+	assert.Empty(t, f.provider.enqueueCh)
 	f.assertNoMerge(t)
 }
 

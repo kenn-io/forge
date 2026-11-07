@@ -155,7 +155,19 @@ func (s *Handler) enqueueDeferredMerge(
 	if err != nil {
 		return deferMergePRBody{}, httpapi.Internal("get stack for pull request failed")
 	}
-	below, belowPending, err := s.nativeStackWaitsBelow(ctx, repo.Repo, stack, members, number)
+	// A merge queue tests what it merges against the branch's required checks,
+	// so in a stack going to one, a pull request with no CI of its own has
+	// nothing for Forge to wait for. Workflows that run only on pull requests
+	// into the default branch leave stacked pull requests like that.
+	queueChecksNoCI := false
+	if stack != nil && stack.Native {
+		queue, err := s.mergeQueueTarget(ctx, repo.Repo, mr, stack, members)
+		if err != nil {
+			return deferMergePRBody{}, err
+		}
+		queueChecksNoCI = queue != nil
+	}
+	below, belowPending, err := s.nativeStackWaitsBelow(ctx, repo.Repo, stack, members, number, queueChecksNoCI)
 	if err != nil {
 		return deferMergePRBody{}, err
 	}
@@ -231,8 +243,10 @@ func (s *Handler) enqueueDeferredMerge(
 		}
 	}
 	// CI still running on a pull request below gives the merge something to
-	// wait for once the target's own CI has passed.
-	if len(pendingKeys) == 0 && aggregateState != "pending" && (!belowPending || aggregateState != "passed") {
+	// wait for once the target's own CI has passed, or when the target has no
+	// CI and the merge goes to a queue.
+	targetSettled := aggregateState == "passed" || (queueChecksNoCI && aggregateState == "unknown")
+	if len(pendingKeys) == 0 && aggregateState != "pending" && (!belowPending || !targetSettled) {
 		return deferMergePRBody{}, httpapi.Conflict(
 			httpapi.CodeConflict,
 			"no pending CI checks to wait for",
@@ -304,7 +318,7 @@ func (s *Handler) enqueueDeferredMerge(
 	}
 	started := s.runBackground(func(bgCtx context.Context) {
 		defer s.clearDeferredMergeInFlight(key, handle)
-		s.runDeferredMerge(bgCtx, repo.Repo, number, body, pendingKeys, below, queuedTarget, pollInterval, maxWait, handle)
+		s.runDeferredMerge(bgCtx, repo.Repo, number, body, pendingKeys, below, queueChecksNoCI, queuedTarget, pollInterval, maxWait, handle)
 	})
 	if !started {
 		s.clearDeferredMergeInFlight(key, handle)
@@ -505,6 +519,7 @@ func (s *Handler) runDeferredMerge(
 	body mergePRInputBody,
 	pendingKeys []deferredMergeCheckKey,
 	below []nativeStackWait,
+	queueChecksNoCI bool,
 	queuedTarget deferredMergeTargetSnapshot,
 	pollInterval time.Duration,
 	maxWait time.Duration,
@@ -527,11 +542,14 @@ func (s *Handler) runDeferredMerge(
 			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 			return
 		}
+		if queueChecksNoCI && ci == "unknown" {
+			ci = "passed"
+		}
 		if ci == "passed" || ci == "pending" {
 			// A native stack merge lands the members below with the target,
 			// so it also waits for their CI, and a failure there ends the
 			// wait as one on the target does.
-			stackCI, err := s.nativeStackMembersCI(ctx, repo, below)
+			stackCI, err := s.nativeStackMembersCI(ctx, repo, below, queueChecksNoCI)
 			if err != nil {
 				s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 				return
@@ -547,6 +565,15 @@ func (s *Handler) runDeferredMerge(
 				if !errors.Is(err, errDeferredMergeTargetMerged) {
 					s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 				}
+				return
+			}
+			// Without the queue nothing would test a pull request with no CI
+			// before it merged, so the merge must not turn into a direct one.
+			if queueChecksNoCI && !s.deferredMergeQueueApplies(ctx, repo, number, current.BaseBranch) {
+				s.broadcastDeferredMergeFailure(
+					repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA),
+					"the base branch no longer has a merge queue; merge was not performed", handle,
+				)
 				return
 			}
 			rules, queue = s.deferredMergeRules(ctx, repo, current)
@@ -602,10 +629,11 @@ type nativeStackWait struct {
 // the target of a native stack merge, which lands them with it, and reads
 // each through the same check as the target, so the checks it waits for come
 // from the provider rather than a stored copy. It refuses the merge when one is closed, a draft, or
-// conflicting, or its CI failed or is unknown, and reports whether CI still
-// runs on any of them.
+// conflicting, or its CI failed, or its CI is unknown unless queueChecksNoCI
+// says a merge queue tests it. It reports whether CI still runs on any of them.
 func (s *Handler) nativeStackWaitsBelow(
 	ctx context.Context, repo db.Repo, stack *db.Stack, members []db.StackMemberWithPR, number int,
+	queueChecksNoCI bool,
 ) ([]nativeStackWait, bool, error) {
 	if stack == nil || !stack.Native {
 		return nil, false, nil
@@ -665,7 +693,9 @@ func (s *Handler) nativeStackWaitsBelow(
 		case "failed":
 			return nil, false, refuse(fmt.Sprintf("CI failed on #%d", member.Number))
 		case "unknown":
-			return nil, false, refuse(fmt.Sprintf("Forge has no CI status for #%d", member.Number))
+			if !queueChecksNoCI {
+				return nil, false, refuse(fmt.Sprintf("Forge has no CI status for #%d", member.Number))
+			}
 		case "pending":
 			pending = true
 		}
@@ -678,9 +708,12 @@ func (s *Handler) nativeStackWaitsBelow(
 // that the merge recorded when it was queued, whatever the stack projection
 // says now, and reads each through the same check as the target. It reports
 // "pending" while CI runs on one of them and "passed" once all passed, and
-// fails the merge when one failed, has unknown CI, or is no longer mergeable.
-// A pull request merged since then no longer lands.
-func (s *Handler) nativeStackMembersCI(ctx context.Context, repo db.Repo, below []nativeStackWait) (string, error) {
+// fails the merge when one failed or is no longer mergeable, or has unknown CI
+// unless queueChecksNoCI says a merge queue tests it. A pull request merged
+// since then no longer lands.
+func (s *Handler) nativeStackMembersCI(
+	ctx context.Context, repo db.Repo, below []nativeStackWait, queueChecksNoCI bool,
+) (string, error) {
 	state := "passed"
 	for _, wait := range below {
 		number := wait.number
@@ -724,7 +757,9 @@ func (s *Handler) nativeStackMembersCI(ctx context.Context, repo db.Repo, below 
 		case "failed":
 			return "", fmt.Errorf("CI failed on #%d, and the stack merge would land it; merge was not performed", number)
 		case "unknown":
-			return "", fmt.Errorf("CI status of #%d is unavailable after refresh; merge was not performed", number)
+			if !queueChecksNoCI {
+				return "", fmt.Errorf("CI status of #%d is unavailable after refresh; merge was not performed", number)
+			}
 		case "pending":
 			state = "pending"
 		}
@@ -1009,11 +1044,17 @@ func (s *Handler) deferredMergeRules(
 	if rules == ghclient.MergeRulesClear {
 		return rules, false
 	}
-	stack, members, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, current.Number)
+	return rules, s.deferredMergeQueueApplies(ctx, repo, current.Number, current.BaseBranch)
+}
+
+// deferredMergeQueueApplies reports whether a merge queue takes the merge of
+// number, reading its queue state first when Forge has none stored.
+func (s *Handler) deferredMergeQueueApplies(ctx context.Context, repo db.Repo, number int, baseBranch string) bool {
+	stack, members, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, number)
 	if err != nil {
-		return rules, false
+		return false
 	}
-	owner, baseBranch := mergeQueueOwner(current.Number, current.BaseBranch, stack, members)
+	owner, ownerBase := mergeQueueOwner(number, baseBranch, stack, members)
 	stored, err := s.db.GetMergeQueueState(ctx, repo.ID, owner)
 	if err == nil && stored == nil {
 		// Forge has not read this pull request's queue state, and a branch
@@ -1021,7 +1062,7 @@ func (s *Handler) deferredMergeRules(
 		s.syncer.RefreshPullRequestMergeQueueForRepository(ctx, repo.ID, owner)
 		stored, err = s.db.GetMergeQueueState(ctx, repo.ID, owner)
 	}
-	return rules, err == nil && stored != nil && stored.Enabled && stored.BaseBranch == baseBranch
+	return err == nil && stored != nil && stored.Enabled && stored.BaseBranch == ownerBase
 }
 
 func (s *Handler) ensureDeferredMergeTargetUnchanged(

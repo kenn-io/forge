@@ -17,7 +17,7 @@
   import type { AppExecution } from "../../app/runtime.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { navigate } from "../../stores/router.svelte.ts";
-  import { resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
+  import { githubAccount, resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import {
     ProjectMutationWorkflow,
@@ -135,10 +135,7 @@
   const provider = $derived.by(() => {
     return selectedHost?.platform;
   });
-  const ghAuthed = $derived(
-    tooling?.gh?.available === true &&
-      tooling.gh.authenticated === true,
-  );
+  const githubReady = $derived(githubAccount(tooling).ready);
   const filteredRepos = $derived.by(() => {
     const query = githubFilter.trim().toLowerCase();
     if (!query) return githubRepos;
@@ -165,7 +162,7 @@
   function isDisabled(definition: ActionDefinition): boolean {
     if (inFlight) return true;
     if (definition.id === "connect-github" && scopedHostKey) return true;
-    if (definition.requiresGh && !ghAuthed) return true;
+    if (definition.requiresGh && !githubReady) return true;
     return false;
   }
 
@@ -175,13 +172,12 @@
     if (definition.id === "connect-github" && scopedHostKey) {
       return "Pick from GitHub is only available for the local host. Use Clone a repository for this host.";
     }
-    if (definition.requiresGh && !ghAuthed) {
-      if (!tooling?.gh?.available) {
-        return "Install gh to use this option.";
-      }
-      return "Run gh auth login to use this option.";
-    }
-    return undefined;
+    if (!definition.requiresGh || githubReady) return undefined;
+    const token = tooling?.github_token;
+    if (token?.source) return `Couldn't verify the token from ${token.source}.`;
+    const ghStep = tooling?.gh?.available ? "Run gh auth login" : "Install gh";
+    if (!token?.env) return `${ghStep} to use this option.`;
+    return `Set ${token.env} and run kenn-forge daemon restart, or ${ghStep.toLowerCase()}.`;
   }
 
   function chooseMode(definition: ActionDefinition): void {

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { resetToolingStatusForTest } from "../../stores/tooling-status.svelte.js";
+import { resetToolingStatusForTest, type ToolingStatusValue } from "../../stores/tooling-status.svelte.js";
 
 import WorkspaceFirstRunPanel from "./WorkspaceFirstRunPanelRuntimeHarness.svelte";
 
@@ -48,9 +48,10 @@ function project(id = "prj_1") {
 interface SetupArgs {
   ghAuthed: boolean;
   ghAvailable?: boolean;
+  githubToken?: ToolingStatusValue["github_token"];
 }
 
-function setupTooling({ ghAuthed, ghAvailable = true }: SetupArgs): void {
+function setupTooling({ ghAuthed, ghAvailable = true, githubToken }: SetupArgs): void {
   vi.stubGlobal(
     "fetch",
     vi.fn(
@@ -59,6 +60,7 @@ function setupTooling({ ghAuthed, ghAvailable = true }: SetupArgs): void {
           JSON.stringify({
             git: { available: true, version: "2.45.0" },
             gh: { available: ghAvailable, authenticated: ghAuthed },
+            github_token: githubToken,
             glab: { available: true, authenticated: true, user: "octocat", host: "gitlab.com" },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
@@ -134,6 +136,49 @@ describe("WorkspaceFirstRunPanel", () => {
     await renderPanel();
 
     expect(screen.getByText("Install gh to use this option.")).toBeTruthy();
+  });
+
+  it.each(["KENN_FORGE_GITHUB_TOKEN", "config"])(
+    "opens the GitHub picker with only a ready %s token",
+    async (source) => {
+      mocks.listUserRepositories.mockReturnValue(
+        Effect.succeed([
+          { name_with_owner: "octo/one", ssh_url: "git@github.com:octo/one.git", default_branch: "main" },
+        ]),
+      );
+      setupTooling({ ghAuthed: false, ghAvailable: false, githubToken: { source, ready: true } });
+      await renderPanel();
+
+      const button = screen.getByRole("button", { name: /Connect a GitHub repository/i }) as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      expect(screen.queryByText("Install gh to use this option.")).toBeNull();
+      await fireEvent.click(button);
+      expect(await screen.findByRole("combobox", { name: /GitHub repository/ })).toBeTruthy();
+      expect(mocks.listUserRepositories).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("keeps the GitHub action disabled when the selected token is unready despite authenticated gh", async () => {
+    setupTooling({ ghAuthed: true, githubToken: { source: "KENN_FORGE_GITHUB_TOKEN", ready: false } });
+    await renderPanel();
+
+    const button = screen.getByRole("button", { name: /Connect a GitHub repository/i }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    await fireEvent.click(button);
+    expect(mocks.listUserRepositories).not.toHaveBeenCalled();
+  });
+
+  it("offers the token environment variable when GitHub access is unavailable", async () => {
+    setupTooling({
+      ghAuthed: false,
+      ghAvailable: false,
+      githubToken: { env: "KENN_FORGE_GITHUB_TOKEN", ready: false },
+    });
+    await renderPanel();
+
+    const button = screen.getByRole("button", { name: /Connect a GitHub repository/i }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(screen.getByText(/Set KENN_FORGE_GITHUB_TOKEN/)).toBeTruthy();
   });
 
   it("registers an existing repository and opens Activity", async () => {

@@ -7,6 +7,8 @@ vi.mock("../../context.js", () => ({
   getStores: () => ({ detail: { mergePull: mockMergePull } }),
 }));
 
+import type { StackContextResponse } from "../../api/generated/models/stackContextResponse.js";
+import type { StackMemberResponse } from "../../api/generated/models/stackMemberResponse.js";
 import MergeModal from "./MergeModal.svelte";
 import * as flash from "../../stores/flash.svelte.js";
 import { getStackDepth, getTopFrame, resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
@@ -33,6 +35,32 @@ const baseProps = {
   allowRebase: true,
   onclose: () => {},
 };
+
+// A native stack whose members are open, passing CI, and stacked bottom
+// first on main unless a member overrides that.
+function nativeStack(members: Array<Partial<StackMemberResponse> & { number: number }>): StackContextResponse {
+  return {
+    health: "healthy",
+    native: true,
+    position: 1,
+    size: members.length,
+    stack_id: 1,
+    stack_name: "feature",
+    members: members.map((member, index) => ({
+      base_branch: index === 0 ? "main" : `branch-${members[index - 1]?.number}`,
+      blocked_by: null,
+      ci_status: "success",
+      is_draft: false,
+      mergeable_state: "clean",
+      position: index + 1,
+      review_decision: "",
+      reviewed_head_sha: `head-${member.number}`,
+      state: "open",
+      title: `Change ${member.number}`,
+      ...member,
+    })),
+  };
+}
 
 function normalized(text: string | null): string {
   return (text ?? "").replace(/\s+/g, " ").trim();
@@ -75,7 +103,7 @@ describe("MergeModal modal frame integration", () => {
         ...baseProps,
         number: 12,
         stackNote: "Stack position 2 of 3.",
-        nativeStackMerge: { baseBranch: "main", landing: [11, 12], remaining: [13] },
+        nativeStack: nativeStack([{ number: 11 }, { number: 12 }, { number: 13 }]),
       },
     });
 
@@ -94,7 +122,7 @@ describe("MergeModal modal frame integration", () => {
       props: {
         ...baseProps,
         number: 11,
-        nativeStackMerge: { baseBranch: "main", landing: [11], remaining: [12, 13] },
+        nativeStack: nativeStack([{ number: 11 }, { number: 12 }, { number: 13 }]),
       },
     });
 
@@ -110,7 +138,7 @@ describe("MergeModal modal frame integration", () => {
         ...baseProps,
         number: 13,
         mergeQueue: true,
-        nativeStackMerge: { baseBranch: "main", landing: [11, 12, 13], remaining: [] },
+        nativeStack: nativeStack([{ number: 11 }, { number: 12 }, { number: 13 }]),
       },
     });
 
@@ -122,13 +150,170 @@ describe("MergeModal modal frame integration", () => {
   });
 });
 
+describe("MergeModal native stack target", () => {
+  beforeEach(() => {
+    resetModalStack();
+    mockMergePull.mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
+    resetModalStack();
+    for (const item of flash.getFlashes()) flash.dismissFlash(item.id);
+  });
+
+  async function chooseTarget(name: RegExp): Promise<void> {
+    await fireEvent.click(screen.getByRole("combobox", { name: /Merge up to/ }));
+    await fireEvent.click(screen.getByRole("option", { name }));
+  }
+
+  it("starts at this pull request and offers every open member", async () => {
+    render(MergeModal, {
+      props: {
+        ...baseProps,
+        number: 12,
+        nativeStack: nativeStack([{ number: 10, state: "merged" }, { number: 11 }, { number: 12 }, { number: 13 }]),
+      },
+    });
+
+    expect(screen.getByRole("combobox", { name: /Merge up to: #12/ })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("combobox", { name: /Merge up to/ }));
+    expect(screen.getAllByRole("option").map((option) => normalized(option.textContent))).toEqual([
+      "#11 Change 11",
+      "#12 Change 12",
+      "#13 Change 13",
+    ]);
+  });
+
+  it("merges up to the chosen member with its reviewed head and keeps this pull request's workspace", async () => {
+    render(MergeModal, {
+      props: {
+        ...baseProps,
+        number: 12,
+        expectedHeadSha: "head-12",
+        requireHeadPin: true,
+        workspaceId: "ws-12",
+        nativeStack: nativeStack([{ number: 11 }, { number: 12 }, { number: 13 }]),
+      },
+    });
+
+    await chooseTarget(/#11 Change 11/);
+    expect(screen.getByText("Only this pull request merges.")).toBeTruthy();
+    expect(screen.queryByRole("checkbox", { name: "Delete workspace after merge" })).toBeNull();
+    await fireEvent.click(screen.getByText("Squash and merge", { selector: ".kit-modal-footer button" }));
+
+    expect(mockMergePull.mock.calls[0]?.[1]).toBe(11);
+    // The merge starts from #12's detail, which the store checks is shown.
+    expect(mockMergePull.mock.calls[0]?.[5]).toBe(12);
+    expect(mockMergePull.mock.calls[0]?.[2]).toEqual({
+      commit_title: "Change 11 (#11)",
+      commit_message: "",
+      method: "squash",
+      expected_head_sha: "head-11",
+    });
+  });
+
+  it("leaves this pull request's workspace alone when merging up to a member above it", async () => {
+    render(MergeModal, {
+      props: {
+        ...baseProps,
+        number: 12,
+        expectedHeadSha: "head-12",
+        workspaceId: "ws-12",
+        nativeStack: nativeStack([{ number: 11 }, { number: 12 }, { number: 13 }]),
+      },
+    });
+
+    await chooseTarget(/#13 Change 13/);
+    expect(screen.queryByRole("checkbox", { name: "Delete workspace after merge" })).toBeNull();
+    await fireEvent.click(screen.getByText(/Squash and merge/, { selector: ".kit-modal-footer button" }));
+
+    expect(mockMergePull.mock.calls[0]?.[1]).toBe(13);
+    expect(mockMergePull.mock.calls[0]?.[2]).not.toHaveProperty("delete_workspace_id");
+  });
+
+  it("merges a chosen member now once its CI passes while the dialog is open", async () => {
+    const props = {
+      ...baseProps,
+      number: 12,
+      expectedHeadSha: "head-12",
+      nativeStack: nativeStack([{ number: 11, ci_status: "pending" }, { number: 12 }]),
+    };
+    const { rerender } = render(MergeModal, { props });
+    await chooseTarget(/#11 Change 11/);
+    expect(screen.getByRole("button", { name: "Merge after CI" })).toBeTruthy();
+
+    await rerender({
+      ...props,
+      nativeStack: nativeStack([{ number: 11, reviewed_head_sha: "head-11-new" }, { number: 12 }]),
+    });
+    expect(screen.queryByRole("button", { name: "Merge after CI" })).toBeNull();
+    await fireEvent.click(screen.getByText("Squash and merge", { selector: ".kit-modal-footer button" }));
+
+    expect(mockMergePull.mock.calls[0]?.[1]).toBe(11);
+    expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
+    // The head reviewed when the dialog opened stays pinned.
+    expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({ expected_head_sha: "head-11" });
+  });
+
+  it("waits for CI on a member below when this pull request's own checks passed", async () => {
+    render(MergeModal, {
+      props: {
+        ...baseProps,
+        number: 12,
+        expectedHeadSha: "head-12",
+        nativeStack: nativeStack([{ number: 11, ci_status: "pending" }, { number: 12 }]),
+      },
+    });
+
+    expect(normalized(screen.getByText(/CI is still running on/).textContent)).toBe(
+      "CI is still running on #11. Forge merges the stack once every included pull request passes CI, and " +
+        "stops waiting if it restarts.",
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI" }));
+
+    expect(mockMergePull.mock.calls[0]?.[1]).toBe(12);
+    expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
+  });
+
+  it("names a member below whose CI failed instead of offering to wait", () => {
+    render(MergeModal, {
+      props: {
+        ...baseProps,
+        number: 12,
+        nativeStack: nativeStack([
+          { number: 11, ci_status: "failure" },
+          { number: 12, ci_status: "pending" },
+        ]),
+        deferUntilChecksPass: true,
+      },
+    });
+
+    expect(normalized(screen.getByRole("alert").textContent)).toBe("CI failed on #11.");
+    expect(screen.queryByRole("button", { name: "Merge after CI" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Merge Anyway" })).toBeTruthy();
+  });
+
+  it("offers no choice in a stack with one open member", () => {
+    render(MergeModal, {
+      props: {
+        ...baseProps,
+        number: 12,
+        nativeStack: nativeStack([{ number: 11, state: "merged" }, { number: 12 }]),
+      },
+    });
+
+    expect(screen.queryByRole("combobox", { name: /Merge up to/ })).toBeNull();
+  });
+});
+
 describe("MergeModal acknowledged merge commands", () => {
   beforeEach(() => {
     resetModalStack();
     mockMergePull.mockReset();
     resetWorkspaceCreatePendingForTest();
     mockMergePull.mockImplementation((...args: unknown[]) => {
-      const callbacks = args.at(-1) as { onSuccess?: (outcome: object) => void; onSettled?: () => void };
+      const callbacks = args[4] as { onSuccess?: (outcome: object) => void; onSettled?: () => void };
       callbacks.onSuccess?.(args[3] === true ? { _tag: "Queued" } : { _tag: "Merged" });
       callbacks.onSettled?.();
     });
@@ -211,7 +396,7 @@ describe("MergeModal acknowledged merge commands", () => {
     "closes and reports the %s conflict instead of leaving a stale retry open",
     async (reason) => {
       mockMergePull.mockImplementation((...args: unknown[]) => {
-        const callbacks = args.at(-1) as {
+        const callbacks = args[4] as {
           onProblem?: (problem: unknown) => void;
           onFailure?: (message: string) => void;
           onSettled?: () => void;
@@ -259,7 +444,7 @@ describe("MergeModal acknowledged merge commands", () => {
 
   it("shows generic merge conflicts through the shared flash after closing", async () => {
     mockMergePull.mockImplementation((...args: unknown[]) => {
-      const callbacks = args.at(-1) as {
+      const callbacks = args[4] as {
         onProblem?: (problem: unknown) => void;
         onFailure?: (message: string) => void;
         onSettled?: () => void;
@@ -286,7 +471,7 @@ describe("MergeModal acknowledged merge commands", () => {
 
   it("shows non-conflict problem failures through the shared flash", async () => {
     mockMergePull.mockImplementation((...args: unknown[]) => {
-      const callbacks = args.at(-1) as {
+      const callbacks = args[4] as {
         onProblem?: (problem: unknown) => void;
         onFailure?: (message: string) => void;
         onSettled?: () => void;

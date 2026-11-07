@@ -1194,6 +1194,12 @@ type StackMemberWithPR struct {
 	IsDraft        bool
 	BaseBranch     string
 	MergeableState string
+	// The head and base commits the provider reports and those of the stored
+	// diff, which together decide the reviewed head a merge must pin.
+	PlatformHeadSHA string
+	PlatformBaseSHA string
+	DiffHeadSHA     string
+	DiffBaseSHA     string
 }
 
 // StackPlacement is a merge request's contiguous position within its stack

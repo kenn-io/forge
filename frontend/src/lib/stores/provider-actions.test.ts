@@ -117,6 +117,81 @@ describe("provider action mutations", () => {
     expect(post).toHaveBeenCalledOnce();
   });
 
+  it("merges another native stack member from the shown pull request's detail", async () => {
+    const post = vi.fn(async () => ({ data: { merged: true }, response: new Response(null, { status: 200 }) }));
+    const store = createDetailStore({
+      client: {
+        GET: vi.fn(async () => ({ data: detail() })),
+        POST: post,
+        PUT: vi.fn(),
+        DELETE: vi.fn(),
+      } as unknown as GeneratedClient,
+    });
+    store.loadDetail("octo", "repo", 1, { ...routeRef, sync: false });
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+    const onFailure = vi.fn();
+    const settled = Promise.withResolvers<void>();
+
+    store.mergePull(
+      routeRef,
+      2,
+      { commit_message: "", commit_title: "Change 2 (#2)", method: "squash", expected_head_sha: "head-2" },
+      false,
+      { onFailure, onSettled: settled.resolve },
+      1,
+    );
+    await settled.promise;
+
+    expect(onFailure).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledOnce();
+    expect(post.mock.calls[0]).toMatchObject([
+      expect.stringContaining("merge"),
+      { params: { path: { number: 2 } }, body: { expected_head_sha: "head-2" } },
+    ]);
+  });
+
+  it("orders a merge of another stack member before later actions on that member", async () => {
+    const merge = Promise.withResolvers<{ data: { merged: boolean } }>();
+    const post = vi.fn(async (path: string) =>
+      path.includes("merge") ? merge.promise : { data: {}, response: new Response(null, { status: 200 }) },
+    );
+    const store = createDetailStore({
+      client: {
+        GET: vi.fn(async (_path: string, options: { params: { path: { number: number } } }) => ({
+          data: { ...detail(), merge_request: { Number: options.params.path.number } },
+        })),
+        POST: post,
+        PUT: vi.fn(),
+        DELETE: vi.fn(),
+      } as unknown as GeneratedClient,
+    });
+    store.loadDetail("octo", "repo", 1, { ...routeRef, sync: false });
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+    const merged = Promise.withResolvers<void>();
+    store.mergePull(
+      routeRef,
+      2,
+      { commit_message: "", commit_title: "Change 2 (#2)", method: "squash", expected_head_sha: "head-2" },
+      false,
+      { onSettled: merged.resolve },
+      1,
+    );
+    await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+
+    store.loadDetail("octo", "repo", 2, { ...routeRef, sync: false });
+    await vi.waitFor(() => expect(store.getDetail()?.merge_request.Number).toBe(2));
+    const approved = Promise.withResolvers<void>();
+    store.approvePull(routeRef, 2, { body: "" }, { onSettled: approved.resolve });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(post).toHaveBeenCalledOnce();
+
+    merge.resolve({ data: { merged: true } });
+    await merged.promise;
+    await approved.promise;
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(post.mock.calls[1]?.[0]).toContain("approve");
+  });
+
   it("rejects a captured route that no longer matches the displayed pull request", async () => {
     const post = vi.fn();
     const store = createDetailStore({

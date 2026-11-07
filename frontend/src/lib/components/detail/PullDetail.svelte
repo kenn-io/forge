@@ -61,6 +61,7 @@
     mergeActionState,
     mergeCI,
     mergeQueueDialogAsksNothing,
+    nativeStackBelowCI,
     mergeRules,
     defaultMergeCommit,
     providerBlocksMerge,
@@ -1396,7 +1397,7 @@
       stackNote: midStackBlocker
         ? `Stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}.`
         : undefined,
-      nativeStackMerge,
+      nativeStack: d.stack?.native ? d.stack : undefined,
     };
   }
 
@@ -1405,6 +1406,10 @@
   function enqueueWithoutDialog(): boolean {
     const d = detailStore.getDetail();
     if (!d?.merge_queue_target || !mergeQueueDialogAsksNothing(mergeDialogContent(d))) return false;
+    // A native stack merge lands the members below too, so their CI decides
+    // whether the dialog has to warn about a failure. The queue waits for CI.
+    const below = nativeStackBelowCI(d.stack?.native ? d.stack : undefined, number);
+    if (below.failed.length > 0) return false;
     const p = d.merge_request;
     const ref = mutationRef;
     const requestNumber = number;

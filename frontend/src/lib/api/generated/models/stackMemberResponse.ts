@@ -12,6 +12,8 @@ export interface StackMemberResponse {
   number: number;
   position: number;
   review_decision: string;
+  /** Head commit a merge of this member pins: its synced diff head, or empty while the diff is missing or stale */
+  reviewed_head_sha: string;
   state: string;
   title: string;
 }

@@ -1,4 +1,5 @@
-import type { NativeStackMergeScope } from "./stack-merge.js";
+import type { StackContextResponse } from "../../api/generated/models/stackContextResponse.js";
+import { nativeStackMembersBelow } from "./stack-merge.js";
 
 export function ciChecksHavePending(checksJSON: string): boolean {
   if (!checksJSON) return false;
@@ -10,7 +11,7 @@ export function ciChecksHavePending(checksJSON: string): boolean {
   }
 }
 
-function ciStatusIsPending(status: string): boolean {
+export function ciStatusIsPending(status: string): boolean {
   return ["pending", "in_progress", "queued"].includes(status.toLowerCase());
 }
 
@@ -145,7 +146,8 @@ export interface MergeDialogContent {
   canBypassRules: boolean;
   workspaceId: string | undefined;
   stackNote: string | undefined;
-  nativeStackMerge: NativeStackMergeScope | undefined;
+  /** The stack, when the provider owns it: a merge lands every unmerged member below its target. */
+  nativeStack: StackContextResponse | undefined;
 }
 
 /**
@@ -163,4 +165,19 @@ export function mergeQueueDialogAsksNothing(content: MergeDialogContent): boolea
     !(content.immediateMergeBlocked && content.canBypassRules) &&
     !content.workspaceId
   );
+}
+
+/**
+ * CI across the members below a native stack merge's target, which land with
+ * it: the members whose CI failed and those whose CI still runs.
+ */
+export function nativeStackBelowCI(
+  stack: StackContextResponse | undefined,
+  number: number,
+): { failed: number[]; pending: number[] } {
+  const below = nativeStackMembersBelow(stack, number);
+  return {
+    failed: below.filter((member) => ciStatusHasFailed(member.ci_status)).map((member) => member.number),
+    pending: below.filter((member) => ciStatusIsPending(member.ci_status)).map((member) => member.number),
+  };
 }

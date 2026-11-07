@@ -389,7 +389,7 @@ describe("OnboardingFlow", () => {
     expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/settings");
   });
 
-  it("uses token readiness for the account label and discovery", async () => {
+  it("discovers repositories with a verified token when gh is missing", async () => {
     mocks.tooling.value = {
       git: { available: true, version: "2.50" },
       gh: { available: false, authenticated: false, host: "ghe.example.com" },

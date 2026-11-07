@@ -84,7 +84,7 @@ describe("ProviderReadinessStep", () => {
         ...callbacks,
         tooling: {
           git: { available: true },
-          gh: { available: true, authenticated: true, host: "ghe.example.com", user: "cli-maintainer" },
+          gh: { available: false, authenticated: false, host: "ghe.example.com" },
           glab: { available: false, authenticated: false },
           github_token: { env: "ACME_GHE_TOKEN", source: "ACME_GHE_TOKEN", ready: true },
         },

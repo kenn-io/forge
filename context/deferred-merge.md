@@ -120,8 +120,8 @@ Immediate merge, not a queue target
   with no CI status when the merge is queued, the target or a member below, has nothing to wait
   for, since GitHub's queue runs the branch's required checks on what it merges. Workflows limited
   to the default branch leave stacked pull requests with no CI. The members with CI still hold the
-  merge, CI that starts later counts, and CI Forge saw that a refresh no longer reports fails
-  closed. A merge that counted on the queue fails instead of merging directly if the queue is gone,
+  merge, CI that starts later counts while it reports, and CI seen when the merge is queued that a
+  refresh no longer reports fails closed. A merge that counted on the queue fails instead of merging directly if the queue is gone,
   checked on the same read that picks the mutation
   (`internal/server/pullapi/routes.go::Handler.mergePRWithBodyAdmitted`).
 - The lowest unmerged member's base branch decides whether a native stack merge goes to a merge

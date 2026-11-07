@@ -336,14 +336,15 @@ func TestListPagesManyRepositories(t *testing.T) {
 	d := openTestDB(t)
 	var repos []int64
 	var filters []RepoFilter
+	const pullsPerRepo = 200 // Several pages per repo suffice for the plan assertions below.
 	for repo := range 60 {
 		repoID := insertTestRepo(t, d, "acme", fmt.Sprintf("repo-%d", repo))
 		repos = append(repos, repoID)
 		filters = append(filters, RepoFilter{Platform: "github", PlatformHost: "github.com", RepoPath: fmt.Sprintf("acme/repo-%d", repo)})
-		execPageFixtureNumbers(t, d, 2000, `
+		execPageFixtureNumbers(t, d, pullsPerRepo, `
 			INSERT INTO forge_merge_requests (repo_id, platform_id, number, state, created_at, updated_at, last_activity_at)
 			SELECT ?1, n, n, CASE WHEN n <= 5 THEN 'open' ELSE 'closed' END,
-			       '2024-01-15 12:00:00', '2024-01-15 12:00:00', datetime('2024-01-15', '+' || (?2 + n) || ' minutes') FROM numbers`, repoID, repo*2000)
+			       '2024-01-15 12:00:00', '2024-01-15 12:00:00', datetime('2024-01-15', '+' || (?2 + n) || ' minutes') FROM numbers`, repoID, repo*pullsPerRepo)
 		count := 40
 		if repo == 59 {
 			count = 400 // The last tracked repository has more issue history.

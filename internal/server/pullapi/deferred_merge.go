@@ -155,21 +155,6 @@ func (s *Handler) enqueueDeferredMerge(
 	if err != nil {
 		return deferMergePRBody{}, httpapi.Internal("get stack for pull request failed")
 	}
-	if stack != nil && stack.Native {
-		queue, err := s.mergeQueueTarget(ctx, repo.Repo, mr, stack, members)
-		if err != nil {
-			return deferMergePRBody{}, err
-		}
-		if queue != nil {
-			// GitHub has no auto-merge for a stack. Its "Enqueue stack" adds
-			// the stack to the merge queue at once, and the queue waits for
-			// the required checks, so Forge enqueues now as well.
-			if _, err := s.mergePRWithBody(ctx, provider, platformHost, owner, name, number, body); err != nil {
-				return deferMergePRBody{}, err
-			}
-			return deferMergePRBody{Status: "queued"}, nil
-		}
-	}
 	below, belowPending, err := s.nativeStackWaitsBelow(ctx, repo.Repo, stack, members, number)
 	if err != nil {
 		return deferMergePRBody{}, err
@@ -255,7 +240,8 @@ func (s *Handler) enqueueDeferredMerge(
 		)
 	}
 	// GitHub refuses to turn auto-merge on for a pull request in a stack, so
-	// the worker merges it through the stack-aware merge API. A
+	// the worker waits for the checks and then merges or enqueues it through
+	// the stack-aware merge API. A
 	// branch-inferred stack counts: with the native stack preview off, Forge
 	// records a GitHub native stack as one.
 	useAutoMerge := false

@@ -98,18 +98,18 @@ Immediate merge, not a queue target
 - Forge's worker runs when the provider has no auto-merge, neither the repository nor a merge queue
   takes it, or the user consented to bypass rules, which auto-merge cannot do. A worker already
   waiting keeps the merge without a provider read.
-- GitHub has no auto-merge for a pull request in a stack and refuses it ("Auto-merge is not
-  supported for stacked pull requests"), so a stack never gets it. A native stack whose merge
-  goes to a merge queue enqueues at once through the immediate merge path, as GitHub's own
-  "Enqueue stack" does while checks run; the queue waits for the required checks. Forge never
-  turns auto-merge on for any other stack member, native or branch-inferred, and gives it the
-  worker; auto-merge already on still counts as the deferral. With the native stack preview off,
-  Forge records a native stack as branch-inferred
+- Forge never turns auto-merge on for a pull request in any stack, native or branch-inferred:
+  GitHub refuses it for stacked pull requests ("Auto-merge is not supported for stacked pull
+  requests"), and with the native stack preview off Forge records a native stack as
+  branch-inferred. Such a pull request gets the worker, which waits for the checks and then
+  merges or enqueues through merge-async, the only GitHub merge API that takes a stack.
+  merge-async has no merge-when-ready action, so the worker's wait stands in for it. Auto-merge
+  already on still counts as the deferral
   (`internal/server/pullapi/deferred_merge.go::Handler.enqueueDeferredMerge`).
-- A native stack deferral outside a merge queue also waits for CI on every unmerged pull request
-  below the target, since the stack merge lands them together. Each one's CI is refreshed when the
-  merge is queued, and then goes through the target's own check (`deferredMergeCheckState`): the
-  checks the provider reports pending on it at queue time must pass, and
+- A native stack deferral also waits for CI on every unmerged pull request below the target,
+  since the stack merge lands them together. Each one's CI is refreshed when the merge is queued,
+  and then goes through the target's own check (`deferredMergeCheckState`): the checks the
+  provider reports pending on it at queue time must pass, and
   unknown CI fails closed, so one with no CI status is refused up front. It is also refused with
   `stack_member_not_ready` and its number when its CI failed, or it is closed, a draft, or
   conflicting. CI still running below makes a target whose own CI passed deferrable. On every

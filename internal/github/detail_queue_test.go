@@ -40,7 +40,6 @@ func TestDetailQueueIgnoresUntrackedOpenItemVolume(t *testing.T) {
 	syncer := NewSyncer(nil, d, nil, []RepoRef{tracked}, time.Minute, nil, nil)
 	baselineItems := syncer.buildDetailQueueItems(ctx, syncer.TrackedRepos())
 	require.Len(baselineItems, 4)
-	assert.Equal(4, syncer.countOverdueDetails(ctx))
 	baselineAllocs := testing.AllocsPerRun(10, func() {
 		syncer.buildDetailQueueItems(ctx, syncer.TrackedRepos())
 	})

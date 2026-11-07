@@ -392,7 +392,8 @@ Resolution is deliberately exact (`internal/server/kata/workspace.go::Handler.re
   agent's Herdr pane; without one the chat is read-only until exit. Herdr stays optional, behind its CLI.
 - A session has one process: a Forge-run agent loads it only after SessionEnd or once the recorded
   process identity is gone, and anything unknown reads as still running.
-- Only Claude and Codex transcripts are read; other agents' chats stay empty until Forge loads the session.
+- Only Claude and Codex transcripts are read; other agents' chats stay empty until Forge loads the
+  session, whose replay then becomes the transcript.
 
 ## Diff Scopes
 

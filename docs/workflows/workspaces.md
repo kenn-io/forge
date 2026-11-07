@@ -111,8 +111,10 @@ worktree and shows the agent's conversation in its chat as it happens.
 - Claude and Codex conversations show while the agent runs. Other agents' chats
   stay empty until the agent exits and Forge loads the session.
 - After the agent exits, your next prompt continues the same session in Forge.
-  This needs an ACP agent whose key starts with the agent's name, such as
-  `claude-chat`.
+  This needs a chat agent in Settings whose key starts with the agent's name,
+  such as `claude-chat`.
+- The worktree needs a remote for the repository the pull request targets. A
+  checkout whose only remote is a fork gets no workspace.
 
 Tool approvals stay in the agent's terminal while it runs. Deleting the workspace
 keeps the worktree and branch and leaves the agent running.

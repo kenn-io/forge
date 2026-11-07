@@ -649,7 +649,7 @@
           <!-- The slot keeps its width while empty, so the spinner appearing
                never takes room from the chips and wraps the row. -->
           <span class="turn-spinner" aria-hidden="true">{#if turnStatus.spinner}<Spinner size={14} label="" />{/if}</span>
-          {#if running || stopping}<button type="button" class="round stop" aria-label="Stop reply" title={stopping ? "Stopping…" : "Stop reply"} disabled={stopping || !connected || !accepting || disabled} onclick={() => connection?.send({type: "cancel"})}><Square size={13} fill="currentColor" strokeWidth={0} /></button>{/if}
+          {#if (running || stopping) && !chatState?.externalReadOnly}<button type="button" class="round stop" aria-label="Stop reply" title={stopping ? "Stopping…" : "Stop reply"} disabled={stopping || !connected || disabled} onclick={() => connection?.send({type: "cancel"})}><Square size={13} fill="currentColor" strokeWidth={0} /></button>{/if}
           {#if !running}
             <button type="submit" class="round send" aria-label="Send" title="Send (Enter) · new line (Shift+Enter)" disabled={!canSend}><ArrowUp size={16} /></button>
           {:else if steeringSupported}

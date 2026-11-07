@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
+	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/repoapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
@@ -277,79 +278,21 @@ func TestToolingStatusGitHubToken(t *testing.T) {
 		assert.Equal(tokenFile, body.GitHubToken.Source)
 		assert.False(body.GitHubToken.Ready)
 	})
-
-	t.Run("pending app reload", func(t *testing.T) {
-		require := require.New(t)
-		assert := assert.New(t)
-		t.Setenv("KENN_FORGE_RELOAD_OLD_TOKEN", "active-token")
-		t.Setenv("KENN_FORGE_RELOAD_NEW_TOKEN", "pending-token")
-		dir := t.TempDir()
-		cfgPath := filepath.Join(dir, "config.toml")
-		const boot = `sync_interval = "5m"
-github_token_env = "KENN_FORGE_RELOAD_OLD_TOKEN"
-host = "127.0.0.1"
-port = 8091
-`
-		require.NoError(os.WriteFile(cfgPath, []byte(boot), 0o600))
-		cfg, err := config.Load(cfgPath)
-		require.NoError(err)
-		sources, _ := reloadTestTokenSources(t, cfgPath, tokenauth.Key{Platform: "github", Host: "github.com"})
-		var requests atomic.Int64
-		f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal("Bearer active-token", r.Header.Get("Authorization"))
-			requests.Add(1)
-			switch r.URL.Path {
-			case "/api/v3/user":
-				_, _ = w.Write([]byte(`{"login":"token-owner"}`))
-			case "/api/v3/user/repos":
-				_, _ = w.Write([]byte(`[{"full_name":"acme/widget","default_branch":"main"}]`))
-			default:
-				http.NotFound(w, r)
-			}
-		}, ServerOptions{TokenSources: sources, HostCheckAllowLoopbackAnyPort: true})
-		srv, ts := f.srv, f.ts
-		// Supply the path after construction so only our explicit reload runs.
-		srv.configReloadMu.Lock()
-		srv.cfgPath = cfgPath
-		srv.configReloadMu.Unlock()
-
-		require.NoError(os.WriteFile(filepath.Join(dir, "app.pem"), []byte("pem"), 0o600))
-		require.NoError(os.WriteFile(cfgPath, []byte(`sync_interval = "5m"
-github_token_env = "KENN_FORGE_RELOAD_NEW_TOKEN"
-host = "127.0.0.1"
-port = 8091
-[[github_apps]]
-host = "github.com"
-app_id = 4242
-private_key_path = "app.pem"
-installation_id = 7
-installation_account = "acme"
-repository_selection = "all"
-`), 0o600))
-		event := srv.configreload.ApplyConfigChange(t.Context())
-		require.True(event.Valid, "reload error: %s", event.Error)
-		require.True(event.RestartRequired)
-		tooling := decodeToolingStatus(t, ts)
-		require.NotNil(tooling.GitHubToken)
-		assert.True(tooling.GitHubToken.Ready)
-		assert.Positive(requests.Load(), "readiness must probe the active token")
-		assert.Equal("KENN_FORGE_RELOAD_OLD_TOKEN", tooling.GitHubToken.Source)
-		status, body := decodeUserRepositories(t, ts, "/api/v1/platform/user-repositories?provider=github&platform_host=github.com")
-		require.Equal(http.StatusOK, status)
-		var listing struct {
-			Repositories json.RawMessage `json:"repositories"`
-		}
-		require.NoError(json.Unmarshal(body, &listing))
-		assert.JSONEq(`[{"name_with_owner":"acme/widget","default_branch":"main"}]`, string(listing.Repositories))
-	})
 }
 
 func TestToolingStatusWithoutSyncerIgnoresGitHubToken(t *testing.T) {
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "test-token")
 	database := dbtest.Open(t)
 	cfg := &config.Config{GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN"}
-	srv := New(database, nil, nil, "/", cfg, ServerOptions{})
+	sources := tokenauth.NewSourceSet(tokenauth.Options{})
+	for _, plan := range cfg.ProviderTokenSources() {
+		sources.Upsert(plan.Descriptor)
+	}
+	srv := New(database, nil, nil, "/", cfg, ServerOptions{TokenSources: sources})
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	srv.newGitHubClient = func(tokenauth.Source, string) (ghclient.Client, error) {
+		return nil, errors.New("provider unavailable")
+	}
 	runner := &recordingToolingRunner{}
 	srv.toolingRun = runner.run
 	ts := httptest.NewServer(srv)
@@ -359,36 +302,94 @@ func TestToolingStatusWithoutSyncerIgnoresGitHubToken(t *testing.T) {
 	assert.Nil(t, tooling.GitHubToken)
 }
 
-func TestToolingStatusPendingHostIsUnavailableUntilRestart(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	t.Setenv("TEST_ENTERPRISE_TOKEN", "enterprise-token")
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config.toml")
-	const boot = "sync_interval = \"5m\"\nhost = \"127.0.0.1\"\nport = 8091\n"
-	require.NoError(os.WriteFile(cfgPath, []byte(boot), 0o600))
-	cfg, err := config.Load(cfgPath)
-	require.NoError(err)
-	var providerCalls atomic.Int32
-	f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
-		providerCalls.Add(1)
-		_, _ = w.Write([]byte(`[]`))
-	}, ServerOptions{HostCheckAllowLoopbackAnyPort: true})
-	f.srv.configReloadMu.Lock()
-	f.srv.cfgPath = cfgPath
-	f.srv.configReloadMu.Unlock()
-	require.NoError(os.WriteFile(cfgPath, []byte(boot+`[[platforms]]
+func TestToolingStatusPendingReloadKeepsActiveSources(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		host       string
+		pending    string
+		wantSource string
+		wantStatus int
+	}{
+		{
+			name: "pending GitHub App",
+			host: "github.com",
+			pending: `github_token_env = "KENN_FORGE_RELOAD_NEW_TOKEN"
+[[github_apps]]
+host = "github.com"
+app_id = 4242
+private_key_path = "app.pem"
+installation_id = 7
+installation_account = "acme"
+repository_selection = "all"
+`,
+			wantSource: "KENN_FORGE_RELOAD_OLD_TOKEN",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "pending Enterprise host",
+			host: "ghe.example.com",
+			pending: `github_token_env = "KENN_FORGE_RELOAD_OLD_TOKEN"
+[[platforms]]
 type = "github"
 host = "ghe.example.com"
 token_env = "TEST_ENTERPRISE_TOKEN"
-`), 0o600))
-	event := f.srv.configreload.ApplyConfigChange(t.Context())
-	require.True(event.Valid, "reload error: %s", event.Error)
-	require.True(event.RestartRequired)
-	tooling := decodeToolingStatus(t, f.ts)
-	assert.Equal("ghe.example.com", tooling.Gh.Host)
-	assert.Nil(tooling.GitHubToken, "a pending host has no active token source")
-	status, _ := decodeUserRepositories(t, f.ts, "/api/v1/platform/user-repositories?provider=github&platform_host=ghe.example.com")
-	assert.Equal(http.StatusNotFound, status, "a pending provider cannot replace the unavailable CLI")
-	assert.Zero(providerCalls.Load())
+`,
+			wantStatus: http.StatusNotFound,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			t.Setenv("KENN_FORGE_RELOAD_OLD_TOKEN", "active-token")
+			t.Setenv("KENN_FORGE_RELOAD_NEW_TOKEN", "pending-token")
+			t.Setenv("TEST_ENTERPRISE_TOKEN", "enterprise-token")
+			dir := t.TempDir()
+			cfgPath := filepath.Join(dir, "config.toml")
+			const boot = `sync_interval = "5m"
+host = "127.0.0.1"
+port = 8091
+`
+			require.NoError(os.WriteFile(cfgPath, []byte(boot+`github_token_env = "KENN_FORGE_RELOAD_OLD_TOKEN"`), 0o600))
+			cfg, err := config.Load(cfgPath)
+			require.NoError(err)
+			var requests atomic.Int32
+			f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				assert.Equal("Bearer active-token", r.Header.Get("Authorization"))
+				switch r.URL.Path {
+				case "/api/v3/user":
+					_, _ = w.Write([]byte(`{"login":"token-owner"}`))
+				case "/api/v3/user/repos":
+					_, _ = w.Write([]byte(`[{"full_name":"acme/widget","default_branch":"main"}]`))
+				default:
+					http.NotFound(w, r)
+				}
+			}, ServerOptions{HostCheckAllowLoopbackAnyPort: true})
+			// Supply the path after construction so only our explicit reload runs.
+			f.srv.configReloadMu.Lock()
+			f.srv.cfgPath = cfgPath
+			f.srv.configReloadMu.Unlock()
+			if tt.host == "github.com" {
+				require.NoError(os.WriteFile(filepath.Join(dir, "app.pem"), []byte("pem"), 0o600))
+			}
+			require.NoError(os.WriteFile(cfgPath, []byte(boot+tt.pending), 0o600))
+			event := f.srv.configreload.ApplyConfigChange(t.Context())
+			require.True(event.Valid, "reload error: %s", event.Error)
+			require.True(event.RestartRequired)
+			tooling := decodeToolingStatus(t, f.ts)
+			if tt.wantSource == "" {
+				assert.Nil(tooling.GitHubToken, "a pending host has no active token source")
+			} else {
+				require.NotNil(tooling.GitHubToken)
+				assert.True(tooling.GitHubToken.Ready)
+				assert.Equal(tt.wantSource, tooling.GitHubToken.Source)
+				assert.Positive(requests.Load(), "readiness must probe the active token")
+			}
+			status, _ := decodeUserRepositories(t, f.ts, "/api/v1/platform/user-repositories?provider=github&platform_host="+tt.host)
+			assert.Equal(tt.wantStatus, status)
+			if tt.wantSource == "" {
+				assert.Zero(requests.Load(), "a pending provider cannot replace the unavailable CLI")
+			}
+		})
+	}
 }

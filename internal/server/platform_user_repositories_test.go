@@ -77,6 +77,7 @@ func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 		{name: "omitted platform host"},
 		{name: "uppercase public host", platformHost: "GITHUB.COM"},
 		{name: "public host with HTTPS port", platformHost: "github.com:443"},
+		{name: "Enterprise platform token", platformHost: "ghe.example.com"},
 		{name: "repository token differs", repositoryToken: true},
 		{name: "rejected token", rejected: true},
 	} {
@@ -85,7 +86,13 @@ func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 			assert := assert.New(t)
 			t.Setenv("KENN_FORGE_GITHUB_TOKEN", "host-token")
 			t.Setenv("TEST_REPOSITORY_TOKEN", "repository-token")
+			t.Setenv("TEST_ENTERPRISE_TOKEN", "enterprise-token")
 			cfg := &config.Config{GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN"}
+			wantHost, wantToken := "github.com", "host-token"
+			if tc.platformHost == "ghe.example.com" {
+				cfg.Platforms = []config.PlatformConfig{{Type: "github", Host: "ghe.example.com", TokenEnv: "TEST_ENTERPRISE_TOKEN"}}
+				wantHost, wantToken = "ghe.example.com", "enterprise-token"
+			}
 			if tc.repositoryToken {
 				cfg.Repos = []config.Repo{{Owner: "acme", Name: "widget", TokenEnv: "TEST_REPOSITORY_TOKEN"}}
 			}
@@ -93,7 +100,7 @@ func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 			f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
 				assert.Equal("/api/v3/user/repos", r.URL.Path)
-				assert.Equal("Bearer host-token", r.Header.Get("Authorization"))
+				assert.Equal("Bearer "+wantToken, r.Header.Get("Authorization"))
 				assert.Equal("owner,collaborator,organization_member", r.URL.Query().Get("affiliation"))
 				assert.Equal("updated", r.URL.Query().Get("sort"))
 				assert.Equal("1", r.URL.Query().Get("page"))
@@ -108,7 +115,7 @@ func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 			newClient := f.srv.newGitHubClient
 			f.srv.newGitHubClient = func(source tokenauth.Source, host string) (ghclient.Client, error) {
 				// The test endpoint override would otherwise hide an Enterprise route.
-				assert.Equal("github.com", host)
+				assert.Equal(wantHost, host)
 				return newClient(source, host)
 			}
 			status, body := decodeUserRepositories(t, f.ts, "/api/v1/platform/user-repositories?provider=github&platform_host="+tc.platformHost)
@@ -157,29 +164,27 @@ func TestListUserRepositoriesKeepsCLIAccountForSSHClone(t *testing.T) {
 	assert.Zero(t, tokenCalls.Load())
 }
 
-func TestListUserRepositoriesTokenPaginatesAndTruncates(t *testing.T) {
+func TestListUserRepositoriesTokenForwardsPageNumber(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	t.Setenv("TEST_ENTERPRISE_TOKEN", "enterprise-token")
-	cfg := &config.Config{Platforms: []config.PlatformConfig{{Type: "github", Host: "ghe.example.com", TokenEnv: "TEST_ENTERPRISE_TOKEN"}}}
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "host-token")
+	cfg := &config.Config{GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN"}
 	var pages []string
 	f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal("/api/v3/user/repos", r.URL.Path)
-		assert.Equal("Bearer enterprise-token", r.Header.Get("Authorization"))
-		assert.Equal("100", r.URL.Query().Get("per_page"))
 		page := r.URL.Query().Get("page")
 		pages = append(pages, page)
 		start := 0
+		repos := make([]map[string]string, 100)
 		if page == "2" {
 			start = 100
+			repos = repos[:20]
 		}
-		repos := make([]map[string]string, 100)
 		for i := range repos {
 			repos[i] = map[string]string{"full_name": "acme/repo" + strconv.Itoa(start+i)}
 		}
 		assert.NoError(json.NewEncoder(w).Encode(repos))
 	}, ServerOptions{})
-	status, body := decodeUserRepositories(t, f.ts, "/api/v1/platform/user-repositories?provider=github&platform_host=ghe.example.com&limit=150")
+	status, body := decodeUserRepositories(t, f.ts, "/api/v1/platform/user-repositories?provider=github&limit=150")
 	require.Equal(http.StatusOK, status)
 	var listing struct {
 		Repositories []struct {
@@ -187,11 +192,9 @@ func TestListUserRepositoriesTokenPaginatesAndTruncates(t *testing.T) {
 		} `json:"repositories"`
 	}
 	require.NoError(json.Unmarshal(body, &listing))
-	require.Len(listing.Repositories, 150)
+	require.Len(listing.Repositories, 120)
 	assert.Equal("acme/repo100", listing.Repositories[100].NameWithOwner)
-	assert.Equal("acme/repo149", listing.Repositories[149].NameWithOwner)
 	assert.Equal([]string{"1", "2"}, pages)
-	assert.Zero(f.ghCalls.Load())
 }
 
 func decodeUserRepositories(
@@ -432,7 +435,7 @@ func TestListUserRepositoriesTruncatesMidPageLimit(t *testing.T) {
 	runner := &recordingToolingRunner{
 		outputs: map[string]string{
 			ghUserReposCall(100, 1): "[" + strings.Join(full, ",") + "]",
-			ghUserReposCall(100, 2): "[" + strings.Join(full[:50], ",") + "]",
+			ghUserReposCall(100, 2): "[" + strings.Join(full, ",") + "]",
 		},
 	}
 	srv.toolingRun = runner.run

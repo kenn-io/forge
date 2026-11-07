@@ -117,11 +117,13 @@ Immediate merge, not a queue target
   projection, waits while one still runs, and fails when one fails or stops being mergeable
   (`internal/server/pullapi/deferred_merge.go::Handler.nativeStackWaitsBelow`).
 - A native stack going to a merge queue has one exception (maintainer decision): a pull request
-  with no CI status, the target or a member below, has nothing to wait for, since GitHub's queue
-  runs the branch's required checks on what it merges. Workflows limited to the default branch
-  leave stacked pull requests with no CI. The members with CI still hold the merge, and CI that
-  starts later counts. If the queue goes away during the wait, the worker fails instead of merging
-  directly (`internal/server/pullapi/deferred_merge.go::Handler.runDeferredMerge`).
+  with no CI status when the merge is queued, the target or a member below, has nothing to wait
+  for, since GitHub's queue runs the branch's required checks on what it merges. Workflows limited
+  to the default branch leave stacked pull requests with no CI. The members with CI still hold the
+  merge, CI that starts later counts, and CI Forge saw that a refresh no longer reports fails
+  closed. A merge that counted on the queue fails instead of merging directly if the queue is gone,
+  checked on the same read that picks the mutation
+  (`internal/server/pullapi/routes.go::Handler.mergePRWithBodyAdmitted`).
 - The lowest unmerged member's base branch decides whether a native stack merge goes to a merge
   queue, for the merge endpoint and the worker alike
   (`internal/server/pullapi/stack_merge.go::mergeQueueOwner`).

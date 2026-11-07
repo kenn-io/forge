@@ -1746,9 +1746,10 @@ var errMergeNotAdmitted = errors.New("merge was not admitted")
 
 // mergePRWithBodyAdmitted merges or enqueues while holding the pull request's
 // merge lock. admit, when set, runs under that lock immediately before the
-// provider mutation; returning false aborts with errMergeNotAdmitted. A
-// deferred worker uses it to check supersession without racing an immediate
-// merge or enqueue of the same pull request.
+// provider mutation and learns whether it adds to a merge queue; an error
+// aborts the mutation with that error. A deferred worker uses it to check
+// supersession without racing an immediate merge or enqueue of the same pull
+// request, and to refuse a direct merge it counted on a queue for.
 func (s *Handler) mergePRWithBodyAdmitted(
 	ctx context.Context,
 	provider string,
@@ -1757,7 +1758,7 @@ func (s *Handler) mergePRWithBodyAdmitted(
 	name string,
 	number int,
 	body mergePRInputBody,
-	admit func() bool,
+	admit func(toQueue bool) error,
 ) (mergePRBody, error) {
 	body.bindWorkspaceHost(ctx)
 	repo, err := s.requireRepoRouteCapability(
@@ -1808,8 +1809,10 @@ func (s *Handler) mergePRWithBodyAdmitted(
 			return mergePRBody{}, err
 		}
 	}
-	if admit != nil && !admit() {
-		return mergePRBody{}, errMergeNotAdmitted
+	if admit != nil {
+		if err := admit(queueMutator != nil); err != nil {
+			return mergePRBody{}, err
+		}
 	}
 	// Queue reads made from here on reflect this merge, so they may drop a
 	// workspace cleanup it keeps for the merge queue.

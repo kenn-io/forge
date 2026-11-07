@@ -528,6 +528,49 @@ func TestDeferMergeIntoQueueFailsWhenAMemberWithNoCILaterFails(t *testing.T) {
 	f.assertNoMerge(t)
 }
 
+// Only a pull request with no CI when the merge was queued counts as having
+// nothing to wait for. CI Forge saw that a refresh no longer reports fails
+// closed, as it does without a queue.
+func TestDeferMergeIntoQueueFailsWhenCIDisappears(t *testing.T) {
+	running := []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}}
+	for _, tt := range []struct {
+		name string
+		opts nativeStackDeferOptions
+		want string
+	}{
+		{
+			name: "pending on the target",
+			opts: nativeStackDeferOptions{targetChecks: []platform.CICheck{}, bottomChecks: passedChecks},
+			want: "aggregate CI status is unavailable",
+		},
+		{
+			name: "pending on the member below",
+			opts: nativeStackDeferOptions{bottomChecks: running, bottomChecksLater: []platform.CICheck{}},
+			want: "CI status of #6 is unavailable",
+		},
+		{
+			name: "passed on the member below",
+			opts: nativeStackDeferOptions{bottomChecks: passedChecks, bottomChecksLater: []platform.CICheck{}},
+			want: "CI status of #6 is unavailable",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := tt.opts
+			opts.queue = true
+			f := newNativeStackDeferFixture(t, opts)
+
+			resp := f.deferTarget(t)
+			require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
+
+			completed := f.completion(t)
+			assert.Equal(t, "failed", completed.Status)
+			assert.Contains(t, completed.Error, tt.want)
+			assert.Empty(t, f.provider.enqueueCh)
+			f.assertNoMerge(t)
+		})
+	}
+}
+
 // A queue that goes away while the worker waits must not turn the wait into a
 // direct merge of a pull request nothing has tested.
 func TestDeferMergeFailsWhenTheQueueGoesAwayDuringTheWait(t *testing.T) {

@@ -133,8 +133,7 @@
   }
   const targetMember = $derived(pinnedTargetMember && liveMember(pinnedTargetMember));
   const nativeStackMerge = $derived(nativeStackMergeScope(nativeStack, targetNumber));
-  // The members below the target land with it. Forge waits only for the
-  // target's own CI, so merging after CI needs their CI to have passed.
+  // The members below the target land with it, so their CI counts too.
   const belowCI = $derived(nativeStackBelowCI(nativeStack, targetNumber));
   const targetCIFailed = $derived(
     mergingThis ? ciFailed : ciStatusHasFailed(targetMember?.ci_status ?? ""),
@@ -143,12 +142,11 @@
     mergingThis ? deferUntilChecksPass : ciStatusIsPending(targetMember?.ci_status ?? ""),
   );
   const landingCIFailed = $derived(targetCIFailed || belowCI.failed.length > 0);
-  // A merge queue waits for the stack's CI itself.
-  const belowCIPending = $derived(
-    !(mergeQueue && nativeStackMerge) && !landingCIFailed && belowCI.pending.length > 0,
-  );
   const landingCIPending = $derived(
-    !(mergeQueue && nativeStackMerge) && !landingCIFailed && !belowCIPending && targetCIPending,
+    !(mergeQueue && nativeStackMerge) && !landingCIFailed && (targetCIPending || belowCI.pending.length > 0),
+  );
+  const pendingNumbers = $derived(
+    targetCIPending ? [...belowCI.pending, targetNumber] : belowCI.pending,
   );
   // Only this pull request's detail says what is queued and what its rules
   // block; for another target the provider decides when the merge runs.
@@ -480,11 +478,6 @@
             immediately instead.
           {/if}
         </div>
-      {:else if belowCIPending}
-        <div class="ci-defer-note">
-          CI is still running on {numberList(belowCI.pending)}. Merge after CI needs CI to pass on every
-          pull request below #{targetNumber} first.
-        </div>
       {:else if landingCIPending}
         <!-- On GitHub the deferred merge goes to GitHub auto-merge, which
              follows the branch's required checks, unless it bypasses rules.
@@ -492,8 +485,9 @@
              native stack merge waits in Forge's worker. -->
         <div class="ci-defer-note">
           {#if nativeStackMerge}
-            CI is still running on #{targetNumber}. Forge merges {stackLandingCount ? "the stack" : "it"} once
-            it passes, and stops waiting if it restarts.
+            CI is still running on {numberList(pendingNumbers)}. Forge
+            {mergeQueue ? "adds" : "merges"} {stackLandingCount ? "the stack" : "it"}{mergeQueue ? " to the merge queue" : ""}
+            once {stackLandingCount ? "every included pull request passes CI" : "CI passes"}, and stops waiting if it restarts.
           {:else if provider === "github" && !sendsBypass && mergeQueue}
             CI is still running. If GitHub accepts auto-merge for this pull request, GitHub adds it to the merge queue once the branch's required checks and reviews pass; otherwise Forge adds it only if the checks that are pending now pass.
           {:else if provider === "github" && !sendsBypass}

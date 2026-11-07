@@ -539,12 +539,21 @@ func (s *Handler) runDeferredMerge(
 			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 			return
 		}
-		rules, queue := "", false
-		if ci == "passed" {
-			if err := s.recheckNativeStackMembersReady(ctx, repo, below); err != nil {
+		if ci == "passed" || ci == "pending" {
+			// A native stack merge lands the members below with the target,
+			// so it also waits for their CI, and a failure there ends the
+			// wait as one on the target does.
+			stackCI, err := s.nativeStackMembersCI(ctx, repo, below)
+			if err != nil {
 				s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 				return
 			}
+			if ci == "passed" {
+				ci = stackCI
+			}
+		}
+		rules, queue := "", false
+		if ci == "passed" {
 			current, err := s.ensureDeferredMergeTargetUnchanged(ctx, repo, number, queuedTarget)
 			if err != nil {
 				if !errors.Is(err, errDeferredMergeTargetMerged) {
@@ -594,9 +603,10 @@ func (s *Handler) runDeferredMerge(
 }
 
 // requireNativeStackMembersReady refuses a deferred merge of a native stack
-// member while a member below it is not ready, because the stack merge lands
-// those members too and Forge waits only for the target's CI. It returns the
-// members below, which the worker checks again before it merges.
+// member while a member below it is in a state that waiting cannot fix: its
+// CI failed, or it is closed, a draft, or conflicting. The stack merge lands
+// those members too. It returns the members below, which the worker waits
+// for by number, whatever the stack projection later says.
 func (s *Handler) requireNativeStackMembersReady(
 	ctx context.Context, repoID int64, stack *db.Stack, members []db.StackMemberWithPR, number int,
 ) ([]int, error) {
@@ -615,10 +625,10 @@ func (s *Handler) requireNativeStackMembersReady(
 		if err != nil {
 			return nil, httpapi.Internal("get stack member failed")
 		}
-		if reason := nativeStackMemberNotReady(member.Number, mr); reason != "" {
+		if _, reason := nativeStackMemberReadiness(member.Number, mr); reason != "" {
 			return nil, httpapi.Conflict(
 				httpapi.CodeConflict,
-				reason+". Merge after CI needs every pull request below this one to be ready first",
+				reason+", and a stack merge lands every pull request below this one with it",
 				map[string]any{"reason": "stack_member_not_ready", "blocking_number": member.Number},
 			)
 		}
@@ -627,14 +637,17 @@ func (s *Handler) requireNativeStackMembersReady(
 	return below, nil
 }
 
-// recheckNativeStackMembersReady refreshes the CI of the members below the
-// target that were ready when the merge was queued, and fails the merge if one
-// of them is no longer ready. A member merged since then no longer lands.
-func (s *Handler) recheckNativeStackMembersReady(ctx context.Context, repo db.Repo, below []int) error {
+// nativeStackMembersCI refreshes the CI of the members below the target that
+// the merge recorded when it was queued. It reports "pending" while CI still
+// runs on one of them and "passed" once every one is ready, and fails the
+// merge when one can no longer become ready. A member merged since then no
+// longer lands.
+func (s *Handler) nativeStackMembersCI(ctx context.Context, repo db.Repo, below []int) (string, error) {
+	state := "passed"
 	for _, number := range below {
 		mr, err := s.visibleMergeRequest(ctx, repo.ID, number)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if mr != nil && mr.State == db.MergeRequestStateMerged {
 			continue
@@ -644,59 +657,62 @@ func (s *Handler) recheckNativeStackMembersReady(ctx context.Context, repo db.Re
 				ctx, mergeRequestRepoRef(repo), repo.ID, number, mr.PlatformHeadSHA,
 			)
 			if err != nil {
-				return fmt.Errorf("refreshing CI on #%d: %w", number, err)
+				return "", fmt.Errorf("refreshing CI on #%d: %w", number, err)
 			}
 			if len(warnings) > 0 {
-				return fmt.Errorf(
+				return "", fmt.Errorf(
 					"could not refresh CI checks on #%d; merge was not performed: %s",
 					number, strings.Join(warnings, "; "),
 				)
 			}
 			if mr, err = s.visibleMergeRequest(ctx, repo.ID, number); err != nil {
-				return err
+				return "", err
 			}
 		}
-		if reason := nativeStackMemberNotReady(number, mr); reason != "" {
-			return errors.New(reason + ", and the stack merge would land it; merge was not performed")
+		pending, reason := nativeStackMemberReadiness(number, mr)
+		if reason != "" {
+			return "", errors.New(reason + ", and the stack merge would land it; merge was not performed")
+		}
+		if pending {
+			state = "pending"
 		}
 	}
-	return nil
+	return state, nil
 }
 
-// nativeStackMemberNotReady says why a member below the target keeps a native
-// stack merge after CI from running, or returns "" when it is ready: open, not
-// a draft, without conflicts, and with every check passed or no CI at all.
-func nativeStackMemberNotReady(number int, mr *db.MergeRequest) string {
+// nativeStackMemberReadiness reads a member below the target from its current
+// state. reason says why the stack merge cannot land it: it is gone, closed, a
+// draft, or conflicting, or its CI failed. Otherwise pending reports CI still
+// running, and a member whose checks all passed, or that has no CI, is ready.
+func nativeStackMemberReadiness(number int, mr *db.MergeRequest) (pending bool, reason string) {
 	switch {
 	case mr == nil:
-		return fmt.Sprintf("#%d no longer exists", number)
+		return false, fmt.Sprintf("#%d no longer exists", number)
 	case mr.State != db.MergeRequestStateOpen:
-		return fmt.Sprintf("#%d is %s", number, mr.State)
+		return false, fmt.Sprintf("#%d is %s", number, mr.State)
 	case mr.IsDraft:
-		return fmt.Sprintf("#%d is a draft", number)
+		return false, fmt.Sprintf("#%d is a draft", number)
 	case mr.MergeableState == "dirty":
-		return fmt.Sprintf("#%d has merge conflicts", number)
+		return false, fmt.Sprintf("#%d has merge conflicts", number)
 	}
 	checks, err := decodeCIChecks(mr.CIChecksJSON)
 	if err != nil {
-		return fmt.Sprintf("the CI checks of #%d cannot be read", number)
+		return false, fmt.Sprintf("the CI checks of #%d cannot be read", number)
 	}
-	state := deferredMergeAggregateState(mr.CIStatus)
+	aggregate := deferredMergeAggregateState(mr.CIStatus)
+	if aggregate == "failed" {
+		return false, fmt.Sprintf("CI failed on #%d", number)
+	}
+	pending = aggregate == "pending"
 	for _, check := range checks {
 		switch {
 		case check.Status != "completed":
-			state = "pending"
+			pending = true
 		case check.Conclusion != "success" && check.Conclusion != "neutral" && check.Conclusion != "skipped":
-			return fmt.Sprintf("CI failed on #%d", number)
+			return false, fmt.Sprintf("CI failed on #%d", number)
 		}
 	}
-	switch state {
-	case "failed":
-		return fmt.Sprintf("CI failed on #%d", number)
-	case "pending":
-		return fmt.Sprintf("CI is still running on #%d", number)
-	}
-	return ""
+	return pending, ""
 }
 
 func (s *Handler) refreshDeferredMergeCI(

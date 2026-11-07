@@ -217,13 +217,11 @@ func TestToolingStatusGitHubToken(t *testing.T) {
 			var requests atomic.Int32
 			f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
-				assert.Equal("/api/v3/user/repos", r.URL.Path)
-				assert.Equal("1", r.URL.Query().Get("page"))
-				assert.Equal("1", r.URL.Query().Get("per_page"))
+				assert.Equal("/api/v3/user", r.URL.Path)
 				assert.Equal("Bearer "+tt.wantToken, r.Header.Get("Authorization"))
 				w.WriteHeader(tt.status)
 				if tt.status == http.StatusOK {
-					_, _ = w.Write([]byte(`[]`))
+					_, _ = w.Write([]byte(`{"login":"token-owner"}`))
 				} else {
 					_, _ = w.Write([]byte(`{"message":"Repository listing unavailable"}`))
 				}
@@ -257,8 +255,9 @@ func TestToolingStatusGitHubToken(t *testing.T) {
 			Platforms:      []config.PlatformConfig{{Type: "github", Host: "github.com", TokenFile: tokenFile}},
 		}
 		f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal("/api/v3/user", r.URL.Path)
 			if r.Header.Get("Authorization") == "Bearer file-token" {
-				_, _ = w.Write([]byte(`[]`))
+				_, _ = w.Write([]byte(`{"login":"token-owner"}`))
 				return
 			}
 			assert.Equal("Bearer rejected-token", r.Header.Get("Authorization"))
@@ -297,10 +296,16 @@ port = 8091
 		sources, _ := reloadTestTokenSources(t, cfgPath, tokenauth.Key{Platform: "github", Host: "github.com"})
 		var requests atomic.Int64
 		f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal("/api/v3/user/repos", r.URL.Path)
 			assert.Equal("Bearer active-token", r.Header.Get("Authorization"))
 			requests.Add(1)
-			_, _ = w.Write([]byte(`[{"full_name":"acme/widget","default_branch":"main"}]`))
+			switch r.URL.Path {
+			case "/api/v3/user":
+				_, _ = w.Write([]byte(`{"login":"token-owner"}`))
+			case "/api/v3/user/repos":
+				_, _ = w.Write([]byte(`[{"full_name":"acme/widget","default_branch":"main"}]`))
+			default:
+				http.NotFound(w, r)
+			}
 		}, ServerOptions{TokenSources: sources, HostCheckAllowLoopbackAnyPort: true})
 		srv, ts := f.srv, f.ts
 		// Supply the path after construction so only our explicit reload runs.
@@ -329,7 +334,7 @@ repository_selection = "all"
 		assert.True(tooling.GitHubToken.Ready)
 		assert.Positive(requests.Load(), "readiness must probe the active token")
 		assert.Equal("KENN_FORGE_RELOAD_OLD_TOKEN", tooling.GitHubToken.Source)
-		status, body := decodeUserRepositories(t, ts, "/api/v1/platform/user-repositories?platform_host=github.com")
+		status, body := decodeUserRepositories(t, ts, "/api/v1/platform/user-repositories?provider=github&platform_host=github.com")
 		require.Equal(http.StatusOK, status)
 		var listing struct {
 			Repositories json.RawMessage `json:"repositories"`
@@ -352,4 +357,38 @@ func TestToolingStatusWithoutSyncerIgnoresGitHubToken(t *testing.T) {
 
 	tooling := decodeToolingStatus(t, ts)
 	assert.Nil(t, tooling.GitHubToken)
+}
+
+func TestToolingStatusPendingHostIsUnavailableUntilRestart(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("TEST_ENTERPRISE_TOKEN", "enterprise-token")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	const boot = "sync_interval = \"5m\"\nhost = \"127.0.0.1\"\nport = 8091\n"
+	require.NoError(os.WriteFile(cfgPath, []byte(boot), 0o600))
+	cfg, err := config.Load(cfgPath)
+	require.NoError(err)
+	var providerCalls atomic.Int32
+	f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
+		providerCalls.Add(1)
+		_, _ = w.Write([]byte(`[]`))
+	}, ServerOptions{HostCheckAllowLoopbackAnyPort: true})
+	f.srv.configReloadMu.Lock()
+	f.srv.cfgPath = cfgPath
+	f.srv.configReloadMu.Unlock()
+	require.NoError(os.WriteFile(cfgPath, []byte(boot+`[[platforms]]
+type = "github"
+host = "ghe.example.com"
+token_env = "TEST_ENTERPRISE_TOKEN"
+`), 0o600))
+	event := f.srv.configreload.ApplyConfigChange(t.Context())
+	require.True(event.Valid, "reload error: %s", event.Error)
+	require.True(event.RestartRequired)
+	tooling := decodeToolingStatus(t, f.ts)
+	assert.Equal("ghe.example.com", tooling.Gh.Host)
+	assert.Nil(tooling.GitHubToken, "a pending host has no active token source")
+	status, _ := decodeUserRepositories(t, f.ts, "/api/v1/platform/user-repositories?provider=github&platform_host=ghe.example.com")
+	assert.Equal(http.StatusNotFound, status, "a pending provider cannot replace the unavailable CLI")
+	assert.Zero(providerCalls.Load())
 }

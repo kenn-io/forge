@@ -9,7 +9,6 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	httpapi "go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/tokenauth"
-	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 // Handlers holds the server state and cross-package calls this package's
@@ -24,7 +23,7 @@ type Handlers struct {
 	RepoResolver    *httpapi.RepositoryResolver
 	Syncer          **ghclient.Syncer
 	TokenSources    **tokenauth.SourceSet
-	NewGitHubClient *func(tokenauth.Source, string) (platformgithub.UserRepositoriesAPI, error)
+	NewGitHubClient *func(tokenauth.Source, string) (ghclient.Client, error)
 	ToolingRun      *ToolingRunner
 	ToolingStatus   *ToolingStatusCache
 	RepoOperations  func(repo dbpkg.Repo) httpapi.RepoOperations

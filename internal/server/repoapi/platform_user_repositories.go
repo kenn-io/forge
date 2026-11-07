@@ -27,13 +27,12 @@ const (
 )
 
 type listUserRepositoriesInput struct {
-	// Provider selects the platform CLI to list through. Only
-	// "github" (the default) is implemented today; other providers
-	// return an unsupportedCapability problem rather than silently
-	// listing the wrong platform.
+	// Provider selects setup discovery. Explicit "github" uses the active
+	// host token when configured; empty uses gh for the SSH clone picker.
+	// Other providers return an unsupportedCapability problem.
 	Provider string `query:"provider"`
 	// PlatformHost targets a specific platform host (e.g. a GitHub
-	// Enterprise deployment); empty uses the CLI's default host.
+	// Enterprise deployment); empty uses the configured token host or gh's default.
 	PlatformHost string `query:"platform_host"`
 	// Limit caps how many repositories are returned; values outside
 	// (0, 1000] fall back to the default of 100.
@@ -85,11 +84,13 @@ func (s *Handlers) ListUserRepositories(
 		tokenHost, _ = s.toolingPlatformHosts()
 	}
 	var client platformgithub.UserRepositoriesAPI
-	if status, source, host := s.githubHostToken(ctx, tokenHost); status != nil && status.Source != "" {
-		var err error
-		client, err = s.githubClient(source, host)
-		if err != nil {
-			return nil, httpapi.ProviderCallProblem(err, "github", tokenHost)
+	if provider == "github" {
+		if status, source, host := s.githubHostToken(ctx, tokenHost); status != nil && status.Source != "" {
+			tokenClient, err := s.githubClient(source, host)
+			if err != nil {
+				return nil, httpapi.ProviderCallProblem(err, "github", tokenHost)
+			}
+			client = tokenClient.(platformgithub.UserRepositoriesAPI)
 		}
 	}
 	resp := &listUserRepositoriesOutput{}

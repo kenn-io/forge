@@ -135,7 +135,7 @@ export const getListUserRepositoriesUrl = (params?: ListUserRepositoriesParams) 
 };
 
 /**
- * @summary List the authenticated platform CLI user's repositories
+ * @summary List repositories using gh, or the active host token for an explicit GitHub provider
  */
 export const listUserRepositories = async (
   params?: ListUserRepositoriesParams,
@@ -252,7 +252,7 @@ export const getGetToolingStatusUrl = () => {
 };
 
 /**
- * @summary Report git/gh/glab CLI availability and auth
+ * @summary Report git/gh/glab availability, CLI auth, and active GitHub token readiness
  */
 export const getToolingStatus = async (options?: Parameters<typeof orvalFetch>[1]): Promise<ToolingStatusBody> => {
   return orvalFetch<ToolingStatusBody>(getGetToolingStatusUrl(), {

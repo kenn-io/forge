@@ -12,7 +12,6 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/tokenauth"
-	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 // toolingProbeTimeout bounds each probe subprocess. A hung credential
@@ -153,16 +152,16 @@ func (s *Handlers) probeToolingStatus(ctx context.Context) ToolingStatusBody {
 		)
 	})
 	probes.Go(func() {
-		status, source, _ := s.githubHostToken(ctx, githubHost)
+		status, source, host := s.githubHostToken(ctx, githubHost)
 		body.GitHubToken = status
 		if status == nil || status.Source == "" {
 			return
 		}
 		probeCtx, cancel := context.WithTimeout(ctx, toolingProbeTimeout)
 		defer cancel()
-		client, err := s.githubClient(source, githubHost)
+		client, err := s.githubClient(source, host)
 		if err == nil {
-			_, err = client.ListUserRepositoriesPage(probeCtx, 1, 1)
+			_, err = client.GetUser(probeCtx, "")
 		}
 		status.Ready = err == nil
 	})
@@ -173,26 +172,18 @@ func (s *Handlers) probeToolingStatus(ctx context.Context) ToolingStatusBody {
 // githubHostToken uses the active unscoped host source. Pending config can
 // differ until restart when a reload changes GitHub App topology.
 func (s *Handlers) githubHostToken(ctx context.Context, host string) (*toolingTokenStatus, tokenauth.Source, string) {
-	if s.Syncer == nil || *s.Syncer == nil {
+	if s.Syncer == nil || *s.Syncer == nil || s.TokenSources == nil || *s.TokenSources == nil {
 		return nil, nil, ""
 	}
 	host, err := config.NormalizePlatformHost("github", host)
 	if err != nil {
 		return nil, nil, ""
 	}
-	var desc tokenauth.Descriptor
-	var live *tokenauth.ManagedSource
-	var ok bool
-	if s.TokenSources != nil && *s.TokenSources != nil {
-		live, ok = (*s.TokenSources).Get(tokenauth.Key{Platform: "github", Host: host})
+	live, ok := (*s.TokenSources).Get(tokenauth.Key{Platform: "github", Host: host})
+	if !ok {
+		return nil, nil, ""
 	}
-	if ok {
-		desc = live.Descriptor()
-	} else {
-		s.CfgMu.Lock()
-		desc = (*s.Cfg).TokenSourceForPlatformHost("github", host, "", "")
-		s.CfgMu.Unlock()
-	}
+	desc := live.Descriptor()
 	var status *toolingTokenStatus
 	for _, candidate := range desc.Candidates {
 		if candidate.Kind != tokenauth.SourceKindEnv && candidate.Kind != tokenauth.SourceKindFile {
@@ -216,15 +207,11 @@ func (s *Handlers) githubHostToken(ctx context.Context, host string) (*toolingTo
 	return status, source, host
 }
 
-func (s *Handlers) githubClient(source tokenauth.Source, host string) (platformgithub.UserRepositoriesAPI, error) {
+func (s *Handlers) githubClient(source tokenauth.Source, host string) (ghclient.Client, error) {
 	if *s.NewGitHubClient != nil {
 		return (*s.NewGitHubClient)(source, host)
 	}
-	client, err := ghclient.NewClient(source, host, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	return client.(platformgithub.UserRepositoriesAPI), nil
+	return ghclient.NewClient(source, host, nil, nil)
 }
 
 // toolingPlatformHosts picks the platform host each CLI is probed

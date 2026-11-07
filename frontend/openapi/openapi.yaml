@@ -24139,7 +24139,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
-      summary: List the authenticated platform CLI user's repositories
+      summary: List repositories using gh, or the active host token for an explicit GitHub provider
       tags:
         - System
   /projects:
@@ -28921,7 +28921,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
-      summary: Report git/gh/glab CLI availability and auth
+      summary: Report git/gh/glab availability, CLI auth, and active GitHub token readiness
       tags:
         - System
   /ui/active-worktree:

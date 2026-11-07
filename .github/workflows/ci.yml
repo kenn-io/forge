@@ -978,8 +978,7 @@ jobs:
               | group_by([.Package, .Test]) | map(max_by(.Elapsed));
             ($main | timings | map({key: ([.Package, .Test] | tojson), value: .Elapsed}) | from_entries) as $baseline
             | timings | map(. + {previous: $baseline[[.Package, .Test] | tojson]})
-            | map(select(.Elapsed > 60 and (.previous == null or .previous <= 60)))
-            | group_by([.Package, (.Test | split("/")[0])]) | .[] | max_by(.Elapsed)
+            | map(select(.Elapsed > 60 and (.previous == null or .previous <= 60)))[]
             | "::warning title=Slow race test::\(.Package) \(.Test): \(.Elapsed)s; main max: \(if .previous == null then "absent" else "\(.previous)s" end)"
           ' tmp/test-race-timing-events.json
 

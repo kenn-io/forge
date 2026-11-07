@@ -688,6 +688,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   // shownNumber is the pull request whose detail started the action, when the
   // action targets another one, as a native stack merge of another member does.
+  // The shown pull request must still be on screen and is refreshed after; the
+  // target orders the mutation with other actions on it.
   function runPullAction(
     routeRef: ProviderRouteRef,
     number: number,
@@ -697,6 +699,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     shownNumber: number = number,
   ): void {
     const ref = detailRequestRef(routeRef.owner, routeRef.name, shownNumber, routeRef);
+    const targetRef = shownNumber === number ? ref : detailRequestRef(routeRef.owner, routeRef.name, number, routeRef);
     if (!isDetailShowingRef(ref)) {
       const message = "The selected pull request changed before the provider action started.";
       invokeMutationFailure(callbacks.onFailure, message);
@@ -710,16 +713,16 @@ export function createDetailStore(opts: DetailStoreOptions) {
     let mutationSettled = false;
     const program = Effect.gen(function* () {
       const mutations = yield* ProviderMutations;
-      yield* submitDetailMutation(mutations, ref, {
-        key: pullMutationKey(ref, "actions"),
+      yield* submitDetailMutation(mutations, targetRef, {
+        key: pullMutationKey(targetRef, "actions"),
         baseline: undefined,
         optimistic: undefined,
         apply: () => Effect.void,
-        commit: commit(ref),
+        commit: commit(targetRef),
         refreshOnStale: executeGeneratedApiRequest(`sync after ${operation}`, (client, signal) =>
-          providerUsesHostRoute(ref)
-            ? client.PullRequestsService.syncPullOnHost({ ...providerHostRouteParams(ref), number: number }, { signal })
-            : client.PullRequestsService.syncPull({ ...providerRouteParams(ref), number: number }, { signal }),
+          providerUsesHostRoute(targetRef)
+            ? client.PullRequestsService.syncPullOnHost({ ...providerHostRouteParams(targetRef), number }, { signal })
+            : client.PullRequestsService.syncPull({ ...providerRouteParams(targetRef), number }, { signal }),
         ).pipe(Effect.asVoid),
       });
       const shouldReconcile = yield* Effect.sync(() => {

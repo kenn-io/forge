@@ -237,24 +237,44 @@ describe("MergeModal native stack target", () => {
     expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({ expected_head_sha: "head-11" });
   });
 
-  it("waits for CI on a member below when this pull request's own checks passed", async () => {
+  it("waits for this pull request's own CI once every member below has passed", async () => {
     render(MergeModal, {
       props: {
         ...baseProps,
         number: 12,
         expectedHeadSha: "head-12",
-        nativeStack: nativeStack([{ number: 11, ci_status: "pending" }, { number: 12 }]),
+        deferUntilChecksPass: true,
+        nativeStack: nativeStack([{ number: 11 }, { number: 12, ci_status: "pending" }]),
       },
     });
 
     expect(normalized(screen.getByText(/CI is still running on/).textContent)).toBe(
-      "CI is still running on #11. Forge merges the stack once every included pull request passes CI, and " +
-        "stops waiting if it restarts.",
+      "CI is still running on #12. Forge merges the stack once it passes, and stops waiting if it restarts.",
     );
     await fireEvent.click(screen.getByRole("button", { name: "Merge after CI" }));
 
     expect(mockMergePull.mock.calls[0]?.[1]).toBe(12);
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
+  });
+
+  it("does not offer to wait while CI still runs on a member below", () => {
+    render(MergeModal, {
+      props: {
+        ...baseProps,
+        number: 12,
+        expectedHeadSha: "head-12",
+        deferUntilChecksPass: true,
+        nativeStack: nativeStack([
+          { number: 11, ci_status: "pending" },
+          { number: 12, ci_status: "pending" },
+        ]),
+      },
+    });
+
+    expect(normalized(screen.getByText(/CI is still running on/).textContent)).toBe(
+      "CI is still running on #11. Merge after CI needs CI to pass on every pull request below #12 first.",
+    );
+    expect(screen.queryByRole("button", { name: "Merge after CI" })).toBeNull();
   });
 
   it("names a member below whose CI failed instead of offering to wait", () => {

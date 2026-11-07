@@ -72,8 +72,6 @@ type deferredMergeTargetSnapshot struct {
 	HeadSHA    string
 	BaseBranch string
 	BaseSHA    string
-	// NoCI is set when the target had no CI when the merge was queued.
-	NoCI bool
 }
 
 type DeferredMergeCompletedPayload struct {
@@ -172,6 +170,10 @@ func (s *Handler) enqueueDeferredMerge(
 			return deferMergePRBody{Status: "queued"}, nil
 		}
 	}
+	below, err := s.requireNativeStackMembersReady(ctx, repo.ID, stack, members, number)
+	if err != nil {
+		return deferMergePRBody{}, err
+	}
 	expectedHeadSHA, err := s.preflightMergePR(repo.Row(), mr, number, body)
 	if err != nil {
 		return deferMergePRBody{}, err
@@ -205,11 +207,6 @@ func (s *Handler) enqueueDeferredMerge(
 			return deferMergePRBody{}, err
 		}
 	}
-	stack, members, err = s.db.GetStackForPRByRepoID(ctx, repo.ID, number)
-	if err != nil {
-		return deferMergePRBody{}, httpapi.Internal("get stack for pull request failed")
-	}
-	below, _ := nativeStackMembersBelow(stack, members, number)
 	if autoMerge != nil && autoMerge.state.Enabled {
 		if body.BypassRules {
 			return deferMergePRBody{}, httpapi.Conflict(
@@ -233,17 +230,12 @@ func (s *Handler) enqueueDeferredMerge(
 			map[string]any{"reason": "ci_failed"},
 		)
 	}
-	stackPending, belowWaits, err := s.deferredMergeStackAdmission(ctx, repo.ID, below)
-	if err != nil {
-		return deferMergePRBody{}, err
-	}
-	if len(pendingKeys) == 0 && aggregateState != "pending" && !stackPending {
+	if len(pendingKeys) == 0 && aggregateState != "pending" {
 		refreshed, refreshedKeys, err := s.refreshPendingDeferredMergeCheckKeys(ctx, repo.Repo, number, queuedTarget)
 		if err != nil {
 			return deferMergePRBody{}, err
 		}
 		pendingKeys = refreshedKeys
-		queuedTarget.NoCI = queuedDeferredMergeNoCI(refreshed)
 		aggregateState = deferredMergeAggregateState(refreshed.CIStatus)
 		if aggregateState == "failed" {
 			return deferMergePRBody{}, httpapi.Conflict(
@@ -253,7 +245,7 @@ func (s *Handler) enqueueDeferredMerge(
 			)
 		}
 	}
-	if len(pendingKeys) == 0 && aggregateState != "pending" && !stackPending {
+	if len(pendingKeys) == 0 && aggregateState != "pending" {
 		return deferMergePRBody{}, httpapi.Conflict(
 			httpapi.CodeConflict,
 			"no pending CI checks to wait for",
@@ -324,7 +316,7 @@ func (s *Handler) enqueueDeferredMerge(
 	}
 	started := s.runBackground(func(bgCtx context.Context) {
 		defer s.clearDeferredMergeInFlight(key, handle)
-		s.runDeferredMerge(bgCtx, repo.Repo, number, body, pendingKeys, belowWaits, queuedTarget, pollInterval, maxWait, handle)
+		s.runDeferredMerge(bgCtx, repo.Repo, number, body, pendingKeys, below, queuedTarget, pollInterval, maxWait, handle)
 	})
 	if !started {
 		s.clearDeferredMergeInFlight(key, handle)
@@ -370,17 +362,15 @@ func (s *Handler) readProviderAutoMerge(
 }
 
 // useProviderAutoMerge reports whether the provider's auto-merge runs a new
-// deferred merge. keepWorker keeps Forge's worker: only it merges over the
-// rules, so bypass consent keeps it, and GitHub's public API refuses
-// auto-merge for every pull request in a native stack, which only its web UI
-// can turn on. GitHub refuses auto-merge for a pull request it could merge
-// now, so the worker waits for those checks. A branch with a merge queue
-// takes auto-merge even where the repository setting is off, and enqueues
-// once the checks pass.
+// deferred merge. Only Forge's worker merges over the rules, so bypass
+// consent keeps it. GitHub refuses auto-merge for a pull request it could
+// merge now, so the worker waits for those checks. A branch with a merge
+// queue takes auto-merge even where the repository setting is off, and
+// enqueues once the checks pass.
 func (s *Handler) useProviderAutoMerge(
-	ctx context.Context, repoID int64, mr *db.MergeRequest, autoMerge *providerAutoMerge, keepWorker bool,
+	ctx context.Context, repoID int64, mr *db.MergeRequest, autoMerge *providerAutoMerge, bypassRules bool,
 ) (bool, error) {
-	if autoMerge == nil || keepWorker || autoMerge.state.MergeableNow {
+	if autoMerge == nil || bypassRules || autoMerge.state.MergeableNow {
 		return false, nil
 	}
 	if autoMerge.state.RepositoryAllows {
@@ -526,7 +516,7 @@ func (s *Handler) runDeferredMerge(
 	number int,
 	body mergePRInputBody,
 	pendingKeys []deferredMergeCheckKey,
-	belowWaits map[int]deferredMergeWait,
+	below []int,
 	queuedTarget deferredMergeTargetSnapshot,
 	pollInterval time.Duration,
 	maxWait time.Duration,
@@ -549,21 +539,12 @@ func (s *Handler) runDeferredMerge(
 			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 			return
 		}
-		if ci == "passed" || ci == "pending" {
-			// A native stack merge lands every unmerged member below the
-			// target with it, so their CI must pass too, and a failure there
-			// ends the wait as one on the target does.
-			stackCI, err := s.deferredMergeStackCI(ctx, repo, number, belowWaits)
-			if err != nil {
+		rules, queue := "", false
+		if ci == "passed" {
+			if err := s.recheckNativeStackMembersReady(ctx, repo, below); err != nil {
 				s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 				return
 			}
-			if ci == "passed" {
-				ci = stackCI
-			}
-		}
-		rules, queue := "", false
-		if ci == "passed" {
 			current, err := s.ensureDeferredMergeTargetUnchanged(ctx, repo, number, queuedTarget)
 			if err != nil {
 				if !errors.Is(err, errDeferredMergeTargetMerged) {
@@ -612,153 +593,110 @@ func (s *Handler) runDeferredMerge(
 	}
 }
 
-// nativeStackMembersBelow returns the unmerged members that a merge of number
-// lands with it, bottom first, and whether number belongs to a provider-native
-// stack. Members must be ordered by position.
-func nativeStackMembersBelow(
-	stack *db.Stack, members []db.StackMemberWithPR, number int,
-) ([]db.StackMemberWithPR, bool) {
+// requireNativeStackMembersReady refuses a deferred merge of a native stack
+// member while a member below it is not ready, because the stack merge lands
+// those members too and Forge waits only for the target's CI. It returns the
+// members below, which the worker checks again before it merges.
+func (s *Handler) requireNativeStackMembersReady(
+	ctx context.Context, repoID int64, stack *db.Stack, members []db.StackMemberWithPR, number int,
+) ([]int, error) {
 	if stack == nil || !stack.Native {
-		return nil, false
+		return nil, nil
 	}
-	var below []db.StackMemberWithPR
+	var below []int
 	for _, member := range members {
 		if member.Number == number {
-			return below, true
+			break
 		}
-		if member.State != string(db.MergeRequestStateMerged) {
-			below = append(below, member)
-		}
-	}
-	return nil, false
-}
-
-// nativeStackMemberNotReady says why the provider's stack merge would refuse a
-// member below the target, as GitHub's own stack auto-merge does for a closed,
-// draft, or conflicting member, or returns "" when nothing does.
-func nativeStackMemberNotReady(number int, state string, isDraft bool, mergeableState string) string {
-	switch {
-	case state != string(db.MergeRequestStateOpen):
-		return fmt.Sprintf("#%d is %s", number, state)
-	case isDraft:
-		return fmt.Sprintf("#%d is a draft", number)
-	case mergeableState == "dirty":
-		return fmt.Sprintf("#%d has merge conflicts", number)
-	}
-	return ""
-}
-
-// deferredMergeWait is what a deferred merge waits for on a member below its
-// target: the checks pending when the merge was queued, and whether the member
-// had no CI then.
-type deferredMergeWait struct {
-	keys []deferredMergeCheckKey
-	noCI bool
-}
-
-// deferredMergeStackAdmission rejects a deferral that a member below the
-// target already rules out, from the stored state, and reports whether any of
-// them still runs CI. It returns what the merge waits for on each member, as
-// it does on the target.
-func (s *Handler) deferredMergeStackAdmission(
-	ctx context.Context, repoID int64, below []db.StackMemberWithPR,
-) (bool, map[int]deferredMergeWait, error) {
-	pending := false
-	waits := make(map[int]deferredMergeWait, len(below))
-	for _, member := range below {
-		if reason := nativeStackMemberNotReady(
-			member.Number, member.State, member.IsDraft, member.MergeableState,
-		); reason != "" {
-			return false, nil, httpapi.Conflict(
-				httpapi.CodeConflict,
-				reason+", and a stack merge lands every pull request below this one with it",
-				map[string]any{"reason": "stack_member_not_ready", "blocking_number": member.Number},
-			)
-		}
-		switch deferredMergeAggregateState(member.CIStatus) {
-		case "failed":
-			return false, nil, httpapi.Conflict(
-				httpapi.CodeConflict,
-				fmt.Sprintf("CI failed on #%d, which a stack merge lands with this pull request", member.Number),
-				map[string]any{"reason": "ci_failed", "blocking_number": member.Number},
-			)
-		case "pending":
-			pending = true
+		if member.State == string(db.MergeRequestStateMerged) {
+			continue
 		}
 		mr, err := s.visibleMergeRequest(ctx, repoID, member.Number)
 		if err != nil {
-			return false, nil, httpapi.Internal("get stack member failed")
+			return nil, httpapi.Internal("get stack member failed")
 		}
-		if mr == nil {
-			continue
-		}
-		memberKeys, err := pendingDeferredMergeCheckKeys(mr.CIChecksJSON)
-		if err != nil {
-			return false, nil, httpapi.Validation("ci_checks", err.Error())
-		}
-		if len(memberKeys) > 0 {
-			pending = true
-		}
-		waits[member.Number] = deferredMergeWait{keys: memberKeys, noCI: queuedDeferredMergeNoCI(mr)}
-	}
-	return pending, waits, nil
-}
-
-// deferredMergeStackCI refreshes the CI of every unmerged member a native
-// stack merge lands below the target. It reports "passed" once all of them
-// passed, including the checks each had pending when the merge was queued,
-// and "pending" while any still runs. A member whose CI failed or is
-// unavailable, or that the provider's stack merge would refuse, fails the
-// deferred merge. Outside a native stack it reports "passed".
-func (s *Handler) deferredMergeStackCI(
-	ctx context.Context, repo db.Repo, number int, belowWaits map[int]deferredMergeWait,
-) (string, error) {
-	stack, members, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, number)
-	if err != nil {
-		return "", err
-	}
-	below, _ := nativeStackMembersBelow(stack, members, number)
-	state := "passed"
-	for _, member := range below {
-		warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
-			ctx, mergeRequestRepoRef(repo), repo.ID, member.Number, member.PlatformHeadSHA,
-		)
-		if err != nil {
-			return "", fmt.Errorf("refreshing CI on #%d: %w", member.Number, err)
-		}
-		if len(warnings) > 0 {
-			return "", fmt.Errorf(
-				"could not refresh CI checks on #%d; deferred merge was not performed: %s",
-				member.Number, strings.Join(warnings, "; "),
+		if reason := nativeStackMemberNotReady(member.Number, mr); reason != "" {
+			return nil, httpapi.Conflict(
+				httpapi.CodeConflict,
+				reason+". Merge after CI needs every pull request below this one to be ready first",
+				map[string]any{"reason": "stack_member_not_ready", "blocking_number": member.Number},
 			)
 		}
-		mr, err := s.visibleMergeRequest(ctx, repo.ID, member.Number)
+		below = append(below, member.Number)
+	}
+	return below, nil
+}
+
+// recheckNativeStackMembersReady refreshes the CI of the members below the
+// target that were ready when the merge was queued, and fails the merge if one
+// of them is no longer ready. A member merged since then no longer lands.
+func (s *Handler) recheckNativeStackMembersReady(ctx context.Context, repo db.Repo, below []int) error {
+	for _, number := range below {
+		mr, err := s.visibleMergeRequest(ctx, repo.ID, number)
 		if err != nil {
-			return "", err
+			return err
 		}
-		if mr == nil {
-			return "", fmt.Errorf("#%d no longer exists; merge was not performed", member.Number)
+		if mr != nil && mr.State == db.MergeRequestStateMerged {
+			continue
 		}
-		if reason := nativeStackMemberNotReady(
-			mr.Number, string(mr.State), mr.IsDraft, mr.MergeableState,
-		); reason != "" {
-			return "", errors.New(reason + ", and a stack merge lands it with this pull request; merge was not performed")
+		if mr != nil {
+			warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
+				ctx, mergeRequestRepoRef(repo), repo.ID, number, mr.PlatformHeadSHA,
+			)
+			if err != nil {
+				return fmt.Errorf("refreshing CI on #%d: %w", number, err)
+			}
+			if len(warnings) > 0 {
+				return fmt.Errorf(
+					"could not refresh CI checks on #%d; merge was not performed: %s",
+					number, strings.Join(warnings, "; "),
+				)
+			}
+			if mr, err = s.visibleMergeRequest(ctx, repo.ID, number); err != nil {
+				return err
+			}
 		}
-		wait := belowWaits[mr.Number]
-		ci, err := deferredMergeCheckState(mr.CIStatus, wait.keys, mr.CIChecksJSON, wait.noCI)
-		if err != nil {
-			return "", err
-		}
-		switch ci {
-		case "failed":
-			return "", fmt.Errorf("CI failed on #%d, which a stack merge lands with this pull request; merge was not performed", mr.Number)
-		case "unknown":
-			return "", fmt.Errorf("CI status of #%d is unavailable after refresh; merge was not performed", mr.Number)
-		case "pending":
-			state = "pending"
+		if reason := nativeStackMemberNotReady(number, mr); reason != "" {
+			return errors.New(reason + ", and the stack merge would land it; merge was not performed")
 		}
 	}
-	return state, nil
+	return nil
+}
+
+// nativeStackMemberNotReady says why a member below the target keeps a native
+// stack merge after CI from running, or returns "" when it is ready: open, not
+// a draft, without conflicts, and with every check passed or no CI at all.
+func nativeStackMemberNotReady(number int, mr *db.MergeRequest) string {
+	switch {
+	case mr == nil:
+		return fmt.Sprintf("#%d no longer exists", number)
+	case mr.State != db.MergeRequestStateOpen:
+		return fmt.Sprintf("#%d is %s", number, mr.State)
+	case mr.IsDraft:
+		return fmt.Sprintf("#%d is a draft", number)
+	case mr.MergeableState == "dirty":
+		return fmt.Sprintf("#%d has merge conflicts", number)
+	}
+	checks, err := decodeCIChecks(mr.CIChecksJSON)
+	if err != nil {
+		return fmt.Sprintf("the CI checks of #%d cannot be read", number)
+	}
+	state := deferredMergeAggregateState(mr.CIStatus)
+	for _, check := range checks {
+		switch {
+		case check.Status != "completed":
+			state = "pending"
+		case check.Conclusion != "success" && check.Conclusion != "neutral" && check.Conclusion != "skipped":
+			return fmt.Sprintf("CI failed on #%d", number)
+		}
+	}
+	switch state {
+	case "failed":
+		return fmt.Sprintf("CI failed on #%d", number)
+	case "pending":
+		return fmt.Sprintf("CI is still running on #%d", number)
+	}
+	return ""
 }
 
 func (s *Handler) refreshDeferredMergeCI(
@@ -821,7 +759,7 @@ func (s *Handler) refreshDeferredMergeCI(
 			Warnings:     []string{},
 		},
 	})
-	return deferredMergeCheckState(refreshed.CIStatus, pendingKeys, refreshed.CIChecksJSON, queuedTarget.NoCI)
+	return deferredMergeCheckState(refreshed.CIStatus, pendingKeys, refreshed.CIChecksJSON)
 }
 
 func (s *Handler) refreshPendingDeferredMergeCheckKeys(
@@ -1079,7 +1017,6 @@ func deferredMergeTargetSnapshotFromMR(mr *db.MergeRequest) deferredMergeTargetS
 		HeadSHA:    strings.TrimSpace(mr.PlatformHeadSHA),
 		BaseBranch: strings.TrimSpace(mr.BaseBranch),
 		BaseSHA:    strings.TrimSpace(mr.PlatformBaseSHA),
-		NoCI:       queuedDeferredMergeNoCI(mr),
 	}
 }
 
@@ -1238,9 +1175,7 @@ func pendingDeferredMergeCheckKeys(checksJSON string) ([]deferredMergeCheckKey, 
 	return keys, nil
 }
 
-func deferredMergeCheckState(
-	aggregateStatus string, keys []deferredMergeCheckKey, checksJSON string, queuedNoCI bool,
-) (string, error) {
+func deferredMergeCheckState(aggregateStatus string, keys []deferredMergeCheckKey, checksJSON string) (string, error) {
 	aggregateState := deferredMergeAggregateState(aggregateStatus)
 	if aggregateState == "failed" {
 		return "failed", nil
@@ -1268,14 +1203,6 @@ func deferredMergeCheckState(
 		}
 	}
 	if aggregateState == "unknown" {
-		// A pull request that had no CI at all when the merge was queued, and
-		// still has none, leaves nothing to wait for. Only a native stack
-		// merge queues one, for a target or member below without CI of its
-		// own. A check captured as pending must still pass, so any other
-		// empty refresh fails closed.
-		if queuedNoCI && len(keys) == 0 && deferredMergeNoCI(aggregateStatus, checks) {
-			return "passed", nil
-		}
 		return "unknown", nil
 	}
 	pending := false
@@ -1305,19 +1232,6 @@ func deferredMergeCheckState(
 		return "pending", nil
 	}
 	return "passed", nil
-}
-
-// deferredMergeNoCI reports a pull request with no CI: no aggregate status and
-// no checks.
-func deferredMergeNoCI(aggregateStatus string, checks []db.CICheck) bool {
-	return strings.TrimSpace(aggregateStatus) == "" && len(checks) == 0
-}
-
-// queuedDeferredMergeNoCI reports whether the stored pull request had no CI
-// when the merge was queued.
-func queuedDeferredMergeNoCI(mr *db.MergeRequest) bool {
-	checks, err := decodeCIChecks(mr.CIChecksJSON)
-	return err == nil && deferredMergeNoCI(mr.CIStatus, checks)
 }
 
 func deferredMergeAggregateState(status string) string {

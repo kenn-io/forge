@@ -1,9 +1,7 @@
 package pullapi
 
 import (
-	"context"
 	"net/http"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,9 +14,11 @@ import (
 )
 
 // nativeStackDeferFixture is a native stack of #6 below #7 on a provider whose
-// repository allows auto-merge. A deferred merge of #7 lands #6 with it.
+// repository allows auto-merge. #7's CI is pending as stored and passes on
+// the provider. A deferred merge of #7 lands #6 with it.
 type nativeStackDeferFixture struct {
 	*autoMergeFixture
+	stackID int64
 }
 
 type nativeStackDeferOptions struct {
@@ -26,16 +26,8 @@ type nativeStackDeferOptions struct {
 	bottom db.MergeRequest
 	// bottomChecks are the checks the provider reports for #6.
 	bottomChecks []platform.CICheck
-	// targetPassed stores #7 with CI already passed instead of pending.
-	targetPassed bool
-	// targetNoCI stores #7 without CI, and the provider reports none for it.
-	targetNoCI bool
-	// targetChecks replaces the passed checks the provider reports for #7.
-	targetChecks []platform.CICheck
-	// bottomQueue gives #6's base branch an enabled merge queue, and the
-	// provider reports #7 blocked, as a branch that requires a queue does.
-	bottomQueue bool
-	maxWait     time.Duration
+	// holdCI holds the worker's first CI read until it is closed.
+	holdCI chan struct{}
 }
 
 func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nativeStackDeferFixture {
@@ -51,73 +43,40 @@ func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nat
 		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
-	targetChecks := []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}}
-	switch {
-	case opts.targetNoCI:
-		targetChecks = []platform.CICheck{}
-	case opts.targetChecks != nil:
-		targetChecks = opts.targetChecks
+	inner := &deferredMergeTestProvider{
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{
+			{
+				Repo: ref, PlatformID: 7001, Number: 7, Title: "Defer merge", Author: "ada", State: "open",
+				HeadBranch: "feature", BaseBranch: "main",
+				HeadSHA: "head-sha", BaseSHA: "base-sha", CIStatus: "success",
+				CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+			},
+			{
+				Repo: ref, PlatformID: 6001, Number: 6, Title: "Bottom", Author: "ada", State: "open",
+				HeadBranch: "bottom", BaseBranch: "main",
+				HeadSHA: "bottom-head", BaseSHA: "base-sha",
+				CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+			},
+		},
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha":    {{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
+			"bottom-head": opts.bottomChecks,
+		},
+		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
-	targetMergeableState := ""
-	if opts.bottomQueue {
-		targetMergeableState = "blocked"
+	if opts.holdCI != nil {
+		inner.ciStarted, inner.ciRelease = make(chan struct{}), opts.holdCI
 	}
 	provider := &autoMergeTestProvider{
-		deferredMergeTestProvider: &deferredMergeTestProvider{
-			ref: ref,
-			mergeRequests: []platform.MergeRequest{
-				{
-					Repo: ref, PlatformID: 7001, Number: 7, Title: "Defer merge", Author: "ada", State: "open",
-					HeadBranch: "feature", BaseBranch: "main",
-					HeadSHA: "head-sha", BaseSHA: "base-sha", CIStatus: "success",
-					MergeableState: targetMergeableState,
-					CreatedAt:      now, UpdatedAt: now, LastActivityAt: now,
-				},
-				{
-					Repo: ref, PlatformID: 6001, Number: 6, Title: "Bottom", Author: "ada", State: "open",
-					HeadBranch: "bottom", BaseBranch: "main",
-					HeadSHA: "bottom-head", BaseSHA: "base-sha",
-					CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
-				},
-			},
-			ciChecks: map[string][]platform.CICheck{
-				"head-sha":    targetChecks,
-				"bottom-head": opts.bottomChecks,
-			},
-			mergeCh:    make(chan deferredMergeTestMergeCall, 1),
-			mergeQueue: opts.bottomQueue,
-			enqueueCh:  make(chan int, 1),
-		},
-		allowed:  true,
-		enableCh: make(chan deferredMergeTestMergeCall, 2),
+		deferredMergeTestProvider: inner,
+		allowed:                   true,
+		enableCh:                  make(chan deferredMergeTestMergeCall, 2),
 	}
 	srv, database, repoID, client := newDeferredMergeRouteServer(
 		t, provider, ref, now,
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
-		deferredMergeTestOptions{deferredMergeMaxWait: opts.maxWait},
 	)
-	if opts.targetPassed || opts.targetNoCI {
-		target := &db.MergeRequest{
-			RepoID: repoID, PlatformID: 7001, Number: 7, Title: "Defer merge", Author: "ada",
-			State: db.MergeRequestStateOpen, HeadBranch: "feature", BaseBranch: "main",
-			PlatformHeadSHA: "head-sha", PlatformBaseSHA: "base-sha",
-			CIStatus: "success", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
-				{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"},
-			}),
-			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
-		}
-		if opts.targetNoCI {
-			target.CIStatus, target.CIChecksJSON = "", ""
-		}
-		_, err := database.UpsertMergeRequest(ctx, target)
-		require.NoError(t, err)
-	}
-	if opts.bottomQueue {
-		_, err := database.UpsertMergeQueueState(ctx, repoID, db.MergeQueueState{
-			Number: 6, BaseBranch: "main", Enabled: true, MergeMethod: "squash", ObservedAt: now,
-		})
-		require.NoError(t, err)
-	}
 	bottom := opts.bottom
 	bottom.RepoID, bottom.PlatformID, bottom.Number = repoID, 6001, 6
 	bottom.Title, bottom.Author = "Bottom", "ada"
@@ -137,9 +96,12 @@ func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nat
 		{StackID: stackID, MergeRequestID: bottomID, Position: 1},
 		{StackID: stackID, MergeRequestID: target.ID, Position: 2},
 	}))
-	return &nativeStackDeferFixture{&autoMergeFixture{
-		provider: provider, srv: srv, database: database, repoID: repoID, client: client, ref: ref,
-	}}
+	return &nativeStackDeferFixture{
+		autoMergeFixture: &autoMergeFixture{
+			provider: provider, srv: srv, database: database, repoID: repoID, client: client, ref: ref,
+		},
+		stackID: stackID,
+	}
 }
 
 func (f *nativeStackDeferFixture) deferTarget(t *testing.T) *generated.DeferMergePullOnHostResp {
@@ -166,25 +128,6 @@ func (f *nativeStackDeferFixture) assertNoMerge(t *testing.T) {
 	}
 }
 
-// requireMerge waits for the worker to merge #7, which lands the stack.
-func (f *nativeStackDeferFixture) requireMerge(t *testing.T) {
-	t.Helper()
-	events, _ := f.srv.Hub().Subscribe(t.Context(), false)
-	for {
-		select {
-		case call := <-f.provider.mergeCh:
-			assert.Equal(t, 7, call.Number)
-			return
-		case ev := <-events:
-			if payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload); ok && payload.Status == "failed" {
-				require.FailNow(t, "the deferred merge failed", payload.Error)
-			}
-		case <-time.After(5 * time.Second):
-			require.FailNow(t, "the worker did not merge the stack")
-		}
-	}
-}
-
 // completion waits for the worker's deferred_merge_completed event.
 func (f *nativeStackDeferFixture) completion(t *testing.T) DeferredMergeCompletedPayload {
 	t.Helper()
@@ -201,135 +144,81 @@ func (f *nativeStackDeferFixture) completion(t *testing.T) DeferredMergeComplete
 	}
 }
 
+func passedChecksJSON(t *testing.T) string {
+	t.Helper()
+	return mustDeferredMergeChecksJSON(t, []db.CICheck{
+		{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"},
+	})
+}
+
+var passedChecks = []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}}
+
 func TestDeferMergeInNativeStackRunsWorkerInsteadOfProviderAutoMerge(t *testing.T) {
 	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
-		bottom: db.MergeRequest{CIStatus: "success", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
-			{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"},
-		})},
-		bottomChecks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
+		bottom:       db.MergeRequest{CIStatus: "success", CIChecksJSON: passedChecksJSON(t)},
+		bottomChecks: passedChecks,
 	})
 
 	resp := f.deferTarget(t)
 	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
 
+	completed := f.completion(t)
+	assert.Equal(t, "merged", completed.Status, completed.Error)
 	select {
 	case call := <-f.provider.mergeCh:
 		assert.Equal(t, 7, call.Number)
 		assert.Equal(t, "head-sha", call.ExpectedHeadSHA)
-	case <-time.After(5 * time.Second):
+	default:
 		require.FailNow(t, "the worker did not merge the stack")
 	}
 	f.assertNoAutoMergeRequest(t)
 }
 
-func TestDeferMergeInNativeStackRejectsAMemberBelowWithFailedCI(t *testing.T) {
-	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
-		bottom: db.MergeRequest{CIStatus: "failure", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
-			{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "failure"},
-		})},
-	})
+// Forge waits only for the target's CI, so every member below must be ready
+// before it accepts the merge.
+func TestDeferMergeInNativeStackRejectsAMemberBelowThatIsNotReady(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		bottom db.MergeRequest
+		want   string
+	}{
+		{
+			name: "failed CI",
+			bottom: db.MergeRequest{CIStatus: "failure", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
+				{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "failure"},
+			})},
+			want: "CI failed on #6",
+		},
+		{
+			name: "running CI",
+			bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
+				{App: "GitLab", Name: "pipeline", Status: "in_progress"},
+			})},
+			want: "CI is still running on #6",
+		},
+		{
+			name:   "draft",
+			bottom: db.MergeRequest{IsDraft: true, CIStatus: "success", CIChecksJSON: passedChecksJSON(t)},
+			want:   "#6 is a draft",
+		},
+		{
+			name:   "conflicts",
+			bottom: db.MergeRequest{MergeableState: "dirty", CIStatus: "success", CIChecksJSON: passedChecksJSON(t)},
+			want:   "#6 has merge conflicts",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newNativeStackDeferFixture(t, nativeStackDeferOptions{bottom: tt.bottom})
 
-	resp := f.deferTarget(t)
-	require.Equal(t, http.StatusConflict, resp.StatusCode, string(resp.Body))
-	assert.Contains(t, string(resp.Body), `"reason":"ci_failed"`)
-	assert.Contains(t, string(resp.Body), `"blocking_number":6`)
-	assert.Contains(t, string(resp.Body), "CI failed on #6")
-	assert.False(t, f.workerQueued(t))
-	f.assertNoAutoMergeRequest(t)
-}
-
-func TestDeferMergeInNativeStackRejectsADraftMemberBelow(t *testing.T) {
-	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
-		bottom: db.MergeRequest{IsDraft: true, CIStatus: "pending"},
-	})
-
-	resp := f.deferTarget(t)
-	require.Equal(t, http.StatusConflict, resp.StatusCode, string(resp.Body))
-	assert.Contains(t, string(resp.Body), `"reason":"stack_member_not_ready"`)
-	assert.Contains(t, string(resp.Body), "#6 is a draft")
-	assert.False(t, f.workerQueued(t))
-}
-
-// The target's own checks have passed, so only the member below gives the
-// worker something to wait for.
-func TestDeferMergeInNativeStackWaitsForAMemberBelow(t *testing.T) {
-	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
-		targetPassed: true,
-		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
-			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
-		})},
-		bottomChecks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
-		maxWait:      50 * time.Millisecond, //nolint:kennlint // deadlinetest: the member below must still be running when the wait expires
-	})
-
-	resp := f.deferTarget(t)
-	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
-
-	completed := f.completion(t)
-	assert.Equal(t, "failed", completed.Status)
-	assert.Contains(t, completed.Error, "timed out waiting for pending CI checks")
-	f.assertNoMerge(t)
-	f.assertNoAutoMergeRequest(t)
-}
-
-func TestDeferMergeInNativeStackFailsWhenAMemberBelowFailsWhileWaiting(t *testing.T) {
-	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
-		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
-			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
-		})},
-		bottomChecks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "failure"}},
-	})
-
-	resp := f.deferTarget(t)
-	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
-
-	completed := f.completion(t)
-	assert.Equal(t, "failed", completed.Status)
-	assert.Contains(t, completed.Error, "CI failed on #6")
-	f.assertNoMerge(t)
-}
-
-// A check that was pending on the member below when the merge was queued must
-// pass; a refresh that no longer reports it keeps the worker waiting.
-func TestDeferMergeInNativeStackWaitsForACheckThatDisappearsBelow(t *testing.T) {
-	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
-		targetPassed: true,
-		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
-			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
-			{App: "GitLab", Name: "lint", Status: "in_progress"},
-		})},
-		bottomChecks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
-		maxWait:      50 * time.Millisecond, //nolint:kennlint // deadlinetest: the missing check must still be outstanding when the wait expires
-	})
-
-	resp := f.deferTarget(t)
-	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
-
-	completed := f.completion(t)
-	assert.Equal(t, "failed", completed.Status)
-	assert.Contains(t, completed.Error, "timed out waiting for pending CI checks")
-	f.assertNoMerge(t)
-}
-
-// A member below that fails while the target still runs CI ends the wait, as a
-// failure on the target does, so a later rerun cannot merge the stack.
-func TestDeferMergeInNativeStackFailsWhenAMemberBelowFailsWhileTheTargetRuns(t *testing.T) {
-	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
-		targetChecks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
-		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
-			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
-		})},
-		bottomChecks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "failure"}},
-		maxWait:      200 * time.Millisecond, //nolint:kennlint // deadlinetest: without the check below, the wait would end only by timing out
-	})
-
-	resp := f.deferTarget(t)
-	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
-
-	completed := f.completion(t)
-	assert.Equal(t, "failed", completed.Status)
-	assert.Contains(t, completed.Error, "CI failed on #6")
-	f.assertNoMerge(t)
+			resp := f.deferTarget(t)
+			require.Equal(t, http.StatusConflict, resp.StatusCode, string(resp.Body))
+			assert.Contains(t, string(resp.Body), `"reason":"stack_member_not_ready"`)
+			assert.Contains(t, string(resp.Body), `"blocking_number":6`)
+			assert.Contains(t, string(resp.Body), tt.want)
+			assert.False(t, f.workerQueued(t))
+			f.assertNoAutoMergeRequest(t)
+		})
+	}
 }
 
 func TestDeferMergeInNativeStackMergesWithAMemberBelowThatHasNoCI(t *testing.T) {
@@ -338,121 +227,76 @@ func TestDeferMergeInNativeStackMergesWithAMemberBelowThatHasNoCI(t *testing.T) 
 	resp := f.deferTarget(t)
 	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
 
-	f.requireMerge(t)
+	completed := f.completion(t)
+	assert.Equal(t, "merged", completed.Status, completed.Error)
 }
 
-func TestDeferMergeInNativeStackMergesATargetThatHasNoCI(t *testing.T) {
+// A member below that was ready when the merge was queued is checked again
+// before the stack merge lands it.
+func TestDeferMergeInNativeStackFailsWhenAMemberBelowFailsBeforeTheMerge(t *testing.T) {
 	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
-		targetNoCI: true,
-		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
-			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
-		})},
-		bottomChecks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
+		bottom: db.MergeRequest{CIStatus: "success", CIChecksJSON: passedChecksJSON(t)},
+		bottomChecks: []platform.CICheck{
+			{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "failure"},
+		},
 	})
 
 	resp := f.deferTarget(t)
 	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
 
-	f.requireMerge(t)
+	completed := f.completion(t)
+	assert.Equal(t, "failed", completed.Status)
+	assert.Contains(t, completed.Error, "CI failed on #6")
+	f.assertNoMerge(t)
+}
+
+// The members checked before the merge are the ones recorded when it was
+// queued, so a stack that Forge stops recording as native still has them
+// checked.
+func TestDeferMergeInNativeStackChecksTheQueuedMembersWhenTheStackStopsBeingNative(t *testing.T) {
+	hold := make(chan struct{})
+	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
+		bottom: db.MergeRequest{CIStatus: "success", CIChecksJSON: passedChecksJSON(t)},
+		bottomChecks: []platform.CICheck{
+			{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "failure"},
+		},
+		holdCI: hold,
+	})
+
+	resp := f.deferTarget(t)
+	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
+	select {
+	case <-f.provider.ciStarted:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "the worker did not read CI")
+	}
+	_, err := f.database.UpsertStack(t.Context(), f.repoID, 6, "feature", false)
+	require.NoError(t, err)
+	close(hold)
+
+	completed := f.completion(t)
+	assert.Equal(t, "failed", completed.Status)
+	assert.Contains(t, completed.Error, "CI failed on #6")
+	f.assertNoMerge(t)
 }
 
 // The stack lands on the bottom member's base, so that branch's queue exempts
 // the merge from the rules, not the queue state of the target's own base.
-func TestDeferMergeInNativeStackEnqueuesOnTheBottomMembersQueue(t *testing.T) {
-	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
-		targetPassed: true,
-		bottomQueue:  true,
-		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
-			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
-		})},
-		bottomChecks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
-	})
-
-	resp := f.deferTarget(t)
-	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
-
-	events, _ := f.srv.Hub().Subscribe(t.Context(), false)
-	for {
-		select {
-		case number := <-f.provider.enqueueCh:
-			assert.Equal(t, 7, number)
-			f.assertNoMerge(t)
-			return
-		case ev := <-events:
-			if payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload); ok && payload.Status == "failed" {
-				require.FailNow(t, "the deferred merge failed", payload.Error)
-			}
-		case <-time.After(5 * time.Second):
-			require.FailNow(t, "the worker did not add the stack to the merge queue")
-		}
-	}
-}
-
-// emptyAfterFirstCIProvider reports pending CI on its first read and none
-// after it.
-type emptyAfterFirstCIProvider struct {
-	*deferredMergeTestProvider
-	reads atomic.Int32
-}
-
-var _ platform.CIReader = (*emptyAfterFirstCIProvider)(nil)
-
-func (p *emptyAfterFirstCIProvider) ListCIChecks(
-	ctx context.Context, ref platform.RepoRef, sha string,
-) ([]platform.CICheck, error) {
-	if p.reads.Add(1) == 1 {
-		return []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}}, nil
-	}
-	return []platform.CICheck{}, nil
-}
-
-// A pull request stored without CI whose admission refresh finds a pending
-// check must wait for that check: a later refresh with no CI fails closed
-// instead of counting as a pull request that never had CI.
-func TestDeferMergeWaitsForAPendingCheckFoundAtAdmissionOnAPullRequestStoredWithoutCI(t *testing.T) {
+func TestDeferredMergeRulesUseTheBottomMembersQueueInANativeStack(t *testing.T) {
+	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{})
 	ctx := t.Context()
-	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
-	ref := platform.RepoRef{
-		Platform: platform.KindGitLab, Host: "gitlab.example.com", Owner: "group", Name: "project",
-		RepoPath: "group/project", Key: platform.RepositoryIDKey(4242), DefaultBranch: "main",
-	}
-	provider := &emptyAfterFirstCIProvider{deferredMergeTestProvider: &deferredMergeTestProvider{
-		ref: ref,
-		mergeRequests: []platform.MergeRequest{{
-			Repo: ref, PlatformID: 7001, Number: 7, Title: "Defer merge", Author: "ada", State: "open",
-			HeadBranch: "feature", BaseBranch: "main", HeadSHA: "head-sha", BaseSHA: "base-sha",
-			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
-		}},
-		mergeCh: make(chan deferredMergeTestMergeCall, 1),
-	}}
-	srv, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, nil)
-	require.NoError(t, database.UpdateMRCIStatus(ctx, repoID, 7, "", ""))
-	events, _ := srv.Hub().Subscribe(ctx, false)
-
-	head := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{
-		PathParams: &generated.DeferMergePullOnHostPath{
-			PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: 7,
-		},
-		Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head},
+	_, err := f.database.UpsertMergeQueueState(ctx, f.repoID, db.MergeQueueState{
+		Number: 6, BaseBranch: "main", Enabled: true, MergeMethod: "squash",
+		ObservedAt: time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC),
 	})
 	require.NoError(t, err)
-	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
-	require.NotNil(t, resp.JSON202)
-	require.EqualValues(t, 1, resp.JSON202.PendingChecks, "admission found the pending check")
+	repo, err := f.database.GetRepoByID(ctx, f.repoID)
+	require.NoError(t, err)
 
-	for {
-		select {
-		case call := <-provider.mergeCh:
-			require.Failf(t, "merged before the pending check passed", "merge call: %+v", call)
-		case ev := <-events:
-			if payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload); ok {
-				assert.Equal(t, "failed", payload.Status)
-				assert.Contains(t, payload.Error, "aggregate CI status is unavailable")
-				return
-			}
-		case <-time.After(5 * time.Second):
-			require.FailNow(t, "timed out waiting for the deferred merge to finish")
-		}
-	}
+	rules, queue := f.srv.handler.deferredMergeRules(ctx, *repo, platform.MergeRequest{
+		Number: 7, BaseBranch: "bottom", MergeableState: "blocked",
+	})
+
+	assert.Equal(t, "blocked", rules)
+	assert.True(t, queue, "the queue on the bottom member's base exempts the stack merge")
 }

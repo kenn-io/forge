@@ -934,6 +934,7 @@ export * from "./tmuxWindowInfo.ts";
 export * from "./toolingCLIStatus.ts";
 export * from "./toolingGitStatus.ts";
 export * from "./toolingStatusBody.ts";
+export * from "./toolingTokenStatus.ts";
 export * from "./triggerSyncParams.ts";
 export * from "./undismissWorklistPathParameters.ts";
 export * from "./unpreparedWorkspace.ts";

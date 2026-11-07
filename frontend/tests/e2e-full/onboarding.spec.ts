@@ -231,6 +231,7 @@ test("missing gh stays usable on the mobile entry route", async ({ page }) => {
           git: { available: true, version: "2.50" },
           gh: { available: false, authenticated: false },
           glab: { available: false, authenticated: false },
+          github_token: { env: "KENN_FORGE_GITHUB_TOKEN", ready: false },
         }),
       });
     });

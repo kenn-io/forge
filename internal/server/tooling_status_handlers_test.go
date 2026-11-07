@@ -6,14 +6,18 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/repoapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
@@ -110,6 +114,7 @@ func TestToolingStatusMissingGh(t *testing.T) {
 
 	assert.True(body.Git.Available)
 	assert.False(body.Gh.Available)
+	assert.Equal("github.com", body.Gh.Host)
 	assert.False(body.Gh.Authenticated)
 	assert.Empty(body.Gh.User)
 	assert.True(body.Glab.Available)
@@ -180,4 +185,127 @@ func TestToolingStatusProbesConfiguredHosts(t *testing.T) {
 		"gh auth token --hostname ghe.example.com")
 	require.Contains(runner.calls,
 		"glab auth status --hostname gitlab.example.com")
+}
+
+func TestToolingStatusGitHubToken(t *testing.T) {
+	for _, tt := range []struct {
+		name        string
+		host        string
+		globalEnv   string
+		globalToken string
+		platformEnv string
+		file        bool
+		status      int
+		wantEnv     string
+		wantSource  string
+		wantToken   string
+	}{
+		{name: "platform token wins", host: "github.com", globalToken: "global-token", platformEnv: "TEST_PLATFORM_TOKEN", status: http.StatusOK, wantEnv: "TEST_PLATFORM_TOKEN", wantSource: "TEST_PLATFORM_TOKEN", wantToken: "platform-token"},
+		{name: "Enterprise platform token", host: "ghe.example.com", globalToken: "global-token", platformEnv: "TEST_PLATFORM_TOKEN", status: http.StatusOK, wantEnv: "TEST_PLATFORM_TOKEN", wantSource: "TEST_PLATFORM_TOKEN", wantToken: "platform-token"},
+		{name: "Enterprise excludes global token", host: "ghe.example.com", globalToken: "global-token"},
+		{name: "custom variable", host: "github.com", globalEnv: "TEST_CUSTOM_TOKEN", globalToken: "custom-token", status: http.StatusOK, wantEnv: "TEST_CUSTOM_TOKEN", wantSource: "TEST_CUSTOM_TOKEN", wantToken: "custom-token"},
+		{name: "rejected token", host: "github.com", globalToken: "global-token", status: http.StatusUnauthorized, wantEnv: "KENN_FORGE_GITHUB_TOKEN", wantSource: "KENN_FORGE_GITHUB_TOKEN", wantToken: "global-token"},
+		{name: "provider unavailable", host: "github.com", globalToken: "global-token", status: http.StatusServiceUnavailable, wantEnv: "KENN_FORGE_GITHUB_TOKEN", wantSource: "KENN_FORGE_GITHUB_TOKEN", wantToken: "global-token"},
+		{name: "no credential", host: "github.com", wantEnv: "KENN_FORGE_GITHUB_TOKEN"},
+		{name: "rotated file", host: "github.com", file: true, status: http.StatusOK, wantEnv: "KENN_FORGE_GITHUB_TOKEN", wantToken: "file-token"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			t.Setenv("KENN_FORGE_GITHUB_TOKEN", tt.globalToken)
+			t.Setenv("TEST_PLATFORM_TOKEN", "platform-token")
+			t.Setenv("TEST_CUSTOM_TOKEN", tt.globalToken)
+			globalEnv := tt.globalEnv
+			if globalEnv == "" {
+				globalEnv = "KENN_FORGE_GITHUB_TOKEN"
+			}
+			cfg := &config.Config{
+				GitHubTokenEnv: globalEnv,
+				Platforms:      []config.PlatformConfig{{Type: "github", Host: tt.host, TokenEnv: tt.platformEnv}},
+			}
+			if tt.file {
+				cfg.Platforms[0].TokenFile = filepath.Join(t.TempDir(), "token")
+				require.NoError(os.WriteFile(cfg.Platforms[0].TokenFile, []byte("file-token"), 0o600))
+				tt.wantSource = cfg.Platforms[0].TokenFile
+			}
+			var rotated atomic.Bool
+			var requests atomic.Int32
+			f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				assert.Equal("/api/v3/user/repos", r.URL.Path)
+				assert.Equal("1", r.URL.Query().Get("page"))
+				assert.Equal("1", r.URL.Query().Get("per_page"))
+				status := tt.status
+				if rotated.Load() {
+					assert.Equal("Bearer rejected-token", r.Header.Get("Authorization"))
+					status = http.StatusUnauthorized
+				} else {
+					assert.Equal("Bearer "+tt.wantToken, r.Header.Get("Authorization"))
+				}
+				w.WriteHeader(status)
+				if status == http.StatusOK {
+					_, _ = w.Write([]byte(`[]`))
+				} else {
+					_, _ = w.Write([]byte(`{"message":"Repository listing unavailable"}`))
+				}
+			}, ServerOptions{})
+			body := decodeToolingStatus(t, f.ts)
+			assert.Equal(tt.host, body.Gh.Host)
+			if tt.wantEnv == "" && tt.wantSource == "" {
+				assert.Nil(body.GitHubToken)
+				assert.Zero(requests.Load())
+				return
+			}
+			require.NotNil(body.GitHubToken)
+			assert.Equal(tt.wantEnv, body.GitHubToken.Env)
+			assert.Equal(tt.wantSource, body.GitHubToken.Source)
+			assert.Equal(tt.wantSource != "" && tt.status == http.StatusOK, body.GitHubToken.Ready)
+			if tt.wantSource == "" {
+				assert.Zero(requests.Load())
+			} else {
+				assert.Positive(requests.Load())
+			}
+			if tt.file {
+				require.True(body.GitHubToken.Ready)
+				require.NoError(os.WriteFile(cfg.Platforms[0].TokenFile, []byte("rejected-token"), 0o600))
+				rotated.Store(true)
+				f.now.Add(31)
+				body = decodeToolingStatus(t, f.ts)
+				require.NotNil(body.GitHubToken)
+				assert.Equal(tt.wantSource, body.GitHubToken.Source)
+				assert.False(body.GitHubToken.Ready)
+			}
+		})
+	}
+}
+
+func TestToolingStatusSpokeIgnoresGitHubToken(t *testing.T) {
+	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "test-token")
+	database := dbtest.Open(t)
+	cfg := &config.Config{GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN"}
+	srv := New(database, nil, nil, "/", cfg, ServerOptions{})
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	runner := &recordingToolingRunner{
+		outputs: map[string]string{
+			"gh auth token --hostname github.com":           "cli-token",
+			"gh api user --hostname github.com --jq .login": "octocat",
+			ghUserReposCall(100, 1):                         `[{"full_name":"acme/widget"}]`,
+		},
+	}
+	srv.toolingRun = runner.run
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+
+	tooling := decodeToolingStatus(t, ts)
+	assert.Nil(t, tooling.GitHubToken)
+	status, body := decodeUserRepositories(t, ts, "/api/v1/platform/user-repositories")
+	require.Equal(t, http.StatusOK, status)
+	var listing struct {
+		Repositories []struct {
+			NameWithOwner string `json:"name_with_owner"`
+		} `json:"repositories"`
+	}
+	require.NoError(t, json.Unmarshal(body, &listing))
+	require.Len(t, listing.Repositories, 1)
+	assert.Equal(t, "acme/widget", listing.Repositories[0].NameWithOwner)
 }

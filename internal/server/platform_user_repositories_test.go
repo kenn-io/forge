@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,12 +9,133 @@ import (
 	"net/http/httptest"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	"go.kenn.io/forge/internal/tokenauth"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
+
+// githubTokenFixture serves one GitHub host through a real API client whose
+// requests reach a test provider. Every CLI is unavailable.
+type githubTokenFixture struct {
+	srv     *Server
+	ts      *httptest.Server
+	now     atomic.Int64
+	ghCalls atomic.Int64
+}
+
+// newGitHubTokenFixture registers the same host and repository sources as startup.
+func newGitHubTokenFixture(
+	t *testing.T, cfg *config.Config,
+	provider http.HandlerFunc, opts ServerOptions,
+) *githubTokenFixture {
+	t.Helper()
+	if opts.TokenSources == nil {
+		opts.TokenSources = tokenauth.NewSourceSet(tokenauth.Options{})
+		for _, plan := range cfg.ProviderTokenSources() {
+			opts.TokenSources.Upsert(plan.Descriptor)
+		}
+	}
+	api := httptest.NewServer(provider)
+	t.Cleanup(api.Close)
+	database := dbtest.Open(t)
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	f := &githubTokenFixture{srv: New(database, syncer, nil, "/", cfg, opts)}
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, f.srv) })
+	f.srv.newGitHubClient = func(source tokenauth.Source, host string) (platformgithub.UserRepositoriesAPI, error) {
+		client, err := ghclient.NewClient(source, host, nil, nil, ghclient.WithBaseURLForTesting(api.URL))
+		if err != nil {
+			return nil, err
+		}
+		return client.(platformgithub.UserRepositoriesAPI), nil
+	}
+	f.now.Store(time.Now().Unix())
+	f.srv.now = func() time.Time { return time.Unix(f.now.Load(), 0).UTC() }
+	f.srv.toolingRun = func(_ context.Context, name string, _ ...string) ([]byte, error) {
+		if name == "gh" {
+			f.ghCalls.Add(1)
+		}
+		return nil, &exec.Error{Name: name, Err: exec.ErrNotFound}
+	}
+	f.ts = httptest.NewServer(f.srv)
+	t.Cleanup(f.ts.Close)
+	return f
+}
+
+func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		repositoryToken bool
+		rejected        bool
+	}{
+		{name: "empty repository config"},
+		{name: "repository token differs", repositoryToken: true},
+		{name: "rejected token", rejected: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			t.Setenv("KENN_FORGE_GITHUB_TOKEN", "host-token")
+			t.Setenv("TEST_REPOSITORY_TOKEN", "repository-token")
+			cfg := &config.Config{GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN"}
+			if tc.repositoryToken {
+				cfg.Repos = []config.Repo{{Owner: "acme", Name: "widget", TokenEnv: "TEST_REPOSITORY_TOKEN"}}
+			}
+			var requests atomic.Int32
+			var discovering atomic.Bool
+			f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				assert.Equal("/api/v3/user/repos", r.URL.Path)
+				assert.Equal("Bearer host-token", r.Header.Get("Authorization"))
+				assert.Equal("owner,collaborator,organization_member", r.URL.Query().Get("affiliation"))
+				assert.Equal("updated", r.URL.Query().Get("sort"))
+				assert.Equal("1", r.URL.Query().Get("page"))
+				perPage := "1"
+				if discovering.Load() {
+					perPage = "100"
+				}
+				assert.Equal(perPage, r.URL.Query().Get("per_page"))
+				if tc.rejected {
+					w.WriteHeader(http.StatusUnauthorized)
+					_, _ = w.Write([]byte(`{"message":"Bad credentials"}`))
+					return
+				}
+				_, _ = w.Write([]byte(`[{"full_name":"acme/widget","ssh_url":"git@github.com:acme/widget.git","default_branch":"main","private":false,"visibility":"private"}]`))
+			}, ServerOptions{})
+			tooling := decodeToolingStatus(t, f.ts)
+			require.NotNil(tooling.GitHubToken)
+			assert.Equal("KENN_FORGE_GITHUB_TOKEN", tooling.GitHubToken.Source)
+			assert.Equal(!tc.rejected, tooling.GitHubToken.Ready)
+			probeRequests := requests.Load()
+			assert.Positive(probeRequests)
+			before := f.ghCalls.Load()
+			discovering.Store(true)
+			status, body := decodeUserRepositories(t, f.ts, "/api/v1/platform/user-repositories")
+			assert.Equal(before, f.ghCalls.Load(), "discovery uses the token without invoking gh")
+			assert.Greater(requests.Load(), probeRequests, "discovery also reaches the provider")
+			if tc.rejected {
+				assert.Equal(http.StatusForbidden, status)
+				assert.Contains(string(body), `"code":"forbidden"`)
+				return
+			}
+			require.Equal(http.StatusOK, status)
+			var decoded struct {
+				Repositories json.RawMessage `json:"repositories"`
+			}
+			require.NoError(json.Unmarshal(body, &decoded))
+			assert.JSONEq(`[{"name_with_owner":"acme/widget","ssh_url":"git@github.com:acme/widget.git","default_branch":"main","private":true}]`, string(decoded.Repositories))
+		})
+	}
+}
 
 func ghUserReposCall(pageSize, page int) string {
 	return fmt.Sprintf(

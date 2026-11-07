@@ -70670,10 +70670,17 @@ type ToolingGitStatus struct {
 
 type ToolingStatusBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string          `json:"$schema,omitempty"`
-	Gh     ToolingCLIStatus `json:"gh"`
-	Git    ToolingGitStatus `json:"git"`
-	Glab   ToolingCLIStatus `json:"glab"`
+	Schema      *string             `json:"$schema,omitempty"`
+	Gh          ToolingCLIStatus    `json:"gh"`
+	Git         ToolingGitStatus    `json:"git"`
+	GithubToken *ToolingTokenStatus `json:"github_token,omitempty"`
+	Glab        ToolingCLIStatus    `json:"glab"`
+}
+
+type ToolingTokenStatus struct {
+	Env    *string `json:"env,omitempty"`
+	Ready  bool    `json:"ready"`
+	Source *string `json:"source,omitempty"`
 }
 
 type UnpreparedWorkspace struct {

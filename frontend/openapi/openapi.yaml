@@ -10967,12 +10967,26 @@ components:
           $ref: "#/components/schemas/ToolingCLIStatus"
         git:
           $ref: "#/components/schemas/ToolingGitStatus"
+        github_token:
+          $ref: "#/components/schemas/ToolingTokenStatus"
         glab:
           $ref: "#/components/schemas/ToolingCLIStatus"
       required:
         - git
         - gh
         - glab
+      type: object
+    ToolingTokenStatus:
+      additionalProperties: false
+      properties:
+        env:
+          type: string
+        ready:
+          type: boolean
+        source:
+          type: string
+      required:
+        - ready
       type: object
     UnpreparedWorkspace:
       additionalProperties: false

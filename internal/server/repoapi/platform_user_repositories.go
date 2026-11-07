@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/internal/server/httpapi"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -52,16 +53,6 @@ type listUserRepositoriesOutput struct {
 	}
 }
 
-// ghUserRepository mirrors the REST repository fields consumed from
-// `gh api user/repos`.
-type ghUserRepository struct {
-	FullName      string  `json:"full_name"`
-	SSHURL        string  `json:"ssh_url"`
-	DefaultBranch string  `json:"default_branch"`
-	Private       *bool   `json:"private"`
-	Visibility    *string `json:"visibility"`
-}
-
 func (s *Handlers) ListUserRepositories(
 	ctx context.Context, input *listUserRepositoriesInput,
 ) (*listUserRepositoriesOutput, error) {
@@ -89,23 +80,44 @@ func (s *Handlers) ListUserRepositories(
 		run = defaultToolingRunner
 	}
 
+	tokenHost := platformHost
+	if tokenHost == "" {
+		tokenHost, _ = s.toolingPlatformHosts()
+	}
+	var client platformgithub.UserRepositoriesAPI
+	if status, source := s.githubHostToken(ctx, tokenHost); status != nil && status.Source != "" {
+		var err error
+		client, err = s.githubClient(source, tokenHost)
+		if err != nil {
+			return nil, httpapi.ProviderCallProblem(err, "github", tokenHost)
+		}
+	}
 	resp := &listUserRepositoriesOutput{}
 	resp.Body.Repositories = make([]userRepository, 0, limit)
 	// per_page stays constant across pages: GitHub page offsets are
 	// per_page-relative, so shrinking the final request would re-fetch
 	// earlier items instead of the tail. Truncate after appending.
 	for page := 1; len(resp.Body.Repositories) < limit; page++ {
-		raw, err := s.fetchUserRepositoriesPage(
-			ctx, run, platformHost, userRepositoriesPageSize, page,
-		)
+		var raw []*gh.Repository
+		var err error
+		if client != nil {
+			pageCtx, cancel := context.WithTimeout(ctx, userRepositoriesTimeout)
+			raw, err = client.ListUserRepositoriesPage(pageCtx, page, userRepositoriesPageSize)
+			cancel()
+			if err != nil {
+				return nil, httpapi.ProviderCallProblem(err, "github", tokenHost)
+			}
+		} else {
+			raw, err = s.fetchUserRepositoriesPage(ctx, run, platformHost, userRepositoriesPageSize, page)
+		}
 		if err != nil {
 			return nil, err
 		}
 		for _, r := range raw {
 			resp.Body.Repositories = append(resp.Body.Repositories, userRepository{
-				NameWithOwner: r.FullName,
-				SSHURL:        r.SSHURL,
-				DefaultBranch: r.DefaultBranch,
+				NameWithOwner: r.GetFullName(),
+				SSHURL:        r.GetSSHURL(),
+				DefaultBranch: r.GetDefaultBranch(),
 				Private:       platformgithub.RepositoryPrivate(r.Visibility, r.Private),
 			})
 		}
@@ -130,7 +142,7 @@ func (s *Handlers) fetchUserRepositoriesPage(
 	run ToolingRunner,
 	platformHost string,
 	pageSize, page int,
-) ([]ghUserRepository, error) {
+) ([]*gh.Repository, error) {
 	args := []string{"api"}
 	if platformHost != "" {
 		args = append(args, "--hostname", platformHost)
@@ -151,7 +163,7 @@ func (s *Handlers) fetchUserRepositoriesPage(
 		}
 		return nil, userRepositoriesProblem(err, platformHost)
 	}
-	var raw []ghUserRepository
+	var raw []*gh.Repository
 	if err := json.Unmarshal(out, &raw); err != nil {
 		return nil, httpapi.Internal(
 			"decode repository listing: " + err.Error(),

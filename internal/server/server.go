@@ -81,6 +81,7 @@ import (
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 type BuildInfo struct {
@@ -235,8 +236,9 @@ type Server struct {
 
 	// toolingStatus caches the assembled CLI tooling probe;
 	// toolingRun overrides the probe subprocess runner in tests.
-	toolingStatus repoapi.ToolingStatusCache
-	toolingRun    repoapi.ToolingRunner
+	toolingStatus   repoapi.ToolingStatusCache
+	toolingRun      repoapi.ToolingRunner
+	newGitHubClient func(tokenauth.Source, string) (platformgithub.UserRepositoriesAPI, error)
 
 	daemonRequests authapi.DaemonRequestPolicy
 	federationAuth *federationauth.Authenticator

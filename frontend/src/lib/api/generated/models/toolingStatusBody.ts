@@ -3,11 +3,13 @@
  */
 import type { ToolingCLIStatus } from "./toolingCLIStatus.ts";
 import type { ToolingGitStatus } from "./toolingGitStatus.ts";
+import type { ToolingTokenStatus } from "./toolingTokenStatus.ts";
 
 export interface ToolingStatusBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   gh: ToolingCLIStatus;
   git: ToolingGitStatus;
+  github_token?: ToolingTokenStatus;
   glab: ToolingCLIStatus;
 }

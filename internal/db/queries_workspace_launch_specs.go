@@ -164,7 +164,7 @@ func (d *DB) GetWorkspaceByLaunchSpecIdentity(
 		       w.item_type, w.item_number, w.item_key, w.associated_pr_number,
 		       w.git_head_ref, w.mr_head_repo, w.workspace_branch,
 		       w.worktree_path, w.tmux_session, w.terminal_backend, w.status,
-		       w.error_message, w.created_at, w.kata_metadata
+		       w.error_message, w.created_at, w.kata_metadata, w.external_worktree
 		FROM forge_workspaces w
 		JOIN forge_workspace_launch_specs launch ON launch.workspace_id = w.id
 		WHERE lower(json_extract(launch.spec_json, '$.repository.provider')) = ?
@@ -363,7 +363,7 @@ func (d *DB) ListUnpreparedProviderWorkspacesAt(
 		       item_type, item_number, item_key, associated_pr_number,
 		       git_head_ref, mr_head_repo, workspace_branch,
 		       worktree_path, tmux_session, terminal_backend, status,
-		       error_message, created_at, kata_metadata
+		       error_message, created_at, kata_metadata, external_worktree
 		FROM forge_workspaces
 		WHERE item_type IN ('pull_request', 'issue')
 		ORDER BY id`)

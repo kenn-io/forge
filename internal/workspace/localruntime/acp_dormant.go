@@ -16,6 +16,9 @@ import (
 type DormantACP struct {
 	saved *ACP
 	start func() (ACPChat, error)
+	// mirror follows an agent running outside Forge, which holds the session
+	// until it exits. Nil for an ordinary stored chat.
+	mirror *acpMirrorFollower
 
 	startMu sync.Mutex // one start at a time
 	mu      sync.Mutex
@@ -90,6 +93,11 @@ func (d *DormantACP) Page(after, limit int) ([]byte, error) {
 func (d *DormantACP) Command(command ACPCommand) error {
 	if live := d.Live(); live != nil {
 		return live.Command(command)
+	}
+	if d.mirror != nil {
+		if status := d.mirror.source.Status(); status.Running {
+			return d.mirror.command(command, status)
+		}
 	}
 	switch command.Type {
 	case "cancel":

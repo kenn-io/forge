@@ -52,10 +52,12 @@
     worklistSections,
     writeWorklistOrder,
     writeWorklistStateFilter,
+    WORKLIST_FILTER_SECTIONS,
     type WorklistItemFilter,
     type WorklistOrder,
     type WorklistStateFilter,
   } from "./worklist-items.js";
+  import { toggleFilterInSections } from "../../utils/pull-attributes.js";
 
   interface Props {
     worklist: Worklist;
@@ -186,22 +188,41 @@
     return stateFilter === "closed" ? "No items are closed." : "No open items remain. Closed items are hidden.";
   });
 
-  const filterOptions: { value: WorklistItemFilter; label: string }[] = [
-    { value: "involves_me", label: "Involves me" },
-    { value: "approved", label: "Approved" },
-    { value: "draft", label: "Draft" },
-    { value: "ready", label: "Ready for review" },
-    { value: "merge_conflicts", label: "Merge conflicts" },
-    { value: "no_merge_conflicts", label: "No merge conflicts" },
-    { value: "passed_ci", label: "Passing CI" },
-    { value: "failed_ci", label: "Failed CI" },
-    { value: "has_workspace", label: "Has workspace" },
+  // Every selected filter must match. Review, CI, and Conflicts are pick-one pairs of opposites.
+  const filterGroups: { title: string; options: { value: WorklistItemFilter; label: string }[] }[] = [
+    {
+      title: "Items",
+      options: [
+        { value: "involves_me", label: "Involves me" },
+        { value: "approved", label: "Approved" },
+        { value: "has_workspace", label: "Has workspace" },
+      ],
+    },
+    {
+      title: "Review",
+      options: [
+        { value: "draft", label: "Draft" },
+        { value: "ready", label: "Ready for review" },
+      ],
+    },
+    {
+      title: "CI",
+      options: [
+        { value: "passed_ci", label: "Passing CI" },
+        { value: "failed_ci", label: "Failed CI" },
+      ],
+    },
+    {
+      title: "Conflicts",
+      options: [
+        { value: "merge_conflicts", label: "Merge conflicts" },
+        { value: "no_merge_conflicts", label: "No merge conflicts" },
+      ],
+    },
   ];
 
   function toggleItemFilter(filter: WorklistItemFilter): void {
-    itemFilters = itemFilters.includes(filter)
-      ? itemFilters.filter((active) => active !== filter)
-      : [...itemFilters, filter];
+    itemFilters = toggleFilterInSections(WORKLIST_FILTER_SECTIONS, itemFilters, filter);
     onInvolvesMeChange(itemFilters.includes("involves_me"));
   }
 
@@ -210,25 +231,29 @@
   );
 
   const filterSections = $derived([
-    {
-      title: "Items",
+    ...filterGroups.map((group, index) => ({
+      title: group.title,
       items: [
-        {
-          id: "worklist-labels",
-          label: "Labels",
-          detail: labelFilterSummary(labelFilters),
-          active: labelFilters.size > 0,
-          submenu: labelFilterMenu,
-          onSelect: () => {},
-        },
-        ...filterOptions.map((option) => ({
+        ...(index === 0
+          ? [
+              {
+                id: "worklist-labels",
+                label: "Labels",
+                detail: labelFilterSummary(labelFilters),
+                active: labelFilters.size > 0,
+                submenu: labelFilterMenu,
+                onSelect: () => {},
+              },
+            ]
+          : []),
+        ...group.options.map((option) => ({
           id: `worklist-${option.value}`,
           label: option.label,
           active: itemFilters.includes(option.value),
           onSelect: () => toggleItemFilter(option.value),
         })),
       ],
-    },
+    })),
     {
       title: "View",
       items: [

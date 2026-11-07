@@ -159,7 +159,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
   const filteredPulls = $derived(
     attributeFilters.length === 0 && labelFilters.size === 0
       ? pulls
-      : pulls.filter((pr) => matchesAttributeFilters(pr) && matchesLabelFilters(pr.labels, labelFilters)),
+      : pulls.filter(
+          (pr) => pullMatchesAttributeFilters(pr, attributeFilters) && matchesLabelFilters(pr.labels, labelFilters),
+        ),
   );
 
   function getFilteredPulls(): PullRequest[] {
@@ -700,14 +702,6 @@ export function createPullsStore(opts: PullsStoreOptions) {
   function loadMorePulls(): void {
     if (!paging.loadMore(listCapped)) return;
     loadPulls(activeListParams);
-  }
-
-  function matchesAttributeFilters(pr: PullRequest): boolean {
-    // With involvement or assignment, the server applies the PR attributes before pagination,
-    // so keep its rows.
-    const filters =
-      involvesMe || unassigned ? attributeFilters.filter((filter) => filter === "has_workspace") : attributeFilters;
-    return pullMatchesAttributeFilters(pr, filters);
   }
 
   return {

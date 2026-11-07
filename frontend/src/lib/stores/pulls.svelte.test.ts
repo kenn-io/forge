@@ -613,6 +613,28 @@ describe("pulls store display order", () => {
     expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([2]);
   });
 
+  it("hides loaded rows that no longer match when the server refresh fails", async () => {
+    const ready = pull(1, "api", "2026-05-20T15:00:00Z");
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce([ready, pull(2, "api", "2026-05-20T14:00:00Z", { IsDraft: true })])
+      .mockResolvedValueOnce([ready])
+      .mockRejectedValueOnce(
+        new GeneratedProblemResponse({ status: 400, title: "Bad request" }, Response.json({}, { status: 400 })),
+      );
+    const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+    store.setInvolvesMe(true);
+    await loadPulls(store);
+    store.toggleAttributeFilter("ready");
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+    expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([1]);
+
+    store.toggleAttributeFilter("draft");
+    await vi.waitFor(() => expect(store.getError()).not.toBeNull());
+    expect(store.getAttributeFilters()).toEqual(["draft"]);
+    expect(store.getFilteredPulls()).toEqual([]);
+  });
+
   it("filters pull requests to entries with a workspace", async () => {
     const store = createPullsStore({
       client: clientWithPulls([

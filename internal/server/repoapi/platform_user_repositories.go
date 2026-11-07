@@ -87,7 +87,7 @@ func (s *Handlers) ListUserRepositories(
 	var client platformgithub.UserRepositoriesAPI
 	if status, source := s.githubHostToken(ctx, tokenHost); status != nil && status.Source != "" {
 		var err error
-		client, err = s.githubClient(source, tokenHost)
+		client, err = s.githubClient(source, source.Descriptor().Key.Host)
 		if err != nil {
 			return nil, httpapi.ProviderCallProblem(err, "github", tokenHost)
 		}

@@ -74,10 +74,13 @@ func newGitHubTokenFixture(
 func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
+		platformHost    string
 		repositoryToken bool
 		rejected        bool
 	}{
 		{name: "empty repository config"},
+		{name: "uppercase public host", platformHost: "GITHUB.COM"},
+		{name: "public host with HTTPS port", platformHost: "github.com:443"},
 		{name: "repository token differs", repositoryToken: true},
 		{name: "rejected token", rejected: true},
 	} {
@@ -106,7 +109,13 @@ func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 				}
 				_, _ = w.Write([]byte(`[{"full_name":"acme/widget","ssh_url":"git@github.com:acme/widget.git","default_branch":"main","private":false,"visibility":"private"}]`))
 			}, ServerOptions{})
-			status, body := decodeUserRepositories(t, f.ts, "/api/v1/platform/user-repositories")
+			newClient := f.srv.newGitHubClient
+			f.srv.newGitHubClient = func(source tokenauth.Source, host string) (platformgithub.UserRepositoriesAPI, error) {
+				// The test endpoint override would otherwise hide an Enterprise route.
+				assert.Equal("github.com", host)
+				return newClient(source, host)
+			}
+			status, body := decodeUserRepositories(t, f.ts, "/api/v1/platform/user-repositories?platform_host="+tc.platformHost)
 			assert.Zero(f.ghCalls.Load(), "discovery uses the token without invoking gh")
 			assert.Positive(requests.Load(), "discovery reaches the provider")
 			if tc.rejected {

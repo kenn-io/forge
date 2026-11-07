@@ -215,7 +215,7 @@ func TestMirrorInAnUnreachableTerminalIsReadOnly(t *testing.T) {
 	assert.True(t, state.ExternalReadOnly)
 	assert.NotEmpty(t, state.Messages)
 
-	assert.ErrorIs(t, chat.Command(ACPCommand{Type: "prompt", Text: "hello"}), ErrACPMirrorReadOnly)
+	require.ErrorIs(t, chat.Command(ACPCommand{Type: "prompt", Text: "hello"}), ErrACPMirrorReadOnly)
 	assert.Empty(t, fixture.delivered)
 	assert.Zero(t, fixture.starts)
 }
@@ -314,7 +314,7 @@ func TestMirrorThatCannotStartKeepsShowingItsTranscript(t *testing.T) {
 		Status: func() ACPMirrorStatus { return ACPMirrorStatus{} },
 		Start:  func() (ACPChat, error) { return nil, errors.New("no chat agent") },
 	})
-	assert.ErrorContains(t, chat.Command(ACPCommand{Type: "prompt", Text: "go"}), "no chat agent")
+	require.ErrorContains(t, chat.Command(ACPCommand{Type: "prompt", Text: "go"}), "no chat agent")
 	state := dormantState(t, chat)
 	assert.Equal(t, "no chat agent", state.Error)
 	assert.NotEmpty(t, state.Messages)

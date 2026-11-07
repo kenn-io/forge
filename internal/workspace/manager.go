@@ -464,21 +464,7 @@ func (m *Manager) Create(
 func (m *Manager) CreateFromLaunchSpec(
 	ctx context.Context, spec WorkspaceLaunchSpec,
 ) (*Workspace, error) {
-	if spec.ItemType != db.WorkspaceItemTypePullRequest {
-		return nil, errors.New("pull-request workspace requires a pull launch specification")
-	}
-	if err := validateLaunchSpecForCreation(spec); err != nil {
-		return nil, err
-	}
-	if err := spec.RequireVisible(m.launchSpecNow()); err != nil {
-		return nil, err
-	}
-	if existing, err := m.GetByLaunchSpecIdentity(ctx, spec); err != nil {
-		return nil, err
-	} else if existing != nil {
-		return nil, fmt.Errorf("%w: %s", ErrWorkspaceDuplicate, existing.ID)
-	}
-	repo, err := m.repositoryForLaunchSpec(ctx, spec)
+	repo, err := m.prepareLaunchSpecPullWorkspace(ctx, spec)
 	if err != nil {
 		return nil, err
 	}
@@ -503,6 +489,16 @@ func (m *Manager) CreateFromLaunchSpec(
 func (m *Manager) CreateExternalFromLaunchSpec(
 	ctx context.Context, spec WorkspaceLaunchSpec, worktreePath, branch string,
 ) (*Workspace, error) {
+	repo, err := m.prepareLaunchSpecPullWorkspace(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	return m.insertPullWorkspace(ctx, spec, repo.ID, worktreePath, branch, true)
+}
+
+// prepareLaunchSpecPullWorkspace checks spec can back a new pull request
+// workspace and returns its repository.
+func (m *Manager) prepareLaunchSpecPullWorkspace(ctx context.Context, spec WorkspaceLaunchSpec) (*db.Repo, error) {
 	if spec.ItemType != db.WorkspaceItemTypePullRequest {
 		return nil, errors.New("pull-request workspace requires a pull launch specification")
 	}
@@ -517,11 +513,7 @@ func (m *Manager) CreateExternalFromLaunchSpec(
 	} else if existing != nil {
 		return nil, fmt.Errorf("%w: %s", ErrWorkspaceDuplicate, existing.ID)
 	}
-	repo, err := m.repositoryForLaunchSpec(ctx, spec)
-	if err != nil {
-		return nil, err
-	}
-	return m.insertPullWorkspace(ctx, spec, repo.ID, worktreePath, branch, true)
+	return m.repositoryForLaunchSpec(ctx, spec)
 }
 
 func (m *Manager) insertPullWorkspace(

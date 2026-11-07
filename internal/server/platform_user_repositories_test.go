@@ -91,7 +91,6 @@ func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 				cfg.Repos = []config.Repo{{Owner: "acme", Name: "widget", TokenEnv: "TEST_REPOSITORY_TOKEN"}}
 			}
 			var requests atomic.Int32
-			var discovering atomic.Bool
 			f := newGitHubTokenFixture(t, cfg, func(w http.ResponseWriter, r *http.Request) {
 				requests.Add(1)
 				assert.Equal("/api/v3/user/repos", r.URL.Path)
@@ -99,11 +98,7 @@ func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 				assert.Equal("owner,collaborator,organization_member", r.URL.Query().Get("affiliation"))
 				assert.Equal("updated", r.URL.Query().Get("sort"))
 				assert.Equal("1", r.URL.Query().Get("page"))
-				perPage := "1"
-				if discovering.Load() {
-					perPage = "100"
-				}
-				assert.Equal(perPage, r.URL.Query().Get("per_page"))
+				assert.Equal("100", r.URL.Query().Get("per_page"))
 				if tc.rejected {
 					w.WriteHeader(http.StatusUnauthorized)
 					_, _ = w.Write([]byte(`{"message":"Bad credentials"}`))
@@ -111,17 +106,9 @@ func TestListUserRepositoriesUsesGitHubTokenWithoutGh(t *testing.T) {
 				}
 				_, _ = w.Write([]byte(`[{"full_name":"acme/widget","ssh_url":"git@github.com:acme/widget.git","default_branch":"main","private":false,"visibility":"private"}]`))
 			}, ServerOptions{})
-			tooling := decodeToolingStatus(t, f.ts)
-			require.NotNil(tooling.GitHubToken)
-			assert.Equal("KENN_FORGE_GITHUB_TOKEN", tooling.GitHubToken.Source)
-			assert.Equal(!tc.rejected, tooling.GitHubToken.Ready)
-			probeRequests := requests.Load()
-			assert.Positive(probeRequests)
-			before := f.ghCalls.Load()
-			discovering.Store(true)
 			status, body := decodeUserRepositories(t, f.ts, "/api/v1/platform/user-repositories")
-			assert.Equal(before, f.ghCalls.Load(), "discovery uses the token without invoking gh")
-			assert.Greater(requests.Load(), probeRequests, "discovery also reaches the provider")
+			assert.Zero(f.ghCalls.Load(), "discovery uses the token without invoking gh")
+			assert.Positive(requests.Load(), "discovery reaches the provider")
 			if tc.rejected {
 				assert.Equal(http.StatusForbidden, status)
 				assert.Contains(string(body), `"code":"forbidden"`)

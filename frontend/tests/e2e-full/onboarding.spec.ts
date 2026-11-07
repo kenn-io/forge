@@ -229,7 +229,7 @@ test("missing gh stays usable on the mobile entry route", async ({ page }) => {
         contentType: "application/json",
         body: JSON.stringify({
           git: { available: true, version: "2.50" },
-          gh: { available: false, authenticated: false },
+          gh: { available: false, authenticated: false, host: "github.com" },
           glab: { available: false, authenticated: false },
           github_token: { env: "KENN_FORGE_GITHUB_TOKEN", ready: false },
         }),

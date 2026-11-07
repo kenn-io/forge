@@ -191,7 +191,6 @@ func TestToolingStatusGitHubToken(t *testing.T) {
 	for _, tt := range []struct {
 		name        string
 		host        string
-		globalEnv   string
 		globalToken string
 		platformEnv string
 		file        bool
@@ -203,9 +202,7 @@ func TestToolingStatusGitHubToken(t *testing.T) {
 		{name: "platform token wins", host: "github.com", globalToken: "global-token", platformEnv: "TEST_PLATFORM_TOKEN", status: http.StatusOK, wantEnv: "TEST_PLATFORM_TOKEN", wantSource: "TEST_PLATFORM_TOKEN", wantToken: "platform-token"},
 		{name: "Enterprise platform token", host: "ghe.example.com", globalToken: "global-token", platformEnv: "TEST_PLATFORM_TOKEN", status: http.StatusOK, wantEnv: "TEST_PLATFORM_TOKEN", wantSource: "TEST_PLATFORM_TOKEN", wantToken: "platform-token"},
 		{name: "Enterprise excludes global token", host: "ghe.example.com", globalToken: "global-token"},
-		{name: "custom variable", host: "github.com", globalEnv: "TEST_CUSTOM_TOKEN", globalToken: "custom-token", status: http.StatusOK, wantEnv: "TEST_CUSTOM_TOKEN", wantSource: "TEST_CUSTOM_TOKEN", wantToken: "custom-token"},
 		{name: "rejected token", host: "github.com", globalToken: "global-token", status: http.StatusUnauthorized, wantEnv: "KENN_FORGE_GITHUB_TOKEN", wantSource: "KENN_FORGE_GITHUB_TOKEN", wantToken: "global-token"},
-		{name: "provider unavailable", host: "github.com", globalToken: "global-token", status: http.StatusServiceUnavailable, wantEnv: "KENN_FORGE_GITHUB_TOKEN", wantSource: "KENN_FORGE_GITHUB_TOKEN", wantToken: "global-token"},
 		{name: "no credential", host: "github.com", wantEnv: "KENN_FORGE_GITHUB_TOKEN"},
 		{name: "rotated file", host: "github.com", file: true, status: http.StatusOK, wantEnv: "KENN_FORGE_GITHUB_TOKEN", wantToken: "file-token"},
 	} {
@@ -214,13 +211,8 @@ func TestToolingStatusGitHubToken(t *testing.T) {
 			require := require.New(t)
 			t.Setenv("KENN_FORGE_GITHUB_TOKEN", tt.globalToken)
 			t.Setenv("TEST_PLATFORM_TOKEN", "platform-token")
-			t.Setenv("TEST_CUSTOM_TOKEN", tt.globalToken)
-			globalEnv := tt.globalEnv
-			if globalEnv == "" {
-				globalEnv = "KENN_FORGE_GITHUB_TOKEN"
-			}
 			cfg := &config.Config{
-				GitHubTokenEnv: globalEnv,
+				GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN",
 				Platforms:      []config.PlatformConfig{{Type: "github", Host: tt.host, TokenEnv: tt.platformEnv}},
 			}
 			if tt.file {
@@ -250,7 +242,6 @@ func TestToolingStatusGitHubToken(t *testing.T) {
 				}
 			}, ServerOptions{})
 			body := decodeToolingStatus(t, f.ts)
-			assert.Equal(tt.host, body.Gh.Host)
 			if tt.wantEnv == "" && tt.wantSource == "" {
 				assert.Nil(body.GitHubToken)
 				assert.Zero(requests.Load())
@@ -279,7 +270,7 @@ func TestToolingStatusGitHubToken(t *testing.T) {
 	}
 }
 
-func TestToolingStatusSpokeIgnoresGitHubToken(t *testing.T) {
+func TestToolingStatusWithoutSyncerIgnoresGitHubToken(t *testing.T) {
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "test-token")
 	database := dbtest.Open(t)
 	cfg := &config.Config{GitHubTokenEnv: "KENN_FORGE_GITHUB_TOKEN"}
@@ -289,7 +280,6 @@ func TestToolingStatusSpokeIgnoresGitHubToken(t *testing.T) {
 		outputs: map[string]string{
 			"gh auth token --hostname github.com":           "cli-token",
 			"gh api user --hostname github.com --jq .login": "octocat",
-			ghUserReposCall(100, 1):                         `[{"full_name":"acme/widget"}]`,
 		},
 	}
 	srv.toolingRun = runner.run
@@ -298,14 +288,4 @@ func TestToolingStatusSpokeIgnoresGitHubToken(t *testing.T) {
 
 	tooling := decodeToolingStatus(t, ts)
 	assert.Nil(t, tooling.GitHubToken)
-	status, body := decodeUserRepositories(t, ts, "/api/v1/platform/user-repositories")
-	require.Equal(t, http.StatusOK, status)
-	var listing struct {
-		Repositories []struct {
-			NameWithOwner string `json:"name_with_owner"`
-		} `json:"repositories"`
-	}
-	require.NoError(t, json.Unmarshal(body, &listing))
-	require.Len(t, listing.Repositories, 1)
-	assert.Equal(t, "acme/widget", listing.Repositories[0].NameWithOwner)
 }

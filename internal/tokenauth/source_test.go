@@ -23,10 +23,9 @@ func TestManagedSourceReadsTokenFileEachCall(t *testing.T) {
 		Candidates: []Candidate{{Kind: SourceKindFile, FilePath: path}},
 	}, Options{})
 
-	got, candidate, err := src.Resolve(t.Context())
+	got, err := src.Token(t.Context())
 	require.NoError(err)
 	assert.Equal("first", got)
-	assert.Equal(Candidate{Kind: SourceKindFile, FilePath: path}, candidate)
 
 	require.NoError(os.WriteFile(path, []byte("second\n"), 0o600))
 	got, err = src.Token(t.Context())

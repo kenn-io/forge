@@ -4082,6 +4082,8 @@ components:
           type: string
         tool_name:
           type: string
+        transcript_path:
+          type: string
       required:
         - session_id
         - cwd
@@ -12264,6 +12266,8 @@ components:
         exited:
           description: The chat's agent has exited; no other field is present.
           type: boolean
+        externalReadOnly:
+          type: boolean
         lastMessageId:
           type: string
         messageCount:
@@ -13861,6 +13865,22 @@ paths:
             type: string
         - in: header
           name: X-Kenn-Forge-Runtime-Session-Key
+          schema:
+            type: string
+        - in: header
+          name: X-Kenn-Forge-Agent-Pid
+          schema:
+            type: string
+        - in: header
+          name: X-Kenn-Forge-Agent-Start
+          schema:
+            type: string
+        - in: header
+          name: X-Kenn-Forge-Herdr-Pane
+          schema:
+            type: string
+        - in: header
+          name: X-Kenn-Forge-Herdr-Socket
           schema:
             type: string
       requestBody:

@@ -381,6 +381,19 @@ Resolution is deliberately exact (`internal/server/kata/workspace.go::Handler.re
   canonical paths.
 - The active sidebar polls every five seconds, and hook receipt fails open.
 
+## External Agent Sessions
+
+- An agent Forge did not launch reports through the same hooks. Once its worktree holds an open pull
+  request's head, matched by provider identity and branch or SHA, it gets a workspace on that worktree
+  (`internal/server/workspaceapi/external_sessions.go::Handler.adoptExternalSession`).
+- Forge writes nothing to that checkout: no clone, branch, upstream, or head ref. Deleting the workspace
+  keeps the worktree and branch, never stops the agent, and the session is not adopted again.
+- Its chat is the ACP view following the agent's transcript, never a terminal. Input is typed into the
+  agent's Herdr pane; without one the chat is read-only until exit. Herdr stays optional, behind its CLI.
+- A session has one process: a Forge-run agent loads it only after SessionEnd or once the recorded
+  process identity is gone, and anything unknown reads as still running.
+- Only Claude and Codex transcripts are read; other agents' chats stay empty until Forge loads the session.
+
 ## Diff Scopes
 
 - Diffs compare against local `HEAD`, the pushed branch, or the merge target, which exists only when
@@ -517,7 +530,8 @@ shift between refreshes.
 
 ## Non-Goals
 
-- Represent arbitrary worktrees discovered on a host machine.
+- Represent arbitrary worktrees discovered on a host machine; an external workspace needs an agent
+  session and an open pull request.
 - Mirror an external workspace tree or host inventory.
 - Serve as a generic Git automation API outside kenn-forge's workspace lifecycle.
 

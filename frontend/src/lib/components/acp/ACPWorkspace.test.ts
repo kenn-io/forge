@@ -1181,6 +1181,41 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(screen.getByText("Send a message to start working in this workspace.")).toBeTruthy();
   });
 
+  it("takes no input for an agent running in a terminal Forge cannot type into", async () => {
+    await openChat(
+      {
+        connected: false,
+        dormant: true,
+        externalReadOnly: true,
+        busy: true,
+        messages: [{ role: "assistant", text: "Working on it" }],
+      },
+      { status: "parked" },
+    );
+    expect(screen.getByText("Working on it")).toBeTruthy();
+    const composer = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    expect(composer.disabled).toBe(true);
+    expect(composer.placeholder).toBe("Running in another terminal");
+    expect((screen.getByRole("button", { name: "Stop reply" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("sends input and stops a replying agent mirrored from a Herdr pane", async () => {
+    await openChat(
+      { connected: false, dormant: true, busy: true, messages: [{ role: "assistant", text: "Working on it" }] },
+      { status: "parked" },
+    );
+    expect(document.querySelector(".turn-spinner svg, .turn-spinner [role=status]")).toBeTruthy();
+    const composer = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    expect(composer.disabled).toBe(false);
+    await fireEvent.click(screen.getByRole("button", { name: "Stop reply" }));
+    await fireEvent.input(composer, { target: { value: "Also check logout" } });
+    await fireEvent.keyDown(composer, { key: "Enter" });
+    expect(sentCommands()).toEqual([
+      { type: "cancel" },
+      { type: "prompt", mode: "queue", id: expect.any(String), text: "Also check logout" },
+    ]);
+  });
+
   it("opens a chat whose agent is not running and starts it with the next message", async () => {
     const onExit = vi.fn();
     await openChat(

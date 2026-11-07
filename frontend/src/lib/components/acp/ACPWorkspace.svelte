@@ -88,7 +88,7 @@
   const slash = $derived(slashToken(draft, caret));
   // A chat whose agent is not running takes input too: the host starts the
   // agent for the first command that needs it.
-  const accepting = $derived(!!chatState?.connected || !!chatState?.dormant);
+  const accepting = $derived((!!chatState?.connected || !!chatState?.dormant) && !chatState?.externalReadOnly);
   const commandMatches = $derived(slash && !commandMenuDismissed && !disabled && accepting ? matchCommands(commands, slash.query) : []);
   const activeCommand = $derived(Math.min(commandHighlight, commandMatches.length - 1));
   const inputHint = $derived(pendingInputHint(commands, draft));
@@ -135,7 +135,7 @@
   const queuePaused = $derived(!!chatState?.queuePaused);
   const childCounts = $derived(subagentChildCounts(chatState?.messages ?? []));
   const subagents = $derived(runningSubagents(chatState?.messages ?? [], childCounts));
-  const composerPlaceholder = $derived(!running ? `Ask ${label}…` : steeringSupported ? "Steer the reply, or queue a follow-up…" : "Queue a follow-up…");
+  const composerPlaceholder = $derived(chatState?.externalReadOnly ? "Running in another terminal" : !running ? `Ask ${label}…` : steeringSupported ? "Steer the reply, or queue a follow-up…" : "Queue a follow-up…");
   const queueShortcutLabel = kbdGlyph({ key: "Enter", alt: true });
   // An idle chat reports nothing. Replying and background work are announced
   // but not shown: their spinner is the only thing on screen.
@@ -145,7 +145,8 @@
     // whose agent is not running opens from its saved transcript.
     if (loading) return { text: connected || status === "parked" ? "Loading chat…" : "Connecting agent…", hidden: true };
     if (!connected && (status === "running" || status === "parked") && !error && !chatState?.error) return { text: "Connecting agent…", spinner: true };
-    if (chatState?.dormant) return { text: "", hidden: true };
+    // A mirrored agent running outside Forge reads as dormant while it replies.
+    if (chatState?.dormant) return running ? { text: "Replying…", spinner: true, hidden: true } : { text: "", hidden: true };
     if (!chatState?.connected) return { text: "Agent disconnected" };
     if (stopping) return { text: "Stopping…" };
     if (chatState.permissions.length || elicitations.length) return { text: "Needs your answer" };
@@ -648,7 +649,7 @@
           <!-- The slot keeps its width while empty, so the spinner appearing
                never takes room from the chips and wraps the row. -->
           <span class="turn-spinner" aria-hidden="true">{#if turnStatus.spinner}<Spinner size={14} label="" />{/if}</span>
-          {#if running || stopping}<button type="button" class="round stop" aria-label="Stop reply" title={stopping ? "Stopping…" : "Stop reply"} disabled={stopping || !connected || disabled} onclick={() => connection?.send({type: "cancel"})}><Square size={13} fill="currentColor" strokeWidth={0} /></button>{/if}
+          {#if running || stopping}<button type="button" class="round stop" aria-label="Stop reply" title={stopping ? "Stopping…" : "Stop reply"} disabled={stopping || !connected || !accepting || disabled} onclick={() => connection?.send({type: "cancel"})}><Square size={13} fill="currentColor" strokeWidth={0} /></button>{/if}
           {#if !running}
             <button type="submit" class="round send" aria-label="Send" title="Send (Enter) · new line (Shift+Enter)" disabled={!canSend}><ArrowUp size={16} /></button>
           {:else if steeringSupported}

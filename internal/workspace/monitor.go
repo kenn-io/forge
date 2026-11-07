@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 
 	"go.kenn.io/forge/internal/db"
@@ -182,38 +183,54 @@ func (m *PRMonitor) detectAssociatedPR(
 			return 0, false, err
 		}
 	}
-	currentBranch, err := gitBranchName(ctx, ws.WorktreePath)
-	if err != nil {
+	match, err := m.detectWorktreePR(ctx, ws)
+	if err != nil || match == nil {
 		return 0, false, err
 	}
+	return match.Number, true, nil
+}
+
+// detectWorktreePR finds the open pull request ws's worktree holds the head
+// branch of, by the branch's upstream or else its branch name and head commit.
+func (m *PRMonitor) detectWorktreePR(ctx context.Context, ws *Workspace) (*db.MergeRequest, error) {
+	currentBranch, err := gitBranchName(ctx, ws.WorktreePath)
+	if err != nil {
+		return nil, err
+	}
 	if currentBranch == "" {
-		return 0, false, nil
+		return nil, nil
 	}
 	candidates, err := m.listOpenPullCandidates(ctx, ws)
 	if err != nil {
-		return 0, false, fmt.Errorf("list merge requests: %w", err)
+		return nil, fmt.Errorf("list merge requests: %w", err)
+	}
+	matched := func(number int) *db.MergeRequest {
+		index := slices.IndexFunc(candidates, func(candidate db.MergeRequest) bool {
+			return candidate.Number == number
+		})
+		return &candidates[index]
 	}
 
 	upstream, err := gitUpstreamState(ctx, ws.WorktreePath, currentBranch)
 	if err != nil {
-		return 0, false, err
+		return nil, err
 	}
 	if upstream.hasTracking {
 		if prNumber, ok := selectPRByUpstream(ws.Platform, ws.PlatformHost, candidates, upstream); ok {
-			return prNumber, true, nil
+			return matched(prNumber), nil
 		}
 	}
 
 	headSHA, err := gitHeadSHA(ctx, ws.WorktreePath)
 	if err != nil {
-		return 0, false, err
+		return nil, err
 	}
 	if prNumber, ok := selectPRByLocalBranch(
 		ws.Platform, ws.PlatformHost, candidates, currentBranch, headSHA, upstream,
 	); ok {
-		return prNumber, true, nil
+		return matched(prNumber), nil
 	}
-	return 0, false, nil
+	return nil, nil
 }
 
 func (m *PRMonitor) listOpenPullCandidates(

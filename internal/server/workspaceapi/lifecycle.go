@@ -60,6 +60,7 @@ func (h *Handler) Start(parent context.Context, disableMonitors bool) {
 		if !h.executionWorker.Enabled {
 			h.runBackground(h.runWorkspacePRMonitorLoop)
 			h.runBackground(h.runWorkspacePushedHeadObserverLoop)
+			h.runBackground(h.runExternalAgentSessionLoop)
 		}
 	}
 }

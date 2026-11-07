@@ -1006,6 +1006,40 @@ func TestPushedHeadObserverRefreshesStaleMergeRequestHeadRef(t *testing.T) {
 
 // A branch with an upstream reports counts against its tracking ref, so the
 // pull ref is irrelevant and must not cost a fetch.
+// Forge did not create an external worktree, so it changes nothing in its Git
+// configuration or refs.
+func TestPushedHeadObserverLeavesAnExternalWorktreeUnchanged(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "2222222", "https://github.com/contributor/widget.git")
+	require.NoError(d.InsertWorkspace(t.Context(), &db.Workspace{
+		ID: "ws-external", Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42, GitHeadRef: "feature/remote-head",
+		WorkspaceBranch: "feature/remote-head", WorktreePath: "/tmp/worktree", Status: "ready", ExternalWorktree: true,
+	}))
+	reader := &fakeRemoteHeadReader{
+		branch: "feature/remote-head", refs: map[string]string{"refs/pull/42/head": "1111111"},
+		trackingSHA: "2222222", trackingRef: "refs/remotes/origin/feature/remote-head", trackingOK: true,
+	}
+	fetcher := &fakeHeadRefFetcher{reader: reader}
+	observer := newPushedHeadObserverForTest(t, d, reader)
+	observer.setHeadRefFetcherForTest(fetcher)
+
+	assert.Empty(runHeadRefPass(t, observer))
+	assert.Empty(fetcher.calls)
+
+	healed, err := observer.configureMissingUpstream(t.Context(), &Workspace{
+		ID: "ws-external", Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42, WorktreePath: "/tmp/worktree", ExternalWorktree: true,
+	}, db.MergeRequest{Number: 42, HeadBranch: "feature/remote-head", HeadRepoCloneURL: "https://github.com/acme/widget.git"},
+		"feature/remote-head", map[string]trackingLookup{})
+	require.NoError(err)
+	assert.False(healed)
+	assert.Empty(reader.setUpstreamCalls)
+}
+
 func TestPushedHeadObserverSkipsHeadRefFetchWithUpstream(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)

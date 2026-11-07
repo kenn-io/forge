@@ -1351,6 +1351,9 @@ type Workspace struct {
 	ErrorMessage    *string
 	CreatedAt       time.Time
 	KataMetadata    *WorkspaceKataMetadata
+	// ExternalWorktree marks a worktree Forge did not create. Forge never removes
+	// it or its branch.
+	ExternalWorktree bool `json:"-"`
 }
 
 const (

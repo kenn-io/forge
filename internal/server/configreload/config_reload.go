@@ -872,6 +872,7 @@ func CloneReloadedConfig(in *config.Config) config.Config {
 	}
 	out.Shell.Command = slices.Clone(in.Shell.Command)
 	out.Fleet.Members = slices.Clone(in.Fleet.Members)
+	out.Fleet.DeclaredSpokes = slices.Clone(in.Fleet.DeclaredSpokes)
 	if in.Fleet.Hub != nil {
 		hub := *in.Fleet.Hub
 		out.Fleet.Hub = &hub

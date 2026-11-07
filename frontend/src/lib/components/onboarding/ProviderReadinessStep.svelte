@@ -59,21 +59,21 @@
           <span>
             Couldn't verify the token from <code>{token.source}</code> on {ghHost}. If this keeps happening, confirm
             {ghHost} is reachable and the token can read your repositories. If you change it, run
-            <code class="command-inline">kenn-forge daemon restart</code>.
+            <code>kenn-forge daemon restart</code>.
           </span>
         {:else if ghReady}
           <span><code>gh</code> authenticated · {accountLabel(gh, "github.com")}</span>
         {:else if gh?.available && token?.env}
           <span>
             <code>gh</code> is not authenticated for <code>{ghHost}</code>. Sign in from a terminal, or set
-            <code>{token.env}</code> and run <code class="command-inline">kenn-forge daemon restart</code>.
+            <code>{token.env}</code> and run <code>kenn-forge daemon restart</code>.
           </span>
         {:else if gh?.available}
           <span><code>gh</code> is not authenticated for <code>{ghHost}</code>. Sign in from a terminal, then check again.</span>
         {:else if token?.env}
           <span>
             Install and sign in to <code>gh</code>, or set <code>{token.env}</code> and run
-            <code class="command-inline">kenn-forge daemon restart</code>.
+            <code>kenn-forge daemon restart</code>.
           </span>
         {:else}
           <span><code>gh</code> is not installed. Install the GitHub CLI on this host, then check again.</span>
@@ -222,10 +222,6 @@
 
   code {
     font-family: var(--font-mono);
-  }
-
-  .command-inline {
-    white-space: nowrap;
   }
 
   .command {

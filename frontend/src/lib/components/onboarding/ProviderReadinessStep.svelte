@@ -32,7 +32,7 @@
 
   function accountLabel(tool: { host?: string; user?: string } | undefined, fallbackHost: string): string {
     const host = tool?.host || fallbackHost;
-    return tool?.user ? `${host} · @${tool.user}` : host;
+    return tool?.user ? `${host}\u00a0· @${tool.user}` : host;
   }
 </script>
 
@@ -54,26 +54,26 @@
         {#if tooling === undefined}
           <span>Checking this host for an authenticated <code>gh</code> installation.</span>
         {:else if token?.source && ghReady}
-          <span>Token from <code>{token.source}</code> · {ghHost}</span>
+          <span>Token from <code>{token.source}</code>&nbsp;· {ghHost}</span>
         {:else if token?.source}
           <span>
             Couldn't verify the token from <code>{token.source}</code> on {ghHost}. If this keeps happening, confirm
             {ghHost} is reachable and the token can read your repositories. If you change it, run
-            <code>kenn-forge daemon restart</code>.
+            <code class="command-inline">kenn-forge daemon restart</code>.
           </span>
         {:else if ghReady}
-          <span><code>gh</code> authenticated · {accountLabel(gh, "github.com")}</span>
+          <span><code>gh</code> authenticated&nbsp;· {accountLabel(gh, "github.com")}</span>
         {:else if gh?.available && token?.env}
           <span>
             <code>gh</code> is not authenticated for <code>{ghHost}</code>. Sign in from a terminal, or set
-            <code>{token.env}</code> and run <code>kenn-forge daemon restart</code>.
+            <code>{token.env}</code> and run <code class="command-inline">kenn-forge daemon restart</code>.
           </span>
         {:else if gh?.available}
           <span><code>gh</code> is not authenticated for <code>{ghHost}</code>. Sign in from a terminal, then check again.</span>
         {:else if token?.env}
           <span>
             Install and sign in to <code>gh</code>, or set <code>{token.env}</code> and run
-            <code>kenn-forge daemon restart</code>.
+            <code class="command-inline">kenn-forge daemon restart</code>.
           </span>
         {:else}
           <span><code>gh</code> is not installed. Install the GitHub CLI on this host, then check again.</span>
@@ -97,7 +97,7 @@
           {/if}
         </div>
         {#if glabReady}
-          <span><code>glab</code> authenticated · {accountLabel(glab, "gitlab.com")}</span>
+          <span><code>glab</code> authenticated&nbsp;· {accountLabel(glab, "gitlab.com")}</span>
         {:else if glab?.available}
           <span><code>glab</code> is installed but not authenticated. Configure repositories in Settings.</span>
         {:else}
@@ -222,6 +222,10 @@
 
   code {
     font-family: var(--font-mono);
+  }
+
+  .command-inline {
+    white-space: nowrap;
   }
 
   .command {

@@ -421,6 +421,49 @@ func TestListPagesManyRepositories(t *testing.T) {
 	}
 }
 
+func TestListUnpagedOpenItemsAllowedRepositoryPlans(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	var repos []int64
+	for repo := range 31 {
+		repoID := insertTestRepo(t, d, "acme", fmt.Sprintf("repo-%d", repo))
+		count := 100
+		if repo < 30 {
+			repos = append(repos, repoID)
+		} else {
+			count = 6000 // Most open items belong to a repository outside the allow-list.
+		}
+		for _, table := range []string{"forge_merge_requests", "forge_issues"} {
+			execPageFixtureNumbers(t, d, count, fmt.Sprintf(`
+				INSERT INTO %s (repo_id, platform_id, number, state, created_at, updated_at, last_activity_at)
+				SELECT ?1, n, n, CASE WHEN n %% 20 = 0 THEN 'open' ELSE 'closed' END,
+				       '2024-01-15', '2024-01-15', datetime('2024-01-15', '+' || n || ' minutes') FROM numbers`, table), repoID)
+		}
+	}
+	_, err := d.WriteDB().ExecContext(t.Context(), "ANALYZE")
+	require.NoError(t, err)
+	t.Run("merge_requests", func(t *testing.T) {
+		q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_state_activity", reject: "idx_mr_state_activity"}
+		pulls, err := d.listMergeRequests(t.Context(), q, ListMergeRequestsOpts{State: "open", AllowedRepoIDs: repos})
+		require.NoError(t, err)
+		require.Len(t, pulls, 150)
+		for _, pull := range pulls {
+			assert.Contains(t, repos, pull.RepoID)
+			require.Equal(t, MergeRequestState("open"), pull.State)
+		}
+	})
+	t.Run("issues", func(t *testing.T) {
+		q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_issues_repo_state_activity", reject: "idx_issues_state_activity"}
+		issues, err := d.listIssues(t.Context(), q, ListIssuesOpts{State: "open", AllowedRepoIDs: repos})
+		require.NoError(t, err)
+		require.Len(t, issues, 150)
+		for _, issue := range issues {
+			assert.Contains(t, repos, issue.RepoID)
+			assert.Equal(t, "open", issue.State)
+		}
+	})
+}
+
 func TestListMergeRequestsCreatedQueryPlan(t *testing.T) {
 	t.Parallel()
 	d := openTestDB(t)

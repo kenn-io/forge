@@ -297,9 +297,9 @@ func (s *Syncer) drainDetailQueue(
 	}
 }
 
-// buildDetailQueueItems queries the DB for open PRs and issues
-// that may need a detail fetch, combining with starred/watched
-// state to build queue items for scoring.
+// buildDetailQueueItems queries the DB for open PRs and issues in the
+// selected repos that may need a detail fetch, combining with
+// starred/watched state to build queue items for scoring.
 func (s *Syncer) buildDetailQueueItems(
 	ctx context.Context,
 	repos []RepoRef,
@@ -322,11 +322,15 @@ func (s *Syncer) buildDetailQueueItems(
 		slog.Warn("detail drain: list repositories failed", "err", err)
 		return nil
 	}
-	reposByID := make(map[int64]db.Repo, len(storedRepos))
+	reposByID := make(map[int64]db.Repo, len(trackedRepos))
+	repoIDs := make([]int64, 0, len(trackedRepos))
 	for _, repo := range storedRepos {
+		if !trackedRepos[detailRepoKey(platform.Kind(repo.Platform), repo.PlatformHost, repo.Owner, repo.Name)] {
+			continue
+		}
 		reposByID[repo.ID] = repo
+		repoIDs = append(repoIDs, repo.ID)
 	}
-
 	// Gather watched MR numbers for matching.
 	s.watchMu.Lock()
 	watched := make(map[string]bool, len(s.watchedMRs))
@@ -339,7 +343,7 @@ func (s *Syncer) buildDetailQueueItems(
 
 	// Open PRs.
 	prs, err := s.db.ListMergeRequests(
-		ctx, db.ListMergeRequestsOpts{State: "open"},
+		ctx, db.ListMergeRequestsOpts{State: "open", AllowedRepoIDs: repoIDs},
 	)
 	if err != nil {
 		slog.Warn("detail drain: list open PRs failed",
@@ -352,14 +356,7 @@ func (s *Syncer) buildDetailQueueItems(
 		prCountsByRepoID[pr.RepoID]++
 	}
 	for _, pr := range prs {
-		repo, found := reposByID[pr.RepoID]
-		if !found {
-			continue
-		}
-		repoKey := detailRepoKey(platform.Kind(repo.Platform), repo.PlatformHost, repo.Owner, repo.Name)
-		if !trackedRepos[repoKey] {
-			continue
-		}
+		repo := reposByID[pr.RepoID]
 		watchKey := detailRepoKey(
 			platform.Kind(repo.Platform), repo.PlatformHost,
 			repo.Owner, repo.Name,
@@ -390,7 +387,7 @@ func (s *Syncer) buildDetailQueueItems(
 
 	// Open issues.
 	issues, err := s.db.ListIssues(
-		ctx, db.ListIssuesOpts{State: "open"},
+		ctx, db.ListIssuesOpts{State: "open", AllowedRepoIDs: repoIDs},
 	)
 	if err != nil {
 		slog.Warn("detail drain: list open issues failed",
@@ -403,14 +400,7 @@ func (s *Syncer) buildDetailQueueItems(
 		issueCountsByRepoID[issue.RepoID]++
 	}
 	for _, issue := range issues {
-		repo, found := reposByID[issue.RepoID]
-		if !found {
-			continue
-		}
-		repoKey := detailRepoKey(platform.Kind(repo.Platform), repo.PlatformHost, repo.Owner, repo.Name)
-		if !trackedRepos[repoKey] {
-			continue
-		}
+		repo := reposByID[issue.RepoID]
 		items = append(items, QueueItem{
 			Type:            QueueItemIssue,
 			Platform:        platform.Kind(repo.Platform),

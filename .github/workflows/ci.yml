@@ -958,13 +958,15 @@ jobs:
         run: |
           baseline=$(mktemp -d)
           trap 'rm -rf "$baseline"' EXIT
-          trap 'echo "Main race timings unavailable; comparison could not run."' ERR
-          runs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=100" --jq '.workflow_runs[].id')
+          trap 'echo "::notice::Main race timings unavailable; comparison could not run."' ERR
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=100" --jq '.workflow_runs[].id')
+          count=0
           for run in $runs; do
             artifacts=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/artifacts?per_page=100" --jq '[.artifacts[] | select(.expired == false and (.name | test("^go-race-timing-(server|core|rest)-[12]$")))] | length')
             if [[ "$artifacts" == 6 ]]; then
-              gh run download "$run" --repo "$GITHUB_REPOSITORY" --pattern 'go-race-timing-*' --dir "$baseline"
-              break
+              gh run download "$run" --repo "$GITHUB_REPOSITORY" --pattern 'go-race-timing-*' --dir "$baseline/$run"
+              count=$((count + 1))
+              if (( count == 5 )); then break; fi
             fi
           done
           find "$baseline" -name test-race-timing-events.json -exec cat {} + > "$baseline/main.json"
@@ -974,10 +976,10 @@ jobs:
               map(select((.Action == "pass" or .Action == "fail" or .Action == "skip") and .Package and .Test and .Elapsed))
               | group_by([.Package, .Test]) | map(max_by(.Elapsed));
             ($main | timings | map({key: ([.Package, .Test] | tojson), value: .Elapsed}) | from_entries) as $baseline
-            | timings[]
-            | $baseline[[.Package, .Test] | tojson] as $previous
-            | select(.Elapsed > 60 and ($previous == null or $previous <= 60))
-            | "::warning title=Slow race test::\(.Package) \(.Test): \(.Elapsed)s; main: \(if $previous == null then "absent" else "\($previous)s" end)"
+            | timings | map(. + {previous: $baseline[[.Package, .Test] | tojson]})
+            | map(select(.Elapsed > 60 and (.previous == null or .previous <= 60)))
+            | group_by([.Package, (.Test | split("/")[0])]) | .[] | max_by(.Elapsed)
+            | "::warning title=Slow race test::\(.Package) \(.Test): \(.Elapsed)s; main max: \(if .previous == null then "absent" else "\(.previous)s" end)"
           ' tmp/test-race-timing-events.json > "$baseline/warnings"
           cat "$baseline/warnings"
 

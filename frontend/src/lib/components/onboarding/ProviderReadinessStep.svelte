@@ -57,8 +57,7 @@
           <span>Token from <code>{token.source}</code>&nbsp;· {ghHost}</span>
         {:else if token?.source}
           <span>
-            Couldn't verify the token from <code>{token.source}</code> on {ghHost}. If this keeps happening, confirm
-            {ghHost} is reachable and the token can read your repositories. If you change it, run
+            Couldn't verify the token from <code>{token.source}</code> on {ghHost}. If this keeps happening, check connectivity and the token's repository access. If you change it, run
             <code>kenn-forge daemon restart</code>.
           </span>
         {:else if ghReady}

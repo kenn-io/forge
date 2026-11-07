@@ -71,8 +71,8 @@ describe("ProviderReadinessStep", () => {
 
     expect(githubRowText()).toBe(
       "GitHub Needs attention Couldn't verify the token from /tmp/forge-test/gh.token on " +
-        "github.com. If this keeps happening, confirm github.com is reachable and the token can read your " +
-        "repositories. If you change it, run kenn-forge daemon restart.",
+        "github.com. If this keeps happening, check connectivity and the token's repository access. " +
+        "If you change it, run kenn-forge daemon restart.",
     );
     expect(screen.queryByText("gh auth login")).toBeNull();
     expect(screen.queryByRole("button", { name: "Continue with GitHub" })).toBeNull();

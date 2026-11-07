@@ -370,6 +370,7 @@ function processState(pid: number): string {
 }
 
 function tmuxPassthroughFormat(payloadFormat: string): string {
+  // These fixtures use allow-passthrough=all so tmux forwards their bytes during redraws.
   return `\\033Ptmux;${payloadFormat}\\033\\\\`;
 }
 
@@ -768,7 +769,7 @@ test.describe("inline workspace pane continuity", () => {
       const phoneRepliesBefore = phoneOutput.cursorReports().length;
       const desktopClaimsBeforeQuery = desktopFrames.filter((frame) => frame.type === "claim_resize").length;
       const phoneClaimsBeforeQuery = phoneFrames.filter((frame) => frame.type === "claim_resize").length;
-      runE2ETmuxCommand(isolatedServer, ["set-option", "-p", "-t", tmuxSession, "allow-passthrough", "on"]);
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-p", "-t", tmuxSession, "allow-passthrough", "all"]);
       runE2ETmuxCommand(isolatedServer, [
         "send-keys",
         "-t",
@@ -2199,7 +2200,7 @@ test.describe("inline workspace pane continuity", () => {
         await page.goto(`${isolatedServer.info.base_url}/terminal/${workspaceA.id}`);
         let containerA = await openTerminalPanel(page);
         const tmuxSessionA = await runningRuntimeTmuxSession(api, workspaceA.id);
-        runE2ETmuxCommand(isolatedServer, ["set-option", "-p", "-t", tmuxSessionA, "allow-passthrough", "on"]);
+        runE2ETmuxCommand(isolatedServer, ["set-option", "-p", "-t", tmuxSessionA, "allow-passthrough", "all"]);
         runE2ETmuxCommand(isolatedServer, ["set-option", "-t", tmuxSessionA, "status", "off"]);
         await page.evaluate((workspaceId) => {
           (
@@ -2454,7 +2455,7 @@ test.describe("inline workspace pane continuity", () => {
         "utf8",
       );
       const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
-      runE2ETmuxCommand(isolatedServer, ["set-option", "-p", "-t", tmuxSession, "allow-passthrough", "on"]);
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-p", "-t", tmuxSession, "allow-passthrough", "all"]);
       runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSession, "mouse", "on"]);
       await expect(container.locator(".xterm.enable-mouse-events")).toBeVisible();
       await typeIntoTerminal(page, container, `sh '${helperPath}'`);

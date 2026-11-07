@@ -12,7 +12,7 @@ supersession, completion events, or pending-state presentation.
   `reviewed_head_sha` as it was when the dialog opened, while its CI and draft state follow
   detail refreshes. Deleting the current pull request's workspace is offered only for a merge of
   that pull request, whose request replaces a deletion an earlier merge of it kept. A merge queue merge still skips the dialog when it asks nothing, unless a
-  member below has failed CI (`frontend/src/lib/components/detail/MergeModal.svelte`). The detail
+  member below has failed or pending CI (`frontend/src/lib/components/detail/MergeModal.svelte`). The detail
   store orders a merge of another member under that member's mutation key and refreshes the
   shown pull request (`frontend/src/lib/stores/detail.svelte.ts::runPullAction`).
 - Merge warnings state a current fact, never "may": warn about rules only when the merge

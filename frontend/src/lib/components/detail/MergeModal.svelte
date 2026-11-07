@@ -143,7 +143,7 @@
   );
   const landingCIFailed = $derived(targetCIFailed || belowCI.failed.length > 0);
   const landingCIPending = $derived(
-    !(mergeQueue && nativeStackMerge) && !landingCIFailed && (targetCIPending || belowCI.pending.length > 0),
+    !landingCIFailed && (targetCIPending || belowCI.pending.length > 0),
   );
   const pendingNumbers = $derived(
     targetCIPending ? [...belowCI.pending, targetNumber] : belowCI.pending,

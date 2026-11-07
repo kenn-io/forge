@@ -18,14 +18,14 @@ import (
 // acpMirrorPollInterval is how often a viewed mirror reads the transcript.
 const acpMirrorPollInterval = 250 * time.Millisecond
 
-// ACPMirrorRefusal is a command a mirrored chat will not carry out while its
+// ACPMirrorRefusalError is a command a mirrored chat will not carry out while its
 // agent runs outside Forge. Sending it again changes nothing.
-type ACPMirrorRefusal string
+type ACPMirrorRefusalError string
 
-func (r ACPMirrorRefusal) Error() string { return string(r) }
+func (r ACPMirrorRefusalError) Error() string { return string(r) }
 
 // ErrACPMirrorReadOnly refuses input to a mirrored agent Forge cannot type to.
-const ErrACPMirrorReadOnly = ACPMirrorRefusal("this agent runs in a terminal Forge can't type into; use that terminal until it exits")
+const ErrACPMirrorReadOnly = ACPMirrorRefusalError("this agent runs in a terminal Forge can't type into; use that terminal until it exits")
 
 // ACPMirrorStatus is what the daemon knows about a mirrored agent right now.
 type ACPMirrorStatus struct {
@@ -115,26 +115,18 @@ func (m *Manager) PrepareMirroredACP(ctx context.Context, targetKey, workspaceID
 	return err
 }
 
-// acpMirrorStatusEvery is how many transcript reads pass between status reads,
-// which cost a database and report read.
-const acpMirrorStatusEvery = 4
-
 // Follow keeps a mirror's chat current until ctx ends or its agent starts.
 func (d *DormantACP) Follow(ctx context.Context) {
 	ticker := time.NewTicker(acpMirrorPollInterval)
 	defer ticker.Stop()
-	for tick := 1; ; tick++ {
+	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-d.started:
 			return
 		case <-ticker.C:
-			if tick%acpMirrorStatusEvery == 0 {
-				d.pollMirror()
-			} else {
-				d.pollMirrorTranscript()
-			}
+			d.pollMirror()
 		}
 	}
 }
@@ -223,16 +215,16 @@ func (f *acpMirrorFollower) command(command ACPCommand, status ACPMirrorStatus) 
 	case "dismiss_error":
 		return nil
 	default:
-		return ACPMirrorRefusal(fmt.Sprintf("%q is not available while this agent runs outside Forge", command.Type))
+		return ACPMirrorRefusalError(fmt.Sprintf("%q is not available while this agent runs outside Forge", command.Type))
 	}
 	if !status.Writable {
 		return ErrACPMirrorReadOnly
 	}
 	if command.SenderKind() != ACPSenderUser {
-		return ACPMirrorRefusal("a coordinator cannot send input to an agent running outside Forge")
+		return ACPMirrorRefusalError("a coordinator cannot send input to an agent running outside Forge")
 	}
 	if len(command.Images) > 0 {
-		return ACPMirrorRefusal("images can't be sent to an agent running outside Forge")
+		return ACPMirrorRefusalError("images can't be sent to an agent running outside Forge")
 	}
 	return f.source.Deliver(command)
 }

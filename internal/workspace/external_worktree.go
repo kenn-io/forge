@@ -44,17 +44,17 @@ func (m *PRMonitor) FindExternalWorktreePR(
 		return nil, fmt.Errorf("list remotes: %w", err)
 	}
 	var found *ExternalWorktreePR
-	seen := make(map[string]bool)
+	seen := make(map[db.PlatformIdentity]bool)
 	for remote := range strings.FieldsSeq(remotes) {
 		url, err := gitRemoteURL(ctx, root, remote)
 		if err != nil {
 			return nil, fmt.Errorf("read remote %s: %w", remote, err)
 		}
 		identity := identify(url)
-		if identity == nil || seen[identity.Platform+"|"+identity.Host+"|"+identity.Owner+"|"+identity.Name] {
+		if identity == nil || seen[*identity] {
 			continue
 		}
-		seen[identity.Platform+"|"+identity.Host+"|"+identity.Owner+"|"+identity.Name] = true
+		seen[*identity] = true
 		mr, err := m.detectWorktreePR(ctx, &Workspace{
 			Platform: identity.Platform, PlatformHost: identity.Host,
 			RepoOwner: identity.Owner, RepoName: identity.Name,

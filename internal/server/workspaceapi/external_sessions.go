@@ -37,28 +37,49 @@ const (
 
 type externalSessionID struct{ agent, sessionID string }
 
-// externalSessionEntry is what the hook path remembers about a session, so a
-// hook event costs a database write only when something changed.
-type externalSessionEntry struct {
-	saved        db.ExternalAgentSession
-	runtimeKey   string
-	worktreePath string
-	handedOff    bool
+// externalSessionCheck paces one session's adoption checks.
+type externalSessionCheck struct {
 	// due marks a hook event since the last adoption check.
 	due       bool
 	checkedAt time.Time
 }
 
 type externalSessionTracker struct {
-	mu      sync.Mutex
-	entries map[externalSessionID]*externalSessionEntry
+	mu     sync.Mutex
+	checks map[externalSessionID]externalSessionCheck
 }
 
-func (t *externalSessionTracker) entry(id externalSessionID) *externalSessionEntry {
-	if t.entries == nil {
-		t.entries = make(map[externalSessionID]*externalSessionEntry)
+func (t *externalSessionTracker) markDue(id externalSessionID) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.checks == nil {
+		t.checks = make(map[externalSessionID]externalSessionCheck)
 	}
-	return t.entries[id]
+	check := t.checks[id]
+	check.due = true
+	t.checks[id] = check
+}
+
+func (t *externalSessionTracker) forget(id externalSessionID) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.checks, id)
+}
+
+// startCheck reports whether an adoption check is due and, if so, starts its
+// recheck interval.
+func (t *externalSessionTracker) startCheck(id externalSessionID) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.checks == nil {
+		t.checks = make(map[externalSessionID]externalSessionCheck)
+	}
+	check := t.checks[id]
+	if !check.due && time.Since(check.checkedAt) < externalSessionRecheckInterval {
+		return false
+	}
+	t.checks[id] = externalSessionCheck{checkedAt: time.Now()}
+	return true
 }
 
 // recordExternalAgentHook handles a hook event from an agent Forge did not
@@ -72,103 +93,49 @@ func (s *Handler) recordExternalAgentHook(ctx context.Context, agent string, inp
 		sessionID == "" || strings.TrimSpace(hook.CWD) == "" {
 		return
 	}
-	id := externalSessionID{agent, sessionID}
-	entry, err := s.externalSessionEntry(ctx, id)
+	saved, err := s.db.GetExternalAgentSession(ctx, agent, sessionID)
 	if err != nil {
 		slog.Warn("read external agent session", "agent", agent, "err", err)
 		return
 	}
-	if entry != nil && entry.handedOff {
+	if saved != nil && saved.HandedOffAt != nil {
 		return
 	}
-	var runtimeKey, worktreePath string
+	id := externalSessionID{agent, sessionID}
 	if hook.HookEventName == "SessionEnd" {
 		if err := s.db.MarkExternalAgentSessionEnded(ctx, agent, sessionID, time.Now()); err != nil {
 			slog.Warn("record external agent session end", "agent", agent, "err", err)
 			return
 		}
-		if entry != nil {
-			runtimeKey, worktreePath = entry.runtimeKey, entry.worktreePath
-		}
-		s.externalSessions.mu.Lock()
-		delete(s.externalSessions.entries, id)
-		s.externalSessions.mu.Unlock()
+		s.externalSessions.forget(id)
 	} else {
-		runtimeKey, worktreePath, err = s.saveExternalAgentReport(ctx, id, input)
-		if err != nil {
+		processID, _ := strconv.Atoi(input.AgentPID)
+		if err := s.db.RecordExternalAgentSession(ctx, db.ExternalAgentSession{
+			Agent: agent, SessionID: sessionID, CWD: hook.CWD, TranscriptPath: hook.TranscriptPath,
+			ProcessID: processID, ProcessStart: input.AgentStart,
+			HerdrPaneID: input.HerdrPane, HerdrSocketPath: input.HerdrSocket,
+		}); err != nil {
 			slog.Warn("record external agent session", "agent", agent, "err", err)
 			return
 		}
+		s.externalSessions.markDue(id)
 	}
-	if runtimeKey == "" || s.agentActivity == nil {
+	if saved == nil || saved.RuntimeSessionKey == "" || s.agentActivity == nil {
+		return
+	}
+	ws, err := s.db.GetWorkspace(ctx, saved.WorkspaceID)
+	if err != nil {
+		slog.Warn("get mirrored workspace", "session_key", saved.RuntimeSessionKey, "err", err)
+		return
+	}
+	if ws == nil {
 		return
 	}
 	// The chat's agent status comes from these events, as a launched agent's does.
-	hook.CWD = worktreePath
-	if err := s.agentActivity.HandleEvent(agent, hook, runtimeKey); err != nil {
-		slog.Warn("record mirrored agent activity", "session_key", runtimeKey, "err", err)
+	hook.CWD = ws.WorktreePath
+	if err := s.agentActivity.HandleEvent(agent, hook, saved.RuntimeSessionKey); err != nil {
+		slog.Warn("record mirrored agent activity", "session_key", saved.RuntimeSessionKey, "err", err)
 	}
-}
-
-func (s *Handler) saveExternalAgentReport(
-	ctx context.Context, id externalSessionID, input *receiveAgentHookInput,
-) (runtimeKey, worktreePath string, err error) {
-	processID, _ := strconv.Atoi(input.AgentPID)
-	report := db.ExternalAgentSession{
-		Agent: id.agent, SessionID: id.sessionID, CWD: input.Body.CWD,
-		TranscriptPath: input.Body.TranscriptPath,
-		ProcessID:      processID, ProcessStart: input.AgentStart,
-		HerdrPaneID: input.HerdrPane, HerdrSocketPath: input.HerdrSocket,
-	}
-	s.externalSessions.mu.Lock()
-	defer s.externalSessions.mu.Unlock()
-	entry := s.externalSessions.entry(id)
-	if entry == nil {
-		entry = &externalSessionEntry{}
-		s.externalSessions.entries[id] = entry
-	}
-	entry.due = true
-	if report != entry.saved {
-		if err := s.db.RecordExternalAgentSession(ctx, report); err != nil {
-			return "", "", err
-		}
-		entry.saved = report
-	}
-	return entry.runtimeKey, entry.worktreePath, nil
-}
-
-// externalSessionEntry returns the remembered entry, loading one saved before
-// this daemon started.
-func (s *Handler) externalSessionEntry(ctx context.Context, id externalSessionID) (*externalSessionEntry, error) {
-	s.externalSessions.mu.Lock()
-	entry := s.externalSessions.entry(id)
-	s.externalSessions.mu.Unlock()
-	if entry != nil {
-		return entry, nil
-	}
-	saved, err := s.db.GetExternalAgentSession(ctx, id.agent, id.sessionID)
-	if err != nil || saved == nil {
-		return nil, err
-	}
-	loaded := &externalSessionEntry{runtimeKey: saved.RuntimeSessionKey, handedOff: saved.HandedOffAt != nil}
-	if saved.WorkspaceID != "" {
-		ws, err := s.db.GetWorkspace(ctx, saved.WorkspaceID)
-		if err != nil {
-			return nil, fmt.Errorf("get adopting workspace: %w", err)
-		}
-		if ws != nil {
-			loaded.worktreePath = ws.WorktreePath
-		} else {
-			loaded.runtimeKey = ""
-		}
-	}
-	s.externalSessions.mu.Lock()
-	defer s.externalSessions.mu.Unlock()
-	if current := s.externalSessions.entry(id); current != nil {
-		return current, nil
-	}
-	s.externalSessions.entries[id] = loaded
-	return loaded, nil
 }
 
 func (s *Handler) runExternalAgentSessionLoop(ctx context.Context) {
@@ -192,13 +159,14 @@ func (s *Handler) runExternalAgentSessionPass(ctx context.Context) {
 		slog.Warn("list external agent sessions", "err", err)
 		return
 	}
-	for _, session := range sessions {
+	for i := range sessions {
+		session := &sessions[i]
 		id := externalSessionID{session.Agent, session.SessionID}
-		if externalProcessGone(session) {
-			s.endExternalSession(ctx, id, session)
+		if externalProcessGone(*session) {
+			s.endExternalSession(ctx, id, *session)
 			continue
 		}
-		if session.WorkspaceID != "" || !s.externalSessionDue(id) {
+		if session.WorkspaceID != "" || !s.externalSessions.startCheck(id) {
 			continue
 		}
 		if err := s.adoptExternalSession(ctx, session, sessions); err != nil {
@@ -219,9 +187,7 @@ func (s *Handler) endExternalSession(ctx context.Context, id externalSessionID, 
 		slog.Warn("record external agent exit", "agent", id.agent, "err", err)
 		return
 	}
-	s.externalSessions.mu.Lock()
-	delete(s.externalSessions.entries, id)
-	s.externalSessions.mu.Unlock()
+	s.externalSessions.forget(id)
 	if session.RuntimeSessionKey != "" && s.agentActivity != nil {
 		if err := s.agentActivity.Remove(id.agent, id.sessionID, session.RuntimeSessionKey); err != nil {
 			slog.Warn("clear mirrored agent activity", "session_key", session.RuntimeSessionKey, "err", err)
@@ -229,28 +195,11 @@ func (s *Handler) endExternalSession(ctx context.Context, id externalSessionID, 
 	}
 }
 
-// externalSessionDue reports whether an adoption check is due and, if so,
-// starts its recheck interval.
-func (s *Handler) externalSessionDue(id externalSessionID) bool {
-	s.externalSessions.mu.Lock()
-	defer s.externalSessions.mu.Unlock()
-	entry := s.externalSessions.entry(id)
-	if entry == nil {
-		entry = &externalSessionEntry{}
-		s.externalSessions.entries[id] = entry
-	}
-	if !entry.due && time.Since(entry.checkedAt) < externalSessionRecheckInterval {
-		return false
-	}
-	entry.due, entry.checkedAt = false, time.Now()
-	return true
-}
-
 // adoptExternalSession gives the session a workspace on its own worktree when
 // that worktree holds an open pull request's head. A worktree's chat follows
 // one agent at a time, so an agent started inside another agent waits its turn.
 func (s *Handler) adoptExternalSession(
-	ctx context.Context, session db.ExternalAgentSession, running []db.ExternalAgentSession,
+	ctx context.Context, session *db.ExternalAgentSession, running []db.ExternalAgentSession,
 ) error {
 	match, err := s.workspacePRMonitor.FindExternalWorktreePR(ctx, session.CWD, func(remote string) *db.PlatformIdentity {
 		return projects.ParseRemoteURLWithKnownPlatforms(remote, s.knownProjectPlatformHosts())
@@ -286,11 +235,8 @@ func (s *Handler) adoptExternalSession(
 	if err := s.db.AdoptExternalAgentSession(ctx, session.Agent, session.SessionID, ws.ID, key); err != nil {
 		return err
 	}
-	s.externalSessions.mu.Lock()
-	if entry := s.externalSessions.entry(externalSessionID{session.Agent, session.SessionID}); entry != nil {
-		entry.runtimeKey, entry.worktreePath = key, ws.WorktreePath
-	}
-	s.externalSessions.mu.Unlock()
+	// Later sessions in this pass read running, so they see this adoption.
+	session.WorkspaceID = ws.ID
 	if created {
 		s.PublishWorkspaceCreated(ws.ID, true)
 		s.runWorkspaceSetup(ws)
@@ -400,6 +346,7 @@ func (s *Handler) mirrorStatus(
 		switch report.State {
 		case agentactivity.StateWorking, agentactivity.StateApproval, agentactivity.StateInput:
 			status.Busy = true
+		case agentactivity.StateIdle, agentactivity.StateDone:
 		}
 	}
 	return status
@@ -469,8 +416,6 @@ func (s *Handler) startMirroredChat(
 	if err := s.db.MarkExternalAgentSessionHandedOff(ctx, session.Agent, session.SessionID, time.Now()); err != nil {
 		slog.Warn("record mirrored chat handoff", "session_key", item.SessionKey, "err", err)
 	}
-	s.externalSessions.mu.Lock()
-	delete(s.externalSessions.entries, externalSessionID{session.Agent, session.SessionID})
-	s.externalSessions.mu.Unlock()
+	s.externalSessions.forget(externalSessionID{session.Agent, session.SessionID})
 	return chat, nil
 }

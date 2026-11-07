@@ -259,7 +259,10 @@ Processes on the execution host:
   prompts still go straight to the agent. On ACP v1, claude-agent-acp signals that work in two
   ways. A backgrounded command's terminal stays open until it exits. A turn the agent starts on
   its own ends at its cost-bearing usage update. Only agents that already sent a cost report can
-  start such a turn (`internal/workspace/localruntime/acp_background.go`).
+  start such a turn. codex-acp marks nothing: a command whose call still runs with its terminal
+  open when a turn ends normally is background work until its terminal exits. A cancelled or
+  failed turn marks nothing, because an interrupted command may never report its exit
+  (`internal/workspace/localruntime/acp_background.go`).
 
 ### Terminal sessions
 

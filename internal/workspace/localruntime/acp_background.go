@@ -13,6 +13,10 @@ import acpsdk "github.com/coder/acp-go-sdk"
 // command ends. A turn it starts itself streams output while no prompt is
 // open and ends, like every turn, with a usage update carrying the session
 // cost.
+//
+// codex-acp marks nothing. Codex ends its turn while a long command still
+// runs, leaving that command's tool call in progress with its terminal open,
+// and completes the call with terminal_exit when the command ends.
 
 // trackTerminalLocked follows the command terminal of tool call id through
 // the Zed terminal conventions. The background marker can arrive before or
@@ -32,6 +36,23 @@ func (a *ACP) trackTerminalLocked(id string, meta map[string]any) {
 	}
 	if _, exited := meta["terminal_exit"].(map[string]any); exited {
 		delete(a.terminals, id)
+	}
+}
+
+// backgroundRunningCommandsLocked marks the commands that outlive a turn that
+// ended normally: their tool call still runs and their terminal is open. A
+// cancelled or failed turn marks nothing, because an agent may never report
+// the exit of a command it interrupted.
+func (a *ACP) backgroundRunningCommandsLocked() {
+	if len(a.terminals) == 0 {
+		return
+	}
+	for _, message := range a.state.Messages {
+		_, open := a.terminals[message.ToolCallID]
+		running := message.Status == string(acpsdk.ToolCallStatusPending) || message.Status == string(acpsdk.ToolCallStatusInProgress)
+		if open && message.Role == "tool" && running {
+			a.terminals[message.ToolCallID] = true
+		}
 	}
 }
 

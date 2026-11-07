@@ -107,6 +107,69 @@ func TestACPWorksWhileABackgroundCommandRunsAndTheTurnItStarts(t *testing.T) {
 	})
 }
 
+// The updates below follow what codex-acp 2.3.0 sent Forge for a command that
+// outlived its turn: the call stays in progress with its terminal open after
+// end_turn, and completes with terminal_exit when the command exits.
+
+func acpCodexCommand(t *testing.T, agent *ACP, id string) {
+	t.Helper()
+	acpUpdate(t, agent, acpsdk.SessionUpdate{ToolCall: &acpsdk.SessionUpdateToolCall{
+		ToolCallId: acpsdk.ToolCallId(id), Title: "make lint", Kind: acpsdk.ToolKindExecute, Status: acpsdk.ToolCallStatusInProgress,
+		Meta: map[string]any{"terminal_info": map[string]any{"cwd": "/work", "terminal_id": id}},
+	}})
+}
+
+func acpCodexCommandExit(t *testing.T, agent *ACP, id string) {
+	t.Helper()
+	completed := acpsdk.ToolCallStatusCompleted
+	acpUpdate(t, agent, acpsdk.SessionUpdate{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
+		ToolCallId: acpsdk.ToolCallId(id), Status: &completed,
+		Meta: map[string]any{"terminal_exit": map[string]any{"terminal_id": id, "exit_code": 0, "signal": nil}},
+	}})
+}
+
+func TestACPWorksWhileACodexCommandOutlivesItsTurn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		agent.loadSession = true
+		agent.recordPath = filepath.Join(t.TempDir(), "chat.json")
+		require.NoError(t, agent.Prompt("push the branch", ACPSender{Kind: ACPSenderUser}))
+		acpCodexCommand(t, agent, "push")
+		acpCodexCommand(t, agent, "quick")
+		acpCodexCommandExit(t, agent, "quick")
+		// A finished call whose terminal never reported an exit runs nothing.
+		acpTerminalCall(t, agent, "finished")
+		acpTerminalStatus(t, agent, "finished", false)
+		acpText(t, agent, "The push is still running its checks.")
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+
+		state := publishedACPState(t, agent)
+		assert.False(t, state.Busy, "the prompt turn ended")
+		assert.True(t, state.Background, "the push still runs")
+		assert.Equal(t, agentactivity.StateWorking, acpActivity(agent))
+		assert.False(t, acpParkable(agent), "parking would stop the push")
+
+		acpCodexCommandExit(t, agent, "push")
+		assert.False(t, publishedACPState(t, agent).Background)
+		assert.Equal(t, agentactivity.StateDone, acpActivity(agent))
+		assert.True(t, acpParkable(agent))
+	})
+}
+
+func TestACPCancelledTurnLeavesNothingInTheBackground(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		require.NoError(t, agent.Prompt("push the branch", ACPSender{Kind: ACPSenderUser}))
+		acpCodexCommand(t, agent, "push")
+		peer.endTurn(acpsdk.StopReasonCancelled)
+		synctest.Wait()
+
+		assert.False(t, publishedACPState(t, agent).Background, "a cancelled command may never report its exit")
+		assert.Equal(t, agentactivity.StateDone, acpActivity(agent))
+	})
+}
+
 func TestACPForegroundCommandsLeaveNothingInTheBackground(t *testing.T) {
 	agent := newDetachedACP(t)
 	acpTerminalCall(t, agent, "fg")

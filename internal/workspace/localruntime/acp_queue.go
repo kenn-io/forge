@@ -313,6 +313,10 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 // open questions are cancelled, and held text becomes visible.
 func (a *ACP) endTurnLocked(stopReason string, err error) {
 	a.endTurnRecordLocked(stopReason, err)
+	// An empty stop reason is a Codex turn that ended with its idle thread.
+	if err == nil && (stopReason == "" || stopReason == string(acpsdk.StopReasonEndTurn)) {
+		a.backgroundRunningCommandsLocked()
+	}
 	a.state.Busy = false
 	a.state.Stopping = false
 	a.turnCompleted = true

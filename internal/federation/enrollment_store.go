@@ -327,10 +327,17 @@ func checkDeclaredJoin(
 	resume := enrollmentIndexByID(enrollments, request.EnrollmentID)
 	if resume >= 0 {
 		existing := enrollments[resume]
-		if existing.State != EnrollmentPending || !existing.Declared ||
-			existing.NodeID != request.NodeID ||
+		if existing.NodeID != request.NodeID ||
 			existing.SpokeBaseURL != request.BaseURL ||
 			existing.HubID != hub.NodeID || existing.HubURL != hub.BaseURL {
+			return -1, nil, ErrEnrollmentConflict
+		}
+		// The spoke retries a join whose reply it lost, and the hub revoked
+		// that enrollment since. Saying so lets it join with a new ID.
+		if existing.State == EnrollmentRevoked {
+			return -1, nil, ErrEnrollmentRevoked
+		}
+		if existing.State != EnrollmentPending || !existing.Declared {
 			return -1, nil, ErrEnrollmentConflict
 		}
 	}

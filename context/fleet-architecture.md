@@ -350,9 +350,10 @@ peer bearers and route scopes       internal/federationauth
 - A join keeps a revoked local enrollment, which `fleet leave` needs, or a pending one the hub
   dropped after it expired unprepared, until the hub accepts the join; a refused join leaves it in
   place. The kept enrollment records the replacement enrollment ID so a retry after a lost reply
-  resumes it at the hub; a join the hub refuses because it revoked that replacement starts again
-  with a new ID (`internal/server/fleetapi/fleet_enrollment.go::HubJoiner.Join`). A revoked
-  declared spoke skips the join with the secret it joined with, which the hub consumed, and starts
+  resumes it at the hub. A resumed join, a first join as well as a replacement, that the hub reports
+  revoked runs once more with a new ID (`internal/server/fleetapi/fleet_enrollment.go::HubJoiner.Join`). A revoked
+  declared spoke that learns of its revocation during startup activation enrolls again in that
+  start. It skips the join with the secret it joined with, which the hub consumed, and starts
   local-only without reading its secret when the file is gone
   (`cmd/kenn-forge/declared_spoke_startup.go::enrollDeclaredFederationSpoke`).
 - A spoke records a revocation only for the enrollment the hub revoked, so a late reply cannot

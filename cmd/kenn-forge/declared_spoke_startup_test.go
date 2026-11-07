@@ -646,7 +646,7 @@ func TestRemovedOfflineSpokeLearnsAtStartAndRejoinsWithRotatedSecret(t *testing.
 	startup, err := spoke.boot(t, hub)
 	require.NoError(err)
 	assert.Equal(federationStartupActionRequired, startup.State)
-	assert.Contains(startup.Reason, "revoked this spoke's enrollment")
+	assert.Contains(startup.Reason, "revoked this fleet spoke's enrollment")
 	local, ok := spoke.enrollments.Local()
 	require.True(ok)
 	require.Equal(federation.EnrollmentRevoked, local.State)
@@ -1100,4 +1100,63 @@ func TestDeclaredSpokeRejoinsAfterTheHubDropsItsUnpreparedEnrollment(t *testing.
 		startup, err := spoke.boot(t, hub)
 		return err == nil && startup.Active()
 	}, 10*time.Second, 100*time.Millisecond, "a new secret enrolls the spoke again")
+}
+
+func TestDeclaredSpokeRejoinsAfterTheHubRevokesAJoinWhoseReplyItLost(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	spokeListener, spokeHandler := startTLSListener(t)
+	hubSecretPath := newDeclaredSecretFile(t, declaredSecret)
+	hub := startDeclaredHub(t, []config.FleetDeclaredSpoke{{
+		Name: declaredSpokeName, BaseURL: spokeListener.URL, EnrollmentSecretFile: hubSecretPath,
+	}}, nil, nil)
+	spokeSecretPath := newDeclaredSecretFile(t, declaredSecret)
+	spoke := newDeclaredSpokeNode(t, hub, declaredSpokeID, spokeListener.URL, spokeHandler, spokeSecretPath)
+	spoke.client = &http.Client{Transport: dropResponses{next: hub.client.Transport}}
+	_, err := spoke.boot(t, hub)
+	require.Error(err)
+	accepted := liveEnrollmentsAt(hub.enrollments, spoke.url)
+	require.Len(accepted, 1)
+	require.NoError(hub.enrollments.Revoke(t.Context(), accepted[0].ID))
+
+	spoke.client = hub.client
+	writeDeclaredSecret(t, hubSecretPath, rotatedSecret)
+	writeDeclaredSecret(t, spokeSecretPath, rotatedSecret)
+	startup, err := spoke.boot(t, hub)
+	require.NoError(err)
+	require.Equal(federationStartupActive, startup.State, startup.Reason)
+	rejoined := liveEnrollmentsAt(hub.enrollments, spoke.url)
+	require.Len(rejoined, 1)
+	assert.NotEqual(accepted[0].ID, rejoined[0].ID)
+}
+
+func TestOfflineSpokeUsesItsNewSecretInTheStartThatLearnsOfItsRemoval(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	spokeListener, spokeHandler := startTLSListener(t)
+	hubSecretPath := newDeclaredSecretFile(t, declaredSecret)
+	hub := startDeclaredHub(t, []config.FleetDeclaredSpoke{{
+		Name: declaredSpokeName, BaseURL: spokeListener.URL, EnrollmentSecretFile: hubSecretPath,
+	}}, nil, nil)
+	spokeSecretPath := newDeclaredSecretFile(t, declaredSecret)
+	spoke := newDeclaredSpokeNode(t, hub, declaredSpokeID, spokeListener.URL, spokeHandler, spokeSecretPath)
+	startup, err := spoke.boot(t, hub)
+	require.NoError(err)
+	require.Equal(federationStartupActive, startup.State, startup.Reason)
+	require.NoError(spokeHandler.server.Swap(nil).Shutdown(t.Context()))
+
+	// The hub removes the spoke while it is offline, as the hub leaves it when
+	// it cannot tell the spoke, then declares it again with a new secret.
+	removed := liveEnrollmentsAt(hub.enrollments, spoke.url)
+	require.Len(removed, 1)
+	require.NoError(hub.enrollments.Revoke(t.Context(), removed[0].ID))
+	require.NoError(hub.credentials.RestrictInboundNode(
+		declaredSpokeID, []federationauth.Scope{federationauth.ScopeEnrollmentActivate},
+	))
+	writeDeclaredSecret(t, hubSecretPath, rotatedSecret)
+	writeDeclaredSecret(t, spokeSecretPath, rotatedSecret)
+
+	startup, err = spoke.boot(t, hub)
+	require.NoError(err)
+	assert.Equal(federationStartupActive, startup.State, startup.Reason)
 }

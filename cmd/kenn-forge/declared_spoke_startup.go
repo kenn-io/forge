@@ -40,8 +40,9 @@ func startFederationSpoke(
 ) (federationSpokeStartup, error) {
 	// Finish a recorded revocation whose cleanup failed, so a later join
 	// does not find the old enrollment's preparation state.
-	if local, ok := startup.enrollments.Local(); ok && local.State == federation.EnrollmentRevoked &&
-		startup.cfg.Fleet.Enabled && startup.cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke {
+	local, ok := startup.enrollments.Local()
+	wasRevoked := ok && local.State == federation.EnrollmentRevoked
+	if wasRevoked && startup.cfg.Fleet.Enabled && startup.cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke {
 		if err := fleetapi.RevokeLocalEnrollment(
 			ctx, startup.enrollments, startup.credentials, startup.database, local,
 		); err != nil {
@@ -61,6 +62,13 @@ func startFederationSpoke(
 	// instead of staying local-only after the hub recovers.
 	if result.awaitsFirstActivation && declaredSpoke(startup.cfg) {
 		return federationSpokeStartup{}, errors.New(result.Reason)
+	}
+	// Activation can report that the hub revoked this spoke while it was
+	// offline. A new secret may be waiting, so enroll in this start instead
+	// of the next one. The next pass finds the spoke already revoked.
+	if local, ok := startup.enrollments.Local(); ok && declaredSpoke(startup.cfg) &&
+		!wasRevoked && local.State == federation.EnrollmentRevoked {
+		return startFederationSpoke(ctx, startup)
 	}
 	if reason != "" && !result.Active() {
 		result.Reason = reason

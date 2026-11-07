@@ -608,7 +608,8 @@ func (j HubJoiner) Join(
 			}
 		}
 	}
-	if enrollmentID == "" {
+	resuming := enrollmentID != ""
+	if !resuming {
 		enrollmentID, err = federation.NewID()
 		if err != nil {
 			return federation.LocalEnrollment{}, httpapi.Internal(err.Error())
@@ -645,16 +646,12 @@ func (j HubJoiner) Join(
 		ProtocolVersion: federation.ProtocolVersion,
 		HubCredential:   hubCredential,
 	})
-	if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok && replaced != nil &&
+	if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok && resuming &&
 		problem.Details["reason"] == "enrollmentRevoked" {
-		// The hub revoked the replacement this join resumed, after a reply
-		// was lost. That ID cannot enroll again, so join with a new one.
-		replaced.ReplacementEnrollmentID = ""
-		if err := j.Enrollments.SaveLocal(ctx, *replaced); err != nil {
-			return federation.LocalEnrollment{}, httpapi.Internal("clear revoked replacement enrollment ID: " + err.Error())
-		}
-		if err := j.Credentials.RevokePending(enrollmentID); err != nil {
-			return federation.LocalEnrollment{}, httpapi.Internal("revoke provisional hub credential: " + err.Error())
+		// The hub revoked the enrollment this join resumed, after a reply was
+		// lost. That ID cannot enroll again, so join once more with a new one.
+		if err := j.forgetRevokedJoin(ctx, enrollmentID, replaced); err != nil {
+			return federation.LocalEnrollment{}, err
 		}
 		return j.Join(ctx, hubURL, spokeBaseURL, name, token)
 	}
@@ -708,6 +705,27 @@ func (j HubJoiner) Join(
 		return federation.LocalEnrollment{}, httpapi.Internal("persist hub enrollment: " + err.Error())
 	}
 	return local, nil
+}
+
+// forgetRevokedJoin drops a resumed join the hub revoked, keeping the
+// enrollment it would have replaced.
+func (j HubJoiner) forgetRevokedJoin(
+	ctx context.Context, enrollmentID string, replaced *federation.LocalEnrollment,
+) error {
+	if err := j.Credentials.RevokePending(enrollmentID); err != nil {
+		return httpapi.Internal("revoke provisional hub credential: " + err.Error())
+	}
+	if replaced == nil {
+		if err := j.Enrollments.ClearLocal(ctx); err != nil {
+			return httpapi.Internal("clear provisional local enrollment: " + err.Error())
+		}
+		return nil
+	}
+	replaced.ReplacementEnrollmentID = ""
+	if err := j.Enrollments.SaveLocal(ctx, *replaced); err != nil {
+		return httpapi.Internal("clear revoked replacement enrollment ID: " + err.Error())
+	}
+	return nil
 }
 
 func (h *Handler) activateEnrollment(

@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -465,6 +466,33 @@ func TestFleetJoinStartsAgainWhenTheHubRevokedItsReplacement(t *testing.T) {
 	require.True(ok)
 	assert.NotEqual(revokedReplacement, local.EnrollmentID)
 	assert.Equal(federation.EnrollmentPending, local.State)
+}
+
+func TestFleetJoinStopsWhenTheHubCallsEveryEnrollmentRevoked(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var joins atomic.Int32
+	revoked := revokedLocalEnrollment()
+	revoked.ReplacementEnrollmentID = "33333333333333333333333333333333"
+	fixture := joinFromLocal(t, revoked, func(http.RoundTripper) http.RoundTripper {
+		return roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			joins.Add(1)
+			return &http.Response{
+				StatusCode: http.StatusForbidden, Request: request,
+				Header: http.Header{"Content-Type": {"application/problem+json"}},
+				Body: io.NopCloser(strings.NewReader(
+					`{"title":"Forbidden","status":403,"details":{"reason":"enrollmentRevoked"}}`,
+				)),
+			}, nil
+		})
+	})
+
+	response := fixture.join(fixture.newToken())
+	assert.Equal(http.StatusForbidden, response.StatusCode)
+	assert.Equal(int32(2), joins.Load(), "one retry with a new ID, then the error")
+	local, ok := fixture.spoke.enrollments.Local()
+	require.True(ok)
+	assert.Equal(federation.EnrollmentRevoked, local.State)
 }
 
 func TestFleetJoinInstallsNothingWhileRevocationCleanupRuns(t *testing.T) {

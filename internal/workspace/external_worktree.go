@@ -55,21 +55,58 @@ func (m *PRMonitor) FindExternalWorktreePR(
 			continue
 		}
 		seen[*identity] = true
-		mr, err := m.detectWorktreePR(ctx, &Workspace{
+		mr, err := m.externalWorktreePR(ctx, &Workspace{
 			Platform: identity.Platform, PlatformHost: identity.Host,
 			RepoOwner: identity.Owner, RepoName: identity.Name,
 			ItemType: db.WorkspaceItemTypeAdHoc, WorktreePath: root,
-		})
+		}, branch)
 		if err != nil {
 			return nil, err
 		}
-		if mr == nil || !worktreeHoldsCommit(ctx, root, mr.PlatformHeadSHA) {
+		if mr == nil {
 			continue
 		}
 		if found != nil {
 			return nil, nil
 		}
 		found = &ExternalWorktreePR{WorktreePath: root, Branch: branch, Identity: *identity, Number: mr.Number}
+	}
+	return found, nil
+}
+
+// externalWorktreePR returns the open pull request ws's checkout holds the head
+// of. Beyond the upstream and exact-head matches a Forge workspace uses, an
+// agent may have committed past the head it pushed without setting an
+// upstream, so a single same-branch pull request whose head the checkout's
+// history holds matches too.
+func (m *PRMonitor) externalWorktreePR(ctx context.Context, ws *Workspace, branch string) (*db.MergeRequest, error) {
+	mr, err := m.detectWorktreePR(ctx, ws)
+	if err != nil || mr != nil {
+		if mr != nil && !worktreeHoldsCommit(ctx, ws.WorktreePath, mr.PlatformHeadSHA) {
+			mr = nil
+		}
+		return mr, err
+	}
+	candidates, err := m.listOpenPullCandidates(ctx, ws)
+	if err != nil {
+		return nil, fmt.Errorf("list merge requests: %w", err)
+	}
+	upstream, err := gitUpstreamState(ctx, ws.WorktreePath, branch)
+	if err != nil {
+		return nil, err
+	}
+	var found *db.MergeRequest
+	for i := range candidates {
+		candidate := &candidates[i]
+		if candidate.HeadBranch != branch || strings.TrimSpace(candidate.PlatformHeadSHA) == "" ||
+			!localBranchCandidateMatchesUpstream(ws.Platform, ws.PlatformHost, *candidate, upstream) ||
+			!worktreeHoldsCommit(ctx, ws.WorktreePath, candidate.PlatformHeadSHA) {
+			continue
+		}
+		if found != nil {
+			return nil, nil
+		}
+		found = candidate
 	}
 	return found, nil
 }

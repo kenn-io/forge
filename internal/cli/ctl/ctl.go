@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"go.kenn.io/forge/internal/apiclient/generated"
 	configpkg "go.kenn.io/forge/internal/config"
 	"go.yaml.in/yaml/v3"
 )
@@ -67,7 +68,7 @@ func newCommand(deps commandDeps) *cobra.Command {
 		Long: strings.TrimSpace(`kenn-forge serves kenn-forge API content for agents.
 
 Start with "kenn-forge quickstart" for the API shape, then use typed shortcuts
-like "kenn-forge pulls" or the raw HTTP escape hatch:
+like "kenn-forge pulls" for summaries, add --full for full records, or use raw HTTP:
 
   kenn-forge api METHOD PATH [body...]
 
@@ -180,8 +181,8 @@ func registerCommands(root *cobra.Command, deps commandDeps) {
 		apiCommand,
 		repos,
 		legacySummaries,
-		newPullsCommand(request),
-		newIssuesCommand(request),
+		newPullsCommand(request, fetch, deps.Stdout),
+		newIssuesCommand(request, fetch, deps.Stdout),
 		newSyncCommand(request),
 		newSimpleGetCommand("stacks", "List detected pull request stacks", "/stacks", nil, request),
 		newWorkspacesCommand(request),
@@ -356,8 +357,8 @@ Use "kenn-forge mcp quickstart" for MCP connectivity and client configuration.`,
 				"api_base_url": mustAPIURL(current.server, apiPrefix, nil),
 				"formats":      []string{"json", "yaml", "jsonl"},
 				"commands": []map[string]string{
-					{"command": "kenn-forge pulls --state open --limit 20", "does": "GET /api/v1/pulls with query parameters"},
-					{"command": "kenn-forge issues --output jsonl", "does": "Emit one issue JSON object per line"},
+					{"command": "kenn-forge pulls --state open --limit 20", "does": "Print up to 20 open PR summaries; add --full for API records"},
+					{"command": "kenn-forge issues --output jsonl", "does": "Print up to 50 issue summaries as JSON lines; add --full for API records"},
 					{"command": "kenn-forge api list", "does": "List API methods, paths, summaries, and parameters"},
 					{"command": "kenn-forge api GET /pulls", "does": "Raw HTTP request to /api/v1/pulls"},
 					{"command": "kenn-forge api GET /version", "does": "Show server version"},
@@ -502,8 +503,94 @@ func newSimpleGetCommand(name, short, path string, addFlags func(*cobra.Command)
 	return cmd
 }
 
-func newPullsCommand(request func(context.Context, string, string, url.Values, []string) error) *cobra.Command {
+type listFetcher func(context.Context, string, string, url.Values, []string) (cliConfig, []byte, error)
+
+type issueSummary struct {
+	generated.RepoSummaryIssueResponse
+	Repo generated.RepositoryRoute `json:"repo"`
+}
+
+type pullSummary struct {
+	issueSummary
+	IsDraft        bool   `json:"is_draft"`
+	CIStatus       string `json:"ci_status"`
+	ReviewDecision string `json:"review_decision"`
+}
+
+func summarizePulls(row generated.MergeRequestResponse) pullSummary {
+	return pullSummary{
+		Number: row.Number,
+		Repo:   generated.RepositoryRoute{Provider: row.Repo.Provider, PlatformHost: row.Repo.PlatformHost, Owner: row.Repo.Owner, Name: row.Repo.Name},
+		Title:  row.Title, Author: row.Author, State: string(row.State),
+		LastActivityAt: row.LastActivityAt.UTC().Format(time.RFC3339), URL: row.URL,
+		IsDraft: row.IsDraft, CIStatus: row.CIStatus, ReviewDecision: row.ReviewDecision,
+	}
+}
+
+func summarizeIssues(row generated.IssueResponse) issueSummary {
+	return issueSummary{
+		Number: row.Number,
+		Repo:   generated.RepositoryRoute{Provider: row.Repo.Provider, PlatformHost: row.Repo.PlatformHost, Owner: row.Repo.Owner, Name: row.Repo.Name},
+		Title:  row.Title, Author: row.Author, State: row.State,
+		LastActivityAt: row.LastActivityAt.UTC().Format(time.RFC3339), URL: row.URL,
+	}
+}
+
+func listSummaries[T, S any](cmd *cobra.Command, fetch listFetcher, stdout io.Writer, path, noun string, summarize func(T) S) error {
+	limit, _ := cmd.Flags().GetInt("limit")
+	offset, _ := cmd.Flags().GetInt("offset")
+	query := collectChangedQuery(cmd, nil)
+	if limit > 0 {
+		query.Set("limit", fmt.Sprint(limit+1))
+	}
+	current, body, err := fetch(cmd.Context(), http.MethodGet, path, query, nil)
+	if err != nil {
+		if len(body) > 0 {
+			if writeErr := writeResponse(stdout, current.output, body); writeErr != nil {
+				return writeErr
+			}
+		}
+		return err
+	}
+	var rows []T
+	if err := json.Unmarshal(body, &rows); err != nil {
+		return err
+	}
+	more := limit > 0 && len(rows) > limit
+	if more {
+		rows = rows[:limit]
+	}
+	summaries := make([]S, len(rows))
+	for i, row := range rows {
+		summaries[i] = summarize(row)
+	}
+	full, _ := cmd.Flags().GetBool("full")
+	if !full || more {
+		body, err = json.Marshal(summaries, jsontext.WithIndent("  "))
+		if err != nil {
+			return err
+		}
+		body = append(body, '\n')
+	}
+	if err := writeResponse(stdout, current.output, body); err != nil {
+		return err
+	}
+	if more {
+		cmd.PrintErrln(fmt.Sprintf("Hint: more %s match; use --offset %d or raise --limit", noun, max(offset, 0)+limit))
+	}
+	return nil
+}
+
+func newPullsCommand(request func(context.Context, string, string, url.Values, []string) error, fetch listFetcher, stdout io.Writer) *cobra.Command {
 	cmd := newSimpleGetCommand("pulls", "List pull and merge requests", "/pulls", addListFlags, request)
+	cmd.Long = "Print summaries. The limit also applies to --full. For get, use a summary's repo and number; add --host PLATFORM_HOST for self-hosted providers."
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		full, _ := cmd.Flags().GetBool("full")
+		if full {
+			return listSummaries(cmd, fetch, stdout, "/pulls", "pull requests", func(row jsontext.Value) jsontext.Value { return row })
+		}
+		return listSummaries(cmd, fetch, stdout, "/pulls", "pull requests", summarizePulls)
+	}
 	get := &cobra.Command{
 		Use:   "get PROVIDER OWNER NAME NUMBER",
 		Short: "Get a pull or merge request detail record",
@@ -518,8 +605,16 @@ func newPullsCommand(request func(context.Context, string, string, url.Values, [
 	return cmd
 }
 
-func newIssuesCommand(request func(context.Context, string, string, url.Values, []string) error) *cobra.Command {
+func newIssuesCommand(request func(context.Context, string, string, url.Values, []string) error, fetch listFetcher, stdout io.Writer) *cobra.Command {
 	cmd := newSimpleGetCommand("issues", "List issues", "/issues", addIssueListFlags, request)
+	cmd.Long = "Print summaries. The limit also applies to --full. For get, use a summary's repo and number; add --host PLATFORM_HOST for self-hosted providers."
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		full, _ := cmd.Flags().GetBool("full")
+		if full {
+			return listSummaries(cmd, fetch, stdout, "/issues", "issues", func(row jsontext.Value) jsontext.Value { return row })
+		}
+		return listSummaries(cmd, fetch, stdout, "/issues", "issues", summarizeIssues)
+	}
 	get := &cobra.Command{
 		Use:   "get PROVIDER OWNER NAME NUMBER",
 		Short: "Get an issue detail record",
@@ -577,7 +672,8 @@ func addIssueListFlags(cmd *cobra.Command) {
 	cmd.Flags().String("state", "", "filter by state")
 	cmd.Flags().String("q", "", "search query")
 	cmd.Flags().Bool("starred", false, "only starred items")
-	cmd.Flags().Int("limit", 0, "maximum items to return")
+	cmd.Flags().Int("limit", 50, "maximum items to return; 0 returns every match")
+	cmd.Flags().Bool("full", false, "print the API's full records instead of summaries")
 	cmd.Flags().Int("offset", 0, "offset for pagination")
 }
 
@@ -585,7 +681,7 @@ func collectChangedQuery(cmd *cobra.Command, _ []string) url.Values {
 	query := url.Values{}
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		switch flag.Name {
-		case "server", "output", "timeout":
+		case "server", "output", "timeout", "full":
 			return
 		}
 		query.Set(flag.Name, flag.Value.String())

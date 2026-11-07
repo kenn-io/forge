@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestDefaultServerComesFromForgeConfig(t *testing.T) {
@@ -229,53 +232,6 @@ func TestQuickstartFormatsStructuredOutput(t *testing.T) {
 	require.Len(lines, 1)
 	assert.Contains(lines[0], `"api_base_url":"http://forge.test/api/v1"`)
 	assert.Contains(lines[0], `"jsonl"`)
-}
-
-func TestPullsCommandDelegatesToRequestWithAgentFriendlyDefaults(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	var got struct {
-		cfg      cliConfig
-		method   string
-		url      string
-		bodyArgs []string
-	}
-	var stdout bytes.Buffer
-	cmd := newCommand(commandDeps{
-		Stdout: &stdout,
-		Stderr: &bytes.Buffer{},
-		Request: func(_ context.Context, cfg cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
-			got.cfg = cfg
-			got.method = method
-			got.url = requestURL
-			got.bodyArgs = append([]string(nil), bodyArgs...)
-			return []byte(`[{"number":7,"title":"ready"}]`), nil
-		},
-	})
-	cmd.SetArgs([]string{
-		"--server", "http://forge.test",
-		"--output", "yaml",
-		"pulls",
-		"--state", "open",
-		"--limit", "5",
-		"--starred",
-	})
-
-	require.NoError(cmd.Execute())
-
-	assert.Equal("yaml", got.cfg.output)
-	assert.Equal(30*time.Second, got.cfg.timeout)
-	assert.Equal(http.MethodGet, got.method)
-	requestURL, err := url.Parse(got.url)
-	require.NoError(err)
-	assert.Equal("http://forge.test/api/v1/pulls", requestURL.Scheme+"://"+requestURL.Host+requestURL.Path)
-	values := requestURL.Query()
-	assert.Equal("open", values.Get("state"))
-	assert.Equal("5", values.Get("limit"))
-	assert.Equal("true", values.Get("starred"))
-	assert.Empty(got.bodyArgs)
-	assert.Contains(stdout.String(), "number: 7")
-	assert.NotContains(stdout.String(), "Content-Type")
 }
 
 func TestRawAPICommandBuildsForgeAPIURLAndBodyArgs(t *testing.T) {
@@ -529,6 +485,18 @@ func TestForgectlCommandsUseRealAPIAndSQLite(t *testing.T) {
 	assert.NotZero(jsonNumberField(t, issueLines[0]))
 	assert.NotZero(jsonNumberField(t, issueLines[1]))
 
+	for _, lines := range [][]string{pullLines, issueLines} {
+		for _, line := range lines {
+			var row map[string]any
+			require.NoError(json.Unmarshal([]byte(line), &row))
+			repo, ok := row["repo"].(map[string]any)
+			require.True(ok)
+			assert.Equal("github", repo["provider"])
+			assert.NotEmpty(row["title"])
+			assert.NotEmpty(row["url"])
+		}
+	}
+
 	versionOut := runForge(t, ts.URL, "api", "GET", "/version")
 	assert.Contains(versionOut, `"version"`)
 
@@ -538,7 +506,7 @@ func TestForgectlCommandsUseRealAPIAndSQLite(t *testing.T) {
 		"item_type: pr, provider: github, platform_host: github.com, owner: acme, name: widgets, number: 1",
 	)
 	assert.Empty(starOut)
-	starredOut := runForge(t, ts.URL, "--output", "jsonl", "pulls", "--starred")
+	starredOut := runForge(t, ts.URL, "--output", "jsonl", "pulls", "--starred", "--full")
 	starredLines := strings.Split(strings.TrimSpace(starredOut), "\n")
 	require.Len(starredLines, 1)
 	assert.InDelta(float64(1), jsonNumberField(t, starredLines[0]), 0)
@@ -720,4 +688,125 @@ func TestWriteResponseFormatsJSONLines(t *testing.T) {
 	require.NoError(writeResponse(&objectOut, "jsonl", []byte(`{"version":"dev"}`)))
 	assert.JSONEq(`{"version":"dev"}`, strings.TrimSpace(objectOut.String()))
 	assert.NotContains(objectOut.String(), "\n\n")
+}
+
+func TestPullsAndIssuesPrintSummariesWithLimitHint(t *testing.T) {
+	for _, resource := range []string{"pulls", "issues"} {
+		t.Run(resource, func(t *testing.T) {
+			noun := "issues"
+			if resource == "pulls" {
+				noun = "pull requests"
+			}
+			for _, tc := range []struct {
+				name  string
+				args  []string
+				limit string
+				count int
+				hint  string
+			}{
+				{name: "default", limit: "51", count: 50, hint: "50"},
+				{name: "offset", args: []string{"--offset", "50"}, limit: "51", count: 10},
+				{name: "negative offset", args: []string{"--limit", "1", "--offset", "-1"}, limit: "2", count: 1, hint: "1"},
+				{name: "limit", args: []string{"--limit", "5", "--offset", "10", "--output", "yaml", "--state", "open", "--starred"}, limit: "6", count: 5, hint: "15"},
+				{name: "unlimited", args: []string{"--limit", "0"}, limit: "0", count: 60},
+				{name: "full", args: []string{"--full"}, limit: "51", count: 50, hint: "50"},
+				{name: "full offset", args: []string{"--full", "--offset", "50"}, limit: "51", count: 10},
+				{name: "empty", args: []string{"--offset", "60"}, limit: "51"},
+			} {
+				if resource == "issues" && tc.name != "default" {
+					continue
+				}
+				t.Run(tc.name, func(t *testing.T) {
+					assert := assert.New(t)
+					var stdout, stderr bytes.Buffer
+					var response []byte
+					cmd := newCommand(commandDeps{
+						Stdout: &stdout, Stderr: &stderr,
+						Request: func(_ context.Context, cfg cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
+							u, err := url.Parse(requestURL)
+							require.NoError(t, err)
+							assert.Equal(http.MethodGet, method)
+							assert.Equal("/api/v1/"+resource, u.Path)
+							assert.Equal(tc.limit, u.Query().Get("limit"))
+							assert.Empty(bodyArgs)
+							if tc.name == "limit" {
+								assert.Equal("yaml", cfg.output)
+								assert.Equal("open", u.Query().Get("state"))
+								assert.Equal("true", u.Query().Get("starred"))
+								assert.Equal("10", u.Query().Get("offset"))
+							}
+							assert.False(u.Query().Has("full"))
+							offset, _ := strconv.Atoi(u.Query().Get("offset"))
+							offset = max(offset, 0)
+							limit, _ := strconv.Atoi(u.Query().Get("limit"))
+							end := 60
+							if limit > 0 {
+								end = min(end, offset+limit)
+							}
+							rows := make([]map[string]any, 0)
+							for i := offset; i < end; i++ {
+								row := map[string]any{
+									"Number": i + 1, "Title": "A compact fixture title", "Author": "user-a", "State": "open",
+									"LastActivityAt": "2026-11-06T12:00:00Z", "URL": "https://example.org/acme/widgets/pull/1",
+									"Body": strings.Repeat("x", 5000),
+									"repo": map[string]any{"provider": "github", "platform_host": "github.com", "owner": "acme", "name": "widgets"},
+								}
+								if resource == "pulls" {
+									row["IsDraft"] = true
+									row["CIStatus"] = "success"
+									row["ReviewDecision"] = "approved"
+									row["CIChecksJSON"] = "[{\"name\":\"build\"}]"
+								}
+								rows = append(rows, row)
+							}
+							response, err = json.Marshal(rows)
+							require.NoError(t, err)
+							return response, nil
+						},
+					})
+					cmd.SetArgs(append([]string{"--server", "http://forge.test", resource}, tc.args...))
+					require.NoError(t, cmd.Execute())
+					if tc.hint != "" {
+						assert.Equal("Hint: more "+noun+" match; use --offset "+tc.hint+" or raise --limit\n", stderr.String())
+					} else {
+						assert.Empty(stderr.String())
+					}
+
+					var rows []map[string]any
+					if tc.name == "limit" {
+						require.NoError(t, yaml.Unmarshal(stdout.Bytes(), &rows))
+					} else {
+						require.NoError(t, json.Unmarshal(stdout.Bytes(), &rows))
+					}
+					require.Len(t, rows, tc.count)
+					if strings.HasPrefix(tc.name, "full") {
+						for _, row := range rows {
+							assert.Len(row["Body"], 5000)
+							assert.Equal("[{\"name\":\"build\"}]", row["CIChecksJSON"])
+						}
+						if tc.name == "full offset" {
+							assert.Equal(string(response), stdout.String())
+						}
+						return
+					}
+					if tc.name == "default" {
+						assert.Less(stdout.Len(), 25000)
+					}
+					if tc.name == "empty" {
+						assert.Equal("[]\n", stdout.String())
+					}
+					for _, row := range rows {
+						expected := []string{"number", "repo", "title", "author", "state", "last_activity_at", "url"}
+						if resource == "pulls" {
+							expected = append(expected, "is_draft", "ci_status", "review_decision")
+						}
+						assert.ElementsMatch(expected, slices.Collect(maps.Keys(row)))
+						assert.Equal("A compact fixture title", row["title"])
+						assert.Equal("2026-11-06T12:00:00Z", row["last_activity_at"])
+						assert.Equal("github", row["repo"].(map[string]any)["provider"])
+					}
+				})
+			}
+		})
+	}
 }

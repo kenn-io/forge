@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -173,6 +174,10 @@ func (s *Handlers) probeToolingStatus(ctx context.Context) ToolingStatusBody {
 // differ until restart when a reload changes GitHub App topology.
 func (s *Handlers) githubHostToken(ctx context.Context, host string) (*toolingTokenStatus, tokenauth.Source) {
 	if s.Syncer == nil || *s.Syncer == nil {
+		return nil, nil
+	}
+	host, err := config.NormalizePlatformHost("github", host)
+	if err != nil {
 		return nil, nil
 	}
 	var desc tokenauth.Descriptor

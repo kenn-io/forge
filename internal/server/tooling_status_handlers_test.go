@@ -329,6 +329,15 @@ repository_selection = "all"
 		assert.True(tooling.GitHubToken.Ready)
 		assert.Positive(requests.Load(), "readiness must probe the active token")
 		assert.Equal("KENN_FORGE_RELOAD_OLD_TOKEN", tooling.GitHubToken.Source)
+		for _, host := range []string{"github.com", "GITHUB.COM", "github.com:443"} {
+			status, body := decodeUserRepositories(t, ts, "/api/v1/platform/user-repositories?platform_host="+host)
+			require.Equal(http.StatusOK, status)
+			var listing struct {
+				Repositories json.RawMessage `json:"repositories"`
+			}
+			require.NoError(json.Unmarshal(body, &listing))
+			assert.JSONEq(`[{"name_with_owner":"acme/widget","default_branch":"main"}]`, string(listing.Repositories))
+		}
 	})
 }
 

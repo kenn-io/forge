@@ -356,10 +356,7 @@ func (s *Syncer) buildDetailQueueItems(
 		prCountsByRepoID[pr.RepoID]++
 	}
 	for _, pr := range prs {
-		repo, found := reposByID[pr.RepoID]
-		if !found {
-			continue
-		}
+		repo := reposByID[pr.RepoID]
 		watchKey := detailRepoKey(
 			platform.Kind(repo.Platform), repo.PlatformHost,
 			repo.Owner, repo.Name,
@@ -403,10 +400,7 @@ func (s *Syncer) buildDetailQueueItems(
 		issueCountsByRepoID[issue.RepoID]++
 	}
 	for _, issue := range issues {
-		repo, found := reposByID[issue.RepoID]
-		if !found {
-			continue
-		}
+		repo := reposByID[issue.RepoID]
 		items = append(items, QueueItem{
 			Type:            QueueItemIssue,
 			Platform:        platform.Kind(repo.Platform),

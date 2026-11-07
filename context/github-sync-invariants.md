@@ -75,6 +75,7 @@ Cadence and budget:
   rather than implying complete freshness (`internal/github/detail_queue.go::countOverdueDetails`).
 - A detail item's worst-case cost is soft admission; pagination and child hydration may exceed it
   because the transport counts actual wire attempts (`internal/github/detail_queue.go::drainDetailQueue`).
+- The detail queue reads only selected repositories' open items in SQL, with unpaged allow-list open-issue reads steered onto the per-repository index so untracked history doesn't slow sync (`internal/github/detail_queue.go::buildDetailQueueItems`, `internal/db/queries.go::DB.listIssues`).
 - Unknown or missing mergeability stays eligible for detail refresh; it can resolve after a base
   push without changing the PR's `updated_at` (`internal/github/detail_queue.go::buildDetailQueueItems`).
 

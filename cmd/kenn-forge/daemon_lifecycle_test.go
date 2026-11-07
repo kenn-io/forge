@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -57,6 +58,92 @@ func TestDaemonStartDirectsVersionMismatchToRestart(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "kenn-forge daemon restart")
+}
+
+type failFirstWrite struct {
+	io.Writer
+	failed bool
+}
+
+func (w *failFirstWrite) Write(p []byte) (int, error) {
+	if !w.failed {
+		w.failed = true
+		return 0, io.ErrClosedPipe
+	}
+	return w.Writer.Write(p)
+}
+
+func TestDaemonProgress(t *testing.T) {
+	const setup = "Setting up the database (first run)…\n"
+	const waiting = "Still waiting for daemon startup…\n"
+	const running = "kenn-forge running at http://127.0.0.1:8091 (pid 42)\n"
+	startupErr := errors.New("startup failed")
+	for _, tt := range []struct {
+		name         string
+		delay        time.Duration
+		progress     string
+		err          error
+		restart      bool
+		writeFailure bool
+	}{
+		{name: "immediate"},
+		{name: "fast", delay: time.Second},
+		{name: "slow", delay: 3 * time.Second, progress: setup},
+		{name: "repeated", delay: 23 * time.Second, progress: setup + waiting + waiting, restart: true},
+		{name: "failure", delay: 3 * time.Second, progress: setup, err: startupErr},
+		{name: "progress write failure", delay: 23 * time.Second, writeFailure: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				assert := assert.New(t)
+				deps, _ := daemonLifecycleTestDeps(t)
+				ctx := t.Context()
+				ready := make(chan struct{})
+				deps.ensureBackground = func(_ context.Context, _ string, _ *config.Config) (daemon.RuntimeRecord, error) {
+					if tt.delay > 0 {
+						<-ready
+					}
+					if tt.err != nil {
+						return daemon.RuntimeRecord{}, tt.err
+					}
+					return daemonTestRuntime(42), nil
+				}
+				var out bytes.Buffer
+				var writer io.Writer = &out
+				if tt.writeFailure {
+					writer = &failFirstWrite{Writer: &out}
+				}
+				result := make(chan error, 1)
+				run := newDaemonLifecycle(deps).Start
+				if tt.restart {
+					run = newDaemonLifecycle(deps).Restart
+				}
+				go func() { result <- run(ctx, "/config.toml", writer) }()
+				synctest.Wait()
+				time.Sleep(tt.delay)
+				synctest.Wait()
+				if tt.delay > 0 {
+					assert.Equal(tt.progress, out.String())
+				}
+				close(ready)
+				err := <-result
+				want := tt.progress
+				if tt.err == nil {
+					require.NoError(t, err)
+					if tt.restart {
+						want += "kenn-forge daemon was not running before start\n"
+					}
+					want += running
+				} else {
+					require.ErrorIs(t, err, tt.err)
+				}
+				assert.Equal(want, out.String())
+				time.Sleep(30 * time.Second)
+				synctest.Wait()
+				assert.Equal(want, out.String())
+			})
+		})
+	}
 }
 
 func TestDaemonStartRetriesWhenConfigDataDirectoryChangesUnderLock(t *testing.T) {

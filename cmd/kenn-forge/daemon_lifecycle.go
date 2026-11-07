@@ -129,7 +129,7 @@ func (l *daemonLifecycle) Start(
 		return err
 	}
 
-	record, err := l.deps.ensureBackground(ctx, mutation.configPath, mutation.config)
+	record, err := l.ensureBackgroundWithProgress(ctx, mutation.configPath, mutation.config, stdout)
 	if err != nil {
 		if _, ok := errors.AsType[*daemonruntime.VersionMismatchError](err); ok {
 			return fmt.Errorf(
@@ -143,6 +143,33 @@ func (l *daemonLifecycle) Start(
 		return fmt.Errorf("daemon start: report running daemon: %w", err)
 	}
 	return nil
+}
+
+func (l *daemonLifecycle) ensureBackgroundWithProgress(ctx context.Context, configPath string, cfg *config.Config, stdout io.Writer) (daemon.RuntimeRecord, error) {
+	reporter := newBackgroundLoopHandle(ctx)
+	reporter.start(func(ctx context.Context) {
+		timer := time.NewTimer(2 * time.Second)
+		defer timer.Stop()
+		message := "Setting up the database (first run)…"
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+				if ctx.Err() != nil {
+					return
+				}
+				if _, err := fmt.Fprintln(stdout, message); err != nil {
+					return
+				}
+				message = "Still waiting for daemon startup…"
+				timer.Reset(10 * time.Second)
+			}
+		}
+	})
+	record, err := l.deps.ensureBackground(ctx, configPath, cfg)
+	stopErr := reporter.Stop(context.WithoutCancel(ctx))
+	return record, errors.Join(err, stopErr)
 }
 
 func (l *daemonLifecycle) Status(
@@ -287,7 +314,7 @@ func (l *daemonLifecycle) Restart(
 	if err != nil {
 		return err
 	}
-	record, err := l.deps.ensureBackground(ctx, mutation.configPath, mutation.config)
+	record, err := l.ensureBackgroundWithProgress(ctx, mutation.configPath, mutation.config, stdout)
 	if err != nil {
 		return fmt.Errorf("daemon restart: start replacement: %w", err)
 	}

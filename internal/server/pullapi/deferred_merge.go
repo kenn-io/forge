@@ -643,7 +643,10 @@ func (s *Handler) nativeStackWaitsBelow(
 				map[string]any{"reason": "stack_member_not_ready", "blocking_number": member.Number},
 			)
 		}
-		if reason := nativeStackMemberBlocked(member.Number, mr); reason != "" {
+		if mr == nil {
+			return nil, false, refuse(fmt.Sprintf("#%d no longer exists", member.Number))
+		}
+		if reason := nativeStackMemberBlocked(mr); reason != "" {
 			return nil, false, refuse(reason)
 		}
 		keys, err := pendingDeferredMergeCheckKeys(mr.CIChecksJSON)
@@ -677,31 +680,36 @@ func (s *Handler) nativeStackMembersCI(ctx context.Context, repo db.Repo, below 
 	state := "passed"
 	for _, wait := range below {
 		number := wait.number
+		gone := fmt.Errorf("#%d no longer exists; merge was not performed", number)
 		mr, err := s.visibleMergeRequest(ctx, repo.ID, number)
 		if err != nil {
 			return "", err
 		}
-		if mr != nil && mr.State == db.MergeRequestStateMerged {
+		if mr == nil {
+			return "", gone
+		}
+		if mr.State == db.MergeRequestStateMerged {
 			continue
 		}
-		if mr != nil {
-			warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
-				ctx, mergeRequestRepoRef(repo), repo.ID, number, mr.PlatformHeadSHA,
-			)
-			if err != nil {
-				return "", fmt.Errorf("refreshing CI on #%d: %w", number, err)
-			}
-			if len(warnings) > 0 {
-				return "", fmt.Errorf(
-					"could not refresh CI checks on #%d; merge was not performed: %s",
-					number, strings.Join(warnings, "; "),
-				)
-			}
-			if mr, err = s.visibleMergeRequest(ctx, repo.ID, number); err != nil {
-				return "", err
-			}
+		warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
+			ctx, mergeRequestRepoRef(repo), repo.ID, number, mr.PlatformHeadSHA,
+		)
+		if err != nil {
+			return "", fmt.Errorf("refreshing CI on #%d: %w", number, err)
 		}
-		if reason := nativeStackMemberBlocked(number, mr); reason != "" {
+		if len(warnings) > 0 {
+			return "", fmt.Errorf(
+				"could not refresh CI checks on #%d; merge was not performed: %s",
+				number, strings.Join(warnings, "; "),
+			)
+		}
+		if mr, err = s.visibleMergeRequest(ctx, repo.ID, number); err != nil {
+			return "", err
+		}
+		if mr == nil {
+			return "", gone
+		}
+		if reason := nativeStackMemberBlocked(mr); reason != "" {
 			return "", errors.New(reason + ", and the stack merge would land it; merge was not performed")
 		}
 		ci, err := deferredMergeCheckState(mr.CIStatus, wait.keys, mr.CIChecksJSON)
@@ -721,18 +729,16 @@ func (s *Handler) nativeStackMembersCI(ctx context.Context, repo db.Repo, below 
 }
 
 // nativeStackMemberBlocked says why the stack merge cannot land a pull request
-// below the target whatever its CI does: it is gone, closed, a draft, or
+// below the target whatever its CI does: it is closed, a draft, or
 // conflicting. It returns "" otherwise.
-func nativeStackMemberBlocked(number int, mr *db.MergeRequest) string {
+func nativeStackMemberBlocked(mr *db.MergeRequest) string {
 	switch {
-	case mr == nil:
-		return fmt.Sprintf("#%d no longer exists", number)
 	case mr.State != db.MergeRequestStateOpen:
-		return fmt.Sprintf("#%d is %s", number, mr.State)
+		return fmt.Sprintf("#%d is %s", mr.Number, mr.State)
 	case mr.IsDraft:
-		return fmt.Sprintf("#%d is a draft", number)
+		return fmt.Sprintf("#%d is a draft", mr.Number)
 	case mr.MergeableState == "dirty":
-		return fmt.Sprintf("#%d has merge conflicts", number)
+		return fmt.Sprintf("#%d has merge conflicts", mr.Number)
 	}
 	return ""
 }

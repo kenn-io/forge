@@ -3196,8 +3196,8 @@ func TestActivityEventsSeekTheWindow(t *testing.T) {
 			{"forge_issue_events", "forge_issues", "issue_id"},
 		} {
 			execPageFixtureNumbers(t, d, 200, fmt.Sprintf(`
-				INSERT INTO %s (%s, repo_id, platform_id, event_type, author, created_at, dedupe_key)
-				SELECT parent.id, parent.repo_id, 0, 'issue_comment', 'alice',
+				INSERT INTO %s (%s, repo_id, event_type, author, created_at, dedupe_key)
+				SELECT parent.id, parent.repo_id, 'issue_comment', 'alice',
 				       datetime('2024-01-15 12:00:00', '+' || (n - 1) || ' hours') || ' +0000 UTC', 'comment-' || (n - 1)
 				FROM %s parent CROSS JOIN numbers WHERE parent.repo_id = ?1`, table.events, table.parentID, table.parent), repoID)
 		}

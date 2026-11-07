@@ -3,7 +3,7 @@ import { repositoryKeyFromWire, repositoryKeyString, sameRepositoryKey } from ".
 import type { WorklistItem, WorklistItemMark, WorklistSummary } from "../../api/worklists.js";
 import type { ListItemTarget } from "../../stores/item-actions.js";
 import type { RoutedItemRef, WorklistItemSelection } from "../../routes.js";
-import { matchesFilterGroups, pullMatchesAttribute, type PullAttributeFilter } from "../../utils/pull-attributes.js";
+import { matchesFilterSections, pullMatchesAttribute, type PullAttributeFilter } from "../../utils/pull-attributes.js";
 import { matchesSearchQuery, type SearchQuery } from "../../utils/search-query.js";
 
 export interface WorklistChangeMarker {
@@ -260,18 +260,28 @@ export function worklistItemsInState(items: readonly WorklistItem[], filter: Wor
 /** A rail filter: the PR list's Involves me, a pull request attribute, or No merge conflicts. */
 export type WorklistItemFilter = "involves_me" | "no_merge_conflicts" | PullAttributeFilter;
 
+/** The rail's mutually exclusive filter sections, combined as in the PR list. */
+export const WORKLIST_FILTER_SECTIONS: readonly (readonly WorklistItemFilter[])[] = [
+  ["involves_me"],
+  ["draft", "ready"],
+  ["approved"],
+  ["passed_ci", "failed_ci"],
+  ["merge_conflicts", "no_merge_conflicts"],
+  ["has_workspace"],
+];
+
 /**
- * Whether the item passes the rail filters, combined as in the PR list: options
- * in one group match any, and every selected group must match. Pull request
- * attributes never match an issue.
+ * Whether the item passes the rail filters, combined as in the PR list: every
+ * selected filter must match, and mutually exclusive ones match either. Pull
+ * request attributes never match an issue.
  */
 export function worklistItemMatchesFilters(item: WorklistItem, filters: readonly WorklistItemFilter[]): boolean {
-  return matchesFilterGroups(filters, (filter) => {
+  return matchesFilterSections(WORKLIST_FILTER_SECTIONS, filters, (filter) => {
     if (filter === "involves_me") return item.involves_viewer;
     if (filter === "has_workspace") return (item.pull ?? item.issue)?.workspace !== undefined;
-    if (filter === "no_merge_conflicts")
-      return item.pull !== null && !pullMatchesAttribute(item.pull, "merge_conflicts");
-    return item.pull !== null && pullMatchesAttribute(item.pull, filter);
+    if (item.pull === null) return false;
+    if (filter === "no_merge_conflicts") return !pullMatchesAttribute(item.pull, "merge_conflicts");
+    return pullMatchesAttribute(item.pull, filter);
   });
 }
 

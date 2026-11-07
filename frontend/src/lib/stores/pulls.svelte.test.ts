@@ -566,26 +566,44 @@ describe("pulls store display order", () => {
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 5]);
   });
 
-  it("keeps server attribute matches when combining involvement and PR attributes", async () => {
-    const viewerPull = pull(1, "api", "2026-05-20T15:00:00Z", { IsDraft: true });
-    const conflictPull = pull(2, "api", "2026-05-20T14:00:00Z", { MergeableState: "dirty" });
-    const get = vi.fn().mockResolvedValueOnce([viewerPull, conflictPull]).mockResolvedValue([conflictPull]);
+  it("requires every selected filter and picks one of each pair of opposites", async () => {
+    const passing = JSON.stringify([{ name: "test", status: "completed", conclusion: "success" }]);
+    const store = createPullsStore({
+      client: clientWithPulls([
+        pull(1, "api", "2026-05-20T15:00:00Z", { CIChecksJSON: passing }),
+        pull(2, "api", "2026-05-20T14:00:00Z", { IsDraft: true, CIChecksJSON: passing }),
+        pull(3, "api", "2026-05-20T13:00:00Z", { CIStatus: "failure" }),
+        pull(4, "api", "2026-05-20T12:00:00Z", { ReviewDecision: "APPROVED", CIChecksJSON: passing }),
+      ]),
+    });
+    await loadPulls(store);
+
+    store.toggleAttributeFilter("ready");
+    store.toggleAttributeFilter("passed_ci");
+    expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([1, 4]);
+
+    store.toggleAttributeFilter("approved");
+    expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([4]);
+
+    store.toggleAttributeFilter("approved");
+    store.toggleAttributeFilter("draft");
+    expect(store.getAttributeFilters()).toEqual(["passed_ci", "draft"]);
+    expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([2]);
+
+    store.toggleAttributeFilter("failed_ci");
+    expect(store.getAttributeFilters()).toEqual(["draft", "failed_ci"]);
+    expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([]);
+  });
+
+  it("keeps the server's attribute matches when it applies them with involvement", async () => {
+    // The server also counts a PR blocked by a conflicting stack parent; the row's own state is clean.
+    const stackBlocked = pull(2, "api", "2026-05-20T14:00:00Z", { MergeableState: "clean" });
+    const get = vi.fn().mockResolvedValue([stackBlocked]);
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
     store.setInvolvesMe(true);
     await loadPulls(store);
     store.toggleAttributeFilter("merge_conflicts");
     await vi.waitFor(() => expect(store.isLoading()).toBe(false));
-    expect(get).toHaveBeenLastCalledWith(
-      expect.objectContaining({ involves_me: true, attributes: "merge_conflicts" }),
-      expect.anything(),
-    );
-    expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([2]);
-    const refresh = runtime!.runCommand(store.reconcilePullsEffect(), {
-      operation: "reconcile grouped filters",
-      safeContext: {},
-      onFailure: () => {},
-    });
-    await refresh.exit;
     expect(get).toHaveBeenLastCalledWith(
       expect.objectContaining({ involves_me: true, attributes: "merge_conflicts" }),
       expect.anything(),

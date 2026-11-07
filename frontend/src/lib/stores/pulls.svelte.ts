@@ -17,7 +17,12 @@ import {
   providerHostRouteParams,
   providerUsesHostRoute,
 } from "../api/provider-routes.js";
-import { matchesFilterGroups, pullMatchesAttribute, type PullAttributeFilter } from "../utils/pull-attributes.js";
+import {
+  PULL_ATTRIBUTE_SECTIONS,
+  pullMatchesAttributeFilters,
+  toggleFilterInSections,
+  type PullAttributeFilter,
+} from "../utils/pull-attributes.js";
 import { cycleLabelFilter as cycleLabel, matchesLabelFilters, type LabelFilters } from "../utils/label-filter.js";
 import { showFlash } from "./flash.svelte.js";
 import { PullsWorkflow, type FetchPullResult } from "./pulls-workflow.js";
@@ -346,7 +351,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   // --- writes ---
 
   function toggleAttributeFilter(filter: PullAttributeFilter): void {
-    attributeFilters = toggleFilterValue(attributeFilters, filter);
+    attributeFilters = toggleFilterInSections(PULL_ATTRIBUTE_SECTIONS, attributeFilters, filter);
     if (filter !== "has_workspace" && (involvesMe || unassigned)) loadPulls(activeListParams);
   }
 
@@ -697,18 +702,12 @@ export function createPullsStore(opts: PullsStoreOptions) {
     loadPulls(activeListParams);
   }
 
-  function toggleFilterValue<T extends string>(values: T[], value: T): T[] {
-    if (values.includes(value)) {
-      return values.filter((item) => item !== value);
-    }
-    return [...values, value];
-  }
-
   function matchesAttributeFilters(pr: PullRequest): boolean {
-    // With involvement or assignment selected, the server applies PR attributes before pagination.
+    // With involvement or assignment, the server applies the PR attributes before pagination
+    // and also matches conflicts it can see through stacks, so keep its rows.
     const filters =
       involvesMe || unassigned ? attributeFilters.filter((filter) => filter === "has_workspace") : attributeFilters;
-    return matchesFilterGroups(filters, (filter) => pullMatchesAttribute(pr, filter));
+    return pullMatchesAttributeFilters(pr, filters);
   }
 
   return {

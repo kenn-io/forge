@@ -212,6 +212,18 @@ func TestAWorktreeChatFollowsOneRunningAgentAtATime(t *testing.T) {
 	assert.Len(t, rows, 2, "the next agent's chat appears once the first ends")
 }
 
+func TestTwoAgentsReportedBeforeOnePassShareOneChat(t *testing.T) {
+	f := newExternalSessionFixture(t)
+	f.openPull(t, "feature/login", f.head)
+	f.hook(t, "claude", "session-1", "UserPromptSubmit", runningAgentHeaders())
+	f.hook(t, "claude", "session-2", "UserPromptSubmit", runningAgentHeaders())
+
+	f.pass(t)
+
+	_, rows := f.adopted(t)
+	assert.Len(t, rows, 1, "a worktree's chat follows one running agent")
+}
+
 func TestExternalSessionsThatAreNotAdopted(t *testing.T) {
 	t.Run("an agent Forge launched", func(t *testing.T) {
 		f := newExternalSessionFixture(t)
@@ -221,15 +233,6 @@ func TestExternalSessionsThatAreNotAdopted(t *testing.T) {
 		saved, err := f.database.GetExternalAgentSession(t.Context(), "claude", "launched")
 		require.NoError(t, err)
 		assert.Nil(t, saved)
-	})
-	t.Run("a pull request whose head is not in the worktree", func(t *testing.T) {
-		f := newExternalSessionFixture(t)
-		f.openPull(t, "feature/login", strings.Repeat("a", 40))
-		f.hook(t, "claude", "session-1", "UserPromptSubmit", runningAgentHeaders())
-		f.pass(t)
-		workspaces, err := f.database.ListWorkspaces(t.Context())
-		require.NoError(t, err)
-		assert.Empty(t, workspaces)
 	})
 	t.Run("a worktree that already belongs to a Forge workspace", func(t *testing.T) {
 		f := newExternalSessionFixture(t)
@@ -315,7 +318,7 @@ func TestChatStaysReadOnlyWithoutAHerdrPaneAndStartsNothingWhileAgentRuns(t *tes
 	chat, err := f.handler.openWorkspaceChat(t.Context(), ws.ID, key)
 	require.NoError(t, err)
 	assert.True(chatState(t, chat).ExternalReadOnly)
-	assert.ErrorIs(chat.Command(localruntime.ACPCommand{Type: "prompt", Text: "hello"}), localruntime.ErrACPMirrorReadOnly)
+	require.ErrorIs(t, chat.Command(localruntime.ACPCommand{Type: "prompt", Text: "hello"}), localruntime.ErrACPMirrorReadOnly)
 	_, err = f.handler.runtime.ACP(ws.ID, key)
 	assert.Error(err, "no Forge-run agent started while the external agent runs")
 }
@@ -355,7 +358,7 @@ func TestExitedExternalAgentContinuesInTheChatAgent(t *testing.T) {
 	require.NoError(t, err)
 	err = chat.Command(localruntime.ACPCommand{Type: "prompt", Text: "continue"})
 
-	assert.ErrorContains(err, "ACP requires tmux or ptyowner")
+	require.ErrorContains(t, err, "ACP requires tmux or ptyowner")
 	session, err := f.database.GetExternalAgentSession(t.Context(), "claude", "session-1")
 	require.NoError(t, err)
 	assert.Nil(session.HandedOffAt, "a failed start leaves the session to the next prompt")

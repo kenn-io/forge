@@ -315,7 +315,7 @@ func (l *daemonLifecycle) Restart(
 	if err != nil {
 		return err
 	}
-	record, err := l.deps.ensureBackground(ctx, mutation.configPath, mutation.config)
+	record, err := l.ensureBackgroundWithProgress(ctx, mutation.configPath, mutation.config, stdout)
 	if err != nil {
 		return fmt.Errorf("daemon restart: start replacement: %w", err)
 	}

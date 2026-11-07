@@ -28410,6 +28410,7 @@ func (c *Client) ListIssuesWithResponse(ctx context.Context, options *ListIssues
 		"q":                {Style: "form", Explode: &[]bool{false}[0]},
 		"referenced_by_pr": {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":             {Style: "form", Explode: &[]bool{false}[0]},
+		"semantic":         {Style: "form", Explode: &[]bool{false}[0]},
 		"starred":          {Style: "form", Explode: &[]bool{false}[0]},
 		"state":            {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -32108,6 +32109,7 @@ func (c *Client) ListPullsWithResponse(ctx context.Context, options *ListPullsRe
 		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
 		"q":           {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":        {Style: "form", Explode: &[]bool{false}[0]},
+		"semantic":    {Style: "form", Explode: &[]bool{false}[0]},
 		"starred":     {Style: "form", Explode: &[]bool{false}[0]},
 		"state":       {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":  {Style: "form", Explode: &[]bool{false}[0]},
@@ -46155,6 +46157,7 @@ func (c *Client) ListIssuesRaw(ctx context.Context, httpClient *http.Client, opt
 		"q":                {Style: "form", Explode: &[]bool{false}[0]},
 		"referenced_by_pr": {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":             {Style: "form", Explode: &[]bool{false}[0]},
+		"semantic":         {Style: "form", Explode: &[]bool{false}[0]},
 		"starred":          {Style: "form", Explode: &[]bool{false}[0]},
 		"state":            {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -47047,6 +47050,7 @@ func (c *Client) ListPullsRaw(ctx context.Context, httpClient *http.Client, opti
 		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
 		"q":           {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":        {Style: "form", Explode: &[]bool{false}[0]},
+		"semantic":    {Style: "form", Explode: &[]bool{false}[0]},
 		"starred":     {Style: "form", Explode: &[]bool{false}[0]},
 		"state":       {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":  {Style: "form", Explode: &[]bool{false}[0]},
@@ -53661,6 +53665,7 @@ func NewListIssuesRequest(ctx context.Context, baseURL string, options *ListIssu
 		"q":                {Style: "form", Explode: &[]bool{false}[0]},
 		"referenced_by_pr": {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":             {Style: "form", Explode: &[]bool{false}[0]},
+		"semantic":         {Style: "form", Explode: &[]bool{false}[0]},
 		"starred":          {Style: "form", Explode: &[]bool{false}[0]},
 		"state":            {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -54608,6 +54613,7 @@ func NewListPullsRequest(ctx context.Context, baseURL string, options *ListPulls
 		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
 		"q":           {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":        {Style: "form", Explode: &[]bool{false}[0]},
+		"semantic":    {Style: "form", Explode: &[]bool{false}[0]},
 		"starred":     {Style: "form", Explode: &[]bool{false}[0]},
 		"state":       {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":  {Style: "form", Explode: &[]bool{false}[0]},
@@ -60815,9 +60821,12 @@ type ListIssuesQuery struct {
 	// ReferencedByPr Only include issues referenced by a pull request.
 	ReferencedByPr *bool   `json:"referenced_by_pr,omitempty"`
 	Q              *string `json:"q,omitempty"`
-	Assignee       *string `json:"assignee,omitempty"`
-	Limit          *int64  `json:"limit,omitempty"`
-	Offset         *int64  `json:"offset,omitempty"`
+
+	// Semantic Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers.
+	Semantic *bool   `json:"semantic,omitempty"`
+	Assignee *string `json:"assignee,omitempty"`
+	Limit    *int64  `json:"limit,omitempty"`
+	Offset   *int64  `json:"offset,omitempty"`
 }
 
 type SyncIssueQuery struct {
@@ -60865,7 +60874,9 @@ type ListPullsQuery struct {
 	Label *string `json:"label,omitempty"`
 
 	// Repo Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
-	Repo    *string `json:"repo,omitempty"`
+	Repo *string `json:"repo,omitempty"`
+
+	// State open (default), closed (including merged), merged, closed_unmerged, or all.
 	State   *string `json:"state,omitempty"`
 	Starred *bool   `json:"starred,omitempty"`
 
@@ -60875,8 +60886,11 @@ type ListPullsQuery struct {
 	// Unassigned Only include pull requests with no assignees.
 	Unassigned *bool   `json:"unassigned,omitempty"`
 	Q          *string `json:"q,omitempty"`
-	Limit      *int64  `json:"limit,omitempty"`
-	Offset     *int64  `json:"offset,omitempty"`
+
+	// Semantic Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers.
+	Semantic *bool  `json:"semantic,omitempty"`
+	Limit    *int64 `json:"limit,omitempty"`
+	Offset   *int64 `json:"offset,omitempty"`
 }
 
 type GetPullDiffQuery struct {
@@ -68464,7 +68478,10 @@ type IssueResponse struct {
 	Repo                    RepoRefResponse `json:"repo"`
 	RepoName                string          `json:"repo_name"`
 	RepoOwner               string          `json:"repo_owner"`
-	Workspace               *WorkspaceRef   `json:"workspace,omitempty"`
+
+	// SearchScore Similarity to q when semantic is set; compare only within one response.
+	SearchScore *float32      `json:"search_score,omitempty"`
+	Workspace   *WorkspaceRef `json:"workspace,omitempty"`
 }
 
 type Issues struct {
@@ -69083,10 +69100,13 @@ type MergeRequestResponse struct {
 	RepoOwner                string                     `json:"repo_owner"`
 	RequestedReviewers       []string                   `json:"requested_reviewers,omitempty"`
 	ReviewDecisionObservedAt *time.Time                 `json:"review_decision_observed_at,omitempty"`
-	Stack                    *StackPlacementResponse    `json:"stack,omitempty"`
-	WorkflowApproval         *WorkflowApprovalResponse  `json:"workflow_approval,omitempty"`
-	Workspace                *WorkspaceRef              `json:"workspace,omitempty"`
-	WorktreeLinks            []WorktreeLinkResponse     `json:"worktree_links"`
+
+	// SearchScore Similarity to q when semantic is set; compare only within one response.
+	SearchScore      *float32                  `json:"search_score,omitempty"`
+	Stack            *StackPlacementResponse   `json:"stack,omitempty"`
+	WorkflowApproval *WorkflowApprovalResponse `json:"workflow_approval,omitempty"`
+	Workspace        *WorkspaceRef             `json:"workspace,omitempty"`
+	WorktreeLinks    []WorktreeLinkResponse    `json:"worktree_links"`
 }
 
 type MergeRequestSummary struct {

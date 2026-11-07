@@ -157,36 +157,77 @@ func TestSearchItemsForwardsTypedQueriesAndOrdersResults(t *testing.T) {
 	assert.NotContains(string(raw), "must not be returned")
 }
 
-func TestSearchItemsPagesMergedPullsAndReportsCaps(t *testing.T) {
+func TestSearchItemsSemanticMergesPullsAndIssuesByScore(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	var offsets []int
-	backend := &fakeBackend{listPullsFn: func(_ context.Context, query ItemListQuery) ([]Pull, error) {
-		offsets = append(offsets, query.Offset)
-		assert.Equal("all", query.State)
-		assert.Equal(2, query.Limit)
-		if query.Offset == 0 {
+	var queries []ItemListQuery
+	backend := &fakeBackend{
+		listPullsFn: func(_ context.Context, query ItemListQuery) ([]Pull, error) {
+			queries = append(queries, query)
 			return []Pull{
-				{Number: 1, State: "open", Repository: testRepository()},
-				{Number: 2, State: "closed", Repository: testRepository()},
+				{
+					Number: 1, State: "open", Repository: testRepository(), SearchScore: new(float32(0.8)),
+					LastActivityAt: time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC),
+				},
+				{
+					Number: 2, State: "open", Repository: testRepository(), SearchScore: new(float32(0.2)),
+					LastActivityAt: time.Date(2026, 7, 3, 10, 0, 0, 0, time.UTC),
+				},
 			}, nil
-		}
-		return []Pull{
-			{Number: 3, State: "merged", Repository: testRepository()},
-			{Number: 4, State: "merged", Repository: testRepository()},
-		}, nil
-	}}
+		},
+		listIssuesFn: func(_ context.Context, query ItemListQuery) ([]Issue, error) {
+			queries = append(queries, query)
+			return []Issue{{
+				Number: 3, State: "open", Repository: testRepository(), SearchScore: new(float32(0.5)),
+				LastActivityAt: time.Date(2026, 7, 2, 10, 0, 0, 0, time.UTC),
+			}}, nil
+		},
+	}
 	s := newMCPTestServer(t, backend)
 
-	out, err := s.searchItems(t.Context(), searchItemsInput{
-		Query: "change", State: "merged", ItemTypes: []string{"pr"}, Limit: 1,
-	})
+	out, err := s.searchItems(t.Context(), searchItemsInput{Query: "flaky ci", Semantic: true})
 
 	require.NoError(err)
-	assert.Equal([]int{0, 2}, offsets)
-	require.Len(out.Results, 1)
-	assert.Equal(3, out.Results[0].Item.Number)
-	assert.True(out.Capped)
+	require.Len(queries, 2)
+	for _, query := range queries {
+		assert.True(query.Semantic, "the backend ranks by meaning")
+	}
+	numbers := make([]int, len(out.Results))
+	for i, result := range out.Results {
+		numbers[i] = result.Item.Number
+		require.NotNil(result.Score)
+	}
+	assert.Equal([]int{1, 3, 2}, numbers, "semantic results order by score, not recent activity")
+}
+
+func TestSearchItemsAsksForTheExactPullStateInOneRequest(t *testing.T) {
+	for state, listState := range map[string]string{"merged": "merged", "closed": "closed_unmerged"} {
+		t.Run(state, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			var queries []ItemListQuery
+			backend := &fakeBackend{listPullsFn: func(_ context.Context, query ItemListQuery) ([]Pull, error) {
+				queries = append(queries, query)
+				return []Pull{
+					{Number: 3, State: state, Repository: testRepository()},
+					{Number: 4, State: state, Repository: testRepository()},
+				}, nil
+			}}
+			s := newMCPTestServer(t, backend)
+
+			out, err := s.searchItems(t.Context(), searchItemsInput{
+				Query: "flaky ci", State: state, ItemTypes: []string{"pr"}, Limit: 1, Semantic: true,
+			})
+
+			require.NoError(err)
+			require.Len(queries, 1, "the provider owner filters by state before it ranks")
+			assert.Equal(listState, queries[0].State)
+			assert.Equal(2, queries[0].Limit)
+			require.Len(out.Results, 1)
+			assert.Equal(3, out.Results[0].Item.Number)
+			assert.True(out.Capped)
+		})
+	}
 }
 
 func TestListActivityForwardsTypedFiltersAndAppliesOutputLimit(t *testing.T) {

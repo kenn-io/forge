@@ -155,8 +155,10 @@ type ItemListQuery struct {
 	Repository RepositoryIdentity
 	State      string
 	Text       string
-	Limit      int
-	Offset     int
+	// Semantic ranks by meaning: rows come back ordered by SearchScore.
+	Semantic bool
+	Limit    int
+	Offset   int
 }
 
 type WorkspaceRef struct {
@@ -184,6 +186,7 @@ type Pull struct {
 	Workspace       *WorkspaceRef
 	DetailLoaded    bool
 	DetailFetchedAt string
+	SearchScore     *float32
 	// MergeQueue and MergeQueueRemoval are the pull request's place in its
 	// base branch's merge queue, or the queue's latest removal of it, as sync
 	// last read them. At most one is set.
@@ -234,6 +237,7 @@ type Issue struct {
 	Workspace       *WorkspaceRef
 	DetailLoaded    bool
 	DetailFetchedAt string
+	SearchScore     *float32
 }
 
 // ItemIdentity names a PR or issue within a keyed repository. JSON encodes

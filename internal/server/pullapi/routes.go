@@ -45,11 +45,12 @@ type listPullsInput struct {
 	Attributes string  `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Options in one group match any (involves_me/unassigned, draft/ready, passed_ci/failed_ci); every selected group must match, before pagination."`
 	Label      string  `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
 	Repo       string  `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
-	State      string  `query:"state"`
+	State      string  `query:"state" doc:"open (default), closed (including merged), merged, closed_unmerged, or all."`
 	Starred    bool    `query:"starred"`
 	InvolvesMe bool    `query:"involves_me" doc:"Only include pull requests involving the authenticated viewer."`
 	Unassigned bool    `query:"unassigned" doc:"Only include pull requests with no assignees."`
 	Q          string  `query:"q"`
+	Semantic   bool    `query:"semantic" doc:"Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers."`
 	Limit      int     `query:"limit"`
 	Offset     int     `query:"offset"`
 }
@@ -363,7 +364,7 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 	query := ListQuery{
 		Numbers: input.Numbers,
 		Repo:    input.Repo, State: input.State,
-		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, Text: input.Q,
+		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, Text: input.Q, Semantic: input.Semantic,
 		Label: input.Label, Attributes: input.Attributes, Limit: input.Limit, Offset: input.Offset,
 	}
 	var rows []MergeRequestResponse
@@ -382,15 +383,18 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 func (s *Handler) listPullsRouteCore(
 	ctx context.Context, input *listPullsInput, items []db.RepoItemNumber,
 ) (*listPullsOutput, error) {
+	if input.Semantic {
+		return s.listPullsByMeaning(ctx, input, items)
+	}
 	if input.State != "" {
 		valid := map[string]bool{
-			"open": true, "closed": true, "all": true,
+			"open": true, "closed": true, "merged": true, "closed_unmerged": true, "all": true,
 		}
 		if !valid[input.State] {
 			return nil, httpapi.Validation(
 				"query.state",
-				"state must be one of: open, closed, all",
-				"open", "closed", "all",
+				"state must be one of: open, closed, merged, closed_unmerged, all",
+				"open", "closed", "merged", "closed_unmerged", "all",
 			)
 		}
 	}

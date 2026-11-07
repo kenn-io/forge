@@ -192,7 +192,9 @@ Bitbucket Data Center. For review triage:
 
 `kenn_forge_search_items` finds quiet cached pull requests and issues that are
 absent from recent activity. Candidate output defaults to 25 items and never
-exceeds 100.
+exceeds 100. With `semantic: true` it ranks them by how closely their titles,
+descriptions, and comments match the query instead of matching its text; that
+needs [semantic search](configuration.md#semantic-search) configured.
 
 `kenn_forge_list_pull_contexts` keeps aggregate CI status and omits completed
 `success`, `neutral`, and `skipped` checks by default. Use `include_checks: true`

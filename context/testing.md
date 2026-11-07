@@ -375,6 +375,9 @@ Treat `go test -race` runtime as test architecture, not a CI-only concern.
   WebSockets over `net.Pipe` listeners, never `httptest.Server`, real sockets, tmux, PTYs, git,
   subprocesses, filesystem polling, or `t.Run`/`t.Parallel`/`t.Deadline` in the bubble. Process-wide
   timer or channel pools crash a second bubble (`internal/fleettunnel/lifetime_test.go`).
+- `synctest.Wait` orders other goroutines' writes before the caller's reads only; a
+  fake-clock timer firing does not order the caller's earlier reads before a later
+  write, so guard state shared across sleeps with a mutex or atomic.
 - Outside synctest bubbles, kennlint rejects sub-second constant wait budgets and
   `time.Sleep`. Use `//nolint:kennlint // deadlinetest: reason` for a deadline that is the
   asserted result, an absence check, a real external wait, or a fake-time helper

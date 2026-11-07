@@ -203,6 +203,7 @@ func McpPull(row pullapi.MergeRequestResponse) mcpserver.Pull {
 		Repository:     RepositoryIdentityFromResponse(row.Repo),
 		Workspace:      McpWorkspaceRef(row.Workspace),
 		DetailLoaded:   row.DetailLoaded, DetailFetchedAt: row.DetailFetchedAt,
+		SearchScore: row.SearchScore,
 	}
 	pull.MergeQueue, pull.MergeQueueRemoval = McpMergeQueue(row.MergeQueue, row.MergeQueueRemoval)
 	if row.Stack != nil {
@@ -259,6 +260,7 @@ func McpIssue(row issueapi.IssueResponse) mcpserver.Issue {
 		Repository:     RepositoryIdentityFromResponse(row.Repo),
 		Workspace:      McpWorkspaceRef(row.Workspace),
 		DetailLoaded:   row.DetailLoaded, DetailFetchedAt: row.DetailFetchedAt,
+		SearchScore: row.SearchScore,
 	}
 }
 

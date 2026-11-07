@@ -40,6 +40,7 @@ type MergeRequestResponse struct {
 	// current head, omitted while it is unchecked, so list rows can offer
 	// approving pending workflow runs.
 	WorkflowApproval workflowApprovalResponse `json:"workflow_approval,omitzero"`
+	SearchScore      *float32                 `json:"search_score,omitempty" doc:"Similarity to q when semantic is set; compare only within one response."`
 }
 
 // MergeQueueRemovalResponse records why the merge queue removed a pull

@@ -7,6 +7,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/semantic"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/platform"
@@ -28,6 +29,7 @@ type ListQuery struct {
 	Unassigned     bool
 	ReferencedByPR bool
 	Text           string
+	Semantic       bool
 	Assignee       string
 	Limit          int
 	Offset         int
@@ -64,7 +66,7 @@ func (s *Handler) ListProviderService(
 	output, err := s.listIssuesRouteCore(ctx, &listIssuesInput{
 		Repo: req.Repo, State: req.State, Starred: req.Starred,
 		InvolvesMe: req.InvolvesMe, Unassigned: req.Unassigned, ReferencedByPR: req.ReferencedByPR,
-		Numbers: req.Numbers, Q: req.Text, Assignee: req.Assignee, Limit: req.Limit, Offset: req.Offset,
+		Numbers: req.Numbers, Q: req.Text, Semantic: req.Semantic, Assignee: req.Assignee, Limit: req.Limit, Offset: req.Offset,
 	}, nil)
 	if err != nil {
 		return nil, err
@@ -270,4 +272,33 @@ func issueResponseIdentity(row IssueResponse) providerplane.ItemIdentity {
 		},
 		ItemType: "issue", ItemNumber: row.Number,
 	}.Canonical()
+}
+
+// listIssuesByMeaning applies every list filter except q, then orders the
+// matching issues by how closely their prose matches q before paging.
+func (s *Handler) listIssuesByMeaning(
+	ctx context.Context, input *listIssuesInput, items []db.RepoItemNumber,
+) (*listIssuesOutput, error) {
+	if err := httpapi.SemanticSearchAvailable(input.Q, s.semantic != nil); err != nil {
+		return nil, err
+	}
+	filtered := *input
+	filtered.Q, filtered.Semantic, filtered.Limit, filtered.Offset = "", false, 0, 0
+	output, err := s.listIssuesRouteCore(ctx, &filtered, items)
+	if err != nil {
+		return nil, err
+	}
+	ranked, err := semantic.Rank(ctx, s.semantic, input.Q, "issue", output.Body,
+		func(row IssueResponse) db.RepoItemNumber {
+			return db.RepoItemNumber{RepoID: row.RepoID, Number: row.Number}
+		}, input.Offset, input.Limit)
+	if err != nil {
+		return nil, httpapi.SemanticSearchFailed(err)
+	}
+	rows := make([]IssueResponse, 0, len(ranked))
+	for _, match := range ranked {
+		match.Row.SearchScore = &match.Score
+		rows = append(rows, match.Row)
+	}
+	return &listIssuesOutput{Body: rows}, nil
 }

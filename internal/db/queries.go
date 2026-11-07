@@ -1858,6 +1858,8 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 			// no state filter
 		case "closed":
 			conds = append(conds, "(p.state IN ('closed', 'merged') OR p.is_locked)")
+		case "closed_unmerged":
+			conds = append(conds, "p.state = 'closed'")
 		default:
 			conds = append(conds, "p.state = ?")
 			args = append(args, state)

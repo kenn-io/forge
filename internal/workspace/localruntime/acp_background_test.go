@@ -167,6 +167,44 @@ func TestACPCancelledTurnLeavesNothingInTheBackground(t *testing.T) {
 
 		assert.False(t, publishedACPState(t, agent).Background, "a cancelled command may never report its exit")
 		assert.Equal(t, agentactivity.StateDone, acpActivity(agent))
+
+		// The next turn that ends normally leaves the interrupted command alone.
+		require.NoError(t, agent.Prompt("try again", ACPSender{Kind: ACPSenderUser}))
+		acpText(t, agent, "Done.")
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+
+		assert.False(t, publishedACPState(t, agent).Background)
+		assert.Equal(t, agentactivity.StateDone, acpActivity(agent))
+	})
+}
+
+func TestACPStoppedTakeoverLeavesNothingInTheBackground(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		agent.state.SteeringSupported = true
+		agent.reportsThreadStatus = true
+		require.NoError(t, agent.Prompt("work", ACPSender{Kind: ACPSenderUser}))
+		steered := make(chan error, 1)
+		go func() {
+			steered <- agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"})
+		}()
+		synctest.Wait()
+		peer.answer(acpSteeringMethod, `{"outcome":"startedNewTurn"}`)
+		require.NoError(t, <-steered)
+		synctest.Wait()
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+		require.True(t, publishedACPState(t, agent).Busy, "the agent's own turn runs on")
+
+		acpCodexCommand(t, agent, "push")
+		require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
+		acpThreadStatus(t, agent, "idle")
+
+		state := publishedACPState(t, agent)
+		assert.False(t, state.Busy)
+		assert.False(t, state.Background, "a stopped command may never report its exit")
+		assert.Equal(t, agentactivity.StateDone, acpActivity(agent))
 	})
 }
 

@@ -41,13 +41,14 @@ func (a *ACP) trackTerminalLocked(id string, meta map[string]any) {
 
 // backgroundRunningCommandsLocked marks the commands that outlive a turn that
 // ended normally: their tool call still runs and their terminal is open. A
-// cancelled or failed turn marks nothing, because an agent may never report
-// the exit of a command it interrupted.
+// stopped or failed turn marks nothing, because an agent may never report
+// the exit of a command it interrupted. Only the ending turn's commands
+// count, so a command an earlier stopped turn interrupted stays unmarked.
 func (a *ACP) backgroundRunningCommandsLocked() {
 	if len(a.terminals) == 0 {
 		return
 	}
-	for _, message := range a.state.Messages {
+	for _, message := range a.state.Messages[min(a.turnStart, len(a.state.Messages)):] {
 		_, open := a.terminals[message.ToolCallID]
 		running := message.Status == string(acpsdk.ToolCallStatusPending) || message.Status == string(acpsdk.ToolCallStatusInProgress)
 		if open && message.Role == "tool" && running {

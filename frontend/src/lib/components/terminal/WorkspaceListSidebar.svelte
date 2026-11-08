@@ -208,6 +208,7 @@
   let collapsedGroups = $state<string[]>([]);
   let searchQuery = $state("");
   let author = $state("");
+  let closedPullRequestsOnly = $state(false);
   let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
   let pinnedWorkspaceKeys = $state.raw(loadPinnedWorkspaces());
   let pinsCollapsed = $state(false);
@@ -302,6 +303,7 @@
   const authorOptions = $derived(workspaceAuthorOptions(scopedWorkspaces));
   const visibleWorkspaces = $derived(scopedWorkspaces.filter((ws) =>
     workspaceMatchesAuthor(ws, author) &&
+    (!closedPullRequestsOnly || pullRequestClosed(ws)) &&
     (!hasSearchQuery || workspaceMatchesSearch(ws, parsedSearchQuery)),
   ));
 
@@ -313,7 +315,7 @@
   const unpinnedWorkspaces = $derived(visibleWorkspaces.filter((ws) => !isPinned(ws)));
 
   const sidebarCountLabel = $derived(
-    hasSearchQuery || author || selectedRepoValues.size > 0
+    hasSearchQuery || author || closedPullRequestsOnly || selectedRepoValues.size > 0
       ? `${visibleWorkspaces.length}/${workspaces.length}`
       : `${workspaces.length}`,
   );
@@ -342,7 +344,7 @@
   );
 
   const viewBadgeCount = $derived(
-    Number(Boolean(author)) + Number(hasSearchQuery) +
+    Number(Boolean(author)) + Number(closedPullRequestsOnly) + Number(hasSearchQuery) +
     Number(sortMode !== defaultWorkspaceListSort) +
       Number(
         displayOptions.showOrgNames !==
@@ -364,6 +366,13 @@
           active: Boolean(author),
           submenu: authorFilterMenu,
           onSelect: () => {},
+        },
+        {
+          id: "merged-or-closed",
+          label: "Merged or closed PRs",
+          description: "Show only workspaces whose pull request was merged or closed.",
+          active: closedPullRequestsOnly,
+          onSelect: () => (closedPullRequestsOnly = !closedPullRequestsOnly),
         },
       ],
     },
@@ -461,6 +470,7 @@
 
   function resetFilters(): void {
     author = "";
+    closedPullRequestsOnly = false;
     searchQuery = "";
     setSort(defaultWorkspaceListSort);
     displayOptions = { ...defaultWorkspaceListDisplayOptions };
@@ -571,7 +581,7 @@
   }
 
   // Moves within the group's full membership, not just its visible rows, so
-  // workspaces a search or author filter hides keep their places.
+  // workspaces a search, author, or PR state filter hides keep their places.
   function applyReorder(group: string, source: string, target: string, side: ReorderSide): void {
     if (group === pinnedReorderGroup) {
       pinnedWorkspaceKeys = moveOrderKey(pinnedWorkspaceKeys, source, target, side);
@@ -953,6 +963,13 @@
 
   function itemState(ws: Workspace): WorkspaceItemState {
     return workspaceItemState(ws, ws.item_type === "issue" ? "issue" : "pr");
+  }
+
+  // Covers ad-hoc workspaces through their detected PR. Issue workspaces
+  // report the issue's state, so they never match.
+  function pullRequestClosed(ws: Workspace): boolean {
+    const state = workspaceItemState(ws, "pr");
+    return state === "merged" || state === "closed";
   }
 
   function shortBranch(ref: string): string {
@@ -2056,7 +2073,7 @@
       <p class="filter-empty">Loading workspaces...</p>
     {:else if workspaceListStatus === "retrying" && workspaces.length === 0}
       <p class="filter-empty">Still loading workspaces. Retrying...</p>
-    {:else if visibleWorkspaces.length === 0 && (hasSearchQuery || author || selectedRepoValues.size > 0)}
+    {:else if visibleWorkspaces.length === 0 && (hasSearchQuery || author || closedPullRequestsOnly || selectedRepoValues.size > 0)}
       <p class="filter-empty">No workspaces match.</p>
     {:else if visibleWorkspaces.length === 0}
       <p class="filter-empty">No workspaces yet.</p>

@@ -1537,6 +1537,56 @@ describe("WorkspaceListSidebar", () => {
     expect((screen.getByRole("searchbox", { name: "Filter workspaces" }) as HTMLInputElement).value).toBe("");
   });
 
+  it("shows only workspaces whose pull request was merged or closed", async () => {
+    const base = workspaceFixture({
+      id: "ws-open",
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widgets",
+      number: 1,
+      title: "Open change",
+    });
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          base,
+          { ...base, id: "ws-merged", item_number: 2, mr_title: "Merged change", mr_state: "merged" },
+          { ...base, id: "ws-closed", item_number: 3, mr_title: "Closed change", mr_state: "closed" },
+          {
+            ...base,
+            id: "ws-closed-issue",
+            item_number: 4,
+            item_type: "issue",
+            mr_title: "Closed issue",
+            mr_state: "closed",
+          },
+          {
+            ...base,
+            id: "ws-adhoc-merged",
+            item_number: 0,
+            item_type: "adhoc",
+            associated_pr_number: 5,
+            mr_title: "Ad hoc merged change",
+            mr_state: "merged",
+          },
+          { ...base, id: "ws-unlinked", item_number: 0, item_type: "adhoc", mr_title: null, mr_state: null },
+        ],
+      },
+    });
+    const { container } = render(WorkspaceListSidebar, { props: { selectedId: "ws-open" } });
+    await screen.findByText("Open change");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Merged or closed PRs" }));
+    expect(rowTitles(container)).toEqual(["Merged change", "Closed change", "Ad hoc merged change"]);
+    expect(container.querySelector(".sidebar-header-count")?.textContent).toBe("3/6");
+    expect(container.querySelector(".kit-filter-dropdown__badge")?.textContent).toBe("1");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+    expect(container.querySelectorAll(".ws-row")).toHaveLength(6);
+  });
+
   it("sorts flat by creation time and drops group headers", async () => {
     mockGet.mockResolvedValue({
       data: { workspaces: sortFixtures() },

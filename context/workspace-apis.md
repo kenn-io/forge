@@ -396,8 +396,11 @@ Resolution is deliberately exact (`internal/server/kata/workspace.go::Handler.re
 - A session that ended without a workspace stays adoptable for an hour, since its pull request may
   sync after the agent exits; then it is forgotten (maintainer decision).
 - Each chat view opens its own mirror, so state shared across views lives on the handler: prompts
-  typed into the pane are remembered by submission ID so a reconnect's resend is typed once, and a
-  view follows a Forge-run agent another view started.
+  typed into the pane are remembered by submission ID so a reconnect's resend is typed once and never
+  runs in the agent that continues the session, and a view follows a Forge-run agent another view
+  started.
+- Hooks record whether the agent was prompted. A chat that read no transcript cannot tell, so a
+  handoff whose load finds no session fails for a prompted agent instead of starting a new one.
 - Forge writes nothing to that checkout: no clone, branch, upstream, or head ref. Deleting the workspace
   keeps the worktree and branch, never stops the agent, and the session is not adopted again.
 - Its chat is the ACP view following the agent's transcript, never a terminal. Input is typed into the

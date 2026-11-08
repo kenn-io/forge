@@ -102,7 +102,8 @@ func (t *externalSessionTracker) startCheck(id externalSessionID) bool {
 
 // mirrorDeliveries remembers the prompts typed into each mirrored agent's pane,
 // by chat key and submission ID, so a prompt a reconnecting browser sends again
-// is typed once. Each chat opens its own mirror, so this outlives them.
+// is typed once, and never runs again in the agent that continues the session.
+// Each chat opens its own mirror, so this outlives them.
 type mirrorDeliveries struct {
 	mu    sync.Mutex
 	chats map[string]*mirrorChatDeliveries
@@ -113,12 +114,9 @@ type mirrorChatDeliveries struct {
 	sent map[string]struct{}
 }
 
-// deliver runs send for a prompt with an ID not delivered yet.
-func (d *mirrorDeliveries) deliver(key, id string, send func() error) error {
-	if id == "" {
-		return send()
-	}
+func (d *mirrorDeliveries) chat(key string) *mirrorChatDeliveries {
 	d.mu.Lock()
+	defer d.mu.Unlock()
 	if d.chats == nil {
 		d.chats = make(map[string]*mirrorChatDeliveries)
 	}
@@ -127,7 +125,15 @@ func (d *mirrorDeliveries) deliver(key, id string, send func() error) error {
 		chat = &mirrorChatDeliveries{sent: make(map[string]struct{})}
 		d.chats[key] = chat
 	}
-	d.mu.Unlock()
+	return chat
+}
+
+// deliver runs send for a prompt with an ID not delivered yet.
+func (d *mirrorDeliveries) deliver(key, id string, send func() error) error {
+	if id == "" {
+		return send()
+	}
+	chat := d.chat(key)
 	chat.mu.Lock()
 	defer chat.mu.Unlock()
 	if _, ok := chat.sent[id]; ok {
@@ -140,10 +146,17 @@ func (d *mirrorDeliveries) deliver(key, id string, send func() error) error {
 	return nil
 }
 
-func (d *mirrorDeliveries) forget(key string) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	delete(d.chats, key)
+// delivered reports whether the prompt id reached the pane, waiting for a
+// delivery of it still in flight.
+func (d *mirrorDeliveries) delivered(key, id string) bool {
+	if id == "" {
+		return false
+	}
+	chat := d.chat(key)
+	chat.mu.Lock()
+	defer chat.mu.Unlock()
+	_, ok := chat.sent[id]
+	return ok
 }
 
 // recordExternalAgentHook handles a hook event from an agent Forge did not
@@ -178,6 +191,8 @@ func (s *Handler) recordExternalAgentHook(ctx context.Context, agent string, inp
 			Agent: agent, SessionID: sessionID, CWD: hook.CWD, TranscriptPath: hook.TranscriptPath,
 			ProcessID: processID, ProcessStart: input.AgentStart,
 			HerdrPaneID: input.HerdrPane, HerdrSocketPath: input.HerdrSocket,
+			// A resumed or forked session carries the prompts it had before.
+			Prompted: hook.HookEventName == "UserPromptSubmit" || hook.Source == "resume" || hook.Source == "fork",
 		}); err != nil {
 			slog.Warn("record external agent session", "agent", agent, "err", err)
 			return
@@ -414,6 +429,7 @@ func (s *Handler) mirroredWorkspaceChat(
 		Start: func() (localruntime.ACPChat, error) {
 			return s.startMirroredChat(background, ws, item, *session)
 		},
+		Delivered: func(id string) bool { return s.mirrorDeliveries.delivered(item.SessionKey, id) },
 		Live: func() localruntime.ACPChat {
 			live, err := s.runtime.ACP(ws.ID, item.SessionKey)
 			if err != nil {
@@ -441,9 +457,11 @@ func (s *Handler) mirrorStatus(
 		return localruntime.ACPMirrorStatus{Running: true}
 	}
 	if current.EndedAt != nil || externalProcessGone(*current) {
-		return localruntime.ACPMirrorStatus{TranscriptPath: current.TranscriptPath}
+		return localruntime.ACPMirrorStatus{TranscriptPath: current.TranscriptPath, Prompted: current.Prompted}
 	}
-	status := localruntime.ACPMirrorStatus{Running: true, Writable: current.HerdrPaneID != "", TranscriptPath: current.TranscriptPath}
+	status := localruntime.ACPMirrorStatus{
+		Running: true, Writable: current.HerdrPaneID != "", TranscriptPath: current.TranscriptPath, Prompted: current.Prompted,
+	}
 	for _, report := range s.agentActivity.LiveReportsForWorkspace(ws.WorktreePath, []string{item.SessionKey}) {
 		switch report.State {
 		case agentactivity.StateWorking, agentactivity.StateApproval, agentactivity.StateInput:
@@ -519,6 +537,5 @@ func (s *Handler) startMirroredChat(
 		slog.Warn("record mirrored chat handoff", "session_key", item.SessionKey, "err", err)
 	}
 	s.externalSessions.forget(externalSessionID{session.Agent, session.SessionID})
-	s.mirrorDeliveries.forget(item.SessionKey)
 	return chat, nil
 }

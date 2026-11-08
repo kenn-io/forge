@@ -95,6 +95,11 @@ func (d *DormantACP) Command(command ACPCommand) error {
 		return live.Command(command)
 	}
 	if d.mirror != nil {
+		// The agent already has it, even when it exited since, so running it in
+		// the agent that continues the session would run it twice.
+		if d.mirror.delivered(command) {
+			return nil
+		}
 		if running := d.attachRunning(); running != nil {
 			return running.Command(command)
 		}

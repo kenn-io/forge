@@ -38,6 +38,9 @@ type ACPMirrorStatus struct {
 	// TranscriptPath is the transcript the agent last reported, which a hook
 	// may supply only after the chat opened.
 	TranscriptPath string
+	// Prompted means the agent received a prompt, so the session it continues
+	// in holds a conversation even when the chat read none.
+	Prompted bool
 }
 
 // ACPMirror names an agent session that runs outside Forge. Its chat shows the
@@ -57,6 +60,9 @@ type ACPMirror struct {
 	// Live returns the Forge-run agent another viewer's chat started on the
 	// session, or nil while none runs.
 	Live func() ACPChat
+	// Delivered reports whether Deliver already typed the prompt with this
+	// submission ID into the agent's terminal.
+	Delivered func(id string) bool
 }
 
 type acpMirrorFollower struct {
@@ -100,12 +106,14 @@ func (m *Manager) saveMirroredSession(dormant *DormantACP, mirror ACPMirror) err
 		return fmt.Errorf("create chat session directory: %w", err)
 	}
 	dormant.pollMirror()
+	prompted := mirror.Status().Prompted
 	dormant.saved.mu.Lock()
 	// A chat that read no transcript, for want of a reader or a transcript,
 	// shows the history the agent replays on load instead.
 	saved := acpSavedSession{
 		SessionID: mirror.SessionID, LoadSession: true, ImportHistory: len(dormant.saved.state.Messages) == 0,
-		State: ACPState{Messages: slices.Clone(dormant.saved.state.Messages)},
+		AgentPrompted: prompted,
+		State:         ACPState{Messages: slices.Clone(dormant.saved.state.Messages)},
 	}
 	dormant.saved.mu.Unlock()
 	data, err := json.Marshal(saved, json.Deterministic(true))
@@ -251,6 +259,12 @@ func (f *acpMirrorFollower) read() []acpTranscriptLine {
 }
 
 // command handles a command while the agent runs outside Forge.
+// delivered reports whether command is a prompt already typed into the agent's
+// terminal, which a reconnecting browser resends without knowing it arrived.
+func (f *acpMirrorFollower) delivered(command ACPCommand) bool {
+	return command.Type == "prompt" && f.source.Delivered != nil && f.source.Delivered(command.ID)
+}
+
 func (f *acpMirrorFollower) command(command ACPCommand, status ACPMirrorStatus) error {
 	switch command.Type {
 	case "prompt", "cancel":

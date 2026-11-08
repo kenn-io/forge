@@ -24,8 +24,11 @@ type ExternalAgentSession struct {
 	// empty when it runs in any other terminal.
 	HerdrPaneID     string
 	HerdrSocketPath string
-	FirstSeenAt     time.Time
-	EndedAt         *time.Time
+	// Prompted records that a hook showed the agent received a prompt. A report
+	// without one never clears it.
+	Prompted    bool
+	FirstSeenAt time.Time
+	EndedAt     *time.Time
 	// WorkspaceID and RuntimeSessionKey name the workspace and chat that adopted
 	// the session. They stay set after the workspace is deleted, so a session
 	// someone removed from Forge is never adopted again.
@@ -36,7 +39,7 @@ type ExternalAgentSession struct {
 }
 
 const externalAgentSessionColumns = `agent, session_id, cwd, transcript_path, process_id, process_start,
-	herdr_pane_id, herdr_socket_path, first_seen_at, ended_at, workspace_id,
+	herdr_pane_id, herdr_socket_path, prompted, first_seen_at, ended_at, workspace_id,
 	runtime_session_key, handed_off_at`
 
 func scanExternalAgentSession(scanner interface{ Scan(...any) error }) (ExternalAgentSession, error) {
@@ -45,7 +48,7 @@ func scanExternalAgentSession(scanner interface{ Scan(...any) error }) (External
 	err := scanner.Scan(
 		&session.Agent, &session.SessionID, &session.CWD, &session.TranscriptPath,
 		&session.ProcessID, &session.ProcessStart, &session.HerdrPaneID, &session.HerdrSocketPath,
-		&session.FirstSeenAt, &ended, &session.WorkspaceID, &session.RuntimeSessionKey, &handedOff,
+		&session.Prompted, &session.FirstSeenAt, &ended, &session.WorkspaceID, &session.RuntimeSessionKey, &handedOff,
 	)
 	if err != nil {
 		return ExternalAgentSession{}, err
@@ -70,10 +73,11 @@ func (d *DB) RecordExternalAgentSession(ctx context.Context, session ExternalAge
 	_, err := d.rwExecContext(ctx, `
 		INSERT INTO forge_external_agent_sessions
 		    (agent, session_id, cwd, transcript_path, process_id, process_start,
-		     herdr_pane_id, herdr_socket_path)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		     herdr_pane_id, herdr_socket_path, prompted)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (agent, session_id) DO UPDATE SET
 		    cwd = excluded.cwd,
+		    prompted = prompted OR excluded.prompted,
 		    transcript_path = COALESCE(NULLIF(excluded.transcript_path, ''), transcript_path),
 		    process_id = CASE WHEN excluded.process_id != 0 THEN excluded.process_id ELSE process_id END,
 		    process_start = COALESCE(NULLIF(excluded.process_start, ''), process_start),
@@ -82,7 +86,7 @@ func (d *DB) RecordExternalAgentSession(ctx context.Context, session ExternalAge
 		    ended_at = NULL
 		WHERE handed_off_at IS NULL`,
 		session.Agent, session.SessionID, session.CWD, session.TranscriptPath,
-		session.ProcessID, session.ProcessStart, session.HerdrPaneID, session.HerdrSocketPath,
+		session.ProcessID, session.ProcessStart, session.HerdrPaneID, session.HerdrSocketPath, session.Prompted,
 	)
 	if err != nil {
 		return fmt.Errorf("record external agent session: %w", err)

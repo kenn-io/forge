@@ -301,7 +301,7 @@ jobs:
         with:
           dist: site
 
-      # kenn-forge-github-app serves this directory as static files behind a
+      # kenn-forge github-app serves this directory as static files behind a
       # one-time setup token, so checking the build covers what it serves.
       - name: Check the GitHub App setup page
         uses: kenn-io/actions/first-paint@main

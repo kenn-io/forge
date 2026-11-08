@@ -17,11 +17,9 @@ async function fixture(t) {
   await mkdir(bin, { recursive: true });
   t.after(() => rm(root, { recursive: true, force: true }));
   const forge = "#!/bin/sh\necho new-forge\n";
-  const ghapp = "#!/bin/sh\necho new-github-app\n";
   await writeFile(join(root, "kenn-forge"), forge);
-  await writeFile(join(root, "kenn-forge-github-app"), ghapp);
   return {
-    root, bin, forge, ghapp,
+    root, bin, forge,
     install: (env = {}) => spawnSync("make", ["-f", makefile, "-o", "build-release", "install"], {
       cwd: root,
       env: { ...process.env, HOME: home, ...env },
@@ -45,7 +43,6 @@ test("replaces a running executable and asks to restart the daemon", { skip: pro
   const result = f.install();
   assert.equal(result.status, 0, result.stderr);
   assert.equal(await readFile(installed, "utf8"), f.forge);
-  assert.equal(await readFile(join(f.bin, "kenn-forge-github-app"), "utf8"), f.ghapp);
   assert.ok(result.stdout.includes(restart));
 });
 
@@ -58,12 +55,12 @@ test("fails on a read-only install directory or a first-copy I/O error", async (
     assert.ok(!result.stdout.includes(restart));
     await chmod(f.bin, 0o755);
   }
-  await writeFile(join(f.bin, "kenn-forge-github-app"), "old helper\n");
+  await writeFile(join(f.bin, "kenn-forge"), "old forge\n");
   const cp = join(f.root, "cp");
   await writeFile(cp, '#!/bin/sh\ncase "$1" in\nkenn-forge) echo "cp: input/output error" >&2; exit 1 ;;\n*) exec /bin/cp "$@" ;;\nesac\n');
   await chmod(cp, 0o755);
   const copyError = f.install({ PATH: `${f.root}:${process.env.PATH}` });
   assert.notEqual(copyError.status, 0);
   assert.ok(!copyError.stdout.includes(restart));
-  assert.equal(await readFile(join(f.bin, "kenn-forge-github-app"), "utf8"), "old helper\n");
+  assert.equal(await readFile(join(f.bin, "kenn-forge"), "utf8"), "old forge\n");
 });

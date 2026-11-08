@@ -16,7 +16,6 @@ LDFLAGS_RELEASE := $(LDFLAGS) -s -w
 
 EXE_SUFFIX := $(if $(filter windows,$(shell go env GOOS)),.exe,)
 BINARY := kenn-forge$(EXE_SUFFIX)
-GHAPP_BINARY := kenn-forge-github-app$(EXE_SUFFIX)
 GOPATH_FIRST := $(shell go env GOPATH | sed -E 's/^([A-Za-z]:)?([^;:]*).*/\1\2/')
 
 ROBOREV_SRC ?= $(HOME)/code/roborev
@@ -101,7 +100,6 @@ ensure-tmp-dir:
 # Build the binary (debug, with embedded frontend)
 build: frontend githubapp-frontend
 	go build -ldflags="$(LDFLAGS)" -o $(BINARY) ./cmd/kenn-forge
-	go build -ldflags="$(LDFLAGS)" -o $(GHAPP_BINARY) ./cmd/kenn-forge-github-app
 
 # The relay has no frontend dependency.
 .PHONY: build-relay
@@ -113,7 +111,6 @@ build-release: frontend githubapp-frontend
 	@printf '%s\n' "$(COMMIT)" | grep -Eq '^[0-9a-f]{40}$$' || \
 		{ echo 'Release builds require COMMIT=<full source revision>.' >&2; exit 1; }
 	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(BINARY) ./cmd/kenn-forge
-	go build -ldflags="$(LDFLAGS_RELEASE)" -trimpath -o $(GHAPP_BINARY) ./cmd/kenn-forge-github-app
 
 rust-pty-manager:
 	cargo build -p kenn-forge-pty-manager
@@ -134,13 +131,11 @@ install: build-release
 		mkdir -p "$$INSTALL_DIR"; \
 	fi; \
 	echo "Installing to $$INSTALL_DIR/$(BINARY)"; \
-	for bin in $(BINARY) $(GHAPP_BINARY); do \
-		tmp="$$(mktemp "$$INSTALL_DIR/$$bin.tmp.XXXXXX")"; \
-		trap 'rm -f "$$tmp"' EXIT HUP INT TERM; \
-		cp "$$bin" "$$tmp"; \
-		chmod 755 "$$tmp"; \
-		mv -f "$$tmp" "$$INSTALL_DIR/$$bin"; \
-	done; \
+	tmp="$$(mktemp "$$INSTALL_DIR/$(BINARY).tmp.XXXXXX")"; \
+	trap 'rm -f "$$tmp"' EXIT HUP INT TERM; \
+	cp "$(BINARY)" "$$tmp"; \
+	chmod 755 "$$tmp"; \
+	mv -f "$$tmp" "$$INSTALL_DIR/$(BINARY)"; \
 	echo "If a daemon is running, run kenn-forge daemon restart to use this build. For a custom config, add --config PATH."
 
 # Install Bun workspace dependencies for the frontend packages

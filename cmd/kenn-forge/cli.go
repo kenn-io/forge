@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.kenn.io/forge/internal/cli/ctl"
 	"go.kenn.io/forge/internal/cli/ghcli"
+	"go.kenn.io/forge/internal/cli/githubappcli"
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 )
@@ -80,6 +81,7 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 		}),
 		newMCPCommand(opts.Stdout, loadMCPQuickstart),
 		ghcli.NewCommand(),
+		githubappcli.NewCommand(opts.Stdout),
 		newPtyOwnerCommand(),
 		newACPOwnerCommand(),
 		newACPHostCommand(),

@@ -170,32 +170,18 @@ the same. See [GitHub CLI shim](gh-shim.md).
 
 ## Manage GitHub App credentials
 
-`kenn-forge-github-app` is available through a source build. Release archives
-contain only `kenn-forge`. Install Go 1.27+, Node.js, and Bun, then clone Forge at
-your installed release's tag, replacing `v0.6.0` below as needed:
-
 ```sh
-git clone --branch v0.6.0 https://github.com/kenn-io/forge.git
-cd forge
-make build-release
+kenn-forge github-app create
+kenn-forge github-app create --org your-org
+kenn-forge github-app create --role archive
+kenn-forge github-app list
+kenn-forge github-app install
+kenn-forge github-app uninstall
+kenn-forge github-app delete
+kenn-forge github-app open
 ```
 
-This also builds the helper's browser setup page. Copy only
-`kenn-forge-github-app` (`kenn-forge-github-app.exe` on Windows) to a directory
-on your `PATH`.
-
-```sh
-kenn-forge-github-app create
-kenn-forge-github-app create --org your-org
-kenn-forge-github-app create --role archive
-kenn-forge-github-app list
-kenn-forge-github-app install
-kenn-forge-github-app uninstall
-kenn-forge-github-app delete
-kenn-forge-github-app open
-```
-
-Use this companion CLI when sync or archive reads should use GitHub App
+Use these commands when sync or archive reads should use GitHub App
 installation tokens. `create --org your-org` creates an organization-owned
 App; omit `--org` for personal ownership. Creation includes a browser-based
 installation step. See [GitHub App reads](configuration.md#github-app-reads)

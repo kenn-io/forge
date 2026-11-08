@@ -1,4 +1,4 @@
-package main
+package githubappcli
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json/v2"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -19,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/spf13/cobra"
 	appfiles "go.kenn.io/forge/internal/githubapp"
 
 	"go.kenn.io/forge/githubapp"
@@ -26,27 +26,47 @@ import (
 	"go.kenn.io/forge/internal/githubapp/ui"
 )
 
-func runCreate(ctx context.Context, args []string, env *appEnv) error {
-	fs := flag.NewFlagSet("kenn-forge-github-app create", flag.ContinueOnError)
-	fs.SetOutput(env.stdout)
-	configPath := fs.String("config", env.configPath, "kenn-forge config path")
-	host := fs.String("host", "", "GitHub host (default github.com)")
-	org := fs.String("org", "", "create the app under this organization instead of your user")
-	name := fs.String("name", "", "app name (default kenn-forge-<random>)")
-	role := fs.String("role", config.GitHubAppRoleSync, "Forge workload for this App: sync or archive")
-	homepage := fs.String("homepage", "", "app homepage URL shown on its public page")
-	noBrowser := fs.Bool("no-browser", false, "print URLs instead of opening a browser")
-	timeout := fs.Duration("timeout", 10*time.Minute, "how long to wait for each browser step")
-	registerTestFlags(fs, env)
-	if err := fs.Parse(args); err != nil {
-		return err
+type createOptions struct {
+	host      string
+	org       string
+	name      string
+	role      string
+	homepage  string
+	noBrowser bool
+	timeout   time.Duration
+}
+
+func newCreateCommand(env *appEnv) *cobra.Command {
+	var opts createOptions
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a GitHub App via the browser manifest flow and write its credentials to kenn-forge's config",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runWithInterrupt(cmd, func(ctx context.Context) error {
+				return runCreate(ctx, opts, env)
+			})
+		},
 	}
-	env.configPath = *configPath
-	h, err := normalizeHostFlag(*host)
+	flags := cmd.Flags()
+	registerConfigFlag(cmd, env)
+	flags.StringVar(&opts.host, "host", "", "GitHub host (default github.com)")
+	flags.StringVar(&opts.org, "org", "", "create the app under this organization instead of your user")
+	flags.StringVar(&opts.name, "name", "", "app name (default kenn-forge-<random>)")
+	flags.StringVar(&opts.role, "role", config.GitHubAppRoleSync, "Forge workload for this App: sync or archive")
+	flags.StringVar(&opts.homepage, "homepage", "", "app homepage URL shown on its public page")
+	flags.BoolVar(&opts.noBrowser, "no-browser", false, "print URLs instead of opening a browser")
+	flags.DurationVar(&opts.timeout, "timeout", 10*time.Minute, "how long to wait for each browser step")
+	registerTestFlags(cmd, env)
+	return cmd
+}
+
+func runCreate(ctx context.Context, opts createOptions, env *appEnv) error {
+	h, err := normalizeHostFlag(opts.host)
 	if err != nil {
 		return err
 	}
-	appRole := strings.ToLower(strings.TrimSpace(*role))
+	appRole := strings.ToLower(strings.TrimSpace(opts.role))
 	if appRole != config.GitHubAppRoleSync && appRole != config.GitHubAppRoleArchive {
 		return fmt.Errorf("--role must be %q or %q", config.GitHubAppRoleSync, config.GitHubAppRoleArchive)
 	}
@@ -66,24 +86,26 @@ func runCreate(ctx context.Context, args []string, env *appEnv) error {
 		if existingRole != appRole {
 			continue
 		}
-		if *org != "" && strings.EqualFold(existing.Owner, *org) {
+		if opts.org != "" && strings.EqualFold(existing.Owner, opts.org) {
 			return fmt.Errorf(
 				"a github app for host %q and owner %q already exists (app id %d, slug %q); "+
-					"use \"install --owner %s\" to add an installation or \"delete --owner %s\" to replace it",
+					"run kenn-forge github-app install --owner %s to add an installation, "+
+					"or kenn-forge github-app delete --owner %s to replace it",
 				h, existing.Owner, existing.AppID, existing.Slug, existing.Owner, existing.Owner,
 			)
 		}
-		if *org == "" && strings.EqualFold(existing.OwnerType, "User") {
+		if opts.org == "" && strings.EqualFold(existing.OwnerType, "User") {
 			return fmt.Errorf(
 				"a user-owned github app for host %q already exists (app id %d, slug %q); "+
-					"use \"install --owner %s\" to add an installation, \"create --org\" for an org-owned app, "+
-					"or \"delete --owner %s\" to replace it",
+					"run kenn-forge github-app install --owner %s to add an installation, "+
+					"kenn-forge github-app create --org ORG for an org-owned app, "+
+					"or kenn-forge github-app delete --owner %s to replace it",
 				h, existing.AppID, existing.Slug, existing.Owner, existing.Owner,
 			)
 		}
 	}
 
-	appName := strings.TrimSpace(*name)
+	appName := strings.TrimSpace(opts.name)
 	if appName == "" {
 		appName, err = appfiles.RandomAppName()
 		if err != nil {
@@ -102,11 +124,11 @@ func runCreate(ctx context.Context, args []string, env *appEnv) error {
 
 	creds, err := env.runManifestFlow(ctx, flow, manifestFlowOptions{
 		host:     h,
-		org:      *org,
+		org:      opts.org,
 		name:     appName,
-		homepage: *homepage,
-		open:     !*noBrowser,
-		timeout:  *timeout,
+		homepage: opts.homepage,
+		open:     !opts.noBrowser,
+		timeout:  opts.timeout,
 	})
 	if err != nil {
 		return err
@@ -136,10 +158,10 @@ func runCreate(ctx context.Context, args []string, env *appEnv) error {
 
 	// Step two: the app must be installed on the account that owns the
 	// synced repos before it can mint tokens.
-	if err := env.runInstallFlow(ctx, cfg, app, !*noBrowser, *timeout); err != nil {
+	if err := env.runInstallFlow(ctx, cfg, app, !opts.noBrowser, opts.timeout); err != nil {
 		return fmt.Errorf(
-			"app created but not installed yet: %w\n"+
-				"run \"kenn-forge-github-app install\" to finish", err,
+			"app created but not installed yet: %w; "+
+				"to finish, run kenn-forge github-app install", err,
 		)
 	}
 	return nil
@@ -181,12 +203,12 @@ type flowServer struct {
 // missingUIPage is served when the binary was built without the
 // embedded Svelte setup page (plain `go build`). The flow cannot
 // continue in the browser, so say that instead of dead-ending.
-const missingUIPage = `<!DOCTYPE html><html><head><title>kenn-forge-github-app</title></head><body>
+const missingUIPage = `<!DOCTYPE html><html><head><title>kenn-forge github-app</title></head><body>
 <h1>Setup page not included in this build</h1>
-<p>This kenn-forge-github-app binary was built without the embedded setup UI,
+<p>This kenn-forge binary was built without the embedded setup UI,
 so the GitHub App creation flow cannot continue in the browser.</p>
 <p>Rebuild with <code>make build</code> (which builds and embeds the page),
-then re-run <code>kenn-forge-github-app create</code>.</p>
+then re-run <code>kenn-forge github-app create</code>.</p>
 </body></html>`
 
 // flowJSON is the contract between the Go flow server and the Svelte
@@ -645,7 +667,7 @@ func (env *appEnv) verifySelectedInstallationCoverage(
 			"the app was installed on %q with \"Only select repositories\", but the "+
 				"installation cannot reach %s; not recording it in config. Edit the "+
 				"installation's repository access on GitHub (or choose \"All "+
-				"repositories\") and re-run \"install\"",
+				"repositories\") and re-run kenn-forge github-app install",
 			picked.Account.Login, strings.Join(missing, ", "),
 		)
 	}
@@ -727,11 +749,16 @@ func randomToken() (string, error) {
 	return hex.EncodeToString(buf[:]), nil
 }
 
+// registerConfigFlag binds --config to the env's config path.
+func registerConfigFlag(cmd *cobra.Command, env *appEnv) {
+	cmd.Flags().StringVar(&env.configPath, "config", env.configPath, "kenn-forge config path")
+}
+
 // registerTestFlags exposes the endpoint overrides the e2e tests use
 // to point both browser-facing and API URLs at a fake GitHub.
-func registerTestFlags(fs *flag.FlagSet, env *appEnv) {
-	fs.StringVar(&env.apiBase, "api-base", env.apiBase,
+func registerTestFlags(cmd *cobra.Command, env *appEnv) {
+	cmd.Flags().StringVar(&env.apiBase, "api-base", env.apiBase,
 		"override the GitHub REST API base URL (testing)")
-	fs.StringVar(&env.webBase, "web-base", env.webBase,
+	cmd.Flags().StringVar(&env.webBase, "web-base", env.webBase,
 		"override the GitHub web base URL (testing)")
 }

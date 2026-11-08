@@ -322,7 +322,7 @@ type GitHubOwnerTokenConfig struct {
 }
 
 // GitHubAppConfig registers a GitHub App created by the
-// kenn-forge-github-app CLI. Installation tokens minted from the app's
+// kenn-forge github-app command. Installation tokens minted from the app's
 // private key carry their own rate-limit budget, taking sync traffic
 // off the host's PAT.
 //
@@ -354,7 +354,7 @@ type GitHubAppConfig struct {
 	// This is a startup routing snapshot: kenn-forge does not detect selection
 	// changes made on GitHub afterwards. Narrowed access can surface as sync
 	// 404s, while newly granted repositories keep using PAT fallback. Re-run
-	// "kenn-forge-github-app install" and restart kenn-forge to load either
+	// "kenn-forge github-app install" and restart kenn-forge to load either
 	// change into the bounded route table.
 	SelectedRepos []string `toml:"selected_repos,omitempty" json:"selected_repos,omitempty"`
 }

@@ -35,7 +35,7 @@ func TestCollectProviderTokensMintsGitHubAppToken(t *testing.T) {
 	t.Cleanup(fake.Close)
 
 	// Register an app + installation on the fake GitHub the way the
-	// kenn-forge-github-app CLI would have.
+	// kenn-forge github-app command would have.
 	manifest, err := appfiles.NewManifest(
 		"kenn-forge-startup", "", "http://127.0.0.1:1/callback",
 	)

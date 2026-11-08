@@ -1,8 +1,7 @@
-package main
+package githubappcli
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -10,60 +9,80 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	"go.kenn.io/forge/githubapp"
 	"go.kenn.io/forge/internal/config"
 )
 
-func runInstall(ctx context.Context, args []string, env *appEnv) error {
-	fs := flag.NewFlagSet("kenn-forge-github-app install", flag.ContinueOnError)
-	fs.SetOutput(env.stdout)
-	configPath := fs.String("config", env.configPath, "kenn-forge config path")
-	host := fs.String("host", "", "GitHub host of the app to install")
-	owner := fs.String("owner", "", "GitHub account that owns the app or installation")
-	appID := fs.Int64("app-id", 0, "GitHub App ID to select when host or owner is ambiguous")
-	noBrowser := fs.Bool("no-browser", false, "print URLs instead of opening a browser")
-	timeout := fs.Duration("timeout", 10*time.Minute, "how long to wait for the installation")
-	registerTestFlags(fs, env)
-	if err := fs.Parse(args); err != nil {
-		return err
+func newInstallCommand(env *appEnv) *cobra.Command {
+	var sel appSelector
+	var noBrowser bool
+	var timeout time.Duration
+	cmd := &cobra.Command{
+		Use:   "install",
+		Short: "Open the install page for an app and record the installation",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runWithInterrupt(cmd, func(ctx context.Context) error {
+				return runInstall(ctx, sel, noBrowser, timeout, env)
+			})
+		},
 	}
-	env.configPath = *configPath
-	cfg, err := env.loadConfig()
-	if err != nil {
-		return err
-	}
-	app, err := selectApp(cfg, *host, *owner, *appID)
-	if err != nil {
-		return err
-	}
-	return env.runInstallFlow(ctx, cfg, app, !*noBrowser, *timeout)
+	registerConfigFlag(cmd, env)
+	sel.register(cmd, "install")
+	cmd.Flags().BoolVar(&noBrowser, "no-browser", false, "print URLs instead of opening a browser")
+	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "how long to wait for the installation")
+	registerTestFlags(cmd, env)
+	return cmd
 }
 
-func runUninstall(ctx context.Context, args []string, env *appEnv) error {
-	fs := flag.NewFlagSet("kenn-forge-github-app uninstall", flag.ContinueOnError)
-	fs.SetOutput(env.stdout)
-	configPath := fs.String("config", env.configPath, "kenn-forge config path")
-	host := fs.String("host", "", "GitHub host of the app to uninstall")
-	owner := fs.String("owner", "", "GitHub account that owns the app or installation")
-	appID := fs.Int64("app-id", 0, "GitHub App ID to select when host or owner is ambiguous")
-	yes := fs.Bool("yes", false, "confirm uninstalling without prompting")
-	registerTestFlags(fs, env)
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	env.configPath = *configPath
+func runInstall(
+	ctx context.Context, sel appSelector, noBrowser bool, timeout time.Duration, env *appEnv,
+) error {
 	cfg, err := env.loadConfig()
 	if err != nil {
 		return err
 	}
-	app, err := selectApp(cfg, *host, *owner, *appID)
+	app, err := selectApp(cfg, sel.host, sel.owner, sel.appID)
+	if err != nil {
+		return err
+	}
+	return env.runInstallFlow(ctx, cfg, app, !noBrowser, timeout)
+}
+
+func newUninstallCommand(env *appEnv) *cobra.Command {
+	var sel appSelector
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "uninstall",
+		Short: "Uninstall an app from its account (keeps the app)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runWithInterrupt(cmd, func(ctx context.Context) error {
+				return runUninstall(ctx, sel, yes, env)
+			})
+		},
+	}
+	registerConfigFlag(cmd, env)
+	sel.register(cmd, "uninstall")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm uninstalling without prompting")
+	registerTestFlags(cmd, env)
+	return cmd
+}
+
+func runUninstall(ctx context.Context, sel appSelector, yes bool, env *appEnv) error {
+	cfg, err := env.loadConfig()
+	if err != nil {
+		return err
+	}
+	app, err := selectApp(cfg, sel.host, sel.owner, sel.appID)
 	if err != nil {
 		return err
 	}
 	if app.InstallationID == 0 {
 		return fmt.Errorf("app %q has no recorded installation", app.Slug)
 	}
-	if !*yes {
+	if !yes {
 		return fmt.Errorf(
 			"uninstalling removes the app's access to %s; re-run with --yes to confirm",
 			app.InstallationAccount,
@@ -89,32 +108,48 @@ func runUninstall(ctx context.Context, args []string, env *appEnv) error {
 	return updateAppSlotInConfig(cfg, env.configPath, oldApp, app)
 }
 
-func runDelete(ctx context.Context, args []string, env *appEnv) error {
-	fs := flag.NewFlagSet("kenn-forge-github-app delete", flag.ContinueOnError)
-	fs.SetOutput(env.stdout)
-	configPath := fs.String("config", env.configPath, "kenn-forge config path")
-	host := fs.String("host", "", "GitHub host of the app to delete")
-	owner := fs.String("owner", "", "GitHub account that owns the app or installation")
-	appID := fs.Int64("app-id", 0, "GitHub App ID to select when host or owner is ambiguous")
-	yes := fs.Bool("yes", false, "confirm deletion without prompting")
-	localOnly := fs.Bool("local-only", false,
-		"only remove the local config entry and key (app already deleted on GitHub)")
-	noBrowser := fs.Bool("no-browser", false, "print URLs instead of opening a browser")
-	timeout := fs.Duration("timeout", 10*time.Minute, "how long to wait for the deletion")
-	registerTestFlags(fs, env)
-	if err := fs.Parse(args); err != nil {
-		return err
+type deleteOptions struct {
+	sel       appSelector
+	yes       bool
+	localOnly bool
+	noBrowser bool
+	timeout   time.Duration
+}
+
+func newDeleteCommand(env *appEnv) *cobra.Command {
+	var opts deleteOptions
+	cmd := &cobra.Command{
+		Use:   "delete",
+		Short: "Delete an app (opens browser; removes local credentials)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runWithInterrupt(cmd, func(ctx context.Context) error {
+				return runDelete(ctx, opts, env)
+			})
+		},
 	}
-	env.configPath = *configPath
+	flags := cmd.Flags()
+	registerConfigFlag(cmd, env)
+	opts.sel.register(cmd, "delete")
+	flags.BoolVar(&opts.yes, "yes", false, "confirm deletion without prompting")
+	flags.BoolVar(&opts.localOnly, "local-only", false,
+		"only remove the local config entry and key (app already deleted on GitHub)")
+	flags.BoolVar(&opts.noBrowser, "no-browser", false, "print URLs instead of opening a browser")
+	flags.DurationVar(&opts.timeout, "timeout", 10*time.Minute, "how long to wait for the deletion")
+	registerTestFlags(cmd, env)
+	return cmd
+}
+
+func runDelete(ctx context.Context, opts deleteOptions, env *appEnv) error {
 	cfg, err := env.loadConfig()
 	if err != nil {
 		return err
 	}
-	app, err := selectApp(cfg, *host, *owner, *appID)
+	app, err := selectApp(cfg, opts.sel.host, opts.sel.owner, opts.sel.appID)
 	if err != nil {
 		return err
 	}
-	if !*yes {
+	if !opts.yes {
 		return fmt.Errorf(
 			"deleting app %q removes its credentials permanently; re-run with --yes to confirm",
 			app.Slug,
@@ -122,7 +157,7 @@ func runDelete(ctx context.Context, args []string, env *appEnv) error {
 	}
 	configuredApp := app
 
-	if !*localOnly {
+	if !opts.localOnly {
 		// Deletion is confirmed by the app's credentials dying, so the
 		// credentials must demonstrably work first. Otherwise a stale
 		// or rotated key would read as "deleted" and local state would
@@ -133,12 +168,12 @@ func runDelete(ctx context.Context, args []string, env *appEnv) error {
 			if githubapp.IsStatus(err, http.StatusUnauthorized) ||
 				githubapp.IsStatus(err, http.StatusNotFound) {
 				return fmt.Errorf(
-					"cannot verify deletion, GitHub rejected the app credentials: %w\n"+
+					"cannot verify deletion, GitHub rejected the app credentials: %w; "+
 						"if the app is already deleted, re-run with --local-only", err,
 				)
 			}
 			return fmt.Errorf(
-				"cannot verify deletion, app credentials are unusable: %w\n"+
+				"cannot verify deletion, app credentials are unusable: %w; "+
 					"delete the app in GitHub settings yourself, then re-run with --local-only", err,
 			)
 		}
@@ -149,13 +184,13 @@ func runDelete(ctx context.Context, args []string, env *appEnv) error {
 		fmt.Fprintf(env.stdout,
 			"Delete the app in GitHub settings (Danger Zone -> Delete GitHub App):\n  %s\n", url,
 		)
-		if !*noBrowser {
+		if !opts.noBrowser {
 			if err := env.openBrowser(url); err != nil {
 				fmt.Fprintf(env.stdout, "could not open browser: %v\n", err)
 			}
 		}
 		fmt.Fprintln(env.stdout, "Waiting for the app to disappear...")
-		err = env.pollUntil(ctx, *timeout, func(ctx context.Context) (bool, error) {
+		err = env.pollUntil(ctx, opts.timeout, func(ctx context.Context) (bool, error) {
 			jwt, err := appJWT(app, env.now())
 			if err != nil {
 				return false, err
@@ -172,7 +207,7 @@ func runDelete(ctx context.Context, args []string, env *appEnv) error {
 		})
 		if err != nil {
 			return fmt.Errorf(
-				"app still exists on %s: %w\n"+
+				"app still exists on %s: %w; "+
 					"re-run with --local-only after deleting it in the browser", app.Host, err,
 			)
 		}
@@ -222,23 +257,30 @@ func appPrivateKeyOwnedByCLI(
 	return false
 }
 
-func runOpen(ctx context.Context, args []string, env *appEnv) error {
-	fs := flag.NewFlagSet("kenn-forge-github-app open", flag.ContinueOnError)
-	fs.SetOutput(env.stdout)
-	configPath := fs.String("config", env.configPath, "kenn-forge config path")
-	host := fs.String("host", "", "GitHub host of the app to open")
-	owner := fs.String("owner", "", "GitHub account that owns the app or installation")
-	appID := fs.Int64("app-id", 0, "GitHub App ID to select when host or owner is ambiguous")
-	registerTestFlags(fs, env)
-	if err := fs.Parse(args); err != nil {
-		return err
+func newOpenCommand(env *appEnv) *cobra.Command {
+	var sel appSelector
+	cmd := &cobra.Command{
+		Use:   "open",
+		Short: "Open an app's GitHub settings page",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runWithInterrupt(cmd, func(ctx context.Context) error {
+				return runOpen(ctx, sel, env)
+			})
+		},
 	}
-	env.configPath = *configPath
+	registerConfigFlag(cmd, env)
+	sel.register(cmd, "open")
+	registerTestFlags(cmd, env)
+	return cmd
+}
+
+func runOpen(ctx context.Context, sel appSelector, env *appEnv) error {
 	cfg, err := env.loadConfig()
 	if err != nil {
 		return err
 	}
-	app, err := selectApp(cfg, *host, *owner, *appID)
+	app, err := selectApp(cfg, sel.host, sel.owner, sel.appID)
 	if err != nil {
 		return err
 	}

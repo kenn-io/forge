@@ -1235,7 +1235,7 @@ func TestRootHelpListsEveryPublicCommandWithoutStartingServer(t *testing.T) {
 
 	for _, name := range []string{
 		"activity", "agent-hook", "api", "archive", "config", "docs",
-		"daemon", "issues", "mcp", "pulls", "quickstart", "rate-limits",
+		"daemon", "github-app", "issues", "mcp", "pulls", "quickstart", "rate-limits",
 		"repos", "serve", "stacks", "sync", "version", "workspaces",
 	} {
 		assert.Contains(stdout.String(), name)
@@ -1264,6 +1264,20 @@ func TestRootUnknownCommandDoesNotStartServer(t *testing.T) {
 
 	require.Error(err)
 	require.False(started)
+}
+
+func TestRootGitHubAppRejectsUnknownSubcommand(t *testing.T) {
+	cmd := newRootCommand(cliOptions{
+		Stdin:     strings.NewReader(""),
+		Stdout:    io.Discard,
+		Stderr:    io.Discard,
+		RunServer: func(serve.Options) error { return errors.New("serve should not start") },
+	})
+	cmd.SetArgs([]string{"github-app", "creat"})
+
+	err := cmd.Execute()
+
+	require.ErrorContains(t, err, `unknown command "creat"`)
 }
 
 func TestRootNestedHelpExposesCommandFlags(t *testing.T) {
@@ -1412,6 +1426,7 @@ func TestRootRejectsControlFlagsForNonControlCommands(t *testing.T) {
 		{name: "bare server", args: []string{"--server", "http://forge.test"}, wantFlag: "--server"},
 		{name: "version output", args: []string{"--output", "yaml", "version"}, wantFlag: "--output"},
 		{name: "version timeout", args: []string{"--timeout", "1s", "version"}, wantFlag: "--timeout"},
+		{name: "github-app output", args: []string{"github-app", "list", "--output", "yaml"}, wantFlag: "--output"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

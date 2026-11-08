@@ -1,16 +1,16 @@
-package main
+package githubappcli
 
 import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
-	"flag"
 	"fmt"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/spf13/cobra"
 	"go.kenn.io/forge/internal/config"
 )
 
@@ -29,23 +29,32 @@ type appStatus struct {
 	Error               string `json:"error,omitempty"`
 }
 
-func runList(ctx context.Context, args []string, env *appEnv) error {
-	fs := flag.NewFlagSet("kenn-forge-github-app list", flag.ContinueOnError)
-	fs.SetOutput(env.stdout)
-	configPath := fs.String("config", env.configPath, "kenn-forge config path")
-	asJSON := fs.Bool("json", false, "emit JSON instead of a table")
-	registerTestFlags(fs, env)
-	if err := fs.Parse(args); err != nil {
-		return err
+func newListCommand(env *appEnv) *cobra.Command {
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List configured apps with installation and rate-limit state",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runWithInterrupt(cmd, func(ctx context.Context) error {
+				return runList(ctx, asJSON, env)
+			})
+		},
 	}
-	env.configPath = *configPath
+	registerConfigFlag(cmd, env)
+	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON instead of a table")
+	registerTestFlags(cmd, env)
+	return cmd
+}
+
+func runList(ctx context.Context, asJSON bool, env *appEnv) error {
 	cfg, err := env.loadConfig()
 	if err != nil {
 		return err
 	}
 	if len(cfg.GitHubApps) == 0 {
 		fmt.Fprintln(env.stdout,
-			"no github apps configured; run \"kenn-forge-github-app create\" to add one")
+			"no github apps configured; run \"kenn-forge github-app create\" to add one")
 		return nil
 	}
 
@@ -73,7 +82,7 @@ func runList(ctx context.Context, args []string, env *appEnv) error {
 		statuses = append(statuses, status)
 	}
 
-	if *asJSON {
+	if asJSON {
 		enc := jsontext.NewEncoder(env.stdout, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
 		return json.MarshalEncode(enc, statuses)
 	}

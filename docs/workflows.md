@@ -31,6 +31,11 @@ Palette prefixes narrow results:
 - `pr:` for pull requests
 - `issue:` for issues
 
+Switch the palette from **Title** to **Meaning** to find pull requests and
+issues by what they are about, such as "flaky CI" or "login redirect loops".
+Forge ranks titles, descriptions, and comments across open and closed items.
+Meaning needs [semantic search](configuration.md#semantic-search) configured.
+
 Press `?` for shortcuts in the current view.
 
 ## Review and merge

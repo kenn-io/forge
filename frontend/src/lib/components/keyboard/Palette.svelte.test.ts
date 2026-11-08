@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
+import { tick } from "svelte";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import Palette from "./PaletteRuntimeHarness.svelte";
@@ -10,6 +11,11 @@ import { registerScopedActions, resetRegistry } from "../../stores/keyboard/regi
 import { RECENTS_KEY } from "../../stores/keyboard/recents.svelte.js";
 import type { Action, Context } from "../../stores/keyboard/types.js";
 import { resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
+import { SEARCH_MODE_KEY } from "../../stores/keyboard/palette-semantic.js";
+import { GeneratedProblemResponse } from "../../api/runtime.js";
+import type { Issue, PullRequest } from "../../api/types.js";
+import { makeGeneratedClient } from "../../testing/generated-client.js";
+import { mockIssueFixture, mockPullFixture } from "../../../test/mockApiFetch.js";
 
 const noop = (): void => {};
 const trueWhen = (): boolean => true;
@@ -363,6 +369,187 @@ describe("Palette", () => {
     expect(persisted.items[0].kind).toBe("pr");
     expect(persisted.items[0].ref.number).toBe(42);
     expect(Date.parse(persisted.items[0].lastSelectedAt)).toBeGreaterThan(Date.parse(seedAt));
+  });
+
+  it("Meaning mode lists the server's ranking of pull requests and issues", async () => {
+    const lowRanked = { ...mockPullFixture(42), Title: "Speed up cache warmup" } as unknown as PullRequest;
+    const topRanked = { ...mockPullFixture(84), Title: "Fix login redirect" } as unknown as PullRequest;
+    const issue = { ...mockIssueFixture(7), Title: "CI keeps timing out" } as unknown as Issue;
+    const listPulls = vi.fn(async () => [topRanked, lowRanked]);
+    const listIssues = vi.fn(async () => [issue]);
+    const client = makeGeneratedClient({
+      PullRequestsService: { listPulls },
+      IssuesService: { listIssues },
+    });
+    const { rerender } = render(Palette, { props: { client } });
+    openPalette();
+    await rerender({ client });
+    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+
+    await fireEvent.click(within(dialog).getByRole("radio", { name: "Meaning" }));
+    expect(localStorage.getItem(SEARCH_MODE_KEY)).toBe("meaning");
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+    expect(document.activeElement).toBe(input);
+    await fireEvent.input(input, { target: { value: "flaky ci" } });
+
+    const params = { q: "flaky ci", semantic: true, state: "all", limit: 10 };
+    await waitFor(() => {
+      expect(listPulls).toHaveBeenCalledWith(params, { signal: expect.any(AbortSignal) });
+      expect(listIssues).toHaveBeenCalledWith(params, { signal: expect.any(AbortSignal) });
+      expect(within(dialog).getByText("CI keeps timing out")).toBeTruthy();
+    });
+    const pullLabels = [...dialog.querySelectorAll(".palette-group")]
+      .find((group) => group.textContent?.startsWith("Pull requests"))
+      ?.querySelectorAll(".palette-row-label");
+    expect([...(pullLabels ?? [])].map((label) => label.textContent)).toEqual([
+      "Fix login redirect",
+      "Speed up cache warmup",
+    ]);
+  });
+
+  it("Meaning mode lists same-numbered items from different hosts", async () => {
+    localStorage.setItem(SEARCH_MODE_KEY, "meaning");
+    const onGitHub = { ...mockPullFixture(42), Title: "Retry budget on github.com" } as unknown as PullRequest;
+    const onMirror = {
+      ...onGitHub,
+      Title: "Retry budget on the mirror",
+      repo: { ...onGitHub.repo, platform_host: "git.example.test" },
+    } as unknown as PullRequest;
+    const client = makeGeneratedClient({
+      PullRequestsService: { listPulls: vi.fn(async () => [onGitHub, onMirror]) },
+      IssuesService: { listIssues: vi.fn(async () => []) },
+    });
+    const { rerender } = render(Palette, { props: { client } });
+    openPalette();
+    await rerender({ client });
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+    await fireEvent.input(input, { target: { value: "retry budget" } });
+
+    const list = screen.getByRole("dialog", { name: "Command palette" }).querySelector<HTMLElement>(".palette-list");
+    expect(list).not.toBeNull();
+    await waitFor(() => {
+      expect(within(list!).getByText("Retry budget on github.com")).toBeTruthy();
+      expect(within(list!).getByText("Retry budget on the mirror")).toBeTruthy();
+    });
+  });
+
+  it("Meaning mode aborts a superseded search and stops when the mode changes", async () => {
+    localStorage.setItem(SEARCH_MODE_KEY, "meaning");
+    const signals = new Map<string, AbortSignal>();
+    const listPulls = vi.fn((params: { q?: string }, options?: { signal?: AbortSignal | null }) => {
+      if (options?.signal) signals.set(params.q ?? "", options.signal);
+      return new Promise<PullRequest[]>(() => {});
+    });
+    const client = makeGeneratedClient({
+      PullRequestsService: { listPulls },
+      IssuesService: { listIssues: vi.fn(() => new Promise<Issue[]>(() => {})) },
+    });
+    const { rerender } = render(Palette, { props: { client } });
+    openPalette();
+    await rerender({ client });
+    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+
+    await fireEvent.input(input, { target: { value: "flaky" } });
+    await waitFor(() => expect(signals.get("flaky")).toBeDefined());
+    await fireEvent.input(input, { target: { value: "flaky ci" } });
+    await waitFor(() => expect(signals.get("flaky ci")).toBeDefined());
+    expect(signals.get("flaky")?.aborted).toBe(true);
+    expect(listPulls).toHaveBeenCalledTimes(2);
+
+    await fireEvent.click(within(dialog).getByRole("radio", { name: "Title" }));
+    await waitFor(() => expect(signals.get("flaky ci")?.aborted).toBe(true));
+    expect(within(dialog).queryByText("Ranking by meaning...")).toBeNull();
+  });
+
+  it("switching search modes highlights the first result again", async () => {
+    localStorage.setItem(SEARCH_MODE_KEY, "meaning");
+    registerScopedActions("test", [action("test.flaky-one", "Flaky one"), action("test.flaky-two", "Flaky two")]);
+    const topRanked = { ...mockPullFixture(84), Title: "Fix login redirect" } as unknown as PullRequest;
+    const lowRanked = { ...mockPullFixture(42), Title: "Speed up cache warmup" } as unknown as PullRequest;
+    const client = makeGeneratedClient({
+      PullRequestsService: { listPulls: vi.fn(async () => [topRanked, lowRanked]) },
+      IssuesService: { listIssues: vi.fn(async () => []) },
+    });
+    const { rerender } = render(Palette, { props: { client } });
+    openPalette();
+    await rerender({ client });
+    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const preview = (): string => dialog.querySelector(".palette-preview")?.textContent ?? "";
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+    await fireEvent.input(input, { target: { value: "flaky" } });
+    await waitFor(() => expect(dialog.querySelectorAll(".palette-row")).toHaveLength(4));
+    for (let i = 0; i < 3; i++) await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await waitFor(() => expect(preview()).toContain("Speed up cache warmup"));
+
+    await fireEvent.click(within(dialog).getByRole("radio", { name: "Title" }));
+    await waitFor(() => expect(preview()).toContain("Flaky one"));
+
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await waitFor(() => expect(preview()).toContain("Flaky two"));
+    await fireEvent.click(within(dialog).getByRole("radio", { name: "Meaning" }));
+    await waitFor(() => expect(dialog.querySelectorAll(".palette-row")).toHaveLength(4));
+    expect(preview()).toContain("Flaky one");
+  });
+
+  it("Meaning mode waits for a pause in typing and never shows a superseded result", async () => {
+    localStorage.setItem(SEARCH_MODE_KEY, "meaning");
+    const pending = new Map<string, { resolve: (rows: PullRequest[]) => void; signal: AbortSignal }>();
+    const listPulls = vi.fn(
+      (params: { q?: string }, options?: { signal?: AbortSignal | null }) =>
+        new Promise<PullRequest[]>((resolve) => {
+          pending.set(params.q ?? "", { resolve, signal: options!.signal! });
+        }),
+    );
+    const client = makeGeneratedClient({
+      PullRequestsService: { listPulls },
+      IssuesService: { listIssues: vi.fn(async () => []) },
+    });
+    const { rerender } = render(Palette, { props: { client } });
+    openPalette();
+    await rerender({ client });
+    const list = screen.getByRole("dialog", { name: "Command palette" }).querySelector<HTMLElement>(".palette-list")!;
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+
+    await fireEvent.input(input, { target: { value: "fla" } });
+    await fireEvent.input(input, { target: { value: "flaky" } });
+    await waitFor(() => expect(pending.has("flaky")).toBe(true));
+    expect(listPulls).toHaveBeenCalledTimes(1);
+
+    await fireEvent.input(input, { target: { value: "flaky ci" } });
+    await waitFor(() => expect(pending.has("flaky ci")).toBe(true));
+    pending.get("flaky ci")!.resolve([{ ...mockPullFixture(84), Title: "Current result" } as unknown as PullRequest]);
+    await waitFor(() => expect(within(list).getByText("Current result")).toBeTruthy());
+    pending.get("flaky")!.resolve([{ ...mockPullFixture(42), Title: "Superseded result" } as unknown as PullRequest]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
+    expect(within(list).queryByText("Superseded result")).toBeNull();
+    expect(within(list).getByText("Current result")).toBeTruthy();
+
+    await fireEvent.input(input, { target: { value: "flaky tests" } });
+    await waitFor(() => expect(pending.has("flaky tests")).toBe(true));
+    closePalette();
+    await waitFor(() => expect(pending.get("flaky tests")!.signal.aborted).toBe(true));
+  });
+
+  it("Meaning mode shows why semantic search is unavailable", async () => {
+    localStorage.setItem(SEARCH_MODE_KEY, "meaning");
+    const detail = "semantic search needs an [embeddings] endpoint on the Forge that syncs providers";
+    const unavailable = new GeneratedProblemResponse(
+      { status: 503, code: "serviceUnavailable", title: "Service Unavailable", detail },
+      new Response(null, { status: 503 }),
+    );
+    const client = makeGeneratedClient({
+      PullRequestsService: { listPulls: vi.fn(async () => Promise.reject(unavailable)) },
+      IssuesService: { listIssues: vi.fn(async () => Promise.reject(unavailable)) },
+    });
+    const { rerender } = render(Palette, { props: { client } });
+    openPalette();
+    await rerender({ client });
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+    await fireEvent.input(input, { target: { value: "flaky ci" } });
+
+    await waitFor(() => expect(screen.getByText(detail)).toBeTruthy());
   });
 
   it("renders Docs search results without a global Kata section", async () => {

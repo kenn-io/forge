@@ -8,7 +8,7 @@
   import type { ModalFrameAction } from "../../stores/keyboard/keyspec.js";
   import { getStores } from "../../context.js";
   import ItemStateChip from "../shared/ItemStateChip.svelte";
-  import { formatRelativeTime, TextInput } from "@kenn-io/kit-ui";
+  import { formatRelativeTime, SegmentedControl, TextInput } from "@kenn-io/kit-ui";
   import Modal from "../shared/Modal.svelte";
   import type { Issue, PullRequest } from "../../api/types.js";
   import {
@@ -35,12 +35,28 @@
     readRecents,
     writeRecent,
   } from "../../stores/keyboard/recents.svelte.js";
+  import {
+    rankByMeaning,
+    readSearchMode,
+    semanticFailureMessage,
+    semanticQueryFor,
+    writeSearchMode,
+    type PaletteSearchMode,
+    type SemanticMatches,
+  } from "../../stores/keyboard/palette-semantic.js";
   import { navigate } from "../../stores/router.svelte.js";
   import type { Action, RecentsState } from "../../stores/keyboard/types.js";
 
   const RECENT_CAP = 8;
   const DOC_SEARCH_DISPLAY_LIMIT = 10;
   const MODE_SEARCH_DEBOUNCE_MS = 150;
+  // Each semantic query embeds the text on the server, so wait for a pause
+  // in typing.
+  const SEMANTIC_SEARCH_DEBOUNCE_MS = 300;
+  const SEARCH_MODE_OPTIONS = [
+    { value: "text", label: "Title", title: "Match loaded titles" },
+    { value: "meaning", label: "Meaning", title: "Rank titles, descriptions, and comments by meaning" },
+  ];
 
   interface DocResult {
     kind: "doc";
@@ -51,6 +67,10 @@
     line?: number | undefined;
     snippet?: BodySnippet | undefined;
   }
+
+  type SemanticSearchResult =
+    | ({ ok: true } & SemanticMatches)
+    | { ok: false; error: string };
 
   type DocsSearchResult =
     | { ok: true; rows: DocResult[]; truncated: boolean; warnings?: string[] | undefined }
@@ -81,9 +101,14 @@
   let recents = $state<RecentsState>({ version: 1, items: [] });
   let docsResult = $state<DocsSearchResult | null>(null);
   let modeLoading = $state(false);
+  let searchMode = $state<PaletteSearchMode>(readSearchMode());
+  let semanticResult = $state<SemanticSearchResult | null>(null);
+  let semanticLoading = $state(false);
+  let inputEl = $state<HTMLInputElement | undefined>();
   const runtime = getAppRuntime();
 
   const parsed = $derived(parsePaletteQuery(query));
+  const semanticQuery = $derived(semanticQueryFor(searchMode, parsed));
 
   // Hydrate the recents snapshot once per palette open: prune stale entries
   // (>30 days) first, then capture the post-prune state. We deliberately don't
@@ -121,8 +146,55 @@
   );
   const modeFeedbackCount = $derived(
     (modeLoading ? 1 : 0) +
-      (docsResult?.ok === false ? 1 : 0),
+      (docsResult?.ok === false ? 1 : 0) +
+      (semanticLoading || semanticResult?.ok === false ? 1 : 0),
   );
+  // Meaning mode replaces the title matches with the server's ranking, best
+  // first; commands and docs keep matching locally.
+  const shownPulls = $derived<PullRequest[]>(
+    semanticQuery === null ? grouped.pulls : semanticResult?.ok ? semanticResult.pulls : [],
+  );
+  const shownIssues = $derived<Issue[]>(
+    semanticQuery === null ? grouped.issues : semanticResult?.ok ? semanticResult.issues : [],
+  );
+
+  function setSearchMode(value: string): void {
+    searchMode = value === "meaning" ? "meaning" : "text";
+    writeSearchMode(searchMode);
+    inputEl?.focus();
+  }
+
+  $effect(() => {
+    const open = isPaletteOpen();
+    const semantic = semanticQuery;
+    if (!open || semantic === null) {
+      semanticResult = null;
+      semanticLoading = false;
+      return;
+    }
+
+    semanticResult = null;
+    semanticLoading = true;
+    const execution = untrack(() => runtime.runCommand(
+      Effect.sleep(`${SEMANTIC_SEARCH_DEBOUNCE_MS} millis`).pipe(
+        Effect.andThen(rankByMeaning(semantic)),
+        Effect.tap((matches) => Effect.sync(() => {
+          semanticResult = { ok: true, ...matches };
+        })),
+        Effect.ensuring(Effect.sync(() => {
+          semanticLoading = false;
+        })),
+      ),
+      {
+        operation: "rank command palette items by meaning",
+        safeContext: { queryLength: semantic.query.length, scope: semantic.scope },
+        onFailure: (failure) => {
+          semanticResult = { ok: false, error: semanticFailureMessage(failure) };
+        },
+      },
+    ));
+    return execution.interrupt;
+  });
 
   $effect(() => {
     const open = isPaletteOpen();
@@ -212,8 +284,8 @@
 
   const hasResults = $derived(
     grouped.commands.length +
-      grouped.pulls.length +
-      grouped.issues.length +
+      shownPulls.length +
+      shownIssues.length +
       modeDocRows.length +
       modeFeedbackCount +
       recentResults.length >
@@ -223,16 +295,17 @@
   const flatResults = $derived<FlatResult[]>([
     ...recentResults,
     ...grouped.commands.map<FlatResult>((c) => ({ kind: "command", item: c })),
-    ...grouped.pulls.map<FlatResult>((p) => ({ kind: "pull", item: p })),
-    ...grouped.issues.map<FlatResult>((i) => ({ kind: "issue", item: i })),
+    ...shownPulls.map<FlatResult>((p) => ({ kind: "pull", item: p })),
+    ...shownIssues.map<FlatResult>((i) => ({ kind: "issue", item: i })),
     ...modeDocRows.map<FlatResult>((item) => ({ kind: "doc", item })),
   ]);
 
-  // Reset the highlight to the top whenever the query changes. The first match
-  // is the assumed pick, and keeping a stale offset across keystrokes makes
-  // the preview jump around as the result list rebuilds.
+  // Reset the highlight to the top whenever the query or search mode changes.
+  // The first match is the assumed pick, and keeping a stale offset across
+  // keystrokes makes the preview jump around as the result list rebuilds.
   $effect(() => {
     void query;
+    void searchMode;
     untrack(() => {
       highlightIndex = 0;
     });
@@ -272,8 +345,10 @@
     }
   });
 
-  function pullKey(repoOwner: string, repoName: string, num: number): string {
-    return `${repoOwner}/${repoName}#${num}`;
+  // Owner, name, and number repeat across providers and hosts, and Meaning
+  // mode searches every repository, so row keys name the provider and host.
+  function itemKey(provider: string, platformHost: string | undefined, repoPath: string, num: number): string {
+    return `${provider}|${platformHost ?? ""}|${repoPath}#${num}`;
   }
 
   function refMatchesPull(ref: RoutedItemRef, pr: PullRequest): boolean {
@@ -472,12 +547,24 @@
         block
         size="md"
         value={query}
-        placeholder="Search PRs, issues, commands, docs..."
+        placeholder={searchMode === "meaning"
+          ? "Describe the work to find, or search commands and docs..."
+          : "Search PRs, issues, commands, docs..."}
         ariaLabel="Search command palette"
         autofocus
+        bind:inputEl
         oninput={(value) => (query = value)}
         onkeydown={onPaletteKeyDown}
-      />
+      >
+        {#snippet suffix()}
+          <SegmentedControl
+            ariaLabel="Match pull requests and issues by"
+            options={SEARCH_MODE_OPTIONS}
+            value={searchMode}
+            onchange={setSearchMode}
+          />
+        {/snippet}
+      </TextInput>
     <div class="palette-body">
       <div class="palette-list">
         {#if parsed.scope === "reserved"}
@@ -494,7 +581,7 @@
           {#if recentResults.length > 0}
             <div class="palette-group">
               <div class="palette-group-header">Recently used</div>
-              {#each recentResults as recent, ri (recent.kind + "|" + recent.ref.repoPath + "#" + recent.ref.number)}
+              {#each recentResults as recent, ri (recent.kind + "|" + itemKey(recent.ref.provider, recent.ref.platformHost, recent.ref.repoPath, recent.ref.number))}
                 {@const flatIdx = ri}
                 <button
                   class="palette-row {flatIdx === highlightIndex
@@ -531,10 +618,21 @@
               {/each}
             </div>
           {/if}
-          {#if grouped.pulls.length > 0}
+          {#if semanticLoading}
+            <div class="palette-group">
+              <div class="palette-group-header">Pull requests and issues</div>
+              <div class="palette-row palette-row-disabled">Ranking by meaning...</div>
+            </div>
+          {:else if semanticResult?.ok === false}
+            <div class="palette-group">
+              <div class="palette-group-header">Pull requests and issues</div>
+              <div class="palette-row palette-row-disabled palette-row-wrap">{semanticResult.error}</div>
+            </div>
+          {/if}
+          {#if shownPulls.length > 0}
             <div class="palette-group">
               <div class="palette-group-header">Pull requests</div>
-              {#each grouped.pulls as pr, pi (pullKey(pr.repo_owner, pr.repo_name, pr.Number))}
+              {#each shownPulls as pr, pi (itemKey(pr.repo.provider, pr.repo.platform_host, pr.repo.repo_path, pr.Number))}
                 {@const flatIdx =
                   recentResults.length + grouped.commands.length + pi}
                 <button
@@ -552,14 +650,14 @@
               {/each}
             </div>
           {/if}
-          {#if grouped.issues.length > 0}
+          {#if shownIssues.length > 0}
             <div class="palette-group">
               <div class="palette-group-header">Issues</div>
-              {#each grouped.issues as issue, ii (pullKey(issue.repo_owner, issue.repo_name, issue.Number))}
+              {#each shownIssues as issue, ii (itemKey(issue.repo.provider, issue.repo.platform_host, issue.repo.repo_path, issue.Number))}
                 {@const flatIdx =
                   recentResults.length +
                   grouped.commands.length +
-                  grouped.pulls.length +
+                  shownPulls.length +
                   ii}
                 <button
                   class="palette-row {flatIdx === highlightIndex
@@ -594,8 +692,8 @@
                 {@const flatIdx =
                   recentResults.length +
                   grouped.commands.length +
-                  grouped.pulls.length +
-                  grouped.issues.length +
+                  shownPulls.length +
+                  shownIssues.length +
                   di}
                 <button
                   class="palette-row {flatIdx === highlightIndex
@@ -802,6 +900,10 @@
   .palette-row-disabled:hover,
   .palette-row-disabled:focus-visible {
     background: transparent;
+  }
+
+  .palette-row-wrap {
+    white-space: normal;
   }
 
   .palette-row-disabled code {

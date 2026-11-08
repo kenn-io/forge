@@ -720,14 +720,18 @@ Not every visibility control means "remove this entity entirely."
 - Hide drafts' default lives in Settings; a session choice wins over later hydration.
 - Server-backed visibility filters reload Activity so turning one off restores omitted rows.
 - Activity `capped` reports event overflow and alone drives event reloads and the warning;
-  `item_activity_capped` drives only the parent-truncation notice.
-- A search whose event matches overflow the event page also reports `item_activity_capped`, since
-  event-matched parents derive from that bounded page.
+  `item_activity_capped` adds `+` to loaded-subject counts and a parent-truncation notice in threaded view.
+- A search whose event matches overflow the bounded matching window also reports `item_activity_capped`, since
+  event-matched parents derive from that window.
 - Status totals deduplicate open subjects across snapshots; parent lifecycle state overrides event state.
 - Authoritative parents rewrite retained event parent metadata, keyed by stable identity.
 
 ### Activity Snapshots And Paging
 
+- Flat Activity requests 200 events initially; event overflow offers Load more in 200-event increments through 5,000. Pending pages retain rows and a disabled control; the ceiling notice appears only after the final page succeeds.
+- Server filters, repositories, and ranges reset the flat page to 200; flat/threaded toggles and refreshes preserve its size. Flat authoritative snapshots replace the event page; threaded snapshots retain cached children. Cached repository rows are previews until the new page arrives.
+- Flat status counts cover loaded subjects and carry `+` when either events or parent summaries overflow. Browser-only filters apply to loaded events; an empty filtered page says `No matches in loaded activity` while more event pages remain.
+- Full search reads one bounded event window for child-text parent matches, then trims events to the requested page; cursored and collapsed reads may need a separate matching window.
 - Collapsed cursors come from the same snapshot as visible summaries; never derive poll authority
   from a visible row. Opaque cursors preserve timestamps outside the Unix nanosecond range.
 - Empty deltas must not rebuild summaries.

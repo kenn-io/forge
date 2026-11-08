@@ -33,7 +33,7 @@ export type ListActivityParams = {
   projection?: ListActivityProjection;
   /**
    * @minimum 1
-   * @maximum 500
+   * @maximum 5000
    */
   limit?: number;
   hide_closed_merged?: boolean;

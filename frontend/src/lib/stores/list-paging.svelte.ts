@@ -17,21 +17,25 @@ export function createListPaging() {
     return query;
   }
 
-  function isCurrentPage(query: ListQuery, params?: ListQuery): boolean {
-    const { limit, ...withoutLimit } = query;
-    return params?.limit === undefined && limit === page.want && JSON.stringify(withoutLimit) === page.key;
+  function isCurrentQuery(query: ListQuery, params?: ListQuery): boolean {
+    const { limit: _limit, ...withoutLimit } = query;
+    return params?.limit === undefined && JSON.stringify(withoutLimit) === page.key;
   }
 
-  function apply(query: ListQuery, params?: ListQuery): void {
-    if (isCurrentPage(query, params)) page = { ...page, got: page.want };
+  function apply({ limit: want, ...query }: ListQuery, params?: ListQuery): void {
+    if (want !== undefined && isCurrentQuery(query, params)) page = { ...page, want, got: want };
   }
 
   function isLoadingMore(): boolean {
     return page.want > page.got;
   }
 
+  function getLimit(): number {
+    return page.want;
+  }
+
   function rollback(query: ListQuery, params?: ListQuery): boolean {
-    if (!isCurrentPage(query, params)) return false;
+    if (query.limit !== page.want || !isCurrentQuery(query, params)) return false;
     const wasLoadingMore = isLoadingMore();
     page = { ...page, want: page.got };
     return wasLoadingMore;
@@ -43,5 +47,5 @@ export function createListPaging() {
     return true;
   }
 
-  return { withLimit, apply, isLoadingMore, rollback, loadMore };
+  return { withLimit, apply, getLimit, isLoadingMore, rollback, loadMore };
 }

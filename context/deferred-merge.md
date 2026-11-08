@@ -12,7 +12,7 @@ supersession, completion events, or pending-state presentation.
   `reviewed_head_sha` as it was when the dialog opened, while its CI and draft state follow
   detail refreshes. Deleting the current pull request's workspace is offered only for a merge of
   that pull request, whose request replaces a deletion an earlier merge of it kept. A merge queue merge still skips the dialog when it asks nothing, unless a
-  member below has failed CI (`frontend/src/lib/components/detail/MergeModal.svelte`). The detail
+  member below has failed or pending CI (`frontend/src/lib/components/detail/MergeModal.svelte`). The detail
   store orders a merge of another member under that member's mutation key and refreshes the
   shown pull request (`frontend/src/lib/stores/detail.svelte.ts::runPullAction`).
 - Merge warnings state a current fact, never "may": warn about rules only when the merge
@@ -98,24 +98,32 @@ Immediate merge, not a queue target
 - Forge's worker runs when the provider has no auto-merge, neither the repository nor a merge queue
   takes it, or the user consented to bypass rules, which auto-merge cannot do. A worker already
   waiting keeps the merge without a provider read.
-- GitHub has no auto-merge for a pull request in a stack and refuses it ("Auto-merge is not
-  supported for stacked pull requests"), so a stack never gets it. A native stack whose merge
-  goes to a merge queue enqueues at once through the immediate merge path, as GitHub's own
-  "Enqueue stack" does while checks run; the queue waits for the required checks. Forge never
-  turns auto-merge on for any other stack member, native or branch-inferred, and gives it the
-  worker; auto-merge already on still counts as the deferral. With the native stack preview off,
-  Forge records a native stack as branch-inferred
+- Forge never turns auto-merge on for a pull request in any stack, native or branch-inferred:
+  GitHub refuses it for stacked pull requests ("Auto-merge is not supported for stacked pull
+  requests"), and with the native stack preview off Forge records a native stack as
+  branch-inferred. Such a pull request gets the worker, which waits for the checks and then
+  merges or enqueues through merge-async, the only GitHub merge API that takes a stack.
+  merge-async has no merge-when-ready action, so the worker's wait stands in for it. Auto-merge
+  already on still counts as the deferral
   (`internal/server/pullapi/deferred_merge.go::Handler.enqueueDeferredMerge`).
-- A native stack deferral outside a merge queue also waits for CI on every unmerged pull request
-  below the target, since the stack merge lands them together. Each one's CI is refreshed when the
-  merge is queued, and then goes through the target's own check (`deferredMergeCheckState`): the
-  checks the provider reports pending on it at queue time must pass, and
+- A native stack deferral also waits for CI on every unmerged pull request below the target,
+  since the stack merge lands them together. Each one's CI is refreshed when the merge is queued,
+  and then goes through the target's own check (`deferredMergeCheckState`): the checks the
+  provider reports pending on it at queue time must pass, and
   unknown CI fails closed, so one with no CI status is refused up front. It is also refused with
   `stack_member_not_ready` and its number when its CI failed, or it is closed, a draft, or
   conflicting. CI still running below makes a target whose own CI passed deferrable. On every
   pass the worker refreshes the pull requests recorded at queue time, not the current stack
   projection, waits while one still runs, and fails when one fails or stops being mergeable
   (`internal/server/pullapi/deferred_merge.go::Handler.nativeStackWaitsBelow`).
+- A native stack going to a merge queue has one exception (maintainer decision): a pull request
+  with no CI status when the merge is queued, the target or a member below, has nothing to wait
+  for, since GitHub's queue runs the branch's required checks on what it merges. Workflows limited
+  to the default branch leave stacked pull requests with no CI. The members with CI still hold the
+  merge, CI that starts later counts while it reports, and CI seen when the merge is queued that a
+  refresh no longer reports fails closed. A merge that counted on the queue fails instead of merging directly if the queue is gone,
+  checked on the same read that picks the mutation
+  (`internal/server/pullapi/routes.go::Handler.mergePRWithBodyAdmitted`).
 - The lowest unmerged member's base branch decides whether a native stack merge goes to a merge
   queue, for the merge endpoint and the worker alike
   (`internal/server/pullapi/stack_merge.go::mergeQueueOwner`).

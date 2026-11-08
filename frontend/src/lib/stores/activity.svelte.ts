@@ -329,7 +329,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return flatPaging.isLoadingMore();
   }
   function loadMoreActivity(): void {
-    if (!canLoadMoreActivity() || !flatPaging.loadMore(capped || itemActivityCapped)) return;
+    if (!flatPaging.loadMore(canLoadMoreActivity())) return;
     loadActivity();
   }
   function getActivityEventCursor(): string {

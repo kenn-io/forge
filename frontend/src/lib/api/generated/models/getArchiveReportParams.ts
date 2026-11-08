@@ -3,17 +3,11 @@
  */
 
 export type GetArchiveReportParams = {
-  /**
-   * Inclusive UTC RFC3339 boundary.
-   */
+  /** Inclusive UTC RFC3339 boundary. */
   start: string;
-  /**
-   * Exclusive UTC RFC3339 boundary.
-   */
+  /** Exclusive UTC RFC3339 boundary. */
   end: string;
-  /**
-   * Repeated provider|platform_host/repo_path filters.
-   */
+  /** Repeated provider|platform_host/repo_path filters. */
   repo?: string[];
   verbose?: boolean;
 };

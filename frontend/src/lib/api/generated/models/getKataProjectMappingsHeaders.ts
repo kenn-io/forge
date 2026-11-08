@@ -3,8 +3,6 @@
  */
 
 export type GetKataProjectMappingsHeaders = {
-  /**
-   * Kata daemon id; the effective default daemon when empty
-   */
+  /** Kata daemon id; the effective default daemon when empty */
   "X-Kenn-Forge-Kata-Daemon"?: string;
 };

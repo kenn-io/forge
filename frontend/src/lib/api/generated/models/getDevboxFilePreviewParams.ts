@@ -6,36 +6,20 @@ import type { GetDevboxFilePreviewSide } from "./getDevboxFilePreviewSide.ts";
 import type { GetDevboxFilePreviewWhitespace } from "./getDevboxFilePreviewWhitespace.ts";
 
 export type GetDevboxFilePreviewParams = {
-  /**
-   * Diff base: head, pushed, or merge-target
-   */
+  /** Diff base: head, pushed, or merge-target */
   base?: GetDevboxFilePreviewBase;
-  /**
-   * Set to hide to ignore whitespace-only changes
-   */
+  /** Set to hide to ignore whitespace-only changes */
   whitespace?: GetDevboxFilePreviewWhitespace;
-  /**
-   * Changed file path to preview
-   */
+  /** Changed file path to preview */
   path?: string;
-  /**
-   * Optional diff side to read for context expansion
-   */
+  /** Optional diff side to read for context expansion */
   side?: GetDevboxFilePreviewSide;
-  /**
-   * Scope to a single commit SHA
-   */
+  /** Scope to a single commit SHA */
   commit?: string;
-  /**
-   * Start SHA for range diff (inclusive)
-   */
+  /** Start SHA for range diff (inclusive) */
   from?: string;
-  /**
-   * End SHA for range diff (inclusive)
-   */
+  /** End SHA for range diff (inclusive) */
   to?: string;
-  /**
-   * Optional snapshot_version returned by the workspace files endpoint
-   */
+  /** Optional snapshot_version returned by the workspace files endpoint */
   revision?: string;
 };

@@ -3,8 +3,6 @@
  */
 
 export type GetSnapshotAggregateParams = {
-  /**
-   * Maximum member fan-out time requested by a spoke.
-   */
+  /** Maximum member fan-out time requested by a spoke. */
   member_timeout?: string;
 };

@@ -3,8 +3,6 @@
  */
 
 export type WatchDevboxDiffParams = {
-  /**
-   * Last observed opaque workspace diff snapshot version
-   */
+  /** Last observed opaque workspace diff snapshot version */
   version?: string;
 };

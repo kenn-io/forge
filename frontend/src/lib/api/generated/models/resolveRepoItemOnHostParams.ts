@@ -4,8 +4,6 @@
 import type { ResolveRepoItemOnHostItemType } from "./resolveRepoItemOnHostItemType.ts";
 
 export type ResolveRepoItemOnHostParams = {
-  /**
-   * Optional item type hint for providers whose issues and merge requests have separate number spaces.
-   */
+  /** Optional item type hint for providers whose issues and merge requests have separate number spaces. */
   item_type?: ResolveRepoItemOnHostItemType;
 };

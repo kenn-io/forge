@@ -3,8 +3,6 @@
  */
 
 export type GetSnapshotParams = {
-  /**
-   * Include the federation aggregate projected for this spoke.
-   */
+  /** Include the federation aggregate projected for this spoke. */
   include_peers?: boolean;
 };

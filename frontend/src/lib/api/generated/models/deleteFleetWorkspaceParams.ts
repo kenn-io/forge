@@ -3,8 +3,6 @@
  */
 
 export type DeleteFleetWorkspaceParams = {
-  /**
-   * Forward force deletion to the owning host.
-   */
+  /** Forward force deletion to the owning host. */
   force?: boolean;
 };

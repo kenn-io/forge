@@ -4,8 +4,6 @@
 import type { ResolveRepoItemItemType } from "./resolveRepoItemItemType.ts";
 
 export type ResolveRepoItemParams = {
-  /**
-   * Optional item type hint for providers whose issues and merge requests have separate number spaces.
-   */
+  /** Optional item type hint for providers whose issues and merge requests have separate number spaces. */
   item_type?: ResolveRepoItemItemType;
 };

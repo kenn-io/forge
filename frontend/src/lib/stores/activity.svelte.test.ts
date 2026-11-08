@@ -361,19 +361,36 @@ describe("flat activity paging", () => {
     );
   });
 
-  it.each(["range reset", "search reset", "uncapped response", "ceiling and view retention"])(
-    "%s",
-    async (scenario) => {
-      const finalPage = Promise.withResolvers<{ data: { items: ActivityItem[]; capped: boolean }; error: null }>();
-      const get = vi.fn(async (path: string, options?: { params?: { query?: { limit?: number } } }) => {
-        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-        if (options?.params?.query?.limit === 5000) return finalPage.promise;
-        const response = pageResponse(options?.params?.query?.limit ?? 5000);
-        if (scenario === "uncapped response") {
-          return {
-            ...response,
+  it.each(["range", "search"])("resets the flat page after changing the %s", async (filter) => {
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { limit?: number } } }) =>
+      path === "/activity/authors"
+        ? { data: { authors: [] }, error: null }
+        : pageResponse(options?.params?.query?.limit ?? 5000),
+    );
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.getActivityItems()).toHaveLength(400));
+    if (filter === "range") store.setTimeRange("30d");
+    else store.setActivitySearch("cache");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ limit: 200, ...(filter === "search" ? { search: "cache" } : {}) }) },
+      }),
+    );
+  });
+
+  it("refuses load more when only parent summaries overflow", async () => {
+    const get = vi.fn(async (path: string) =>
+      path === "/activity/authors"
+        ? { data: { authors: [] }, error: null }
+        : {
             data: {
-              ...response.data,
+              ...pageResponse(200).data,
               capped: false,
               item_activity: Array.from({ length: 200 }, (_, index) => ({
                 ...itemActivity(index + 1),
@@ -381,91 +398,77 @@ describe("flat activity paging", () => {
               })),
               item_activity_capped: true,
             },
-          };
-        }
-        return response;
-      });
-      const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
-      store.loadActivity();
-      await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-      expect(get).toHaveBeenCalledWith(
-        "/activity",
-        expect.objectContaining({
-          params: { query: expect.objectContaining({ projection: "full", limit: 200 }) },
-        }),
-      );
+            error: null,
+          },
+    );
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.canLoadMoreActivity()).toBe(false);
+    const requests = get.mock.calls.filter(([path]) => path === "/activity").length;
+    store.loadMoreActivity();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(get.mock.calls.filter(([path]) => path === "/activity")).toHaveLength(requests);
+  });
 
-      if (scenario === "uncapped response") {
-        expect(store.canLoadMoreActivity()).toBe(false);
-        const requests = get.mock.calls.filter(([path]) => path === "/activity").length;
-        store.loadMoreActivity();
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        expect(get.mock.calls.filter(([path]) => path === "/activity")).toHaveLength(requests);
-        return;
-      }
-
+  it("keeps the final page pending until received and stops at 5000", async () => {
+    const finalPage = Promise.withResolvers<ReturnType<typeof pageResponse>>();
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { limit?: number } } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      const limit = options?.params?.query?.limit ?? 5000;
+      return limit === 5000 ? finalPage.promise : pageResponse(limit);
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    for (let limit = 400; limit < 5000; limit += 200) {
       store.loadMoreActivity();
       await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-      expect(get).toHaveBeenCalledWith(
-        "/activity",
-        expect.objectContaining({
-          params: { query: expect.objectContaining({ projection: "full", limit: 400 }) },
-        }),
-      );
+    }
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(true));
+    expect(store.isLoadingMoreActivity()).toBe(true);
+    expect(store.canLoadMoreActivity()).toBe(true);
+    finalPage.resolve(pageResponse(5000));
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.canLoadMoreActivity()).toBe(false);
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({ params: { query: expect.objectContaining({ limit: 5000 }) } }),
+    );
+  });
 
-      if (scenario === "range reset" || scenario === "search reset") {
-        if (scenario === "range reset") store.setTimeRange("30d");
-        else store.setActivitySearch("cache");
-        store.loadActivity();
-        await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-        expect(get).toHaveBeenLastCalledWith(
-          "/activity",
-          expect.objectContaining({
-            params: {
-              query: expect.objectContaining({
-                limit: 200,
-                ...(scenario === "search reset" ? { search: "cache" } : {}),
-              }),
-            },
-          }),
-        );
-        return;
-      }
-      for (let limit = 600; limit < 5000; limit += 200) {
-        store.loadMoreActivity();
-        await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-      }
-      store.loadMoreActivity();
-      await vi.waitFor(() => expect(store.isActivityLoading()).toBe(true));
-      expect(store.isLoadingMoreActivity()).toBe(true);
-      expect(store.canLoadMoreActivity()).toBe(true);
-      finalPage.resolve(pageResponse(5000));
-      await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-      expect(store.canLoadMoreActivity()).toBe(false);
-      expect(get).toHaveBeenLastCalledWith(
-        "/activity",
-        expect.objectContaining({
-          params: { query: expect.objectContaining({ limit: 5000 }) },
-        }),
-      );
-      store.setViewMode("threaded");
-      store.loadActivity();
-      await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-      expect(get).toHaveBeenLastCalledWith(
-        "/activity",
-        expect.objectContaining({
-          params: { query: expect.not.objectContaining({ limit: expect.any(Number) }) },
-        }),
-      );
+  it.each(["threaded", "flat"])("keeps the flat page size through a view toggle ending in %s", async (view) => {
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { limit?: number } } }) =>
+      path === "/activity/authors"
+        ? { data: { authors: [] }, error: null }
+        : pageResponse(options?.params?.query?.limit ?? 5000),
+    );
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.getActivityItems()).toHaveLength(400));
+    store.setViewMode("threaded");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    if (view === "flat") {
       store.setViewMode("flat");
       store.loadActivity();
       await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-      expect(get).toHaveBeenLastCalledWith(
-        "/activity",
-        expect.objectContaining({ params: { query: expect.objectContaining({ limit: 5000 }) } }),
-      );
-    },
-  );
+    }
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: {
+          query:
+            view === "flat"
+              ? expect.objectContaining({ limit: 400 })
+              : expect.not.objectContaining({ limit: expect.any(Number) }),
+        },
+      }),
+    );
+  });
 
   it("keeps the loaded page and allows retry after load more fails", async () => {
     let fail = false;
@@ -478,6 +481,10 @@ describe("flat activity paging", () => {
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get).toHaveBeenCalledWith(
+      "/activity",
+      expect.objectContaining({ params: { query: expect.objectContaining({ projection: "full", limit: 200 }) } }),
+    );
     fail = true;
     store.loadMoreActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));

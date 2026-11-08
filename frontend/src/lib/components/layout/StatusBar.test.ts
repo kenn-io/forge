@@ -9,6 +9,7 @@ const activityState = vi.hoisted(() => ({
   enabledItemTypes: new Set<"pr" | "issue">(["pr", "issue"]),
   hideBots: false,
   itemActivityCapped: false,
+  activityCapped: false,
   providerAvailable: true,
   overdue: 0,
   progress: undefined as string | undefined,
@@ -38,7 +39,7 @@ vi.mock("../../context.js", () => ({
       getEnabledItemTypes: () => activityState.enabledItemTypes,
       getHideBots: () => activityState.hideBots,
       getViewMode: () => "flat",
-      isActivityCapped: () => false,
+      isActivityCapped: () => activityState.activityCapped,
       isItemActivityCapped: () => activityState.itemActivityCapped,
     },
     pulls: { getPulls: () => [] },
@@ -114,6 +115,7 @@ describe("StatusBar Activity counts", () => {
     activityState.enabledItemTypes = new Set(["pr", "issue"]);
     activityState.hideBots = false;
     activityState.itemActivityCapped = false;
+    activityState.activityCapped = false;
     activityState.providerAvailable = true;
     activityState.overdue = 0;
     activityState.progress = undefined;
@@ -133,11 +135,12 @@ describe("StatusBar Activity counts", () => {
     expect(screen.getByText("1 repos")).toBeTruthy();
   });
 
-  it("marks activity totals as incomplete when parent summaries are capped", () => {
+  it.each(["parents", "events"])("marks flat activity totals as incomplete when %s are capped", (kind) => {
     activityState.itemActivity = Array.from({ length: 200 }, (_, index) =>
       parentSubject(index < 100 ? "pr" : "issue", index + 1),
     );
-    activityState.itemActivityCapped = true;
+    activityState.itemActivityCapped = kind === "parents";
+    activityState.activityCapped = kind === "events";
     render(StatusBar);
     expect(screen.getByText("100+ PRs")).toBeTruthy();
     expect(screen.getByText("100+ issues")).toBeTruthy();

@@ -320,9 +320,9 @@ describe("ActivityFeed compact mode", () => {
     activityCapped.value = true;
     canLoadMore.value = true;
     loadingMore.value = pending;
-    render(ActivityFeed);
+    const { container } = render(ActivityFeed);
     if (pending) {
-      expect(screen.getByRole("button", { name: "Loading more…" }).hasAttribute("disabled")).toBe(true);
+      expect(container.querySelector(".list-pagination button")?.hasAttribute("disabled")).toBe(true);
     } else {
       await fireEvent.click(screen.getByRole("button", { name: "Load more" }));
       expect(loadMoreActivity).toHaveBeenCalledOnce();
@@ -343,6 +343,7 @@ describe("ActivityFeed compact mode", () => {
   it.each([
     {
       kind: "events",
+      rule: "shows the event ceiling notice after paging ends",
       view: "threaded" as const,
       visible: true,
       notice: /most recent 5,000 events/,
@@ -350,6 +351,7 @@ describe("ActivityFeed compact mode", () => {
     },
     {
       kind: "parents",
+      rule: "shows the parent ceiling notice in threaded view",
       view: "threaded" as const,
       visible: true,
       notice: /5,000 most recently active pull requests and issues/,
@@ -357,12 +359,13 @@ describe("ActivityFeed compact mode", () => {
     },
     {
       kind: "parents",
+      rule: "hides the parent ceiling notice in flat view",
       view: "flat" as const,
       visible: false,
       notice: /5,000 most recently active pull requests and issues/,
       otherNotice: /most recent 5,000 events/,
     },
-  ])("shows $kind truncation notice in $view activity: $visible", ({ kind, view, visible, notice, otherNotice }) => {
+  ])("$rule", ({ kind, view, visible, notice, otherNotice }) => {
     activityCapped.value = kind === "events";
     itemActivityCapped.value = kind === "parents";
     viewMode.value = view;

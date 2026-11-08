@@ -139,6 +139,7 @@ const showNotifications = vi.hoisted(() => ({ value: true }));
 const activityCapped = vi.hoisted(() => ({ value: false }));
 const itemActivityCapped = vi.hoisted(() => ({ value: false }));
 const canLoadMore = vi.hoisted(() => ({ value: false }));
+const loadingMore = vi.hoisted(() => ({ value: false }));
 const loadMoreActivity = vi.hoisted(() => vi.fn());
 const involvesMe = vi.hoisted(() => ({ value: false }));
 const unassigned = vi.hoisted(() => ({ value: false }));
@@ -195,7 +196,7 @@ vi.mock("../context.js", () => ({
       isActivityCapped: () => activityCapped.value,
       isItemActivityCapped: () => itemActivityCapped.value,
       canLoadMoreActivity: () => canLoadMore.value,
-      isLoadingMoreActivity: () => false,
+      isLoadingMoreActivity: () => loadingMore.value,
       loadMoreActivity,
       getCollapseThreads: () => collapseThreads.value,
       collapseAllThreads,
@@ -274,6 +275,7 @@ describe("ActivityFeed compact mode", () => {
     activityCapped.value = false;
     itemActivityCapped.value = false;
     canLoadMore.value = false;
+    loadingMore.value = false;
     loadMoreActivity.mockClear();
     selectedAuthor.value = undefined;
     setActivityAuthor.mockClear();
@@ -334,6 +336,15 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
   });
 
+  it("keeps the final page pending without a ceiling notice", () => {
+    activityCapped.value = true;
+    canLoadMore.value = true;
+    loadingMore.value = true;
+    render(ActivityFeed);
+    expect(screen.getByRole("button", { name: "Loading more…" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
+  });
+
   it.each([
     {
       kind: "events",
@@ -348,9 +359,17 @@ describe("ActivityFeed compact mode", () => {
   ])("warns about $kind truncation when no more pages can load", ({ kind, notice, otherNotice }) => {
     activityCapped.value = kind === "events";
     itemActivityCapped.value = kind === "parents";
+    if (kind === "parents") viewMode.value = "threaded";
     render(ActivityFeed);
     expect(screen.getByText(notice)).toBeTruthy();
     expect(screen.queryByText(otherNotice)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+  });
+
+  it("discloses parent-only truncation through counts rather than a flat-feed notice", () => {
+    itemActivityCapped.value = true;
+    render(ActivityFeed);
+    expect(screen.queryByText(/5,000/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 

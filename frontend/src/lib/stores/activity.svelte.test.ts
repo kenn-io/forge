@@ -202,7 +202,7 @@ afterEach(async () => {
 });
 
 describe("flat activity paging", () => {
-  it("loads more when only parent summaries are capped", async () => {
+  it("offers no event page when only parent summaries are capped", async () => {
     const get = vi.fn(async (path: string) => {
       if (path === "/activity/authors") return { data: { authors: [] }, error: null };
       return {
@@ -213,13 +213,10 @@ describe("flat activity paging", () => {
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-    expect(store.canLoadMoreActivity()).toBe(true);
+    expect(store.canLoadMoreActivity()).toBe(false);
+    const requests = get.mock.calls.filter(([path]) => path === "/activity").length;
     store.loadMoreActivity();
-    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-    expect(get).toHaveBeenCalledWith(
-      "/activity",
-      expect.objectContaining({ params: { query: expect.objectContaining({ limit: 400 }) } }),
-    );
+    expect(get.mock.calls.filter(([path]) => path === "/activity")).toHaveLength(requests);
   });
 
   it("finishes loading more when sync reconciliation replaces the pending request", async () => {
@@ -259,8 +256,10 @@ describe("flat activity paging", () => {
   });
 
   it("loads 200 events, adds a page, and resets for a new range or filter", async () => {
-    const get = vi.fn(async (path: string) => {
+    const finalPage = Promise.withResolvers<{ data: { items: ActivityItem[]; capped: boolean }; error: null }>();
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { limit?: number } } }) => {
       if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (options?.params?.query?.limit === 5000) return finalPage.promise;
       return { data: { items: [], capped: true }, error: null };
     });
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
@@ -302,10 +301,16 @@ describe("flat activity paging", () => {
         params: { query: expect.objectContaining({ search: "cache", limit: 200 }) },
       }),
     );
-    for (let limit = 400; limit <= 5000; limit += 200) {
+    for (let limit = 400; limit < 5000; limit += 200) {
       store.loadMoreActivity();
       await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
     }
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(true));
+    expect(store.isLoadingMoreActivity()).toBe(true);
+    expect(store.canLoadMoreActivity()).toBe(true);
+    finalPage.resolve({ data: { items: [], capped: true }, error: null });
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
     expect(store.canLoadMoreActivity()).toBe(false);
     expect(get).toHaveBeenLastCalledWith(
       "/activity",
@@ -321,6 +326,13 @@ describe("flat activity paging", () => {
       expect.objectContaining({
         params: { query: expect.not.objectContaining({ limit: expect.any(Number) }) },
       }),
+    );
+    store.setViewMode("flat");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({ params: { query: expect.objectContaining({ limit: 5000 }) } }),
     );
   });
 

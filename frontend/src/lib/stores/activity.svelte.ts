@@ -34,6 +34,7 @@ export const DEFAULT_EVENT_TYPES = ["comment", "review", "commit", "force_push"]
 const PR_TIMELINE_EVENT_TYPES = ["comment", "review", "force_push"] as const;
 const ISSUE_TIMELINE_EVENT_TYPES = ["comment"] as const;
 const NO_ACTIVITY_FILTER_TYPE = "none";
+const ACTIVITY_SAFETY_CAP = 5000; // Matches itemapi.ActivitySafetyCap.
 const ACTIVITY_ITEM_TYPES_PARAM = "item_types";
 const ACTIVITY_EVENT_TYPES_PARAM = "event_types";
 
@@ -321,8 +322,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return (
       viewMode === "flat" &&
       activityPageLimit === undefined &&
-      (capped || itemActivityCapped) &&
-      flatPaging.getLimit() < 5000
+      (flatPaging.isLoadingMore() || (capped && flatPaging.getLimit() < ACTIVITY_SAFETY_CAP))
     );
   }
   function isLoadingMoreActivity(): boolean {

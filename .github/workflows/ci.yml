@@ -35,7 +35,7 @@ jobs:
     # Queue validation always runs the Linux and Chromium suites. Do not make
     # those jobs wait for a runner just to decide which paths changed.
     if: github.event_name != 'merge_group'
-    runs-on: ubuntu-latest
+    runs-on: namespace-profile-linux-1cpu
     timeout-minutes: 10
     outputs:
       backend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.ci == 'true' }}

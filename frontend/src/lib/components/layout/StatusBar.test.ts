@@ -132,11 +132,13 @@ describe("StatusBar Activity counts", () => {
   });
 
   it("marks activity totals as incomplete when parent summaries are capped", () => {
-    activityState.itemActivity = [parentSubject("pr", 7), parentSubject("issue", 8)];
+    activityState.itemActivity = Array.from({ length: 200 }, (_, index) =>
+      parentSubject(index < 100 ? "pr" : "issue", index + 1),
+    );
     activityState.itemActivityCapped = true;
     render(StatusBar);
-    expect(screen.getByText("1+ PRs")).toBeTruthy();
-    expect(screen.getByText("1+ issues")).toBeTruthy();
+    expect(screen.getByText("100+ PRs")).toBeTruthy();
+    expect(screen.getByText("100+ issues")).toBeTruthy();
     expect(screen.getByText("1+ repos")).toBeTruthy();
   });
 

@@ -212,23 +212,39 @@ describe("flat activity paging", () => {
     created_at: new Date().toISOString(),
   };
 
+  function pageResponse(limit: number) {
+    return {
+      data: {
+        items: Array.from({ length: limit }, (_, index) => ({
+          ...pageItem,
+          id: `comment:${index}`,
+          cursor: `comment:${index}`,
+        })),
+        capped: true,
+      },
+      error: null,
+    };
+  }
+
   it.each([false, true])("adopts a reconciled page after load more (failed: %s)", async (failed) => {
     let requests = 0;
-    const response = { data: { items: [pageItem], capped: true }, error: null };
+    const response = pageResponse(400);
     const page = Promise.withResolvers<typeof response | { error: { detail: string }; response: Response }>();
     const reconciliation = Promise.withResolvers<typeof response>();
-    const get = vi.fn(async (path: string, options?: { signal?: AbortSignal }) => {
-      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-      requests += 1;
-      if (requests === 2) {
-        options?.signal?.addEventListener("abort", () => page.reject(new DOMException("Aborted", "AbortError")), {
-          once: true,
-        });
-        return page.promise;
-      }
-      if (requests === 3) return reconciliation.promise;
-      return response;
-    });
+    const get = vi.fn(
+      async (path: string, options?: { signal?: AbortSignal; params?: { query?: { limit?: number } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        requests += 1;
+        if (requests === 2) {
+          options?.signal?.addEventListener("abort", () => page.reject(new DOMException("Aborted", "AbortError")), {
+            once: true,
+          });
+          return page.promise;
+        }
+        if (requests === 3) return reconciliation.promise;
+        return pageResponse(options?.params?.query?.limit ?? 5000);
+      },
+    );
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
@@ -258,12 +274,12 @@ describe("flat activity paging", () => {
     );
   });
 
-  it("loads 200 events, adds a page, and resets for a new range or filter", async () => {
+  it("resets pages for queries, retains them across views, and keeps the ceiling pending until received", async () => {
     const finalPage = Promise.withResolvers<{ data: { items: ActivityItem[]; capped: boolean }; error: null }>();
     const get = vi.fn(async (path: string, options?: { params?: { query?: { limit?: number } } }) => {
       if (path === "/activity/authors") return { data: { authors: [] }, error: null };
       if (options?.params?.query?.limit === 5000) return finalPage.promise;
-      return { data: { items: [pageItem], capped: true }, error: null };
+      return pageResponse(options?.params?.query?.limit ?? 5000);
     });
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.loadActivity();
@@ -312,7 +328,7 @@ describe("flat activity paging", () => {
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(true));
     expect(store.isLoadingMoreActivity()).toBe(true);
     expect(store.canLoadMoreActivity()).toBe(true);
-    finalPage.resolve({ data: { items: [pageItem], capped: true }, error: null });
+    finalPage.resolve(pageResponse(5000));
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
     expect(store.canLoadMoreActivity()).toBe(false);
     expect(get).toHaveBeenLastCalledWith(
@@ -341,10 +357,11 @@ describe("flat activity paging", () => {
 
   it("keeps the loaded page and allows retry after load more fails", async () => {
     let fail = false;
-    const get = vi.fn(async (path: string) => {
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { limit?: number } } }) => {
       if (path === "/activity/authors") return { data: { authors: [] }, error: null };
       if (fail) return { error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) };
-      return { data: { items: [pageItem], item_activity: [itemActivity(7)], capped: true }, error: null };
+      const response = pageResponse(options?.params?.query?.limit ?? 5000);
+      return { ...response, data: { ...response.data, item_activity: [itemActivity(7)] } };
     });
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.loadActivity();

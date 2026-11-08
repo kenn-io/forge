@@ -343,27 +343,32 @@ describe("ActivityFeed compact mode", () => {
   it.each([
     {
       kind: "events",
+      view: "threaded" as const,
+      visible: true,
       notice: /most recent 5,000 events/,
       otherNotice: /5,000 most recently active pull requests and issues/,
     },
     {
       kind: "parents",
+      view: "threaded" as const,
+      visible: true,
       notice: /5,000 most recently active pull requests and issues/,
       otherNotice: /most recent 5,000 events/,
     },
-  ])("warns about $kind truncation in threaded activity", ({ kind, notice, otherNotice }) => {
+    {
+      kind: "parents",
+      view: "flat" as const,
+      visible: false,
+      notice: /5,000 most recently active pull requests and issues/,
+      otherNotice: /most recent 5,000 events/,
+    },
+  ])("shows $kind truncation notice in $view activity: $visible", ({ kind, view, visible, notice, otherNotice }) => {
     activityCapped.value = kind === "events";
     itemActivityCapped.value = kind === "parents";
-    viewMode.value = "threaded";
+    viewMode.value = view;
     render(ActivityFeed);
-    expect(screen.getByText(notice)).toBeTruthy();
+    expect(screen.queryByText(notice) !== null).toBe(visible);
     expect(screen.queryByText(otherNotice)).toBeNull();
-  });
-
-  it("discloses parent-only truncation through counts rather than a flat-feed notice", () => {
-    itemActivityCapped.value = true;
-    render(ActivityFeed);
-    expect(screen.queryByText(/5,000/)).toBeNull();
   });
 
   it("offers to retry a failed thread history load", async () => {

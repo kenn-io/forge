@@ -165,8 +165,11 @@ func (g *GraphQLFetcher) FetchPullRequestMergeQueue(
 		state.Queued = true
 		state.State = "QUEUED"
 	case latest == "RemovedFromMergeQueueEvent":
+		// A merge is not a failure, and a manual removal is someone's
+		// choice: neither needs attention, so the pull request reads as it
+		// did before it was queued. GitHub reports both in lowercase.
 		event := nodes[len(nodes)-1].RemovedFromMergeQueueEvent
-		if !strings.EqualFold(event.Reason, "merged") {
+		if !strings.EqualFold(event.Reason, "merged") && !strings.EqualFold(event.Reason, "manual") {
 			state.RemovedAt = new(event.CreatedAt.UTC())
 			state.RemovalReason = event.Reason
 			if commit := event.BeforeCommit; commit != nil && commit.StatusCheckRollup != nil {

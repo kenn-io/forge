@@ -53,6 +53,13 @@ const mergedByQueuePR7 = `{"data":{"repository":{"pullRequest":{
 	"latestQueueEvent":{"nodes":[{"__typename":"RemovedFromMergeQueueEvent","createdAt":"2026-10-14T19:09:58Z","reason":"merged"}]}
 }}}}`
 
+// manuallyRemovedPR7 is pull request 7 after someone removed it from the
+// queue.
+const manuallyRemovedPR7 = `{"data":{"repository":{"pullRequest":{
+	"state":"OPEN","baseRefName":"main","isMergeQueueEnabled":true,"mergeQueueEntry":null,
+	"latestQueueEvent":{"nodes":[{"__typename":"RemovedFromMergeQueueEvent","createdAt":"2026-10-14T19:09:58Z","reason":"manual"}]}
+}}}}`
+
 // enqueuedUnlistedPR7 is pull request 7 just after it was enqueued, before
 // the queue lists it.
 const enqueuedUnlistedPR7 = `{"data":{"repository":{"pullRequest":{
@@ -282,6 +289,25 @@ func TestRefreshPullRequestMergeQueueIgnoresQueueMerge(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(state)
 	require.Empty(state.RemovalReason, "leaving the queue because it merged is not a failure")
+}
+
+func TestRefreshPullRequestMergeQueueClearsManualRemoval(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := newPRQueueGraphQL(queuedPR7)
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+
+	gql.set(manuallyRemovedPR7)
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(state)
+	assert.False(state.Queued)
+	assert.Empty(state.RemovalReason, "a manual removal is a choice, not a failure to show")
+	assert.Nil(state.RemovedAt)
 }
 
 func TestRefreshPullRequestMergeQueueShowsEnqueueBeforeQueueListsIt(t *testing.T) {

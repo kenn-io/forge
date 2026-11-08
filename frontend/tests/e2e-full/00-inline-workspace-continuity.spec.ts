@@ -1141,6 +1141,46 @@ test.describe("inline workspace pane continuity", () => {
     }
   });
 
+  test("a promoted session pane's Delete confirms and deletes after the container pane retires", async ({ page }) => {
+    // Promoting the only session retires the container pane and parks the
+    // workspace view in a display:none node. The promoted pane's strip still
+    // carries the workspace's trash button, so its confirmation has to render
+    // somewhere the user can see and click it.
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
+      const workspace = await createIssueWorkspace(api, 10);
+      const launch = await api.post(`/api/v1/workspaces/${workspace.id}/runtime/sessions`, {
+        data: { target_key: "plain_shell", display_region: "workflow" },
+      });
+      expect(launch.status(), await launch.text()).toBe(200);
+
+      await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
+      await expect(page.locator(".detail-pane-workspace-slot .terminal-container")).toBeVisible();
+      await runPaletteCommand(page, "Move terminal session to a pane");
+      const promotedLeaf = page.locator(".tabbed-panel-leaf").filter({ has: page.locator(".session-terminal-slot") });
+      await expect(promotedLeaf.locator(".terminal-container")).toBeVisible();
+      await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
+
+      await promotedLeaf.getByRole("button", { name: /^Delete workspace / }).click();
+      const dialog = page.getByRole("dialog", { name: "Delete workspace?" });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole("button", { name: "Delete workspace" }).click();
+
+      await expect.poll(async () => (await api!.get(`/api/v1/workspaces/${workspace.id}`)).status()).toBe(404);
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+
   test("deleting a running inline workspace never reveals the launcher during teardown", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]),

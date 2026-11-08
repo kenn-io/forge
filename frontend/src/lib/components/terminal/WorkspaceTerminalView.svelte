@@ -4189,6 +4189,11 @@
 
   let previouslyFocusedEl: HTMLElement | null = null;
 
+  function portalToBody(node: HTMLElement): () => void {
+    document.body.appendChild(node);
+    return () => node.remove();
+  }
+
   $effect(() => {
     let afterTick: Effect.Effect<void> | null = null;
     if (renamePrompt !== null) {
@@ -5288,124 +5293,131 @@
   </CollapsibleSidebar>
 </div>
 
-{#if attributionDialogOpen && workspace?.commit_attribution}
-  {@const attribution = workspace.commit_attribution}
-  <Modal
-    open
-    title="Last push"
-    showClose
-    onClose={() => { attributionOpen = false; }}
-  >
-    <div class="push-details">
-      <p>{attribution.message}</p>
-      <dl>
-        <dt>Author</dt>
-        <dd>
-          {attribution.author_name || "Not verified"}
-          {#if attribution.author_email}<span>{attribution.author_email}</span>{/if}
-        </dd>
-        <dt>Committer</dt>
-        <dd>
-          {attribution.committer_name || "Not verified"}
-          {#if attribution.committer_email}<span>{attribution.committer_email}</span>{/if}
-        </dd>
-        <dt>Commit</dt><dd><code>{attribution.oid.slice(0, 12)}</code></dd>
-        <dt>Branch</dt><dd>{attribution.branch}</dd>
-        <dt>Repository</dt><dd>{attribution.repository}</dd>
-      </dl>
-    </div>
-  </Modal>
-{/if}
-
-{#if renamePrompt !== null && interactionVisible}
-  <Modal
-    open={renamePrompt !== null && interactionVisible}
-    title="Rename tab"
-    width={460}
-    frameId="workspace-rename-session"
-    onClose={cancelRenamePrompt}
-  >
-    <form
-      id="rename-session-form"
-      class="rename-form"
-      onsubmit={(event) => {
-        event.preventDefault();
-        void saveRenamePrompt();
-      }}
+<!-- Portalled to <body>. Once every session is promoted, the container pane retires
+     and this view is parked inert in a display:none node, while the promoted panes
+     still carry its controls. A dialog those controls open (the Delete confirmation
+     among them) would render inside the parked view, where nobody can see or click
+     it. -->
+<div {@attach portalToBody}>
+  {#if attributionDialogOpen && workspace?.commit_attribution}
+    {@const attribution = workspace.commit_attribution}
+    <Modal
+      open
+      title="Last push"
+      showClose
+      onClose={() => { attributionOpen = false; }}
     >
-      <p class="rename-message">
-        Choose the label shown in the workflow and terminal panes.
-      </p>
-      <label class="rename-field">
-        <span>Name</span>
-        <input
-          bind:this={renameInputEl}
-          bind:value={renameInputValue}
-          autocomplete="off"
-          spellcheck="false"
-        />
-      </label>
-    </form>
+      <div class="push-details">
+        <p>{attribution.message}</p>
+        <dl>
+          <dt>Author</dt>
+          <dd>
+            {attribution.author_name || "Not verified"}
+            {#if attribution.author_email}<span>{attribution.author_email}</span>{/if}
+          </dd>
+          <dt>Committer</dt>
+          <dd>
+            {attribution.committer_name || "Not verified"}
+            {#if attribution.committer_email}<span>{attribution.committer_email}</span>{/if}
+          </dd>
+          <dt>Commit</dt><dd><code>{attribution.oid.slice(0, 12)}</code></dd>
+          <dt>Branch</dt><dd>{attribution.branch}</dd>
+          <dt>Repository</dt><dd>{attribution.repository}</dd>
+        </dl>
+      </div>
+    </Modal>
+  {/if}
 
-    {#snippet footer()}
-      <DialogButton disabled={renameSaving} onclick={cancelRenamePrompt}>
-        Cancel
-      </DialogButton>
-      <DialogButton
-        type="submit"
-        form="rename-session-form"
-        tone="primary"
-        disabled={renameSaving || renameInputValue.trim() === ""}
+  {#if renamePrompt !== null && interactionVisible}
+    <Modal
+      open={renamePrompt !== null && interactionVisible}
+      title="Rename tab"
+      width={460}
+      frameId="workspace-rename-session"
+      onClose={cancelRenamePrompt}
+    >
+      <form
+        id="rename-session-form"
+        class="rename-form"
+        onsubmit={(event) => {
+          event.preventDefault();
+          void saveRenamePrompt();
+        }}
       >
-        {renameSaving ? "Saving..." : "Save"}
-      </DialogButton>
-    {/snippet}
-  </Modal>
-{/if}
+        <p class="rename-message">
+          Choose the label shown in the workflow and terminal panes.
+        </p>
+        <label class="rename-field">
+          <span>Name</span>
+          <input
+            bind:this={renameInputEl}
+            bind:value={renameInputValue}
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </label>
+      </form>
 
-<ConfirmDialog
-  open={stopPromptSession !== null && interactionVisible}
-  title={stopPromptSession
-    ? `Stop ${stopPromptSession.label}?`
-    : "Stop session?"}
-  message="This will stop the running session and close its pane."
-  hint="Any foreground command running inside this session may be interrupted."
-  confirmLabel="Stop session"
-  pendingLabel="Stopping…"
-  busy={stopSessionStopping}
-  tone="danger"
-  frameId="workspace-stop-session"
-  onCancel={cancelStopSession}
-  onConfirm={() => void confirmStopSession()}
-/>
+      {#snippet footer()}
+        <DialogButton disabled={renameSaving} onclick={cancelRenamePrompt}>
+          Cancel
+        </DialogButton>
+        <DialogButton
+          type="submit"
+          form="rename-session-form"
+          tone="primary"
+          disabled={renameSaving || renameInputValue.trim() === ""}
+        >
+          {renameSaving ? "Saving..." : "Save"}
+        </DialogButton>
+      {/snippet}
+    </Modal>
+  {/if}
 
-<ConfirmDialog
-  open={deletePromptOpen && interactionVisible}
-  title="Delete workspace?"
-  message={workspace
-    ? `This removes the worktree and tmux session for ${workspace.git_head_ref}.`
-    : "This removes the worktree and tmux session."}
-  hint="Commits that exist nowhere but this worktree are lost with it. Uncommitted changes are refused and prompt again."
-  confirmLabel="Delete workspace"
-  tone="danger"
-  frameId="workspace-delete"
-  onCancel={cancelDeletePrompt}
-  onConfirm={confirmDeletePrompt}
-/>
+  <ConfirmDialog
+    open={stopPromptSession !== null && interactionVisible}
+    title={stopPromptSession
+      ? `Stop ${stopPromptSession.label}?`
+      : "Stop session?"}
+    message="This will stop the running session and close its pane."
+    hint="Any foreground command running inside this session may be interrupted."
+    confirmLabel="Stop session"
+    pendingLabel="Stopping…"
+    busy={stopSessionStopping}
+    tone="danger"
+    frameId="workspace-stop-session"
+    onCancel={cancelStopSession}
+    onConfirm={() => void confirmStopSession()}
+  />
 
-<ConfirmDialog
-  open={forcePromptMessage !== null && interactionVisible}
-  title="Force delete workspace?"
-  message={forcePromptMessage ?? ""}
-  hint="Force-deleting discards any uncommitted changes in the worktree. This cannot be undone."
-  confirmLabel="Force delete"
-  pendingLabel="Deleting…"
-  busy={forceDeleting}
-  tone="danger"
-  frameId="workspace-force-delete"
-  onCancel={cancelForceDelete}
-  onConfirm={() => void confirmForceDelete()}
-/>
+  <ConfirmDialog
+    open={deletePromptOpen && interactionVisible}
+    title="Delete workspace?"
+    message={workspace
+      ? `This removes the worktree and tmux session for ${workspace.git_head_ref}.`
+      : "This removes the worktree and tmux session."}
+    hint="Commits that exist nowhere but this worktree are lost with it. Uncommitted changes are refused and prompt again."
+    confirmLabel="Delete workspace"
+    tone="danger"
+    frameId="workspace-delete"
+    onCancel={cancelDeletePrompt}
+    onConfirm={confirmDeletePrompt}
+  />
+
+  <ConfirmDialog
+    open={forcePromptMessage !== null && interactionVisible}
+    title="Force delete workspace?"
+    message={forcePromptMessage ?? ""}
+    hint="Force-deleting discards any uncommitted changes in the worktree. This cannot be undone."
+    confirmLabel="Force delete"
+    pendingLabel="Deleting…"
+    busy={forceDeleting}
+    tone="danger"
+    frameId="workspace-force-delete"
+    onCancel={cancelForceDelete}
+    onConfirm={() => void confirmForceDelete()}
+  />
+</div>
 
 <!-- The dock body has one definition for its internal and surface-hosted placements.
      The internal copy follows the workspace host's visibility; the external copy is

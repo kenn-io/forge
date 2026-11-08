@@ -172,7 +172,8 @@ Snapshots and merge state:
   does; never read or snapshot a repository's whole queue
   (`internal/github/merge_queue.go::GraphQLFetcher.FetchPullRequestMergeQueue`).
 - Show GitHub's answer at read time: an entry, a latest enqueue (unknown position), or a latest
-  non-`merged` removal and its reason. A read finding the PR closed or merged clears it. No
+  removal and its reason. A `merged` or `manual` removal is not stored: neither needs attention,
+  so a pull request someone removed reads as it did before it was queued. A read finding the PR closed or merged clears it. No
   attempt matching across reads (maintainer decision).
 - A removal stops showing once a later event replaces it: an enqueue, a reopening, or a new head
   (force push or commit), because a removal describes the head the queue tested

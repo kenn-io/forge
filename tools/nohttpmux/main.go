@@ -271,13 +271,13 @@ func allowedRegistration(path string, call *ast.CallExpr) bool {
 
 // isExemptNonAPIServerPath lists muxes that are not kenn-forge API
 // surfaces and so have no Huma route layer to go through: the GitHub
-// App fake server used by tests, and the kenn-forge-github-app CLI's
+// App fake server used by tests, and the kenn-forge github-app command's
 // loopback browser-callback server for the App Manifest flow.
 func isExemptNonAPIServerPath(path string) bool {
 	slashPath := filepath.ToSlash(path)
 	for _, exempt := range []string{
 		"internal/githubapp/githubapptest/",
-		"cmd/kenn-forge-github-app/",
+		"internal/cli/githubappcli/",
 	} {
 		if strings.Contains(slashPath, "/"+exempt) ||
 			strings.HasPrefix(slashPath, exempt) {

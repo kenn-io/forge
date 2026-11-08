@@ -1235,7 +1235,7 @@ func TestRootHelpListsEveryPublicCommandWithoutStartingServer(t *testing.T) {
 
 	for _, name := range []string{
 		"activity", "agent-hook", "api", "archive", "config", "docs",
-		"daemon", "issues", "mcp", "pulls", "quickstart", "rate-limits",
+		"daemon", "github-app", "issues", "mcp", "pulls", "quickstart", "rate-limits",
 		"repos", "serve", "stacks", "sync", "version", "workspaces",
 	} {
 		assert.Contains(stdout.String(), name)
@@ -1286,6 +1286,9 @@ func TestRootNestedHelpExposesCommandFlags(t *testing.T) {
 		{name: "serve", args: []string{"serve", "--help"}, want: []string{"--config", "--pprof-addr", "foreground", "kenn-forge daemon start"}},
 		{name: "repos", args: []string{"repos", "--help"}, want: []string{"summaries"}},
 		{name: "api", args: []string{"api", "--help"}, want: []string{"list", "--config", "-d", "-i", "--timeout"}},
+		{name: "github-app", args: []string{"github-app", "--help"}, want: []string{"create", "list", "install", "uninstall", "delete", "open"}},
+		{name: "github-app create", args: []string{"github-app", "create", "--help"}, want: []string{"--config", "--org", "--role", "--no-browser", "--timeout"}},
+		{name: "github-app delete", args: []string{"github-app", "delete", "--help"}, want: []string{"--owner", "--app-id", "--yes", "--local-only"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1412,6 +1415,7 @@ func TestRootRejectsControlFlagsForNonControlCommands(t *testing.T) {
 		{name: "bare server", args: []string{"--server", "http://forge.test"}, wantFlag: "--server"},
 		{name: "version output", args: []string{"--output", "yaml", "version"}, wantFlag: "--output"},
 		{name: "version timeout", args: []string{"--timeout", "1s", "version"}, wantFlag: "--timeout"},
+		{name: "github-app output", args: []string{"github-app", "list", "--output", "yaml"}, wantFlag: "--output"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

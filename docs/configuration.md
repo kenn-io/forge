@@ -282,15 +282,15 @@ on your `PATH`.
 Replace `your-org` with your organization:
 
 ```sh
-kenn-forge-github-app create --org your-org
-kenn-forge-github-app list
+kenn-forge github-app create --org your-org
+kenn-forge github-app list
 kenn-forge daemon restart
 ```
 
 The create command opens a browser for App creation and installation. Choose
 the organization and repositories Forge should read. Omit `--org` to create a
 personally owned App. If you need to finish installation later, run
-`kenn-forge-github-app install --owner your-org`.
+`kenn-forge github-app install --owner your-org`.
 
 Forge's [local sync budget](#sync-budget) still applies to ordinary App sync
 reads. Raise
@@ -301,19 +301,19 @@ For a busy historical archive, create a second App with its own installation
 budget:
 
 ```sh
-kenn-forge-github-app create --org your-org --role archive
-kenn-forge-github-app install --app-id <archive-app-id>
+kenn-forge github-app create --org your-org --role archive
+kenn-forge github-app install --app-id <archive-app-id>
 ```
 
 The archive App must be installed on the same repository account. Archive
 reads use it only for repositories it covers; ordinary sync and mutations keep
 using the normal App/PAT routes. The two Apps must be distinct GitHub Apps.
-The role is also visible in `kenn-forge-github-app list` and can be set
+The role is also visible in `kenn-forge github-app list` and can be set
 explicitly as `role = "archive"` in `[[github_apps]]`.
 
-The CLI writes `[[github_apps]]` entries. Mutations still use a user PAT.
+The `github-app` commands write `[[github_apps]]` entries. Mutations still use a user PAT.
 After changing selected repository access on GitHub, run
-`kenn-forge-github-app install` again and restart Forge.
+`kenn-forge github-app install` again and restart Forge.
 
 Selected repository access is a startup routing snapshot. New grants use the
 PAT route until refresh. Revoked App access can return 404, and Forge does

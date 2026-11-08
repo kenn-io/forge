@@ -114,8 +114,8 @@ if the App has quota left but sync stops at the local limit.
 
 If ordinary sync is healthy but historical archive work is competing for the
 same installation budget, add a separate App with
-`kenn-forge-github-app create --role archive`, install it on the repository
-account, and restart Forge. `kenn-forge-github-app list` shows each App's
+`kenn-forge github-app create --role archive`, install it on the repository
+account, and restart Forge. `kenn-forge github-app list` shows each App's
 role and independent rate-limit state.
 
 See [Archive sync capacity](archive.md#sync-capacity) for how provider quota

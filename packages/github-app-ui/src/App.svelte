@@ -81,7 +81,7 @@
         <h1>App created on GitHub</h1>
       </div>
       <p>
-        GitHub handed the app's creation code back to <code>kenn-forge-github-app</code>. The terminal is finishing
+        GitHub handed the app's creation code back to <code>kenn-forge github-app</code>. The terminal is finishing
         setup: exchanging the code, saving the credentials to your kenn-forge config, and opening GitHub's install
         page so you can choose the account your repositories live in.
       </p>
@@ -150,11 +150,11 @@
       {#if failure._tag === "SetupInvalidPayload"}
         <p>
           The setup data did not match the GitHub App manifest format. Re-run
-          <code>kenn-forge-github-app create</code> in your terminal to start a fresh setup.
+          <code>kenn-forge github-app create</code> in your terminal to start a fresh setup.
         </p>
       {:else}
         <p>
-          The <code>kenn-forge-github-app create</code> command that opened this page is not running anymore. Re-run
+          The <code>kenn-forge github-app create</code> command that opened this page is not running anymore. Re-run
           it in your terminal to start a fresh setup.
         </p>
       {/if}

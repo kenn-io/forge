@@ -214,7 +214,7 @@ linters:
       # the SPA/health outer mux (tools/nohttpmux/main.go::allowedRegistration).
       - linters:
           - kennlint
-        path: ^(cmd/kenn-forge-github-app/|internal/githubapp/githubapptest/|internal/profiler/profiler\.go$|internal/server/server\.go$)
+        path: ^(internal/cli/githubappcli/|internal/githubapp/githubapptest/|internal/profiler/profiler\.go$|internal/server/server\.go$)
         text: nohttpmux
       - linters:
           - noctx

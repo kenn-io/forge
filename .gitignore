@@ -2,8 +2,6 @@
 /kenn-forge.exe
 /custom-gcl
 /.golangci-cache/
-/kenn-forge-github-app
-/kenn-forge-github-app.exe
 dist/
 !internal/web/dist/
 internal/web/dist/*

@@ -1,4 +1,4 @@
-package main
+package githubappcli
 
 import (
 	"bytes"
@@ -1373,4 +1373,13 @@ func TestCreateNoBrowserPrintsManifestURL(t *testing.T) {
 	}, env))
 	require.NoError(t, <-done)
 	assert.Contains(t, out.String(), "Installed on kenn-io", out.String())
+}
+
+// runCLI runs the github-app command tree in-process with env.
+func runCLI(ctx context.Context, args []string, env *appEnv) error {
+	cmd := newCommand(env)
+	cmd.SetArgs(args)
+	cmd.SetOut(env.stdout)
+	cmd.SetErr(env.stdout)
+	return cmd.ExecuteContext(ctx)
 }

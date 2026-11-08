@@ -185,17 +185,17 @@ This also builds the helper's browser setup page. Copy only
 on your `PATH`.
 
 ```sh
-kenn-forge-github-app create
-kenn-forge-github-app create --org your-org
-kenn-forge-github-app create --role archive
-kenn-forge-github-app list
-kenn-forge-github-app install
-kenn-forge-github-app uninstall
-kenn-forge-github-app delete
-kenn-forge-github-app open
+kenn-forge github-app create
+kenn-forge github-app create --org your-org
+kenn-forge github-app create --role archive
+kenn-forge github-app list
+kenn-forge github-app install
+kenn-forge github-app uninstall
+kenn-forge github-app delete
+kenn-forge github-app open
 ```
 
-Use this companion CLI when sync or archive reads should use GitHub App
+Use these commands when sync or archive reads should use GitHub App
 installation tokens. `create --org your-org` creates an organization-owned
 App; omit `--org` for personal ownership. Creation includes a browser-based
 installation step. See [GitHub App reads](configuration.md#github-app-reads)

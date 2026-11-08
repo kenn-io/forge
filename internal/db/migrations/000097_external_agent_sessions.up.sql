@@ -14,6 +14,9 @@ CREATE TABLE forge_external_agent_sessions (
     process_start       TEXT NOT NULL DEFAULT '',
     herdr_pane_id       TEXT NOT NULL DEFAULT '',
     herdr_socket_path   TEXT NOT NULL DEFAULT '',
+    -- A prompt reached the agent, so its own record of the session holds a
+    -- conversation that a load must not silently drop.
+    prompted            BOOLEAN NOT NULL DEFAULT 0,
     first_seen_at       DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     ended_at            DATETIME,
     workspace_id        TEXT NOT NULL DEFAULT '',

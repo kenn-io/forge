@@ -59,6 +59,10 @@ type acpSavedSession struct {
 	// mirrored without a transcript reader. Its load replays the conversation
 	// into the chat instead of being dropped.
 	ImportHistory bool `json:",omitempty"`
+	// AgentPrompted records that the agent received a prompt the saved state
+	// may not show, as for a mirrored agent whose transcript Forge did not read.
+	// A load that finds no session then fails, instead of starting a new one.
+	AgentPrompted bool `json:",omitempty"`
 }
 
 func (m *Manager) acpSessionPath(key string) string {

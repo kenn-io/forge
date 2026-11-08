@@ -552,7 +552,7 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 			// Claude Code does, so a session that never received one cannot
 			// be loaded. It holds no agent context, so a new session loses
 			// nothing.
-			if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok && requestErr.Code == acpResourceNotFound && !saved.State.prompted() {
+			if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok && requestErr.Code == acpResourceNotFound && !saved.State.prompted() && !saved.AgentPrompted {
 				load, err = false, nil
 				// The new session's updates may arrive before its ID does.
 				a.mu.Lock()

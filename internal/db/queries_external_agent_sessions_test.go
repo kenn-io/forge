@@ -16,7 +16,7 @@ func TestExternalAgentSessionLifecycle(t *testing.T) {
 
 	require.NoError(database.RecordExternalAgentSession(ctx, ExternalAgentSession{
 		Agent: "claude", SessionID: "s1", CWD: "/work/one", TranscriptPath: "/t/s1.jsonl",
-		ProcessID: 7, ProcessStart: "100", HerdrPaneID: "w1:p1", HerdrSocketPath: "/run/herdr.sock",
+		ProcessID: 7, ProcessStart: "100", HerdrPaneID: "w1:p1", HerdrSocketPath: "/run/herdr.sock", Prompted: true,
 	}))
 	saved, err := database.GetExternalAgentSession(ctx, "claude", "s1")
 	require.NoError(err)
@@ -35,6 +35,7 @@ func TestExternalAgentSessionLifecycle(t *testing.T) {
 	assert.Equal(7, saved.ProcessID)
 	assert.Equal("100", saved.ProcessStart)
 	assert.Equal("w2:p3", saved.HerdrPaneID)
+	assert.True(saved.Prompted, "an event without a prompt does not undo an earlier one")
 
 	// An ended session stops being listed; a report means it runs again.
 	require.NoError(database.MarkExternalAgentSessionEnded(ctx, "claude", "s1", time.Now()))

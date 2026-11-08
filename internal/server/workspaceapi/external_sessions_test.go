@@ -410,6 +410,17 @@ func TestAResentPromptReachesTheAgentOnce(t *testing.T) {
 		"agent", "prompt", "w1:p1", "prompt p1",
 		"agent", "prompt", "w1:p1", "prompt p2", "",
 	}, "\n"), string(recorded))
+
+	// After the agent exits, a resend reaches no agent that continues the session.
+	f.hook(t, "claude", "session-1", "SessionEnd", nil)
+	chat, err := f.handler.openWorkspaceChat(t.Context(), ws.ID, rows[0].SessionKey)
+	require.NoError(t, err)
+	require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "prompt", ID: "p1", Text: "prompt p1"}))
+	_, err = f.handler.runtime.ACP(ws.ID, rows[0].SessionKey)
+	require.Error(t, err, "the resend started an agent to run the prompt again")
+	session, err := f.database.GetExternalAgentSession(t.Context(), "claude", "session-1")
+	require.NoError(t, err)
+	assert.True(t, session.Prompted, "UserPromptSubmit records that the agent was prompted")
 }
 
 func TestChatStaysReadOnlyWithoutAHerdrPaneAndStartsNothingWhileAgentRuns(t *testing.T) {

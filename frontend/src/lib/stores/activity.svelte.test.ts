@@ -202,6 +202,59 @@ afterEach(async () => {
 });
 
 describe("flat activity paging", () => {
+  it("loads more when only parent summaries are capped", async () => {
+    const get = vi.fn(async () => ({
+      data: { items: [], item_activity: [itemActivity(7)], capped: false, item_activity_capped: true },
+      error: null,
+    }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.canLoadMoreActivity()).toBe(true);
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get).toHaveBeenCalledWith(
+      "/activity",
+      expect.objectContaining({ params: { query: expect.objectContaining({ limit: 400 }) } }),
+    );
+  });
+
+  it("finishes loading more when sync reconciliation replaces the pending request", async () => {
+    let requests = 0;
+    const response = { data: { items: [], capped: true }, error: null };
+    const get = vi.fn(async (path: string, options?: { signal?: AbortSignal }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      requests += 1;
+      if (requests === 2) {
+        return new Promise((_, reject) => {
+          options?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+            once: true,
+          });
+        });
+      }
+      return response;
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(requests).toBe(2));
+    expect(store.isLoadingMoreActivity()).toBe(true);
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(store.isLoadingMoreActivity()).toBe(false);
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get).toHaveBeenCalledWith(
+      "/activity",
+      expect.objectContaining({ params: { query: expect.objectContaining({ limit: 600 }) } }),
+    );
+  });
+
   it("loads 200 events, adds a page, and resets for a new range or filter", async () => {
     const get = vi.fn(async () => ({ data: { items: [], capped: true }, error: null }));
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });

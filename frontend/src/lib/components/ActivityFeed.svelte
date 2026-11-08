@@ -1022,7 +1022,7 @@
         <ListLoadMore loading={activity.isLoadingMoreActivity()} onclick={activity.loadMoreActivity} />
       {/if}
 
-      {#if flatRows.length === 0 && !activity.isActivityLoading()}
+      {#if flatRows.length === 0 && !activity.isActivityLoading() && !activity.canLoadMoreActivity()}
         <EmptyState title="No activity found" />
       {/if}
     </div>

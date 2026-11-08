@@ -30,6 +30,10 @@ export function createListPaging() {
     return page.want > page.got;
   }
 
+  function getLimit(): number {
+    return page.want;
+  }
+
   function rollback(query: ListQuery, params?: ListQuery): boolean {
     if (!isCurrentPage(query, params)) return false;
     const wasLoadingMore = isLoadingMore();
@@ -43,5 +47,5 @@ export function createListPaging() {
     return true;
   }
 
-  return { withLimit, apply, isLoadingMore, rollback, loadMore };
+  return { withLimit, apply, getLimit, isLoadingMore, rollback, loadMore };
 }

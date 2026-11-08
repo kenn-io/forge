@@ -332,6 +332,17 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
+  it.each([false, true])(
+    "keeps older activity available when the loaded page has no label matches (compact: %s)",
+    (compact) => {
+      labelFilters.value = new Map([["cache", { name: "cache", mode: "require" }]]);
+      canLoadMore.value = true;
+      render(ActivityFeed, { props: { compact } });
+      expect(screen.queryByText("No activity found")).toBeNull();
+      expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
+    },
+  );
+
   it("warns about parent truncation separately from event truncation", () => {
     itemActivityCapped.value = true;
 

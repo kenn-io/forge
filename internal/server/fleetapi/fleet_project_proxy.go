@@ -74,7 +74,7 @@ func (s *Handler) serveFleetProjectWrite(
 	localPath string,
 ) {
 	hostKey := r.PathValue("host_key")
-	target, ok := s.resolveFleetHostTarget(hostKey)
+	target, localPath, ok := s.resolveFleetRouteTarget(r, localPath)
 	if !ok {
 		writeProblemResponse(w, fleetHostNotFoundProblem(hostKey))
 		return

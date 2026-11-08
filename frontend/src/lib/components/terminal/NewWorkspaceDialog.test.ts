@@ -684,6 +684,62 @@ describe("NewWorkspaceDialog", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/fleet/build-node/ws-new");
   });
 
+  it("defaults a spoke to the fleet member its setting names by origin", async () => {
+    preferredTarget = "https://build-b.example.test";
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/repos") return Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] });
+      if (path === "/snapshot") {
+        return Promise.resolve({
+          data: {
+            hosts: [
+              {
+                configKey: "build-a-node",
+                federationRole: "spoke",
+                kind: "self",
+                name: "build-a",
+                baseURL: "https://build-a.example.test",
+                operationAvailability: { workspaceWrite: { available: true } },
+              },
+              {
+                configKey: "hub-node",
+                federationRole: "hub",
+                kind: "remote",
+                name: "forge-hub",
+                baseURL: "https://forge-hub.example.test",
+                operationAvailability: { workspaceWrite: { available: true } },
+              },
+              {
+                configKey: "build-b-node",
+                federationRole: "spoke",
+                kind: "remote",
+                name: "build-b",
+                baseURL: "https://build-b.example.test",
+                operationAvailability: { workspaceWrite: { available: true } },
+              },
+            ],
+          },
+        });
+      }
+      throw new Error(`unexpected GET ${path}`);
+    });
+    await renderDialog();
+
+    const machine = await screen.findByRole("combobox", { name: "Workspace machine: build-b" });
+    await fireEvent.click(machine);
+    expect(screen.getAllByRole("option").map((option) => option.textContent?.trim())).toEqual([
+      "build-a (this machine)",
+      "forge-hub",
+      "build-b",
+    ]);
+    await fireEvent.click(screen.getByRole("option", { name: "build-b" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    expect(mockPost.mock.calls[0][0]).toBe("/fleet/hosts/{host_key}/repo/{provider}/{owner}/{name}/workspaces");
+    expect(mockPost.mock.calls[0][1]).toMatchObject({ params: { path: { host_key: "build-b-node" } } });
+    expect(mockNavigate).toHaveBeenCalledWith("/terminal/fleet/build-b-node/ws-new");
+  });
+
   it("uses the preferred devbox and keeps its target separate from fleet peers", async () => {
     preferredTarget = "devbox:compute-a";
     mockGet.mockImplementation((path: string) =>

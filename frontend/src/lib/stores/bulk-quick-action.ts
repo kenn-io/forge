@@ -3,9 +3,10 @@ import type { QuickAction } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { documentVisible } from "../browser/document-visible.svelte.js";
 import { reportOutcome } from "../app/telemetry.js";
-import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
-import { providerHostRouteParams, providerRouteParams, providerUsesHostRoute } from "../api/provider-routes.js";
-import { repositoryKeyFromWire, repositoryKeyToWire } from "../api/repository-key.js";
+import { FleetSnapshotReads } from "../api/fleet-snapshot.js";
+import type { GeneratedApi } from "../api/generated-api.js";
+import { createItemWorkspace } from "../api/item-workspace.js";
+import { repositoryKeyFromWire } from "../api/repository-key.js";
 import type { WorkspaceItemIdentity } from "../workspace-inline.js";
 import { showFlash } from "./flash.svelte.js";
 import { listItemLabel, type ListItemTarget } from "./item-actions.js";
@@ -21,7 +22,13 @@ import {
   retryWorkspaceQuickAction,
   type QuickActionOutcome,
 } from "./workspace-quick-actions.js";
-import { devboxRepositoryUnavailableReason } from "./workspace-target.svelte.js";
+import {
+  devboxRepositoryUnavailableReason,
+  findDefaultTargetHost,
+  workspaceHostKey,
+  workspaceHostLabel,
+  workspaceTargetUnavailableReason,
+} from "./workspace-target.svelte.js";
 
 const CONCURRENCY = 4;
 
@@ -37,55 +44,34 @@ function itemIdentity({ kind, item }: ListItemTarget): WorkspaceItemIdentity {
   };
 }
 
-function createItemWorkspace(target: ListItemTarget, devboxTarget: string | undefined) {
-  const { kind, item } = target;
-  const repo = item.repo;
-  const repoKey = repositoryKeyToWire(repositoryKeyFromWire(repo));
-  const routeRef = {
-    provider: repo.provider,
-    platformHost: repo.platform_host,
-    owner: repo.owner,
-    name: repo.name,
-    repoPath: repo.repo_path,
-  };
-  return executeGeneratedApiRequest(`POST ${kind} workspace`, (client, signal) => {
-    if (devboxTarget) {
-      return client.DevboxesService.createDevboxWorkspace(
-        { connectionId: devboxTarget.slice(7) },
-        {
-          provider: repo.provider,
-          platform_host: repo.platform_host,
-          ...repoKey,
-          owner: repo.owner,
-          name: repo.name,
-          ...(kind === "pull" ? { mr_number: item.Number } : { issue_number: item.Number }),
-        },
-        { signal },
-      );
-    }
-    if (kind === "pull") {
-      return client.WorkspacesService.createWorkspace(
-        {
-          provider: repo.provider,
-          platform_host: repo.platform_host,
-          ...repoKey,
-          owner: repo.owner,
-          name: repo.name,
-          mr_number: item.Number,
-        },
-        { signal },
-      );
-    }
-    return providerUsesHostRoute(routeRef)
-      ? client.IssuesService.createIssueWorkspaceOnHost(
-          { ...providerHostRouteParams(routeRef), number: item.Number },
-          repoKey,
-          { signal },
-        )
-      : client.IssuesService.createIssueWorkspace({ ...providerRouteParams(routeRef), number: item.Number }, repoKey, {
-          signal,
-        });
-  });
+/** Where new workspaces go: hostKey unset is this Forge; reason blocks creation. */
+type ResolvedTarget = { readonly hostKey: string | undefined; readonly reason: string };
+
+// Resolves the saved default once per run. A devbox or node ID goes to its
+// create route, which validates it; an origin must match a fleet host.
+function resolveDefaultTarget(defaultTarget: string): Effect.Effect<ResolvedTarget, never, FleetSnapshotReads> {
+  if (!defaultTarget || defaultTarget.startsWith("devbox:")) {
+    return Effect.succeed({ hostKey: defaultTarget || undefined, reason: "" });
+  }
+  return Effect.gen(function* () {
+    const reads = yield* FleetSnapshotReads;
+    const snapshot = yield* reads.load;
+    const host = findDefaultTargetHost(defaultTarget, snapshot.hosts ?? []);
+    if (!host) return { hostKey: undefined, reason: `your default machine, ${defaultTarget}, is not in this fleet` };
+    const unavailable = workspaceTargetUnavailableReason(host, { provider: "" }, true);
+    return {
+      hostKey: workspaceHostKey(host),
+      reason: unavailable ? `your default machine, ${workspaceHostLabel(host)}, is unavailable: ${unavailable}` : "",
+    };
+  }).pipe(
+    Effect.catch(() =>
+      Effect.succeed(
+        /^[0-9a-f]{32}$/.test(defaultTarget)
+          ? { hostKey: defaultTarget, reason: "" }
+          : { hostKey: undefined, reason: `could not check your default machine, ${defaultTarget}` },
+      ),
+    ),
+  );
 }
 
 /**
@@ -95,10 +81,9 @@ function createItemWorkspace(target: ListItemTarget, devboxTarget: string | unde
 function runOnItem(
   target: ListItemTarget,
   action: QuickAction,
-  defaultTarget: string,
+  { hostKey, reason }: ResolvedTarget,
 ): Effect.Effect<QuickActionOutcome, never, GeneratedApi> {
   const identity = itemIdentity(target);
-  const devboxTarget = defaultTarget.startsWith("devbox:") ? defaultTarget : undefined;
   const failed = (reason: string): Effect.Effect<QuickActionOutcome> =>
     Effect.succeed({ type: "failed", reason, message: reason });
   if (isWorkspaceCreatePending(identity)) return failed("a workspace is already being created");
@@ -116,20 +101,35 @@ function runOnItem(
     if (existing.status === "error") return retryWorkspaceQuickAction(existing.id, action);
     return launchWorkspaceQuickAction(existing.id, action);
   }
-  if (devboxTarget) {
-    const reason = devboxRepositoryUnavailableReason({
+  if (reason) return failed(reason);
+  if (hostKey?.startsWith("devbox:")) {
+    const unsupported = devboxRepositoryUnavailableReason({
       provider: target.item.repo.provider,
       platformHost: target.item.repo.platform_host,
     });
-    if (reason) return failed(reason);
+    if (unsupported) return failed(unsupported);
   }
+  const repo = target.item.repo;
   return Effect.sync(() => beginWorkspaceCreate(identity)).pipe(
-    Effect.andThen(createItemWorkspace(target, devboxTarget)),
+    Effect.andThen(
+      createItemWorkspace(hostKey, {
+        kind: target.kind,
+        repo: {
+          provider: repo.provider,
+          platformHost: repo.platform_host,
+          repositoryKey: repositoryKeyFromWire(repo),
+          owner: repo.owner,
+          name: repo.name,
+          repoPath: repo.repo_path,
+        },
+        number: target.item.Number,
+      }),
+    ),
     Effect.tap((data) =>
       Effect.sync(() => {
         // A local creation is published like the detail views do, so an open
         // detail for the same item shows the workspace without a refetch.
-        if (data?.id && !devboxTarget) {
+        if (data?.id && !hostKey) {
           recordWorkspaceCreated(identity, { id: data.id, status: data.status ?? "provisioning" });
         }
       }),
@@ -144,7 +144,7 @@ function runOnItem(
         ),
       onSuccess: (data) => {
         if (!data?.id) return failed("failed to create workspace");
-        return launchWorkspaceQuickAction(data.id, action, devboxTarget);
+        return launchWorkspaceQuickAction(data.id, action, hostKey);
       },
     }),
   );
@@ -178,30 +178,39 @@ function summary(
   };
 }
 
+type Launch = { readonly label: string; readonly launch: Effect.Effect<QuickActionOutcome, never, GeneratedApi> };
+
 // Runs every launch a few at a time, then reports them all in one message.
 function runLaunches(
   runtime: AppRuntime,
   action: QuickAction,
   noun: string,
-  launches: readonly { label: string; launch: Effect.Effect<QuickActionOutcome, never, GeneratedApi> }[],
+  count: number,
+  launches: Effect.Effect<readonly Launch[], never, FleetSnapshotReads>,
   operation: string,
 ): void {
   runtime.runCommand(
-    Effect.forEach(launches, ({ label, launch }) => launch.pipe(Effect.map((outcome) => ({ label, outcome }))), {
-      concurrency: CONCURRENCY,
-    }).pipe(
-      Effect.flatMap((outcomes) =>
-        Effect.sync(() => {
-          const { message, tone } = summary(action, noun, outcomes);
-          showFlash(message, { tone });
-          if (documentVisible() && outcomes.some(({ outcome }) => outcome.type === "failed"))
-            reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
-        }),
+    launches
+      .pipe(
+        Effect.flatMap((ready) =>
+          Effect.forEach(ready, ({ label, launch }) => launch.pipe(Effect.map((outcome) => ({ label, outcome }))), {
+            concurrency: CONCURRENCY,
+          }),
+        ),
+      )
+      .pipe(
+        Effect.flatMap((outcomes) =>
+          Effect.sync(() => {
+            const { message, tone } = summary(action, noun, outcomes);
+            showFlash(message, { tone });
+            if (documentVisible() && outcomes.some(({ outcome }) => outcome.type === "failed"))
+              reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
+          }),
+        ),
       ),
-    ),
     {
       operation,
-      safeContext: { count: launches.length, agent: action.agent },
+      safeContext: { count, agent: action.agent },
       onFailure: () => {
         showFlash(`"${action.label}" could not start.`, { tone: "danger" });
         if (documentVisible()) reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
@@ -227,12 +236,17 @@ export function runQuickActionOnItems(
     runtime,
     action,
     "items",
-    targets.map((target) => ({ label: listItemLabel(target), launch: runOnItem(target, action, defaultTarget) })),
+    targets.length,
+    resolveDefaultTarget(defaultTarget).pipe(
+      Effect.map((resolved) =>
+        targets.map((target) => ({ label: listItemLabel(target), launch: runOnItem(target, action, resolved) })),
+      ),
+    ),
     "run quick action on items",
   );
 }
 
-/** A workspace a quick action runs in; hostKey is set for devbox workspaces. */
+/** A workspace a quick action runs in; hostKey is set for a devbox or another fleet member. */
 export interface QuickActionWorkspace {
   readonly id: string;
   readonly hostKey?: string | undefined;
@@ -254,7 +268,10 @@ export function runQuickActionOnWorkspaces(
     runtime,
     action,
     "workspaces",
-    workspaces.map(({ id, hostKey, label }) => ({ label, launch: launchWorkspaceQuickAction(id, action, hostKey) })),
+    workspaces.length,
+    Effect.succeed(
+      workspaces.map(({ id, hostKey, label }) => ({ label, launch: launchWorkspaceQuickAction(id, action, hostKey) })),
+    ),
     "run quick action in workspaces",
   );
 }

@@ -4450,6 +4450,91 @@ describe("PullDetail inline workspace handoff", () => {
     },
   );
 
+  const hubNode = "a".repeat(32);
+  const buildBNode = "b".repeat(32);
+  function fleetHosts(buildBWrite: { available: boolean; unavailableReason?: string }) {
+    return [
+      {
+        configKey: "c".repeat(32),
+        kind: "self",
+        name: "build-a",
+        baseURL: "https://build-a.example.test",
+        operationAvailability: { workspaceWrite: { available: true } },
+      },
+      {
+        configKey: hubNode,
+        kind: "remote",
+        federationRole: "hub",
+        name: "forge-hub",
+        baseURL: "https://forge-hub.example.test",
+        operationAvailability: { workspaceWrite: { available: true } },
+      },
+      {
+        configKey: buildBNode,
+        kind: "remote",
+        federationRole: "spoke",
+        name: "build-b",
+        baseURL: "https://build-b.example.test",
+        operationAvailability: { workspaceWrite: buildBWrite },
+      },
+    ];
+  }
+
+  it("creates on the fleet member the saved default names by origin", async () => {
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),
+      POST: vi.fn().mockResolvedValue({ data: { id: "ws-remote", status: "provisioning" } }),
+    };
+    const { navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "https://build-b.example.test",
+    });
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    await fireEvent.click(create);
+    await waitFor(() =>
+      expect(apiClient.POST).toHaveBeenCalledWith(
+        "/fleet/hosts/{host_key}/workspaces",
+        expect.objectContaining({
+          params: { path: { host_key: buildBNode } },
+          body: expect.objectContaining({ owner: "acme", name: "widget", mr_number: 1 }),
+        }),
+      ),
+    );
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith(`/terminal/fleet/${buildBNode}/ws-remote`));
+  });
+
+  it("names an unavailable default and creates on a machine the user picks instead", async () => {
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: { hosts: fleetHosts({ available: false, unavailableReason: "Host is offline." }) },
+      }),
+      POST: vi.fn().mockResolvedValue({ data: { id: "ws-hub", status: "provisioning" } }),
+    };
+    renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "https://build-b.example.test",
+    });
+    const notice = within(await screen.findByRole("group", { name: "Create on another machine" }));
+    expect(notice.getByRole("status").textContent).toBe(
+      "Your default machine, build-b, is unavailable: Host is offline.",
+    );
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    expect(notice.getAllByRole("button").map((button) => button.textContent?.trim())).toEqual([
+      "Create on build-a (this machine)",
+      "Create on forge-hub",
+    ]);
+    await fireEvent.click(notice.getByRole("button", { name: "Create on forge-hub" }));
+    await waitFor(() =>
+      expect(apiClient.POST).toHaveBeenCalledWith(
+        "/fleet/hosts/{host_key}/workspaces",
+        expect.objectContaining({ params: { path: { host_key: hubNode } } }),
+      ),
+    );
+    expect(apiClient.POST).toHaveBeenCalledTimes(1);
+  });
+
   function deferredWorkspaceApiClient() {
     let resolvePost!: (value: { data?: { id: string; status: string; created?: boolean } }) => void;
     const postPromise = new Promise<{ data?: { id: string; status: string; created?: boolean } }>((resolve) => {

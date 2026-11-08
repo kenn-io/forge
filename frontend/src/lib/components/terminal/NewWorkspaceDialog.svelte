@@ -26,7 +26,13 @@
   import { repositoryKeyFromCatalog, repositoryKeyToWire, type RepositoryKey } from "../../api/repository-key.js";
   import { executeOpaqueGeneratedApiRequest } from "../../api/generated-api.js";
   import { FleetSnapshotReads, type HostSummary } from "../../api/fleet-snapshot.js";
-  import { devboxRepositoryUnavailableReason, workspaceTargetUnavailableReason } from "../../stores/workspace-target.svelte.js";
+  import {
+    devboxRepositoryUnavailableReason,
+    findDefaultTargetHost,
+    workspaceHostKey,
+    workspaceHostLabel,
+    workspaceTargetUnavailableReason,
+  } from "../../stores/workspace-target.svelte.js";
   import type { ProblemBody } from "../../api/problems.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -108,6 +114,7 @@
   let workspaceHostsLoaded = $state(false);
   let workspaceHostsError = $state("");
   let selectedWorkspaceHostKey = $state("");
+  let workspaceHostChosen = $state(false);
   let source = $state<NewWorkspaceSource>("repository");
   const kataDaemons = createKataDaemonsStore();
   let selectedDaemonID = $state("");
@@ -136,8 +143,13 @@
     workspaceHostsError = "";
     function receiveHosts(hosts: HostSummary[]): void {
       if (activeSession !== session) return;
-      const self = hosts.find((host) => host.kind === "self");
-      workspaceHosts = self && self.federationRole !== "hub" ? [self] : hosts;
+      workspaceHosts = hosts;
+      // The saved default may name a member by origin or name this machine;
+      // select that host's key until the user picks another.
+      if (!workspaceHostChosen) {
+        const host = findDefaultTargetHost(selectedWorkspaceHostKey, hosts);
+        if (host) selectedWorkspaceHostKey = workspaceHostKey(host) ?? "";
+      }
     }
     fleetLoadExecution = untrack(() => runtime.runCommand(
       Effect.gen(function* () {
@@ -157,7 +169,9 @@
         safeContext: {},
         onFailure: () => {
           if (activeSession !== session) return;
-          workspaceHostsError = "Preferred devbox — status unavailable";
+          workspaceHostsError = selectedWorkspaceHostKey.startsWith("devbox:")
+            ? "Preferred devbox — status unavailable"
+            : "Default machine — status unavailable";
         },
       },
     ));
@@ -287,6 +301,7 @@
     workspaceHostsLoaded = false;
     workspaceHostsError = "";
     selectedWorkspaceHostKey = untrack(() => settings.getWorkspaceSettings().default_execution_target ?? "");
+    workspaceHostChosen = false;
     submitting = false;
     repos = [];
     selectedKey = "";
@@ -367,6 +382,12 @@
     }
     if (selectedWorkspaceHost) return workspaceTargetUnavailableReason(selectedWorkspaceHost, selected, workspaceHostsLoaded);
     if (!selectedWorkspaceHostKey) return "";
+    // An origin is sent only after it resolves to a fleet host.
+    if (selectedWorkspaceHostKey.startsWith("https://")) {
+      return workspaceHostsLoaded
+        ? `Your default machine, ${selectedWorkspaceHostKey}, is not in this fleet. Choose another machine.`
+        : workspaceHostsError || "Checking your default machine…";
+    }
     return workspaceHostsLoaded
       ? "Your selected machine is unavailable. Choose another machine or reconnect it in Settings → Workspaces."
       : "";
@@ -374,7 +395,13 @@
   const workspaceHostOptions = $derived<SelectDropdownOption[]>(
     [
     ...(selectedWorkspaceHostKey && !selectedWorkspaceHost
-      ? [{ value: selectedWorkspaceHostKey, label: workspaceHostsLoaded ? "Unavailable machine — choose another" : workspaceHostsError || "Preferred devbox — checking…", disabled: workspaceTargetReason !== "" }]
+      ? [{
+          value: selectedWorkspaceHostKey,
+          label: workspaceHostsLoaded
+            ? "Unavailable machine — choose another"
+            : workspaceHostsError || (selectedWorkspaceHostKey.startsWith("devbox:") ? "Preferred devbox — checking…" : "Default machine — checking…"),
+          disabled: workspaceTargetReason !== "",
+        }]
       : []),
     ...(!workspaceHosts.some((host) => host.kind === "self") ? [{ value: "", label: "This Forge machine" }] : []),
     ...workspaceHosts.map((host) => {
@@ -383,7 +410,7 @@
         : "Pick a repository first.";
       return {
         value: host.kind === "self" ? "" : host.configKey,
-        label: `${host.name.trim() || host.hostname?.trim() || host.configKey}${host.kind === "self" ? " (this machine)" : host.kind === "devbox" ? " (devbox)" : ""}`,
+        label: workspaceHostLabel(host),
         disabled: unavailableReason !== "",
         ...(unavailableReason === ""
           ? {}
@@ -746,6 +773,7 @@
             options={workspaceHostOptions}
             onchange={(hostKey) => {
               clearPendingLaunch();
+              workspaceHostChosen = true;
               selectedWorkspaceHostKey = hostKey;
             }}
             title="Workspace machine"

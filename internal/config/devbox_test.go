@@ -121,23 +121,34 @@ func TestDefaultExecutionTargetConfig(t *testing.T) {
 	for _, tc := range []struct {
 		name, target string
 		valid        bool
+		saved        string
 	}{
-		{"local", "", true},
-		{"unavailable devbox", "devbox:connection-a", true},
-		{"route-safe identifier", "devbox:Compute_1-A", true},
-		{"unknown kind", "fleet:connection-a", false},
-		{"unprefixed host", "connection-a", false},
-		{"empty identifier", "devbox:", false},
-		{"whitespace", "devbox:connection a", false},
-		{"path", "devbox:connection/a", false},
-		{"query", "devbox:connection?a", false},
-		{"fragment", "devbox:connection#a", false},
+		{"local", "", true, ""},
+		{"unavailable devbox", "devbox:connection-a", true, ""},
+		{"route-safe identifier", "devbox:Compute_1-A", true, ""},
+		{"fleet member origin", "https://build-a.example.test", true, ""},
+		{"canonical fleet origin", "https://Build-A.example.test:443/", true, "https://build-a.example.test"},
+		{"fleet member node ID", "0123456789abcdef0123456789abcdef", true, ""},
+		{"cleartext origin", "http://build-a.example.test", false, ""},
+		{"origin with path", "https://build-a.example.test/forge", false, ""},
+		{"uppercase node ID", "0123456789ABCDEF0123456789ABCDEF", false, ""},
+		{"unknown kind", "fleet:connection-a", false, ""},
+		{"unprefixed host", "connection-a", false, ""},
+		{"empty identifier", "devbox:", false, ""},
+		{"whitespace", "devbox:connection a", false, ""},
+		{"path", "devbox:connection/a", false, ""},
+		{"query", "devbox:connection?a", false, ""},
+		{"fragment", "devbox:connection#a", false, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			content := fmt.Sprintf("[workspaces]\ndefault_execution_target = %q\n", tc.target)
 			if tc.valid {
 				_, saved := roundTripConfigString(t, content)
-				assert.Equal(t, tc.target, saved.Workspaces.DefaultExecutionTarget)
+				want := tc.saved
+				if want == "" {
+					want = tc.target
+				}
+				assert.Equal(t, want, saved.Workspaces.DefaultExecutionTarget)
 				return
 			}
 			_, err := Load(writeConfig(t, content))

@@ -1,26 +1,25 @@
 import { Effect } from "effect";
 import { InvalidExternalPayload } from "./effect-errors.js";
-import { executeGeneratedApiRequest } from "./generated-api.js";
-import { repositoryKeyFromWire, repositoryKeyToWire } from "./repository-key.js";
+import { createItemWorkspace } from "./item-workspace.js";
+import { repositoryKeyFromWire } from "./repository-key.js";
 import type { PullRequest } from "./types.js";
 
 export const createPullRequestWorkspace = Effect.fn("Onboarding.createPullRequestWorkspace")(function* (
   pull: PullRequest,
-  devboxHostKey?: string,
+  hostKey?: string,
 ) {
-  const body = {
-    provider: pull.repo.provider,
-    platform_host: pull.repo.platform_host,
-    ...repositoryKeyToWire(repositoryKeyFromWire(pull.repo)),
-    owner: pull.repo.owner,
-    name: pull.repo.name,
-    mr_number: pull.Number,
-  };
-  const data = yield* executeGeneratedApiRequest("create pull request workspace", (client, signal) =>
-    devboxHostKey
-      ? client.DevboxesService.createDevboxWorkspace({ connectionId: devboxHostKey.slice(7) }, body, { signal })
-      : client.WorkspacesService.createWorkspace(body, { signal }),
-  );
+  const data = yield* createItemWorkspace(hostKey, {
+    kind: "pull",
+    repo: {
+      provider: pull.repo.provider,
+      platformHost: pull.repo.platform_host,
+      repositoryKey: repositoryKeyFromWire(pull.repo),
+      owner: pull.repo.owner,
+      name: pull.repo.name,
+      repoPath: pull.repo.repo_path,
+    },
+    number: pull.Number,
+  });
   if (!data.id) {
     return yield* Effect.fail(
       InvalidExternalPayload.make({
@@ -31,6 +30,6 @@ export const createPullRequestWorkspace = Effect.fn("Onboarding.createPullReques
   }
   return {
     id: data.id,
-    status: data.status,
+    status: data.status ?? "provisioning",
   };
 });

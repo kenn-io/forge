@@ -456,7 +456,7 @@ func workspaceByID(rows []fleet.WorkspaceSummary, id string) *fleet.WorkspaceSum
 
 // TestFederatedForgesE2E exercises the contracts that only emerge when three
 // real daemons communicate: shared provider ownership, observer-local
-// workspace overlays, one-hop fleet projection, outage behavior, event
+// workspace overlays, fleet projection, outage behavior, event
 // re-stamping, protocol enforcement, and synchronous credential revocation.
 func TestFederatedForgesE2E(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
@@ -496,7 +496,9 @@ func TestFederatedForgesE2E(t *testing.T) {
 	require.NotNil(nodeAWorkspace)
 	assert.Empty(nodeAWorkspace.FleetHostKey,
 		"the connected spoke projects its own workspace as local")
-	assert.Nil(workspaceByID(nodeAView.Workspaces, "ws-spoke-b"))
+	siblingWorkspace := workspaceByID(nodeAView.Workspaces, "ws-spoke-b")
+	require.NotNil(siblingWorkspace, "a spoke lists the fleet's workspaces")
+	assert.Equal(federatedNodeBID, siblingWorkspace.FleetHostKey)
 
 	nodeBView := fixture.snapshot(t, fixture.NodeB)
 	assert.Equal(federation.ProtocolVersion, nodeBView.ProtocolVersion)
@@ -504,7 +506,7 @@ func TestFederatedForgesE2E(t *testing.T) {
 	nodeBWorkspace := workspaceByID(nodeBView.Workspaces, "ws-spoke-b")
 	require.NotNil(nodeBWorkspace)
 	assert.Empty(nodeBWorkspace.FleetHostKey)
-	assert.Nil(workspaceByID(nodeBView.Workspaces, "ws-spoke-a"))
+	require.NotNil(workspaceByID(nodeBView.Workspaces, "ws-spoke-a"))
 
 	proxied := fixture.request(
 		t, fixture.Hub, http.MethodGet,

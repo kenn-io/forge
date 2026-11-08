@@ -419,10 +419,11 @@
   const fleetDegraded = $derived(
     fleetError !== null || Object.keys(fleetPeerErrors).length > 0,
   );
-  const showWorkspaceHostBadges = $derived(
-    fleetHosts.length > 1 &&
-      fleetHosts.find((host) => host.kind === "self")?.federationRole === "hub",
-  );
+  // Hubs and spokes list the whole fleet's workspaces, so rows name their machine.
+  const showWorkspaceHostBadges = $derived.by(() => {
+    const role = fleetHosts.find((host) => host.kind === "self")?.federationRole;
+    return fleetHosts.length > 1 && (role === "hub" || role === "spoke");
+  });
 
   // Flat ordering for status and timestamp sorts. The org/repo mode keeps
   // the API order (created_at DESC) inside each repo group.

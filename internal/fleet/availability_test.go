@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProjectForObserverSuppressesTwoHopMutation(t *testing.T) {
+func TestSpokeProjectionRoutesMembersButNotHubDevboxes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	full := Capabilities{Commands: CommandCapabilities{
@@ -18,6 +18,7 @@ func TestProjectForObserverSuppressesTwoHopMutation(t *testing.T) {
 	nodeA := NodeID("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	nodeB := NodeID("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
 	nodeC := NodeID("cccccccccccccccccccccccccccccccc")
+	devbox := NodeID("devbox:compute-a")
 	rawA := RawSnapshot{
 		ProtocolVersion: 3, NodeID: nodeA,
 		Host: RawHost{Hostname: "hub", Platform: "linux"}, Capabilities: &full,
@@ -29,39 +30,41 @@ func TestProjectForObserverSuppressesTwoHopMutation(t *testing.T) {
 	rawC := RawSnapshot{
 		ProtocolVersion: 3, NodeID: nodeC,
 		Host: RawHost{Hostname: "spoke-c", Platform: "linux"}, Capabilities: &full,
+		Workspaces: []RawWorkspace{{ID: "ws-c", Status: "ready"}},
+	}
+	rawDevbox := RawSnapshot{
+		ProtocolVersion: 3, NodeID: devbox,
+		Host: RawHost{Hostname: "compute-a", Platform: "linux"}, Capabilities: &full,
+		Workspaces: []RawWorkspace{{ID: "ws-devbox", Status: "ready"}},
 	}
 	aggregate := BuildNeutralAggregate(rawA, []PeerResult{
 		{NodeID: nodeB, Name: "spoke-b", Reachable: true, Raw: &rawB},
 		{NodeID: nodeC, Name: "spoke-c", Reachable: true, Raw: &rawC},
+		{NodeID: devbox, Name: "compute-a", Role: RoleDevbox, Reachable: true, Raw: &rawDevbox},
 	})
 
 	projected := ProjectForObserver(aggregate, rawB, Observer{NodeID: nodeB, Role: RoleSpoke})
-	var self, remoteC *HostSummary
-	for index := range projected.Hosts {
-		host := &projected.Hosts[index]
-		switch host.ConfigKey {
-		case string(nodeB):
-			self = host
-		case string(nodeC):
-			remoteC = host
-		}
+	hosts := make(map[string]HostSummary)
+	for _, host := range projected.Hosts {
+		hosts[host.ConfigKey] = host
 	}
-	require.NotNil(self)
-	assert.Equal("self", self.Kind)
-	require.NotNil(remoteC)
-	write := remoteC.OperationAvailability[OpWorkspaceWrite]
+	require.Contains(hosts, string(nodeB))
+	assert.Equal("self", hosts[string(nodeB)].Kind)
+	require.Contains(hosts, string(nodeC))
+	assert.True(hosts[string(nodeC)].OperationAvailability[OpWorkspaceWrite].Available,
+		"a spoke creates on another member through the hub")
+	require.Contains(hosts, string(devbox))
+	write := hosts[string(devbox)].OperationAvailability[OpWorkspaceWrite]
 	assert.False(write.Available)
 	require.NotNil(write.UnavailableReason)
 	assert.Equal(ReasonSummaryOnly, *write.UnavailableReason)
 
-	hubView := ProjectForObserver(
-		aggregate, rawA, Observer{NodeID: nodeA, Role: RoleHub},
-	)
-	for _, host := range hubView.Hosts {
-		if host.ConfigKey == string(nodeC) {
-			assert.True(host.OperationAvailability[OpWorkspaceWrite].Available)
-		}
+	workspaces := make(map[string]string)
+	for _, workspace := range projected.Workspaces {
+		workspaces[workspace.ID] = workspace.FleetHostKey
 	}
+	assert.Equal(map[string]string{"ws-c": string(nodeC)}, workspaces,
+		"a spoke lists other members' workspaces but not the hub's devbox work")
 }
 
 func fullCommandCaps() CommandCapabilities {

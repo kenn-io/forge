@@ -13,10 +13,10 @@ const (
 	OpTerminalAttach  = "terminalAttach"
 )
 
-// ReasonSummaryOnly explains why a spoke cannot route an operation through the
-// hub to another spoke. The summary remains useful, but the operation
-// must be performed from the hub or the owning spoke.
-const ReasonSummaryOnly = "This host is visible as a summary only."
+// ReasonSummaryOnly explains why a spoke cannot use one of the hub's devboxes.
+// Only the hub holds devbox connections, so the operation must be performed
+// from the hub.
+const ReasonSummaryOnly = "This devbox is available only from the hub's Forge."
 
 // operationDef maps an operation key to its
 // CommandCapabilities field check and fallback reason.
@@ -117,9 +117,9 @@ type RealCapabilityPolicy struct{}
 
 func (RealCapabilityPolicy) Apply(map[string]HostOperationAvailability, bool) {}
 
-// SummaryOnlyPolicy suppresses every operation on a non-self host in a spoke
-// observer's view. Nodes consume the hub's aggregate for display but
-// deliberately do not create two-hop routing paths through the hub.
+// SummaryOnlyPolicy suppresses every operation on a devbox in a spoke
+// observer's view. Spokes route other members' operations through the hub,
+// but devbox connections belong to the hub alone.
 type SummaryOnlyPolicy struct{}
 
 func (SummaryOnlyPolicy) Apply(

@@ -44,6 +44,7 @@ var authorizedRoutes = []authorizedRoute{
 	{method: http.MethodGet, path: "/api/v1/workspaces/{id}/files", scope: ScopeWorkspaceRead},
 	{method: http.MethodGet, path: "/api/v1/workspaces/{id}/diff/watch", scope: ScopeWorkspaceRead},
 	{method: http.MethodPost, path: "/api/v1/workspaces/{id}/runtime/sessions", scope: ScopeWorkspaceWrite},
+	{method: http.MethodPost, path: "/api/v1/workspaces/{id}/runtime/agent-handoffs", scope: ScopeWorkspaceWrite},
 	{method: http.MethodPatch, path: "/api/v1/workspaces/{id}/runtime/sessions/{session_key}", scope: ScopeWorkspaceWrite},
 	{method: http.MethodDelete, path: "/api/v1/workspaces/{id}/runtime/sessions/{session_key}", scope: ScopeWorkspaceWrite},
 	{method: http.MethodGet, path: "/api/v1/workspaces/{id}/runtime/sessions/{session_key}/attach-spec", scope: ScopeTerminalAttach},
@@ -145,10 +146,32 @@ func RouteScope(method, path string) (Scope, bool) {
 	if method == http.MethodHead {
 		method = http.MethodGet
 	}
+	if target, ok := fleetHostTargetPath(path); ok {
+		path = target
+	}
 	for _, route := range authorizedRoutes {
 		if route.method == method && routePathMatches(route.path, path) {
 			return route.scope, true
 		}
+	}
+	return "", false
+}
+
+// fleetHostTargetPath maps a fleet host route to the route it forwards to on
+// the owning member: /api/v1/fleet/hosts/{host_key}/workspaces forwards to
+// /api/v1/workspaces. A fleet host route needs the same scope as its target,
+// and a target outside the inventory stays forbidden.
+func fleetHostTargetPath(path string) (string, bool) {
+	for _, prefix := range []string{"/api/v1", "/ws/v1"} {
+		rest, ok := strings.CutPrefix(path, prefix+"/fleet/hosts/")
+		if !ok {
+			continue
+		}
+		hostKey, target, ok := strings.Cut(rest, "/")
+		if !ok || hostKey == "" || target == "" {
+			return "", false
+		}
+		return prefix + "/" + target, true
 	}
 	return "", false
 }

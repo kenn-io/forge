@@ -47,7 +47,7 @@ export const quickActionLaunches = new SvelteMap<
   }
 >();
 
-/** Identifies a workspace in quickActionWorkspaces; devbox workspace IDs are only unique per host. */
+/** Identifies a workspace in quickActionWorkspaces; remote workspace IDs are only unique per host. */
 export function quickActionWorkspaceKey(workspaceId: string, hostKey?: string): string {
   return hostKey ? `${hostKey}\0${workspaceId}` : workspaceId;
 }
@@ -151,7 +151,9 @@ function quickActionHandoff(
           ? client.DevboxesService.launchDevboxHandoff({ connectionId: hostKey.slice(7), id: workspaceId }, body, {
               signal,
             })
-          : client.WorkspacesService.launchWorkspaceAgentHandoff({ id: workspaceId }, body, { signal }),
+          : hostKey
+            ? client.FleetService.launchFleetWorkspaceAgentHandoff({ hostKey, id: workspaceId }, body, { signal })
+            : client.WorkspacesService.launchWorkspaceAgentHandoff({ id: workspaceId }, body, { signal }),
       ),
     ),
     Effect.match({

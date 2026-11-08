@@ -290,6 +290,7 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "join-federation", Owner: NodeLocal},
 	{OperationID: "launch-fleet-host-runtime-session", Owner: NodeLocal},
 	{OperationID: "launch-fleet-project-worktree-runtime-session", Owner: NodeLocal},
+	{OperationID: "launch-fleet-workspace-agent-handoff", Owner: NodeLocal},
 	{OperationID: "launch-fleet-workspace-runtime-session", Owner: NodeLocal},
 	{OperationID: "launch-host-runtime-session", Owner: NodeLocal},
 	{OperationID: "launch-project-worktree-runtime-session", Owner: NodeLocal},

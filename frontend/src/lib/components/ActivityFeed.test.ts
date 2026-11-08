@@ -330,6 +330,7 @@ describe("ActivityFeed compact mode", () => {
     canLoadMore.value = true;
     render(ActivityFeed);
     expect(screen.queryByText("No activity found")).toBeNull();
+    expect(screen.getByText("No matches in loaded activity")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
   });
 

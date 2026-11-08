@@ -1018,12 +1018,12 @@
         </div>
       {/if}
 
-      {#if activity.canLoadMoreActivity()}
-        <ListLoadMore loading={activity.isLoadingMoreActivity()} onclick={activity.loadMoreActivity} />
+      {#if flatRows.length === 0 && !activity.isActivityLoading()}
+        <EmptyState title={activity.canLoadMoreActivity() ? "No matches in loaded activity" : "No activity found"} />
       {/if}
 
-      {#if flatRows.length === 0 && !activity.isActivityLoading() && !activity.canLoadMoreActivity()}
-        <EmptyState title="No activity found" />
+      {#if activity.canLoadMoreActivity()}
+        <ListLoadMore loading={activity.isLoadingMoreActivity()} onclick={activity.loadMoreActivity} />
       {/if}
     </div>
     </ScrollBox>

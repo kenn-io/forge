@@ -64,9 +64,10 @@ func (t *externalSessionTracker) markDue(id externalSessionID, hook agentactivit
 	}
 	check := t.checks[id]
 	check.due = true
-	// An idle notice would replace a pending approval or question with nothing
-	// an activity report takes from it alone.
-	if check.hook == nil || !agentactivity.IsIdlePrompt(hook) {
+	// An idle notice ends a turn whose Stop was missed, but it would replace a
+	// pending approval or question with nothing an activity report takes from it
+	// alone.
+	if check.hook == nil || !agentactivity.IsIdlePrompt(hook) || !agentactivity.AwaitsPerson(*check.hook) {
 		check.hook = &hook
 	}
 	t.checks[id] = check

@@ -136,7 +136,6 @@ install: build-release
 	cp "$(BINARY)" "$$tmp"; \
 	chmod 755 "$$tmp"; \
 	mv -f "$$tmp" "$$INSTALL_DIR/$(BINARY)"; \
-	rm -f "$$INSTALL_DIR/kenn-forge-github-app$(EXE_SUFFIX)"; \
 	echo "If a daemon is running, run kenn-forge daemon restart to use this build. For a custom config, add --config PATH."
 
 # Install Bun workspace dependencies for the frontend packages

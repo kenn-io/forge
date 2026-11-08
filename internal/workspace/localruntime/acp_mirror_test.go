@@ -250,9 +250,35 @@ func TestExitedMirrorHandsTheSessionToAForgeRunAgent(t *testing.T) {
 	assert.Equal(t, before[0].ID, saved.State.Messages[0].ID)
 }
 
+// A browser that lost the acknowledgment of a prompt resends it on reconnect.
+// When the agent has the prompt but exited meanwhile, the resend is accepted
+// and starts nothing, so the agent that continues the session never runs it again.
+func TestExitedMirrorTakesADeliveredPromptWithoutStarting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	require.NoError(t, os.WriteFile(path, []byte(claudeTranscriptFixture), 0o600))
+	manager := newACPTestManager(t, Options{ACPSessionsDir: t.TempDir()})
+	starts := 0
+	chat := manager.MirrorACP(ACPMirror{
+		Key: "chat", Agent: "claude", SessionID: "session-1", TranscriptPath: path,
+		Status:    func() ACPMirrorStatus { return ACPMirrorStatus{} },
+		Start:     func() (ACPChat, error) { starts++; return &recordingChat{}, nil },
+		Delivered: func(id string) bool { return id == "p1" },
+	})
+
+	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", ID: "p1", Text: "typed into the pane"}))
+
+	assert.Zero(t, starts)
+	assert.Nil(t, chat.Live())
+}
+
 // startRealMirror returns a mirror of an exited agent whose handoff starts a
 // real owner on the fixture agent, and the fixture's directory.
 func startRealMirror(t *testing.T, agent, transcriptText string) (*DormantACP, string) {
+	t.Helper()
+	return startRealMirrorWithStatus(t, agent, transcriptText, ACPMirrorStatus{})
+}
+
+func startRealMirrorWithStatus(t *testing.T, agent, transcriptText string, status ACPMirrorStatus) (*DormantACP, string) {
 	t.Helper()
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
@@ -272,7 +298,7 @@ func startRealMirror(t *testing.T, agent, transcriptText string) (*DormantACP, s
 	require.NoError(t, os.WriteFile(transcript, []byte(transcriptText), 0o600))
 	chat := manager.MirrorACP(ACPMirror{
 		Key: key, Agent: agent, SessionID: "fixture-session", TranscriptPath: transcript,
-		Status: func() ACPMirrorStatus { return ACPMirrorStatus{} },
+		Status: func() ACPMirrorStatus { return status },
 		Start: func() (ACPChat, error) {
 			if err := manager.PrepareMirroredACP(t.Context(), targetKey, "workspace", key, dir); err != nil {
 				return nil, err
@@ -340,6 +366,25 @@ func TestExitedMirrorWithoutATranscriptShowsTheAgentsHistory(t *testing.T) {
 			assert.Equal(t, []string{"remember", "restored answer", "continue here"}, messageTexts(state)[:3])
 		})
 	}
+}
+
+// The chat read no transcript, so it cannot tell whether the agent had a
+// conversation. When the agent cannot find the session, a prompted agent's
+// conversation would be lost, so the start fails; a never-prompted one has
+// nothing to lose and starts a new session.
+func TestExitedMirrorWithoutATranscriptStartsFreshOnlyIfNeverPrompted(t *testing.T) {
+	t.Run("prompted", func(t *testing.T) {
+		t.Setenv("KENN_FORGE_ACP_LOAD_NOT_FOUND", "1")
+		chat, _ := startRealMirrorWithStatus(t, "gemini", "", ACPMirrorStatus{Prompted: true})
+		require.ErrorContains(t, chat.Command(ACPCommand{Type: "prompt", ID: "p1", Text: "continue here"}), "Resource not found")
+		assert.Nil(t, chat.Live())
+	})
+	t.Run("never prompted", func(t *testing.T) {
+		t.Setenv("KENN_FORGE_ACP_LOAD_NOT_FOUND", "1")
+		chat, _ := startRealMirrorWithStatus(t, "gemini", "", ACPMirrorStatus{})
+		require.NoError(t, chat.Command(ACPCommand{Type: "prompt", ID: "p1", Text: "continue here"}))
+		assert.NotNil(t, chat.Live())
+	})
 }
 
 func messageTexts(state ACPState) []string {

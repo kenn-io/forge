@@ -992,7 +992,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		projection = "full"
 	}
 	pageLimit := itemapi.ActivitySafetyCap
-	if projection == "events" || (projection == "collapsed" && input.Limit > 0) {
+	if projection == "events" || input.Limit > 0 {
 		pageLimit = input.Limit
 		if pageLimit == 0 {
 			pageLimit = 500
@@ -1148,7 +1148,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			HideBots:                 opts.HideBots,
 			HideDrafts:               opts.HideDrafts,
 			HideMergeQueued:          opts.HideMergeQueued,
-			Limit:                    itemapi.ActivitySafetyCap + 1,
+			Limit:                    pageLimit + 1,
 			Since:                    opts.Since,
 		})
 		if err != nil {
@@ -1200,10 +1200,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 	}
 
 	eventsCapped := len(items) > pageLimit
-	itemActivityLimit := itemapi.ActivitySafetyCap
-	if projection == "collapsed" {
-		itemActivityLimit = pageLimit
-	}
+	itemActivityLimit := pageLimit
 	itemActivityCapped := len(itemActivity) > itemActivityLimit || searchMatchesTruncated
 	if len(items) > pageLimit {
 		items = items[:pageLimit]

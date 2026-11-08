@@ -56,6 +56,22 @@ port = 8123
 	assert.Equal("http://127.0.0.1:8123/api/v1/repos", got.url)
 }
 
+func TestActivityForwardsLimit(t *testing.T) {
+	var requestURL string
+	cmd := newCommand(commandDeps{
+		Stdout: &bytes.Buffer{},
+		Stderr: &bytes.Buffer{},
+		Request: func(_ context.Context, _ cliConfig, _ string, target string, _ []string) ([]byte, error) {
+			requestURL = target
+			return nil, nil
+		},
+	})
+	cmd.SetArgs([]string{"--server", "http://forge.test", "activity", "--limit", "50"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Equal(t, "http://forge.test/api/v1/activity?limit=50", requestURL)
+}
+
 func TestRootHelpPointsAgentsToQuickstartAndAPI(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

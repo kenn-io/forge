@@ -11,24 +11,42 @@ export type PullAttributeFilter =
   | "passed_ci"
   | "has_workspace";
 
-// Options in one group are alternatives; an option outside these is its own group.
-const filterGroups: Readonly<Record<string, string>> = {
-  involves_me: "people",
-  unassigned: "people",
-  draft: "draft",
-  ready: "draft",
-  failed_ci: "ci",
-  passed_ci: "ci",
-};
+/**
+ * Whether the selection matches. Each section holds mutually exclusive options and
+ * matches any one selected; every section with a selection must match.
+ */
+export function matchesFilterSections<T>(
+  sections: readonly (readonly T[])[],
+  selected: readonly T[],
+  matches: (filter: T) => boolean,
+): boolean {
+  return sections.every((section) => {
+    const chosen = section.filter((filter) => selected.includes(filter));
+    return chosen.length === 0 || chosen.some(matches);
+  });
+}
 
-/** Whether the filters match: any option within a group, and every selected group. */
-export function matchesFilterGroups<T extends string>(filters: readonly T[], matches: (filter: T) => boolean): boolean {
-  const groups = new Map<string, boolean>();
-  for (const filter of filters) {
-    const group = filterGroups[filter] ?? filter;
-    groups.set(group, groups.get(group) === true || matches(filter));
-  }
-  return [...groups.values()].every(Boolean);
+/**
+ * Toggles a filter. Selecting an option clears the others in its section, so the
+ * menu offers each mutually exclusive pair as a pick-one choice.
+ */
+export function toggleFilterInSections<T>(sections: readonly (readonly T[])[], selected: readonly T[], filter: T): T[] {
+  if (selected.includes(filter)) return selected.filter((item) => item !== filter);
+  const siblings = sections.find((section) => section.includes(filter)) ?? [];
+  return [...selected.filter((item) => !siblings.includes(item)), filter];
+}
+
+/** The PR list's attribute sections, matched as `matchesFilterSections` describes. */
+export const PULL_ATTRIBUTE_SECTIONS: readonly (readonly PullAttributeFilter[])[] = [
+  ["draft", "ready"],
+  ["approved"],
+  ["passed_ci", "failed_ci"],
+  ["merge_conflicts"],
+  ["has_workspace"],
+];
+
+export function pullMatchesAttributeFilters(pr: PullRequest, filters: readonly PullAttributeFilter[]): boolean {
+  return matchesFilterSections(PULL_ATTRIBUTE_SECTIONS, filters, (filter) => pullMatchesAttribute(pr, filter));
 }
 
 export function pullMatchesAttribute(pr: PullRequest, filter: PullAttributeFilter): boolean {

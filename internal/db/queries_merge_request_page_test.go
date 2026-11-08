@@ -100,8 +100,10 @@ func TestListPagesTrackedRepositoryPlans(t *testing.T) {
 		offset        int
 		limit         int
 	}{
-		{"newer_untracked/negative_offset/tracked=30", 30, 200, 60000, false, "", false, -51, 50},
-		{"dense_history/tracked=27", 27, 2000, 0, true, "", false, 0, 50},
+		// Newer excluded rows fill the probe bound; 60 tracked rows fill the 50-row page.
+		{"newer_untracked/negative_offset/tracked=30", 30, 2, 50 * activityPageScanFactor, false, "", false, -51, 50},
+		// Keep all 27 repositories so disabling the walk breaks both PR and issue plans.
+		{"dense_history/tracked=27", 27, 250, 0, true, "", false, 0, 50},
 		{"recent_search/tracked=60", 60, 100, 0, true, "user-a", false, 0, 50},
 		{"partial_page/tracked=51", 51, 10, 300, false, "", true, 0, 50},
 		{"unlimited_issues/tracked=2", 2, 100, 6000, false, "", false, 0, 0},
@@ -531,7 +533,7 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 		mr.State = "merged"
 		mr.AssigneesJSON = `["other"]`
 		if number == 299 || number == 297 || number == 295 {
-			mr.ReviewDecision, mr.AssigneesJSON, mr.CIStatus = "APPROVED", `[]`, "success"
+			mr.AssigneesJSON, mr.ReviewDecision, mr.CIStatus = `[]`, "APPROVED", "success"
 		}
 		mr.LastActivityAt = baseTime().Add(time.Duration(number/2) * time.Minute)
 		if number == 300 {
@@ -574,7 +576,7 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 			mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_activity"}, ListMergeRequestsOpts{
 				State: state, Limit: 2, Offset: 1, AllowedRepoIDs: []int64{large, small},
 				RepoFilters: []RepoFilter{{Platform: "github", PlatformHost: "github.com", RepoPath: "acme/large"}},
-				Attributes:  []string{"approved", "passed_ci"},
+				Attributes:  []string{"approved"},
 			})
 			require.NoError(t, err)
 			require.Len(t, mrs, 2)

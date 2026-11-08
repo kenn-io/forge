@@ -104,10 +104,13 @@ func TestFleetLeaveRejectsUnrevokedEnrollmentOrRunningDaemon(t *testing.T) {
 			command := newFleetCommand(fleetCLIOptions{Stdout: io.Discard})
 			command.SetArgs([]string{"leave", "--config", path})
 			err := command.ExecuteContext(t.Context())
-			if state == federation.EnrollmentRevoked {
+			switch state {
+			case federation.EnrollmentRevoked:
 				require.ErrorContains(err, "stop the Forge daemon")
-			} else {
-				require.ErrorContains(err, "revoke")
+			case federation.EnrollmentPending:
+				require.ErrorContains(err, "abort-preparation")
+			default:
+				require.ErrorContains(err, "Revoke it on the hub")
 			}
 			unchanged, err := config.Load(path)
 			require.NoError(err)

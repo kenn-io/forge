@@ -55,16 +55,29 @@
     grouping.getGroupingMode(),
   );
   const pullStateOptions = ["open", "closed", "all"] as const;
-  const attributeFilterOptions: {
-    value: PullAttributeFilter;
-    label: string;
+  // Every selected filter must match. Review and CI are pick-one pairs of opposites.
+  const pickOneFilterSections: {
+    title: string;
+    options: { value: PullAttributeFilter; label: string }[];
   }[] = [
+    {
+      title: "Review",
+      options: [
+        { value: "draft", label: "Draft" },
+        { value: "ready", label: "Ready for review" },
+      ],
+    },
+    {
+      title: "CI",
+      options: [
+        { value: "passed_ci", label: "Passing CI" },
+        { value: "failed_ci", label: "Failed CI" },
+      ],
+    },
+  ];
+  const conditionFilterOptions: { value: PullAttributeFilter; label: string }[] = [
     { value: "approved", label: "Approved" },
-    { value: "draft", label: "Draft" },
-    { value: "ready", label: "Ready for review" },
     { value: "merge_conflicts", label: "Merge conflicts" },
-    { value: "passed_ci", label: "Passing CI" },
-    { value: "failed_ci", label: "Failed CI" },
     { value: "has_workspace", label: "Has workspace" },
   ];
   const groupingOptions: {
@@ -204,6 +217,14 @@
   ]);
 
   const labelChoices = $derived(labelFilterChoices(pulls.getPulls(), pulls.getLabelFilters()));
+  function attributeFilterItem(option: { value: PullAttributeFilter; label: string }) {
+    return {
+      id: option.value === "has_workspace" ? "has-workspace" : `pr-${option.value}`,
+      label: option.label,
+      active: pulls.getAttributeFilters().includes(option.value),
+      onSelect: () => pulls.toggleAttributeFilter(option.value),
+    };
+  }
 
   const localFilterSections = $derived.by(() => [
     {
@@ -235,14 +256,13 @@
             pulls.loadPulls();
           },
         },
-        ...attributeFilterOptions.map((option) => ({
-          id: `pr-${option.value}`,
-          label: option.label,
-          active: pulls.getAttributeFilters().includes(option.value),
-          onSelect: () => pulls.toggleAttributeFilter(option.value),
-        })),
+        ...conditionFilterOptions.map(attributeFilterItem),
       ],
     },
+    ...pickOneFilterSections.map((section) => ({
+      title: section.title,
+      items: section.options.map(attributeFilterItem),
+    })),
     {
       title: "View",
       items: [

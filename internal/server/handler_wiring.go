@@ -243,6 +243,7 @@ func (s *Server) wireHandlers() {
 	s.configreload.ReconcileOrphanedRepoVisibility = s.settingsapi.ReconcileOrphanedRepoVisibility
 	s.configreload.RefreshRuntimeTargetsLocked = s.settingsapi.RefreshRuntimeTargetsLocked
 	s.configreload.RunBackground = s.streamapi.RunBackground
+	s.configreload.ReconcileDeclaredSpokes = s.ReconcileDeclaredSpokes
 	s.configreload.SwapGitHubNativeStackPreferenceLocked = s.syncevents.SwapGitHubNativeStackPreferenceLocked
 	s.configreload.UpdateExternalContext = func(sources []config.ExternalContextSource) {
 		if s.externalContext != nil {

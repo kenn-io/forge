@@ -201,6 +201,311 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
+describe("flat activity paging", () => {
+  const pageItem: ActivityItem = {
+    ...itemActivity(7),
+    id: "comment:7",
+    cursor: "comment:7",
+    activity_type: "comment",
+    author: "alice",
+    body_preview: "cache",
+    created_at: new Date().toISOString(),
+  };
+
+  function pageResponse(limit: number) {
+    return {
+      data: {
+        items: Array.from({ length: limit }, (_, index) => ({
+          ...pageItem,
+          id: `comment:${index}`,
+          cursor: `comment:${index}`,
+        })),
+        capped: true,
+      },
+      error: null,
+    };
+  }
+
+  it.each(["provider", "empty provider", "scheduled"])("replaces the flat page on %s refresh", async (source) => {
+    vi.useFakeTimers();
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: 1011,
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    };
+    const initial = pageResponse(200).data.items.map((item) => ({ ...item, repo }));
+    const replacement = source === "empty provider" ? [] : initial.map((item) => ({ ...item, id: `fresh:${item.id}` }));
+    let snapshots = 0;
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (options?.params?.query?.projection === "events") {
+        return {
+          data: { items: [], capped: false, event_cursor: initial[0].cursor },
+          error: null,
+        };
+      }
+      snapshots += 1;
+      return {
+        data: {
+          items: snapshots === 1 ? initial : replacement,
+          item_activity: [{ ...itemActivity(7), repo, activity_at: pageItem.created_at }],
+          capped: source !== "empty provider" || snapshots === 1,
+          ...(source !== "empty provider" || snapshots === 1 ? { event_cursor: initial[0].cursor } : {}),
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems()).toHaveLength(200));
+    if (source !== "scheduled") {
+      await runtime!.runCommand(store.reconcileActivityEffect(), {
+        operation: "reconcile flat activity in test",
+        safeContext: {},
+        onFailure: () => {},
+      }).exit;
+    } else {
+      store.startActivityPolling();
+      await vi.advanceTimersByTimeAsync(45_000);
+    }
+    expect(snapshots).toBe(2);
+    expect(store.getActivityItems().map((item) => item.id)).toEqual(replacement.map((item) => item.id));
+    expect(store.getActivityEventCursor()).toBe(initial[0].cursor);
+  });
+
+  it("keeps live events within the loaded page and exposes overflow", async () => {
+    const recent = Array.from({ length: 500 }, (_, index) => ({
+      ...pageItem,
+      id: `recent:${index}`,
+      cursor: `recent:${index}`,
+      created_at: new Date(Date.now() - index * 1000).toISOString(),
+    }));
+    const initial = recent.slice(300, 500);
+    let polled = false;
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { after?: string; limit?: number } } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (options?.params?.query?.after) {
+        polled = true;
+        return { data: { items: recent.slice(0, 300), capped: false, event_cursor: recent[0].cursor }, error: null };
+      }
+      const limit = options?.params?.query?.limit ?? 5000;
+      return {
+        data: {
+          items: polled ? recent.slice(0, limit) : initial,
+          capped: polled && recent.length > limit,
+          event_cursor: polled ? recent[0].cursor : initial[0].cursor,
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    store.startActivityPolling();
+    await vi.waitFor(() => expect(store.getActivityItems()[0]?.id).toBe("recent:0"));
+    expect(store.getActivityItems()).toHaveLength(200);
+    expect(store.canLoadMoreActivity()).toBe(true);
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.getActivityItems()).toEqual(recent.slice(0, 400));
+  });
+
+  it.each([false, true])("adopts a reconciled page after load more (failed: %s)", async (failed) => {
+    let requests = 0;
+    const response = pageResponse(400);
+    const page = Promise.withResolvers<typeof response | { error: { detail: string }; response: Response }>();
+    const reconciliation = Promise.withResolvers<typeof response>();
+    const get = vi.fn(
+      async (path: string, options?: { signal?: AbortSignal; params?: { query?: { limit?: number } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        requests += 1;
+        if (requests === 2) {
+          options?.signal?.addEventListener("abort", () => page.reject(new DOMException("Aborted", "AbortError")), {
+            once: true,
+          });
+          return page.promise;
+        }
+        if (requests === 3) return reconciliation.promise;
+        return pageResponse(options?.params?.query?.limit ?? 5000);
+      },
+    );
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(requests).toBe(2));
+    expect(store.isLoadingMoreActivity()).toBe(true);
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    const reconciled = runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    await vi.waitFor(() => expect(requests).toBe(3));
+    if (failed) {
+      page.resolve({ error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) });
+      await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+      expect(store.getActivityError()).toBe("unavailable");
+    }
+    reconciliation.resolve(response);
+    await reconciled;
+    expect(store.isLoadingMoreActivity()).toBe(false);
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get).toHaveBeenCalledWith(
+      "/activity",
+      expect.objectContaining({ params: { query: expect.objectContaining({ limit: 600 }) } }),
+    );
+  });
+
+  it.each(["range", "search"])("resets the flat page after changing the %s", async (filter) => {
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { limit?: number } } }) =>
+      path === "/activity/authors"
+        ? { data: { authors: [] }, error: null }
+        : pageResponse(options?.params?.query?.limit ?? 5000),
+    );
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.getActivityItems()).toHaveLength(400));
+    if (filter === "range") store.setTimeRange("30d");
+    else store.setActivitySearch("cache");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ limit: 200, ...(filter === "search" ? { search: "cache" } : {}) }) },
+      }),
+    );
+  });
+
+  it("refuses load more when only parent summaries overflow", async () => {
+    const get = vi.fn(async (path: string) =>
+      path === "/activity/authors"
+        ? { data: { authors: [] }, error: null }
+        : {
+            data: {
+              ...pageResponse(200).data,
+              capped: false,
+              item_activity: Array.from({ length: 200 }, (_, index) => ({
+                ...itemActivity(index + 1),
+                activity_at: pageItem.created_at,
+              })),
+              item_activity_capped: true,
+            },
+            error: null,
+          },
+    );
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.canLoadMoreActivity()).toBe(false);
+    const requests = get.mock.calls.filter(([path]) => path === "/activity").length;
+    store.loadMoreActivity();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(get.mock.calls.filter(([path]) => path === "/activity")).toHaveLength(requests);
+  });
+
+  it("keeps the final page pending until received and stops at 5000", async () => {
+    const finalPage = Promise.withResolvers<ReturnType<typeof pageResponse>>();
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { limit?: number } } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      const limit = options?.params?.query?.limit ?? 5000;
+      return limit === 5000 ? finalPage.promise : pageResponse(limit);
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    for (let limit = 400; limit < 5000; limit += 200) {
+      store.loadMoreActivity();
+      await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    }
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(true));
+    expect(store.isLoadingMoreActivity()).toBe(true);
+    expect(store.canLoadMoreActivity()).toBe(true);
+    finalPage.resolve(pageResponse(5000));
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.canLoadMoreActivity()).toBe(false);
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({ params: { query: expect.objectContaining({ limit: 5000 }) } }),
+    );
+  });
+
+  it.each(["threaded", "flat"])("keeps the flat page size through a view toggle ending in %s", async (view) => {
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { limit?: number } } }) =>
+      path === "/activity/authors"
+        ? { data: { authors: [] }, error: null }
+        : pageResponse(options?.params?.query?.limit ?? 5000),
+    );
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.getActivityItems()).toHaveLength(400));
+    store.setViewMode("threaded");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    if (view === "flat") {
+      store.setViewMode("flat");
+      store.loadActivity();
+      await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    }
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: {
+          query:
+            view === "flat"
+              ? expect.objectContaining({ limit: 400 })
+              : expect.not.objectContaining({ limit: expect.any(Number) }),
+        },
+      }),
+    );
+  });
+
+  it("keeps the loaded page and allows retry after load more fails", async () => {
+    let fail = false;
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { limit?: number } } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (fail) return { error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) };
+      const response = pageResponse(options?.params?.query?.limit ?? 5000);
+      return { ...response, data: { ...response.data, item_activity: [itemActivity(7)] } };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get).toHaveBeenCalledWith(
+      "/activity",
+      expect.objectContaining({ params: { query: expect.objectContaining({ projection: "full", limit: 200 }) } }),
+    );
+    fail = true;
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.getItemActivity()).toHaveLength(1);
+    expect(store.isLoadingMoreActivity()).toBe(false);
+    expect(store.getActivityError()).toBe("unavailable");
+    expect(getFlash()).toBeNull();
+    const requestsBeforeRetry = get.mock.calls.filter(([path]) => path === "/activity").length;
+    fail = false;
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get.mock.calls.filter(([path]) => path === "/activity")).toHaveLength(requestsBeforeRetry + 1);
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ limit: 400 }) },
+      }),
+    );
+  });
+});
+
 describe("activity store workspace activity", () => {
   it.each(["layout", "URL filters"])("resumes polling when cached %s supersede a pending load", async (change) => {
     vi.useFakeTimers();
@@ -481,17 +786,16 @@ describe("activity store workspace activity", () => {
   });
 
   it("retains parent-snapshot truncation independently from event truncation", async () => {
-    const client = {
-      GET: async () => ({
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      return {
         data: { items: [], capped: false, item_activity: [itemActivity(7)], item_activity_capped: true },
         error: null,
-      }),
-    } as unknown as GeneratedClient;
-    const store = createActivityStore({ client });
-
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-
     expect(store.isActivityCapped()).toBe(false);
     expect(store.isItemActivityCapped()).toBe(true);
   });
@@ -3419,6 +3723,7 @@ describe("activity polling recovery", () => {
       }),
     } as unknown as GeneratedClient;
     const store = createActivityStore({ client });
+    store.setViewMode("threaded");
     store.loadActivity();
     await vi.waitFor(() => expect(store.getActivityItems()).toEqual([retained, retainedNotification]));
 
@@ -3781,6 +4086,7 @@ describe("activity polling recovery", () => {
       }),
     } as unknown as GeneratedClient;
     const store = createActivityStore({ client });
+    store.setViewMode("threaded");
     store.loadActivity();
     await vi.waitFor(() => expect(store.getActivityItems()).toEqual([initial]));
 

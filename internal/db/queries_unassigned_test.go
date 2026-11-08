@@ -128,7 +128,7 @@ func TestListUnassignedWorkspaceSubjectKeysSupportsLargeSetsAndHidesRemovedItems
 	}, got)
 }
 
-func TestInclusionFiltersMatchAnySelectedOption(t *testing.T) {
+func TestInvolvementAndUnassignedFiltersBothApply(t *testing.T) {
 	t.Parallel()
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -138,10 +138,10 @@ func TestInclusionFiltersMatchAnySelectedOption(t *testing.T) {
 		pr := testMR(repoID, number, withMRActivity(baseTime().Add(time.Duration(number)*time.Minute)))
 		issue := testIssue(repoID, number, withIssueActivity(baseTime().Add(time.Duration(number)*time.Minute)))
 		pr.AssigneesJSON, issue.AssigneesJSON = `["other"]`, `["other"]`
-		if number == 1 {
+		if number <= 2 {
 			pr.Author, issue.Author = "viewer", "viewer"
 		}
-		if number == 2 {
+		if number >= 2 {
 			pr.AssigneesJSON, issue.AssigneesJSON = `[]`, `[]`
 		}
 		insertTestMRWithOptions(t, d, pr)
@@ -149,22 +149,22 @@ func TestInclusionFiltersMatchAnySelectedOption(t *testing.T) {
 	}
 	pulls, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{ViewerLogins: viewer, Unassigned: true, Limit: 2})
 	require.NoError(t, err)
-	require.Len(t, pulls, 2)
-	assert.Equal(t, []int{2, 1}, []int{pulls[0].Number, pulls[1].Number})
+	require.Len(t, pulls, 1)
+	assert.Equal(t, 2, pulls[0].Number)
 	issues, err := d.ListIssues(ctx, ListIssuesOpts{ViewerLogins: viewer, Unassigned: true, Limit: 2})
 	require.NoError(t, err)
-	require.Len(t, issues, 2)
-	assert.Equal(t, []int{2, 1}, []int{issues[0].Number, issues[1].Number})
+	require.Len(t, issues, 1)
+	assert.Equal(t, 2, issues[0].Number)
 	activity, err := d.ListActivity(ctx, ListActivityOpts{ViewerLogins: viewer, Unassigned: true, Limit: 4})
 	require.NoError(t, err)
-	require.Len(t, activity, 4)
+	require.Len(t, activity, 2)
 	for _, item := range activity {
-		assert.Contains(t, []int{1, 2}, item.ItemNumber)
+		assert.Equal(t, 2, item.ItemNumber)
 	}
 	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{ViewerLogins: viewer, Unassigned: true, Limit: 4, SubjectLimit: 4})
 	require.NoError(t, err)
-	require.Len(t, projection.Subjects, 4)
+	require.Len(t, projection.Subjects, 2)
 	for _, subject := range projection.Subjects {
-		assert.Contains(t, []int{1, 2}, subject.Subject.Key.ItemNumber)
+		assert.Equal(t, 2, subject.Subject.Key.ItemNumber)
 	}
 }

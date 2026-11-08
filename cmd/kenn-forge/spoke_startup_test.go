@@ -317,7 +317,7 @@ func TestFederationSpokeRenewalCannotReactivateRevokedEnrollment(t *testing.T) {
 	renewed := make(chan error, 1)
 	go func() {
 		renewed <- renewFederationSpokeActivation(
-			t.Context(), enrollments, credentials, hub.Client(),
+			t.Context(), nil, enrollments, credentials, hub.Client(),
 		)
 	}()
 	<-activationStarted
@@ -361,7 +361,7 @@ func TestFederationSpokeRenewalSuspendsAfterHubRejection(t *testing.T) {
 	require.NoError(promoteFederationSpokeCredentialScopes(credentials, startupHubID))
 
 	err := renewFederationSpokeActivation(
-		t.Context(), enrollments, credentials, hub.Client(),
+		t.Context(), nil, enrollments, credentials, hub.Client(),
 	)
 
 	require.ErrorIs(err, errSpokeActivationSuspended)
@@ -380,7 +380,7 @@ func TestMissingOrExpiredSpokeLeaseRetriesAfterBackoff(t *testing.T) {
 }
 
 func TestFederationSpokeRenewalStopsWhenEnrollmentIsInactive(t *testing.T) {
-	err := renewFederationSpokeActivation(t.Context(), nil, nil, nil)
+	err := renewFederationSpokeActivation(t.Context(), nil, nil, nil, nil)
 
 	require.ErrorIs(t, err, errSpokeActivationInactive)
 }
@@ -651,4 +651,103 @@ func spokeStartupFixture(
 			NodeID: startupHubID, BaseURL: hubURL,
 		},
 	}}
+}
+
+func TestFederationSpokeRenewalRetriesRecordingRevocationAfterSaveFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	assert := assert.New(t)
+	require := require.New(t)
+	hub := startRevokingHub(t)
+	database := dbtest.Open(t)
+	enrollments, credentials, _ := spokeStartupFixture(t, database, hub.URL, true)
+	require.NoError(enrollments.MarkLocalActive(
+		t.Context(), startupEnrollmentID, time.Now().Add(time.Hour),
+	))
+	require.NoError(promoteFederationSpokeCredentialScopes(credentials, startupHubID))
+	storeDir := filepath.Dir(enrollments.Path())
+	require.NoError(os.Chmod(storeDir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(storeDir, 0o700) })
+
+	err := renewFederationSpokeActivation(t.Context(), database, enrollments, credentials, hub.Client())
+	require.Error(err)
+	require.NotErrorIs(err, errSpokeActivationInactive, "renewal keeps running to record the revocation")
+
+	require.NoError(os.Chmod(storeDir, 0o700))
+	err = renewFederationSpokeActivation(t.Context(), database, enrollments, credentials, hub.Client())
+	require.ErrorIs(err, errSpokeActivationInactive)
+	local, ok := enrollments.Local()
+	require.True(ok)
+	assert.Equal(federation.EnrollmentRevoked, local.State)
+}
+
+// startRevokingHub starts a hub that reports every enrollment revoked.
+func startRevokingHub(t *testing.T) *httptest.Server {
+	t.Helper()
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(
+		w http.ResponseWriter, r *http.Request,
+	) {
+		if r.URL.Path == "/api/v1/federation/identity" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"node_id": startupHubID, "protocol_version": federation.ProtocolVersion,
+			})
+			return
+		}
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"title":"Forbidden","status":403,"detail":"federation enrollment was revoked","details":{"reason":"enrollmentRevoked"}}`))
+	}))
+	t.Cleanup(hub.Close)
+	return hub
+}
+
+// revokeWithFailedCleanup has an active spoke learn of its revocation while
+// its database is unavailable, so clearing its preparation state fails. It
+// returns the spoke's stores with the database reopened.
+func revokeWithFailedCleanup(t *testing.T) (*db.DB, *federation.Store, *federationauth.Store, *config.Config, *http.Client) {
+	t.Helper()
+	require := require.New(t)
+	hub := startRevokingHub(t)
+	path := filepath.Join(t.TempDir(), "forge.db")
+	database := dbtest.OpenAt(t, path)
+	enrollments, credentials, cfg := spokeStartupFixture(t, database, hub.URL, true)
+	require.NoError(enrollments.MarkLocalActive(
+		t.Context(), startupEnrollmentID, time.Now().Add(time.Hour),
+	))
+	require.NoError(promoteFederationSpokeCredentialScopes(credentials, startupHubID))
+	require.NoError(database.Close())
+
+	err := renewFederationSpokeActivation(t.Context(), database, enrollments, credentials, hub.Client())
+	require.Error(err)
+	require.NotErrorIs(err, errSpokeActivationInactive, "renewal keeps running to finish the cleanup")
+	local, ok := enrollments.Local()
+	require.True(ok)
+	require.Equal(federation.EnrollmentRevoked, local.State)
+	return dbtest.OpenPreparedAt(t, path), enrollments, credentials, cfg, hub.Client()
+}
+
+func TestFederationSpokeRenewalFinishesRevocationCleanupAfterItFails(t *testing.T) {
+	require := require.New(t)
+	database, enrollments, credentials, _, client := revokeWithFailedCleanup(t)
+
+	err := renewFederationSpokeActivation(t.Context(), database, enrollments, credentials, client)
+	require.ErrorIs(err, errSpokeActivationInactive)
+	preparation, err := database.GetSpokePreparation(t.Context())
+	require.NoError(err)
+	assert.Empty(t, preparation.EnrollmentID, "a later join starts from a clear preparation state")
+}
+
+func TestFederationSpokeStartupFinishesRevocationCleanupAfterItFails(t *testing.T) {
+	require := require.New(t)
+	database, enrollments, credentials, cfg, client := revokeWithFailedCleanup(t)
+
+	_, err := startFederationSpoke(t.Context(), declaredSpokeStartup{
+		database: database, cfg: cfg, nodeID: startupNodeID,
+		enrollments: enrollments, credentials: credentials, httpClient: client,
+	})
+	require.NoError(err)
+	preparation, err := database.GetSpokePreparation(t.Context())
+	require.NoError(err)
+	assert.Empty(t, preparation.EnrollmentID, "a later join starts from a clear preparation state")
 }

@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -631,6 +633,64 @@ func TestOutboundDisabledSpokeIsNotContactedOrReportedOffline(t *testing.T) {
 	_, err = srv.revokeEnrollment(t.Context(), &revokeEnrollmentInput{EnrollmentID: enrollment.ID})
 	require.NoError(err)
 	assert.Equal(int32(1), calls.Load(), "revocation must not contact an outbound-disabled spoke")
+}
+
+func TestManualRevocationOfUnreachableDeclaredSpokeKeepsItsNotice(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv := New(Deps{DB: dbtest.Open(t), Tunnels: fleettunnel.NewRegistry()})
+	configureTestMembers(t, srv, http.DefaultClient, config.FleetMember{
+		NodeID: testMemberNodeID, BaseURL: "https://spoke.example", OutboundDisabled: true,
+	})
+	enrollment, ok := srv.enrollments.EnrollmentForSpoke(testMemberNodeID)
+	require.True(ok)
+	require.NoError(srv.enrollments.MarkDeclared(t.Context(), enrollment.ID))
+	spokeToHub, err := srv.credentials.MintInbound(testMemberNodeID, federationauth.SpokeToHubScopes())
+	require.NoError(err)
+
+	// The spoke's tunnel is down, so the hub cannot tell it. The operator
+	// revokes again to finish cleanup.
+	for range 2 {
+		_, err = srv.revokeEnrollment(t.Context(), &revokeEnrollmentInput{EnrollmentID: enrollment.ID})
+		require.NoError(err)
+	}
+	kept, ok := srv.credentials.Authenticate(spokeToHub)
+	require.True(ok, "the spoke keeps a credential that reaches the route reporting the revocation")
+	assert.Equal([]federationauth.Scope{federationauth.ScopeEnrollmentActivate}, slices.Collect(maps.Keys(kept.Scopes)))
+}
+
+func TestRepeatedRevocationLeavesTheNodesNewerEnrollment(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv := New(Deps{DB: dbtest.Open(t), Tunnels: fleettunnel.NewRegistry()})
+	configureTestMembers(t, srv, http.DefaultClient, config.FleetMember{
+		NodeID: testMemberNodeID, BaseURL: "https://spoke.example", OutboundDisabled: true,
+	})
+	old, ok := srv.enrollments.EnrollmentForSpoke(testMemberNodeID)
+	require.True(ok)
+	_, err := srv.revokeEnrollment(t.Context(), &revokeEnrollmentInput{EnrollmentID: old.ID})
+	require.NoError(err)
+
+	// The same spoke enrolls again.
+	token, err := srv.enrollments.CreateOneTimeToken(federation.Identity{
+		NodeID: testHubNodeID, BaseURL: "https://hub.example",
+	}, time.Now().Add(time.Hour))
+	require.NoError(err)
+	rejoined, err := srv.enrollments.Begin(t.Context(), token.Token, federation.JoinRequest{
+		EnrollmentID: "cccccccccccccccccccccccccccccccc", NodeID: testMemberNodeID,
+		Platform: "linux", BaseURL: "https://spoke.example",
+		ProtocolVersion: federation.ProtocolVersion, HubCredential: strings.Repeat("d", 48),
+	})
+	require.NoError(err)
+	require.NoError(srv.enrollments.Activate(t.Context(), rejoined.ID, time.Now().Add(time.Hour)))
+	spokeToHub, err := srv.credentials.MintInbound(testMemberNodeID, federationauth.SpokeToHubScopes())
+	require.NoError(err)
+
+	_, err = srv.revokeEnrollment(t.Context(), &revokeEnrollmentInput{EnrollmentID: old.ID})
+	require.NoError(err)
+	kept, ok := srv.credentials.Authenticate(spokeToHub)
+	require.True(ok, "revoking the old enrollment again leaves the new one's credential")
+	assert.Contains(kept.Scopes, federationauth.ScopeProviderRead)
 }
 
 func TestOutboundDisabledSpokeIsReachedThroughItsTunnel(t *testing.T) {

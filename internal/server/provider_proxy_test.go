@@ -334,8 +334,8 @@ func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T)
 		snapshot,
 	)
 	require.NoError(err)
-	require.Len(combined.WorkspaceActivity, 1)
-	assert.Equal(1, combined.WorkspaceActivity[0].ItemNumber)
+	// Only the hub can tell whether a standalone local subject involves the viewer.
+	assert.Empty(combined.WorkspaceActivity)
 
 	response, err := srv.activityapi.OverlayLocalActivityWorkspaceSnapshot(
 		t.Context(),

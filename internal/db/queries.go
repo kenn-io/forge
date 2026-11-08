@@ -1810,6 +1810,22 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	return d.listMergeRequests(ctx, d.roStmts, opts)
 }
 
+// filterSectionsCondition ORs the options within each section and ANDs the
+// sections. Only mutually exclusive options, such as draft and ready, share a
+// section, so every other selected filter narrows the list.
+func filterSectionsCondition(sections ...[]string) string {
+	var selected []string
+	for _, options := range sections {
+		if len(options) > 0 {
+			selected = append(selected, "("+strings.Join(options, " OR ")+")")
+		}
+	}
+	if len(selected) == 0 {
+		return ""
+	}
+	return "(" + strings.Join(selected, " AND ") + ")"
+}
+
 func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeRequestsOpts) ([]MergeRequest, error) {
 	state := opts.State
 	if state == "" {
@@ -1945,25 +1961,14 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		narrowing = append(narrowing, conds[filterCondStart:]...)
 		narrowingArgs = append(narrowingArgs, args[filterArgStart:]...)
 	}
-	// Options in one group match any; every selected group must match. Only the
-	// people group binds arguments, and it comes first so they stay in order.
-	var inclusion [][]string
-	groupIndex := map[string]int{}
-	include := func(group, condition string) {
-		i, ok := groupIndex[group]
-		if !ok {
-			i = len(inclusion)
-			groupIndex[group] = i
-			inclusion = append(inclusion, nil)
-		}
-		inclusion[i] = append(inclusion[i], condition)
-	}
+	// Every selected filter must match; mutually exclusive options share a section and match either.
+	var involved, unassigned []string
 	var inclusionArgs []any
 	if opts.Unassigned {
-		include("people", unassignedCondition("p"))
+		unassigned = append(unassigned, unassignedCondition("p"))
 	}
 	if opts.ViewerLogins != nil {
-		include("people", mergeRequestInvolvementCondition("p", opts.ViewerLogins, &inclusionArgs))
+		involved = append(involved, mergeRequestInvolvementCondition("p", opts.ViewerLogins, &inclusionArgs))
 	}
 	// Empty and JSON null decode as no checks; invalid check arrays cannot match by check content.
 	const checks = `CASE
@@ -1972,31 +1977,32 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 			WHEN 'null' THEN '[]' WHEN 'array' THEN p.ci_checks_json END
 		END`
 	const pending = `COALESCE(json_extract(c.value, '$.status'), '') IN ('in_progress', 'queued', 'pending', 'waiting')`
+	var review, approval, ci, conflicts, mergeQueue []string
 	for _, attribute := range opts.Attributes {
 		switch attribute {
 		case "approved":
-			include("approved", "upper(trim(p.review_decision)) = 'APPROVED'")
+			approval = append(approval, "upper(trim(p.review_decision)) = 'APPROVED'")
 		case "draft":
-			include("draft", "p.is_draft")
+			review = append(review, "p.is_draft")
 		case "ready":
-			include("draft", "(p.state = 'open' AND NOT p.is_draft)")
+			review = append(review, "(p.state = 'open' AND NOT p.is_draft)")
 		case "merge_conflicts":
-			include("merge_conflicts", "(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))")
+			conflicts = append(conflicts, "(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))")
 		case "merge_queue":
-			include("merge_queue", `(p.state = 'open' AND EXISTS (
+			mergeQueue = append(mergeQueue, `(p.state = 'open' AND EXISTS (
 				SELECT 1 FROM forge_merge_queue_states q
 				WHERE q.repo_id = p.repo_id AND q.number = p.number
 				  AND (q.queued OR (q.removal_reason != '' AND q.removed_at IS NOT NULL))
 			))`)
 		case "failed_ci":
-			include("ci", `(lower(trim(p.ci_status)) IN ('failure', 'failed', 'error') OR (
+			ci = append(ci, `(lower(trim(p.ci_status)) IN ('failure', 'failed', 'error') OR (
 				NOT EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE c.type NOT IN ('object', 'null'))
 				AND EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
 					NOT (`+pending+`) AND json_extract(c.value, '$.conclusion') IN ('failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure')
 					ELSE 0 END)
 			))`)
 		case "passed_ci":
-			include("ci", `(lower(trim(p.ci_status)) IN ('', 'success')
+			ci = append(ci, `(lower(trim(p.ci_status)) IN ('', 'success')
 				AND (`+checks+`) IS NOT NULL
 				AND (lower(trim(p.ci_status)) != '' OR json_array_length(`+checks+`) > 0)
 				AND NOT EXISTS (
@@ -2006,19 +2012,16 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 				))`)
 		}
 	}
-	if len(inclusion) > 0 {
-		groups := make([]string, len(inclusion))
-		for i, conditions := range inclusion {
-			groups[i] = "(" + strings.Join(conditions, " OR ") + ")"
-		}
-		// One CASE term keeps the planner from indexing a group and losing the activity-order scan.
-		inclusionCondition := "CASE WHEN " + strings.Join(groups, " AND ") + " THEN 1 ELSE 0 END"
+	if inclusion := filterSectionsCondition(involved, unassigned, review, approval, ci, conflicts, mergeQueue); inclusion != "" {
 		if len(narrowing) > 0 {
 			// SQLite can reorder WHERE terms; evaluate narrowing filters before inclusion subqueries.
-			inclusionCondition = "CASE WHEN " + strings.Join(narrowing, " AND ") + " THEN " + inclusionCondition + " ELSE 0 END"
+			inclusion = "CASE WHEN " + strings.Join(narrowing, " AND ") + " THEN " + inclusion + " ELSE 0 END"
 			args = append(args, narrowingArgs...)
+		} else {
+			// One opaque term keeps SQLite paging in activity order instead of planning around one section.
+			inclusion = "CASE WHEN " + inclusion + " THEN 1 ELSE 0 END"
 		}
-		conds = append(conds, inclusionCondition)
+		conds = append(conds, inclusion)
 		args = append(args, inclusionArgs...)
 	}
 
@@ -3344,21 +3347,17 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		conds = append(conds, `EXISTS (SELECT 1 FROM json_each(COALESCE(NULLIF(i.assignees_json, ''), '[]')) WHERE value = ?)`)
 		args = append(args, opts.Assignee)
 	}
-	var inclusion []string
 	if opts.Unassigned {
-		inclusion = append(inclusion, unassignedCondition("i"))
+		conds = append(conds, unassignedCondition("i"))
 	}
 	if opts.ViewerLogins != nil {
-		inclusion = append(inclusion, issueInvolvementCondition("i", opts.ViewerLogins, &args))
+		conds = append(conds, issueInvolvementCondition("i", opts.ViewerLogins, &args))
 	}
 	if opts.ReferencedByPR {
-		inclusion = append(inclusion, `EXISTS (
+		conds = append(conds, `EXISTS (
 			SELECT 1 FROM forge_issue_pr_references ref
 			WHERE ref.issue_id = i.id
 		)`)
-	}
-	if len(inclusion) > 0 {
-		conds = append(conds, "("+strings.Join(inclusion, " OR ")+")")
 	}
 
 	pageAll = pageAll && d.activityPageWalks(ctx, "forge_issues", "+last_activity_at", opts.AllowedRepoIDs, opts.Limit, opts.Offset)

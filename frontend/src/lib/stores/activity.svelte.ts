@@ -16,6 +16,7 @@ import type {
 import { activityItemKey } from "../components/activityRows.js";
 import { ActivityWorkflow } from "./activity-workflow.js";
 import { showFlash } from "./flash.svelte.js";
+import { createListPaging } from "./list-paging.svelte.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
 import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
 import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
@@ -33,6 +34,7 @@ export const DEFAULT_EVENT_TYPES = ["comment", "review", "commit", "force_push"]
 const PR_TIMELINE_EVENT_TYPES = ["comment", "review", "force_push"] as const;
 const ISSUE_TIMELINE_EVENT_TYPES = ["comment"] as const;
 const NO_ACTIVITY_FILTER_TYPE = "none";
+const ACTIVITY_SAFETY_CAP = 5000; // Matches itemapi.ActivitySafetyCap.
 const ACTIVITY_ITEM_TYPES_PARAM = "item_types";
 const ACTIVITY_EVENT_TYPES_PARAM = "event_types";
 
@@ -251,6 +253,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let collapseThreadsDefault = false;
   let fullEventProjectionRequired = false;
   let activityPageLimit: number | undefined;
+  const flatPaging = createListPaging();
   let expandOverrides = $state<Set<string>>(new Set());
   let pagedActivityGeneration = 0;
   let childProjectionInvalidationGeneration = 0;
@@ -314,6 +317,20 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function isItemActivityCapped(): boolean {
     return itemActivityCapped;
+  }
+  function canLoadMoreActivity(): boolean {
+    return (
+      viewMode === "flat" &&
+      activityPageLimit === undefined &&
+      (flatPaging.isLoadingMore() || (capped && flatPaging.getLimit() < ACTIVITY_SAFETY_CAP))
+    );
+  }
+  function isLoadingMoreActivity(): boolean {
+    return flatPaging.isLoadingMore();
+  }
+  function loadMoreActivity(): void {
+    if (!flatPaging.loadMore(canLoadMoreActivity())) return;
+    loadActivity();
   }
   function getActivityEventCursor(): string {
     return activityEventCursor;
@@ -566,8 +583,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return new Date(Date.now() - RANGE_MS[timeRange]).toISOString();
   }
 
+  function activityPageQuery(params: ActivityParams): ActivityParams {
+    return { ...params, since: timeRange };
+  }
+
   function buildParams(): ActivityParams {
-    const p: ActivityParams = { since: computeSince() };
+    const since = computeSince();
+    const p: ActivityParams = { since };
     p.projection =
       activityPageLimit !== undefined || (viewMode === "threaded" && collapseThreads && !fullEventProjectionRequired)
         ? "collapsed"
@@ -589,6 +611,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (hideDrafts) p.hide_drafts = true;
     if (hideMergeQueued) p.hide_merge_queued = true;
     if (hideDefaultBranchActivity) p.hide_default_branch = true;
+    if (activityPageLimit === undefined && viewMode === "flat") {
+      return { ...flatPaging.withLimit(activityPageQuery(p)), since };
+    }
     return p;
   }
 
@@ -843,7 +868,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     });
   }
 
-  function projectActivitySubjects(response: ActivityResponse): void {
+  function projectActivitySubjects(response: ActivityResponse, params: ActivityParams): void {
+    flatPaging.apply(activityPageQuery(params));
     const subjects = response.item_activity ?? [];
     reconcileItemsWithParentSubjects(subjects);
     itemActivity = subjects;
@@ -851,12 +877,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     itemActivityCapped = response.item_activity_capped ?? false;
   }
 
-  function projectActivitySnapshot(result: ActivityReadResponse, projection: ActivityParams["projection"]): void {
+  function projectActivitySnapshot(result: ActivityReadResponse, params: ActivityParams): void {
     snapshotScope = result.scope;
     snapshotFilterScope = result.filterScope;
     displayedRepo = result.repo;
     items = projectOwnedNotificationStates(result);
-    projectActivitySubjects(result.response);
+    projectActivitySubjects(result.response, params);
     capped = result.response.capped;
     activityEventCursor = result.response.event_cursor ?? "";
     loadedThreadKeys = new Set();
@@ -866,13 +892,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     projectedChildInvalidationGeneration = childProjectionInvalidationGeneration;
     loading = false;
     storeError = null;
-    if (projection === "collapsed" && activityPageLimit === undefined) {
+    if (params.projection === "collapsed" && activityPageLimit === undefined) {
       for (const subject of itemActivity) {
         const key = stableParentKey(subject);
         if (key && isThreadItemExpanded(key)) loadThreadEvents(key);
       }
     } else if (
-      projection === "full" &&
+      params.projection === "full" &&
       viewMode === "threaded" &&
       !collapseThreads &&
       capped &&
@@ -882,7 +908,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     }
   }
 
-  function projectAuthoritativeActivitySnapshot(result: ActivityReadResponse): void {
+  function projectAuthoritativeActivitySnapshot(result: ActivityReadResponse, params: ActivityParams): void {
+    if (viewMode === "flat" && activityPageLimit === undefined) {
+      const eventCursor = result.response.event_cursor ?? activityEventCursor;
+      projectActivitySnapshot(result, params);
+      activityEventCursor = eventCursor;
+      return;
+    }
     snapshotScope = result.scope;
     snapshotFilterScope = result.filterScope;
     displayedRepo = result.repo;
@@ -956,7 +988,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           );
         });
     items = [...received, ...retainedThreadItems];
-    projectActivitySubjects(result.response);
+    projectActivitySubjects(result.response, params);
     capped = result.response.capped;
     activityEventCursor = result.response.event_cursor ?? activityEventCursor;
     if (childProjectionStale) {
@@ -1009,7 +1041,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const read = activityRead(params);
       const project = (result: ActivityReadResponse) =>
         Effect.sync(() => {
-          if (acceptsProjection()) projectActivitySnapshot(result, params.projection);
+          if (acceptsProjection()) projectActivitySnapshot(result, params);
         });
       const clearLoading = Effect.sync(() => {
         if (acceptsProjection()) loading = false;
@@ -1034,6 +1066,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           if (!ownsProjection()) return;
           storeError = readErrorMessage(failure);
           loading = false;
+          flatPaging.rollback(activityPageQuery(params));
         }),
       ),
     );
@@ -1046,7 +1079,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       if (shouldUseCollapsedAuthoritativeProjection()) params.projection = "collapsed";
       const scope = activityProjectionScope(params);
       const read = activityRead(params);
-      const project = (result: ActivityReadResponse) => Effect.sync(() => projectAuthoritativeActivitySnapshot(result));
+      const project = (result: ActivityReadResponse) =>
+        Effect.sync(() => projectAuthoritativeActivitySnapshot(result, params));
       return Effect.gen(function* () {
         const workflow = yield* ActivityWorkflow;
         yield* Effect.all([workflow.reconcileRead(scope, read, project), loadActivityAuthorsEffect()], {
@@ -1307,7 +1341,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       yield* workflow.pollSnapshotRead(
         activityProjectionScope(params),
         activityRead(params),
-        (result) => Effect.sync(() => projectAuthoritativeActivitySnapshot(result)),
+        (result) => Effect.sync(() => projectAuthoritativeActivitySnapshot(result, params)),
         Effect.sync(() => {
           loading = false;
         }),
@@ -1375,6 +1409,16 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     });
   }
 
+  // Keeps polled rows inside the time range and, in the flat feed, inside the
+  // loaded page, so Load more only ever extends what is shown.
+  function liveActivityPage(next: ActivityItem[]): ActivityItem[] {
+    const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
+    const live = next.filter((item) => new Date(item.created_at) >= cutoff);
+    if (viewMode !== "flat" || activityPageLimit !== undefined || live.length <= flatPaging.getLimit()) return live;
+    capped = true;
+    return live.slice(0, flatPaging.getLimit());
+  }
+
   const pollNewItems = Effect.suspend(() => {
     if (loading) return Effect.void;
     pollCount += 1;
@@ -1398,16 +1442,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const projectPoll = ({ mode, result }: ActivityPollProjection) =>
         Effect.sync(() => {
           if (mode === "replace") {
-            projectAuthoritativeActivitySnapshot(result);
+            projectAuthoritativeActivitySnapshot(result, authoritativeParams);
             return;
           }
           const existingIds = new Set(items.map((item) => item.id));
           const newItems = projectOwnedNotificationStates(result, false).filter((item) => !existingIds.has(item.id));
           activityEventCursor = result.response.event_cursor ?? activityEventCursor;
-          const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
-          const nextItems = (newItems.length > 0 ? [...newItems, ...items] : items).filter(
-            (item) => new Date(item.created_at) >= cutoff,
-          );
+          const nextItems = liveActivityPage(newItems.length > 0 ? [...newItems, ...items] : items);
           if (newItems.length > 0 || nextItems.length !== items.length) items = nextItems;
         });
       yield* workflow.pollRead(
@@ -1587,6 +1628,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getThreadLoadError,
     isActivityCapped,
     isItemActivityCapped,
+    canLoadMoreActivity,
+    isLoadingMoreActivity,
+    loadMoreActivity,
     getActivityEventCursor,
     getActivityFilterTypes,
     getActivitySearch,

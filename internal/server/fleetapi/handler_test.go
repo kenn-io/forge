@@ -22,15 +22,20 @@ func TestHandlerConfigSnapshotIsImmutable(t *testing.T) {
 				NodeID:  testMemberNodeID,
 				BaseURL: "https://peer-a.test",
 			}},
+			DeclaredSpokes: []config.FleetDeclaredSpoke{{
+				Name: "build-box", BaseURL: "https://peer-a.test",
+			}},
 		},
 		TmuxCommand: []string{"tmux"},
 	}
 	h := New(Deps{Config: initial})
 	initial.Fleet.Members[0].NodeID = "cccccccccccccccccccccccccccccccc"
+	initial.Fleet.DeclaredSpokes[0].Name = "mutated"
 	initial.TmuxCommand[0] = "mutated"
 
 	snapshot := h.configSnapshot()
 	assert.Equal(testMemberNodeID, snapshot.Fleet.Members[0].NodeID)
+	assert.Equal("build-box", snapshot.Fleet.DeclaredSpokes[0].Name)
 	assert.Equal("tmux", snapshot.TmuxCommand[0])
 
 	h.ApplyConfig(ConfigSnapshot{

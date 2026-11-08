@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -585,4 +586,27 @@ func TestSpokePreparationRefreshFollowsStableRepositoryRename(t *testing.T) { //
 	require.NotNil(workspace)
 	assert.Equal("acme-renamed", workspace.RepoOwner)
 	assert.Equal("widget-renamed", workspace.RepoName)
+}
+
+// cutOffHub answers every request with HTTP 200 and a body that breaks
+// partway, as when the hub's connection drops while a handoff reply streams.
+type cutOffHub struct{}
+
+func (cutOffHub) Do(context.Context, federationauth.Scope, *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK, Header: http.Header{},
+		Body: io.NopCloser(io.MultiReader(
+			bytes.NewBufferString(`{"receipt":`), iotest.ErrReader(io.ErrUnexpectedEOF),
+		)),
+	}, nil
+}
+
+func TestHubOutageRecorderTreatsCutOffHandoffReplyAsOutage(t *testing.T) {
+	recorder := &hubOutageRecorder{Client: cutOffHub{}}
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "https://hub.example/api/v1/handoff", http.NoBody)
+	var target struct{ Receipt string }
+
+	require.Error(t, providerplane.ReadJSON(t.Context(), recorder, federationauth.ScopeProviderHandoff, request, &target))
+	require.ErrorIs(t, recorder.outage, providerplane.ErrHubUnavailable,
+		"preparation reports the pass as a hub outage, so a declared spoke retries")
 }

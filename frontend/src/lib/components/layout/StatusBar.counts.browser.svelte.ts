@@ -19,6 +19,7 @@ import StatusBarTestHost from "./StatusBarTestHost.svelte";
 import { Effect } from "effect";
 import { makeAppRuntime } from "../../app/runtime.js";
 import { setGlobalRepo } from "../../stores/filter.svelte.js";
+import type { ActivityStore } from "../../stores/activity.svelte.js";
 import type { PullRequest } from "../../api/types.js";
 import type { StoreInstances } from "../../types.js";
 
@@ -357,6 +358,44 @@ describe("status bar counts", () => {
 
     await vi.waitFor(() => {
       expect(statusItemTexts()).toEqual(["2 PRs", "1 issues", "1 repos"]);
+    }, WAIT);
+  });
+
+  it("marks flat counts partial after a live burst exceeds the loaded page", async () => {
+    const rows = Array.from({ length: 500 }, (_, index) => ({
+      ...activityItem(`comment:${index + 1}`, index + 1, "comment", "pr", "open"),
+      created_at: new Date(Date.now() - index * 1000).toISOString(),
+    }));
+    let activity: ActivityStore | undefined;
+    let polled = false;
+    mounted = await mountStatusBar(
+      "/?view=flat",
+      [
+        (req) => {
+          if (req.url.pathname !== "/api/v1/activity") return null;
+          const delta = req.url.searchParams.get("projection") === "events";
+          if (delta) polled = true;
+          const items = delta ? rows.slice(0, 300) : rows.slice(300);
+          return jsonResponse({
+            items,
+            capped: false,
+            event_cursor: items[0]?.cursor,
+            ...(!delta && {
+              item_activity: items.map((item) => ({ ...item, activity_at: item.created_at })),
+              item_activity_capped: false,
+            }),
+          });
+        },
+      ],
+      (stores) => {
+        activity = stores.activity;
+      },
+    );
+    await vi.waitFor(() => expect(statusItemTexts()).toEqual(["200 PRs", "0 issues", "1 repos"]), WAIT);
+    activity!.startActivityPolling();
+    await vi.waitFor(() => expect(polled).toBe(true), WAIT);
+    await vi.waitFor(() => {
+      expect(statusItemTexts()).toEqual(["400+ PRs", "0+ issues", "1+ repos"]);
     }, WAIT);
   });
 

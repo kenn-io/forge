@@ -10,6 +10,21 @@ import (
 	"go.kenn.io/kit/embedconfig"
 )
 
+// A settings write validates its clone, and validation rewrites each declared
+// spoke while hub reconciliation reads the running config without that lock.
+func TestCloneReloadedConfigDetachesDeclaredSpokes(t *testing.T) {
+	running := &config.Config{Fleet: config.Fleet{
+		DeclaredSpokes: []config.FleetDeclaredSpoke{{
+			Name: "build-box", BaseURL: "https://spoke.example",
+		}},
+	}}
+
+	candidate := CloneReloadedConfig(running)
+	candidate.Fleet.DeclaredSpokes[0].Name = "mutated"
+
+	require.Equal(t, "build-box", running.Fleet.DeclaredSpokes[0].Name)
+}
+
 func TestApplyConfigChangeWithoutConfigReturnsDisabledBeforeFileLoad(t *testing.T) {
 	var cfg *config.Config
 	var cfgMu sync.Mutex

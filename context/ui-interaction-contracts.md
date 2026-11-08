@@ -262,7 +262,7 @@ and back.
   Activity), sent as pre-limit server queries, never URL or config state.
 - `Unassigned` matches only PR/issue subjects with an empty synchronized assignee set.
 - `Referenced by PR` is a browser-local Issues preference, default off, exposed in every issue-filter
-  presentation; it ORs with involvement and unassigned before limits, and reset clears it.
+  presentation; it ANDs with involvement and unassigned before limits, and reset clears it.
 - `Referenced by PR` shows whenever any configured provider-host supplies reference edges; edges never
   cross provider-host boundaries, and the graph has no badge or detail UI.
 - Repository preset definitions follow server settings; the active selection and preset affinity stay
@@ -683,12 +683,15 @@ Not every visibility control means "remove this entity entirely."
 - Empty states make clear when filters, not missing data, hide results.
 - When two data sources race, prefer the one matching the current filter/scope over a faster stale preview.
 - Workspace status counts use the complete event-refreshed open-item cache, not page lists or capped search.
-- PR inclusion options match any selected option within a group (Involves me/Unassigned, Draft/Ready,
-  Passing/Failed CI) and must match every selected group, so Ready plus Passing CI shows only green ready
-  PRs. Repository, state, search, starred, and workspace filters still narrow. The database
-  applies them before pagination (`internal/db/queries.go::DB.listMergeRequests`); the worklist rail
-  uses the same groups (`frontend/src/lib/utils/pull-attributes.ts::matchesFilterGroups`).
-- Activity involvement and unassigned likewise match either selection; exclusions still narrow.
+- Every selected PR, issue, and Activity filter must match, including Involves me with Unassigned.
+  Opposite options (Draft or Ready for review, Passing or Failed CI, Merge conflicts or No merge
+  conflicts) are pick-one menu sections. The menu shows this through its sections, without
+  explanatory text. The database applies it before
+  pagination; the PR store and worklist rail use the same sections
+  (`internal/db/queries.go::filterSectionsCondition`, `frontend/src/lib/utils/pull-attributes.ts::toggleFilterInSections`).
+- A spoke lists standalone local workspace activity only without Involves me, because only the hub
+  can tell whether such a subject involves the viewer
+  (`internal/server/activityapi/huma_routes.go::Handlers.prepareLocalActivityWorkspaceSnapshot`).
 - Workspaces applies repository scope by full provider/host/path identity to local and Fleet rows.
 
 ### PR Stacks And Lists
@@ -720,14 +723,18 @@ Not every visibility control means "remove this entity entirely."
 - Hide drafts' default lives in Settings; a session choice wins over later hydration.
 - Server-backed visibility filters reload Activity so turning one off restores omitted rows.
 - Activity `capped` reports event overflow and alone drives event reloads and the warning;
-  `item_activity_capped` drives only the parent-truncation notice.
-- A search whose event matches overflow the event page also reports `item_activity_capped`, since
-  event-matched parents derive from that bounded page.
+  `item_activity_capped` adds `+` to loaded-subject counts and a parent-truncation notice in threaded view.
+- A search whose event matches overflow the bounded matching window also reports `item_activity_capped`, since
+  event-matched parents derive from that window.
 - Status totals deduplicate open subjects across snapshots; parent lifecycle state overrides event state.
 - Authoritative parents rewrite retained event parent metadata, keyed by stable identity.
 
 ### Activity Snapshots And Paging
 
+- Flat Activity requests 200 events initially; event overflow offers Load more in 200-event increments through 5,000. Pending pages retain rows and a disabled control; the ceiling notice appears only after the final page succeeds.
+- Server filters, repositories, and ranges reset the flat page to 200; flat/threaded toggles and refreshes preserve its size. Flat authoritative snapshots replace the event page; threaded snapshots retain cached children. Cached repository rows are previews until the new page arrives.
+- Flat status counts cover loaded subjects and carry `+` when either events or parent summaries overflow. Browser-only filters apply to loaded events; an empty filtered page says `No matches in loaded activity` while more event pages remain.
+- Full search reads one bounded event window for child-text parent matches, then trims events to the requested page; cursored and collapsed reads may need a separate matching window.
 - Collapsed cursors come from the same snapshot as visible summaries; never derive poll authority
   from a visible row. Opaque cursors preserve timestamps outside the Unix nanosecond range.
 - Empty deltas must not rebuild summaries.

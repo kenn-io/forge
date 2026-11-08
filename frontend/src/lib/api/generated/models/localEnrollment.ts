@@ -8,6 +8,7 @@ export interface LocalEnrollment {
   readonly $schema?: string;
   activation_lease_version?: number;
   activation_valid_until?: string;
+  declared_secret_digest?: string;
   enrollment_id: string;
   expires_at: string;
   hub_base_url: string;
@@ -18,6 +19,7 @@ export interface LocalEnrollment {
   preparation_required: boolean;
   preparation_started?: boolean;
   protocol_version: number;
+  replacement_enrollment_id?: string;
   spoke_base_url: string;
   spoke_name?: string;
   spoke_platform: string;

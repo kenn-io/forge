@@ -60867,7 +60867,7 @@ type ListPullsQuery struct {
 	// Numbers Item numbers in every repo unless repo is set; before pagination.
 	Numbers []int64 `json:"numbers,omitempty"`
 
-	// Attributes Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Options in one group match any (involves_me/unassigned, draft/ready, passed_ci/failed_ci); every selected group must match, before pagination.
+	// Attributes Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Mutually exclusive filters match either: draft or ready, and failed_ci or passed_ci. Every other selected filter, including involves_me and unassigned, must also match before pagination.
 	Attributes *string `json:"attributes,omitempty"`
 
 	// Label Exact case-sensitive label name; applied before pagination.
@@ -67765,6 +67765,7 @@ type Enrollment struct {
 	ActivationLeaseVersion *int64     `json:"activation_lease_version,omitempty"`
 	ActivationValidUntil   *time.Time `json:"activation_valid_until,omitempty"`
 	CreatedAt              time.Time  `json:"created_at"`
+	Declared               *bool      `json:"declared,omitempty"`
 	ExpiresAt              time.Time  `json:"expires_at"`
 	HubBaseURL             string     `json:"hub_base_url"`
 	HubName                *string    `json:"hub_name,omitempty"`
@@ -68814,23 +68815,25 @@ type ListWorktreesOutputBody struct {
 
 type LocalEnrollment struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                 *string               `json:"$schema,omitempty"`
-	ActivationLeaseVersion *int64                `json:"activation_lease_version,omitempty"`
-	ActivationValidUntil   *time.Time            `json:"activation_valid_until,omitempty"`
-	EnrollmentID           string                `json:"enrollment_id"`
-	ExpiresAt              time.Time             `json:"expires_at"`
-	HubBaseURL             string                `json:"hub_base_url"`
-	HubName                *string               `json:"hub_name,omitempty"`
-	HubNodeID              *string               `json:"hub_node_id,omitempty"`
-	NodeID                 string                `json:"node_id"`
-	Preparation            *LocalPreparationSeal `json:"preparation,omitempty"`
-	PreparationRequired    bool                  `json:"preparation_required"`
-	PreparationStarted     *bool                 `json:"preparation_started,omitempty"`
-	ProtocolVersion        int64                 `json:"protocol_version"`
-	SpokeBaseURL           string                `json:"spoke_base_url"`
-	SpokeName              *string               `json:"spoke_name,omitempty"`
-	SpokePlatform          string                `json:"spoke_platform"`
-	State                  string                `json:"state"`
+	Schema                  *string               `json:"$schema,omitempty"`
+	ActivationLeaseVersion  *int64                `json:"activation_lease_version,omitempty"`
+	ActivationValidUntil    *time.Time            `json:"activation_valid_until,omitempty"`
+	DeclaredSecretDigest    *string               `json:"declared_secret_digest,omitempty"`
+	EnrollmentID            string                `json:"enrollment_id"`
+	ExpiresAt               time.Time             `json:"expires_at"`
+	HubBaseURL              string                `json:"hub_base_url"`
+	HubName                 *string               `json:"hub_name,omitempty"`
+	HubNodeID               *string               `json:"hub_node_id,omitempty"`
+	NodeID                  string                `json:"node_id"`
+	Preparation             *LocalPreparationSeal `json:"preparation,omitempty"`
+	PreparationRequired     bool                  `json:"preparation_required"`
+	PreparationStarted      *bool                 `json:"preparation_started,omitempty"`
+	ProtocolVersion         int64                 `json:"protocol_version"`
+	ReplacementEnrollmentID *string               `json:"replacement_enrollment_id,omitempty"`
+	SpokeBaseURL            string                `json:"spoke_base_url"`
+	SpokeName               *string               `json:"spoke_name,omitempty"`
+	SpokePlatform           string                `json:"spoke_platform"`
+	State                   string                `json:"state"`
 }
 
 type LocalJoinInputBody struct {

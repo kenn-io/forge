@@ -32,8 +32,8 @@ export type ListActivityParams = {
   since?: string;
   projection?: ListActivityProjection;
   /**
-   * @minimum 10
-   * @maximum 500
+   * @minimum 1
+   * @maximum 5000
    */
   limit?: number;
   hide_closed_merged?: boolean;

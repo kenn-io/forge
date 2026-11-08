@@ -499,10 +499,13 @@ func TestStackDetectionQueryPlans(t *testing.T) {
 	for _, optimize := range []bool{false, true} {
 		d := openTestDB(t)
 		repoID := insertTestRepo(t, d, "org", "repo")
-		for number := 1; number <= 300; number++ {
-			insertTestMRWithBranches(t, d, repoID, number, fmt.Sprintf("branch/%d", number), fmt.Sprintf("base/%d", number), MergeRequestStateOpen,
-				func(mr *MergeRequest) { mr.HeadRepoCloneURL = "https://github.com/org/repo.git" })
-		}
+		execPageFixtureNumbers(t, d, 300, `
+			INSERT INTO forge_merge_requests (
+				repo_id, platform_id, number, title, author, state, head_branch, base_branch,
+				head_repo_clone_url, created_at, updated_at, last_activity_at
+			)
+			SELECT ?1, ?2 + n, n, 'PR branch/' || n, 'author', 'open', 'branch/' || n, 'base/' || n,
+			       'https://github.com/org/repo.git', ?3, ?3, ?3 FROM numbers`, repoID, repoID*10000, baseTime())
 		if optimize {
 			require.NoError(t, d.Optimize(t.Context()))
 		}
@@ -511,7 +514,7 @@ func TestStackDetectionQueryPlans(t *testing.T) {
 			WITH RECURSIVE history(number) AS (
 				VALUES(301)
 				UNION ALL
-				SELECT number + 1 FROM history WHERE number < 30000
+				SELECT number + 1 FROM history WHERE number < 3000
 			)
 			INSERT INTO forge_merge_requests (
 				repo_id, platform_id, number, title, author, state, head_branch, base_branch,

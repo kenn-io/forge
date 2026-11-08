@@ -1071,6 +1071,12 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 
+	// Included terms can surface parents through events beyond the returned page.
+	searchHasIncludes := len(db.ParseSearchQuery(opts.Search).Include) > 0
+	hasFullWorkspaceEventItems := projection != "events" && searchHasIncludes
+	if projection == "full" && searchHasIncludes && opts.AfterTime == nil {
+		opts.Limit = itemapi.ActivitySafetyCap + 1
+	}
 	var items []db.ActivityItem
 	var itemActivity []db.ActivitySubject
 	eventCursor := input.After
@@ -1098,12 +1104,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 	workspaceEventItems := items
-	// Only included terms can surface a parent through its events; excluded
-	// terms filter parents by their own fields in ListActivitySubjects.
-	searchHasIncludes := len(db.ParseSearchQuery(opts.Search).Include) > 0
-	hasFullWorkspaceEventItems := projection != "events" &&
-		searchHasIncludes && (opts.AfterTime != nil || projection == "collapsed" || input.Limit > 0)
-	if hasFullWorkspaceEventItems {
+	if hasFullWorkspaceEventItems && (opts.AfterTime != nil || projection == "collapsed") {
 		workspaceOpts := opts
 		workspaceOpts.AfterTime = nil
 		workspaceOpts.AfterSource = ""

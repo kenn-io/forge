@@ -407,7 +407,7 @@ func TestAPIListActivitySearchLimitCountsDistinctParents(t *testing.T) {
 		serverfake.WithSeedPRTitle("Unrelated newer parent"),
 		serverfake.WithSeedPRTimes(base, base, base),
 	)
-	newerEvents := make([]db.MREvent, 31)
+	newerEvents := make([]db.MREvent, 201)
 	for i := range newerEvents {
 		newerEvents[i] = db.MREvent{
 			MergeRequestID: newerPRID,
@@ -426,7 +426,7 @@ func TestAPIListActivitySearchLimitCountsDistinctParents(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
 			rr := testutil.DoJSON(t, srv, http.MethodGet,
-				"/api/v1/activity?since="+since+"&projection="+projection+"&limit=30&search=needle", nil)
+				"/api/v1/activity?since="+since+"&projection="+projection+"&limit=200&search=needle", nil)
 
 			require.Equal(http.StatusOK, rr.Code)
 			var body itemapi.ActivityResponse
@@ -435,7 +435,7 @@ func TestAPIListActivitySearchLimitCountsDistinctParents(t *testing.T) {
 			assert.Equal([]int{2, 1}, []int{body.ItemActivity[0].ItemNumber, body.ItemActivity[1].ItemNumber})
 			assert.False(body.ItemActivityCapped)
 			if projection == "full" {
-				assert.Len(body.Items, 30)
+				assert.Len(body.Items, 200)
 				assert.True(body.Capped)
 			}
 		})

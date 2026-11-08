@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
+import { existsSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -56,6 +57,7 @@ test("fails on a read-only install directory or a first-copy I/O error", async (
     await chmod(f.bin, 0o755);
   }
   await writeFile(join(f.bin, "kenn-forge"), "old forge\n");
+  await writeFile(join(f.bin, "kenn-forge-github-app"), "old helper\n");
   const cp = join(f.root, "cp");
   await writeFile(cp, '#!/bin/sh\ncase "$1" in\nkenn-forge) echo "cp: input/output error" >&2; exit 1 ;;\n*) exec /bin/cp "$@" ;;\nesac\n');
   await chmod(cp, 0o755);
@@ -63,4 +65,14 @@ test("fails on a read-only install directory or a first-copy I/O error", async (
   assert.notEqual(copyError.status, 0);
   assert.ok(!copyError.stdout.includes(restart));
   assert.equal(await readFile(join(f.bin, "kenn-forge"), "utf8"), "old forge\n");
+  assert.equal(await readFile(join(f.bin, "kenn-forge-github-app"), "utf8"), "old helper\n");
+});
+
+test("removes the old kenn-forge-github-app helper", async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.bin, "kenn-forge-github-app"), "old helper\n");
+  const result = f.install();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(await readFile(join(f.bin, "kenn-forge"), "utf8"), f.forge);
+  assert.ok(!existsSync(join(f.bin, "kenn-forge-github-app")));
 });

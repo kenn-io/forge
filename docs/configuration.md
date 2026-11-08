@@ -265,20 +265,6 @@ also require organization approval. If you do not have that access, ask an
 organization owner to help with setup. See
 [GitHub's App registration requirements](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app).
 
-`kenn-forge-github-app` is available through a source build. Release archives
-contain only `kenn-forge`. Install Go 1.27+, Node.js, and Bun, then clone Forge at
-your installed release's tag, replacing `v0.6.0` below as needed:
-
-```sh
-git clone --branch v0.6.0 https://github.com/kenn-io/forge.git
-cd forge
-make build-release
-```
-
-This also builds the helper's browser setup page. Copy only
-`kenn-forge-github-app` (`kenn-forge-github-app.exe` on Windows) to a directory
-on your `PATH`.
-
 Replace `your-org` with your organization:
 
 ```sh

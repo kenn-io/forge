@@ -170,20 +170,6 @@ the same. See [GitHub CLI shim](gh-shim.md).
 
 ## Manage GitHub App credentials
 
-`kenn-forge-github-app` is available through a source build. Release archives
-contain only `kenn-forge`. Install Go 1.27+, Node.js, and Bun, then clone Forge at
-your installed release's tag, replacing `v0.6.0` below as needed:
-
-```sh
-git clone --branch v0.6.0 https://github.com/kenn-io/forge.git
-cd forge
-make build-release
-```
-
-This also builds the helper's browser setup page. Copy only
-`kenn-forge-github-app` (`kenn-forge-github-app.exe` on Windows) to a directory
-on your `PATH`.
-
 ```sh
 kenn-forge github-app create
 kenn-forge github-app create --org your-org

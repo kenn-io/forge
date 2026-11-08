@@ -608,7 +608,7 @@ Sync status:
 - Multiple `[[github_apps]]` rows per host are distinct credentials: management commands target
   one row, and duplicate installation accounts on a host are invalid.
 - Selected-repository coverage applies only to repos owned by the row's `installation_account`;
-  the install CLI must not warn about cross-account repos.
+  `kenn-forge github-app install` must not warn about cross-account repos.
 - The selected-repository list is a startup snapshot; changes need `install` and a restart. Never
   retry PAT credentials after an App-backed 404, which would hide stale or revoked App access.
 - Re-running `install` adopts an existing installation only after a clean poll deadline, and only

@@ -203,10 +203,13 @@ afterEach(async () => {
 
 describe("flat activity paging", () => {
   it("loads more when only parent summaries are capped", async () => {
-    const get = vi.fn(async () => ({
-      data: { items: [], item_activity: [itemActivity(7)], capped: false, item_activity_capped: true },
-      error: null,
-    }));
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      return {
+        data: { items: [], item_activity: [itemActivity(7)], capped: false, item_activity_capped: true },
+        error: null,
+      };
+    });
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
@@ -256,7 +259,10 @@ describe("flat activity paging", () => {
   });
 
   it("loads 200 events, adds a page, and resets for a new range or filter", async () => {
-    const get = vi.fn(async () => ({ data: { items: [], capped: true }, error: null }));
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      return { data: { items: [], capped: true }, error: null };
+    });
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
@@ -325,10 +331,12 @@ describe("flat activity paging", () => {
     expect(store.getItemActivity()).toHaveLength(1);
     expect(store.isLoadingMoreActivity()).toBe(false);
     expect(getFlash()?.message).toContain("Failed to load more activity");
+    const requestsBeforeRetry = get.mock.calls.filter(([path]) => path === "/activity").length;
     fail = false;
     store.loadMoreActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-    expect(get).toHaveBeenCalledWith(
+    expect(get.mock.calls.filter(([path]) => path === "/activity")).toHaveLength(requestsBeforeRetry + 1);
+    expect(get).toHaveBeenLastCalledWith(
       "/activity",
       expect.objectContaining({
         params: { query: expect.objectContaining({ limit: 400 }) },

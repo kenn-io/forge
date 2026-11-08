@@ -314,42 +314,43 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.getByText("Add widget caching layer")).toBeTruthy();
   });
 
-  it.each([false, true])("loads more flat rows without a safety-cap notice (compact: %s)", async (compact) => {
+  it("loads more flat rows without a safety-cap notice", async () => {
     activityCapped.value = true;
     itemActivityCapped.value = true;
     canLoadMore.value = true;
-    render(ActivityFeed, { props: { compact } });
+    render(ActivityFeed);
 
     await fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     expect(loadMoreActivity).toHaveBeenCalledOnce();
     expect(screen.queryByText(/5,000/)).toBeNull();
   });
 
-  it("shows the event safety-cap notice when no more pages can load", () => {
-    activityCapped.value = true;
+  it("keeps older activity available when the loaded page has no label matches", () => {
+    labelFilters.value = new Map([["cache", { name: "cache", mode: "require" }]]);
+    canLoadMore.value = true;
     render(ActivityFeed);
-    expect(screen.getByText(/most recent 5,000 events/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+    expect(screen.queryByText("No activity found")).toBeNull();
+    expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
   });
 
-  it.each([false, true])(
-    "keeps older activity available when the loaded page has no label matches (compact: %s)",
-    (compact) => {
-      labelFilters.value = new Map([["cache", { name: "cache", mode: "require" }]]);
-      canLoadMore.value = true;
-      render(ActivityFeed, { props: { compact } });
-      expect(screen.queryByText("No activity found")).toBeNull();
-      expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
+  it.each([
+    {
+      kind: "events",
+      notice: /most recent 5,000 events/,
+      otherNotice: /5,000 most recently active pull requests and issues/,
     },
-  );
-
-  it("warns about parent truncation separately from event truncation", () => {
-    itemActivityCapped.value = true;
-
-    render(ActivityFeed, { props: { compact: true } });
-
-    expect(screen.getByText(/5,000 most recently active pull requests and issues/)).toBeTruthy();
-    expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
+    {
+      kind: "parents",
+      notice: /5,000 most recently active pull requests and issues/,
+      otherNotice: /most recent 5,000 events/,
+    },
+  ])("warns about $kind truncation when no more pages can load", ({ kind, notice, otherNotice }) => {
+    activityCapped.value = kind === "events";
+    itemActivityCapped.value = kind === "parents";
+    render(ActivityFeed);
+    expect(screen.getByText(notice)).toBeTruthy();
+    expect(screen.queryByText(otherNotice)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
   it("offers to retry a failed thread history load", async () => {

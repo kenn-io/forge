@@ -354,9 +354,12 @@ test.describe("default branch activity", () => {
     ).toBeVisible();
   });
 
-  test("warns when parent activity is capped without reporting event overflow", async ({ page }) => {
+  test("warns about capped parents only in threaded activity", async ({ page }) => {
     await mockDefaultBranchActivity(page, { itemActivityCapped: true });
     await page.goto("/?view=flat");
+
+    await expect(page.locator(".item-activity-capped-notice")).toHaveCount(0);
+    await page.goto("/?view=threaded");
 
     await expect(page.locator(".item-activity-capped-notice")).toContainText(
       "5,000 most recently active pull requests and issues",

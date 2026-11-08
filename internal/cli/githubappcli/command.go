@@ -24,9 +24,6 @@ import (
 	"go.kenn.io/forge/internal/config"
 )
 
-// CommandName is the kenn-forge subcommand that manages GitHub Apps.
-const CommandName = "github-app"
-
 // NewCommand returns the github-app command tree writing to stdout.
 func NewCommand(stdout io.Writer) *cobra.Command {
 	return newCommand(defaultEnv(stdout))
@@ -34,8 +31,14 @@ func NewCommand(stdout io.Writer) *cobra.Command {
 
 func newCommand(env *appEnv) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:           CommandName,
-		Short:         "Manage GitHub Apps for kenn-forge's sync engine",
+		Use:   "github-app",
+		Short: "Manage GitHub Apps for kenn-forge's sync engine",
+		// Only the root rejects unknown subcommands by default; without
+		// Args and RunE a mistyped subcommand prints help and exits 0.
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}

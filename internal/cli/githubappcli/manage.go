@@ -43,7 +43,7 @@ func runInstall(
 	if err != nil {
 		return err
 	}
-	app, err := sel.selectApp(cfg)
+	app, err := selectApp(cfg, sel.host, sel.owner, sel.appID)
 	if err != nil {
 		return err
 	}
@@ -75,7 +75,7 @@ func runUninstall(ctx context.Context, sel appSelector, yes bool, env *appEnv) e
 	if err != nil {
 		return err
 	}
-	app, err := sel.selectApp(cfg)
+	app, err := selectApp(cfg, sel.host, sel.owner, sel.appID)
 	if err != nil {
 		return err
 	}
@@ -145,7 +145,7 @@ func runDelete(ctx context.Context, opts deleteOptions, env *appEnv) error {
 	if err != nil {
 		return err
 	}
-	app, err := opts.sel.selectApp(cfg)
+	app, err := selectApp(cfg, opts.sel.host, opts.sel.owner, opts.sel.appID)
 	if err != nil {
 		return err
 	}
@@ -280,7 +280,7 @@ func runOpen(ctx context.Context, sel appSelector, env *appEnv) error {
 	if err != nil {
 		return err
 	}
-	app, err := sel.selectApp(cfg)
+	app, err := selectApp(cfg, sel.host, sel.owner, sel.appID)
 	if err != nil {
 		return err
 	}

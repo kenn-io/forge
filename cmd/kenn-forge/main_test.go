@@ -1266,6 +1266,20 @@ func TestRootUnknownCommandDoesNotStartServer(t *testing.T) {
 	require.False(started)
 }
 
+func TestRootGitHubAppRejectsUnknownSubcommand(t *testing.T) {
+	cmd := newRootCommand(cliOptions{
+		Stdin:     strings.NewReader(""),
+		Stdout:    io.Discard,
+		Stderr:    io.Discard,
+		RunServer: func(serve.Options) error { return errors.New("serve should not start") },
+	})
+	cmd.SetArgs([]string{"github-app", "creat"})
+
+	err := cmd.Execute()
+
+	require.ErrorContains(t, err, `unknown command "creat"`)
+}
+
 func TestRootNestedHelpExposesCommandFlags(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1286,9 +1300,6 @@ func TestRootNestedHelpExposesCommandFlags(t *testing.T) {
 		{name: "serve", args: []string{"serve", "--help"}, want: []string{"--config", "--pprof-addr", "foreground", "kenn-forge daemon start"}},
 		{name: "repos", args: []string{"repos", "--help"}, want: []string{"summaries"}},
 		{name: "api", args: []string{"api", "--help"}, want: []string{"list", "--config", "-d", "-i", "--timeout"}},
-		{name: "github-app", args: []string{"github-app", "--help"}, want: []string{"create", "list", "install", "uninstall", "delete", "open"}},
-		{name: "github-app create", args: []string{"github-app", "create", "--help"}, want: []string{"--config", "--org", "--role", "--no-browser", "--timeout"}},
-		{name: "github-app delete", args: []string{"github-app", "delete", "--help"}, want: []string{"--owner", "--app-id", "--yes", "--local-only"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

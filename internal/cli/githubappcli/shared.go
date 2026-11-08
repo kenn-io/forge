@@ -51,10 +51,6 @@ func (s *appSelector) register(cmd *cobra.Command, action string) {
 	cmd.Flags().Int64Var(&s.appID, "app-id", 0, "GitHub App ID to select when host or owner is ambiguous")
 }
 
-func (s *appSelector) selectApp(cfg *config.Config) (config.GitHubAppConfig, error) {
-	return selectApp(cfg, s.host, s.owner, s.appID)
-}
-
 // selectApp picks a configured app credential. Same-host configs can carry
 // multiple private apps, so management commands must disambiguate by owner or
 // app id when a host alone is not unique.
@@ -62,7 +58,7 @@ func selectApp(
 	cfg *config.Config, host, owner string, appID int64,
 ) (config.GitHubAppConfig, error) {
 	if cfg == nil || len(cfg.GitHubApps) == 0 {
-		return config.GitHubAppConfig{}, errors.New("no github apps configured; run \"kenn-forge github-app create\" first")
+		return config.GitHubAppConfig{}, errors.New("no github apps configured; run kenn-forge github-app create first")
 	}
 	normalizedHost := ""
 	if strings.TrimSpace(host) != "" {

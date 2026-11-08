@@ -89,15 +89,17 @@ func runCreate(ctx context.Context, opts createOptions, env *appEnv) error {
 		if opts.org != "" && strings.EqualFold(existing.Owner, opts.org) {
 			return fmt.Errorf(
 				"a github app for host %q and owner %q already exists (app id %d, slug %q); "+
-					"use \"install --owner %s\" to add an installation or \"delete --owner %s\" to replace it",
+					"run kenn-forge github-app install --owner %s to add an installation, "+
+					"or kenn-forge github-app delete --owner %s to replace it",
 				h, existing.Owner, existing.AppID, existing.Slug, existing.Owner, existing.Owner,
 			)
 		}
 		if opts.org == "" && strings.EqualFold(existing.OwnerType, "User") {
 			return fmt.Errorf(
 				"a user-owned github app for host %q already exists (app id %d, slug %q); "+
-					"use \"install --owner %s\" to add an installation, \"create --org\" for an org-owned app, "+
-					"or \"delete --owner %s\" to replace it",
+					"run kenn-forge github-app install --owner %s to add an installation, "+
+					"kenn-forge github-app create --org ORG for an org-owned app, "+
+					"or kenn-forge github-app delete --owner %s to replace it",
 				h, existing.AppID, existing.Slug, existing.Owner, existing.Owner,
 			)
 		}
@@ -159,7 +161,7 @@ func runCreate(ctx context.Context, opts createOptions, env *appEnv) error {
 	if err := env.runInstallFlow(ctx, cfg, app, !opts.noBrowser, opts.timeout); err != nil {
 		return fmt.Errorf(
 			"app created but not installed yet: %w; "+
-				"run \"kenn-forge github-app install\" to finish", err,
+				"to finish, run kenn-forge github-app install", err,
 		)
 	}
 	return nil
@@ -665,7 +667,7 @@ func (env *appEnv) verifySelectedInstallationCoverage(
 			"the app was installed on %q with \"Only select repositories\", but the "+
 				"installation cannot reach %s; not recording it in config. Edit the "+
 				"installation's repository access on GitHub (or choose \"All "+
-				"repositories\") and re-run \"install\"",
+				"repositories\") and re-run kenn-forge github-app install",
 			picked.Account.Login, strings.Join(missing, ", "),
 		)
 	}

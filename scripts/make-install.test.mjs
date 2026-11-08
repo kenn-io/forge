@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
 const makefile = fileURLToPath(new URL("../Makefile", import.meta.url));
-const restart = "Run kenn-forge daemon restart to use this build.";
+const restart = "If a daemon is running, run kenn-forge daemon restart to use this build. For a custom config, add --config PATH.";
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), "forge-install-"));

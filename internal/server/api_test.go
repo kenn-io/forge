@@ -9209,7 +9209,7 @@ func TestAPIPullMergeQueueFilterKeepsQueuedAndRemovedPulls(t *testing.T) {
 	}
 }
 
-func TestAPIPullFiltersCombineGroupsBeforePagination(t *testing.T) {
+func TestAPIPullFiltersCombineSectionsBeforePagination(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	srv, database, _ := setupTestServerWithMock(t, &serverfake.MockGH{AuthenticatedViewerLoginFn: func(context.Context) (string, error) { return "viewer", nil }})
 	ctx := t.Context()
@@ -9217,14 +9217,13 @@ func TestAPIPullFiltersCombineGroupsBeforePagination(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	for number := 1; number <= 4; number++ {
 		author := "other"
-		if number == 1 {
+		if number == 1 || number == 3 {
 			author = "viewer"
 		}
 		id := serverfake.SeedPR(t, database, "acme", "widget", number, serverfake.WithSeedPRAuthor(author), serverfake.WithSeedPRTimes(now, now, now.Add(time.Duration(number)*time.Minute)))
 		ids = append(ids, id)
-		// 1 involves the viewer, 2 and 3 are unassigned; 1 and 2 pass CI, 3 fails, 4 is pending.
 		assignees := `["other"]`
-		if number == 2 || number == 3 {
+		if number == 2 {
 			assignees = `[]`
 		}
 		status := "success"
@@ -9254,24 +9253,21 @@ func TestAPIPullFiltersCombineGroupsBeforePagination(t *testing.T) {
 		query string
 		want  []int
 	}{
-		{"involves_me=true&unassigned=true&attributes=passed_ci", []int{2, 1}},
-		{"involves_me=true&unassigned=true&attributes=passed_ci&limit=1&offset=1", []int{1}},
-		{"involves_me=true&unassigned=true&attributes=failed_ci", []int{3}},
-		{"involves_me=true&attributes=failed_ci", []int{}},
+		{"involves_me=true&unassigned=true", []int{}},
+		{"unassigned=true&attributes=passed_ci", []int{2}},
+		{"involves_me=true&attributes=failed_ci,passed_ci&limit=1&offset=1", []int{1}},
+		{"attributes=failed_ci,draft", []int{}},
+		{"attributes=failed_ci,ready", []int{3}},
 		{"attributes=passed_ci", []int{2, 1}},
 		{"attributes=passed_ci,failed_ci", []int{3, 2, 1}},
-		{"attributes=ready,passed_ci", []int{2, 1}},
-		{"attributes=ready,failed_ci", []int{3}},
-		{"attributes=draft,ready,failed_ci", []int{3}},
-		{"attributes=draft,failed_ci", []int{}},
-		{"attributes=merge_conflicts,failed_ci", []int{3}},
-		{"unassigned=true&attributes=failed_ci&q=03", []int{3}},
-		{"state=all&unassigned=true&attributes=failed_ci&q=nonexistent", []int{}},
-		{"state=all&unassigned=true&attributes=failed_ci&label=review", []int{3}},
-		{"state=all&involves_me=true&unassigned=true&attributes=passed_ci&starred=true", []int{1}},
-		{"state=closed&unassigned=true&attributes=failed_ci", []int{}},
-		{"state=all&involves_me=true&unassigned=true&attributes=passed_ci,failed_ci&limit=1&offset=1", []int{2}},
+		{"involves_me=true&attributes=failed_ci&q=03", []int{3}},
+		{"state=all&involves_me=true&attributes=failed_ci&q=nonexistent", []int{}},
+		{"state=all&involves_me=true&attributes=failed_ci&label=review", []int{3}},
+		{"state=all&involves_me=true&attributes=passed_ci&starred=true", []int{1}},
+		{"state=closed&involves_me=true&attributes=failed_ci", []int{}},
+		{"state=all&involves_me=true&attributes=failed_ci,passed_ci&limit=1&offset=1", []int{1}},
 		{"state=all&attributes=merge_conflicts&limit=1&offset=1", []int{3}},
+		{"state=all&involves_me=true&attributes=merge_conflicts", []int{3}},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?"+tc.query, nil)
@@ -9286,22 +9282,22 @@ func TestAPIPullFiltersCombineGroupsBeforePagination(t *testing.T) {
 		})
 	}
 	t.Run("repeated attributes", func(t *testing.T) {
-		query := "state=all&unassigned=true&attributes=" + strings.Repeat("failed_ci,", 1000) + "passed_ci&limit=1&offset=1"
+		query := "state=all&involves_me=true&attributes=" + strings.Repeat("failed_ci,", 1000) + "passed_ci&limit=2&offset=1"
 		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?"+query, nil)
 		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 		var rows []pullapi.MergeRequestResponse
 		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &rows))
 		require.Len(t, rows, 1)
-		assert.Equal(t, 2, rows[0].Number)
+		assert.Equal(t, 1, rows[0].Number)
 	})
 	_, err = database.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET state = 'closed' WHERE id IN (?, ?)", ids[0], ids[2])
 	require.NoError(t, err)
-	for state, want := range map[string]int{"closed": 1, "all": 2} {
-		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?state="+state+"&involves_me=true&unassigned=true&attributes=passed_ci,failed_ci&limit=1&offset=1", nil)
+	for _, state := range []string{"closed", "all"} {
+		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?state="+state+"&involves_me=true&attributes=failed_ci,passed_ci&limit=1&offset=1", nil)
 		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 		var rows []pullapi.MergeRequestResponse
 		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &rows))
 		require.Len(t, rows, 1)
-		assert.Equal(t, want, rows[0].Number, state)
+		assert.Equal(t, 1, rows[0].Number, state)
 	}
 }

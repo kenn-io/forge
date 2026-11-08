@@ -531,7 +531,7 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 		mr.State = "merged"
 		mr.AssigneesJSON = `["other"]`
 		if number == 299 || number == 297 || number == 295 {
-			mr.ReviewDecision, mr.AssigneesJSON, mr.CIStatus = "APPROVED", `[]`, "success"
+			mr.AssigneesJSON, mr.ReviewDecision, mr.CIStatus = `[]`, "APPROVED", "success"
 		}
 		mr.LastActivityAt = baseTime().Add(time.Duration(number/2) * time.Minute)
 		if number == 300 {
@@ -574,7 +574,7 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 			mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_activity"}, ListMergeRequestsOpts{
 				State: state, Limit: 2, Offset: 1, AllowedRepoIDs: []int64{large, small},
 				RepoFilters: []RepoFilter{{Platform: "github", PlatformHost: "github.com", RepoPath: "acme/large"}},
-				Attributes:  []string{"approved", "passed_ci"},
+				Attributes:  []string{"approved"},
 			})
 			require.NoError(t, err)
 			require.Len(t, mrs, 2)

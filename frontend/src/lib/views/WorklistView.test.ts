@@ -888,11 +888,15 @@ describe("WorklistView", () => {
     };
     const refs = () => [...document.querySelectorAll(".worklist-row-ref")].map((ref) => ref.textContent);
 
+    await fireEvent.click(await menuItem("Merge conflicts"));
+    expect(rowTitles()).toEqual(["Mirror host stub PR"]);
+    await fireEvent.click(await menuItem("Merge conflicts"));
+
     await fireEvent.click(await menuItem("Involves me"));
     await waitFor(() => expect(rowTitles()).toEqual(["Theme toggle does not stick", "Mirror host stub PR"]));
     expect(reads).toEqual([false, true]);
 
-    // Involvement and merge conflicts are separate groups, so a row must match both.
+    // Involves me and Merge conflicts must both match.
     await fireEvent.click(await menuItem("Merge conflicts"));
     expect(rowTitles()).toEqual(["Mirror host stub PR"]);
 

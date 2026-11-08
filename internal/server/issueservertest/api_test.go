@@ -164,9 +164,9 @@ func TestAPIInvolvesMeFiltersPullsIssuesAndActivity(t *testing.T) {
 	for _, item := range activity.Items {
 		assert.Contains([]int{1, 3}, item.ItemNumber)
 	}
-	_, err = database.WriteDB().ExecContext(ctx, `UPDATE forge_merge_requests SET assignees_json = CASE WHEN number = 2 THEN '[]' ELSE '["other"]' END`)
+	_, err = database.WriteDB().ExecContext(ctx, `UPDATE forge_merge_requests SET assignees_json = CASE WHEN number IN (1, 2) THEN '[]' ELSE '["other"]' END`)
 	require.NoError(err)
-	_, err = database.WriteDB().ExecContext(ctx, `UPDATE forge_issues SET assignees_json = CASE WHEN number = 4 THEN '[]' ELSE '["other"]' END`)
+	_, err = database.WriteDB().ExecContext(ctx, `UPDATE forge_issues SET assignees_json = CASE WHEN number IN (3, 4) THEN '[]' ELSE '["other"]' END`)
 	require.NoError(err)
 	serverfake.SeedWorkspace(t, database, "ws-involved-pr", "acme", "widget", "pull_request", 1)
 	serverfake.SeedWorkspace(t, database, "ws-unassigned-pr", "acme", "widget", "pull_request", 2)
@@ -178,14 +178,15 @@ func TestAPIInvolvesMeFiltersPullsIssuesAndActivity(t *testing.T) {
 		if strings.Contains(path, "activity") {
 			var body itemapi.ActivityResponse
 			require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
-			assert.Len(body.ItemActivity, 4)
+			require.Len(body.ItemActivity, 2)
 			for _, item := range body.ItemActivity {
-				assert.NotNil(item.Workspace, "both involvement and unassigned matches retain workspace metadata")
+				assert.Contains([]int{1, 3}, item.ItemNumber, "only involved, unassigned subjects match both filters")
+				assert.NotNil(item.Workspace, "matching subjects retain workspace metadata")
 			}
 		} else {
 			var rows []json.RawMessage
 			require.NoError(json.Unmarshal(rr.Body.Bytes(), &rows))
-			assert.Len(rows, 2)
+			assert.Len(rows, 1)
 		}
 	}
 	assert.Equal(1, mock.AuthenticatedViewerCalls,

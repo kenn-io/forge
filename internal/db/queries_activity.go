@@ -238,15 +238,11 @@ func activityEventsQuery(opts ListActivityOpts) (string, []any) {
 		whereClauses = append(whereClauses,
 			"("+strings.Join(directConditions, " OR ")+")")
 	}
-	var inclusion []string
 	if opts.Unassigned {
-		inclusion = append(inclusion, activityUnassignedCondition())
+		whereClauses = append(whereClauses, activityUnassignedCondition())
 	}
 	if opts.ViewerLogins != nil {
-		inclusion = append(inclusion, activityInvolvementCondition(opts.ViewerLogins, &args))
-	}
-	if len(inclusion) > 0 {
-		whereClauses = append(whereClauses, "("+strings.Join(inclusion, " OR ")+")")
+		whereClauses = append(whereClauses, activityInvolvementCondition(opts.ViewerLogins, &args))
 	}
 
 	// Time window filter.
@@ -828,15 +824,11 @@ func listActivitySubjectsWithQueryer(
 	if opts.HideDrafts {
 		whereClauses = append(whereClauses, "item_is_draft = 0")
 	}
-	var inclusion []string
 	if opts.Unassigned {
-		inclusion = append(inclusion, activityUnassignedCondition())
+		whereClauses = append(whereClauses, activityUnassignedCondition())
 	}
 	if opts.ViewerLogins != nil {
-		inclusion = append(inclusion, activityInvolvementCondition(opts.ViewerLogins, &args))
-	}
-	if len(inclusion) > 0 {
-		whereClauses = append(whereClauses, "("+strings.Join(inclusion, " OR ")+")")
+		whereClauses = append(whereClauses, activityInvolvementCondition(opts.ViewerLogins, &args))
 	}
 	if opts.Since != nil {
 		whereClauses = append(whereClauses, "activity_at >= ?")

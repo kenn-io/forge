@@ -826,7 +826,9 @@ type MRReviewThread struct {
 }
 
 type ListMergeRequestsOpts struct {
-	// Attributes are PR inclusion filters ORed with Unassigned and ViewerLogins before pagination.
+	// Attributes are PR inclusion filters. Mutually exclusive ones (draft and ready, failed_ci and
+	// passed_ci) match either; every other filter, including Unassigned and ViewerLogins, must
+	// also match before pagination.
 	Attributes []string
 	// AllowedRepoIDs scopes repositories before pagination. nil is unrestricted; empty matches none.
 	AllowedRepoIDs []int64

@@ -262,7 +262,7 @@ and back.
   Activity), sent as pre-limit server queries, never URL or config state.
 - `Unassigned` matches only PR/issue subjects with an empty synchronized assignee set.
 - `Referenced by PR` is a browser-local Issues preference, default off, exposed in every issue-filter
-  presentation; it ORs with involvement and unassigned before limits, and reset clears it.
+  presentation; it ANDs with involvement and unassigned before limits, and reset clears it.
 - `Referenced by PR` shows whenever any configured provider-host supplies reference edges; edges never
   cross provider-host boundaries, and the graph has no badge or detail UI.
 - Repository preset definitions follow server settings; the active selection and preset affinity stay
@@ -683,12 +683,15 @@ Not every visibility control means "remove this entity entirely."
 - Empty states make clear when filters, not missing data, hide results.
 - When two data sources race, prefer the one matching the current filter/scope over a faster stale preview.
 - Workspace status counts use the complete event-refreshed open-item cache, not page lists or capped search.
-- PR inclusion options match any selected option within a group (Involves me/Unassigned, Draft/Ready,
-  Passing/Failed CI) and must match every selected group, so Ready plus Passing CI shows only green ready
-  PRs. Repository, state, search, starred, and workspace filters still narrow. The database
-  applies them before pagination (`internal/db/queries.go::DB.listMergeRequests`); the worklist rail
-  uses the same groups (`frontend/src/lib/utils/pull-attributes.ts::matchesFilterGroups`).
-- Activity involvement and unassigned likewise match either selection; exclusions still narrow.
+- Every selected PR, issue, and Activity filter must match, including Involves me with Unassigned.
+  Opposite options (Draft or Ready for review, Passing or Failed CI, Merge conflicts or No merge
+  conflicts) are pick-one menu sections. The menu shows this through its sections, without
+  explanatory text. The database applies it before
+  pagination; the PR store and worklist rail use the same sections
+  (`internal/db/queries.go::filterSectionsCondition`, `frontend/src/lib/utils/pull-attributes.ts::toggleFilterInSections`).
+- A spoke lists standalone local workspace activity only without Involves me, because only the hub
+  can tell whether such a subject involves the viewer
+  (`internal/server/activityapi/huma_routes.go::Handlers.prepareLocalActivityWorkspaceSnapshot`).
 - Workspaces applies repository scope by full provider/host/path identity to local and Fleet rows.
 
 ### PR Stacks And Lists

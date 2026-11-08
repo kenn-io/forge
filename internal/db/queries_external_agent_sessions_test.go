@@ -67,20 +67,27 @@ func TestExternalAgentSessionLifecycle(t *testing.T) {
 	assert.Nil(missing)
 }
 
-func TestDeleteEndedExternalSessionsKeepsAdoptedAndRunningOnes(t *testing.T) {
+func TestDeleteEndedExternalSessionsKeepsAdoptedRunningAndRecentOnes(t *testing.T) {
 	ctx := t.Context()
 	require := require.New(t)
 	database := openTestDB(t)
-	for _, id := range []string{"ended", "running", "adopted"} {
+	for _, id := range []string{"ended", "recent", "running", "adopted"} {
 		require.NoError(database.RecordExternalAgentSession(ctx, ExternalAgentSession{Agent: "codex", SessionID: id, CWD: "/work"}))
 	}
+	cutoff := time.Now()
 	require.NoError(database.AdoptExternalAgentSession(ctx, "codex", "adopted", "ws-1", "key-1"))
-	require.NoError(database.MarkExternalAgentSessionEnded(ctx, "codex", "adopted", time.Now()))
-	require.NoError(database.MarkExternalAgentSessionEnded(ctx, "codex", "ended", time.Now()))
+	require.NoError(database.MarkExternalAgentSessionEnded(ctx, "codex", "adopted", cutoff.Add(-time.Minute)))
+	require.NoError(database.MarkExternalAgentSessionEnded(ctx, "codex", "ended", cutoff.Add(-time.Minute)))
+	require.NoError(database.MarkExternalAgentSessionEnded(ctx, "codex", "recent", cutoff.Add(time.Minute)))
 
-	require.NoError(database.DeleteEndedUnadoptedExternalAgentSessions(ctx))
+	recent, err := database.ListEndedUnadoptedExternalAgentSessions(ctx, cutoff)
+	require.NoError(err)
+	require.Len(recent, 1)
+	assert.Equal(t, "recent", recent[0].SessionID)
 
-	for id, kept := range map[string]bool{"ended": false, "running": true, "adopted": true} {
+	require.NoError(database.DeleteEndedUnadoptedExternalAgentSessions(ctx, cutoff))
+
+	for id, kept := range map[string]bool{"ended": false, "recent": true, "running": true, "adopted": true} {
 		saved, err := database.GetExternalAgentSession(ctx, "codex", id)
 		require.NoError(err)
 		assert.Equal(t, kept, saved != nil, id)

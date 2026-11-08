@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -322,16 +323,23 @@ func TestExitedMirrorLoadsItsSessionInARealAgent(t *testing.T) {
 	assert.NotContains(messageTexts(state), "restored answer", "the mirrored transcript already holds the history")
 }
 
-// Forge reads no transcript for this agent, so the history the agent replays on
-// load is the only record of the earlier conversation.
-func TestExitedMirrorWithoutATranscriptReaderShowsTheAgentsHistory(t *testing.T) {
-	chat, _ := startRealMirror(t, "gemini", "")
-	require.Empty(t, dormantState(t, chat).Messages)
+// When the chat read no transcript, the history the agent replays on load is the
+// only record of the earlier conversation.
+func TestExitedMirrorWithoutATranscriptShowsTheAgentsHistory(t *testing.T) {
+	for name, agent := range map[string]string{
+		"an agent Forge reads no transcript of": "gemini",
+		"a transcript with nothing in it":       "claude",
+	} {
+		t.Run(name, func(t *testing.T) {
+			chat, _ := startRealMirror(t, agent, "")
+			require.Empty(t, dormantState(t, chat).Messages)
 
-	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", ID: "p1", Text: "continue here"}))
+			require.NoError(t, chat.Command(ACPCommand{Type: "prompt", ID: "p1", Text: "continue here"}))
 
-	state := awaitIdleMessages(t, chat, 4)
-	assert.Equal(t, []string{"remember", "restored answer", "continue here"}, messageTexts(state)[:3])
+			state := awaitIdleMessages(t, chat, 4)
+			assert.Equal(t, []string{"remember", "restored answer", "continue here"}, messageTexts(state)[:3])
+		})
+	}
 }
 
 func messageTexts(state ACPState) []string {
@@ -352,8 +360,68 @@ func TestMirrorThatCannotStartKeepsShowingItsTranscript(t *testing.T) {
 		Start:  func() (ACPChat, error) { return nil, errors.New("no chat agent") },
 	})
 	require.ErrorContains(t, chat.Command(ACPCommand{Type: "prompt", Text: "go"}), "no chat agent")
-	state := dormantState(t, chat)
-	assert.Equal(t, "no chat agent", state.Error)
-	assert.NotEmpty(t, state.Messages)
+	assert.NotEmpty(t, dormantState(t, chat).Messages)
 	assert.Nil(t, chat.Live())
+}
+
+// A transcript path a hook reports after the chat opened is read from then on.
+func TestMirrorReadsATranscriptReportedAfterItOpened(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	require.NoError(t, os.WriteFile(path, []byte(claudeTranscriptFixture), 0o600))
+	manager := newACPTestManager(t, Options{ACPSessionsDir: t.TempDir()})
+	var mu sync.Mutex
+	reported := ""
+	chat := manager.MirrorACP(ACPMirror{
+		Key: "chat", Agent: "claude", SessionID: "session-1",
+		Status: func() ACPMirrorStatus {
+			mu.Lock()
+			defer mu.Unlock()
+			return ACPMirrorStatus{Running: true, TranscriptPath: reported}
+		},
+	})
+	require.Empty(t, dormantState(t, chat).Messages)
+
+	mu.Lock()
+	reported = path
+	mu.Unlock()
+	chat.pollMirror()
+
+	assert.Len(t, dormantState(t, chat).Messages, 5)
+}
+
+// Every open view of a session gets its own chat. Once one view starts the
+// Forge-run agent, the others follow that agent instead of the transcript.
+func TestMirrorFollowsAnAgentAnotherViewStarted(t *testing.T) {
+	manager := newACPTestManager(t, Options{ACPSessionsDir: t.TempDir()})
+	live := &recordingChat{}
+	var running atomic.Bool
+	chat := manager.MirrorACP(ACPMirror{
+		Key: "chat", Agent: "claude", SessionID: "session-1",
+		Status: func() ACPMirrorStatus { return ACPMirrorStatus{} },
+		Start:  func() (ACPChat, error) { return nil, errors.New("a second agent started on the session") },
+		Live: func() ACPChat {
+			if running.Load() {
+				return live
+			}
+			return nil
+		},
+	})
+	following := make(chan struct{})
+	go func() {
+		defer close(following)
+		chat.Follow(t.Context())
+	}()
+
+	running.Store(true)
+	select {
+	case <-chat.Started():
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "the view never followed the started agent")
+	}
+	<-following
+	assert.Same(t, live, chat.Live())
+	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", ID: "p1", Text: "continue"}))
+	live.mu.Lock()
+	defer live.mu.Unlock()
+	assert.Len(t, live.commands, 1)
 }

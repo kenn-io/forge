@@ -130,9 +130,16 @@ func (f *externalSessionFixture) adopted(t *testing.T) (*db.Workspace, []db.Work
 	workspaces, err := f.database.ListWorkspaces(t.Context())
 	require.NoError(t, err)
 	require.Len(t, workspaces, 1)
+	// Setup writes the ready status before it lets a chat start, so wait for both.
 	require.Eventually(t, func() bool {
 		ws, err := f.database.GetWorkspace(t.Context(), workspaces[0].ID)
-		return err == nil && ws != nil && ws.Status == "ready"
+		if err != nil || ws == nil || ws.Status != "ready" {
+			return false
+		}
+		f.handler.workspaceSetupMu.Lock()
+		defer f.handler.workspaceSetupMu.Unlock()
+		_, settingUp := f.handler.workspaceSetupDone[ws.ID]
+		return !settingUp
 	}, 5*time.Second, 10*time.Millisecond, "setup never finished")
 	rows, err := f.database.ListWorkspaceRuntimeSessions(t.Context(), workspaces[0].ID)
 	require.NoError(t, err)
@@ -191,6 +198,46 @@ func TestExternalAgentGetsAWorkspaceOnceItsWorktreeHoldsAPullRequest(t *testing.
 	require.Len(t, state.Messages, 2)
 	assert.Equal("Open a pull request", state.Messages[0].Text)
 	assert.Equal("Opened it.", state.Messages[1].Text)
+}
+
+// An agent can open its pull request and exit before Forge syncs it. The session
+// is still adopted when the pull request arrives within an hour, and forgotten
+// after that.
+func TestAgentThatExitsBeforeItsPullRequestSyncsStillGetsAWorkspace(t *testing.T) {
+	assert := assert.New(t)
+	f := newExternalSessionFixture(t)
+	f.hook(t, "claude", "session-1", "UserPromptSubmit", runningAgentHeaders())
+	f.hook(t, "claude", "session-1", "SessionEnd", nil)
+	f.hook(t, "claude", "session-2", "UserPromptSubmit", runningAgentHeaders())
+	require.NoError(t, f.database.MarkExternalAgentSessionEnded(t.Context(), "claude", "session-2", time.Now().Add(-2*time.Hour)))
+
+	f.openPull(t, "feature/login", f.head)
+	f.pass(t)
+
+	ws, rows := f.adopted(t)
+	require.Len(t, rows, 1)
+	adopted, err := f.database.GetExternalAgentSession(t.Context(), "claude", "session-1")
+	require.NoError(t, err)
+	require.NotNil(t, adopted)
+	assert.Equal(ws.ID, adopted.WorkspaceID)
+	stale, err := f.database.GetExternalAgentSession(t.Context(), "claude", "session-2")
+	require.NoError(t, err)
+	assert.Nil(stale, "a session that ended over an hour ago is forgotten")
+}
+
+// The hook that made the session due for adoption may be the last one for a
+// while, so the new chat starts from it.
+func TestAdoptedChatShowsTheAgentWorkingBeforeItsNextHook(t *testing.T) {
+	f := newExternalSessionFixture(t)
+	f.openPull(t, "feature/login", f.head)
+	f.hook(t, "claude", "session-1", "PostToolUse", runningAgentHeaders())
+	f.pass(t)
+	ws, rows := f.adopted(t)
+
+	chat, err := f.handler.openWorkspaceChat(t.Context(), ws.ID, rows[0].SessionKey)
+	require.NoError(t, err)
+
+	assert.True(t, chatState(t, chat).Busy)
 }
 
 func TestAWorktreeChatFollowsOneRunningAgentAtATime(t *testing.T) {
@@ -294,7 +341,8 @@ func TestAgentThatDiedWithoutSessionEndIsSeenAsGone(t *testing.T) {
 
 	killed, err := f.database.GetExternalAgentSession(t.Context(), "claude", "killed")
 	require.NoError(t, err)
-	assert.Nil(killed, "a session that ended without opening a pull request is forgotten")
+	require.NotNil(t, killed)
+	assert.NotNil(killed.EndedAt)
 	running, err := f.database.GetExternalAgentSession(t.Context(), "claude", "unknown-process")
 	require.NoError(t, err)
 	require.NotNil(t, running)
@@ -333,6 +381,34 @@ func TestChatPromptGoesToTheAgentsHerdrPane(t *testing.T) {
 	assert.Equal(strings.Join([]string{
 		"socket=/run/test/herdr.sock", "agent", "prompt", "w1:p1", "--also check logout",
 		"socket=/run/test/herdr.sock", "agent", "send-keys", "w1:p1", "esc", "",
+	}, "\n"), string(recorded))
+}
+
+// A browser that reconnects resends the prompts it has no acknowledgment for,
+// under their submission IDs, through a new chat. Each reaches the pane once.
+func TestAResentPromptReachesTheAgentOnce(t *testing.T) {
+	f := newExternalSessionFixture(t)
+	bin := t.TempDir()
+	record := filepath.Join(bin, "record")
+	script := "#!/bin/sh\nfor arg; do printf '%s\\n' \"$arg\"; done >> " + record + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "herdr"), []byte(script), 0o755))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	f.openPull(t, "feature/login", f.head)
+	f.hook(t, "claude", "session-1", "UserPromptSubmit", herdrHeaders("/run/test/herdr.sock"))
+	f.pass(t)
+	ws, rows := f.adopted(t)
+
+	for _, id := range []string{"p1", "p1", "p2"} {
+		chat, err := f.handler.openWorkspaceChat(t.Context(), ws.ID, rows[0].SessionKey)
+		require.NoError(t, err)
+		require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "prompt", ID: id, Text: "prompt " + id}))
+	}
+
+	recorded, err := os.ReadFile(record)
+	require.NoError(t, err)
+	assert.Equal(t, strings.Join([]string{
+		"agent", "prompt", "w1:p1", "prompt p1",
+		"agent", "prompt", "w1:p1", "prompt p2", "",
 	}, "\n"), string(recorded))
 }
 

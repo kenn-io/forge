@@ -136,6 +136,7 @@ type Handler struct {
 	pasteImages         *terminalpaste.Store
 	agentActivity       *agentactivity.Store
 	externalSessions    externalSessionTracker
+	mirrorDeliveries    mirrorDeliveries
 	tmuxCmd             []string
 	now                 func() time.Time
 	broadcast           func(Event) uint64

@@ -49,13 +49,15 @@ test("replaces a running executable and asks to restart the daemon", { skip: pro
   assert.ok(result.stdout.includes(restart));
 });
 
-test("fails on a read-only install directory or a first-copy I/O error", { skip: process.getuid?.() === 0 }, async (t) => {
+test("fails on a read-only install directory or a first-copy I/O error", async (t) => {
   const f = await fixture(t);
-  await chmod(f.bin, 0o555);
-  const result = f.install();
-  assert.notEqual(result.status, 0);
-  assert.ok(!result.stdout.includes(restart));
-  await chmod(f.bin, 0o755);
+  if (process.getuid?.() !== 0) {
+    await chmod(f.bin, 0o555);
+    const result = f.install();
+    assert.notEqual(result.status, 0);
+    assert.ok(!result.stdout.includes(restart));
+    await chmod(f.bin, 0o755);
+  }
   await writeFile(join(f.bin, "kenn-forge-github-app"), "old helper\n");
   const cp = join(f.root, "cp");
   await writeFile(cp, '#!/bin/sh\ncase "$1" in\nkenn-forge) echo "cp: input/output error" >&2; exit 1 ;;\n*) exec /bin/cp "$@" ;;\nesac\n');

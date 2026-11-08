@@ -202,26 +202,19 @@ afterEach(async () => {
 });
 
 describe("flat activity paging", () => {
-  it("offers no event page when only parent summaries are capped", async () => {
-    const get = vi.fn(async (path: string) => {
-      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-      return {
-        data: { items: [], item_activity: [itemActivity(7)], capped: false, item_activity_capped: true },
-        error: null,
-      };
-    });
-    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-    expect(store.canLoadMoreActivity()).toBe(false);
-    const requests = get.mock.calls.filter(([path]) => path === "/activity").length;
-    store.loadMoreActivity();
-    expect(get.mock.calls.filter(([path]) => path === "/activity")).toHaveLength(requests);
-  });
+  const pageItem: ActivityItem = {
+    ...itemActivity(7),
+    id: "comment:7",
+    cursor: "comment:7",
+    activity_type: "comment",
+    author: "alice",
+    body_preview: "cache",
+    created_at: new Date().toISOString(),
+  };
 
   it("finishes loading more when sync reconciliation replaces the pending request", async () => {
     let requests = 0;
-    const response = { data: { items: [], capped: true }, error: null };
+    const response = { data: { items: [pageItem], capped: true }, error: null };
     const get = vi.fn(async (path: string, options?: { signal?: AbortSignal }) => {
       if (path === "/activity/authors") return { data: { authors: [] }, error: null };
       requests += 1;
@@ -260,7 +253,7 @@ describe("flat activity paging", () => {
     const get = vi.fn(async (path: string, options?: { params?: { query?: { limit?: number } } }) => {
       if (path === "/activity/authors") return { data: { authors: [] }, error: null };
       if (options?.params?.query?.limit === 5000) return finalPage.promise;
-      return { data: { items: [], capped: true }, error: null };
+      return { data: { items: [pageItem], capped: true }, error: null };
     });
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.loadActivity();
@@ -309,7 +302,7 @@ describe("flat activity paging", () => {
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(true));
     expect(store.isLoadingMoreActivity()).toBe(true);
     expect(store.canLoadMoreActivity()).toBe(true);
-    finalPage.resolve({ data: { items: [], capped: true }, error: null });
+    finalPage.resolve({ data: { items: [pageItem], capped: true }, error: null });
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
     expect(store.canLoadMoreActivity()).toBe(false);
     expect(get).toHaveBeenLastCalledWith(
@@ -341,7 +334,7 @@ describe("flat activity paging", () => {
     const get = vi.fn(async (path: string) => {
       if (path === "/activity/authors") return { data: { authors: [] }, error: null };
       if (fail) return { error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) };
-      return { data: { items: [], item_activity: [itemActivity(7)], capped: true }, error: null };
+      return { data: { items: [pageItem], item_activity: [itemActivity(7)], capped: true }, error: null };
     });
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.loadActivity();
@@ -646,19 +639,22 @@ describe("activity store workspace activity", () => {
   });
 
   it("retains parent-snapshot truncation independently from event truncation", async () => {
-    const client = {
-      GET: async () => ({
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      return {
         data: { items: [], capped: false, item_activity: [itemActivity(7)], item_activity_capped: true },
         error: null,
-      }),
-    } as unknown as GeneratedClient;
-    const store = createActivityStore({ client });
-
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-
     expect(store.isActivityCapped()).toBe(false);
     expect(store.isItemActivityCapped()).toBe(true);
+    expect(store.canLoadMoreActivity()).toBe(false);
+    const requests = get.mock.calls.filter(([path]) => path === "/activity").length;
+    store.loadMoreActivity();
+    expect(get.mock.calls.filter(([path]) => path === "/activity")).toHaveLength(requests);
   });
 });
 

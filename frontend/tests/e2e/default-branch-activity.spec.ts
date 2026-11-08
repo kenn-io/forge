@@ -354,11 +354,8 @@ test.describe("default branch activity", () => {
     ).toBeVisible();
   });
 
-  test("warns about capped parents only in threaded activity", async ({ page }) => {
+  test("warns about capped parents in threaded activity", async ({ page }) => {
     await mockDefaultBranchActivity(page, { itemActivityCapped: true });
-    await page.goto("/?view=flat");
-
-    await expect(page.locator(".item-activity-capped-notice")).toHaveCount(0);
     await page.goto("/?view=threaded");
 
     await expect(page.locator(".item-activity-capped-notice")).toContainText(

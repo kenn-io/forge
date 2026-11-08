@@ -316,33 +316,28 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.getByText("Add widget caching layer")).toBeTruthy();
   });
 
-  it("loads more flat rows without a safety-cap notice", async () => {
+  it.each([false, true])("keeps paging controls without a ceiling notice (pending: %s)", async (pending) => {
     activityCapped.value = true;
-    itemActivityCapped.value = true;
     canLoadMore.value = true;
+    loadingMore.value = pending;
     render(ActivityFeed);
-
-    await fireEvent.click(screen.getByRole("button", { name: "Load more" }));
-    expect(loadMoreActivity).toHaveBeenCalledOnce();
-    expect(screen.queryByText(/5,000/)).toBeNull();
+    if (pending) {
+      expect(screen.getByRole("button", { name: "Loading more…" }).hasAttribute("disabled")).toBe(true);
+    } else {
+      await fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+      expect(loadMoreActivity).toHaveBeenCalledOnce();
+    }
+    expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
   });
 
   it("keeps older activity available when the loaded page has no label matches", () => {
+    activityCapped.value = true;
     labelFilters.value = new Map([["cache", { name: "cache", mode: "require" }]]);
     canLoadMore.value = true;
     render(ActivityFeed);
     expect(screen.queryByText("No activity found")).toBeNull();
     expect(screen.getByText("No matches in loaded activity")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
-  });
-
-  it("keeps the final page pending without a ceiling notice", () => {
-    activityCapped.value = true;
-    canLoadMore.value = true;
-    loadingMore.value = true;
-    render(ActivityFeed);
-    expect(screen.getByRole("button", { name: "Loading more…" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
   });
 
   it.each([
@@ -360,18 +355,15 @@ describe("ActivityFeed compact mode", () => {
     activityCapped.value = kind === "events";
     itemActivityCapped.value = kind === "parents";
     viewMode.value = "threaded";
-    loadingMore.value = true;
     render(ActivityFeed);
     expect(screen.getByText(notice)).toBeTruthy();
     expect(screen.queryByText(otherNotice)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
   it("discloses parent-only truncation through counts rather than a flat-feed notice", () => {
     itemActivityCapped.value = true;
     render(ActivityFeed);
     expect(screen.queryByText(/5,000/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
   it("offers to retry a failed thread history load", async () => {

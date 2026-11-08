@@ -724,7 +724,10 @@ async function spawnServer(
   const child = spawn(invocation.command, args, {
     cwd: repoRoot,
     stdio: "inherit",
-    env: process.env,
+    // Workspace runtime shells start from $SHELL. The developer's own
+    // interactive shell config (zle widgets, autopairing, prompts) rewrites
+    // the commands tests type, so pin a POSIX shell that loads no user config.
+    env: { ...process.env, SHELL: "/bin/sh" },
   });
   startingServers.add(child);
 

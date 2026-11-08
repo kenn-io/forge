@@ -344,89 +344,43 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Len(unfiltered.JSON200.Items, len(resp.JSON200.Items))
 }
 
-func TestAPIListCollapsedActivityHonorsLimit(t *testing.T) {
+func TestAPIListActivityHonorsLimit(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
-	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
+	client := servertest.SetupTestClient(t, srv)
 	now := time.Now().UTC().Truncate(time.Second)
 	for number := 1; number <= 11; number++ {
 		activityAt := now.Add(-time.Duration(number) * time.Minute)
-		serverfake.SeedPR(
-			t, database, "acme", "widget", number,
-			serverfake.WithSeedPRTimes(activityAt, activityAt, activityAt),
-		)
+		serverfake.SeedPR(t, database, "acme", "widget", number,
+			serverfake.WithSeedPRTimes(activityAt, activityAt, activityAt))
 	}
-
-	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
-	rr := testutil.DoJSON(
-		t,
-		srv,
-		http.MethodGet,
-		"/api/v1/activity?since="+since+"&projection=collapsed&limit=10",
-		nil)
-
-	require.Equal(http.StatusOK, rr.Code)
-	var body itemapi.ActivityResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
-	require.Len(body.ItemActivity, 10)
-	assert.True(body.ItemActivityCapped)
-	assert.Equal(1, body.ItemActivity[0].ItemNumber)
-}
-
-func TestAPIListCollapsedActivitySearchLimitCountsDistinctParents(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
-	require := require.New(t)
-	srv, database, _ := setupTestServer(t)
-	ctx := t.Context()
-	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
-
-	olderPRID := serverfake.SeedPR(
-		t, database, "acme", "widget", 1,
-		serverfake.WithSeedPRTitle("Unrelated older parent"),
-		serverfake.WithSeedPRTimes(base, base, base),
-	)
-	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
-		MergeRequestID: olderPRID,
-		EventType:      "issue_comment",
-		Author:         "reviewer",
-		Body:           "needle in an older event",
-		CreatedAt:      base.Add(time.Minute),
-		DedupeKey:      "older-search-match",
-	}}))
-	newerPRID := serverfake.SeedPR(
-		t, database, "acme", "widget", 2,
-		serverfake.WithSeedPRTitle("Unrelated newer parent"),
-		serverfake.WithSeedPRTimes(base, base, base),
-	)
-	newerEvents := make([]db.MREvent, 31)
-	for i := range newerEvents {
-		newerEvents[i] = db.MREvent{
-			MergeRequestID: newerPRID,
-			EventType:      "issue_comment",
-			Author:         "reviewer",
-			Body:           "needle repeated",
-			CreatedAt:      base.Add(2*time.Minute + time.Duration(i)*time.Second),
-			DedupeKey:      fmt.Sprintf("newer-search-match-%d", i),
-		}
+	since := now.Add(-7 * 24 * time.Hour).Format(time.RFC3339)
+	limit := int64(1)
+	for _, tc := range []struct {
+		name       string
+		projection *generated.ListActivityQueryProjection
+	}{
+		{name: "full"},
+		{name: "collapsed", projection: new(generated.ListActivityQueryProjectionCollapsed)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			resp, err := client.HTTP.ListActivityWithResponse(t.Context(), &generated.ListActivityRequestOptions{
+				Query: &generated.ListActivityQuery{Since: &since, Limit: &limit, Projection: tc.projection},
+			})
+			require.NoError(err)
+			require.Equal(http.StatusOK, resp.StatusCode)
+			require.NotNil(resp.JSON200)
+			if tc.projection == nil {
+				assert.Len(resp.JSON200.Items, int(limit))
+				assert.True(resp.JSON200.Capped)
+			}
+			require.Len(resp.JSON200.ItemActivity, int(limit))
+			assert.True(resp.JSON200.ItemActivityCapped)
+			assert.Equal(int64(1), resp.JSON200.ItemActivity[0].ItemNumber)
+		})
 	}
-	require.NoError(database.UpsertMREvents(ctx, newerEvents))
-
-	since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
-	rr := testutil.DoJSON(
-		t,
-		srv,
-		http.MethodGet,
-		"/api/v1/activity?since="+since+"&projection=collapsed&limit=30&search=needle",
-		nil)
-
-	require.Equal(http.StatusOK, rr.Code)
-	var body itemapi.ActivityResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
-	require.Len(body.ItemActivity, 2)
-	assert.Equal([]int{2, 1}, []int{body.ItemActivity[0].ItemNumber, body.ItemActivity[1].ItemNumber})
-	assert.False(body.ItemActivityCapped)
 }
 
 func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testing.T) {
@@ -1013,62 +967,63 @@ func TestAPIListActivityAppliesTrackedRepoScopeBeforeAuthorLimit(t *testing.T) {
 
 func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
-	require := require.New(t)
-	assert := assert.New(t)
-	srv, database, _ := setupTestServer(t)
-	ctx := t.Context()
-	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
-
-	// The older parent matches the search only through its event body, and
-	// that event sits behind more than a full event page of newer matches on
-	// another parent, so it can only be recognised as a truncated parent.
-	olderPRID := serverfake.SeedPR(
-		t, database, "acme", "widget", 1,
-		serverfake.WithSeedPRTitle("Unrelated older parent"),
-		serverfake.WithSeedPRTimes(base, base, base),
-	)
-	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
-		MergeRequestID: olderPRID,
-		EventType:      "issue_comment",
-		Author:         "reviewer",
-		Body:           "needle in an older event",
-		CreatedAt:      base.Add(time.Minute),
-		DedupeKey:      "older-needle",
-	}}))
-	noisyPRID := serverfake.SeedPR(
-		t, database, "acme", "widget", 2,
-		serverfake.WithSeedPRTitle("Unrelated noisy parent"),
-		serverfake.WithSeedPRTimes(base, base, base),
-	)
-	noisyEvents := make([]db.MREvent, itemapi.ActivitySafetyCap+1)
-	for i := range noisyEvents {
-		noisyEvents[i] = db.MREvent{
-			MergeRequestID: noisyPRID,
-			EventType:      "issue_comment",
-			Author:         "reviewer",
-			Body:           "needle repeated",
-			CreatedAt:      base.Add(2*time.Minute + time.Duration(i)*time.Second),
-			DedupeKey:      fmt.Sprintf("noisy-needle-%d", i),
-		}
+	for _, tc := range []struct {
+		name      string
+		events    int
+		limit     int
+		parents   []int
+		truncated bool
+	}{
+		{"beyond page", 201, 200, []int{2, 1}, false},
+		{"beyond window", itemapi.ActivitySafetyCap + 1, 0, []int{2}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, database, _ := setupTestServer(t)
+			ctx := t.Context()
+			base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
+			olderPRID := serverfake.SeedPR(t, database, "acme", "widget", 1,
+				serverfake.WithSeedPRTitle("Unrelated older parent"),
+				serverfake.WithSeedPRTimes(base, base, base))
+			require.NoError(t, database.UpsertMREvents(ctx, []db.MREvent{{
+				MergeRequestID: olderPRID, EventType: "issue_comment", Author: "reviewer",
+				Body: "needle in an older event", CreatedAt: base.Add(time.Minute), DedupeKey: "older-needle",
+			}}))
+			noisyPRID := serverfake.SeedPR(t, database, "acme", "widget", 2,
+				serverfake.WithSeedPRTitle("Unrelated noisy parent"),
+				serverfake.WithSeedPRTimes(base, base, base))
+			noisyEvents := make([]db.MREvent, tc.events)
+			for i := range noisyEvents {
+				noisyEvents[i] = db.MREvent{
+					MergeRequestID: noisyPRID, EventType: "issue_comment", Author: "reviewer",
+					Body: "needle repeated", CreatedAt: base.Add(2*time.Minute + time.Duration(i)*time.Second),
+					DedupeKey: fmt.Sprintf("noisy-needle-%d", i),
+				}
+			}
+			require.NoError(t, database.UpsertMREvents(ctx, noisyEvents))
+			since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
+			limit := ""
+			if tc.limit > 0 {
+				limit = "&limit=" + strconv.Itoa(tc.limit)
+			}
+			for _, projection := range []string{"full", "collapsed"} {
+				t.Run(projection, func(t *testing.T) {
+					rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle&projection="+projection+limit, nil)
+					require.Equal(t, http.StatusOK, rr.Code)
+					var body itemapi.ActivityResponse
+					require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
+					require.Len(t, body.ItemActivity, len(tc.parents))
+					for i, number := range tc.parents {
+						assert.Equal(t, number, body.ItemActivity[i].ItemNumber)
+					}
+					assert.Equal(t, tc.truncated, body.ItemActivityCapped)
+					if tc.limit == 0 && projection == "full" {
+						assert.Len(t, body.Items, itemapi.ActivitySafetyCap)
+						assert.True(t, body.Capped)
+					}
+				})
+			}
+		})
 	}
-	require.NoError(database.UpsertMREvents(ctx, noisyEvents))
-
-	since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
-	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle", nil)
-	require.Equal(http.StatusOK, rr.Code)
-	var body struct {
-		Items              []itemapi.ActivityItemResponse    `json:"items"`
-		ItemActivity       []itemapi.ActivitySubjectResponse `json:"item_activity"`
-		Capped             bool                              `json:"capped"`
-		ItemActivityCapped bool                              `json:"item_activity_capped"`
-	}
-	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
-	require.Len(body.Items, itemapi.ActivitySafetyCap)
-	assert.True(body.Capped)
-	assert.True(body.ItemActivityCapped,
-		"parents matched only through truncated events must be reported as truncated")
-	require.Len(body.ItemActivity, 1)
-	assert.Equal(2, body.ItemActivity[0].ItemNumber)
 }
 
 func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {

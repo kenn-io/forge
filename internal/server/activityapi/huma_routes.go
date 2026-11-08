@@ -992,7 +992,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		projection = "full"
 	}
 	pageLimit := itemapi.ActivitySafetyCap
-	if projection == "events" || (projection == "collapsed" && input.Limit > 0) {
+	if projection == "events" || input.Limit > 0 {
 		pageLimit = input.Limit
 		if pageLimit == 0 {
 			pageLimit = 500
@@ -1071,6 +1071,12 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 
+	// Included terms can surface parents through events beyond the returned page.
+	searchHasIncludes := len(db.ParseSearchQuery(opts.Search).Include) > 0
+	hasFullWorkspaceEventItems := projection != "events" && searchHasIncludes
+	if projection == "full" && searchHasIncludes && opts.AfterTime == nil {
+		opts.Limit = itemapi.ActivitySafetyCap + 1
+	}
 	var items []db.ActivityItem
 	var itemActivity []db.ActivitySubject
 	eventCursor := input.After
@@ -1098,12 +1104,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 	workspaceEventItems := items
-	// Only included terms can surface a parent through its events; excluded
-	// terms filter parents by their own fields in ListActivitySubjects.
-	searchHasIncludes := len(db.ParseSearchQuery(opts.Search).Include) > 0
-	hasFullWorkspaceEventItems := projection != "events" &&
-		searchHasIncludes && (opts.AfterTime != nil || projection == "collapsed")
-	if hasFullWorkspaceEventItems {
+	if hasFullWorkspaceEventItems && (opts.AfterTime != nil || projection == "collapsed") {
 		workspaceOpts := opts
 		workspaceOpts.AfterTime = nil
 		workspaceOpts.AfterSource = ""
@@ -1148,7 +1149,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			HideBots:                 opts.HideBots,
 			HideDrafts:               opts.HideDrafts,
 			HideMergeQueued:          opts.HideMergeQueued,
-			Limit:                    itemapi.ActivitySafetyCap + 1,
+			Limit:                    pageLimit + 1,
 			Since:                    opts.Since,
 		})
 		if err != nil {
@@ -1200,11 +1201,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 	}
 
 	eventsCapped := len(items) > pageLimit
-	itemActivityLimit := itemapi.ActivitySafetyCap
-	if projection == "collapsed" {
-		itemActivityLimit = pageLimit
-	}
-	itemActivityCapped := len(itemActivity) > itemActivityLimit || searchMatchesTruncated
+	itemActivityCapped := len(itemActivity) > pageLimit || searchMatchesTruncated
 	if len(items) > pageLimit {
 		items = items[:pageLimit]
 	}
@@ -1213,8 +1210,8 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		last := items[len(items)-1]
 		nextCursor = db.EncodeCursor(last.CreatedAt, last.Source, last.SourceID)
 	}
-	if len(itemActivity) > itemActivityLimit {
-		itemActivity = itemActivity[:itemActivityLimit]
+	if len(itemActivity) > pageLimit {
+		itemActivity = itemActivity[:pageLimit]
 	}
 	if hasFullWorkspaceEventItems {
 		if len(workspaceEventItems) > itemapi.ActivitySafetyCap {

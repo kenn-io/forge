@@ -32,7 +32,7 @@ export type ListActivityParams = {
   since?: string;
   projection?: ListActivityProjection;
   /**
-   * @minimum 10
+   * @minimum 1
    * @maximum 500
    */
   limit?: number;

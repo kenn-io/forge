@@ -344,6 +344,32 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Len(unfiltered.JSON200.Items, len(resp.JSON200.Items))
 }
 
+func TestAPIListActivityLimitBoundary(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	srv, _, _ := setupTestServer(t)
+	client := servertest.SetupTestClient(t, srv)
+	for _, tc := range []struct {
+		limit  int64
+		status int
+	}{
+		{5000, http.StatusOK},
+		{5001, http.StatusUnprocessableEntity},
+	} {
+		t.Run(strconv.FormatInt(tc.limit, 10), func(t *testing.T) {
+			resp, err := client.HTTP.ListActivityWithResponse(t.Context(), &generated.ListActivityRequestOptions{
+				Query: &generated.ListActivityQuery{Limit: &tc.limit},
+			})
+			if tc.status == http.StatusOK {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+			require.NotNil(t, resp)
+			assert.Equal(t, tc.status, resp.StatusCode)
+		})
+	}
+}
+
 func TestAPIListActivityHonorsLimit(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	srv, database, _ := setupTestServer(t)

@@ -210,7 +210,8 @@
       }
     }
 
-    const capped = activity.isItemActivityCapped();
+    const capped = activity.isItemActivityCapped() ||
+      (getPage() === "activity" && activity.getViewMode() === "flat" && activity.isActivityCapped());
     return {
       pullRequests: capped ? `${pullRequests.size}+` : pullRequests.size,
       issues: capped ? `${issueKeys.size}+` : issueKeys.size,

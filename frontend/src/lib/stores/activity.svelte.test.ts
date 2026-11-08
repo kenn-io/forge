@@ -226,6 +226,56 @@ describe("flat activity paging", () => {
     };
   }
 
+  it.each(["provider", "empty provider", "scheduled"])("replaces the flat page on %s refresh", async (source) => {
+    vi.useFakeTimers();
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: 1011,
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    };
+    const initial = pageResponse(200).data.items.map((item) => ({ ...item, repo }));
+    const replacement = source === "empty provider" ? [] : initial.map((item) => ({ ...item, id: `fresh:${item.id}` }));
+    let snapshots = 0;
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (options?.params?.query?.projection === "events") {
+        return {
+          data: { items: [], capped: false, event_cursor: initial[0].cursor },
+          error: null,
+        };
+      }
+      snapshots += 1;
+      return {
+        data: {
+          items: snapshots === 1 ? initial : replacement,
+          item_activity: [{ ...itemActivity(7), repo, activity_at: pageItem.created_at }],
+          capped: source !== "empty provider" || snapshots === 1,
+          ...(source !== "empty provider" || snapshots === 1 ? { event_cursor: initial[0].cursor } : {}),
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems()).toHaveLength(200));
+    if (source !== "scheduled") {
+      await runtime!.runCommand(store.reconcileActivityEffect(), {
+        operation: "reconcile flat activity in test",
+        safeContext: {},
+        onFailure: () => {},
+      }).exit;
+    } else {
+      store.startActivityPolling();
+      await vi.advanceTimersByTimeAsync(45_000);
+    }
+    expect(snapshots).toBe(2);
+    expect(store.getActivityItems().map((item) => item.id)).toEqual(replacement.map((item) => item.id));
+    expect(store.getActivityEventCursor()).toBe(initial[0].cursor);
+  });
+
   it("keeps live events within the loaded page and exposes overflow", async () => {
     const recent = Array.from({ length: 500 }, (_, index) => ({
       ...pageItem,
@@ -3666,6 +3716,7 @@ describe("activity polling recovery", () => {
       }),
     } as unknown as GeneratedClient;
     const store = createActivityStore({ client });
+    store.setViewMode("threaded");
     store.loadActivity();
     await vi.waitFor(() => expect(store.getActivityItems()).toEqual([retained, retainedNotification]));
 
@@ -4028,6 +4079,7 @@ describe("activity polling recovery", () => {
       }),
     } as unknown as GeneratedClient;
     const store = createActivityStore({ client });
+    store.setViewMode("threaded");
     store.loadActivity();
     await vi.waitFor(() => expect(store.getActivityItems()).toEqual([initial]));
 

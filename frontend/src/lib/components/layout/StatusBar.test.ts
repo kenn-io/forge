@@ -37,6 +37,8 @@ vi.mock("../../context.js", () => ({
       getWorkspaceActivity: () => activityState.workspaceActivity,
       getEnabledItemTypes: () => activityState.enabledItemTypes,
       getHideBots: () => activityState.hideBots,
+      getViewMode: () => "flat",
+      isActivityCapped: () => false,
       isItemActivityCapped: () => activityState.itemActivityCapped,
     },
     pulls: { getPulls: () => [] },

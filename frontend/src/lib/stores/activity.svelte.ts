@@ -909,6 +909,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   function projectAuthoritativeActivitySnapshot(result: ActivityReadResponse, params: ActivityParams): void {
+    if (viewMode === "flat" && activityPageLimit === undefined) {
+      const eventCursor = result.response.event_cursor ?? activityEventCursor;
+      projectActivitySnapshot(result, params);
+      activityEventCursor = eventCursor;
+      return;
+    }
     snapshotScope = result.scope;
     snapshotFilterScope = result.filterScope;
     displayedRepo = result.repo;

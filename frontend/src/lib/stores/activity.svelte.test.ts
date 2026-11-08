@@ -313,6 +313,15 @@ describe("flat activity paging", () => {
         params: { query: expect.objectContaining({ limit: 5000 }) },
       }),
     );
+    store.setViewMode("threaded");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.not.objectContaining({ limit: expect.any(Number) }) },
+      }),
+    );
   });
 
   it("keeps the loaded page and allows retry after load more fails", async () => {

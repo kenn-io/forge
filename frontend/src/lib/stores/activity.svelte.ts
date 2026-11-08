@@ -1035,9 +1035,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const read = activityRead(params);
       const project = (result: ActivityReadResponse) =>
         Effect.sync(() => {
-          if (acceptsProjection()) {
-            projectActivitySnapshot(result, params);
-          }
+          if (acceptsProjection()) projectActivitySnapshot(result, params);
         });
       const clearLoading = Effect.sync(() => {
         if (acceptsProjection()) loading = false;

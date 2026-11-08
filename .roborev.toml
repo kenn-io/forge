@@ -106,7 +106,7 @@ permits generic methods, promoted field selectors as struct-literal keys, and
 generic function inference in assignment contexts. Do not flag these forms as
 invalid solely because older Go versions did not allow them.
 
-All CI jobs use GitHub-hosted runners, and PR CI calls `ci.yml` from the same
+Test and build jobs use GitHub-hosted runners, and PR CI calls `ci.yml` from the same
 commit. Workflow `uses:` lines name version tags, and
 `.github/workflows/actions.lock` pins every action to a commit, so do not
 report tag references as unpinned. Live GitHub validation receives the

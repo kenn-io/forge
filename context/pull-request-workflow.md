@@ -20,9 +20,9 @@ request metadata, comments, or review threads.
   publication or automatic PR/mainline container builds.
 - CI jobs use GitHub-hosted runners, including pull requests from forks,
   workflow validation, and scheduled Android builds. (`.github/workflows/`)
-- The `CI gate` job only checks the CI run's result. It runs on the Namespace
-  profile `namespace-profile-linux-1cpu` so it does not wait in the GitHub-hosted
-  queue after CI finishes. (`.github/workflows/ci-pr.yml::jobs.gate`)
+- The `CI gate`, `Detect changed paths`, and `Sibling pins on main` jobs take
+  seconds. They run on the Namespace profile `namespace-profile-linux-1cpu` so
+  they do not wait in the GitHub-hosted queue. (`.github/workflows/ci-pr.yml::jobs.gate`)
 - macOS 15 (Sequoia) is the minimum supported macOS version. Keep macOS CI on
   that baseline; runner upgrades require a support-policy change.
   (`.github/workflows/ci.yml::jobs.daemon-path-macos`)

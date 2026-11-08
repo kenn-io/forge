@@ -1019,10 +1019,12 @@
       {/if}
 
       {#if flatRows.length === 0 && !activity.isActivityLoading()}
-        <EmptyState title={activity.canLoadMoreActivity() ? "No matches in loaded activity" : "No activity found"} />
-      {/if}
-
-      {#if activity.canLoadMoreActivity()}
+        <EmptyState title={activity.canLoadMoreActivity() ? "No matches in loaded activity" : "No activity found"}>
+          {#if activity.canLoadMoreActivity()}
+            <ListLoadMore loading={activity.isLoadingMoreActivity()} onclick={activity.loadMoreActivity} />
+          {/if}
+        </EmptyState>
+      {:else if activity.canLoadMoreActivity()}
         <ListLoadMore loading={activity.isLoadingMoreActivity()} onclick={activity.loadMoreActivity} />
       {/if}
     </div>

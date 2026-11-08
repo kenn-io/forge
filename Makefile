@@ -141,9 +141,7 @@ install: build-release
 		chmod 755 "$$tmp"; \
 		mv -f "$$tmp" "$$INSTALL_DIR/$$bin"; \
 	done; \
-	if "$$INSTALL_DIR/$(BINARY)" daemon status --json 2>/dev/null | grep -q '"running": true'; then \
-		echo "Run kenn-forge daemon restart to use this build."; \
-	fi
+	echo "Run kenn-forge daemon restart to use this build."
 
 # Install Bun workspace dependencies for the frontend packages
 frontend-deps:

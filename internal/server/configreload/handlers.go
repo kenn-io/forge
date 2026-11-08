@@ -43,6 +43,7 @@ type Handlers struct {
 	ApplyWorkspaceConfigLocked            func()
 	ReconcileGitHubNativeStackProjection  func(previous bool, enabled bool)
 	ReconcileOrphanedRepoVisibility       func(ctx context.Context) error
+	ReconcileDeclaredSpokes               func(ctx context.Context)
 	RefreshRuntimeTargetsLocked           func()
 	RunBackground                         func(fn func(ctx context.Context)) bool
 	SwapGitHubNativeStackPreferenceLocked func(enabled bool) bool

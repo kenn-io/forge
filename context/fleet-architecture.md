@@ -311,12 +311,62 @@ peer bearers and route scopes       internal/federationauth
   Renewal requires the enrollment to stay active, so a reply racing revocation cannot restore the lease
   (`internal/server/fleetapi/fleet_enrollment.go::Handler.activateEnrollment`).
 - The hub must validate its own issued preparation seal before accepting an activation retry.
-- Retryable activation failures back off for one minute; definitive rejection clears the lease and
-  stops renewal until restart. `action_required` and `incompatible` keep local execution while
+- Retryable activation failures (no reply, 5xx, 408, or 429) back off for one minute; definitive
+  rejection clears the lease and stops renewal until restart. `action_required` and `incompatible` keep local execution while
   suppressing routes (`cmd/kenn-forge/spoke_startup.go::activateFederationSpokeAtStartup`).
 - Hub-initiated revocation is retry-safe on both sides: the spoke keeps the hub bearer only as an
   exact-revoke tombstone, and the hub records revocation before fallible cleanup
   (`internal/server/fleetapi/fleet_enrollment.go::Handler.revokeEnrollment`).
+- Declared membership automates the same enrollment protocol, never a parallel one: a spoke with
+  `fleet.hub.enrollment_secret_file` joins with that secret, runs the shared `SpokePreparer`, and
+  activates in one start, so the seal and the 24-hour lease keep their guarantees
+  (`cmd/kenn-forge/declared_spoke_startup.go::enrollDeclaredFederationSpoke`).
+- A declared secret is single-use like a one-time token; the hub keeps consumed digests forever and
+  admits a secret only from its declared origin. A fresh secret replaces the live enrollment at that
+  origin, which is how a reinstalled spoke rejoins; a retried join resumes its own pending
+  enrollment instead. The hub checks the whole join before revoking the enrollment it replaces, so
+  a join it rejects revokes nothing (`internal/federation/enrollment_store.go::Store.DeclaredJoinReplacements`).
+- `fleet.declared_spokes` is operator-owned and Forge never writes it; `fleet.members` stays
+  enrollment-written for both kinds. Hub startup and config reload adopt live enrollments at
+  declared origins, restore a missing member for an active declared spoke, and revoke declared ones
+  no longer listed; CLI-enrolled spokes at undeclared origins are untouched
+  (`internal/server/fleetapi/fleet_enrollment.go::Handler.ReconcileDeclaredSpokes`).
+- Configuration tools may rewrite `config.toml` without learned state, so startup and `fleet leave`
+  take an omitted `fleet.hub.node_id` from the spoke's local enrollment
+  (`cmd/kenn-forge/declared_spoke_startup.go::resolveDeclaredHubBinding`).
+- A declared spoke that has never activated exits so its supervisor retries when its secret file
+  is unreadable, its config cannot be saved (checked before the join consumes the secret), or the
+  hub is unreachable or answers 5xx, 408, or 429, including a reply cut off mid-body, during
+  preparation, and during activation. Other 4xx rejections start it local-only, because
+  restarting cannot change them (`cmd/kenn-forge/declared_spoke_startup.go::declaredSpokeHubFailure`).
+- A spoke that never hears of its revocation stays enrolled and cannot leave. When the hub cannot
+  confirm telling a declared spoke it removed or revoked by hand, including a tunnel-only spoke whose tunnel is down, it
+  keeps that spoke's credential narrowed to the enrollment-activation scope, and its auth gate admits
+  the identity, activation, and preparation start and seal handshake for a node whose only enrollment is a
+  revoked declared one. Those routes then answer `enrollmentRevoked`, and the spoke applies the same local
+  revocation the hub's notice would (`internal/server/api_auth.go::Server.allowsActivationLeaseHandshake`,
+  `internal/server/fleetapi/fleet_enrollment.go::RevokeLocalEnrollment`). A new enrollment for the
+  node replaces that credential.
+- A join keeps a revoked local enrollment, which `fleet leave` needs, or a pending one the hub
+  dropped after it expired unprepared, until the hub accepts the join; a refused join leaves it in
+  place. The kept enrollment records the replacement enrollment ID so a retry after a lost reply
+  resumes it at the hub. A resumed join, a first join as well as a replacement, that the hub reports
+  revoked runs once more with a new ID (`internal/server/fleetapi/fleet_enrollment.go::HubJoiner.Join`). A revoked
+  declared spoke that learns of its revocation during startup activation enrolls again in that
+  start. It skips the join with the secret it joined with, which the hub consumed, and starts
+  local-only without reading its secret when the file is gone
+  (`cmd/kenn-forge/declared_spoke_startup.go::enrollDeclaredFederationSpoke`).
+- A spoke records a revocation only for the enrollment the hub revoked, so a late reply cannot
+  overwrite a replacement, and one lock covers that cleanup and a join's credential install,
+  because both key credentials by hub node ID. Renewal and startup rerun the cleanup of a recorded
+  revocation until it succeeds, so a later join finds no old preparation state
+  (`internal/server/fleetapi/fleet_enrollment.go::RevokeLocalEnrollment`).
+- Revoking an already-revoked enrollment on the hub finishes its cleanup. It skips node-keyed
+  credentials and the member entry while a newer enrollment holds the node, and keeps a declared
+  spoke's notice credential (`internal/server/fleetapi/fleet_enrollment.go::Handler.revokeEnrollment`).
+- Reconciliation finishes the cleanup of a revoked declared enrollment whose member entry survived
+  a failed removal, unless a live enrollment holds the same node ID
+  (`internal/server/fleetapi/fleet_enrollment.go::Handler.ReconcileDeclaredSpokes`).
 - Ordinary fleet settings update only operator preferences; enrollment owns role, hub binding, and
   membership, so a stale browser save cannot replace them (`internal/server/settingsapi/settings_routes.go::Handlers.UpdateFleetSettings`).
 - Leaving requires a revoked enrollment and a stopped daemon and keeps current local execution

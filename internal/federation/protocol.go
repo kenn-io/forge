@@ -27,6 +27,11 @@ const ActivationLeaseVersion = 1
 // federation requests without successfully revalidating its enrollment.
 const SpokeActivationLeaseDuration = 24 * time.Hour
 
+// DeclaredEnrollmentPendingDuration matches the longest one-time token
+// lifetime: a declared spoke prepares right after joining, so its pending
+// enrollment needs no longer before preparation pins it.
+const DeclaredEnrollmentPendingDuration = 24 * time.Hour
+
 // MaxCredentialLength bounds opaque federation bearers on the wire and disk.
 const MaxCredentialLength = 256
 
@@ -121,6 +126,9 @@ type Enrollment struct {
 	RevokedAt              time.Time       `json:"revoked_at,omitzero"`
 	ActivationLeaseVersion int             `json:"activation_lease_version,omitempty"`
 	ActivationValidUntil   time.Time       `json:"activation_valid_until,omitzero"`
+	// Declared marks membership owned by the hub's fleet.declared_spokes:
+	// removing the spoke from that list revokes the enrollment.
+	Declared bool `json:"declared,omitempty"`
 }
 
 // LocalEnrollment is the joining daemon's durable view of its pending or
@@ -142,6 +150,22 @@ type LocalEnrollment struct {
 	Preparation            *LocalPreparationSeal `json:"preparation,omitempty"`
 	ActivationLeaseVersion int                   `json:"activation_lease_version,omitempty"`
 	ActivationValidUntil   time.Time             `json:"activation_valid_until,omitzero"`
+	// DeclaredSecretDigest identifies the declared enrollment secret this
+	// spoke joined with. The hub consumed that secret, so a revoked spoke
+	// does not try it again.
+	DeclaredSecretDigest string `json:"declared_secret_digest,omitempty"`
+	// ReplacementEnrollmentID names the enrollment a join sent to replace
+	// this one, so a retry after a lost reply resumes it at the hub. The
+	// local enrollment changes only once the hub accepts that join.
+	ReplacementEnrollmentID string `json:"replacement_enrollment_id,omitempty"`
+}
+
+// PendingExpired reports whether the hub has dropped this pending enrollment:
+// the hub deletes a pending enrollment that did not start preparation before
+// it expired.
+func (local LocalEnrollment) PendingExpired(now time.Time) bool {
+	return local.State == EnrollmentPending && !local.PreparationStarted &&
+		local.Preparation == nil && !local.ExpiresAt.IsZero() && !local.ExpiresAt.After(now)
 }
 
 // LocalPreparationSeal is the joining daemon's durable proof that the

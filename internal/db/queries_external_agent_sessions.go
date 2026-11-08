@@ -107,13 +107,24 @@ func (d *DB) MarkExternalAgentSessionEnded(ctx context.Context, agent, sessionID
 // oldest first, so a worktree's first agent is considered before any agent it
 // started.
 func (d *DB) ListRunningExternalAgentSessions(ctx context.Context) ([]ExternalAgentSession, error) {
+	return d.listExternalAgentSessions(ctx, `ended_at IS NULL AND handed_off_at IS NULL`)
+}
+
+// ListEndedUnadoptedExternalAgentSessions returns sessions that ended at or
+// after since without a workspace, oldest first. Their pull request may sync
+// after the agent exits.
+func (d *DB) ListEndedUnadoptedExternalAgentSessions(ctx context.Context, since time.Time) ([]ExternalAgentSession, error) {
+	return d.listExternalAgentSessions(ctx, `ended_at >= ? AND workspace_id = '' AND handed_off_at IS NULL`, since.UTC())
+}
+
+func (d *DB) listExternalAgentSessions(ctx context.Context, where string, args ...any) ([]ExternalAgentSession, error) {
 	rows, err := d.roQueryContext(ctx, `
 		SELECT `+externalAgentSessionColumns+`
 		FROM forge_external_agent_sessions
-		WHERE ended_at IS NULL AND handed_off_at IS NULL
-		ORDER BY first_seen_at, agent, session_id`)
+		WHERE `+where+`
+		ORDER BY first_seen_at, agent, session_id`, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list running external agent sessions: %w", err)
+		return nil, fmt.Errorf("list external agent sessions: %w", err)
 	}
 	defer rows.Close()
 	var sessions []ExternalAgentSession
@@ -125,7 +136,7 @@ func (d *DB) ListRunningExternalAgentSessions(ctx context.Context) ([]ExternalAg
 		sessions = append(sessions, session)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list running external agent sessions: %w", err)
+		return nil, fmt.Errorf("list external agent sessions: %w", err)
 	}
 	return sessions, nil
 }
@@ -180,12 +191,12 @@ func (d *DB) MarkExternalAgentSessionHandedOff(ctx context.Context, agent, sessi
 	return nil
 }
 
-// DeleteEndedUnadoptedExternalAgentSessions forgets sessions that ended without
-// opening a pull request.
-func (d *DB) DeleteEndedUnadoptedExternalAgentSessions(ctx context.Context) error {
+// DeleteEndedUnadoptedExternalAgentSessions forgets sessions that ended before
+// endedBefore without a workspace.
+func (d *DB) DeleteEndedUnadoptedExternalAgentSessions(ctx context.Context, endedBefore time.Time) error {
 	_, err := d.rwExecContext(ctx, `
 		DELETE FROM forge_external_agent_sessions
-		WHERE ended_at IS NOT NULL AND workspace_id = ''`)
+		WHERE ended_at < ? AND workspace_id = ''`, endedBefore.UTC())
 	if err != nil {
 		return fmt.Errorf("delete ended external agent sessions: %w", err)
 	}

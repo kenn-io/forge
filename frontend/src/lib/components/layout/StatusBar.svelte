@@ -210,10 +210,11 @@
       }
     }
 
+    const capped = activity.isItemActivityCapped();
     return {
-      pullRequests: pullRequests.size,
-      issues: issueKeys.size,
-      repos: repos.size,
+      pullRequests: capped ? `${pullRequests.size}+` : pullRequests.size,
+      issues: capped ? `${issueKeys.size}+` : issueKeys.size,
+      repos: capped ? `${repos.size}+` : repos.size,
     };
   });
 

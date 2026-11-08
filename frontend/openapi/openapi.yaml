@@ -13650,7 +13650,7 @@ paths:
           name: limit
           schema:
             format: int64
-            maximum: 500
+            maximum: 5000
             minimum: 1
             type: integer
         - explode: false

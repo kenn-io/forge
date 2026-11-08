@@ -201,6 +201,89 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
+describe("flat activity paging", () => {
+  it("loads 200 events, adds a page, and resets for a new range or filter", async () => {
+    const get = vi.fn(async () => ({ data: { items: [], capped: true }, error: null }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get).toHaveBeenCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ projection: "full", limit: 200 }) },
+      }),
+    );
+
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get).toHaveBeenCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ projection: "full", limit: 400 }) },
+      }),
+    );
+
+    store.setTimeRange("30d");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ limit: 200 }) },
+      }),
+    );
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    store.setActivitySearch("cache");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ search: "cache", limit: 200 }) },
+      }),
+    );
+    for (let limit = 400; limit <= 5000; limit += 200) {
+      store.loadMoreActivity();
+      await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    }
+    expect(store.canLoadMoreActivity()).toBe(false);
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ limit: 5000 }) },
+      }),
+    );
+  });
+
+  it("keeps the loaded page and allows retry after load more fails", async () => {
+    let fail = false;
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (fail) return { error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) };
+      return { data: { items: [], item_activity: [itemActivity(7)], capped: true }, error: null };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    fail = true;
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.getItemActivity()).toHaveLength(1);
+    expect(store.isLoadingMoreActivity()).toBe(false);
+    expect(getFlash()?.message).toContain("Failed to load more activity");
+    fail = false;
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(get).toHaveBeenCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ limit: 400 }) },
+      }),
+    );
+  });
+});
+
 describe("activity store workspace activity", () => {
   it.each(["layout", "URL filters"])("resumes polling when cached %s supersede a pending load", async (change) => {
     vi.useFakeTimers();

@@ -16,6 +16,7 @@ import type {
 import { activityItemKey } from "../components/activityRows.js";
 import { ActivityWorkflow } from "./activity-workflow.js";
 import { showFlash } from "./flash.svelte.js";
+import { createListPaging } from "./list-paging.svelte.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
 import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
 import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
@@ -251,6 +252,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let collapseThreadsDefault = false;
   let fullEventProjectionRequired = false;
   let activityPageLimit: number | undefined;
+  const flatPaging = createListPaging();
   let expandOverrides = $state<Set<string>>(new Set());
   let pagedActivityGeneration = 0;
   let childProjectionInvalidationGeneration = 0;
@@ -314,6 +316,16 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function isItemActivityCapped(): boolean {
     return itemActivityCapped;
+  }
+  function canLoadMoreActivity(): boolean {
+    return viewMode === "flat" && activityPageLimit === undefined && capped && (buildParams().limit ?? 0) < 5000;
+  }
+  function isLoadingMoreActivity(): boolean {
+    return flatPaging.isLoadingMore();
+  }
+  function loadMoreActivity(): void {
+    if (!canLoadMoreActivity() || !flatPaging.loadMore(capped)) return;
+    loadActivity();
   }
   function getActivityEventCursor(): string {
     return activityEventCursor;
@@ -567,7 +579,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   function buildParams(): ActivityParams {
-    const p: ActivityParams = { since: computeSince() };
+    const since = computeSince();
+    const p: ActivityParams = { since };
     p.projection =
       activityPageLimit !== undefined || (viewMode === "threaded" && collapseThreads && !fullEventProjectionRequired)
         ? "collapsed"
@@ -589,6 +602,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (hideDrafts) p.hide_drafts = true;
     if (hideMergeQueued) p.hide_merge_queued = true;
     if (hideDefaultBranchActivity) p.hide_default_branch = true;
+    if (activityPageLimit === undefined && viewMode === "flat") {
+      return { ...flatPaging.withLimit({ ...p, since: timeRange }), since };
+    }
     return p;
   }
 
@@ -1009,7 +1025,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const read = activityRead(params);
       const project = (result: ActivityReadResponse) =>
         Effect.sync(() => {
-          if (acceptsProjection()) projectActivitySnapshot(result, params.projection);
+          if (acceptsProjection()) {
+            projectActivitySnapshot(result, params.projection);
+            const pageQuery = { ...params, since: timeRange };
+            flatPaging.apply(pageQuery);
+          }
         });
       const clearLoading = Effect.sync(() => {
         if (acceptsProjection()) loading = false;
@@ -1034,6 +1054,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           if (!ownsProjection()) return;
           storeError = readErrorMessage(failure);
           loading = false;
+          const pageQuery = { ...params, since: timeRange };
+          if (flatPaging.rollback(pageQuery)) {
+            showFlash(`Failed to load more activity: ${storeError}`, { tone: "danger" });
+          }
         }),
       ),
     );
@@ -1587,6 +1611,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getThreadLoadError,
     isActivityCapped,
     isItemActivityCapped,
+    canLoadMoreActivity,
+    isLoadingMoreActivity,
+    loadMoreActivity,
     getActivityEventCursor,
     getActivityFilterTypes,
     getActivitySearch,

@@ -138,6 +138,8 @@ const enabledEvents = vi.hoisted(() => ({
 const showNotifications = vi.hoisted(() => ({ value: true }));
 const activityCapped = vi.hoisted(() => ({ value: false }));
 const itemActivityCapped = vi.hoisted(() => ({ value: false }));
+const canLoadMore = vi.hoisted(() => ({ value: false }));
+const loadMoreActivity = vi.hoisted(() => vi.fn());
 const involvesMe = vi.hoisted(() => ({ value: false }));
 const unassigned = vi.hoisted(() => ({ value: false }));
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
@@ -192,6 +194,9 @@ vi.mock("../context.js", () => ({
       isActivityLoading: () => false,
       isActivityCapped: () => activityCapped.value,
       isItemActivityCapped: () => itemActivityCapped.value,
+      canLoadMoreActivity: () => canLoadMore.value,
+      isLoadingMoreActivity: () => false,
+      loadMoreActivity,
       getCollapseThreads: () => collapseThreads.value,
       collapseAllThreads,
       expandAllThreads,
@@ -268,6 +273,8 @@ describe("ActivityFeed compact mode", () => {
     unassigned.value = false;
     activityCapped.value = false;
     itemActivityCapped.value = false;
+    canLoadMore.value = false;
+    loadMoreActivity.mockClear();
     selectedAuthor.value = undefined;
     setActivityAuthor.mockClear();
     setActivityFilterTypes.mockClear();
@@ -305,6 +312,24 @@ describe("ActivityFeed compact mode", () => {
     expect(container.querySelector(".activity-table")).toBeNull();
     expect(container.querySelectorAll(".activity-compact-row")).toHaveLength(2);
     expect(screen.getByText("Add widget caching layer")).toBeTruthy();
+  });
+
+  it.each([false, true])("loads more flat rows without a safety-cap notice (compact: %s)", async (compact) => {
+    activityCapped.value = true;
+    itemActivityCapped.value = true;
+    canLoadMore.value = true;
+    render(ActivityFeed, { props: { compact } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(loadMoreActivity).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/5,000/)).toBeNull();
+  });
+
+  it("shows the event safety-cap notice when no more pages can load", () => {
+    activityCapped.value = true;
+    render(ActivityFeed);
+    expect(screen.getByText(/most recent 5,000 events/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
   it("warns about parent truncation separately from event truncation", () => {

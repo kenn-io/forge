@@ -107,7 +107,7 @@ type ListActivityInput struct {
 	AtOrBefore         string   `query:"at_or_before"`
 	Since              string   `query:"since"`
 	Projection         string   `query:"projection" enum:"full,collapsed,events" default:"full"`
-	Limit              int      `query:"limit" minimum:"1" maximum:"500"`
+	Limit              int      `query:"limit" minimum:"1" maximum:"5000"`
 	HideClosedMerged   bool     `query:"hide_closed_merged"`
 	HideBots           bool     `query:"hide_bots"`
 	HideDrafts         bool     `query:"hide_drafts" doc:"Exclude activity for draft pull requests."`

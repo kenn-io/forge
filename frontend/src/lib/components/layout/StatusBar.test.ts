@@ -8,6 +8,7 @@ const activityState = vi.hoisted(() => ({
   workspaceActivity: [] as WorkspaceActivitySubject[],
   enabledItemTypes: new Set<"pr" | "issue">(["pr", "issue"]),
   hideBots: false,
+  itemActivityCapped: false,
   providerAvailable: true,
   overdue: 0,
   progress: undefined as string | undefined,
@@ -36,6 +37,7 @@ vi.mock("../../context.js", () => ({
       getWorkspaceActivity: () => activityState.workspaceActivity,
       getEnabledItemTypes: () => activityState.enabledItemTypes,
       getHideBots: () => activityState.hideBots,
+      isItemActivityCapped: () => activityState.itemActivityCapped,
     },
     pulls: { getPulls: () => [] },
     issues: { getIssues: () => [] },
@@ -109,6 +111,7 @@ describe("StatusBar Activity counts", () => {
     activityState.workspaceActivity = [];
     activityState.enabledItemTypes = new Set(["pr", "issue"]);
     activityState.hideBots = false;
+    activityState.itemActivityCapped = false;
     activityState.providerAvailable = true;
     activityState.overdue = 0;
     activityState.progress = undefined;
@@ -126,6 +129,15 @@ describe("StatusBar Activity counts", () => {
     expect(screen.getByText("1 PRs")).toBeTruthy();
     expect(screen.getByText("1 issues")).toBeTruthy();
     expect(screen.getByText("1 repos")).toBeTruthy();
+  });
+
+  it("marks activity totals as incomplete when parent summaries are capped", () => {
+    activityState.itemActivity = [parentSubject("pr", 7), parentSubject("issue", 8)];
+    activityState.itemActivityCapped = true;
+    render(StatusBar);
+    expect(screen.getByText("1+ PRs")).toBeTruthy();
+    expect(screen.getByText("1+ issues")).toBeTruthy();
+    expect(screen.getByText("1+ repos")).toBeTruthy();
   });
 
   it("deduplicates subjects represented by events, parents, and workspaces", () => {

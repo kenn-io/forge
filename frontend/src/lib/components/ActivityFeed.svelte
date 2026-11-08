@@ -22,6 +22,7 @@
   } from "../stores/activity.svelte.js";
   import { getStores, getNavigate } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
+  import ListLoadMore from "./sidebar/ListLoadMore.svelte";
   import { activityFilterOptions } from "./activityFilters.js";
   import AuthorFilterMenu from "./shared/AuthorFilterMenu.svelte";
   import LabelFilterMenu from "./shared/LabelFilterMenu.svelte";
@@ -1017,6 +1018,10 @@
         </div>
       {/if}
 
+      {#if activity.canLoadMoreActivity()}
+        <ListLoadMore loading={activity.isLoadingMoreActivity()} onclick={activity.loadMoreActivity} />
+      {/if}
+
       {#if flatRows.length === 0 && !activity.isActivityLoading()}
         <EmptyState title="No activity found" />
       {/if}
@@ -1024,13 +1029,13 @@
     </ScrollBox>
   {/if}
 
-  {#if activity.isActivityCapped()}
+  {#if activity.isActivityCapped() && !activity.canLoadMoreActivity()}
     <div class="capped-notice event-capped-notice">
       Showing most recent 5,000 events. Narrow the time range or use filters to see more.
     </div>
   {/if}
 
-  {#if activity.isItemActivityCapped()}
+  {#if activity.isItemActivityCapped() && !activity.canLoadMoreActivity()}
     <div class="capped-notice item-activity-capped-notice">
       Showing the 5,000 most recently active pull requests and issues. Item totals may be incomplete; narrow the time
       range or item filters to see fewer results.

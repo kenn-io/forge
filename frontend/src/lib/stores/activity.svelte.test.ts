@@ -212,19 +212,21 @@ describe("flat activity paging", () => {
     created_at: new Date().toISOString(),
   };
 
-  it("finishes loading more when sync reconciliation replaces the pending request", async () => {
+  it.each([false, true])("adopts a reconciled page after load more (failed: %s)", async (failed) => {
     let requests = 0;
     const response = { data: { items: [pageItem], capped: true }, error: null };
+    const page = Promise.withResolvers<typeof response | { error: { detail: string }; response: Response }>();
+    const reconciliation = Promise.withResolvers<typeof response>();
     const get = vi.fn(async (path: string, options?: { signal?: AbortSignal }) => {
       if (path === "/activity/authors") return { data: { authors: [] }, error: null };
       requests += 1;
       if (requests === 2) {
-        return new Promise((_, reject) => {
-          options?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
-            once: true,
-          });
+        options?.signal?.addEventListener("abort", () => page.reject(new DOMException("Aborted", "AbortError")), {
+          once: true,
         });
+        return page.promise;
       }
+      if (requests === 3) return reconciliation.promise;
       return response;
     });
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
@@ -234,11 +236,19 @@ describe("flat activity paging", () => {
     await vi.waitFor(() => expect(requests).toBe(2));
     expect(store.isLoadingMoreActivity()).toBe(true);
     if (runtime === undefined) throw new Error("test runtime was not created");
-    await runtime.runCommand(store.reconcileActivityEffect(), {
+    const reconciled = runtime.runCommand(store.reconcileActivityEffect(), {
       operation: "reconcile activity in test",
       safeContext: {},
       onFailure: () => {},
     }).exit;
+    await vi.waitFor(() => expect(requests).toBe(3));
+    if (failed) {
+      page.resolve({ error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) });
+      await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+      expect(store.getActivityError()).toBe("unavailable");
+    }
+    reconciliation.resolve(response);
+    await reconciled;
     expect(store.isLoadingMoreActivity()).toBe(false);
     store.loadMoreActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
@@ -344,7 +354,8 @@ describe("flat activity paging", () => {
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
     expect(store.getItemActivity()).toHaveLength(1);
     expect(store.isLoadingMoreActivity()).toBe(false);
-    expect(getFlash()?.message).toContain("Failed to load more activity");
+    expect(store.getActivityError()).toBe("unavailable");
+    expect(getFlash()).toBeNull();
     const requestsBeforeRetry = get.mock.calls.filter(([path]) => path === "/activity").length;
     fail = false;
     store.loadMoreActivity();

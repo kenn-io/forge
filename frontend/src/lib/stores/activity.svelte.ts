@@ -1060,9 +1060,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           if (!ownsProjection()) return;
           storeError = readErrorMessage(failure);
           loading = false;
-          if (flatPaging.rollback(activityPageQuery(params))) {
-            showFlash(`Failed to load more activity: ${storeError}`, { tone: "danger" });
-          }
+          flatPaging.rollback(activityPageQuery(params));
         }),
       ),
     );

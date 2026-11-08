@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -93,9 +94,18 @@ func newExternalSessionFixture(t *testing.T) *externalSessionFixture {
 
 func (f *externalSessionFixture) hook(t *testing.T, agent, session, event string, headers map[string]string) {
 	t.Helper()
-	body, err := json.Marshal(map[string]any{
+	f.hookWith(t, agent, session, event, nil, headers)
+}
+
+// hookWith posts a hook event whose body also carries fields; the hook ignores
+// fields its event does not use.
+func (f *externalSessionFixture) hookWith(t *testing.T, agent, session, event string, fields map[string]any, headers map[string]string) {
+	t.Helper()
+	payload := map[string]any{
 		"session_id": session, "cwd": f.worktree, "hook_event_name": event, "transcript_path": f.transcript,
-	})
+	}
+	maps.Copy(payload, fields)
+	body, err := json.Marshal(payload)
 	require.NoError(t, err)
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/agent-hooks/"+agent, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -225,19 +235,60 @@ func TestAgentThatExitsBeforeItsPullRequestSyncsStillGetsAWorkspace(t *testing.T
 	assert.Nil(stale, "a session that ended over an hour ago is forgotten")
 }
 
-// The hook that made the session due for adoption may be the last one for a
-// while, so the new chat starts from it.
-func TestAdoptedChatShowsTheAgentWorkingBeforeItsNextHook(t *testing.T) {
+// Forge can miss hooks, as while its daemon restarts, so an agent whose first
+// hook Forge sees is its exit still gets a workspace.
+func TestAgentFirstSeenAtItsExitStillGetsAWorkspace(t *testing.T) {
 	f := newExternalSessionFixture(t)
+	f.hook(t, "claude", "session-1", "SessionEnd", nil)
 	f.openPull(t, "feature/login", f.head)
-	f.hook(t, "claude", "session-1", "PostToolUse", runningAgentHeaders())
 	f.pass(t)
-	ws, rows := f.adopted(t)
 
-	chat, err := f.handler.openWorkspaceChat(t.Context(), ws.ID, rows[0].SessionKey)
-	require.NoError(t, err)
+	_, rows := f.adopted(t)
+	assert.Len(t, rows, 1)
+}
 
-	assert.True(t, chatState(t, chat).Busy)
+// The hook that made the session due for adoption may be the last one for a
+// while, so the new chat starts from it. An idle notice that followed an
+// approval request does not hide the request.
+func TestAdoptedChatShowsTheAgentWorkingBeforeItsNextHook(t *testing.T) {
+	for name, events := range map[string][]string{
+		"working":                          {"PostToolUse"},
+		"approval followed by idle notice": {"PermissionRequest", "Notification"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newExternalSessionFixture(t)
+			f.openPull(t, "feature/login", f.head)
+			for _, event := range events {
+				f.hookWith(t, "claude", "session-1", event, map[string]any{"notification_type": "idle_prompt"}, runningAgentHeaders())
+			}
+			f.pass(t)
+			ws, rows := f.adopted(t)
+
+			chat, err := f.handler.openWorkspaceChat(t.Context(), ws.ID, rows[0].SessionKey)
+			require.NoError(t, err)
+
+			assert.True(t, chatState(t, chat).Busy)
+		})
+	}
+}
+
+// A hook that shows a turn happened marks the agent prompted even when Forge
+// missed its prompt hook; startup and idle notices can come from an agent never
+// prompted.
+func TestHooksThatShowTheAgentWasPrompted(t *testing.T) {
+	for event, want := range map[string]bool{
+		"UserPromptSubmit": true, "PostToolUse": true, "Stop": true, "PermissionRequest": true,
+		"SessionStart": false, "Notification": false,
+	} {
+		t.Run(event, func(t *testing.T) {
+			f := newExternalSessionFixture(t)
+			f.hookWith(t, "claude", "session-1", event, map[string]any{"notification_type": "idle_prompt"}, runningAgentHeaders())
+			session, err := f.database.GetExternalAgentSession(t.Context(), "claude", "session-1")
+			require.NoError(t, err)
+			require.NotNil(t, session)
+			assert.Equal(t, want, session.Prompted)
+		})
+	}
 }
 
 func TestAWorktreeChatFollowsOneRunningAgentAtATime(t *testing.T) {

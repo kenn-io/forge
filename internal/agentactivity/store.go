@@ -153,7 +153,7 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 			PendingWork:       hook.HookEventName == "Stop" && (len(backgroundTasks) > 0 || len(sessionCrons) > 0),
 		}
 		previous, ok := s.previousReport(agent, hook.SessionID, runtimeSessionKey)
-		if isIdlePrompt(hook) && (!ok || previous.State != StateWorking && previous.State != StateDone) {
+		if IsIdlePrompt(hook) && (!ok || previous.State != StateWorking && previous.State != StateDone) {
 			// Claude Code raises idle_prompt after a minute of waiting for
 			// input whatever it is waiting for. Only a recorded turn makes
 			// it a completion: an unanswered question or permission prompt
@@ -270,7 +270,9 @@ func (s *Store) remove(agent, sessionID, runtimeSessionKey string) error {
 	return errors.Join(errs...)
 }
 
-func isIdlePrompt(hook HookEvent) bool {
+// IsIdlePrompt reports Claude Code's idle notice, which follows any minute of
+// waiting and so says nothing about what the agent waits for.
+func IsIdlePrompt(hook HookEvent) bool {
 	return hook.HookEventName == "Notification" && hook.NotificationType == "idle_prompt"
 }
 

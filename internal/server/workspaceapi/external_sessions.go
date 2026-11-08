@@ -64,7 +64,11 @@ func (t *externalSessionTracker) markDue(id externalSessionID, hook agentactivit
 	}
 	check := t.checks[id]
 	check.due = true
-	check.hook = &hook
+	// An idle notice would replace a pending approval or question with nothing
+	// an activity report takes from it alone.
+	if check.hook == nil || !agentactivity.IsIdlePrompt(hook) {
+		check.hook = &hook
+	}
 	t.checks[id] = check
 }
 
@@ -179,6 +183,18 @@ func (s *Handler) recordExternalAgentHook(ctx context.Context, agent string, inp
 		return
 	}
 	id := externalSessionID{agent, sessionID}
+	// A session first seen at its end is recorded too: its pull request may
+	// still sync within the adoption window.
+	processID, _ := strconv.Atoi(input.AgentPID)
+	if err := s.db.RecordExternalAgentSession(ctx, db.ExternalAgentSession{
+		Agent: agent, SessionID: sessionID, CWD: hook.CWD, TranscriptPath: hook.TranscriptPath,
+		ProcessID: processID, ProcessStart: input.AgentStart,
+		HerdrPaneID: input.HerdrPane, HerdrSocketPath: input.HerdrSocket,
+		Prompted: hookShowsPrompt(hook),
+	}); err != nil {
+		slog.Warn("record external agent session", "agent", agent, "err", err)
+		return
+	}
 	if hook.HookEventName == "SessionEnd" {
 		if err := s.db.MarkExternalAgentSessionEnded(ctx, agent, sessionID, time.Now()); err != nil {
 			slog.Warn("record external agent session end", "agent", agent, "err", err)
@@ -186,17 +202,6 @@ func (s *Handler) recordExternalAgentHook(ctx context.Context, agent string, inp
 		}
 		s.externalSessions.forget(id)
 	} else {
-		processID, _ := strconv.Atoi(input.AgentPID)
-		if err := s.db.RecordExternalAgentSession(ctx, db.ExternalAgentSession{
-			Agent: agent, SessionID: sessionID, CWD: hook.CWD, TranscriptPath: hook.TranscriptPath,
-			ProcessID: processID, ProcessStart: input.AgentStart,
-			HerdrPaneID: input.HerdrPane, HerdrSocketPath: input.HerdrSocket,
-			// A resumed or forked session carries the prompts it had before.
-			Prompted: hook.HookEventName == "UserPromptSubmit" || hook.Source == "resume" || hook.Source == "fork",
-		}); err != nil {
-			slog.Warn("record external agent session", "agent", agent, "err", err)
-			return
-		}
 		s.externalSessions.markDue(id, hook)
 	}
 	if saved == nil || saved.RuntimeSessionKey == "" || s.agentActivity == nil {
@@ -214,6 +219,23 @@ func (s *Handler) recordExternalAgentHook(ctx context.Context, agent string, inp
 	hook.CWD = ws.WorktreePath
 	if err := s.agentActivity.HandleEvent(agent, hook, saved.RuntimeSessionKey); err != nil {
 		slog.Warn("record mirrored agent activity", "session_key", saved.RuntimeSessionKey, "err", err)
+	}
+}
+
+// hookShowsPrompt reports whether a hook shows the agent had a prompt, even one
+// whose own hook Forge missed: any turn activity does, as does resuming a
+// session. Startup, exit, and Claude Code's idle notice also come from an agent
+// never prompted.
+func hookShowsPrompt(hook agentactivity.HookEvent) bool {
+	switch hook.HookEventName {
+	case "SessionStart":
+		return hook.Source == "resume" || hook.Source == "fork"
+	case "SessionEnd":
+		return false
+	case "Notification":
+		return hook.NotificationType == "permission_prompt" || hook.NotificationType == "elicitation_dialog"
+	default:
+		return true
 	}
 }
 

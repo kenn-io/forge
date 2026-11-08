@@ -364,6 +364,25 @@ export function requestSessionFocus(key: SessionHostKey, opts?: { soft?: boolean
   pendingFocusSoft = opts?.soft === true;
 }
 
+// True while the pool focuses a terminal nobody explicitly asked for: a soft
+// request, or focus a reparent took being handed back. Focus events fire inside
+// focus(), so their handlers can tell this from the user moving the keyboard.
+let restoringFocus = false;
+
+export function restoreSessionFocus(focus: () => void): void {
+  restoringFocus = true;
+  try {
+    focus();
+  } finally {
+    restoringFocus = false;
+  }
+}
+
+/** Whether the focus now being delivered came from navigation or a reparent, not the user. */
+export function isRestoringSessionFocus(): boolean {
+  return restoringFocus;
+}
+
 /** Drop an outstanding request, for when focus moves somewhere else entirely. */
 export function clearSessionFocusRequest(): void {
   pendingFocusKey = null;
@@ -401,5 +420,6 @@ export function resetSessionHostForTest(): void {
   mounted = [];
   pendingFocusKey = null;
   pendingFocusSoft = false;
+  restoringFocus = false;
   exitListeners.clear();
 }

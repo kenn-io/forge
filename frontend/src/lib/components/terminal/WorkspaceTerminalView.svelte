@@ -54,6 +54,7 @@
     noteSessionMounted,
     noteSessionReleased,
     isSessionSlotVisible,
+    isRestoringSessionFocus,
     onSessionExited,
     requestSessionFocus,
     sessionHostKey,
@@ -2237,7 +2238,8 @@
   }
 
   function rememberActiveTab(key: WorkflowTabKey): void {
-    if (!workspaceId) return;
+    // Focus the pool gives back after a reparent or navigation is not the user choosing a tab.
+    if (!workspaceId || isRestoringSessionFocus()) return;
     lastRequestedTabKey = key;
     if (lastTabSave?.key === key) return;
     const request = { key };

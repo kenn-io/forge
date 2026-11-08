@@ -468,6 +468,7 @@ func (s *Syncer) runOnceWithSlot(
 	}
 	s.startupRepoSyncTimes = nil
 	s.runMu.Unlock()
+	startedAt := time.Now()
 	var terminalStatus *SyncStatus
 	defer func() {
 		// Serialize the terminal snapshot with slot release. A new run may
@@ -753,7 +754,7 @@ dispatch:
 		// buckets present in both maps.
 		advance := maps.Clone(archivedEligibility)
 		maps.Copy(advance, cadenceEligibleBuckets)
-		s.advanceNextSync(advance, s.nextSyncAfter, s.interval)
+		s.advanceNextSync(advance, s.nextSyncAfter, s.interval, startedAt)
 	}
 
 	slog.Info("sync complete", "repos", total)

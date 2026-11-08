@@ -3,8 +3,6 @@
  */
 
 export type StreamEventsParams = {
-  /**
-   * Optional selected local workspace to prewarm and validate while this stream is connected
-   */
+  /** Optional selected local workspace to prewarm and validate while this stream is connected */
   workspace_id?: string;
 };

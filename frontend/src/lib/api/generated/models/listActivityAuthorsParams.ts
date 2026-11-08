@@ -3,9 +3,7 @@
  */
 
 export type ListActivityAuthorsParams = {
-  /**
-   * Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
-   */
+  /** Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories. */
   repo?: string;
   since?: string;
 };

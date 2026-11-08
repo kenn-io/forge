@@ -3,8 +3,6 @@
  */
 
 export type GetWorklistParams = {
-  /**
-   * Mark the items that involve the authenticated viewer. Resolving the viewer may call providers, so reads leave it off unless a filter needs it.
-   */
+  /** Mark the items that involve the authenticated viewer. Resolving the viewer may call providers, so reads leave it off unless a filter needs it. */
   involves_me?: boolean;
 };

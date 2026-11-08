@@ -3,36 +3,20 @@
  */
 
 export type GetFleetWorkspaceFilePreviewParams = {
-  /**
-   * Workspace diff base.
-   */
+  /** Workspace diff base. */
   base?: string;
-  /**
-   * Whitespace filtering mode.
-   */
+  /** Whitespace filtering mode. */
   whitespace?: string;
-  /**
-   * Commit SHA scope.
-   */
+  /** Commit SHA scope. */
   commit?: string;
-  /**
-   * Older range commit SHA.
-   */
+  /** Older range commit SHA. */
   from?: string;
-  /**
-   * Newer range commit SHA.
-   */
+  /** Newer range commit SHA. */
   to?: string;
-  /**
-   * Pinned workspace snapshot version.
-   */
+  /** Pinned workspace snapshot version. */
   revision?: string;
-  /**
-   * Workspace file path to preview.
-   */
+  /** Workspace file path to preview. */
   path?: string;
-  /**
-   * Preview side.
-   */
+  /** Preview side. */
   side?: string;
 };

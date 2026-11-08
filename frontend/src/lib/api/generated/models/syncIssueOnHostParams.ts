@@ -3,8 +3,6 @@
  */
 
 export type SyncIssueOnHostParams = {
-  /**
-   * Check GitHub for changes; other providers return the local copy.
-   */
+  /** Check GitHub for changes; other providers return the local copy. */
   if_changed?: boolean;
 };

@@ -6,8 +6,6 @@ export type ListKataReferencesParams = {
   q?: string;
   project_uid?: string;
   issue_uid?: string[];
-  /**
-   * @minimum 0
-   */
+  /** @minimum 0 */
   limit?: number;
 };

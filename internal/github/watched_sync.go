@@ -170,7 +170,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	}
 
 	s.advanceNextSync(
-		eligibleBuckets, s.nextWatchSyncAfter, watchInt,
+		eligibleBuckets, s.nextWatchSyncAfter, watchInt, time.Now(),
 	)
 	if syncedAny && s.onWatchedMRSyncCompleted != nil {
 		s.onWatchedMRSyncCompleted()

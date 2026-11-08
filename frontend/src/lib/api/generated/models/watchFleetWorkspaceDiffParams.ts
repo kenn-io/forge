@@ -3,8 +3,6 @@
  */
 
 export type WatchFleetWorkspaceDiffParams = {
-  /**
-   * Last observed workspace diff snapshot version.
-   */
+  /** Last observed workspace diff snapshot version. */
   version?: string;
 };

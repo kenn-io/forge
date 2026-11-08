@@ -252,8 +252,8 @@ func (s *Syncer) advanceNextSync(
 	eligible map[string]bool,
 	nextAfter map[string]time.Time,
 	interval time.Duration,
+	from time.Time,
 ) {
-	now := time.Now()
 	for host, ok := range eligible {
 		if !ok {
 			continue
@@ -262,7 +262,7 @@ func (s *Syncer) advanceNextSync(
 		if rt == nil {
 			continue
 		}
-		nextAfter[host] = now.Add(interval * time.Duration(rt.ThrottleFactor()))
+		nextAfter[host] = from.Add(interval * time.Duration(rt.ThrottleFactor()))
 	}
 }
 

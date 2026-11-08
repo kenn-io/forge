@@ -356,10 +356,11 @@ describe("ActivityFeed compact mode", () => {
       notice: /5,000 most recently active pull requests and issues/,
       otherNotice: /most recent 5,000 events/,
     },
-  ])("warns about $kind truncation when no more pages can load", ({ kind, notice, otherNotice }) => {
+  ])("warns about $kind truncation in threaded activity", ({ kind, notice, otherNotice }) => {
     activityCapped.value = kind === "events";
     itemActivityCapped.value = kind === "parents";
-    if (kind === "parents") viewMode.value = "threaded";
+    viewMode.value = "threaded";
+    loadingMore.value = true;
     render(ActivityFeed);
     expect(screen.getByText(notice)).toBeTruthy();
     expect(screen.queryByText(otherNotice)).toBeNull();

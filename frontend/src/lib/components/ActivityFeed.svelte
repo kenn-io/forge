@@ -1031,7 +1031,7 @@
     </ScrollBox>
   {/if}
 
-  {#if activity.isActivityCapped() && !activity.canLoadMoreActivity() && !activity.isLoadingMoreActivity()}
+  {#if activity.isActivityCapped() && !activity.canLoadMoreActivity()}
     <div class="capped-notice event-capped-notice">
       Showing most recent 5,000 events. Narrow the time range or use filters to see more.
     </div>

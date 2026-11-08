@@ -1,8 +1,22 @@
-# kenn-forge
+<h1 align="center">kenn-forge</h1>
 
-kenn-forge is a local maintainer console for pull requests, issues, reviews,
-activity, and local workspaces. It syncs the repositories you maintain into a
-local SQLite database and serves the UI from one binary.
+<p align="center">
+  <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.27.3+-00ADD8?logo=go" alt="Go 1.27.3+"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Elastic_2.0-yellow.svg" alt="License: Elastic 2.0"></a>
+  <a href="https://forge.kenn.io"><img src="https://img.shields.io/badge/Docs-forge.kenn.io-blue" alt="Docs"></a>
+</p>
+
+<p align="center">
+  <a href="https://forge.kenn.io">Documentation</a> ·
+  <a href="docs/quickstart.md">Quick Start</a> ·
+  <a href="docs/configuration.md">Configuration</a>
+</p>
+
+**A local maintainer console for pull requests, issues, reviews, activity,
+and workspaces.**
+
+kenn-forge syncs the repositories you maintain into a local SQLite database
+and serves the UI from one binary.
 
 Start with the [user guide](docs/index.md) for setup and workflows.
 
@@ -39,7 +53,7 @@ Start with the [user guide](docs/index.md) for setup and workflows.
 
 Provider capabilities vary. kenn-forge shows unsupported actions as unavailable.
 
-## Install a release
+## Installation
 
 Download the archive for your system from
 [GitHub Releases](https://github.com/kenn-io/forge/releases). Releases

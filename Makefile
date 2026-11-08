@@ -123,19 +123,26 @@ rust-test:
 
 # Install to ~/.local/bin, $GOBIN, or $GOPATH/bin
 install: build-release
-	@if [ -d "$(HOME)/.local/bin" ]; then \
-		echo "Installing to ~/.local/bin/$(BINARY)"; \
-		cp $(BINARY) "$(HOME)/.local/bin/$(BINARY)"; \
-		cp $(GHAPP_BINARY) "$(HOME)/.local/bin/$(GHAPP_BINARY)"; \
+	@set -e; \
+	if [ -d "$(HOME)/.local/bin" ]; then \
+		INSTALL_DIR="$(HOME)/.local/bin"; \
 	else \
 		INSTALL_DIR="$${GOBIN:-$$(go env GOBIN)}"; \
 		if [ -z "$$INSTALL_DIR" ]; then \
 			INSTALL_DIR="$(GOPATH_FIRST)/bin"; \
 		fi; \
 		mkdir -p "$$INSTALL_DIR"; \
-		echo "Installing to $$INSTALL_DIR/$(BINARY)"; \
-		cp $(BINARY) "$$INSTALL_DIR/$(BINARY)"; \
-		cp $(GHAPP_BINARY) "$$INSTALL_DIR/$(GHAPP_BINARY)"; \
+	fi; \
+	echo "Installing to $$INSTALL_DIR/$(BINARY)"; \
+	for bin in $(BINARY) $(GHAPP_BINARY); do \
+		tmp="$$(mktemp "$$INSTALL_DIR/$$bin.tmp.XXXXXX")"; \
+		trap 'rm -f "$$tmp"' EXIT HUP INT TERM; \
+		cp "$$bin" "$$tmp"; \
+		chmod 755 "$$tmp"; \
+		mv -f "$$tmp" "$$INSTALL_DIR/$$bin"; \
+	done; \
+	if "$$INSTALL_DIR/$(BINARY)" daemon status --json 2>/dev/null | grep -q '"running": true'; then \
+		echo "Run kenn-forge daemon restart to use this build."; \
 	fi
 
 # Install Bun workspace dependencies for the frontend packages

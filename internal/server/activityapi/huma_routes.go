@@ -1102,7 +1102,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 	// terms filter parents by their own fields in ListActivitySubjects.
 	searchHasIncludes := len(db.ParseSearchQuery(opts.Search).Include) > 0
 	hasFullWorkspaceEventItems := projection != "events" &&
-		searchHasIncludes && (opts.AfterTime != nil || projection == "collapsed")
+		searchHasIncludes && (opts.AfterTime != nil || projection == "collapsed" || input.Limit > 0)
 	if hasFullWorkspaceEventItems {
 		workspaceOpts := opts
 		workspaceOpts.AfterTime = nil

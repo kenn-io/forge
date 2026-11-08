@@ -404,10 +404,8 @@ func TestAPIListCollapsedActivityHonorsLimit(t *testing.T) {
 	assert.Equal(1, body.ItemActivity[0].ItemNumber)
 }
 
-func TestAPIListCollapsedActivitySearchLimitCountsDistinctParents(t *testing.T) {
+func TestAPIListActivitySearchLimitCountsDistinctParents(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
-	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
 	ctx := t.Context()
 	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
@@ -417,7 +415,7 @@ func TestAPIListCollapsedActivitySearchLimitCountsDistinctParents(t *testing.T) 
 		serverfake.WithSeedPRTitle("Unrelated older parent"),
 		serverfake.WithSeedPRTimes(base, base, base),
 	)
-	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+	require.NoError(t, database.UpsertMREvents(ctx, []db.MREvent{{
 		MergeRequestID: olderPRID,
 		EventType:      "issue_comment",
 		Author:         "reviewer",
@@ -441,22 +439,28 @@ func TestAPIListCollapsedActivitySearchLimitCountsDistinctParents(t *testing.T) 
 			DedupeKey:      fmt.Sprintf("newer-search-match-%d", i),
 		}
 	}
-	require.NoError(database.UpsertMREvents(ctx, newerEvents))
+	require.NoError(t, database.UpsertMREvents(ctx, newerEvents))
 
 	since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
-	rr := testutil.DoJSON(
-		t,
-		srv,
-		http.MethodGet,
-		"/api/v1/activity?since="+since+"&projection=collapsed&limit=30&search=needle",
-		nil)
+	for _, projection := range []string{"full", "collapsed"} {
+		t.Run(projection, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			rr := testutil.DoJSON(t, srv, http.MethodGet,
+				"/api/v1/activity?since="+since+"&projection="+projection+"&limit=30&search=needle", nil)
 
-	require.Equal(http.StatusOK, rr.Code)
-	var body itemapi.ActivityResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
-	require.Len(body.ItemActivity, 2)
-	assert.Equal([]int{2, 1}, []int{body.ItemActivity[0].ItemNumber, body.ItemActivity[1].ItemNumber})
-	assert.False(body.ItemActivityCapped)
+			require.Equal(http.StatusOK, rr.Code)
+			var body itemapi.ActivityResponse
+			require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+			require.Len(body.ItemActivity, 2)
+			assert.Equal([]int{2, 1}, []int{body.ItemActivity[0].ItemNumber, body.ItemActivity[1].ItemNumber})
+			assert.False(body.ItemActivityCapped)
+			if projection == "full" {
+				assert.Len(body.Items, 30)
+				assert.True(body.Capped)
+			}
+		})
+	}
 }
 
 func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testing.T) {

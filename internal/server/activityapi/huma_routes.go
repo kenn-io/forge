@@ -1200,8 +1200,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 	}
 
 	eventsCapped := len(items) > pageLimit
-	itemActivityLimit := pageLimit
-	itemActivityCapped := len(itemActivity) > itemActivityLimit || searchMatchesTruncated
+	itemActivityCapped := len(itemActivity) > pageLimit || searchMatchesTruncated
 	if len(items) > pageLimit {
 		items = items[:pageLimit]
 	}
@@ -1210,8 +1209,8 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		last := items[len(items)-1]
 		nextCursor = db.EncodeCursor(last.CreatedAt, last.Source, last.SourceID)
 	}
-	if len(itemActivity) > itemActivityLimit {
-		itemActivity = itemActivity[:itemActivityLimit]
+	if len(itemActivity) > pageLimit {
+		itemActivity = itemActivity[:pageLimit]
 	}
 	if hasFullWorkspaceEventItems {
 		if len(workspaceEventItems) > itemapi.ActivitySafetyCap {

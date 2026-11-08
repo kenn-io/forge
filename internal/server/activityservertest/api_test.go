@@ -344,7 +344,7 @@ func TestAPIListActivity(t *testing.T) {
 	assert.Len(unfiltered.JSON200.Items, len(resp.JSON200.Items))
 }
 
-func TestAPIListFullActivityHonorsLimit(t *testing.T) {
+func TestAPIListActivityHonorsLimit(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	srv, database, _ := setupTestServer(t)
 	client := servertest.SetupTestClient(t, srv)
@@ -355,53 +355,33 @@ func TestAPIListFullActivityHonorsLimit(t *testing.T) {
 			serverfake.WithSeedPRTimes(activityAt, activityAt, activityAt))
 	}
 	since := now.Add(-7 * 24 * time.Hour).Format(time.RFC3339)
-	for _, limit := range []int64{10, 1} {
-		t.Run(fmt.Sprintf("limit=%d", limit), func(t *testing.T) {
-			assert := assert.New(t)
-			require := require.New(t)
-			resp, err := client.HTTP.ListActivityWithResponse(t.Context(), &generated.ListActivityRequestOptions{
-				Query: &generated.ListActivityQuery{Since: &since, Limit: &limit},
+	for _, tc := range []struct {
+		name       string
+		projection *generated.ListActivityQueryProjection
+	}{
+		{name: "full"},
+		{name: "collapsed", projection: new(generated.ListActivityQueryProjectionCollapsed)},
+	} {
+		for _, limit := range []int64{10, 1} {
+			t.Run(fmt.Sprintf("%s/limit=%d", tc.name, limit), func(t *testing.T) {
+				assert := assert.New(t)
+				require := require.New(t)
+				resp, err := client.HTTP.ListActivityWithResponse(t.Context(), &generated.ListActivityRequestOptions{
+					Query: &generated.ListActivityQuery{Since: &since, Limit: &limit, Projection: tc.projection},
+				})
+				require.NoError(err)
+				require.Equal(http.StatusOK, resp.StatusCode)
+				require.NotNil(resp.JSON200)
+				if tc.projection == nil {
+					assert.Len(resp.JSON200.Items, int(limit))
+					assert.True(resp.JSON200.Capped)
+				}
+				require.Len(resp.JSON200.ItemActivity, int(limit))
+				assert.True(resp.JSON200.ItemActivityCapped)
+				assert.Equal(int64(1), resp.JSON200.ItemActivity[0].ItemNumber)
 			})
-			require.NoError(err)
-			require.Equal(http.StatusOK, resp.StatusCode)
-			require.NotNil(resp.JSON200)
-			assert.Len(resp.JSON200.Items, int(limit))
-			assert.True(resp.JSON200.Capped)
-			require.Len(resp.JSON200.ItemActivity, int(limit))
-			assert.True(resp.JSON200.ItemActivityCapped)
-			assert.Equal(int64(1), resp.JSON200.ItemActivity[0].ItemNumber)
-		})
+		}
 	}
-}
-
-func TestAPIListCollapsedActivityHonorsLimit(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
-	require := require.New(t)
-	srv, database, _ := setupTestServer(t)
-	now := time.Now().UTC().Truncate(time.Second)
-	for number := 1; number <= 11; number++ {
-		activityAt := now.Add(-time.Duration(number) * time.Minute)
-		serverfake.SeedPR(
-			t, database, "acme", "widget", number,
-			serverfake.WithSeedPRTimes(activityAt, activityAt, activityAt),
-		)
-	}
-
-	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
-	rr := testutil.DoJSON(
-		t,
-		srv,
-		http.MethodGet,
-		"/api/v1/activity?since="+since+"&projection=collapsed&limit=10",
-		nil)
-
-	require.Equal(http.StatusOK, rr.Code)
-	var body itemapi.ActivityResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
-	require.Len(body.ItemActivity, 10)
-	assert.True(body.ItemActivityCapped)
-	assert.Equal(1, body.ItemActivity[0].ItemNumber)
 }
 
 func TestAPIListActivitySearchLimitCountsDistinctParents(t *testing.T) {

@@ -393,6 +393,11 @@ Resolution is deliberately exact (`internal/server/kata/workspace.go::Handler.re
 - An agent Forge did not launch reports through the same hooks. Once its worktree holds an open pull
   request's head, matched by provider identity and branch or SHA, it gets a workspace on that worktree
   (`internal/server/workspaceapi/external_sessions.go::Handler.adoptExternalSession`).
+- A session that ended without a workspace stays adoptable for an hour, since its pull request may
+  sync after the agent exits; then it is forgotten (maintainer decision).
+- Each chat view opens its own mirror, so state shared across views lives on the handler: prompts
+  typed into the pane are remembered by submission ID so a reconnect's resend is typed once, and a
+  view follows a Forge-run agent another view started.
 - Forge writes nothing to that checkout: no clone, branch, upstream, or head ref. Deleting the workspace
   keeps the worktree and branch, never stops the agent, and the session is not adopted again.
 - Its chat is the ACP view following the agent's transcript, never a terminal. Input is typed into the

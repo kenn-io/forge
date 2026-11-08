@@ -33,6 +33,10 @@ const (
 	externalSessionRecheckInterval = 30 * time.Second
 	// herdrDeliverTimeout bounds one Herdr CLI call.
 	herdrDeliverTimeout = 30 * time.Second
+	// externalSessionAdoptionAfterExit is how long a session that ended without a
+	// workspace stays adoptable, since its pull request may sync after the agent
+	// exits.
+	externalSessionAdoptionAfterExit = time.Hour
 )
 
 type externalSessionID struct{ agent, sessionID string }
@@ -42,6 +46,9 @@ type externalSessionCheck struct {
 	// due marks a hook event since the last adoption check.
 	due       bool
 	checkedAt time.Time
+	// hook is the latest hook event, which gives the session's new chat the
+	// agent's status without waiting for the next one.
+	hook *agentactivity.HookEvent
 }
 
 type externalSessionTracker struct {
@@ -49,7 +56,7 @@ type externalSessionTracker struct {
 	checks map[externalSessionID]externalSessionCheck
 }
 
-func (t *externalSessionTracker) markDue(id externalSessionID) {
+func (t *externalSessionTracker) markDue(id externalSessionID, hook agentactivity.HookEvent) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.checks == nil {
@@ -57,7 +64,18 @@ func (t *externalSessionTracker) markDue(id externalSessionID) {
 	}
 	check := t.checks[id]
 	check.due = true
+	check.hook = &hook
 	t.checks[id] = check
+}
+
+func (t *externalSessionTracker) lastHook(id externalSessionID) (agentactivity.HookEvent, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	check, ok := t.checks[id]
+	if !ok || check.hook == nil {
+		return agentactivity.HookEvent{}, false
+	}
+	return *check.hook, true
 }
 
 func (t *externalSessionTracker) forget(id externalSessionID) {
@@ -78,8 +96,54 @@ func (t *externalSessionTracker) startCheck(id externalSessionID) bool {
 	if !check.due && time.Since(check.checkedAt) < externalSessionRecheckInterval {
 		return false
 	}
-	t.checks[id] = externalSessionCheck{checkedAt: time.Now()}
+	t.checks[id] = externalSessionCheck{checkedAt: time.Now(), hook: check.hook}
 	return true
+}
+
+// mirrorDeliveries remembers the prompts typed into each mirrored agent's pane,
+// by chat key and submission ID, so a prompt a reconnecting browser sends again
+// is typed once. Each chat opens its own mirror, so this outlives them.
+type mirrorDeliveries struct {
+	mu    sync.Mutex
+	chats map[string]*mirrorChatDeliveries
+}
+
+type mirrorChatDeliveries struct {
+	mu   sync.Mutex // one delivery at a time
+	sent map[string]struct{}
+}
+
+// deliver runs send for a prompt with an ID not delivered yet.
+func (d *mirrorDeliveries) deliver(key, id string, send func() error) error {
+	if id == "" {
+		return send()
+	}
+	d.mu.Lock()
+	if d.chats == nil {
+		d.chats = make(map[string]*mirrorChatDeliveries)
+	}
+	chat := d.chats[key]
+	if chat == nil {
+		chat = &mirrorChatDeliveries{sent: make(map[string]struct{})}
+		d.chats[key] = chat
+	}
+	d.mu.Unlock()
+	chat.mu.Lock()
+	defer chat.mu.Unlock()
+	if _, ok := chat.sent[id]; ok {
+		return nil
+	}
+	if err := send(); err != nil {
+		return err
+	}
+	chat.sent[id] = struct{}{}
+	return nil
+}
+
+func (d *mirrorDeliveries) forget(key string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	delete(d.chats, key)
 }
 
 // recordExternalAgentHook handles a hook event from an agent Forge did not
@@ -118,7 +182,7 @@ func (s *Handler) recordExternalAgentHook(ctx context.Context, agent string, inp
 			slog.Warn("record external agent session", "agent", agent, "err", err)
 			return
 		}
-		s.externalSessions.markDue(id)
+		s.externalSessions.markDue(id, hook)
 	}
 	if saved == nil || saved.RuntimeSessionKey == "" || s.agentActivity == nil {
 		return
@@ -152,17 +216,26 @@ func (s *Handler) runExternalAgentSessionLoop(ctx context.Context) {
 }
 
 // runExternalAgentSessionPass notices agents that exited without a SessionEnd
-// hook and adopts sessions whose worktree now holds an open pull request.
+// hook and adopts sessions whose worktree now holds an open pull request,
+// including sessions that ended recently, whose pull request may sync after.
 func (s *Handler) runExternalAgentSessionPass(ctx context.Context) {
 	sessions, err := s.db.ListRunningExternalAgentSessions(ctx)
 	if err != nil {
 		slog.Warn("list external agent sessions", "err", err)
 		return
 	}
+	adoptableSince := time.Now().Add(-externalSessionAdoptionAfterExit)
+	ended, err := s.db.ListEndedUnadoptedExternalAgentSessions(ctx, adoptableSince)
+	if err != nil {
+		slog.Warn("list ended external agent sessions", "err", err)
+		return
+	}
+	// Running sessions come first, so a worktree's running agent gets its chat.
+	sessions = append(sessions, ended...)
 	for i := range sessions {
 		session := &sessions[i]
 		id := externalSessionID{session.Agent, session.SessionID}
-		if externalProcessGone(*session) {
+		if session.EndedAt == nil && externalProcessGone(*session) {
 			s.endExternalSession(ctx, id, *session)
 			continue
 		}
@@ -173,7 +246,7 @@ func (s *Handler) runExternalAgentSessionPass(ctx context.Context) {
 			slog.Warn("adopt external agent session", "agent", session.Agent, "err", err)
 		}
 	}
-	if err := s.db.DeleteEndedUnadoptedExternalAgentSessions(ctx); err != nil {
+	if err := s.db.DeleteEndedUnadoptedExternalAgentSessions(ctx, adoptableSince); err != nil {
 		slog.Warn("forget ended external agent sessions", "err", err)
 	}
 }
@@ -237,6 +310,14 @@ func (s *Handler) adoptExternalSession(
 	}
 	// Later sessions in this pass read running, so they see this adoption.
 	session.WorkspaceID = ws.ID
+	if hook, ok := s.externalSessions.lastHook(externalSessionID{session.Agent, session.SessionID}); ok && s.agentActivity != nil {
+		// Hooks before adoption had no chat to report to; the latest one says
+		// whether the agent is mid-turn now.
+		hook.CWD = ws.WorktreePath
+		if err := s.agentActivity.HandleEvent(session.Agent, hook, key); err != nil {
+			slog.Warn("record mirrored agent activity", "session_key", key, "err", err)
+		}
+	}
 	if created {
 		s.PublishWorkspaceCreated(ws.ID, true)
 		s.runWorkspaceSetup(ws)
@@ -322,10 +403,23 @@ func (s *Handler) mirroredWorkspaceChat(
 		TranscriptPath: session.TranscriptPath,
 		Status:         func() localruntime.ACPMirrorStatus { return s.mirrorStatus(background, ws, item, *session) },
 		Deliver: func(command localruntime.ACPCommand) error {
-			return s.deliverToExternalAgent(background, *session, command)
+			id := ""
+			if command.Type == "prompt" {
+				id = command.ID
+			}
+			return s.mirrorDeliveries.deliver(item.SessionKey, id, func() error {
+				return s.deliverToExternalAgent(background, *session, command)
+			})
 		},
 		Start: func() (localruntime.ACPChat, error) {
 			return s.startMirroredChat(background, ws, item, *session)
+		},
+		Live: func() localruntime.ACPChat {
+			live, err := s.runtime.ACP(ws.ID, item.SessionKey)
+			if err != nil {
+				return nil
+			}
+			return live
 		},
 	})
 	s.runBackground(func(bgCtx context.Context) {
@@ -347,9 +441,9 @@ func (s *Handler) mirrorStatus(
 		return localruntime.ACPMirrorStatus{Running: true}
 	}
 	if current.EndedAt != nil || externalProcessGone(*current) {
-		return localruntime.ACPMirrorStatus{}
+		return localruntime.ACPMirrorStatus{TranscriptPath: current.TranscriptPath}
 	}
-	status := localruntime.ACPMirrorStatus{Running: true, Writable: current.HerdrPaneID != ""}
+	status := localruntime.ACPMirrorStatus{Running: true, Writable: current.HerdrPaneID != "", TranscriptPath: current.TranscriptPath}
 	for _, report := range s.agentActivity.LiveReportsForWorkspace(ws.WorktreePath, []string{item.SessionKey}) {
 		switch report.State {
 		case agentactivity.StateWorking, agentactivity.StateApproval, agentactivity.StateInput:
@@ -425,5 +519,6 @@ func (s *Handler) startMirroredChat(
 		slog.Warn("record mirrored chat handoff", "session_key", item.SessionKey, "err", err)
 	}
 	s.externalSessions.forget(externalSessionID{session.Agent, session.SessionID})
+	s.mirrorDeliveries.forget(item.SessionKey)
 	return chat, nil
 }

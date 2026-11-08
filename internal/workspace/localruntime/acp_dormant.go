@@ -95,6 +95,9 @@ func (d *DormantACP) Command(command ACPCommand) error {
 		return live.Command(command)
 	}
 	if d.mirror != nil {
+		if running := d.attachRunning(); running != nil {
+			return running.Command(command)
+		}
 		if status := d.mirror.source.Status(); status.Running {
 			return d.mirror.command(command, status)
 		}
@@ -125,10 +128,9 @@ func (d *DormantACP) ensureStarted() (ACPChat, error) {
 	})
 	live, err := d.start()
 	if err != nil {
-		d.update(func(state *ACP) {
-			state.state.Starting = false
-			state.setErrorLocked(err)
-		})
+		// The command that needed the agent reports the failure to its sender,
+		// beside the refused prompt.
+		d.update(func(state *ACP) { state.state.Starting = false })
 		return nil, err
 	}
 	d.mu.Lock()

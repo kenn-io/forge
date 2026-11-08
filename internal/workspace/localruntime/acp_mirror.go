@@ -35,6 +35,9 @@ type ACPMirrorStatus struct {
 	// Writable means Forge can type into the agent's terminal.
 	Writable bool
 	Busy     bool
+	// TranscriptPath is the transcript the agent last reported, which a hook
+	// may supply only after the chat opened.
+	TranscriptPath string
 }
 
 // ACPMirror names an agent session that runs outside Forge. Its chat shows the
@@ -51,6 +54,9 @@ type ACPMirror struct {
 	Deliver func(ACPCommand) error
 	// Start starts a Forge-run agent once the session is saved for it to load.
 	Start func() (ACPChat, error)
+	// Live returns the Forge-run agent another viewer's chat started on the
+	// session, or nil while none runs.
+	Live func() ACPChat
 }
 
 type acpMirrorFollower struct {
@@ -58,6 +64,9 @@ type acpMirrorFollower struct {
 	reader acpTranscriptReader
 	// readMu serializes reads, which Follow and a save before a start both make.
 	readMu sync.Mutex
+	// path is the transcript being read; the first reported one is kept, since
+	// entry IDs come from offsets in it.
+	path   string
 	offset int64
 	// partial holds a line the agent has not finished writing.
 	partial []byte
@@ -69,7 +78,7 @@ func (m *Manager) MirrorACP(mirror ACPMirror) *DormantACP {
 	view := &ACP{done: make(chan struct{}), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
 	view.state.Dormant = true
 	dormant := &DormantACP{saved: view, started: make(chan struct{})}
-	dormant.mirror = &acpMirrorFollower{source: mirror, reader: newACPTranscriptReader(mirror.Agent)}
+	dormant.mirror = &acpMirrorFollower{source: mirror, reader: newACPTranscriptReader(mirror.Agent), path: mirror.TranscriptPath}
 	dormant.start = func() (ACPChat, error) {
 		if err := m.saveMirroredSession(dormant, mirror); err != nil {
 			return nil, err
@@ -92,8 +101,10 @@ func (m *Manager) saveMirroredSession(dormant *DormantACP, mirror ACPMirror) err
 	}
 	dormant.pollMirror()
 	dormant.saved.mu.Lock()
+	// A chat that read no transcript, for want of a reader or a transcript,
+	// shows the history the agent replays on load instead.
 	saved := acpSavedSession{
-		SessionID: mirror.SessionID, LoadSession: true, ImportHistory: dormant.mirror.reader == nil,
+		SessionID: mirror.SessionID, LoadSession: true, ImportHistory: len(dormant.saved.state.Messages) == 0,
 		State: ACPState{Messages: slices.Clone(dormant.saved.state.Messages)},
 	}
 	dormant.saved.mu.Unlock()
@@ -118,7 +129,8 @@ func (m *Manager) PrepareMirroredACP(ctx context.Context, targetKey, workspaceID
 	return err
 }
 
-// Follow keeps a mirror's chat current until ctx ends or its agent starts.
+// Follow keeps a mirror's chat current until ctx ends or its agent starts,
+// here or in another viewer's chat.
 func (d *DormantACP) Follow(ctx context.Context) {
 	ticker := time.NewTicker(acpMirrorPollInterval)
 	defer ticker.Stop()
@@ -129,15 +141,39 @@ func (d *DormantACP) Follow(ctx context.Context) {
 		case <-d.started:
 			return
 		case <-ticker.C:
+			if d.attachRunning() != nil {
+				return
+			}
 			d.pollMirror()
 		}
 	}
 }
 
+// attachRunning makes the Forge-run agent another viewer started this chat's
+// agent, and returns it, or nil while none runs.
+func (d *DormantACP) attachRunning() ACPChat {
+	if d.mirror.source.Live == nil {
+		return nil
+	}
+	running := d.mirror.source.Live()
+	if running == nil {
+		return nil
+	}
+	d.startMu.Lock()
+	defer d.startMu.Unlock()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.live == nil {
+		d.live = running
+		close(d.started)
+	}
+	return d.live
+}
+
 // pollMirror applies what the agent wrote since the last read and its status.
 func (d *DormantACP) pollMirror() {
-	d.pollMirrorTranscript()
 	status := d.mirror.source.Status()
+	d.pollMirrorTranscript(status.TranscriptPath)
 	readOnly := status.Running && !status.Writable
 	busy := status.Running && status.Busy
 	d.saved.mu.Lock()
@@ -149,9 +185,12 @@ func (d *DormantACP) pollMirror() {
 	}
 }
 
-func (d *DormantACP) pollMirrorTranscript() {
+func (d *DormantACP) pollMirrorTranscript(reported string) {
 	d.mirror.readMu.Lock()
 	defer d.mirror.readMu.Unlock()
+	if d.mirror.path == "" {
+		d.mirror.path = reported
+	}
 	lines := d.mirror.read()
 	if len(lines) == 0 {
 		return
@@ -173,14 +212,14 @@ type acpTranscriptLine struct {
 // read returns the complete lines the agent appended since the last read. A
 // transcript that is missing, or not a regular file, reads as nothing yet.
 func (f *acpMirrorFollower) read() []acpTranscriptLine {
-	if f.reader == nil || f.source.TranscriptPath == "" {
+	if f.reader == nil || f.path == "" {
 		return nil
 	}
-	info, err := os.Stat(f.source.TranscriptPath)
+	info, err := os.Stat(f.path)
 	if err != nil || !info.Mode().IsRegular() || info.Size() == f.offset {
 		return nil
 	}
-	file, err := os.Open(f.source.TranscriptPath)
+	file, err := os.Open(f.path)
 	if err != nil {
 		return nil
 	}

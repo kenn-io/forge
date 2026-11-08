@@ -92,8 +92,9 @@ func TestDormantACPStartsItsAgentOnceForCommands(t *testing.T) {
 	assert.ElementsMatch(t, []string{"p1", "p2"}, []string{live.commands[0].ID, live.commands[1].ID})
 }
 
-// A failed start is shown on the chat and returned to the command; the next
-// command tries again.
+// A failed start is returned to the command, whose sender shows it beside the
+// refused prompt, not raised again as a chat-wide error; the next command tries
+// again.
 func TestDormantACPReportsAFailedStartAndRetries(t *testing.T) {
 	live := &recordingChat{}
 	attempts := 0
@@ -109,9 +110,8 @@ func TestDormantACPReportsAFailedStartAndRetries(t *testing.T) {
 	require.ErrorContains(t, err, "agent refused")
 	state := dormantState(t, chat)
 	assert.False(t, state.Starting)
-	assert.Contains(t, state.Error, "agent refused")
+	assert.Empty(t, state.Error)
 
 	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", ID: "p1"}))
 	assert.Equal(t, 2, attempts)
-	assert.Empty(t, dormantState(t, chat).Error, "a new start clears the failure")
 }

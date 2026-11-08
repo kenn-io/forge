@@ -226,6 +226,47 @@ describe("flat activity paging", () => {
     };
   }
 
+  it.each([false, true])("keeps live events within the loaded page (initially capped: %s)", async (initiallyCapped) => {
+    const recent = Array.from({ length: initiallyCapped ? 501 : 500 }, (_, index) => ({
+      ...pageItem,
+      id: `recent:${index}`,
+      cursor: `recent:${index}`,
+      created_at: new Date(Date.now() - index * 1000).toISOString(),
+    }));
+    const initial = recent.slice(300, 500);
+    let polled = false;
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { after?: string; limit?: number } } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (options?.params?.query?.after) {
+        polled = true;
+        return { data: { items: recent.slice(0, 300), capped: false, event_cursor: recent[0].cursor }, error: null };
+      }
+      const limit = options?.params?.query?.limit ?? 5000;
+      return {
+        data: {
+          items: polled ? recent.slice(0, limit) : initial,
+          capped: polled ? recent.length > limit : initiallyCapped,
+          event_cursor: polled ? recent[0].cursor : initial[0].cursor,
+        },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    store.startActivityPolling();
+    await vi.waitFor(() => expect(store.getActivityItems()[0]?.id).toBe("recent:0"));
+    expect(store.getActivityItems()).toHaveLength(200);
+    expect(store.canLoadMoreActivity()).toBe(true);
+    store.loadMoreActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.getActivityItems()).toEqual(recent.slice(0, 400));
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({ params: { query: expect.objectContaining({ projection: "full", limit: 400 }) } }),
+    );
+  });
+
   it.each([false, true])("adopts a reconciled page after load more (failed: %s)", async (failed) => {
     let requests = 0;
     const response = pageResponse(400);

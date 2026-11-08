@@ -1403,6 +1403,16 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     });
   }
 
+  // Keeps polled rows inside the time range and, in the flat feed, inside the
+  // loaded page, so Load more only ever extends what is shown.
+  function liveActivityPage(next: ActivityItem[]): ActivityItem[] {
+    const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
+    const live = next.filter((item) => new Date(item.created_at) >= cutoff);
+    if (viewMode !== "flat" || activityPageLimit !== undefined || live.length <= flatPaging.getLimit()) return live;
+    capped = true;
+    return live.slice(0, flatPaging.getLimit());
+  }
+
   const pollNewItems = Effect.suspend(() => {
     if (loading) return Effect.void;
     pollCount += 1;
@@ -1432,10 +1442,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           const existingIds = new Set(items.map((item) => item.id));
           const newItems = projectOwnedNotificationStates(result, false).filter((item) => !existingIds.has(item.id));
           activityEventCursor = result.response.event_cursor ?? activityEventCursor;
-          const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
-          const nextItems = (newItems.length > 0 ? [...newItems, ...items] : items).filter(
-            (item) => new Date(item.created_at) >= cutoff,
-          );
+          const nextItems = liveActivityPage(newItems.length > 0 ? [...newItems, ...items] : items);
           if (newItems.length > 0 || nextItems.length !== items.length) items = nextItems;
         });
       yield* workflow.pollRead(

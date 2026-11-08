@@ -3396,6 +3396,67 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByText("Oldest without activity")).toBeTruthy();
   });
 
+  it("offers force delete when a delete is refused for uncommitted changes", async () => {
+    mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });
+    const pending = new Map<string, (status: number) => void>();
+    mockDelete.mockImplementation(
+      (_path: string, options: { params: { path: { id: string }; query?: { force?: boolean } } }) =>
+        new Promise((resolve) => {
+          const key = `${options.params.path.id}${options.params.query?.force === true ? ":force" : ""}`;
+          pending.set(key, (status) =>
+            resolve(
+              status === 409
+                ? {
+                    error: {
+                      type: "about:blank",
+                      title: "Conflict",
+                      status,
+                      code: "worktreeDirty",
+                      detail: "worktree has uncommitted changes: a.txt",
+                    },
+                    response: new Response(null, { status }),
+                  }
+                : { response: { ok: true, status } },
+            ),
+          );
+        }),
+    );
+    render(WorkspaceListSidebar, { props: { selectedId: "ws-new" } });
+    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+    const openDelete = async (title: string) => {
+      await fireEvent.contextMenu(await row(title));
+      await fireEvent.click(screen.getByRole("menuitem", { name: "Delete workspace..." }));
+      return screen.findByRole("dialog", { name: "Delete workspace?" });
+    };
+
+    // A refusal that lands while another confirmation is open reports the error
+    // and leaves that confirmation alone.
+    const oldDialog = await openDelete("Oldest without activity");
+    await fireEvent.click(within(oldDialog).getByRole("button", { name: "Delete workspace" }));
+    await waitFor(() => expect([...pending.keys()]).toEqual(["ws-old"]));
+    const newDialog = await openDelete("Newest created");
+    pending.get("ws-old")!(409);
+    await waitFor(() => {
+      expect(getFlashes().map((flash) => flash.message)).toContainEqual(
+        "Oldest without activity: worktree has uncommitted changes: a.txt",
+      );
+    });
+    expect(screen.queryByRole("dialog", { name: "Force delete workspace?" })).toBeNull();
+    await fireEvent.click(within(newDialog).getByRole("button", { name: "Cancel" }));
+
+    const midDialog = await openDelete("Most recently active");
+    await fireEvent.click(within(midDialog).getByRole("button", { name: "Delete workspace" }));
+    await waitFor(() => expect(pending.has("ws-mid")).toBe(true));
+    pending.get("ws-mid")!(409);
+
+    const forceDialog = await screen.findByRole("dialog", { name: "Force delete workspace?" });
+    expect(forceDialog.textContent).toContain('Delete workspace "Most recently active"?');
+    await fireEvent.click(within(forceDialog).getByRole("button", { name: "Force delete workspace" }));
+    await waitFor(() => expect(pending.has("ws-mid:force")).toBe(true));
+    pending.get("ws-mid:force")!(204);
+    await waitFor(() => expect(screen.queryByText("Most recently active")).toBeNull());
+  });
+
   it("runs a quick action at once in one workspace and after confirmation in several", async () => {
     quickActions = [{ label: "Review", agent: "helper", prompt: "Review this change" }];
     mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });

@@ -1522,8 +1522,23 @@
       {
         operation: "delete workspace",
         safeContext: { workspaceId: ws.id, remote: Boolean(ws.fleet_host_key) },
-        onFailure: (failure) =>
-          showFlash(`${displayName(ws)}: ${deleteFailureMessage(failure)}`, { tone: "danger" }),
+        onFailure: (failure) => {
+          const problem = failure instanceof ApiProblemError ? failure.problem : undefined;
+          // Offer force only when no other confirmation is open, so a late
+          // refusal never replaces a dialog the user is answering.
+          if (
+            !force &&
+            problem?.code === ProblemCodes.worktreeDirty &&
+            deleteConfirmWorkspace === null &&
+            bulkDeleteConfirm === null &&
+            stopSessionsConfirm === null &&
+            quickActionConfirm === null
+          ) {
+            openDeleteWorkspaceDialog(ws, true);
+            return;
+          }
+          showFlash(`${displayName(ws)}: ${deleteFailureMessage(failure)}`, { tone: "danger" });
+        },
       },
     );
   }

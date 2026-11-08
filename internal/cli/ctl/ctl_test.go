@@ -57,6 +57,8 @@ port = 8123
 }
 
 func TestActivityForwardsLimit(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
 	var requestURL string
 	cmd := newCommand(commandDeps{
 		Stdout: &bytes.Buffer{},
@@ -68,8 +70,8 @@ func TestActivityForwardsLimit(t *testing.T) {
 	})
 	cmd.SetArgs([]string{"--server", "http://forge.test", "activity", "--limit", "50"})
 
-	require.NoError(t, cmd.Execute())
-	assert.Equal(t, "http://forge.test/api/v1/activity?limit=50", requestURL)
+	require.NoError(cmd.Execute())
+	assert.Equal("http://forge.test/api/v1/activity?limit=50", requestURL)
 }
 
 func TestRootHelpPointsAgentsToQuickstartAndAPI(t *testing.T) {

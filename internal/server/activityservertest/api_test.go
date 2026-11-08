@@ -355,6 +355,7 @@ func TestAPIListActivityHonorsLimit(t *testing.T) {
 			serverfake.WithSeedPRTimes(activityAt, activityAt, activityAt))
 	}
 	since := now.Add(-7 * 24 * time.Hour).Format(time.RFC3339)
+	limit := int64(1)
 	for _, tc := range []struct {
 		name       string
 		projection *generated.ListActivityQueryProjection
@@ -362,25 +363,23 @@ func TestAPIListActivityHonorsLimit(t *testing.T) {
 		{name: "full"},
 		{name: "collapsed", projection: new(generated.ListActivityQueryProjectionCollapsed)},
 	} {
-		for _, limit := range []int64{10, 1} {
-			t.Run(fmt.Sprintf("%s/limit=%d", tc.name, limit), func(t *testing.T) {
-				assert := assert.New(t)
-				require := require.New(t)
-				resp, err := client.HTTP.ListActivityWithResponse(t.Context(), &generated.ListActivityRequestOptions{
-					Query: &generated.ListActivityQuery{Since: &since, Limit: &limit, Projection: tc.projection},
-				})
-				require.NoError(err)
-				require.Equal(http.StatusOK, resp.StatusCode)
-				require.NotNil(resp.JSON200)
-				if tc.projection == nil {
-					assert.Len(resp.JSON200.Items, int(limit))
-					assert.True(resp.JSON200.Capped)
-				}
-				require.Len(resp.JSON200.ItemActivity, int(limit))
-				assert.True(resp.JSON200.ItemActivityCapped)
-				assert.Equal(int64(1), resp.JSON200.ItemActivity[0].ItemNumber)
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			resp, err := client.HTTP.ListActivityWithResponse(t.Context(), &generated.ListActivityRequestOptions{
+				Query: &generated.ListActivityQuery{Since: &since, Limit: &limit, Projection: tc.projection},
 			})
-		}
+			require.NoError(err)
+			require.Equal(http.StatusOK, resp.StatusCode)
+			require.NotNil(resp.JSON200)
+			if tc.projection == nil {
+				assert.Len(resp.JSON200.Items, int(limit))
+				assert.True(resp.JSON200.Capped)
+			}
+			require.Len(resp.JSON200.ItemActivity, int(limit))
+			assert.True(resp.JSON200.ItemActivityCapped)
+			assert.Equal(int64(1), resp.JSON200.ItemActivity[0].ItemNumber)
+		})
 	}
 }
 

@@ -270,6 +270,13 @@ func (s *Store) remove(agent, sessionID, runtimeSessionKey string) error {
 	return errors.Join(errs...)
 }
 
+// AwaitsPerson reports whether a hook leaves the agent waiting on a person: an
+// approval or an answer.
+func AwaitsPerson(hook HookEvent) bool {
+	state, _, ok := stateForHook(hook)
+	return ok && (state == StateApproval || state == StateInput)
+}
+
 // IsIdlePrompt reports Claude Code's idle notice, which follows any minute of
 // waiting and so says nothing about what the agent waits for.
 func IsIdlePrompt(hook HookEvent) bool {

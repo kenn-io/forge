@@ -272,6 +272,21 @@ func TestAdoptedChatShowsTheAgentWorkingBeforeItsNextHook(t *testing.T) {
 	}
 }
 
+// An idle notice after a turn whose Stop Forge missed means the turn is over.
+func TestAdoptedChatShowsAnAgentIdleAfterAnIdleNotice(t *testing.T) {
+	f := newExternalSessionFixture(t)
+	f.openPull(t, "feature/login", f.head)
+	f.hook(t, "claude", "session-1", "PostToolUse", runningAgentHeaders())
+	f.hookWith(t, "claude", "session-1", "Notification", map[string]any{"notification_type": "idle_prompt"}, runningAgentHeaders())
+	f.pass(t)
+	ws, rows := f.adopted(t)
+
+	chat, err := f.handler.openWorkspaceChat(t.Context(), ws.ID, rows[0].SessionKey)
+	require.NoError(t, err)
+
+	assert.False(t, chatState(t, chat).Busy)
+}
+
 // A hook that shows a turn happened marks the agent prompted even when Forge
 // missed its prompt hook; startup and idle notices can come from an agent never
 // prompted.

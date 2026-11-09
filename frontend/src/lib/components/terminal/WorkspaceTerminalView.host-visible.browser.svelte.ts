@@ -235,6 +235,56 @@ describe("WorkspaceTerminalView hostVisible", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
+  // The view portals its dialogs out of the (possibly parked) host. iOS Safari zooms
+  // when a field under 16px takes focus, and the 16px touch-field rule only matches
+  // inside #app, so the portal has to land there.
+  it("keeps the touch-field size on the Rename tab field it portals out of the host", async () => {
+    const api = createMockApiFetch([
+      (request) =>
+        request.url.pathname === "/api/v1/workspaces/ws-1/runtime" && request.method === "GET"
+          ? jsonResponse(agentRuntime)
+          : null,
+      workspaceRoutes(),
+    ]);
+    const originalFetch = globalThis.fetch;
+    const originalEventSource = globalThis.EventSource;
+    globalThis.fetch = api.fetch;
+    globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
+    vi.stubGlobal("WebSocket", ControlledWebSocket);
+    const appRoot = document.createElement("div");
+    appRoot.id = "app";
+    const target = document.createElement("div");
+    target.style.width = "800px";
+    target.style.height = "600px";
+    appRoot.appendChild(target);
+    document.body.appendChild(appRoot);
+    document.documentElement.classList.add("kit-type-touch");
+    const instance = mount(WorkspaceTerminalView, {
+      target,
+      props: {
+        runtime,
+        workspaceId: "ws-1",
+        hideWorkspaceList: true,
+        hideRightSidebar: true,
+      },
+      context: new Map([[STORES_KEY, { events: eventsStore, settings: createSettingsStore() }]]),
+    });
+
+    try {
+      await page.getByRole("button", { name: "Rename Helper" }).click();
+      const field = page.getByRole("dialog", { name: "Rename tab" }).getByRole("textbox");
+      await expect.element(field).toBeVisible();
+      expect(getComputedStyle(field.element()).fontSize).toBe("16px");
+    } finally {
+      flushSync(() => unmount(instance));
+      appRoot.remove();
+      document.documentElement.classList.remove("kit-type-touch");
+      globalThis.fetch = originalFetch;
+      globalThis.EventSource = originalEventSource;
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([
     ["prs", false, false, "bottom"],
     ["prs", true, false, "bottom"],

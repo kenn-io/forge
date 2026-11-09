@@ -1,5 +1,8 @@
 import { Effect } from "effect";
+import { ApiProblemError } from "./effect-errors.js";
+import { loadFleetSnapshot } from "./fleet-snapshot.js";
 import { executeGeneratedApiRequest, executeOpaqueGeneratedApiRequest } from "./generated-api.js";
+import { ProblemCodes } from "./problems.js";
 import {
   providerHostRouteParams,
   providerRouteParams,
@@ -7,7 +10,7 @@ import {
   resolvedPlatformHost,
   type ProviderRouteRef,
 } from "./provider-routes.js";
-import { repositoryKeyToWire } from "./repository-key.js";
+import { repositoryKeyAllows, repositoryKeyFromWire, repositoryKeyToWire } from "./repository-key.js";
 
 export type ItemWorkspaceRequest = {
   readonly kind: "pull" | "issue";
@@ -87,7 +90,16 @@ export function createItemWorkspace(hostKey: string | undefined, request: ItemWo
             issueBody,
             { signal },
           );
-    }).pipe(Effect.map(created));
+    }).pipe(
+      Effect.map(created),
+      // This Forge's item detail does not know another member's workspace, so
+      // a repeat create reaches the conflict; reuse that workspace instead.
+      Effect.catchIf(
+        (failure): failure is ApiProblemError =>
+          failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.workspaceAlreadyExists,
+        (failure) => existingFleetItemWorkspace(hostKey, request, failure),
+      ),
+    );
   }
   return executeGeneratedApiRequest(operation, (client, signal) => {
     if (kind === "pull") return client.WorkspacesService.createWorkspace(pullBody, { signal });
@@ -97,4 +109,25 @@ export function createItemWorkspace(hostKey: string | undefined, request: ItemWo
         })
       : client.IssuesService.createIssueWorkspace({ ...providerRouteParams(repo), number }, issueBody, { signal });
   }).pipe(Effect.map(created));
+}
+
+function existingFleetItemWorkspace(hostKey: string, request: ItemWorkspaceRequest, conflict: ApiProblemError) {
+  const { kind, repo, number } = request;
+  const itemType = kind === "pull" ? "pull_request" : "issue";
+  const platformHost = resolvedPlatformHost(repo.provider, repo.platformHost);
+  return loadFleetSnapshot().pipe(
+    Effect.flatMap((snapshot) => {
+      const existing = (snapshot.workspaces ?? []).find(
+        (ws) =>
+          ws.fleet_host_key === hostKey &&
+          ws.item_type === itemType &&
+          ws.item_number === number &&
+          ws.platform_host === platformHost &&
+          ws.repo_owner === repo.owner &&
+          ws.repo_name === repo.name &&
+          repositoryKeyAllows(repo.repositoryKey, repositoryKeyFromWire(ws.repo)),
+      );
+      return existing ? Effect.succeed({ id: existing.id, status: existing.status }) : Effect.fail(conflict);
+    }),
+  );
 }

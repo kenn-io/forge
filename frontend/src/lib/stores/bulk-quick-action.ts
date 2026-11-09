@@ -82,7 +82,7 @@ function runOnItem(
   target: ListItemTarget,
   action: QuickAction,
   { hostKey, reason }: ResolvedTarget,
-): Effect.Effect<QuickActionOutcome, never, GeneratedApi> {
+): Effect.Effect<QuickActionOutcome, never, GeneratedApi | FleetSnapshotReads> {
   const identity = itemIdentity(target);
   const failed = (reason: string): Effect.Effect<QuickActionOutcome> =>
     Effect.succeed({ type: "failed", reason, message: reason });
@@ -178,7 +178,10 @@ function summary(
   };
 }
 
-type Launch = { readonly label: string; readonly launch: Effect.Effect<QuickActionOutcome, never, GeneratedApi> };
+type Launch = {
+  readonly label: string;
+  readonly launch: Effect.Effect<QuickActionOutcome, never, GeneratedApi | FleetSnapshotReads>;
+};
 
 // Runs every launch a few at a time, then reports them all in one message.
 function runLaunches(

@@ -1405,7 +1405,7 @@
                   backDestination={mobileWorkspaceHistory()?.origin === "list" ? "list" : "terminal"}
                   onBack={() => leaveMobileWorkspaceItem(route.workspaceId, route.hostKey)}
                   onMissing={() => replaceUrl("/m/workspaces")}
-                  onOpenWorkspace={(workspaceId, hostKey) => openMobileWorkspaceFromItem(workspaceId, hostKey ?? route.hostKey)}
+                  onOpenWorkspace={(workspaceId, hostKey) => openMobileWorkspaceFromItem(workspaceId, hostKey)}
                   onViewWorkspaces={() => replaceUrl("/m/workspaces")}
                   onTabChange={(tab, options) => {
                     const path = buildMobileWorkspaceItemRoute(

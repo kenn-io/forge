@@ -4613,6 +4613,84 @@ describe("PullDetail inline workspace handoff", () => {
     ]);
   });
 
+  it("opens the existing workspace on the default fleet member instead of failing a repeat create", async () => {
+    const fleetWorkspace = (id: string, number: number) => ({
+      id,
+      status: "ready",
+      fleet_host_key: buildBNode,
+      item_type: "pull_request",
+      item_number: number,
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widget",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: 1001,
+        owner: "acme",
+        name: "widget",
+        repo_path: "acme/widget",
+      },
+    });
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: {
+          hosts: fleetHosts({ available: true }),
+          workspaces: [fleetWorkspace("ws-other-pr", 2), fleetWorkspace("ws-existing", 1)],
+        },
+      }),
+      POST: vi.fn().mockResolvedValue({
+        error: {
+          type: "about:blank",
+          title: "Conflict",
+          status: 409,
+          code: "workspaceAlreadyExists",
+          detail: "workspace already exists for this MR",
+        },
+        response: new Response(null, { status: 409 }),
+      }),
+    };
+    const { navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "https://build-b.example.test",
+    });
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    await fireEvent.click(create);
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith(`/terminal/fleet/${buildBNode}/ws-existing`));
+    expect(getFlashes()).toEqual([]);
+  });
+
+  it("keeps rechecking after a failed read when the saved devbox cannot take the repository", async () => {
+    let snapshots = 0;
+    const apiClient = {
+      GET: vi.fn(async (path: string) => {
+        if (path !== "/snapshot") return { data: {} };
+        snapshots += 1;
+        if (snapshots === 1) throw new Error("directory unavailable");
+        return { data: { hosts: fleetHosts({ available: true }) } };
+      }),
+      POST: vi.fn(),
+    };
+    let notify: ((event: { type: "open" }) => void) | undefined;
+    const detail = pullDetail();
+    detail.repo.platform_host = "ghe.example.com";
+    detail.platform_host = "ghe.example.com";
+    renderPullDetail(detail, undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "devbox:compute-a",
+      detailProps: { platformHost: "ghe.example.com" },
+      subscribeWorkspaceEvents: (subscriber) => {
+        notify = subscriber;
+        return () => undefined;
+      },
+    });
+    await waitFor(() => expect(notify).toBeDefined());
+    expect(screen.queryByRole("group", { name: "Create on another machine" })).toBeNull();
+    notify!({ type: "open" });
+    expect(await screen.findByRole("group", { name: "Create on another machine" })).toBeTruthy();
+  });
+
   it("leaves agent checks for a quick action on another machine to that machine", async () => {
     const apiClient = {
       GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),

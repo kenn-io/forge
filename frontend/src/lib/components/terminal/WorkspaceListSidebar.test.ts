@@ -3550,6 +3550,48 @@ describe("WorkspaceListSidebar", () => {
     );
   });
 
+  it("runs a quick action on another fleet member whose agent this machine lacks", async () => {
+    quickActions = [{ label: "Triage", agent: "remote-only", prompt: "Triage this change" }];
+    const [local] = sortFixtures();
+    const remote = { ...local!, id: "ws-remote", mr_title: "Remote workspace", fleet_host_key: "peer-a" };
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [local, remote],
+        hosts: [
+          {
+            configKey: "peer-a",
+            kind: "remote",
+            name: "peer-a",
+            operationAvailability: { workspaceWrite: { available: true } },
+          },
+        ],
+      },
+    });
+    mockPost.mockResolvedValue({
+      data: {
+        session: { key: "runtime-1", target_key: "remote-only" },
+        initial_message: { state: "delivered", target_key: "remote-only", message_bytes: 18 },
+      },
+    });
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+
+    await fireEvent.contextMenu((await screen.findByText("Newest created")).closest<HTMLElement>(".ws-row")!);
+    expect(screen.getByRole("menuitem", { name: /^Triage/ }).getAttribute("aria-disabled")).toBe("true");
+    await fireEvent.keyDown(document, { key: "Escape" });
+
+    await fireEvent.contextMenu(screen.getByText("Remote workspace").closest<HTMLElement>(".ws-row")!);
+    await fireEvent.click(screen.getByRole("menuitem", { name: /^Triage/ }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs",
+        expect.objectContaining({
+          params: { path: { host_key: "peer-a", id: "ws-remote" } },
+          body: { target_key: "remote-only", message: "Triage this change" },
+        }),
+      ),
+    );
+  });
+
   it("pulls every selected workspace and reports up-to-date and skipped ones", async () => {
     mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });
     const conflict = (problem: Record<string, unknown>) => ({

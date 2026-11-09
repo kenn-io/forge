@@ -143,10 +143,11 @@ export function createDefaultWorkspaceTarget(
       : "",
   );
   // An offline or unreachable default can come back; recheck until it does.
-  // A devbox that cannot take this repository will not, so skip it.
+  // A devbox that cannot take this repository will not, but a failed read
+  // still retries so the other machines can be offered.
   const recheck = $derived(
-    (loadFailed || (checked && reason !== "")) &&
-      !(target.startsWith("devbox:") && devboxRepositoryUnavailableReason(getRepo())),
+    loadFailed ||
+      (checked && reason !== "" && !(target.startsWith("devbox:") && devboxRepositoryUnavailableReason(getRepo()))),
   );
   $effect(() => {
     if (!recheck) return;

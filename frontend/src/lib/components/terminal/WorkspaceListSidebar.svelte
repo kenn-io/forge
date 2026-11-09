@@ -1361,12 +1361,15 @@
     );
   }
 
-  // Fleet workspaces cannot take an agent handoff, so quick actions run
-  // only in local and devbox workspaces that finished or are finishing setup.
+  // Quick actions run in workspaces that finished or are finishing setup.
   function quickActionAvailable(ws: Workspace): boolean {
-    return !workspaceActionsDisabled(ws) &&
-      ws.status !== "error" &&
-      (!isRemoteWorkspace(ws) || ws.fleet_host_key?.startsWith("devbox:") === true);
+    return !workspaceActionsDisabled(ws) && ws.status !== "error";
+  }
+
+  // This Forge's launch targets do not describe another fleet member, which
+  // checks its own agents when the action runs.
+  function onOtherFleetMember(ws: Workspace): boolean {
+    return isRemoteWorkspace(ws) && ws.fleet_host_key?.startsWith("devbox:") !== true;
   }
 
   function quickActionAgentLabel(action: QuickAction): string {
@@ -2103,7 +2106,7 @@
   {#if quickActions.length > 0}
     <MenuSeparator />
     {#each quickActions as action (action.label)}
-      {@const reason = quickActionDisabledReason(action, launchTargets) ||
+      {@const reason = quickActionDisabledReason(action, launchTargets, targets.length > 0 && targets.every(onOtherFleetMember)) ||
         (targets.length === 0 ? "Not available in these workspaces" : "")}
       <MenuItem disabled={reason !== ""} textValue={action.label} onselect={() => chooseQuickAction(action, targets)}>
         {#snippet icon()}<ZapIcon size={14} />{/snippet}

@@ -54,15 +54,17 @@ const orderStorageKey = "kenn-forge:workspaceOrder";
 
 const validSorts = new Set<WorkspaceListSort>(workspaceListSortOptions.map((option) => option.value));
 
+// Workspaces waiting on the user come first, then finished ones ready for
+// review, then agents still running.
 export function workspaceAgentStatePriority(state: WorkspaceListItem["agent_state"]): number {
   switch (state) {
     case "approval":
       return 5;
     case "input":
       return 4;
-    case "working":
-      return 3;
     case "done":
+      return 3;
+    case "working":
       return 2;
     case "idle":
       return 1;

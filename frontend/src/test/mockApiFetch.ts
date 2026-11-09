@@ -14,6 +14,21 @@ import type { SettingsResponse as GeneratedSettingsResponse } from "../lib/api/g
 
 type SettingsResponse = GeneratedSettingsResponse;
 
+export function mockLaunchTargets(claudeAvailable: boolean) {
+  return [
+    ..."codex claude pi gemini opencode aider".split(" ").map((key) => ({
+      key,
+      label: key === "opencode" ? key : key.slice(0, 1).toUpperCase() + key.slice(1),
+      kind: "agent",
+      source: "builtin",
+      command: [key],
+      available: key === "claude" && claudeAvailable,
+      ...(key === "claude" && claudeAvailable ? {} : { disabled_reason: `${key} not found on PATH` }),
+    })),
+    { key: "plain_shell", label: "Shell", kind: "plain_shell", source: "system", available: true },
+  ];
+}
+
 const defaultProviderCapabilities = {
   read_repositories: true,
   read_merge_requests: true,

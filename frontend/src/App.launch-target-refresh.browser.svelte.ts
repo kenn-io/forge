@@ -1,21 +1,12 @@
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { mountBrowserApp, type MountedBrowserApp } from "./test/browserAppHarness.js";
-import { jsonResponse, mockSettings } from "./test/mockApiFetch.js";
+import { jsonResponse, mockLaunchTargets, mockSettings } from "./test/mockApiFetch.js";
 
 const settings = (available: boolean) => ({
   ...mockSettings,
   quick_actions: [{ label: "Review", agent: "claude", prompt: "Review this change" }],
-  launch_targets: [
-    {
-      key: "claude",
-      label: "Claude",
-      kind: "agent",
-      source: "builtin",
-      available,
-      disabled_reason: available ? undefined : "claude not found on PATH",
-    },
-  ],
+  launch_targets: mockLaunchTargets(available),
 });
 
 let mounted: MountedBrowserApp | undefined;
@@ -30,7 +21,6 @@ it.each([
   ["pull request", "/pulls/github/acme/widgets/42"],
   ["issue", "/issues/github/acme/widgets/7"],
 ])("refreshes %s launch choices after install and removal", async (_kind, route) => {
-  await page.viewport(1400, 900);
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
   const started = Date.now();
   let visible = true;

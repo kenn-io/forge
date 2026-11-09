@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { makeAppRuntime, type AppServices, type OwnedAppRuntime } from "./runtime.js";
 import { createAppStores } from "../app-stores.svelte.js";
 import type { Issue, IssueDetail, PullDetail, PullRequest } from "../api/types.js";
-import { createMockApiFetch, mockSettings } from "../../test/mockApiFetch.js";
+import { createMockApiFetch, mockLaunchTargets, mockSettings } from "../../test/mockApiFetch.js";
 
 let runtime: OwnedAppRuntime;
 let eventSources: EventSourceStub[];
@@ -51,8 +51,8 @@ describe("app store composition", () => {
     const api = createMockApiFetch();
     const releasePulls = Promise.withResolvers<void>();
     const releaseLocal = Promise.withResolvers<Response>();
-    const claude = { key: "claude", label: "Claude", kind: "agent", source: "builtin", available: true };
-    const saved = { ...claude, key: "saved", label: "Saved agent", source: "config", command: ["saved-agent"] };
+    const agent = { key: "saved", label: "Saved agent", command: ["worker"] };
+    const saved = { ...agent, kind: "agent", source: "config", available: true };
     let pullReads = 0;
     let localReads = 0;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -65,7 +65,11 @@ describe("app store composition", () => {
         localReads += 1;
         return localReads === 1
           ? releaseLocal.promise
-          : Response.json({ ...mockSettings, launch_targets: [saved, claude] });
+          : Response.json({
+              ...mockSettings,
+              agents: [{ ...agent, enabled: true }],
+              launch_targets: [saved, ...mockLaunchTargets(true)],
+            });
       }
       return api.fetch(input, init);
     });
@@ -80,13 +84,13 @@ describe("app store composition", () => {
     try {
       await vi.advanceTimersByTimeAsync(0);
       expect([pullReads, localReads]).toEqual([1, 1]);
-      stores.settings.setLaunchTargets([saved, { ...claude, available: false }]);
-      releaseLocal.resolve(Response.json({ ...mockSettings, launch_targets: [{ ...claude, available: false }] }));
+      stores.settings.setLaunchTargets([saved, ...mockLaunchTargets(false)]);
+      releaseLocal.resolve(Response.json({ ...mockSettings, launch_targets: mockLaunchTargets(false) }));
       await vi.advanceTimersByTimeAsync(0);
-      expect(stores.settings.getLaunchTargets()).toMatchObject([saved, { key: "claude", available: false }]);
+      expect(stores.settings.getLaunchTargets()).toMatchObject([saved, ...mockLaunchTargets(false)]);
       await vi.advanceTimersByTimeAsync(5_000);
       expect([pullReads, localReads]).toEqual([1, 2]);
-      expect(stores.settings.getLaunchTargets()).toMatchObject([saved, claude]);
+      expect(stores.settings.getLaunchTargets()).toMatchObject([saved, ...mockLaunchTargets(true)]);
     } finally {
       releasePulls.resolve();
       polling.interrupt();

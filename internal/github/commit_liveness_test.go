@@ -2,6 +2,7 @@ package github
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -1162,6 +1163,106 @@ func TestCommitLivenessFinalizedByPeriodicCloseDetection(t *testing.T) {
 	require.NoError(syncer.fetchAndUpdateClosedMergeRequest(
 		t.Context(), provider, providerRepo, providerRepoID, 1, false,
 	))
+	assertLivenessCommitFlags(t, providerFixture, map[string]bool{
+		h.a1: true, h.a2: true, h.a3: true,
+	})
+}
+
+func TestDetailFetchesMissingFinalHeadBeforeClosingMR(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	fixture := setupCommitLivenessFixture(t)
+	h := fixture.history
+	providerRepo := RepoRef{
+		Platform:     platform.KindForgejo,
+		PlatformHost: platform.DefaultForgejoHost,
+		Key:          platform.RepositoryIDKey(1001),
+		Owner:        "owner",
+		Name:         "repo",
+		RepoPath:     "owner/repo",
+		CloneURL:     h.sourceDir,
+	}
+	// Production detail syncs read and fetch the identity-scoped clone.
+	ctx := withCloneRepositoryIdentity(t.Context(), providerRepo)
+	barePath, err := h.manager.ClonePathForContext(
+		ctx, string(platform.KindForgejo), platform.DefaultForgejoHost, "owner", "repo",
+	)
+	require.NoError(err)
+	livenessTestGit(t, "", "clone", "--bare", h.sourceDir, barePath)
+	// The MR is force-pushed to a commit the clone has not fetched yet.
+	livenessTestGit(t, h.sourceDir, "checkout", "-b", "feature-c", h.base)
+	require.NoError(os.WriteFile(filepath.Join(h.sourceDir, "lineage-c.txt"), []byte("c1\n"), 0o644))
+	livenessTestGit(t, h.sourceDir, "add", "lineage-c.txt")
+	livenessTestGit(t, h.sourceDir, "commit", "-m", "lineage c1")
+	finalHead := livenessTestGit(t, h.sourceDir, "rev-parse", "HEAD")
+
+	providerRepoID, err := reposeed.Seed(
+		t.Context(), fixture.database, verifiedDBRepoIdentity(platformRepoRef(providerRepo)),
+	)
+	require.NoError(err)
+	now := time.Date(2026, 8, 5, 12, 1, 0, 0, time.UTC)
+	providerMRID, err := fixture.database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID:             providerRepoID,
+		PlatformID:         101,
+		PlatformExternalID: "mr-1",
+		Number:             1,
+		URL:                "https://codeberg.org/owner/repo/pulls/1",
+		Title:              "Synthetic merge request",
+		Author:             "developer",
+		State:              db.MergeRequestStateOpen,
+		HeadBranch:         "feature",
+		BaseBranch:         "main",
+		PlatformHeadSHA:    h.a3,
+		PlatformBaseSHA:    h.base,
+		CreatedAt:          now.Add(-time.Hour),
+		UpdatedAt:          now.Add(-time.Minute),
+		LastActivityAt:     now.Add(-time.Minute),
+	})
+	require.NoError(err)
+	providerFixture := fixture
+	providerFixture.repo = providerRepo
+	providerFixture.repoID = providerRepoID
+	providerFixture.mrID = providerMRID
+	seedLivenessCommitEvents(t, providerFixture, h.a1, h.a2, h.a3)
+
+	// Closing the MR is the last round that computes its flags. The child
+	// event read fails, so only the parent snapshot's finalizer can record
+	// them, and it needs the final head in the clone.
+	provider := &syncTestReadProvider{
+		kind: platform.KindForgejo,
+		host: platform.DefaultForgejoHost,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:               platformRepoRef(providerRepo),
+			PlatformID:         101,
+			PlatformExternalID: "mr-1",
+			Number:             1,
+			URL:                "https://codeberg.org/owner/repo/pulls/1",
+			Title:              "Synthetic merge request",
+			Author:             "developer",
+			State:              "closed",
+			HeadBranch:         "feature",
+			BaseBranch:         "main",
+			HeadSHA:            finalHead,
+			BaseSHA:            h.base,
+			CreatedAt:          now.Add(-time.Hour),
+			UpdatedAt:          now,
+			LastActivityAt:     now,
+		}},
+		listMRMergeEventsErr: errors.New("events unavailable"),
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(
+		registry, fixture.database, h.manager, []RepoRef{providerRepo},
+		time.Minute, nil, nil,
+	)
+	t.Cleanup(syncer.Stop)
+
+	_, err = syncer.fetchProviderMRDetail(
+		ctx, provider, providerRepo, providerRepoID, 1,
+	)
+	require.Error(err)
 	assertLivenessCommitFlags(t, providerFixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true,
 	})

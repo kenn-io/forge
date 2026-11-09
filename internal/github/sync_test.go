@@ -32,6 +32,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -370,7 +371,7 @@ func TestCommitMergeRequestParentSnapshotRollsBackParentWhenLabelsFail(t *testin
 
 func setupBareRemoteForSyncTest(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := gitfixture.ScratchDir(t)
 	remote := filepath.Join(dir, "remote.git")
 	cmd := gitsafe.Runner().Command(t.Context(), dir, "init", "--bare", "--initial-branch=main", remote)
 	out, err := cmd.CombinedOutput()
@@ -1131,21 +1132,22 @@ func (p syncTestProvider) Capabilities() platform.Capabilities {
 
 type syncTestReadProvider struct {
 	syncTestProvider
-	mergeRequests       []platform.MergeRequest
-	issues              []platform.Issue
-	getIssueErr         error
-	listIssueEventsErr  error
-	listMRCalls         atomic.Int32
-	listIssueCalls      atomic.Int32
-	getMRCalls          atomic.Int32
-	getIssueCalls       atomic.Int32
-	listReviewThreads   atomic.Int32
-	listMRMergeEvents   []platform.MergeRequestEvent
-	reviewThreads       []platform.MergeRequestReviewThread
-	listReviewThreadsFn func(context.Context, platform.RepoRef, int) ([]platform.MergeRequestReviewThread, error)
-	listIssueReadEvents []platform.IssueEvent
-	readReviewThreads   bool
-	requireRepoPath     string
+	mergeRequests        []platform.MergeRequest
+	issues               []platform.Issue
+	getIssueErr          error
+	listIssueEventsErr   error
+	listMRCalls          atomic.Int32
+	listIssueCalls       atomic.Int32
+	getMRCalls           atomic.Int32
+	getIssueCalls        atomic.Int32
+	listReviewThreads    atomic.Int32
+	listMRMergeEvents    []platform.MergeRequestEvent
+	listMRMergeEventsErr error
+	reviewThreads        []platform.MergeRequestReviewThread
+	listReviewThreadsFn  func(context.Context, platform.RepoRef, int) ([]platform.MergeRequestReviewThread, error)
+	listIssueReadEvents  []platform.IssueEvent
+	readReviewThreads    bool
+	requireRepoPath      string
 }
 
 func (p *syncTestReadProvider) GetRepository(
@@ -1336,7 +1338,7 @@ func (p *syncTestReadProvider) ListMergeRequestEvents(
 	platform.RepoRef,
 	int,
 ) ([]platform.MergeRequestEvent, error) {
-	return p.listMRMergeEvents, nil
+	return p.listMRMergeEvents, p.listMRMergeEventsErr
 }
 
 func (p *syncTestReadProvider) ListMergeRequestReviewThreads(
@@ -7858,7 +7860,7 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	d := openTestDB(t)
 	now := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
 	remote := setupBareRemoteForSyncTest(t)
-	work := filepath.Join(t.TempDir(), "work")
+	work := filepath.Join(gitfixture.ScratchDir(t), "work")
 	syncActivityGitRun(t, "", "clone", remote, work)
 	syncActivityGitRun(t, work, "config", "user.email", "alice@example.com")
 	syncActivityGitRun(t, work, "config", "user.name", "Alice")
@@ -7942,7 +7944,7 @@ func TestDetailDrainFetchesCloneOnlyForMissingPRCommits(t *testing.T) {
 	ctx := t.Context()
 	d := openTestDB(t)
 	remote := setupBareRemoteForSyncTest(t)
-	work := filepath.Join(t.TempDir(), "work")
+	work := filepath.Join(gitfixture.ScratchDir(t), "work")
 	syncActivityGitRun(t, "", "clone", remote, work)
 	syncActivityGitRun(t, work, "config", "user.email", "alice@example.com")
 	syncActivityGitRun(t, work, "config", "user.name", "Alice")

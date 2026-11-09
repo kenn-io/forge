@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/BurntSushi/toml"
@@ -154,6 +155,82 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 			assert.Equal(200, response.StatusCode)
 		})
 	}
+	t.Run("shared-token-rotation", func(t *testing.T) {
+		const nodeID = "0123456789abcdef0123456789abcdef"
+		oldToken, newToken := strings.Repeat("a", 64), strings.Repeat("b", 64)
+		var workerToken atomic.Value
+		workerToken.Store(oldToken)
+		bearers := make(chan string, 2)
+		worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			bearer := r.Header.Get("Authorization")
+			if r.URL.Path == "/probe" {
+				bearers <- bearer
+			}
+			if bearer != "Bearer "+workerToken.Load().(string) {
+				http.Error(w, "invalid worker bearer", http.StatusUnauthorized)
+				return
+			}
+			if r.URL.Path == "/api/v1/worker" {
+				assert.NoError(t, json.MarshalWrite(w, WorkerIdentity{NodeID: nodeID, UID: 1001, GitHubUserID: 777, Role: "execution", Protocol: Protocol}))
+			}
+		}))
+		t.Cleanup(worker.Close)
+		assignment := Assignment{NodeID: nodeID, UID: 1001, GitHubUserID: 42, WorkerGitHubUserID: 777, Role: "execution", Protocol: Protocol, HostID: "compute-a", Name: "Compute A", URL: "http://compute-a.example.ts.net:9001", Account: "service", Enabled: true, TokenFile: "/run/example/token"}
+		second := assignment
+		second.GitHubUserID = 43
+		cfg := RegistryConfig{Socket: "/run/example/registry.sock", RegistryID: "example", Revision: "1", Developers: []Developer{{GitHubUserID: 42, TailscaleUserID: 11, Enabled: true}, {GitHubUserID: 43, TailscaleUserID: 12, Enabled: true}}, Assignments: []Assignment{assignment, second}}
+		require.NoError(t, cfg.validate())
+		var peerID atomic.Int64
+		lookup := func(context.Context, string) (tailnetPeer, error) {
+			peer := tailnetPeer{}
+			peer.UserProfile.ID = peerID.Load()
+			return peer, nil
+		}
+		var handler atomic.Value
+		handler.Store(registryHandler(cfg, map[string]string{nodeID: oldToken}, lookup))
+		registry := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Header.Set("X-Devbox-Peer-IP", "100.64.0.2")
+			r.Header.Set("X-Devbox-Peer-Port", "12345")
+			handler.Load().(http.Handler).ServeHTTP(w, r)
+		}))
+		t.Cleanup(registry.Close)
+		transport := registry.Client().Transport.(*http.Transport).Clone()
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if strings.HasPrefix(addr, "compute-a.example.ts.net:") {
+				addr = worker.Listener.Addr().String()
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		}
+		var stores []*Connections
+		var connections []Connection
+		for _, id := range []int64{11, 12} {
+			peerID.Store(id)
+			store, err := OpenConnections(t.TempDir())
+			require.NoError(t, err)
+			t.Cleanup(store.Close)
+			store.client.Transport = transport.Clone()
+			connection, err := store.Connect(t.Context(), registry.URL, "compute-a")
+			require.NoError(t, err)
+			stores, connections = append(stores, store), append(connections, connection)
+		}
+		cfg.Assignments = cfg.Assignments[:1]
+		require.NoError(t, cfg.validate())
+		workerToken.Store(newToken)
+		handler.Store(registryHandler(cfg, map[string]string{nodeID: newToken}, lookup))
+		response, err := stores[1].Do(t.Context(), connections[1].ID, http.MethodGet, "/probe", nil, nil)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
+		require.NoError(t, response.Body.Close())
+		assert.Equal(t, "Bearer "+oldToken, <-bearers)
+		peerID.Store(11)
+		connection, err := stores[0].Connect(t.Context(), registry.URL, "compute-a")
+		require.NoError(t, err)
+		response, err = stores[0].Do(t.Context(), connection.ID, http.MethodGet, "/probe", nil, nil)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, response.StatusCode)
+		require.NoError(t, response.Body.Close())
+		assert.Equal(t, "Bearer "+newToken, <-bearers)
+	})
 }
 
 func TestRegistryIdentityUsesUserOrExplicitUnambiguousPin(t *testing.T) {

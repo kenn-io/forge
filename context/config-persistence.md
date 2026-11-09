@@ -92,6 +92,9 @@ back to TOML.
 - `modes.actions` is false by default and controls presentation only; provider workflow HTTP
   access remains available. Disabling it removes both the Actions mode and the PR workflow menu
   (`internal/config/config.go::ModeVisibility`).
+- `workspaces.detail_session_placement` is a node-local UI preference stored in TOML, not
+  localStorage; omitted means `bottom`, which keeps the pre-setting behavior
+  (`internal/config/config.go::Workspaces`).
 - `workspaces.idle_runtime_stop_hours` is a TOML-only, hot-reloaded node-local setting bounded
   0-720; zero keeps runtimes running (`internal/config/config.go::Workspaces`).
 - `roborev.init_managed_clones` is a hot-reloaded, false-by-default setup policy; only the

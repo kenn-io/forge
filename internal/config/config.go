@@ -844,6 +844,11 @@ type Workspaces struct {
 	// DefaultSidebarView selects the initial right-sidebar tab for a workspace
 	// created from a pull request or issue. A saved per-workspace choice wins.
 	DefaultSidebarView string `toml:"default_sidebar_view,omitempty" json:"default_sidebar_view" enum:"diff,item"`
+	// DetailSessionPlacement decides where an agent or chat session started
+	// from a pull request or issue detail opens: "bottom" keeps it in the
+	// workspace pane, docked below the detail by default; "right", "left",
+	// and "top" split the detail pane; "tab" adds it beside the detail tabs.
+	DetailSessionPlacement string `toml:"detail_session_placement,omitempty" json:"detail_session_placement" enum:"bottom,right,left,top,tab"`
 	// IdleRuntimeStopHours stops a pty-owner workspace's idle agents and
 	// shells after this many hours with no viewer; zero disables it.
 	IdleRuntimeStopHours int `toml:"idle_runtime_stop_hours,omitempty" json:"-"`
@@ -852,6 +857,9 @@ type Workspaces struct {
 func (w Workspaces) withDefaults() Workspaces {
 	if w.DefaultSidebarView == "" {
 		w.DefaultSidebarView = "diff"
+	}
+	if w.DetailSessionPlacement == "" {
+		w.DetailSessionPlacement = "bottom"
 	}
 	return w
 }
@@ -1651,6 +1659,11 @@ func (c *Config) validate() error {
 	c.Workspaces = c.Workspaces.withDefaults()
 	if c.Workspaces.DefaultSidebarView != "diff" && c.Workspaces.DefaultSidebarView != "item" {
 		return errors.New("config: workspaces.default_sidebar_view must be one of diff or item")
+	}
+	switch c.Workspaces.DetailSessionPlacement {
+	case "bottom", "right", "left", "top", "tab":
+	default:
+		return errors.New("config: workspaces.detail_session_placement must be one of bottom, right, left, top, or tab")
 	}
 	if c.Workspaces.IdleRuntimeStopHours < 0 || c.Workspaces.IdleRuntimeStopHours > 720 {
 		return errors.New("config: workspaces.idle_runtime_stop_hours must be between 0 and 720")

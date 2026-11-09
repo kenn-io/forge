@@ -39,6 +39,8 @@
   } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
+  import { detailSessionLaunchLeaf } from "../../stores/paneLayout.svelte.js";
+  import type { WorkspaceRuntimeLaunchLeaf } from "../terminal/workspace-runtime-workflow.js";
   import {
     getStores,
     getNavigate,
@@ -2019,11 +2021,18 @@
     });
   }
 
+  // A quick action from this header opens where the user's placement setting
+  // says, like an agent launched from it.
+  function quickActionLeaf(): WorkspaceRuntimeLaunchLeaf | undefined {
+    if (!inlineWorkspace) return undefined;
+    return detailSessionLaunchLeaf(inlineWorkspace.surface, settings.getWorkspaceSettings().detail_session_placement);
+  }
+
   // Runs in the workspace this pull request already has, then shows it the way
   // a create does: the inline pane, or the workspace route.
   function runQuickActionInWorkspace(workspaceId: string, action: QuickAction): void {
     closeActionMenu();
-    runWorkspaceQuickAction(runtime, workspaceId, "pull_request", action);
+    runWorkspaceQuickAction(runtime, workspaceId, "pull_request", action, undefined, undefined, quickActionLeaf());
     if (inlineWorkspace) inlineWorkspace.revealWorkspace();
     else if (onOpenWorkspace) onOpenWorkspace(workspaceId);
     else navigate(`/terminal/${workspaceId}`);
@@ -2089,7 +2098,9 @@
             promoteWorkspaceCreateLaunch(requestIdentity, createdRef.id, undefined);
             recordWorkspaceCreated(requestIdentity, createdRef);
             inlineWorkspace?.recordCreated(requestIdentity, createdRef);
-            if (quickAction) runWorkspaceQuickAction(runtime, createdRef.id, "pull_request", quickAction);
+            if (quickAction) {
+              runWorkspaceQuickAction(runtime, createdRef.id, "pull_request", quickAction, undefined, undefined, quickActionLeaf());
+            }
           }
           if (responseIsStale() || !data?.id) return;
           if (inlineWorkspace) {

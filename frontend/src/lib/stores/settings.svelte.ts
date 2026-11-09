@@ -36,6 +36,7 @@ export function createSettingsStore() {
   let workspaceSettings = $state.raw<Settings["workspaces"]>({
     auto_assign_on_create: false,
     default_sidebar_view: "diff",
+    detail_session_placement: "bottom",
     default_execution_target: "",
     show_agent_status_in_lists: false,
   });
@@ -135,6 +136,7 @@ export function createSettingsStore() {
     workspaceSettings = {
       auto_assign_on_create: value?.auto_assign_on_create ?? false,
       default_sidebar_view: value?.default_sidebar_view ?? "diff",
+      detail_session_placement: value?.detail_session_placement ?? "bottom",
       default_execution_target: value?.default_execution_target ?? "",
       show_agent_status_in_lists: value?.show_agent_status_in_lists ?? false,
     };

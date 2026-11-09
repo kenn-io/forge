@@ -52,7 +52,12 @@ const settingsPayload = makeStartupSnapshot({
   },
   launch_targets: [codexTarget],
   quick_actions: [{ label: "Rebase", agent: "codex", prompt: "rebase this pull request onto main" }],
-  workspaces: { auto_assign_on_create: false, default_sidebar_view: "item", show_agent_status_in_lists: true },
+  workspaces: {
+    auto_assign_on_create: false,
+    default_sidebar_view: "item",
+    detail_session_placement: "right",
+    show_agent_status_in_lists: true,
+  },
   roborev: { init_managed_clones: true },
   acp: { font_family: "MesloLGS NF", font_size: 18 },
 });

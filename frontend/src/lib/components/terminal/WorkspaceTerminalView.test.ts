@@ -10,6 +10,7 @@ import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
 import { createWorkspaceItemSearchStore } from "../../stores/workspace-item-search.svelte.js";
 import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
+import type { TabbedPanelNode } from "../shared/tabbed-panel-layout.js";
 import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
 import {
   getPaneLayoutStore,
@@ -72,6 +73,7 @@ const mocks = vi.hoisted(() => ({
   diffStore: null as unknown as ReturnType<typeof createDiffStore>,
   workspaceItemSearch: null as unknown as ReturnType<typeof createWorkspaceItemSearchStore>,
   workspaceSidebarPreference: "diff" as "diff" | "item",
+  detailSessionPlacement: "bottom" as "bottom" | "right" | "left" | "top" | "tab",
 }));
 
 let sockets: MockWebSocket[] = [];
@@ -202,6 +204,7 @@ vi.mock("../../context.js", async (importOriginal) => {
         getWorkspaceSettings: () => ({
           auto_assign_on_create: false,
           default_sidebar_view: mocks.workspaceSidebarPreference,
+          detail_session_placement: mocks.detailSessionPlacement,
         }),
       },
       diff: mocks.diffStore,
@@ -653,6 +656,15 @@ function promoteSession(surface: "prs" | "issues" | "activity", sessionKey: stri
   return paneKey;
 }
 
+function splitHoldingLeaf(
+  node: TabbedPanelNode | null,
+  leafID: string,
+): Extract<TabbedPanelNode, { type: "split" }> | null {
+  if (node === null || node.type === "leaf") return null;
+  if (node.first.id === leafID || node.second.id === leafID) return node;
+  return splitHoldingLeaf(node.first, leafID) ?? splitHoldingLeaf(node.second, leafID);
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((r) => {
@@ -759,6 +771,7 @@ describe("WorkspaceTerminalView", () => {
     mocks.diffStore = createDiffStore({ runtime: mocks.runtime });
     mocks.workspaceItemSearch = createWorkspaceItemSearchStore(mocks.runtime);
     mocks.workspaceSidebarPreference = "diff";
+    mocks.detailSessionPlacement = "bottom";
     mocks.getWorkspaceRuntime.mockReset();
     mocks.workspaceRuntimeParams.mockReset();
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
@@ -4839,6 +4852,84 @@ describe("WorkspaceTerminalView", () => {
     metadata.resolve(Response.json(workspaceResponse));
 
     await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "codex", expect.anything()));
+  });
+
+  it.each([
+    ["right", "horizontal", "after"],
+    ["left", "horizontal", "before"],
+    ["top", "vertical", "before"],
+  ] as const)(
+    "opens a session launched from the detail header %s of the detail when placement asks for it",
+    async (placement, direction, side) => {
+      mocks.detailSessionPlacement = placement;
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+      mocks.launchWorkspaceSession.mockResolvedValue({
+        ...runningSession,
+        key: "ws-1:codex",
+        target_key: "codex",
+        label: "Codex",
+      });
+      claimForPrs();
+      noteWorkspacePaneRendered("prs");
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+      await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+
+      getInlineWorkspaceController("prs").launchSession("codex");
+
+      const layout = getPaneLayoutStore("prs");
+      const newPane = sessionPaneKey("ws-1", undefined, "ws-1:codex");
+      await waitFor(() => expect(layout.hasTab(newPane)).toBe(true));
+      const tree = layout.renderTree(["conversation", "files", "kata", "workspace", newPane]);
+      const parent = splitHoldingLeaf(tree, layout.leafIDForTab(newPane)!);
+      expect(parent?.direction).toBe(direction);
+      const [newSide, detailSide] =
+        side === "after" ? [parent?.second, parent?.first] : [parent?.first, parent?.second];
+      expect(newSide).toMatchObject({ type: "leaf", tabs: [newPane] });
+      expect(detailSide).toMatchObject({ type: "leaf", tabs: expect.arrayContaining(["conversation"]) });
+    },
+  );
+
+  it("opens a session launched from the detail header as a tab beside the detail when placement asks for the same pane", async () => {
+    mocks.detailSessionPlacement = "tab";
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    mocks.launchWorkspaceSession.mockResolvedValue({
+      ...runningSession,
+      key: "ws-1:codex",
+      target_key: "codex",
+      label: "Codex",
+    });
+    claimForPrs();
+    noteWorkspacePaneRendered("prs");
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+
+    getInlineWorkspaceController("prs").launchSession("codex");
+
+    const layout = getPaneLayoutStore("prs");
+    const newPane = sessionPaneKey("ws-1", undefined, "ws-1:codex");
+    await waitFor(() => expect(layout.leafIDForTab(newPane)).toBe(layout.leafIDForTab("conversation")));
+    expect(layout.isTabActive(newPane)).toBe(true);
+  });
+
+  it("keeps a session launched from the detail header in the workspace pane when placement is bottom", async () => {
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    mocks.launchWorkspaceSession.mockResolvedValue({
+      ...runningSession,
+      key: "ws-1:codex",
+      target_key: "codex",
+      label: "Codex",
+    });
+    claimForPrs();
+    noteWorkspacePaneRendered("prs");
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    const controller = getInlineWorkspaceController("prs");
+
+    controller.launchSession("codex");
+
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(controller.sessionLaunching()).toBe(false));
+    expect(getPaneLayoutStore("prs").hasTab(sessionPaneKey("ws-1", undefined, "ws-1:codex"))).toBe(false);
   });
 
   it("keeps a queued launch waiting while another launch starts during its admission read", async () => {

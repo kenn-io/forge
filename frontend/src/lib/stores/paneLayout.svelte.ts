@@ -13,12 +13,15 @@ import {
   pruneTabbedPanelTreeToAvailable,
   serializeTabbedPanelLayout,
   splitTabbedPanelTabIntoLeaf,
+  tabbedPanelSplitPlacementForEdge,
   updateTabbedPanelSplitRatio,
   type TabbedPanelDirection,
   type TabbedPanelInsertTarget,
   type TabbedPanelLayoutState,
   type TabbedPanelNode,
 } from "../components/shared/tabbed-panel-layout.js";
+import type { Settings } from "../api/types.js";
+import type { WorkspaceRuntimeLaunchLeaf } from "../components/terminal/workspace-runtime-workflow.js";
 import { getStackDepth } from "./keyboard/modal-stack.svelte.js";
 import { PANE_SURFACES } from "./pane-surfaces.js";
 import { parseSessionPaneKey, sessionPaneKeyMatchesWorkspace } from "./session-pane-key.js";
@@ -418,22 +421,51 @@ export function promoteSessionBesideWorkspace(layout: PaneLayoutStore, tabKey: s
       : render.onScreenTabs.find((candidate) =>
           sessionPaneKeyMatchesWorkspace(candidate, target.workspaceId, target.hostKey),
         );
-  const focused = layout.lastFocusedTabKey();
-  const focusedDetail =
-    focused !== null && render.onScreenTabs.includes(focused) && parseSessionPaneKey(focused) === null
-      ? focused
-      : undefined;
-  const firstDetail = render.onScreenTabs.find(
-    (candidate) => candidate !== "workspace" && parseSessionPaneKey(candidate) === null,
-  );
   const anchorTab = render.onScreenTabs.includes("workspace")
     ? "workspace"
-    : (sameWorkspaceSession ?? focusedDetail ?? firstDetail);
+    : (sameWorkspaceSession ?? onScreenDetailTab(layout, render));
   if (anchorTab === undefined) return false;
 
   const leafID = layout.leafIDForTab(anchorTab);
   if (leafID === null) return false;
   return layout.promoteTab(tabKey, { kind: "split", leafID, direction: "horizontal", placement: "after" });
+}
+
+/** The detail pane the user last focused if it is on screen, else the first one on screen. */
+function onScreenDetailTab(layout: PaneLayoutStore, render: PaneRenderReport): string | undefined {
+  const isDetail = (candidate: string) => candidate !== "workspace" && parseSessionPaneKey(candidate) === null;
+  const focused = layout.lastFocusedTabKey();
+  if (focused !== null && render.onScreenTabs.includes(focused) && isDetail(focused)) return focused;
+  return render.onScreenTabs.find(isDetail);
+}
+
+/**
+ * Where a session started from a pull request or issue header opens, per the
+ * user's `detail_session_placement` setting.
+ *
+ * Undefined means the workspace pane, which is what "bottom" asks for and the
+ * fallback for every other choice when no detail pane is on screen or the
+ * narrow-width strip has structural edits off: a split must not land beside a
+ * pane the user cannot see.
+ */
+export function detailSessionLaunchLeaf(
+  surface: PaneSurfaceKey,
+  placement: Settings["workspaces"]["detail_session_placement"],
+): WorkspaceRuntimeLaunchLeaf | undefined {
+  if (placement === "bottom") return undefined;
+  const layout = getPaneLayoutStore(surface);
+  const render = layout.paneRender();
+  if (render === null || render.flattened) return undefined;
+  const anchor = onScreenDetailTab(layout, render);
+  const id = anchor === undefined ? null : layout.leafIDForTab(anchor);
+  if (id === null) return undefined;
+  return placement === "tab" ? { surface: "detail", id } : { surface: "detail", id, edge: placement };
+}
+
+/** Where a session launched into a detail leaf goes in that surface's tree. */
+export function detailLaunchInsertTarget(leaf: WorkspaceRuntimeLaunchLeaf): TabbedPanelInsertTarget {
+  if (leaf.edge === undefined) return { kind: "tab", leafID: leaf.id };
+  return { kind: "split", leafID: leaf.id, ...tabbedPanelSplitPlacementForEdge(leaf.edge) };
 }
 
 const stores = new Map<PaneSurfaceKey, PaneLayoutStore>();

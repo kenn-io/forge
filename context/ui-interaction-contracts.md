@@ -553,6 +553,11 @@ Who owns what, under `frontend/src/lib/` (no single file shows the split):
   never prune their own trees, so demotion restores the user's arrangement.
 - Promoting a session requires the workspace pane to be on screen, enforced in one place
   (`frontend/src/lib/stores/paneLayout.svelte.ts::promoteSessionBesideWorkspace`).
+- Agents, chats, and quick actions started from a PR or issue header, including launches queued behind
+  Create Workspace, open per `workspaces.detail_session_placement`: `bottom` keeps them in the workspace
+  pane; `right`/`left`/`top` split, and `tab` joins, the on-screen detail leaf. With no on-screen detail
+  leaf or a flattened surface they fall back to the workspace pane; launches from inside a workspace
+  pane ignore the setting (`frontend/src/lib/stores/paneLayout.svelte.ts::detailSessionLaunchLeaf`).
 - A promoted pane is dropped only on authoritative workspace deletion; stopped or reconnecting sessions
   keep their placement, and the API has no session-deletion signal.
 - The workspace container's tab disappears once every session is promoted; the workspace stays claimed.

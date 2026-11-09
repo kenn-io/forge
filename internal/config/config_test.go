@@ -63,6 +63,26 @@ func TestWorkspaceDefaultSidebarView(t *testing.T) {
 	})
 }
 
+func TestWorkspaceDetailSessionPlacement(t *testing.T) {
+	t.Run("defaults to bottom", func(t *testing.T) {
+		cfg, err := Load(writeConfig(t, ""))
+		require.NoError(t, err)
+		assert.Equal(t, "bottom", cfg.Workspaces.DetailSessionPlacement)
+	})
+
+	t.Run("round trips right", func(t *testing.T) {
+		cfg, saved := roundTripConfigString(t, "[workspaces]\ndetail_session_placement = \"right\"\n")
+		assert.Equal(t, "right", cfg.Workspaces.DetailSessionPlacement)
+		assert.Equal(t, "right", saved.Workspaces.DetailSessionPlacement)
+	})
+
+	t.Run("rejects invalid value", func(t *testing.T) {
+		_, err := Load(writeConfig(t, "[workspaces]\ndetail_session_placement = \"center\"\n"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "workspaces.detail_session_placement")
+	})
+}
+
 func TestWorkspaceIdleRuntimeStopHours(t *testing.T) {
 	cfg, saved := roundTripConfigString(t, "[workspaces]\nidle_runtime_stop_hours = 12\n")
 	assert.Equal(t, 12, cfg.Workspaces.IdleRuntimeStopHours)

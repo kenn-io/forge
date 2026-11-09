@@ -57740,6 +57740,16 @@ const (
 	WorkspaceSettingsUpdateDefaultSidebarViewItem WorkspaceSettingsUpdateDefaultSidebarView = "item"
 )
 
+type WorkspaceSettingsUpdateDetailSessionPlacement string
+
+const (
+	WorkspaceSettingsUpdateDetailSessionPlacementBottom WorkspaceSettingsUpdateDetailSessionPlacement = "bottom"
+	WorkspaceSettingsUpdateDetailSessionPlacementLeft   WorkspaceSettingsUpdateDetailSessionPlacement = "left"
+	WorkspaceSettingsUpdateDetailSessionPlacementRight  WorkspaceSettingsUpdateDetailSessionPlacement = "right"
+	WorkspaceSettingsUpdateDetailSessionPlacementTab    WorkspaceSettingsUpdateDetailSessionPlacement = "tab"
+	WorkspaceSettingsUpdateDetailSessionPlacementTop    WorkspaceSettingsUpdateDetailSessionPlacement = "top"
+)
+
 type WorkspaceTargetSource string
 
 const (
@@ -57769,6 +57779,16 @@ type WorkspacesDefaultSidebarView string
 const (
 	WorkspacesDefaultSidebarViewDiff WorkspacesDefaultSidebarView = "diff"
 	WorkspacesDefaultSidebarViewItem WorkspacesDefaultSidebarView = "item"
+)
+
+type WorkspacesDetailSessionPlacement string
+
+const (
+	WorkspacesDetailSessionPlacementBottom WorkspacesDetailSessionPlacement = "bottom"
+	WorkspacesDetailSessionPlacementLeft   WorkspacesDetailSessionPlacement = "left"
+	WorkspacesDetailSessionPlacementRight  WorkspacesDetailSessionPlacement = "right"
+	WorkspacesDetailSessionPlacementTab    WorkspacesDetailSessionPlacement = "tab"
+	WorkspacesDetailSessionPlacementTop    WorkspacesDetailSessionPlacement = "top"
 )
 
 type ListActivityQueryProjection string
@@ -71581,10 +71601,11 @@ type WorkspaceRuntimeResponse struct {
 }
 
 type WorkspaceSettingsUpdate struct {
-	AutoAssignOnCreate     *bool                                      `json:"auto_assign_on_create,omitempty"`
-	DefaultExecutionTarget *string                                    `json:"default_execution_target,omitempty"`
-	DefaultSidebarView     *WorkspaceSettingsUpdateDefaultSidebarView `json:"default_sidebar_view,omitempty"`
-	ShowAgentStatusInLists *bool                                      `json:"show_agent_status_in_lists,omitempty"`
+	AutoAssignOnCreate     *bool                                          `json:"auto_assign_on_create,omitempty"`
+	DefaultExecutionTarget *string                                        `json:"default_execution_target,omitempty"`
+	DefaultSidebarView     *WorkspaceSettingsUpdateDefaultSidebarView     `json:"default_sidebar_view,omitempty"`
+	DetailSessionPlacement *WorkspaceSettingsUpdateDetailSessionPlacement `json:"detail_session_placement,omitempty"`
+	ShowAgentStatusInLists *bool                                          `json:"show_agent_status_in_lists,omitempty"`
 }
 
 type WorkspaceSummary struct {
@@ -71674,10 +71695,11 @@ type WorkspaceViewState struct {
 }
 
 type Workspaces struct {
-	AutoAssignOnCreate     bool                         `json:"auto_assign_on_create"`
-	DefaultExecutionTarget *string                      `json:"default_execution_target,omitempty"`
-	DefaultSidebarView     WorkspacesDefaultSidebarView `json:"default_sidebar_view"`
-	ShowAgentStatusInLists bool                         `json:"show_agent_status_in_lists"`
+	AutoAssignOnCreate     bool                             `json:"auto_assign_on_create"`
+	DefaultExecutionTarget *string                          `json:"default_execution_target,omitempty"`
+	DefaultSidebarView     WorkspacesDefaultSidebarView     `json:"default_sidebar_view"`
+	DetailSessionPlacement WorkspacesDetailSessionPlacement `json:"detail_session_placement"`
+	ShowAgentStatusInLists bool                             `json:"show_agent_status_in_lists"`
 }
 
 type WorktreeFromMergeRequestResponse struct {

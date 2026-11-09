@@ -129,7 +129,13 @@
   import { reconnectSchedule } from "../../api/retry-policy.js";
   import { Button, CollapsibleSidebar, SplitResizeHandle, type SplitResizeEvent } from "@kenn-io/kit-ui";
   import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
-  import { getPaneLayoutStore, promoteSessionBesideWorkspace, type PaneSurfaceKey } from "../../stores/paneLayout.svelte.js";
+  import {
+    detailLaunchInsertTarget,
+    detailSessionLaunchLeaf,
+    getPaneLayoutStore,
+    promoteSessionBesideWorkspace,
+    type PaneSurfaceKey,
+  } from "../../stores/paneLayout.svelte.js";
   import { getStores } from "../../context.js";
   import { parseSessionPaneKey, sessionPaneKey, sessionPaneKeyMatchesWorkspace } from "../../stores/session-pane-key.js";
   import WorkspaceRightSidebar from "../workspace/WorkspaceRightSidebar.svelte";
@@ -2857,7 +2863,7 @@
             if (leaf?.surface === "workflow") {
               appendWorkflowTabToGroup(workflowTabKeyForSession(session.key), leaf.id, sessions);
             } else if (leaf?.surface === "detail") {
-              surfaceLayout?.promoteTab(sessionPaneKeyFor(session), { kind: "tab", leafID: leaf.id });
+              surfaceLayout?.promoteTab(sessionPaneKeyFor(session), detailLaunchInsertTarget(leaf));
             }
             closeLauncher();
             requestSessionFocus(sessionHostKeyFor(session));
@@ -3097,8 +3103,15 @@
   // A launch picked in the detail header. A workspace still being set up takes it
   // the way a create does: queued, and launched once the workspace is ready.
   function launchFromDetail(targetKey: string): void {
-    if (workspaceLive && workspace?.status === "ready") handleLaunch(targetKey);
+    if (workspaceLive && workspace?.status === "ready") handleLaunch(targetKey, undefined, detailLaunchLeaf());
     else queueWorkspaceLaunch(workspaceId, targetKey, workspaceHostKey, "existing");
+  }
+
+  // Header launches, including ones queued behind a create, open where the user's
+  // placement setting says. Launches from inside the workspace pane do not ask.
+  function detailLaunchLeaf(): WorkspaceRuntimeLaunchLeaf | undefined {
+    if (paneSurface === undefined) return undefined;
+    return detailSessionLaunchLeaf(paneSurface, settingsStore.getWorkspaceSettings().detail_session_placement);
   }
 
   function handleQuickAction(action: QuickAction, leaf?: WorkspaceRuntimeLaunchLeaf): void {
@@ -4565,7 +4578,7 @@
           workflowTree: tree,
         };
         if (launch.leaf?.surface === "detail") {
-          surfaceLayout?.promoteTab(sessionPaneKeyFor(session), { kind: "tab", leafID: launch.leaf.id });
+          surfaceLayout?.promoteTab(sessionPaneKeyFor(session), detailLaunchInsertTarget(launch.leaf));
         }
       }
       mountSessionTerminal(session.key);
@@ -4616,7 +4629,7 @@
       return;
     }
     const claim = claimWorkspaceLaunch(workspaceId, workspaceHostKey);
-    if (claim !== null) handleLaunch(claim.targetKey, claim, undefined, admissionRuntime);
+    if (claim !== null) handleLaunch(claim.targetKey, claim, detailLaunchLeaf(), admissionRuntime);
   }
 
   $effect(() => {

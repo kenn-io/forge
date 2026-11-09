@@ -479,8 +479,12 @@ func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {
 	require.NoError(srv.cfg.Save(cfgPath))
 
 	defaultSidebarView := "item"
+	detailSessionPlacement := "right"
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
-		Workspaces: &spokeapi.WorkspaceSettingsUpdate{DefaultSidebarView: &defaultSidebarView},
+		Workspaces: &spokeapi.WorkspaceSettingsUpdate{
+			DefaultSidebarView:     &defaultSidebarView,
+			DetailSessionPlacement: &detailSessionPlacement,
+		},
 	})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
@@ -490,6 +494,7 @@ func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {
 	assert.True(cfg2.Workspaces.AutoAssignOnCreate)
 	assert.True(cfg2.Workspaces.ShowAgentStatusInLists)
 	assert.Equal("item", cfg2.Workspaces.DefaultSidebarView)
+	assert.Equal("right", cfg2.Workspaces.DetailSessionPlacement)
 	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		Workspaces: &spokeapi.WorkspaceSettingsUpdate{ShowAgentStatusInLists: new(false)},
 	})
@@ -499,6 +504,7 @@ func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {
 	assert.False(cfg2.Workspaces.ShowAgentStatusInLists)
 	assert.True(cfg2.Workspaces.AutoAssignOnCreate)
 	assert.Equal("item", cfg2.Workspaces.DefaultSidebarView)
+	assert.Equal("right", cfg2.Workspaces.DetailSessionPlacement)
 }
 
 func TestHandleUpdateTerminalSettingsAppliesMouseToDedicatedTmuxServer(t *testing.T) { //nolint:paralleltest // t.Setenv writes PATH through installSettingsTmuxRecorder

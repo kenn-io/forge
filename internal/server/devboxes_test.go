@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -28,6 +29,7 @@ import (
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/fleetapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/server/workspaceapi"
@@ -266,10 +268,19 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	workerAPI := workspaceapi.New(workspaceapi.Deps{DB: database, Workspaces: workspacetest.NewManager(t, database, filepath.Join(root, "worktrees")), Runtime: manager})
 	t.Cleanup(func() { require.NoError(t, workerAPI.Shutdown(context.WithoutCancel(t.Context()))) })
 	workerMux := http.NewServeMux()
-	workerAPI.RegisterExecution(humago.NewWithPrefix(workerMux, "/api/v1", huma.DefaultConfig("worker", "1")))
+	workerHTTP := humago.NewWithPrefix(workerMux, "/api/v1", huma.DefaultConfig("worker", "1"))
+	workerAPI.RegisterExecution(workerHTTP)
 	workerAPI.RegisterTerminal(humago.NewWithPrefix(workerMux, "/ws/v1", huma.DefaultConfig("worker terminal", "1")))
+	const workerNode = "0123456789abcdef0123456789abcdef"
+	workerFleet := fleetapi.New(fleetapi.Deps{DB: database, NodeID: workerNode, WorkspaceSnapshot: workerAPI.FleetSnapshot, Config: fleetapi.ConfigSnapshot{TmuxCommand: []string{filepath.Join(root, "missing-tmux")}}})
+	t.Cleanup(func() { require.NoError(t, workerFleet.Shutdown(context.WithoutCancel(t.Context()))) })
+	workerControl := &Server{cfg: &config.Config{ExecutionWorker: config.ExecutionWorker{UID: 1001, GitHubUserID: 777}}, options: ServerOptions{FederationSpokeID: workerNode}, fleetAPI: workerFleet, workspaceAPI: workerAPI}
+	workerControlConfig := huma.DefaultConfig("worker control", "1")
+	workerControlConfig.OpenAPIPath, workerControlConfig.DocsPath, workerControlConfig.SchemasPath = "", "", ""
+	workerControl.registerWorkerAPI(humago.NewWithPrefix(workerMux, "/api/v1", workerControlConfig))
+	token := strings.Repeat("a", 64)
 	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !authapi.HasValidBearer(r, "worker-test-token") {
+		if !authapi.HasValidBearer(r, token) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -285,22 +296,83 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
 	require.NoError(t, database.UpsertWorkspaceRuntimeSession(t.Context(), &db.WorkspaceRuntimeSession{WorkspaceID: "work-a", SessionKey: session.Key, TargetKey: "chat", Kind: "acp", Scope: "session", DisplayRegion: "workflow", CreatedAt: session.CreatedAt}))
 	require.NoError(t, database.SetWorkspaceActiveTab(t.Context(), "work-a", "session:"+session.Key))
-	for index, prompt := range []string{"inspect the failure", "adjust again"} {
+	for index, prompt := range []string{"inspect the failure", "adjust again", ""} {
 		directory := t.TempDir()
-		raw, err := json.Marshal([]any{map[string]any{"id": "compute-a", "profile": devbox.Profile{Assignment: devbox.Assignment{URL: worker.URL}, Token: "worker-test-token"}}})
-		require.NoError(t, err)
-		require.NoError(t, os.WriteFile(filepath.Join(directory, "devbox-connections.json"), raw, 0o600))
-		connections, err := devbox.OpenConnections(directory)
+		userID := int64(42 + index)
+		assignment := devbox.Assignment{NodeID: workerNode, UID: 1001, GitHubUserID: userID, WorkerGitHubUserID: 777, Role: "execution", Protocol: 1, HostID: "compute-a", Name: "Compute A", URL: "http://compute-a.example.ts.net:9001", Account: "service"}
+		registry := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method + " " + r.URL.Path {
+			case "GET /api/v1/devboxes":
+				assigned := []devbox.Assignment{}
+				if index < 2 {
+					assigned = append(assigned, assignment)
+				}
+				assert.NoError(t, json.MarshalWrite(w, devbox.Discovery{RegistryID: "example", Revision: "1", Protocol: 1, GitHubUserID: userID, Devboxes: assigned}))
+			case "POST /api/v1/devboxes/compute-a/connect":
+				if index == 2 {
+					http.NotFound(w, r)
+					return
+				}
+				assert.NoError(t, json.MarshalWrite(w, devbox.Profile{Assignment: assignment, RegistryID: "example", Revision: "1", Token: token}))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		t.Cleanup(registry.Close)
+		transport := registry.Client().Transport.(*http.Transport).Clone()
+		transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			if address == "compute-a.example.ts.net:9001" {
+				address = worker.Listener.Addr().String()
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, address)
+		}
+		connections, err := devbox.OpenConnectionsWithTransport(directory, transport)
 		require.NoError(t, err)
 		t.Cleanup(connections.Close)
-		controller := wiredServer(&Server{options: ServerOptions{Devboxes: connections}})
+		controller := wiredServer(&Server{options: ServerOptions{Devboxes: connections}, hub: syncevents.NewEventHub()})
 		mux := http.NewServeMux()
 		api := humago.New(mux, huma.DefaultConfig("controller", "1"))
 		controller.registerDevboxAPI(api)
 		controller.registerDevboxTerminalAPI(humago.NewWithPrefix(mux, "/ws/v1", huma.DefaultConfig("terminal", "1")))
 		server := httptest.NewServer(mux)
 		t.Cleanup(server.Close)
-		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/devboxes/compute-a/workspaces/work-a/view-state", nil)
+		discoveryRequest, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/devboxes/discovery?registry="+url.QueryEscape(registry.URL), nil)
+		require.NoError(t, err)
+		discoveryResponse, err := server.Client().Do(discoveryRequest)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, discoveryResponse.StatusCode)
+		var discovery devbox.Discovery
+		require.NoError(t, json.UnmarshalRead(discoveryResponse.Body, &discovery))
+		require.NoError(t, discoveryResponse.Body.Close())
+		if index == 2 {
+			require.Empty(t, discovery.Devboxes)
+		} else {
+			require.Len(t, discovery.Devboxes, 1)
+		}
+		require.Equal(t, userID, discovery.GitHubUserID)
+		connectBody, err := json.Marshal(map[string]string{"registry": registry.URL, "host_id": "compute-a"})
+		require.NoError(t, err)
+		connectRequest, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/devboxes", strings.NewReader(string(connectBody)))
+		require.NoError(t, err)
+		connectRequest.Header.Set("Content-Type", "application/json")
+		connectResponse, err := server.Client().Do(connectRequest)
+		require.NoError(t, err)
+		if index == 2 {
+			require.Equal(t, http.StatusConflict, connectResponse.StatusCode)
+			require.NoError(t, connectResponse.Body.Close())
+			require.Empty(t, connections.List())
+			continue
+		}
+		require.Equal(t, http.StatusOK, connectResponse.StatusCode)
+		var connection devbox.Connection
+		require.NoError(t, json.UnmarshalRead(connectResponse.Body, &connection))
+		require.NoError(t, connectResponse.Body.Close())
+		require.Equal(t, int64(777), connection.WorkerGitHubUserID)
+		local := fleet.RawSnapshot{NodeID: "controller"}
+		aggregate := fleet.BuildNeutralAggregate(local, controller.devboxSnapshots(t.Context(), 5*time.Second))
+		require.Len(t, aggregate.Workspaces, 1)
+		require.Equal(t, "work-a", aggregate.Workspaces[0].ID)
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/devboxes/"+connection.ID+"/workspaces/work-a/view-state", nil)
 		require.NoError(t, err)
 		response, err := server.Client().Do(request)
 		require.NoError(t, err)
@@ -309,7 +381,7 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 		require.NoError(t, json.UnmarshalRead(response.Body, &workspace))
 		require.NoError(t, response.Body.Close())
 		require.Equal(t, "session:"+session.Key, workspace.ActiveTab)
-		conn, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/compute-a/workspaces/work-a/runtime/sessions/"+session.Key+"/terminal?protocol=acp", nil, nil)
+		conn, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/"+connection.ID+"/workspaces/work-a/runtime/sessions/"+session.Key+"/terminal?protocol=acp", nil, nil)
 		require.NoError(t, err)
 		chatCtx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 		_, snapshot, err := conn.Read(chatCtx)
@@ -358,7 +430,7 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 				var state localruntime.ACPState
 				return json.Unmarshal(data, &state) == nil && state.Busy && strings.Contains(string(data), "wait")
 			}, 10*time.Second, 20*time.Millisecond)
-			first, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/compute-a/workspaces/work-a/runtime/sessions/"+session.Key+"/terminal?protocol=acp", nil, nil)
+			first, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/"+connection.ID+"/workspaces/work-a/runtime/sessions/"+session.Key+"/terminal?protocol=acp", nil, nil)
 			require.NoError(t, err)
 			ctx, stop := context.WithTimeout(t.Context(), 10*time.Second)
 			_, active, err := first.Read(ctx)

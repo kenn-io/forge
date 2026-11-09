@@ -32,6 +32,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -370,7 +371,7 @@ func TestCommitMergeRequestParentSnapshotRollsBackParentWhenLabelsFail(t *testin
 
 func setupBareRemoteForSyncTest(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := gitfixture.ScratchDir(t)
 	remote := filepath.Join(dir, "remote.git")
 	cmd := gitsafe.Runner().Command(t.Context(), dir, "init", "--bare", "--initial-branch=main", remote)
 	out, err := cmd.CombinedOutput()
@@ -1131,21 +1132,22 @@ func (p syncTestProvider) Capabilities() platform.Capabilities {
 
 type syncTestReadProvider struct {
 	syncTestProvider
-	mergeRequests       []platform.MergeRequest
-	issues              []platform.Issue
-	getIssueErr         error
-	listIssueEventsErr  error
-	listMRCalls         atomic.Int32
-	listIssueCalls      atomic.Int32
-	getMRCalls          atomic.Int32
-	getIssueCalls       atomic.Int32
-	listReviewThreads   atomic.Int32
-	listMRMergeEvents   []platform.MergeRequestEvent
-	reviewThreads       []platform.MergeRequestReviewThread
-	listReviewThreadsFn func(context.Context, platform.RepoRef, int) ([]platform.MergeRequestReviewThread, error)
-	listIssueReadEvents []platform.IssueEvent
-	readReviewThreads   bool
-	requireRepoPath     string
+	mergeRequests        []platform.MergeRequest
+	issues               []platform.Issue
+	getIssueErr          error
+	listIssueEventsErr   error
+	listMRCalls          atomic.Int32
+	listIssueCalls       atomic.Int32
+	getMRCalls           atomic.Int32
+	getIssueCalls        atomic.Int32
+	listReviewThreads    atomic.Int32
+	listMRMergeEvents    []platform.MergeRequestEvent
+	listMRMergeEventsErr error
+	reviewThreads        []platform.MergeRequestReviewThread
+	listReviewThreadsFn  func(context.Context, platform.RepoRef, int) ([]platform.MergeRequestReviewThread, error)
+	listIssueReadEvents  []platform.IssueEvent
+	readReviewThreads    bool
+	requireRepoPath      string
 }
 
 func (p *syncTestReadProvider) GetRepository(
@@ -1336,7 +1338,7 @@ func (p *syncTestReadProvider) ListMergeRequestEvents(
 	platform.RepoRef,
 	int,
 ) ([]platform.MergeRequestEvent, error) {
-	return p.listMRMergeEvents, nil
+	return p.listMRMergeEvents, p.listMRMergeEventsErr
 }
 
 func (p *syncTestReadProvider) ListMergeRequestReviewThreads(
@@ -7858,6 +7860,13 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	d := openTestDB(t)
 	now := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
 	remote := setupBareRemoteForSyncTest(t)
+	work := filepath.Join(gitfixture.ScratchDir(t), "work")
+	syncActivityGitRun(t, "", "clone", remote, work)
+	syncActivityGitRun(t, work, "config", "user.email", "alice@example.com")
+	syncActivityGitRun(t, work, "config", "user.name", "Alice")
+	// The drain clones only for a commit it needs, here the MR head that
+	// commit liveness reads.
+	headSHA := syncActivityCommitAndPush(t, work, "feature.txt", "feature\n", "feature work", "feature")
 	clones := gitclone.New(t.TempDir(), nil)
 	repo := RepoRef{
 		Platform:     platform.KindGitLab,
@@ -7898,6 +7907,7 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 				State:          "open",
 				HeadBranch:     "feature",
 				BaseBranch:     "main",
+				HeadSHA:        headSHA,
 				CreatedAt:      now,
 				UpdatedAt:      now,
 				LastActivityAt: now,
@@ -7926,6 +7936,95 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	)
 	require.NoError(err)
 	require.FileExists(filepath.Join(clonePath, "HEAD"))
+}
+
+func TestDetailDrainFetchesCloneOnlyForMissingPRCommits(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	remote := setupBareRemoteForSyncTest(t)
+	work := filepath.Join(gitfixture.ScratchDir(t), "work")
+	syncActivityGitRun(t, "", "clone", remote, work)
+	syncActivityGitRun(t, work, "config", "user.email", "alice@example.com")
+	syncActivityGitRun(t, work, "config", "user.name", "Alice")
+	baseSHA := syncActivityCommitAndPush(t, work, "README.md", "base\n", "base", "main")
+	firstHead := syncActivityCommitAndPush(t, work, "feature.txt", "one\n", "feature one", "refs/pull/1/head")
+
+	repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com", CloneURL: remote}
+	identity := verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name)
+	repoID, err := reposeed.Seed(ctx, d, identity)
+	require.NoError(err)
+	clones := gitclone.New(t.TempDir(), nil)
+	t.Cleanup(clones.Wait)
+	clonePath, err := clones.ClonePathForContext(
+		gitclone.WithRepositoryIdentity(ctx, platform.RepositoryIdentity{Key: identity.Key}),
+		"github", "github.com", repo.Owner, repo.Name,
+	)
+	require.NoError(err)
+
+	head := firstHead
+	updatedAt := time.Now().UTC().Truncate(time.Second).Add(time.Hour)
+	pr := func() *gh.PullRequest {
+		p := buildOpenPRWithSHA(1, updatedAt, head)
+		p.Base.SHA = new(baseSHA)
+		p.MergeableState = new("clean")
+		return p
+	}
+	mock := &mockClient{
+		comments: []*gh.IssueComment{},
+		reviews:  []*gh.PullRequestReview{},
+		commits:  []*gh.RepositoryCommit{},
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			return pr(), nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mock}, d, clones,
+		[]RepoRef{repo}, time.Minute, nil, testBudget(500))
+	// drain stores the PR as list sync saw it, newer than its last detail
+	// read, then runs one detail drain pass.
+	drain := func() {
+		t.Helper()
+		stored, err := NormalizePR(repoID, pr())
+		require.NoError(err)
+		_, err = d.UpsertMergeRequest(ctx, stored)
+		require.NoError(err)
+		syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos())
+	}
+	requireDiff := func(wantHead string) {
+		t.Helper()
+		stored, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+		require.NoError(err)
+		require.NotNil(stored)
+		assert.Equal(wantHead, stored.DiffHeadSHA)
+		assert.Equal(baseSHA, stored.DiffBaseSHA)
+		assert.Equal(baseSHA, stored.MergeBaseSHA)
+	}
+	cloneMainTip := func() string {
+		return syncActivityGitRun(t, clonePath, "rev-parse", "refs/remotes/origin/main")
+	}
+
+	drain()
+	requireDiff(firstHead)
+	require.Equal(baseSHA, cloneMainTip())
+
+	// The PR changes without a new head while main moves on. Its commits
+	// are already in the clone, so the drain must not fetch.
+	mainTip := syncActivityCommitAndPush(t, work, "main.txt", "main\n", "main work", "main")
+	updatedAt = updatedAt.Add(time.Hour)
+	drain()
+	requireDiff(firstHead)
+	assert.Equal(baseSHA, cloneMainTip(), "drain fetched although the clone had the PR commits")
+
+	// A force push moves the head to a commit the clone lacks, so the drain
+	// must fetch it to compute the new diff.
+	syncActivityGitRun(t, work, "reset", "--hard", baseSHA)
+	head = syncActivityCommit(t, work, "feature.txt", "two\n", "feature two")
+	syncActivityGitRun(t, work, "push", "--force", "origin", "HEAD:refs/pull/1/head")
+	updatedAt = updatedAt.Add(time.Hour)
+	drain()
+	requireDiff(head)
+	assert.Equal(mainTip, cloneMainTip())
 }
 
 func TestDetailDrainCompletesWhenProviderExceedsAdmittedCost(t *testing.T) {
@@ -8387,7 +8486,7 @@ func TestFetchMRDetailUsesRepoIDForPendingAndCallback(t *testing.T) {
 		callbackMR = mr
 	}
 
-	_, err = syncer.fetchMRDetail(ctx, githubRepo, githubRepoID, 7, true)
+	_, err = syncer.fetchMRDetail(ctx, githubRepo, githubRepoID, 7)
 	require.NoError(err)
 
 	githubMR, err := d.GetMergeRequestByRepoIDAndNumber(ctx, githubRepoID, 7)
@@ -8451,7 +8550,7 @@ func TestFetchMRDetailPersistsWorkflowApproval(t *testing.T) {
 		nil,
 	)
 
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 7, true)
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 7)
 	require.NoError(err)
 
 	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
@@ -8504,7 +8603,7 @@ func TestFetchMRDetailPersistsMergedActorEventFromPullRequest(t *testing.T) {
 		nil,
 	)
 
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 7, true)
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 7)
 	require.NoError(err)
 
 	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
@@ -8567,7 +8666,7 @@ func TestFetchProviderMRDetailPersistsMergedActorEventFromMergeRequest(t *testin
 		registry, d, nil, []RepoRef{repo}, time.Minute, nil, nil,
 	)
 
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 7, true)
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 7)
 	require.NoError(err)
 
 	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
@@ -8631,7 +8730,7 @@ func TestFetchMRDetailDoesNotDuplicateMergedTimelineEvent(t *testing.T) {
 		nil,
 	)
 
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 7, true)
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 7)
 	require.NoError(err)
 
 	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
@@ -9244,7 +9343,7 @@ func TestFetchGitHubMRDetailSyncsReviewThreads(t *testing.T) {
 		nil,
 	)
 
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, number, true)
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, number)
 	require.NoError(err)
 
 	mr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
@@ -12765,7 +12864,7 @@ func TestFetchMRDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 		),
 	})
 
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1)
 	require.NoError(err)
 	events, err := d.ListMREvents(ctx, mrID)
 	require.NoError(err)
@@ -12783,7 +12882,7 @@ func TestFetchMRDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 
 	mc.reviewThreads[0].Comments[0].IsMinimized = false
 	mc.reviewThreads[0].Comments[0].MinimizedReason = ""
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1)
 	require.NoError(err)
 	events, err = d.ListMREvents(ctx, mrID)
 	require.NoError(err)
@@ -12855,7 +12954,7 @@ func TestFetchMRDetailDoesNotBackfillMergedActorOn304(t *testing.T) {
 		time.Minute, nil, testBudget(1000),
 	)
 
-	calls, err := syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
+	calls, err := syncer.fetchMRDetail(ctx, repo, repoID, 1)
 	require.NoError(err)
 
 	assert.Equal(1, calls)
@@ -13085,7 +13184,7 @@ func TestFetchMRDetailPersistsPullRequestETag(t *testing.T) {
 		time.Minute, nil, testBudget(1000),
 	)
 
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1)
 	require.NoError(err)
 
 	etag, err := d.GetHTTPEtag(
@@ -13120,7 +13219,7 @@ func TestFetchMRDetailDoesNotPersistPullRequestETagWhenDetailRefreshFails(t *tes
 		time.Minute, nil, testBudget(1000),
 	)
 
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1)
 	require.Error(err)
 
 	etag, err := d.GetHTTPEtag(
@@ -17867,7 +17966,7 @@ func TestFetchMRDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 
 	_, err = syncer.fetchMRDetail(
 		ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
-		repoID, 1, false,
+		repoID, 1,
 	)
 	require.NoError(err)
 
@@ -17885,7 +17984,7 @@ func TestFetchMRDetailRemovesDeletedCommentDuringFullRefresh(t *testing.T) {
 
 	_, err = syncer.fetchMRDetail(
 		ctx, RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
-		repoID, 1, false,
+		repoID, 1,
 	)
 	require.NoError(err)
 
@@ -18145,7 +18244,7 @@ func TestFetchMRDetailUsesCurrentCommentVisibility(t *testing.T) {
 		),
 	})
 
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1)
 	require.NoError(err)
 
 	mr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)

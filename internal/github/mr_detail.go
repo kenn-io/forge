@@ -24,7 +24,6 @@ func (s *Syncer) fetchMRDetail(
 	repo RepoRef,
 	repoID int64,
 	number int,
-	cloneFetchOK bool,
 ) (int, error) {
 	removed, err := s.removedUpstreamForLiveSync(
 		ctx, repoID, db.ArchiveItemTypeMergeRequest, number,
@@ -36,7 +35,7 @@ func (s *Syncer) fetchMRDetail(
 		return 0, nil
 	}
 	calls, err := s.fetchMRDetailWithRouteFence(
-		ctx, repo, repoID, number, cloneFetchOK,
+		ctx, repo, repoID, number,
 	)
 	if errors.Is(err, db.ErrRepositoryIdentityChanged) {
 		return calls, nil
@@ -51,7 +50,6 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 	repo RepoRef,
 	repoID int64,
 	number int,
-	cloneFetchOK bool,
 ) (int, error) {
 	ctx = withCloneRepositoryIdentity(ctx, repo)
 	calls := 0
@@ -129,6 +127,23 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 		calls++ // GetUser
 	}
 
+	// The diff below and commit liveness read the head and base from the
+	// clone. Liveness runs first in the parent snapshot when it closes the MR.
+	headSHA := normalized.PlatformHeadSHA
+	baseSHA := normalized.PlatformBaseSHA
+	cloneReady := false
+	if s.clones != nil {
+		if cloneErr := s.ensureCloneHasCommits(ctx, repo, headSHA, baseSHA); cloneErr != nil {
+			if !isReportedGitAccessFailure(cloneErr) {
+				slog.Warn("detail drain: bare clone failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"err", cloneErr,
+				)
+			}
+		} else {
+			cloneReady = true
+		}
+	}
 	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(
 		ctx, repo, normalized,
 	)
@@ -146,32 +161,28 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 	if cloneRepoHost == "" {
 		cloneRepoHost = "github.com"
 	}
-	if s.clones != nil && cloneFetchOK {
-		headSHA := normalized.PlatformHeadSHA
-		baseSHA := normalized.PlatformBaseSHA
-		if headSHA != "" && baseSHA != "" {
-			mb, mbErr := s.clones.MergeBase(
-				ctx, string(repoPlatform(repo)), cloneRepoHost, repo.Owner,
-				repo.Name, baseSHA, headSHA,
+	if cloneReady && headSHA != "" && baseSHA != "" {
+		mb, mbErr := s.clones.MergeBase(
+			ctx, string(repoPlatform(repo)), cloneRepoHost, repo.Owner,
+			repo.Name, baseSHA, headSHA,
+		)
+		if mbErr != nil {
+			slog.Warn("merge-base computation failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number, "err", mbErr,
 			)
-			if mbErr != nil {
-				slog.Warn("merge-base computation failed",
+		} else {
+			diffApplied, dbErr := s.db.UpdateDiffSHAsSnapshot(
+				ctx, mrID, revision, headSHA, baseSHA,
+				headSHA, baseSHA, mb,
+			)
+			if dbErr != nil {
+				slog.Warn("update diff SHAs failed",
 					"repo", repo.Owner+"/"+repo.Name,
-					"number", number, "err", mbErr,
+					"number", number, "err", dbErr,
 				)
-			} else {
-				diffApplied, dbErr := s.db.UpdateDiffSHAsSnapshot(
-					ctx, mrID, revision, headSHA, baseSHA,
-					headSHA, baseSHA, mb,
-				)
-				if dbErr != nil {
-					slog.Warn("update diff SHAs failed",
-						"repo", repo.Owner+"/"+repo.Name,
-						"number", number, "err", dbErr,
-					)
-				} else if !diffApplied {
-					return calls, nil
-				}
+			} else if !diffApplied {
+				return calls, nil
 			}
 		}
 	}
@@ -433,6 +444,19 @@ func (s *Syncer) fetchProviderMRDetail(
 	// replaces it, so a failed or unsupported fetch does not overwrite it.
 	carryCIStateOnSameHead(normalized, existing)
 
+	// Commit liveness reads the head's ancestry from the clone, first in the
+	// parent snapshot when it closes the MR and then in the extras below.
+	livenessHead := livenessHeadForRound(normalized, existing)
+	if s.clones != nil && livenessHead != "" {
+		if cloneErr := s.ensureCloneHasCommits(
+			ctx, repo, livenessHead,
+		); cloneErr != nil && !isReportedGitAccessFailure(cloneErr) {
+			slog.Warn("detail drain: bare clone failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"err", cloneErr,
+			)
+		}
+	}
 	mrID, revision, accepted, err := s.CommitMergeRequestParentSnapshot(
 		ctx, repo, normalized,
 	)
@@ -447,7 +471,7 @@ func (s *Syncer) fetchProviderMRDetail(
 
 	detailCalls, pending, err := s.syncProviderMRDetailExtras(
 		ctx, reader, repo, mrID, number, revision, normalized.PlatformHeadSHA,
-		livenessHeadForRound(normalized, existing),
+		livenessHead,
 	)
 	calls += detailCalls
 	if err != nil {

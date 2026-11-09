@@ -313,6 +313,25 @@ func (s *Syncer) ensureClone(ctx context.Context, repo RepoRef) error {
 	return s.recordGitAccess(repo, err)
 }
 
+// ensureCloneHasCommits fetches the repository clone only when it lacks one
+// of shas, or one is blank. Per-item syncs mostly need commits the repo sync
+// already fetched; fetching for each of them runs `git fetch` under the
+// clone's worktree lock that workspace setup and deletion wait on. A
+// force-pushed head is new to the clone, so it still fetches.
+func (s *Syncer) ensureCloneHasCommits(ctx context.Context, repo RepoRef, shas ...string) error {
+	for _, sha := range shas {
+		if sha == "" {
+			return s.ensureClone(ctx, repo)
+		}
+		if _, err := s.clones.ResolveCommit(
+			ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, sha,
+		); err != nil {
+			return s.ensureClone(ctx, repo)
+		}
+	}
+	return nil
+}
+
 func (s *Syncer) optionalGitHubClientFor(repo RepoRef) (Client, bool) {
 	client, err := s.clientFor(repo)
 	if err != nil {

@@ -677,7 +677,7 @@ func TestDetailDrainCarriesThenReobservesGitHubReviewAndCI(t *testing.T) {
 				afterParent = readMergeStatus(t, d, repoID)
 			}
 
-			_, err := syncer.fetchMRDetail(t.Context(), observedGitHubRepo, repoID, 1, false)
+			_, err := syncer.fetchMRDetail(t.Context(), observedGitHubRepo, repoID, 1)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -753,7 +753,7 @@ func TestDetailDrainKeepsStoredGitLabCIUntilChecksLoad(t *testing.T) {
 				afterParent = readMergeStatus(t, d, repoID)
 			}
 
-			_, err := syncer.fetchMRDetail(t.Context(), observedGitLabRepo, repoID, 1, false)
+			_, err := syncer.fetchMRDetail(t.Context(), observedGitLabRepo, repoID, 1)
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
@@ -781,7 +781,7 @@ func TestUnchangedDetailKeepsReviewAndMergeableAndStampsPendingCI(t *testing.T) 
 		mr.CIHadPending = true
 	})
 
-	_, err := syncer.fetchMRDetail(t.Context(), observedGitHubRepo, repoID, 1, false)
+	_, err := syncer.fetchMRDetail(t.Context(), observedGitHubRepo, repoID, 1)
 	require.NoError(t, err)
 
 	// The 304 request is sent at 10:00 and the check runs at 10:01.
@@ -840,7 +840,7 @@ func TestUnchangedDetailStoresGitHubReviewDecision(t *testing.T) {
 				),
 			})
 
-			_, err := syncer.fetchMRDetail(t.Context(), observedGitHubRepo, repoID, 1, false)
+			_, err := syncer.fetchMRDetail(t.Context(), observedGitHubRepo, repoID, 1)
 			require.NoError(t, err)
 
 			got := readMergeStatus(t, d, repoID)

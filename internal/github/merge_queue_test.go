@@ -782,7 +782,7 @@ func TestScheduledDetailRefreshDiscoversEnqueueForgeDidNotSee(t *testing.T) {
 	syncer, database, repo, repoID := newMergeQueueTestSyncerWithClient(t, gql, client)
 
 	// The detail drain refreshes dormant pull requests through fetchMRDetail.
-	_, err := syncer.fetchMRDetail(WithSyncBudget(t.Context()), repo, repoID, 9, false)
+	_, err := syncer.fetchMRDetail(WithSyncBudget(t.Context()), repo, repoID, 9)
 	require.NoError(err)
 
 	state, err := database.GetMergeQueueState(t.Context(), repoID, 9)

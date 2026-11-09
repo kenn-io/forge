@@ -67,7 +67,6 @@ describe("app store composition", () => {
           ? releaseLocal.promise
           : Response.json({
               ...mockSettings,
-              agents: [{ ...agent, enabled: true }],
               launch_targets: [saved, ...mockLaunchTargets(true)],
             });
       }

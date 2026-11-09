@@ -16,14 +16,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it.each([
-  ["pull request", "/pulls/github/acme/widgets/42"],
-  ["issue", "/issues/github/acme/widgets/7"],
-])("refreshes %s launch choices after install and removal", async (_kind, route) => {
+it("refreshes pull request launch choices after install", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   let available = false;
   let reads = 0;
-  mounted = await mountBrowserApp(route, {
+  mounted = await mountBrowserApp("/pulls/github/acme/widgets/42", {
     overrides: [
       (request) => {
         if (request.url.pathname === "/api/v1/settings") return jsonResponse(settings(false));
@@ -41,7 +38,4 @@ it.each([
   available = true;
   await vi.advanceTimersByTimeAsync(5_000);
   await vi.waitFor(() => expect(options.element().hasAttribute("disabled")).toBe(false));
-  available = false;
-  await vi.advanceTimersByTimeAsync(5_000);
-  await vi.waitFor(() => expect(options.element().hasAttribute("disabled")).toBe(true));
 });

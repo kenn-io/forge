@@ -54,9 +54,14 @@ it("refreshes agent availability on a visibility return and skips hidden tabs", 
   await vi.waitFor(() => expect(reads).toBe(2));
   await vi.waitFor(() => expect(options.element().hasAttribute("disabled")).toBe(true));
 
-  vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  const commands = vi.spyOn(mounted.runtime, "runCommand");
   window.dispatchEvent(new Event("focus"));
   document.dispatchEvent(new Event("visibilitychange"));
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  await Promise.all(commands.mock.results.map((result) => result.value.exit));
   expect(reads).toBe(2);
+
+  visibility.mockReturnValue("visible");
+  document.dispatchEvent(new Event("visibilitychange"));
+  await vi.waitFor(() => expect(reads).toBe(3));
 });

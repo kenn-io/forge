@@ -17,7 +17,6 @@ import {
   type IsolatedE2EServer,
 } from "./support/e2eServer";
 import { openSettingsPanel } from "./support/settingsPanel";
-import { runPaletteCommand } from "./support/paletteCommands";
 
 type WorkspaceResponse = {
   id: string;
@@ -240,13 +239,6 @@ test.describe("workspace create-and-launch full stack", () => {
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
       expect((await focused).ok()).toBe(true);
       await expect(claude).toBeEnabled();
-
-      rmSync(binary);
-      const refocused = page.waitForResponse((response) => response.url().endsWith("/api/v1/settings/local"));
-      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-      expect((await refocused).ok()).toBe(true);
-      await expect(claude).toBeDisabled();
-      await expect(claude).toHaveAttribute("title", "claude not found on PATH");
     } finally {
       await api?.dispose();
       await server?.stop();

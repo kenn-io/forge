@@ -502,7 +502,6 @@ describe("App feature routes", () => {
     let hidden = true;
     vi.spyOn(performance, "now").mockImplementation(() => now);
     vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
-    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => (hidden ? "hidden" : "visible"));
     const posts: Array<{ url: string; body: unknown; keepalive: boolean }> = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
@@ -513,7 +512,10 @@ describe("App feature routes", () => {
     const runtime: OwnedAppRuntime = {
       ...testAppRuntime(() => {}),
       runCommand: <A, E>(program: unknown, options: { readonly operation: string }): AppExecution<A, E> => {
-        if (options.operation === "report app opens") appOpens = Effect.runFork(program as Effect.Effect<A, E>);
+        if (options.operation !== "report app opens") {
+          return { interrupt: () => {}, await: Effect.never, exit: new Promise(() => {}) };
+        }
+        appOpens = Effect.runFork(program as Effect.Effect<A, E>);
         return { interrupt: () => appOpens?.interruptUnsafe(), await: Effect.never, exit: new Promise(() => {}) };
       },
     };

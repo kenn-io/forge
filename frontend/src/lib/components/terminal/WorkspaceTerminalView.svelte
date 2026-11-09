@@ -4189,8 +4189,10 @@
 
   let previouslyFocusedEl: HTMLElement | null = null;
 
-  function portalToBody(node: HTMLElement): () => void {
-    document.body.appendChild(node);
+  // Into #app, which the parking node sits inside, so #app-scoped rules such as the
+  // 16px touch-field size still reach the dialogs. Component tests mount without #app.
+  function portalToAppRoot(node: HTMLElement): () => void {
+    (document.getElementById("app") ?? document.body).appendChild(node);
     return () => node.remove();
   }
 
@@ -5293,12 +5295,12 @@
   </CollapsibleSidebar>
 </div>
 
-<!-- Portalled to <body>. Once every session is promoted, the container pane retires
+<!-- Portalled to the end of #app. Once every session is promoted, the container pane retires
      and this view is parked inert in a display:none node, while the promoted panes
      still carry its controls. A dialog those controls open (the Delete confirmation
      among them) would render inside the parked view, where nobody can see or click
      it. -->
-<div {@attach portalToBody}>
+<div {@attach portalToAppRoot}>
   {#if attributionDialogOpen && workspace?.commit_attribution}
     {@const attribution = workspace.commit_attribution}
     <Modal

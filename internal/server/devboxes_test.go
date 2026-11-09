@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bufio"
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
 	"io"
@@ -21,9 +23,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/ptyowner"
+	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/server/workspaceapi"
@@ -31,6 +37,8 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
 )
 
@@ -233,6 +241,62 @@ func TestDevboxWorkspaceViewStatePersistsOnWorker(t *testing.T) {
 	assert.Equal(t, "session:agent-a", activeTab)
 }
 
+func TestSharedDevboxACPOwner(t *testing.T) { //nolint:paralleltest // runs as an ACP owner subprocess
+	if os.Getenv("FORGE_SHARED_CHAT_OWNER") != "1" {
+		return
+	}
+	if err := localruntime.RunACPOwner(t.Context(), os.Args[len(os.Args)-1]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Exit(0)
+}
+
+func TestSharedDevboxACPAgent(t *testing.T) { //nolint:paralleltest // runs as an ACP subprocess
+	if os.Getenv("FORGE_SHARED_CHAT_AGENT") != "1" {
+		return
+	}
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		var request struct {
+			ID     jsontext.Value `json:"id"`
+			Method string         `json:"method"`
+			Params struct {
+				SessionID string `json:"sessionId"`
+				Prompt    []struct {
+					Text string `json:"text"`
+				} `json:"prompt"`
+			} `json:"params"`
+		}
+		if json.Unmarshal(scanner.Bytes(), &request) != nil {
+			os.Exit(2)
+		}
+		switch request.Method {
+		case "initialize":
+			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{}}}`+"\n", request.ID)
+		case "session/new":
+			if err := os.WriteFile(os.Getenv("FORGE_SHARED_CHAT_LOG"), []byte("new\n"), 0o600); err != nil {
+				os.Exit(6)
+			}
+			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"shared-session"}}`+"\n", request.ID)
+		case "session/prompt":
+			if request.Params.SessionID != "shared-session" || len(request.Params.Prompt) != 1 {
+				os.Exit(3)
+			}
+			file, err := os.OpenFile(os.Getenv("FORGE_SHARED_CHAT_LOG"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+			if err != nil {
+				os.Exit(4)
+			}
+			_, err = fmt.Fprintln(file, request.Params.Prompt[0].Text)
+			if err != nil || file.Close() != nil {
+				os.Exit(5)
+			}
+			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", request.ID)
+		}
+	}
+	os.Exit(0)
+}
+
 func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	database := dbtest.Open(t)
@@ -240,31 +304,33 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 		ID: "work-a", Platform: "github", PlatformHost: "github.com", RepoOwner: "example", RepoName: "project",
 		ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 1, WorktreePath: t.TempDir(), Status: "ready",
 	}))
-	require.NoError(t, database.SetWorkspaceActiveTab(t.Context(), "work-a", "session:chat-a"))
+	root := t.TempDir()
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	logPath := filepath.Join(root, "prompts")
+	agent := config.Agent{Key: "chat", Protocol: "acp", DisableForgeTools: true, Command: []string{executable, "-test.run=^TestSharedDevboxACPAgent$"}, Env: map[string]string{"KENN_FORGE_SERVER_RUNTIME_HELPER": "1", "FORGE_SHARED_CHAT_AGENT": "1", "FORGE_SHARED_CHAT_LOG": logPath}}
+	targets := localruntime.ResolveLaunchTargets([]config.Agent{agent}, []string{filepath.Join(root, "missing-tmux")}, nil)
+	manager := localruntime.NewManager(localruntime.Options{ACPSessionsDir: filepath.Join(root, "acp"), ACPOwnerCommand: []string{"env", "KENN_FORGE_SERVER_RUNTIME_HELPER=1", "FORGE_SHARED_CHAT_OWNER=1", executable, "-test.run=^TestSharedDevboxACPOwner$", "--"}, Targets: targets, PtyOwnerRuntime: ptyownerruntime.New(&ptyowner.Client{Root: filepath.Join(root, "pty-owner"), InProcess: true}, nil)})
+	t.Cleanup(manager.Shutdown)
+	workerAPI := workspaceapi.New(workspaceapi.Deps{DB: database, Workspaces: workspacetest.NewManager(t, database, filepath.Join(root, "worktrees")), Runtime: manager})
+	t.Cleanup(func() { require.NoError(t, workerAPI.Shutdown(context.WithoutCancel(t.Context()))) })
 	workerMux := http.NewServeMux()
-	workspaceAPI := workspaceapi.New(workspaceapi.Deps{DB: database})
-	t.Cleanup(func() { require.NoError(t, workspaceAPI.Shutdown(context.WithoutCancel(t.Context()))) })
-	workspaceAPI.RegisterExecution(humago.NewWithPrefix(workerMux, "/api/v1", huma.DefaultConfig("worker", "1")))
-	commands := make(chan string, 2)
-	workerMux.HandleFunc("/ws/v1/workspaces/work-a/runtime/sessions/chat-a/terminal", func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "Bearer worker-test-token", r.Header.Get("Authorization"))
-		assert.Equal(t, "acp", r.URL.Query().Get("protocol"))
-		conn, err := terminalwebsocket.Accept(w, r)
-		if !assert.NoError(t, err) {
+	workerAPI.RegisterExecution(humago.NewWithPrefix(workerMux, "/api/v1", huma.DefaultConfig("worker", "1")))
+	workerAPI.RegisterTerminal(humago.NewWithPrefix(workerMux, "/ws/v1", huma.DefaultConfig("worker terminal", "1")))
+	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !authapi.HasValidBearer(r, "worker-test-token") {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		defer conn.CloseNow()
-		if !assert.NoError(t, conn.Write(r.Context(), websocket.MessageText, []byte(`{"messages":[{"role":"assistant","text":"Shared reply"}]}`))) {
-			return
-		}
-		_, data, err := conn.Read(r.Context())
-		if assert.NoError(t, err) {
-			commands <- string(data)
-			_, _, _ = conn.Read(r.Context())
-		}
-	})
-	worker := httptest.NewServer(workerMux)
+		workerMux.ServeHTTP(w, r)
+	}))
 	t.Cleanup(worker.Close)
+	ws, err := database.GetWorkspace(t.Context(), "work-a")
+	require.NoError(t, err)
+	session, err := manager.LaunchWithInitialMessage(t.Context(), "work-a", ws.WorktreePath, "chat", "", nil)
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertWorkspaceRuntimeSession(t.Context(), &db.WorkspaceRuntimeSession{WorkspaceID: "work-a", SessionKey: session.Key, TargetKey: "chat", Kind: "acp", Scope: "session", DisplayRegion: "workflow", CreatedAt: session.CreatedAt}))
+	require.NoError(t, database.SetWorkspaceActiveTab(t.Context(), "work-a", "session:"+session.Key))
 	for _, prompt := range []string{"inspect the failure", "try the fix"} {
 		directory := t.TempDir()
 		raw, err := json.Marshal([]any{map[string]any{"id": "compute-a", "profile": devbox.Profile{Assignment: devbox.Assignment{URL: worker.URL}, Token: "worker-test-token"}}})
@@ -288,22 +354,19 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 		var workspace workspaceapi.WorkspaceViewState
 		require.NoError(t, json.UnmarshalRead(response.Body, &workspace))
 		require.NoError(t, response.Body.Close())
-		require.Equal(t, "session:chat-a", workspace.ActiveTab)
-		conn, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/compute-a/workspaces/work-a/runtime/sessions/chat-a/terminal?protocol=acp", nil, nil)
+		require.Equal(t, "session:"+session.Key, workspace.ActiveTab)
+		conn, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/compute-a/workspaces/work-a/runtime/sessions/"+session.Key+"/terminal?protocol=acp", nil, nil)
 		require.NoError(t, err)
-		_, state, err := conn.Read(t.Context())
+		_, _, err = conn.Read(t.Context())
 		require.NoError(t, err)
-		assert.JSONEq(t, `{"messages":[{"role":"assistant","text":"Shared reply"}]}`, string(state))
-		command := `{"type":"prompt","text":"` + prompt + `"}`
+		command := `{"type":"prompt","mode":"send","id":"` + prompt + `","text":"` + prompt + `"}`
 		require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte(command)))
-		select {
-		case received := <-commands:
-			assert.JSONEq(t, command, received)
-		case <-time.After(5 * time.Second):
-			t.Fatal("worker did not receive the chat command")
-		}
+		require.Eventually(t, func() bool { data, _ := os.ReadFile(logPath); return strings.Contains(string(data), prompt+"\n") }, 10*time.Second, 20*time.Millisecond)
 		require.NoError(t, conn.Close(websocket.StatusNormalClosure, "done"))
 	}
+	got, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	require.Equal(t, "new\ninspect the failure\ntry the fix\n", string(got))
 }
 
 func TestDevboxShellLaunchDoesNotRefreshSourceContext(t *testing.T) {

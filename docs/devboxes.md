@@ -7,9 +7,8 @@ agent processes and tmux sessions. Closing the browser does not stop them.
 
 This is an initial operator-managed deployment for trusted teams on Tailscale.
 It is not a container sandbox. Each developer gets a separate non-root Linux
-account, and multiple developers may also use a shared service account through
-separate registry grants. Administrators can read account data and installed
-agent credentials; personal GitHub credentials stay on the controller.
+account. Administrators can read account data and installed agent credentials;
+personal GitHub credentials stay on the controller.
 
 ## Daily workflow
 
@@ -56,11 +55,10 @@ forwarding. Do not expose application listeners publicly to obtain a preview.
 
 ## Repository access and commit identity
 
-Each developer has a separate personal Linux account on the devbox. The operator
-links that account's numeric Linux user ID to the developer's GitHub user ID and
+Each developer uses a separate Linux account on the devbox. The operator links
+that account's numeric Linux user ID to the developer's GitHub user ID and
 configures their commit name and email. Forge uses that link to check repository
-access; Git uses the name and email to identify new commits. Developers can
-also use a shared service account through separate registry grants.
+access; Git uses the name and email to identify new commits.
 
 ### How the credential broker works
 
@@ -186,7 +184,7 @@ is required. Keep your chosen versions and configuration in your own automation.
 | Host | Processes and state |
 | --- | --- |
 | Your existing controller | Full Forge with its browser UI, provider access and saved devbox connections. |
-| Each devbox | One credential broker, one worker per developer account, and any configured service workers. Worktrees, tools, agent credentials and tmux sessions live here. |
+| Each devbox | One credential broker and one worker per developer account. Worktrees, tools, agent credentials and tmux sessions live here. |
 | Registry host | One registry process, a roster and copies of worker connection tokens, behind an HTTPS proxy. It needs no worktrees, agents or GitHub App key. |
 
 The registry handles discovery and connection setup. Workspace requests and

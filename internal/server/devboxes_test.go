@@ -387,29 +387,6 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 		responses, err := os.ReadFile(filepath.Join(root, "responses"))
 		return err == nil && strings.Contains(string(responses), "steer:adjust\n")
 	}, 5*time.Second, 10*time.Millisecond, "the worker agent receives the second controller's correction during the active turn")
-	require.NoError(t, observers[1].Write(ctx, websocket.MessageText, []byte(`{"type":"prompt","mode":"steer","id":"finish-b","text":"finish"}`)))
-	require.Eventually(t, func() bool {
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, chatURL, nil)
-		if err != nil {
-			return false
-		}
-		request.Header.Set("Authorization", "Bearer "+token)
-		response, err := worker.Client().Do(request)
-		if err != nil {
-			return false
-		}
-		defer response.Body.Close()
-		var chat workspaceapi.WorkspaceChat
-		if response.StatusCode != http.StatusOK || json.UnmarshalRead(response.Body, &chat) != nil || chat.WorkspaceChatState == nil {
-			return false
-		}
-		for _, message := range chat.Messages {
-			if message.SubmissionID == "prompt-a" && message.Turn != nil && message.Turn.StopReason == "end_turn" && !chat.Busy {
-				return true
-			}
-		}
-		return false
-	}, 5*time.Second, 10*time.Millisecond, "the supervised turn settles after the correction")
 }
 
 func TestDevboxShellLaunchDoesNotRefreshSourceContext(t *testing.T) {

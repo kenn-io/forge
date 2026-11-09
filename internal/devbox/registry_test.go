@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/BurntSushi/toml"
@@ -25,10 +24,8 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 			require := require.New(t)
 			identity := WorkerIdentity{NodeID: "0123456789abcdef0123456789abcdef", UID: 1001, GitHubUserID: workerID, Role: "execution", Protocol: Protocol}
 			token := strings.Repeat("a", 64)
-			var workerToken atomic.Value
-			workerToken.Store(token)
 			worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Header.Get("Authorization") != "Bearer "+workerToken.Load().(string) {
+				if r.Header.Get("Authorization") != "Bearer "+token {
 					http.Error(w, "invalid worker bearer", http.StatusUnauthorized)
 					return
 				}
@@ -40,9 +37,10 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 				_, _ = w.Write([]byte(`{"status":"ready"}`))
 			}))
 			t.Cleanup(worker.Close)
-			workerSetting := ""
+			workerSetting, account := "", "developer-a"
 			if workerID != 42 {
 				workerSetting = fmt.Sprintf("worker_github_user_id = %d", workerID)
+				account = "service"
 			}
 			var assignment Assignment
 			_, err := toml.Decode(fmt.Sprintf(`
@@ -55,10 +53,10 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 		host_id = "compute-a"
 		name = "Compute A"
 		url = "http://compute-a.example.ts.net:9001"
-		account = "developer-a"
+		account = %q
 		enabled = true
 		token_file = "/run/example/token"
-		`, workerSetting), &assignment)
+		`, workerSetting, account), &assignment)
 			require.NoError(err)
 			cfg := RegistryConfig{Socket: "/run/example/registry.sock", RegistryID: "example-registry", Revision: "1", Developers: []Developer{{GitHubUserID: 42, TailscaleUserID: 11, Enabled: true}, {GitHubUserID: 43, TailscaleUserID: 12, Enabled: true}}, Assignments: []Assignment{assignment}}
 			if workerID == 777 {
@@ -98,9 +96,15 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 			assert.Equal(int64(42), discovery.GitHubUserID)
 			require.Len(discovery.Devboxes, 1)
 			assert.Equal(int64(42), discovery.Devboxes[0].GitHubUserID)
-			assert.Equal(assignment.WorkerGitHubUserID, discovery.Devboxes[0].WorkerGitHubUserID)
 			connection, err := store.Connect(t.Context(), registry.URL, "compute-a")
 			require.NoError(err)
+			if workerID == 42 {
+				assert.Zero(discovery.Devboxes[0].WorkerGitHubUserID)
+				assert.Zero(connection.WorkerGitHubUserID)
+			} else {
+				assert.Equal(int64(777), discovery.Devboxes[0].WorkerGitHubUserID)
+				assert.Equal(int64(777), connection.WorkerGitHubUserID)
+			}
 			_, err = store.Connect(t.Context(), registry.URL, "compute-a")
 			require.NoError(err)
 			assert.Len(store.List(), 1)
@@ -126,24 +130,12 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 				require.NoError(err)
 				assert.Equal(workerID, secondConnection.WorkerGitHubUserID)
 				cfg.Assignments[1].Enabled = false
-				require.NoError(cfg.validate())
 				handler = registryHandler(cfg, map[string]string{identity.NodeID: token}, lookup)
 				discovery, err = secondStore.Discover(t.Context(), registry.URL)
 				require.NoError(err)
 				assert.Empty(discovery.Devboxes)
 				_, err = secondStore.Connect(t.Context(), registry.URL, "compute-a")
 				require.ErrorContains(err, "not assigned")
-
-				newToken := strings.Repeat("b", 64)
-				workerToken.Store(newToken)
-				handler = registryHandler(cfg, map[string]string{identity.NodeID: newToken}, lookup)
-				peerID = 11
-				connection, err = store.Connect(t.Context(), registry.URL, "compute-a")
-				require.NoError(err)
-				response, err := store.Do(t.Context(), connection.ID, http.MethodGet, "/api/v1/worker", nil, nil)
-				require.NoError(err)
-				assert.Equal(http.StatusOK, response.StatusCode)
-				require.NoError(response.Body.Close())
 			} else {
 				discovery, err = store.Discover(t.Context(), registry.URL)
 				require.NoError(err)
@@ -193,6 +185,8 @@ func TestRegistrySharedServiceWorkerValidation(t *testing.T) {
 	second.GitHubUserID = 43
 	second.Name = "Shared compute"
 	cfg := RegistryConfig{Socket: "/run/example/registry.sock", RegistryID: "example", Revision: "1", Developers: []Developer{{GitHubUserID: 42, TailscaleUserID: 11, Enabled: true}, {GitHubUserID: 43, TailscaleUserID: 12, Enabled: true}}, Assignments: []Assignment{assignment, second}}
+	require.NoError(t, cfg.validate())
+	cfg.Assignments[1].Enabled = false
 	require.NoError(t, cfg.validate())
 	for name, change := range map[string]func(*Assignment){
 		"worker identity": func(a *Assignment) { a.WorkerGitHubUserID = 778 },

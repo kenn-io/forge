@@ -14,7 +14,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/db"
-	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -460,7 +459,8 @@ func closesMarkdownFence(line string, fence markdownFence) bool {
 // detail sync. It reruns after a sync already in flight for the same pull
 // request, because that sync may have read state from before the mutation.
 // When the sync lands, afterSync (if set) runs, then clients get data_changed
-// and pr_detail_refreshed so an open list and detail reload.
+// and pr_detail_refreshed so an open list and detail reload. Both still run
+// when a later request for the same pull request replaces the pending rerun.
 func (s *Handler) syncAfterProviderMutation(
 	repo db.Repo, number int, source string, afterSync func(context.Context),
 ) {
@@ -481,14 +481,13 @@ func (s *Handler) syncAfterProviderMutation(
 			"source", source,
 		},
 		func(ctx context.Context) error {
-			err := s.syncMergeRequestIfVisible(ctx, repo, number)
-			if _, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err); err == nil || isDiffErr {
-				if afterSync != nil {
-					afterSync(ctx)
-				}
-				s.broadcastPRDetailRefreshed(ctx, repo.ID, number)
+			return s.syncMergeRequestIfVisible(ctx, repo, number)
+		},
+		func(ctx context.Context) {
+			if afterSync != nil {
+				afterSync(ctx)
 			}
-			return err
+			s.broadcastPRDetailRefreshed(ctx, repo.ID, number)
 		},
 	)
 }

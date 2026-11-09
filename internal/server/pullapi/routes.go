@@ -1610,9 +1610,17 @@ func (s *Handler) approveWorkflows(ctx context.Context, input *repoNumberInput) 
 	// Clear now so the detail reload after this response hides the button,
 	// and again after the background sync: GitHub can still list an approved
 	// run as action_required for a moment, and the sync would otherwise
-	// restore the flag.
+	// restore the flag. A push during the sync gives the pull request a new
+	// head whose runs this approval did not cover, so the second clear
+	// leaves that head's state alone.
 	clearApprovalState(ctx)
-	s.syncAfterProviderMutation(repo.Repo, input.Number, "approve_workflows", clearApprovalState)
+	s.syncAfterProviderMutation(repo.Repo, input.Number, "approve_workflows", func(ctx context.Context) {
+		current, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+		if err != nil || current == nil || current.PlatformHeadSHA != headSHA {
+			return
+		}
+		clearApprovalState(ctx)
+	})
 
 	return &actionStatusOutput{Body: ActionStatusBody{
 		Status:        "approved_workflows",

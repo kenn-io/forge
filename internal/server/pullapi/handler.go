@@ -54,7 +54,7 @@ type Deps struct {
 		context.Context, db.Repo, db.MergeRequest,
 	) httpapi.RepoOperations
 	EnqueueDetailSyncOrRerun func(
-		string, []any, func(context.Context) error,
+		string, []any, func(context.Context) error, func(context.Context),
 	) bool
 	Broadcast                         func(Event) uint64
 	BroadcastPRDetailRefreshed        func(context.Context, int64, int)
@@ -81,7 +81,7 @@ type Handler struct {
 		context.Context, db.Repo, db.MergeRequest,
 	) httpapi.RepoOperations
 	enqueueDetailSyncRerun func(
-		string, []any, func(context.Context) error,
+		string, []any, func(context.Context) error, func(context.Context),
 	) bool
 	broadcast               func(Event) uint64
 	prDetailRefreshed       func(context.Context, int64, int)
@@ -159,11 +159,12 @@ func (s *Handler) enqueueDetailSyncOrRerun(
 	key string,
 	attrs []any,
 	fn func(context.Context) error,
+	after func(context.Context),
 ) bool {
 	if s.enqueueDetailSyncRerun == nil {
 		return false
 	}
-	return s.enqueueDetailSyncRerun(key, attrs, fn)
+	return s.enqueueDetailSyncRerun(key, attrs, fn, after)
 }
 
 func (s *Handler) publish(event Event) uint64 {

@@ -3,6 +3,7 @@ package pullreviewtest
 import (
 	"context"
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -193,4 +194,64 @@ func TestAPIReviewActionReturnsProviderRejection(t *testing.T) {
 			require.Equal(http.StatusBadGateway, status)
 		})
 	}
+}
+
+// A push that lands while the post-approval sync runs gives the pull request
+// a head whose runs this approval did not cover; that head's pending state
+// must survive the approval's cleanup.
+func TestAPIApproveWorkflowsKeepsPendingStateOfNewerHead(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+
+	var prReads atomic.Int64
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			head := "approved-head"
+			if prReads.Add(1) > 1 {
+				head = "pushed-head"
+			}
+			updated := gh.Timestamp{Time: time.Now().UTC()}
+			return &gh.PullRequest{
+				ID: new(int64(1000)), Number: &number, State: new("open"),
+				Title:     new("Workflow PR"),
+				HTMLURL:   new("https://github.com/acme/widget/pull/1"),
+				CreatedAt: &updated, UpdatedAt: &updated,
+				Head: &gh.PullRequestBranch{SHA: &head, Ref: new("feature")},
+				Base: &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+		ListWorkflowRunsForHeadFn: func(_ context.Context, _, _, headSHA string) ([]*gh.WorkflowRun, error) {
+			return []*gh.WorkflowRun{{
+				ID: new(int64(70)), HeadSHA: &headSHA, Event: new("pull_request"),
+				PullRequests: []*gh.PullRequest{{Number: new(1)}},
+			}}, nil
+		},
+		ApproveWorkflowRunFn: func(context.Context, string, string, int64) error { return nil },
+	}
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	client := servertest.SetupTestClient(t, srv)
+	events, _ := srv.Hub().Subscribe(t.Context(), false)
+
+	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(t.Context(), &generated.ApprovePullWorkflowsRequestOptions{PathParams: &generated.ApprovePullWorkflowsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
+
+	deadline := time.After(10 * time.Second)
+	for refreshed := false; !refreshed; {
+		select {
+		case event := <-events:
+			refreshed = event.Event.Type == "pr_detail_refreshed"
+		case <-deadline:
+			require.FailNow("workflow approval sync did not finish")
+		}
+	}
+	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal("pushed-head", pr.PlatformHeadSHA)
+	assert.Equal("pushed-head", pr.WorkflowApprovalHeadSHA)
+	assert.True(pr.WorkflowApprovalRequired)
+	assert.Equal(1, pr.WorkflowApprovalCount)
 }

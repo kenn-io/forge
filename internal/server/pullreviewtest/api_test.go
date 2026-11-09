@@ -954,10 +954,12 @@ func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t 
 	assert.Contains(*resp.Error.Detail, "permission denied")
 	assert.Equal([]int64{91, 92}, approvedRunIDs)
 
-	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
-	require.NoError(err)
-	require.NotNil(pr)
-	assert.Equal("abc123", pr.PlatformHeadSHA)
+	// Runs approved before the failure still change the pull request, so it
+	// is refreshed in the background.
+	assert.Eventually(func() bool {
+		pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
+		return err == nil && pr != nil && pr.PlatformHeadSHA == "abc123"
+	}, 10*time.Second, 20*time.Millisecond)
 }
 
 // TestAPIApproveWorkflowsForForkPR verifies the approve endpoint reaches

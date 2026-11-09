@@ -246,9 +246,6 @@ func Agent(ctx context.Context) {
 			if code, err := strconv.Atoi(os.Getenv("KENN_FORGE_ACP_EXIT_ON_PROMPT")); err == nil {
 				os.Exit(code)
 			}
-			if os.Getenv("KENN_FORGE_ACP_RECORD_PROMPTS") == "1" {
-				recordFixtureResponse(fixtureDir, "prompt:"+params.Prompt[0].Text)
-			}
 			promptID = message.ID
 			fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hello "}}}}`)
 			fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"workspace"}}}}`)
@@ -305,7 +302,7 @@ func Agent(ctx context.Context) {
 				// Holds the answer while the host accepts more steers, then refuses.
 				waitForParent(os.Getenv("KENN_FORGE_ACP_STEER_GATE"))
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"failed"}}`+"\n", message.ID)
-			case "adjust", "adjust again":
+			case "adjust":
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"injected"}}`+"\n", message.ID)
 			case "finish":
 				// The turn ends before the text is taken, so Forge must send it.

@@ -246,7 +246,7 @@ import DevboxSettings from "./DevboxSettings.svelte";
   <div class="setting-row">
     <div class="setting-copy">
       <span class="setting-label">Open new sessions from a PR or issue</span>
-      <span class="setting-description">Where an agent or chat started from a pull request or issue opens. Bottom uses the workspace pane; the other sides split the detail; Same pane adds a tab next to Conversation.</span>
+      <span class="setting-description">Applies to agents and chats. Bottom uses the workspace pane, the other sides split the Conversation pane, and Same pane adds a tab next to Conversation.</span>
     </div>
     <SelectDropdown
       class="sidebar-view-select"

@@ -47,13 +47,8 @@ type Connections struct {
 }
 
 func OpenConnections(dataDir string) (*Connections, error) {
-	return OpenConnectionsWithTransport(dataDir, tracing.PeerHTTPTransport(&http.Transport{Proxy: nil, ResponseHeaderTimeout: 30 * time.Second}))
-}
-
-// OpenConnectionsWithTransport uses the supplied transport for registry and worker requests.
-func OpenConnectionsWithTransport(dataDir string, transport http.RoundTripper) (*Connections, error) {
 	c := &Connections{path: filepath.Join(dataDir, "devbox-connections.json"), client: &http.Client{
-		Transport: transport, CheckRedirect: refuseRedirect,
+		Transport: tracing.PeerHTTPTransport(&http.Transport{Proxy: nil, ResponseHeaderTimeout: 30 * time.Second}), CheckRedirect: refuseRedirect,
 	}}
 	raw, err := os.ReadFile(c.path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {

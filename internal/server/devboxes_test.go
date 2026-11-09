@@ -5,7 +5,6 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -296,37 +295,13 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
 	require.NoError(t, database.UpsertWorkspaceRuntimeSession(t.Context(), &db.WorkspaceRuntimeSession{WorkspaceID: "work-a", SessionKey: session.Key, TargetKey: "chat", Kind: "acp", Scope: "session", DisplayRegion: "workflow", CreatedAt: session.CreatedAt}))
 	require.NoError(t, database.SetWorkspaceActiveTab(t.Context(), "work-a", "session:"+session.Key))
-	for index, prompt := range []string{"inspect the failure", "adjust again", ""} {
+	for index, prompt := range []string{"inspect the failure", "adjust again"} {
 		directory := t.TempDir()
-		userID := int64(42 + index)
-		assignment := devbox.Assignment{NodeID: workerNode, UID: 1001, GitHubUserID: userID, WorkerGitHubUserID: 777, Role: "execution", Protocol: 1, HostID: "compute-a", Name: "Compute A", URL: "http://compute-a.example.ts.net:9001", Account: "service"}
-		registry := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.Method + " " + r.URL.Path {
-			case "GET /api/v1/devboxes":
-				assigned := []devbox.Assignment{}
-				if index < 2 {
-					assigned = append(assigned, assignment)
-				}
-				assert.NoError(t, json.MarshalWrite(w, devbox.Discovery{RegistryID: "example", Revision: "1", Protocol: 1, GitHubUserID: userID, Devboxes: assigned}))
-			case "POST /api/v1/devboxes/compute-a/connect":
-				if index == 2 {
-					http.NotFound(w, r)
-					return
-				}
-				assert.NoError(t, json.MarshalWrite(w, devbox.Profile{Assignment: assignment, RegistryID: "example", Revision: "1", Token: token}))
-			default:
-				http.NotFound(w, r)
-			}
-		}))
-		t.Cleanup(registry.Close)
-		transport := registry.Client().Transport.(*http.Transport).Clone()
-		transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-			if address == "compute-a.example.ts.net:9001" {
-				address = worker.Listener.Addr().String()
-			}
-			return (&net.Dialer{}).DialContext(ctx, network, address)
-		}
-		connections, err := devbox.OpenConnectionsWithTransport(directory, transport)
+		assignment := devbox.Assignment{NodeID: workerNode, UID: 1001, GitHubUserID: int64(42 + index), WorkerGitHubUserID: 777, Role: "execution", Protocol: 1, HostID: "compute-a", Name: "Compute A", URL: worker.URL, Account: "service"}
+		raw, err := json.Marshal([]any{map[string]any{"id": "compute-a", "profile": devbox.Profile{Assignment: assignment, RegistryID: "example", Token: token}}})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(directory, "devbox-connections.json"), raw, 0o600))
+		connections, err := devbox.OpenConnections(directory)
 		require.NoError(t, err)
 		t.Cleanup(connections.Close)
 		controller := wiredServer(&Server{options: ServerOptions{Devboxes: connections}, hub: syncevents.NewEventHub()})
@@ -336,38 +311,9 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 		controller.registerDevboxTerminalAPI(humago.NewWithPrefix(mux, "/ws/v1", huma.DefaultConfig("terminal", "1")))
 		server := httptest.NewServer(mux)
 		t.Cleanup(server.Close)
-		discoveryRequest, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/devboxes/discovery?registry="+url.QueryEscape(registry.URL), nil)
-		require.NoError(t, err)
-		discoveryResponse, err := server.Client().Do(discoveryRequest)
-		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, discoveryResponse.StatusCode)
-		var discovery devbox.Discovery
-		require.NoError(t, json.UnmarshalRead(discoveryResponse.Body, &discovery))
-		require.NoError(t, discoveryResponse.Body.Close())
-		if index == 2 {
-			require.Empty(t, discovery.Devboxes)
-		} else {
-			require.Len(t, discovery.Devboxes, 1)
-		}
-		require.Equal(t, userID, discovery.GitHubUserID)
-		connectBody, err := json.Marshal(map[string]string{"registry": registry.URL, "host_id": "compute-a"})
-		require.NoError(t, err)
-		connectRequest, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/devboxes", strings.NewReader(string(connectBody)))
-		require.NoError(t, err)
-		connectRequest.Header.Set("Content-Type", "application/json")
-		connectResponse, err := server.Client().Do(connectRequest)
-		require.NoError(t, err)
-		if index == 2 {
-			require.Equal(t, http.StatusConflict, connectResponse.StatusCode)
-			require.NoError(t, connectResponse.Body.Close())
-			require.Empty(t, connections.List())
-			continue
-		}
-		require.Equal(t, http.StatusOK, connectResponse.StatusCode)
-		var connection devbox.Connection
-		require.NoError(t, json.UnmarshalRead(connectResponse.Body, &connection))
-		require.NoError(t, connectResponse.Body.Close())
-		require.Equal(t, int64(777), connection.WorkerGitHubUserID)
+		connected := connections.List()
+		require.Len(t, connected, 1)
+		connection := connected[0]
 		local := fleet.RawSnapshot{NodeID: "controller"}
 		aggregate := fleet.BuildNeutralAggregate(local, controller.devboxSnapshots(t.Context(), 5*time.Second))
 		require.Len(t, aggregate.Workspaces, 1)

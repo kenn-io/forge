@@ -384,12 +384,10 @@ func (s *Server) registerDevboxTerminalAPI(api huma.API) {
 			if r.URL.RawQuery != "" {
 				endpoint += "?" + r.URL.RawQuery
 			}
-			client, err := connections.WorkerClient(r.PathValue("connection_id"))
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusNotFound)
-				return
-			}
-			peer, _, err := terminalwebsocket.Dial(r.Context(), endpoint, http.Header{"Authorization": {"Bearer " + token}}, client.Transport)
+			transport := &http.Transport{Proxy: nil, ResponseHeaderTimeout: 30 * time.Second}
+			defer transport.CloseIdleConnections()
+			client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+			peer, _, err := terminalwebsocket.Dial(r.Context(), endpoint, http.Header{"Authorization": {"Bearer " + token}}, client)
 			if err != nil {
 				http.Error(w, "devbox terminal unavailable; reconnect and retry attachment", http.StatusBadGateway)
 				return

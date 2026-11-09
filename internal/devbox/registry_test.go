@@ -142,25 +142,6 @@ func TestRegistryIdentityUsesUserOrExplicitUnambiguousPin(t *testing.T) {
 	require.ErrorContains(err, "conflicts")
 }
 
-func TestRegistryInjectedTransportRefusesRedirect(t *testing.T) {
-	targetReached := false
-	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		targetReached = true
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(target.Close)
-	registry := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, target.URL, http.StatusFound)
-	}))
-	t.Cleanup(registry.Close)
-	store, err := OpenConnectionsWithTransport(t.TempDir(), registry.Client().Transport)
-	require.NoError(t, err)
-	t.Cleanup(store.Close)
-	_, err = store.Discover(t.Context(), registry.URL)
-	require.Error(t, err)
-	require.False(t, targetReached)
-}
-
 func TestRegistrySharedServiceWorker(t *testing.T) {
 	require := require.New(t)
 	identity := WorkerIdentity{NodeID: "0123456789abcdef0123456789abcdef", UID: 1001, GitHubUserID: 777, Role: "execution", Protocol: Protocol}

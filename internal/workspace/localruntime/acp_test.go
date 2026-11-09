@@ -1255,6 +1255,7 @@ func TestACPOwnerHelper(t *testing.T) {
 	if os.Getenv("KENN_FORGE_ACP_OWNER_FIXTURE") != "1" {
 		return
 	}
+	useTestACPHandshakeTimeout()
 	if fixtureDir := os.Getenv("KENN_FORGE_ACP_CONTINUE_DIR"); fixtureDir != "" {
 		_ = os.WriteFile(filepath.Join(fixtureDir, "owner-pid"), []byte(strconv.Itoa(os.Getpid())), 0o600)
 	}
@@ -1264,6 +1265,28 @@ func TestACPOwnerHelper(t *testing.T) {
 		os.Exit(1)
 	}
 	os.Exit(0)
+}
+
+// testACPHandshakeTimeoutEnv carries a test's acpHandshakeTimeout to the
+// owner and host processes it starts.
+const testACPHandshakeTimeoutEnv = "KENN_FORGE_ACP_TEST_HANDSHAKE_TIMEOUT"
+
+// shortenACPHandshake gives a test that waits out agent starts a shorter
+// acpHandshakeTimeout, here and in the owners and hosts it starts.
+func shortenACPHandshake(t *testing.T, timeout time.Duration) {
+	t.Helper()
+	t.Setenv(testACPHandshakeTimeoutEnv, timeout.String())
+	previous := acpHandshakeTimeout
+	acpHandshakeTimeout = timeout
+	t.Cleanup(func() { acpHandshakeTimeout = previous })
+}
+
+// useTestACPHandshakeTimeout applies, in an owner or host helper process, the
+// acpHandshakeTimeout of the test that started it.
+func useTestACPHandshakeTimeout() {
+	if timeout, err := time.ParseDuration(os.Getenv(testACPHandshakeTimeoutEnv)); err == nil {
+		acpHandshakeTimeout = timeout
+	}
 }
 
 func newACPTestManager(t *testing.T, options Options, fixtures ...*TmuxRuntimeFixture) *Manager {

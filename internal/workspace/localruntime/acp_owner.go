@@ -212,7 +212,9 @@ const acpStartErrorFile = "start-error"
 // It covers an owner that tries a shared host and then a start of its own,
 // each within acpHandshakeTimeout (see Manager.startACPAgent), then restores
 // the chat's settings before it listens (see Manager.startACP).
-const acpAttachTimeout = 2*acpHandshakeTimeout + codexACPInitialModeTimeout + acpSettingsRestoreTimeout + 5*time.Second
+func acpAttachTimeout() time.Duration {
+	return 2*acpHandshakeTimeout + codexACPInitialModeTimeout + acpSettingsRestoreTimeout + 5*time.Second
+}
 
 func recordACPStartError(dir string, err error) error {
 	record := ACPErrorCode(err) + "\n" + err.Error()
@@ -400,7 +402,7 @@ var ErrACPOwnerUnresponsive = fmt.Errorf("%w: ACP owner is running but not respo
 // otherwise hold the workspace's runtime lock for good; one that does not
 // answer within the attach timeout is unresponsive.
 func (m *Manager) boundedACPAttachment(ctx context.Context, info SessionInfo, conn net.Conn) (*session, error) {
-	attachCtx, cancel := context.WithTimeout(ctx, acpAttachTimeout)
+	attachCtx, cancel := context.WithTimeout(ctx, acpAttachTimeout())
 	defer cancel()
 	attached, err := m.acpAttachment(attachCtx, info, conn)
 	if err != nil && attachCtx.Err() != nil {
@@ -419,7 +421,7 @@ func (m *Manager) boundedACPAttachment(ctx context.Context, info SessionInfo, co
 func (m *Manager) attachRunningACPOwner(ctx context.Context, info SessionInfo, paths ptyowner.SessionPaths, dialErr error, exited func(context.Context) <-chan struct{}) (*session, error) {
 	slog.Info("ACP owner is running but not listening; waiting for it",
 		"workspace_id", info.WorkspaceID, "session_key", info.Key, "err", dialErr)
-	waitCtx, cancel := context.WithTimeout(ctx, acpAttachTimeout)
+	waitCtx, cancel := context.WithTimeout(ctx, acpAttachTimeout())
 	defer cancel()
 	unresponsive := func(err error) error {
 		err = fmt.Errorf("%w: %w: %w", ErrACPOwnerUnresponsive, dialErr, err)
@@ -570,7 +572,7 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (_ *sess
 		return nil, err
 	}
 	parent := ctx
-	ctx, cancel := context.WithTimeout(ctx, acpAttachTimeout)
+	ctx, cancel := context.WithTimeout(ctx, acpAttachTimeout())
 	defer cancel()
 	conn, err := dialStartingACPProcess(ctx, paths.Dir, paths.Socket, nil)
 	switch {
@@ -580,7 +582,7 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (_ *sess
 	case ctx.Err() == nil:
 		return nil, fmt.Errorf("start ACP owner: %w", err)
 	case parent.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return nil, fmt.Errorf("attach ACP owner: the agent did not finish starting within %s: %w", acpAttachTimeout, ctx.Err())
+		return nil, fmt.Errorf("attach ACP owner: the agent did not finish starting within %s: %w", acpAttachTimeout(), ctx.Err())
 	default:
 		return nil, fmt.Errorf("attach ACP owner: %w", ctx.Err())
 	}

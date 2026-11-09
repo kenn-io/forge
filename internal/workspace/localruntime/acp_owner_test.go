@@ -954,6 +954,7 @@ const lateACPOwnerDelay = 300 * time.Millisecond
 // timeout, since a real start has no caller deadline, and no second agent
 // starts beside the owner.
 func TestACPRestoreReportsAnOwnerThatListensButNeverAnswers(t *testing.T) {
+	shortenACPHandshake(t, 30*time.Second)
 	manager, late, dir, _ := parkedACPChat(t, false)
 	listening, err := manager.Launch(t.Context(), "workspace", dir, "chat")
 	require.NoError(t, err)
@@ -990,7 +991,7 @@ func TestACPRestoreReportsAnOwnerThatListensButNeverAnswers(t *testing.T) {
 
 	// Each start runs out its own attach timeout; this only turns a hang into
 	// a failure.
-	watchdog := time.After(acpAttachTimeout + 30*time.Second) //nolint:kennlint // deadlinetest: a watchdog for a start that must end on its own timeout; it decides only that a hang fails
+	watchdog := time.After(acpAttachTimeout() + 30*time.Second) //nolint:kennlint // deadlinetest: a watchdog for a start that must end on its own timeout; it decides only that a hang fails
 	for name, restored := range map[string]<-chan error{"late": restoredLate, "listening": restoredListening} {
 		select {
 		case err := <-restored:

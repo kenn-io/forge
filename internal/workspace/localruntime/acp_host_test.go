@@ -38,6 +38,7 @@ func TestACPHostHelper(t *testing.T) {
 		return
 	}
 	acpSharedAgents = append(acpSharedAgents, "forge-shared-fixture")
+	useTestACPHandshakeTimeout()
 	if err := RunACPHost(t.Context(), os.Args[len(os.Args)-1]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -55,6 +56,7 @@ func TestACPHostHelper(t *testing.T) {
 // answers its first session/new and never another, like a wedged agent.
 // KENN_FORGE_ACP_SHARED_SLOW makes every agent process that does not stall
 // offer a model setting and answer initialize and each setting change after
+// that long. KENN_FORGE_ACP_SHARED_NEW_DELAY answers each session/new after
 // that long.
 func TestACPSharedAgentHelper(t *testing.T) {
 	if os.Getenv("KENN_FORGE_ACP_SHARED_FIXTURE") != "1" {
@@ -82,6 +84,7 @@ func TestACPSharedAgentHelper(t *testing.T) {
 	}
 	name := cmp.Or(os.Getenv("KENN_FORGE_ACP_SHARED_NAME"), "forge-shared-fixture")
 	loadDelay, _ := time.ParseDuration(os.Getenv("KENN_FORGE_ACP_SHARED_LOAD_DELAY"))
+	newDelay, _ := time.ParseDuration(os.Getenv("KENN_FORGE_ACP_SHARED_NEW_DELAY"))
 	stalls := false
 	if path := os.Getenv("KENN_FORGE_ACP_SHARED_STALL"); path != "" {
 		if file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600); err == nil {
@@ -136,6 +139,7 @@ func TestACPSharedAgentHelper(t *testing.T) {
 				record("stalled %s", message.Params.Cwd)
 				continue
 			}
+			time.Sleep(newDelay) //nolint:kennlint // sleeptest: a slow session start the chat's owner must wait out
 			id := "s" + strconv.Itoa(len(cwds)+1) + "-" + strconv.Itoa(os.Getpid())
 			cwds[id] = message.Params.Cwd
 			wd, _ := os.Getwd()
@@ -762,6 +766,7 @@ func TestACPAgentEnvReachesTheAgentAndKeepsHostsApart(t *testing.T) {
 // finds it stuck starts an agent of its own once the host's time runs out, and
 // the next chat starts on a new host.
 func TestACPChatStartsAloneWhenItsSharedAgentStopsAnswering(t *testing.T) {
+	shortenACPHandshake(t, 30*time.Second)
 	t.Setenv("KENN_FORGE_ACP_SHARED_STALL", filepath.Join(t.TempDir(), "stall"))
 	manager, dir, _, _ := sharedACPChats(t, "alpha")
 	bravo := launchSharedACPChat(t, manager, dir, "bravo")
@@ -781,11 +786,24 @@ func TestACPChatStartsAloneWhenItsSharedAgentStopsAnswering(t *testing.T) {
 	assert.Equal(t, starts[2], sessions["charlie"], "charlie runs on a new host")
 }
 
+// Claude Code answers session/new only after its SessionStart hooks finish,
+// which took over half a minute with several chats starting at once on a busy
+// machine. A chat whose agent is that slow waits for its shared host instead
+// of failing, or of starting a second agent beside the first.
+func TestACPChatWaitsForASlowSessionStart(t *testing.T) {
+	t.Setenv("KENN_FORGE_ACP_SHARED_NEW_DELAY", "35s")
+	manager, dir, chats, _ := sharedACPChats(t, "alpha")
+
+	assert.Equal(t, "cwd="+filepath.Join(dir, "alpha"), askACPChat(t, manager, chats["alpha"]))
+	assert.Len(t, agentLogLines(t, dir, "start "), 1, "the chat started on its host's agent")
+}
+
 // A chat whose shared agent is stuck still starts when its own agent then
 // takes most of a start's time and its settings take most of a restore's: the
 // daemon waits for the whole start instead of failing a chat that is nearly
 // ready.
 func TestACPChatStartsAfterAStuckHostAndASlowStartOfItsOwn(t *testing.T) {
+	shortenACPHandshake(t, 30*time.Second)
 	t.Setenv("KENN_FORGE_ACP_SHARED_STALL", filepath.Join(t.TempDir(), "stall"))
 	t.Setenv("KENN_FORGE_ACP_SHARED_SLOW", "22s")
 	manager, dir, _, _ := sharedACPChats(t, "alpha")

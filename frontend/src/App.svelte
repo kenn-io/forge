@@ -809,13 +809,13 @@
   // action grid. Desktop-narrow focus presentation keeps the desktop
   // destinations and layout.
   function phoneDetailProps(): {
-    onOpenWorkspace?: (workspaceId: string) => void;
+    onOpenWorkspace?: (workspaceId: string, hostKey?: string) => void;
     onViewWorkspaces?: () => void;
     phonePresentation?: boolean;
   } {
     if (!useFocusLayoutClass()) return {};
     return {
-      onOpenWorkspace: (workspaceId) => navigate(buildMobileWorkspaceRoute(workspaceId)),
+      onOpenWorkspace: (workspaceId, hostKey) => navigate(buildMobileWorkspaceRoute(workspaceId, hostKey)),
       onViewWorkspaces: () => navigate("/m/workspaces"),
       phonePresentation: true,
     };
@@ -824,7 +824,7 @@
   // The issue list view takes the same workspace callbacks but has no
   // phone-presentation switch of its own.
   function phoneIssueDetailProps(): {
-    onOpenWorkspace?: (workspaceId: string) => void;
+    onOpenWorkspace?: (workspaceId: string, hostKey?: string) => void;
     onViewWorkspaces?: () => void;
   } {
     const { onOpenWorkspace, onViewWorkspaces } = phoneDetailProps();
@@ -1405,7 +1405,7 @@
                   backDestination={mobileWorkspaceHistory()?.origin === "list" ? "list" : "terminal"}
                   onBack={() => leaveMobileWorkspaceItem(route.workspaceId, route.hostKey)}
                   onMissing={() => replaceUrl("/m/workspaces")}
-                  onOpenWorkspace={(workspaceId) => openMobileWorkspaceFromItem(workspaceId, route.hostKey)}
+                  onOpenWorkspace={(workspaceId, hostKey) => openMobileWorkspaceFromItem(workspaceId, hostKey ?? route.hostKey)}
                   onViewWorkspaces={() => replaceUrl("/m/workspaces")}
                   onTabChange={(tab, options) => {
                     const path = buildMobileWorkspaceItemRoute(

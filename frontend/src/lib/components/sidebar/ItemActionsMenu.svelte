@@ -98,6 +98,8 @@
   const multi = $derived(count > 1);
   const quickActions = $derived(sortQuickActionsByLabel(settings.getQuickActions()));
   const launchTargets = $derived(settings.getLaunchTargets());
+  // A default machine elsewhere checks its own agents; the run resolves it.
+  const defaultExecutionTarget = $derived(settings.getWorkspaceSettings().default_execution_target ?? "");
 
   let running = $state(false);
   let confirmQuickAction = $state.raw<{ action: QuickAction; targets: readonly ListItemTarget[] } | null>(null);
@@ -250,7 +252,7 @@
   function runQuick(action: QuickAction, items: readonly ListItemTarget[]): void {
     confirmQuickAction = null;
     onClearSelection();
-    runQuickActionOnItems(runtime, items, action, settings.getWorkspaceSettings().default_execution_target ?? "");
+    runQuickActionOnItems(runtime, items, action, defaultExecutionTarget);
   }
 
   function agentLabel(action: QuickAction): string {
@@ -572,7 +574,7 @@
     {#if quickActions.length > 0}
       <MenuSeparator />
       {#each quickActions as action (action.label)}
-        {@const reason = quickActionDisabledReason(action, launchTargets)}
+        {@const reason = quickActionDisabledReason(action, launchTargets, defaultExecutionTarget !== "")}
         <MenuItem disabled={reason !== "" || running} textValue={action.label} onselect={() => chooseQuickAction(action)}>
           {#snippet icon()}<ZapIcon size={14} />{/snippet}
           {#snippet trailing()}{reason || agentLabel(action)}{/snippet}

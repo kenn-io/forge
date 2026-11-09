@@ -392,6 +392,10 @@
       ? "Your selected machine is unavailable. Choose another machine or reconnect it in Settings → Workspaces."
       : "";
   });
+  // The Run on option already says the default is loading or its status failed.
+  const workspaceTargetPending = $derived(
+    !selectedWorkspaceHost && selectedWorkspaceHostKey.startsWith("https://") && !workspaceHostsLoaded,
+  );
   const workspaceHostOptions = $derived<SelectDropdownOption[]>(
     [
     ...(selectedWorkspaceHostKey && !selectedWorkspaceHost
@@ -780,7 +784,7 @@
             disabled={submitting}
           />
           <small class="field-hint">Files, agents and tests run on the selected machine. Change the default in Settings → Workspaces.</small>
-          {#if workspaceTargetReason}
+          {#if workspaceTargetReason && !workspaceTargetPending}
             <p class="form-error" role="alert">{workspaceTargetReason}</p>
           {/if}
         </label>

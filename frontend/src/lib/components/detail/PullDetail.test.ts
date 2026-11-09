@@ -241,7 +241,8 @@ function renderPullDetail(
     hideWorkspaceAction?: boolean;
     defaultExecutionTarget?: string;
     phonePresentation?: boolean;
-    onOpenWorkspace?: (workspaceId: string) => void;
+    onOpenWorkspace?: (workspaceId: string, hostKey?: string) => void;
+    subscribeWorkspaceEvents?: (subscriber: (event: { type: "open" }) => void) => () => void;
     hideTabs?: boolean;
     detailLoading?: boolean;
     detailFromCache?: boolean;
@@ -421,6 +422,7 @@ function renderPullDetail(
           pulls: { loadPulls: vi.fn() },
           activity: { loadActivity: vi.fn() },
           detailActivityView: createDetailActivityViewStore(),
+          events: { subscribeWorkspaceEvents: options.subscribeWorkspaceEvents ?? (() => () => undefined) },
           settings,
           workflowActions,
         },
@@ -852,6 +854,7 @@ describe("PullDetail provider workflow actions", () => {
             pulls: { loadPulls: vi.fn() },
             activity: { loadActivity: vi.fn() },
             detailActivityView: createDetailActivityViewStore(),
+            events: { subscribeWorkspaceEvents: () => () => undefined },
             settings,
             workflowActions: createWorkflowActionsStore({ runtime: detailRuntime }),
           },
@@ -1284,6 +1287,7 @@ describe("PullDetail activity refresh", () => {
             pulls: { loadPulls: vi.fn() },
             activity: { loadActivity: vi.fn() },
             detailActivityView: createDetailActivityViewStore(),
+            events: { subscribeWorkspaceEvents: () => () => undefined },
             settings: {
               getWorkspaceSettings: () => ({ default_execution_target: "" }),
               getLaunchTargets: () => launchTargets,
@@ -2910,6 +2914,7 @@ describe("PullDetail approvals", () => {
               isSubmitting: () => false,
             },
             detailActivityView: createDetailActivityViewStore(),
+            events: { subscribeWorkspaceEvents: () => () => undefined },
             settings: {
               getWorkspaceSettings: () => ({ default_execution_target: "" }),
               getLaunchTargets: () => [],
@@ -4533,6 +4538,95 @@ describe("PullDetail inline workspace handoff", () => {
       ),
     );
     expect(apiClient.POST).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens a workspace created on another fleet member through the host callback", async () => {
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),
+      POST: vi.fn().mockResolvedValue({ data: { id: "ws-remote", status: "provisioning" } }),
+    };
+    const onOpenWorkspace = vi.fn();
+    const { navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "https://build-b.example.test",
+      onOpenWorkspace,
+    });
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    await fireEvent.click(create);
+    await waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledWith("ws-remote", buildBNode));
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("enables creation when an unavailable default machine comes back", async () => {
+    let snapshots = 0;
+    const apiClient = {
+      GET: vi.fn(async (path: string) => {
+        if (path !== "/snapshot") return { data: {} };
+        snapshots += 1;
+        return {
+          data: {
+            hosts: fleetHosts(
+              snapshots === 1 ? { available: false, unavailableReason: "Host is offline." } : { available: true },
+            ),
+          },
+        };
+      }),
+      POST: vi.fn(),
+    };
+    let notify: ((event: { type: "open" }) => void) | undefined;
+    renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "https://build-b.example.test",
+      subscribeWorkspaceEvents: (subscriber) => {
+        notify = subscriber;
+        return () => undefined;
+      },
+    });
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await screen.findByRole("group", { name: "Create on another machine" });
+    expect(create.disabled).toBe(true);
+    await waitFor(() => expect(notify).toBeDefined());
+    notify!({ type: "open" });
+    await waitFor(() => expect(create.disabled).toBe(false));
+    expect(screen.queryByRole("group", { name: "Create on another machine" })).toBeNull();
+  });
+
+  it("offers other machines when the saved devbox cannot take the repository", async () => {
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),
+      POST: vi.fn(),
+    };
+    const detail = pullDetail();
+    detail.repo.platform_host = "ghe.example.com";
+    detail.platform_host = "ghe.example.com";
+    renderPullDetail(detail, undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "devbox:compute-a",
+      detailProps: { platformHost: "ghe.example.com" },
+    });
+    const notice = within(await screen.findByRole("group", { name: "Create on another machine" }));
+    expect(notice.getAllByRole("button").map((button) => button.textContent?.trim())).toEqual([
+      "Create on build-a (this machine)",
+      "Create on forge-hub",
+      "Create on build-b",
+    ]);
+  });
+
+  it("leaves agent checks for a quick action on another machine to that machine", async () => {
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),
+      POST: vi.fn(),
+    };
+    const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "https://build-b.example.test",
+    });
+    settings.setQuickActions([{ label: "Review", agent: "claude", prompt: "Review this change" }]);
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
+    expect((screen.getByRole("menuitem", { name: /Review/ }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   function deferredWorkspaceApiClient() {

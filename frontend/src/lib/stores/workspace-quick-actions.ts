@@ -23,8 +23,16 @@ export function quickActionTarget(
   );
 }
 
-/** Why a quick action cannot run right now, or "" when it can. */
-export function quickActionDisabledReason(action: QuickAction, launchTargets: readonly LaunchTarget[]): string {
+/**
+ * Why a quick action cannot run right now, or "" when it can. launchTargets
+ * describe this Forge, so a remote execution host validates its own agents.
+ */
+export function quickActionDisabledReason(
+  action: QuickAction,
+  launchTargets: readonly LaunchTarget[],
+  remoteHost = false,
+): string {
+  if (remoteHost) return "";
   const target = quickActionTarget(action, launchTargets);
   if (!target) return `Agent "${action.agent}" is not configured`;
   if (!target.available) return target.disabled_reason || `Agent "${action.agent}" is not available`;

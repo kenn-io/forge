@@ -194,6 +194,7 @@
     settings,
     sync,
     workflowActions,
+    events,
   } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
@@ -305,7 +306,7 @@
     workflowApprovalSync?: boolean;
     onStackMemberNavigate?: (ref: PullRequestRouteRef) => boolean | void;
     onDetailTabChange?: ((tab: "conversation" | "files") => void) | undefined;
-    onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
+    onOpenWorkspace?: ((workspaceId: string, hostKey?: string) => void) | undefined;
     onViewWorkspaces?: (() => void) | undefined;
     inlineWorkspace?: InlineWorkspaceController | null;
   }
@@ -1549,7 +1550,7 @@
   });
 
   let wsCreating = $state(false);
-  const workspaceTarget = createDefaultWorkspaceTarget(runtime,
+  const workspaceTarget = createDefaultWorkspaceTarget(runtime, events.subscribeWorkspaceEvents,
     () => settings.getWorkspaceSettings().default_execution_target ?? "",
     () => itemIdentity,
   );
@@ -2071,9 +2072,9 @@
           if (data?.id && hostKey) {
             promoteWorkspaceCreateLaunch(requestIdentity, data.id, hostKey);
             if (quickAction) runWorkspaceQuickAction(runtime, data.id, "pull_request", quickAction, hostKey);
-            if (!responseIsStale()) {
-              navigate(`/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(data.id)}`);
-            }
+            if (responseIsStale()) return;
+            if (onOpenWorkspace) onOpenWorkspace(data.id, hostKey);
+            else navigate(`/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(data.id)}`);
             return;
           }
           if (data?.id) {
@@ -3185,6 +3186,7 @@
             onCreate={(targetKey) => createWorkspace(targetKey)}
             quickActions={settings.getQuickActions()}
             onQuickAction={(action) => createWorkspace(undefined, action)}
+            remoteHost={workspaceTarget.hostKey !== undefined}
           />
           {#if !stalePR && workspaceTarget.alternatives.length > 0}
             <WorkspaceHostAlternatives

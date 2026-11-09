@@ -1,8 +1,11 @@
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { untrack } from "svelte";
 import { FleetSnapshotReads, type HostSummary } from "../api/fleet-snapshot.js";
 import { canonicalProvider, resolvedPlatformHost } from "../api/provider-routes.js";
 import type { AppRuntime } from "../app/runtime.js";
+import { workspaceEventStream } from "../components/terminal/workspace-event-stream.js";
+import { pollWhileVisible } from "../effect/poll-while-visible.js";
+import type { WorkspaceEventsNotification } from "./events.svelte.js";
 
 type Repository = { provider: string; platformHost?: string | undefined };
 
@@ -58,14 +61,30 @@ export function workspaceHostKey(host: HostSummary): string | undefined {
 }
 
 // PR and issue actions use the saved target. Keep their gate and request target together.
-export function createDefaultWorkspaceTarget(runtime: AppRuntime, getTarget: () => string, getRepo: () => Repository) {
+export function createDefaultWorkspaceTarget(
+  runtime: AppRuntime,
+  subscribeWorkspaceEvents: (subscriber: (event: WorkspaceEventsNotification) => void) => () => void,
+  getTarget: () => string,
+  getRepo: () => Repository,
+) {
   const target = $derived(getTarget());
   let hosts = $state.raw<HostSummary[] | null>(null);
   let checked = $state(false);
   let loadFailed = $state(false);
+  const loadHosts = Effect.gen(function* () {
+    const reads = yield* FleetSnapshotReads;
+    const snapshot = yield* reads.load;
+    yield* Effect.sync(() => {
+      hosts = snapshot.hosts ?? [];
+      checked = true;
+      loadFailed = false;
+    });
+  });
   $effect(() => {
     loadFailed = false;
-    if (!target || (target.startsWith("devbox:") && devboxRepositoryUnavailableReason(getRepo()))) return;
+    // Load hosts even when a devbox default cannot take this repository, so
+    // the other machines can be offered instead.
+    if (!target) return;
     hosts = null;
     checked = false;
     const execution = untrack(() =>
@@ -75,11 +94,7 @@ export function createDefaultWorkspaceTarget(runtime: AppRuntime, getTarget: () 
           yield* Effect.sync(() => {
             hosts = reads.hosts ?? null;
           });
-          const snapshot = yield* reads.load;
-          yield* Effect.sync(() => {
-            hosts = snapshot.hosts ?? [];
-            checked = true;
-          });
+          yield* loadHosts;
         }),
         {
           operation: "check workspace machine",
@@ -127,6 +142,39 @@ export function createDefaultWorkspaceTarget(runtime: AppRuntime, getTarget: () 
         : "Default machine status unavailable. Forge will check it when creating the workspace."
       : "",
   );
+  // An offline or unreachable default can come back; recheck until it does.
+  // A devbox that cannot take this repository will not, so skip it.
+  const recheck = $derived(
+    (loadFailed || (checked && reason !== "")) &&
+      !(target.startsWith("devbox:") && devboxRepositoryUnavailableReason(getRepo())),
+  );
+  $effect(() => {
+    if (!recheck) return;
+    const reload = loadHosts.pipe(
+      Effect.catch(() =>
+        Effect.sync(() => {
+          loadFailed = true;
+        }),
+      ),
+    );
+    const execution = untrack(() =>
+      runtime.runCommand(
+        Effect.all(
+          [
+            pollWhileVisible(reload, "15 seconds"),
+            Stream.runForEach(workspaceEventStream(subscribeWorkspaceEvents), () => reload),
+          ],
+          { concurrency: "unbounded", discard: true },
+        ),
+        {
+          operation: "recheck workspace machine",
+          safeContext: {},
+          onFailure: (failure) => console.error("Default machine recheck stopped", failure),
+        },
+      ),
+    );
+    return () => execution.interrupt();
+  });
   // When the default cannot take the workspace, offer the machines that can.
   const alternatives = $derived.by((): WorkspaceHostChoice[] => {
     if (!reason || !checked || !hosts) return [];

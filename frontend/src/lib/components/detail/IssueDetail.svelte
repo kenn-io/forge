@@ -81,7 +81,7 @@
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
-  const { issues, activity, detailActivityView, settings } = getStores();
+  const { issues, activity, detailActivityView, settings, events } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
   let manualRefreshPending = $state(false);
@@ -181,7 +181,7 @@
     repoPath: string;
     hideStaleWhileLoading?: boolean;
     autoSync?: IssueDetailSyncMode;
-    onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
+    onOpenWorkspace?: ((workspaceId: string, hostKey?: string) => void) | undefined;
     onViewWorkspaces?: (() => void) | undefined;
     inlineWorkspace?: InlineWorkspaceController | null;
   }
@@ -660,7 +660,7 @@
   // still in flight, and a round-trip back to this issue must keep the
   // button disabled or a second click sends a duplicate create.
   const workspaceCreateBlocked = $derived(workspaceCreating || isWorkspaceCreatePending(itemIdentity));
-  const workspaceTarget = createDefaultWorkspaceTarget(runtime,
+  const workspaceTarget = createDefaultWorkspaceTarget(runtime, events.subscribeWorkspaceEvents,
     () => settings.getWorkspaceSettings().default_execution_target ?? "",
     () => itemIdentity,
   );
@@ -905,10 +905,10 @@
           if (data?.id && hostKey) {
             promoteWorkspaceCreateLaunch(requestIdentity, data.id, hostKey);
             if (quickAction) runWorkspaceQuickAction(runtime, data.id, "issue", quickAction, hostKey);
-            if (!responseIsStale()) {
-              pendingWorkspaceHostChoice = null;
-              navigate(`/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(data.id)}`);
-            }
+            if (responseIsStale()) return;
+            pendingWorkspaceHostChoice = null;
+            if (onOpenWorkspace) onOpenWorkspace(data.id, hostKey);
+            else navigate(`/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(data.id)}`);
             return;
           }
           if (data?.id) {
@@ -1504,6 +1504,7 @@
             )}
             quickActions={settings.getQuickActions()}
             onQuickAction={(action) => void createWorkspace({ quickAction: action })}
+            remoteHost={workspaceTarget.hostKey !== undefined}
           />
           {#if !staleIssue && workspaceTarget.alternatives.length > 0}
             <WorkspaceHostAlternatives

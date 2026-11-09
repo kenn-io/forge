@@ -38,7 +38,7 @@
     inlineWorkspace?: InlineWorkspaceController | null;
     onStackMemberNavigate?: ((ref: PullRequestRouteRef) => boolean | void) | undefined;
     onDetailTabChange?: ((tab: "conversation" | "files") => void) | undefined;
-    onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
+    onOpenWorkspace?: ((workspaceId: string, hostKey?: string) => void) | undefined;
     onViewWorkspaces?: (() => void) | undefined;
     /** Phone-like routes render PR actions as one kit action grid. */
     phonePresentation?: boolean;

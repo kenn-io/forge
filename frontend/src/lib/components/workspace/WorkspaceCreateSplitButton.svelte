@@ -51,6 +51,8 @@
     primary?: Snippet;
     /** A session launch is starting: the launch menu waits for it, quick actions do not. */
     launchBusy?: boolean;
+    /** Quick actions run on another machine, which checks its own agents. */
+    remoteHost?: boolean;
   }
 
   let {
@@ -69,6 +71,7 @@
     onQuickAction,
     primary,
     launchBusy = false,
+    remoteHost = false,
   }: Props = $props();
   const runtime = getAppRuntime();
 
@@ -98,7 +101,7 @@
   }
 
   function quickActionDisabledReason(action: QuickAction): string {
-    return quickActionUnavailableReason(action, launchTargets);
+    return quickActionUnavailableReason(action, launchTargets, remoteHost);
   }
 
   function enabledItems(): HTMLButtonElement[] {

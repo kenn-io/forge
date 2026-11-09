@@ -740,6 +740,35 @@ describe("NewWorkspaceDialog", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/fleet/build-b-node/ws-new");
   });
 
+  it("states an unresolved origin default once, in the machine picker, until the fleet loads", async () => {
+    preferredTarget = "https://build-b.example.test";
+    const snapshot = Promise.withResolvers<unknown>();
+    mockGet.mockImplementation((path: string) =>
+      path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] }),
+    );
+    await renderDialog();
+    await screen.findByRole("combobox", { name: /Workspace machine:.*checking/i });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+    snapshot.reject(new Error("snapshot unavailable"));
+    await screen.findByRole("combobox", { name: /Workspace machine:.*status unavailable/i });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("explains an origin default the loaded fleet does not contain", async () => {
+    preferredTarget = "https://gone.example.test";
+    mockGet.mockImplementation((path: string) =>
+      Promise.resolve({
+        data: path === "/snapshot" ? { hosts: [] } : [repoFixture("acme", "widget", 1001)],
+      }),
+    );
+    await renderDialog();
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Your default machine, https://gone.example.test, is not in this fleet. Choose another machine.",
+    );
+  });
+
   it("uses the preferred devbox and keeps its target separate from fleet peers", async () => {
     preferredTarget = "devbox:compute-a";
     mockGet.mockImplementation((path: string) =>

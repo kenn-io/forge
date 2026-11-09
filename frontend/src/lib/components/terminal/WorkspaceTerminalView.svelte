@@ -1314,6 +1314,11 @@
         },
   );
 
+  function promoteIntoDetailLeaf(session: RuntimeSession, leaf: WorkspaceRuntimeLaunchLeaf): void {
+    const target = surfaceLayout === null ? null : detailLaunchInsertTarget(surfaceLayout, leaf);
+    if (target !== null) surfaceLayout?.promoteTab(sessionPaneKeyFor(session), target);
+  }
+
   function rememberQuickActionSessionPlacement(sessionKey: string): void {
     const launch = quickActionLaunches.get(quickActionWorkspaceKey(workspaceId, workspaceHostKey));
     if (launch) (launch.explicitlyMovedSessionKeys ??= new Set()).add(sessionKey);
@@ -2863,7 +2868,7 @@
             if (leaf?.surface === "workflow") {
               appendWorkflowTabToGroup(workflowTabKeyForSession(session.key), leaf.id, sessions);
             } else if (leaf?.surface === "detail") {
-              surfaceLayout?.promoteTab(sessionPaneKeyFor(session), detailLaunchInsertTarget(leaf));
+              promoteIntoDetailLeaf(session, leaf);
             }
             closeLauncher();
             requestSessionFocus(sessionHostKeyFor(session));
@@ -4577,9 +4582,7 @@
           sessionRegions: { ...terminalLayout.sessionRegions, [session.key]: "workflow" },
           workflowTree: tree,
         };
-        if (launch.leaf?.surface === "detail") {
-          surfaceLayout?.promoteTab(sessionPaneKeyFor(session), detailLaunchInsertTarget(launch.leaf));
-        }
+        if (launch.leaf?.surface === "detail") promoteIntoDetailLeaf(session, launch.leaf);
       }
       mountSessionTerminal(session.key);
       if (isPromoted(session)) {

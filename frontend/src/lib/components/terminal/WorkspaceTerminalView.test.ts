@@ -4911,6 +4911,33 @@ describe("WorkspaceTerminalView", () => {
     expect(layout.isTabActive(newPane)).toBe(true);
   });
 
+  it("keeps a header launch in the workspace pane when its detail destination leaves the screen mid-launch", async () => {
+    mocks.detailSessionPlacement = "right";
+    const launchRequest = deferred<typeof runningSession>();
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    mocks.launchWorkspaceSession.mockReturnValue(launchRequest.promise);
+    claimForPrs();
+    noteWorkspacePaneRendered("prs");
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    const controller = getInlineWorkspaceController("prs");
+
+    controller.launchSession("codex");
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+    // The window narrowed to the single-strip layout while the agent started.
+    getPaneLayoutStore("prs").notePaneRender({
+      activeInputTabKey: "workspace",
+      editableTabs: ["conversation", "workspace"],
+      onScreenTabs: ["workspace"],
+      flattened: true,
+      soloChromeTabs: [],
+    });
+    launchRequest.resolve({ ...runningSession, key: "ws-1:codex", target_key: "codex", label: "Codex" });
+
+    await waitFor(() => expect(controller.sessionLaunching()).toBe(false));
+    expect(getPaneLayoutStore("prs").hasTab(sessionPaneKey("ws-1", undefined, "ws-1:codex"))).toBe(false);
+  });
+
   it("keeps a session launched from the detail header in the workspace pane when placement is bottom", async () => {
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
     mocks.launchWorkspaceSession.mockResolvedValue({

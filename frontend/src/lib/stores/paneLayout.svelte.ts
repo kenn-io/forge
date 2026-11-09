@@ -447,6 +447,10 @@ function onScreenDetailTab(layout: PaneLayoutStore, render: PaneRenderReport): s
  * fallback for every other choice when no detail pane is on screen or the
  * narrow-width strip has structural edits off: a split must not land beside a
  * pane the user cannot see.
+ *
+ * The anchor is the Conversation pane, which holds the header these launches start
+ * from. Last focus cannot say that: revealing the workspace pane for the launch
+ * records the workspace as focused before this runs.
  */
 export function detailSessionLaunchLeaf(
   surface: PaneSurfaceKey,
@@ -456,14 +460,27 @@ export function detailSessionLaunchLeaf(
   const layout = getPaneLayoutStore(surface);
   const render = layout.paneRender();
   if (render === null || render.flattened) return undefined;
-  const anchor = onScreenDetailTab(layout, render);
+  const anchor = render.onScreenTabs.includes("conversation") ? "conversation" : onScreenDetailTab(layout, render);
   const id = anchor === undefined ? null : layout.leafIDForTab(anchor);
   if (id === null) return undefined;
   return placement === "tab" ? { surface: "detail", id } : { surface: "detail", id, edge: placement };
 }
 
-/** Where a session launched into a detail leaf goes in that surface's tree. */
-export function detailLaunchInsertTarget(leaf: WorkspaceRuntimeLaunchLeaf): TabbedPanelInsertTarget {
+/**
+ * Where a session launched into a detail leaf goes in that surface's tree, or null
+ * to leave it in the workspace pane.
+ *
+ * Checked when the launch completes, not when it starts. A launch takes seconds,
+ * and a leaf that another pane's zoom or the narrow-width strip has taken off
+ * screen since then would hide the new session.
+ */
+export function detailLaunchInsertTarget(
+  layout: PaneLayoutStore,
+  leaf: WorkspaceRuntimeLaunchLeaf,
+): TabbedPanelInsertTarget | null {
+  const render = layout.paneRender();
+  if (render === null || render.flattened) return null;
+  if (!render.onScreenTabs.some((tab) => layout.leafIDForTab(tab) === leaf.id)) return null;
   if (leaf.edge === undefined) return { kind: "tab", leafID: leaf.id };
   return { kind: "split", leafID: leaf.id, ...tabbedPanelSplitPlacementForEdge(leaf.edge) };
 }

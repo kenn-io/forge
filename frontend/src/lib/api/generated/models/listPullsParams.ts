@@ -3,39 +3,23 @@
  */
 
 export type ListPullsParams = {
-  /**
-   * Item numbers in every repo unless repo is set; before pagination.
-   */
+  /** Item numbers in every repo unless repo is set; before pagination. */
   numbers?: number[];
-  /**
-   * Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Mutually exclusive filters match either: draft or ready, and failed_ci or passed_ci. Every other selected filter, including involves_me and unassigned, must also match before pagination.
-   */
+  /** Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Mutually exclusive filters match either: draft or ready, and failed_ci or passed_ci. Every other selected filter, including involves_me and unassigned, must also match before pagination. */
   attributes?: string;
-  /**
-   * Exact case-sensitive label name; applied before pagination.
-   */
+  /** Exact case-sensitive label name; applied before pagination. */
   label?: string;
-  /**
-   * Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
-   */
+  /** Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories. */
   repo?: string;
-  /**
-   * open (default), closed (including merged), merged, closed_unmerged, or all.
-   */
+  /** open (default), closed (including merged), merged, closed_unmerged, or all. */
   state?: string;
   starred?: boolean;
-  /**
-   * Only include pull requests involving the authenticated viewer.
-   */
+  /** Only include pull requests involving the authenticated viewer. */
   involves_me?: boolean;
-  /**
-   * Only include pull requests with no assignees.
-   */
+  /** Only include pull requests with no assignees. */
   unassigned?: boolean;
   q?: string;
-  /**
-   * Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers.
-   */
+  /** Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers. */
   semantic?: boolean;
   limit?: number;
   offset?: number;

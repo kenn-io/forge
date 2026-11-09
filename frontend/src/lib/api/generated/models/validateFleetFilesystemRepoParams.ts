@@ -3,8 +3,6 @@
  */
 
 export type ValidateFleetFilesystemRepoParams = {
-  /**
-   * The path to resolve to a repository root on the owning host.
-   */
+  /** The path to resolve to a repository root on the owning host. */
   path: string;
 };

@@ -3,8 +3,6 @@
  */
 
 export type GetMarkdownMediaHeaders = {
-  /**
-   * Single byte range forwarded to the provider
-   */
+  /** Single byte range forwarded to the provider */
   Range?: string;
 };

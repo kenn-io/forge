@@ -4,27 +4,17 @@
 import type { ListActivityProjection } from "./listActivityProjection.ts";
 
 export type ListActivityParams = {
-  /**
-   * Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
-   */
+  /** Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories. */
   repo?: string;
   types?: string[];
-  /**
-   * Item scopes included before limiting activity results: pr, issue, or repo.
-   */
+  /** Item scopes included before limiting activity results: pr, issue, or repo. */
   item_types?: string[];
   search?: string;
-  /**
-   * Exact, case-insensitive pull request or issue author filter.
-   */
+  /** Exact, case-insensitive pull request or issue author filter. */
   author?: string;
-  /**
-   * Only include activity for pull requests and issues involving the authenticated viewer.
-   */
+  /** Only include activity for pull requests and issues involving the authenticated viewer. */
   involves_me?: boolean;
-  /**
-   * Only include activity for pull requests and issues with no assignees.
-   */
+  /** Only include activity for pull requests and issues with no assignees. */
   unassigned?: boolean;
   after?: string;
   before?: string;
@@ -38,13 +28,9 @@ export type ListActivityParams = {
   limit?: number;
   hide_closed_merged?: boolean;
   hide_bots?: boolean;
-  /**
-   * Exclude activity for draft pull requests.
-   */
+  /** Exclude activity for draft pull requests. */
   hide_drafts?: boolean;
-  /**
-   * Exclude activity for pull requests currently queued for merge.
-   */
+  /** Exclude activity for pull requests currently queued for merge. */
   hide_merge_queued?: boolean;
   hide_default_branch?: boolean;
 };

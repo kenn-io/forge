@@ -7,12 +7,8 @@ export type GetCommentAutocompleteParams = {
   trigger?: string;
   q?: string;
   limit?: number;
-  /**
-   * Optional item the comment targets; requires item_number.
-   */
+  /** Optional item the comment targets; requires item_number. */
   item_type?: GetCommentAutocompleteItemType;
-  /**
-   * Optional item number the comment targets; requires item_type.
-   */
+  /** Optional item number the comment targets; requires item_type. */
   item_number?: number;
 };

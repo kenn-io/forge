@@ -4,16 +4,10 @@
 
 export type GetPullDiffParams = {
   whitespace?: string;
-  /**
-   * Scope to a single commit SHA
-   */
+  /** Scope to a single commit SHA */
   commit?: string;
-  /**
-   * Start SHA for range diff (inclusive)
-   */
+  /** Start SHA for range diff (inclusive) */
   from?: string;
-  /**
-   * End SHA for range diff (inclusive)
-   */
+  /** End SHA for range diff (inclusive) */
   to?: string;
 };

@@ -6,36 +6,20 @@ import type { GetWorkspaceFilePreviewSide } from "./getWorkspaceFilePreviewSide.
 import type { GetWorkspaceFilePreviewWhitespace } from "./getWorkspaceFilePreviewWhitespace.ts";
 
 export type GetWorkspaceFilePreviewParams = {
-  /**
-   * Diff base: head, pushed, or merge-target
-   */
+  /** Diff base: head, pushed, or merge-target */
   base?: GetWorkspaceFilePreviewBase;
-  /**
-   * Set to hide to ignore whitespace-only changes
-   */
+  /** Set to hide to ignore whitespace-only changes */
   whitespace?: GetWorkspaceFilePreviewWhitespace;
-  /**
-   * Changed file path to preview
-   */
+  /** Changed file path to preview */
   path?: string;
-  /**
-   * Optional diff side to read for context expansion
-   */
+  /** Optional diff side to read for context expansion */
   side?: GetWorkspaceFilePreviewSide;
-  /**
-   * Scope to a single commit SHA
-   */
+  /** Scope to a single commit SHA */
   commit?: string;
-  /**
-   * Start SHA for range diff (inclusive)
-   */
+  /** Start SHA for range diff (inclusive) */
   from?: string;
-  /**
-   * End SHA for range diff (inclusive)
-   */
+  /** End SHA for range diff (inclusive) */
   to?: string;
-  /**
-   * Optional snapshot_version returned by the workspace files endpoint
-   */
+  /** Optional snapshot_version returned by the workspace files endpoint */
   revision?: string;
 };

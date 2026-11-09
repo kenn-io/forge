@@ -9,15 +9,11 @@ export type ListActivityThreadEventsParams = {
   platform_repo_id?: number;
   bitbucket_repository_uuid?: string;
   item_type?: ListActivityThreadEventsItemType;
-  /**
-   * @minimum 1
-   */
+  /** @minimum 1 */
   item_number?: number;
   types?: string[];
   search?: string;
-  /**
-   * Only include activity for pull requests and issues with no assignees.
-   */
+  /** Only include activity for pull requests and issues with no assignees. */
   unassigned?: boolean;
   since?: string;
   before?: string;
@@ -29,13 +25,9 @@ export type ListActivityThreadEventsParams = {
   limit?: number;
   hide_closed_merged?: boolean;
   hide_bots?: boolean;
-  /**
-   * Exclude activity for draft pull requests.
-   */
+  /** Exclude activity for draft pull requests. */
   hide_drafts?: boolean;
-  /**
-   * Exclude activity for pull requests currently queued for merge.
-   */
+  /** Exclude activity for pull requests currently queued for merge. */
   hide_merge_queued?: boolean;
   hide_default_branch?: boolean;
 };

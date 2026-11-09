@@ -3,8 +3,6 @@
  */
 
 export type ListWorklistsParams = {
-  /**
-   * Include dismissed worklists.
-   */
+  /** Include dismissed worklists. */
   include_dismissed?: boolean;
 };

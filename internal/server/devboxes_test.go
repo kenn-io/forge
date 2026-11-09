@@ -259,7 +259,7 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	executable, err := os.Executable()
 	require.NoError(t, err)
 	logPath := filepath.Join(root, "responses")
-	agent := config.Agent{Key: "chat", Protocol: "acp", DisableForgeTools: true, Command: []string{executable, "-test.run=^TestSharedDevboxACPAgent$"}, Env: map[string]string{"KENN_FORGE_SERVER_RUNTIME_HELPER": "1", "KENN_FORGE_ACP_FIXTURE": "1", "KENN_FORGE_ACP_CONTINUE_DIR": root, "KENN_FORGE_ACP_RECORD_PROMPTS": "1"}}
+	agent := config.Agent{Key: "chat", Protocol: "acp", DisableForgeTools: true, Command: []string{executable, "-test.run=^TestSharedDevboxACPAgent$"}, Env: map[string]string{"KENN_FORGE_SERVER_RUNTIME_HELPER": "1", "KENN_FORGE_ACP_FIXTURE": "1", "KENN_FORGE_ACP_CONTINUE_DIR": root, "KENN_FORGE_ACP_RECORD_PROMPTS": "1", "KENN_FORGE_ACP_STEERING": "1"}}
 	targets := localruntime.ResolveLaunchTargets([]config.Agent{agent}, []string{filepath.Join(root, "missing-tmux")}, nil)
 	manager := localruntime.NewManager(localruntime.Options{ACPSessionsDir: filepath.Join(root, "acp"), ACPOwnerCommand: []string{"env", "KENN_FORGE_SERVER_RUNTIME_HELPER=1", "KENN_FORGE_ACP_OWNER_FIXTURE=1", executable, "-test.run=^TestSharedDevboxACPOwner$", "--"}, Targets: targets, PtyOwnerRuntime: ptyownerruntime.New(&ptyowner.Client{Root: filepath.Join(root, "pty-owner"), InProcess: true}, nil)})
 	t.Cleanup(manager.Shutdown)
@@ -285,7 +285,7 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
 	require.NoError(t, database.UpsertWorkspaceRuntimeSession(t.Context(), &db.WorkspaceRuntimeSession{WorkspaceID: "work-a", SessionKey: session.Key, TargetKey: "chat", Kind: "acp", Scope: "session", DisplayRegion: "workflow", CreatedAt: session.CreatedAt}))
 	require.NoError(t, database.SetWorkspaceActiveTab(t.Context(), "work-a", "session:"+session.Key))
-	for index, prompt := range []string{"inspect the failure", "try the fix"} {
+	for index, prompt := range []string{"inspect the failure", "adjust"} {
 		directory := t.TempDir()
 		raw, err := json.Marshal([]any{map[string]any{"id": "compute-a", "profile": devbox.Profile{Assignment: devbox.Assignment{URL: worker.URL}, Token: "worker-test-token"}}})
 		require.NoError(t, err)
@@ -323,12 +323,18 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 			assert.Equal(t, "coordinator", state.Supervision.Supervisor)
 			assert.Equal(t, uint64(1), state.Supervision.Generation)
 			assert.False(t, state.Supervision.TakenOver)
+			assert.True(t, state.Busy)
+			assert.True(t, state.SteeringSupported)
 		}
-		command := `{"type":"prompt","mode":"send","id":"` + prompt + `","text":"` + prompt + `"}`
+		mode, record := "send", "prompt:"
+		if index == 1 {
+			mode, record = "steer", "steer:"
+		}
+		command := `{"type":"prompt","mode":"` + mode + `","id":"` + prompt + `","text":"` + prompt + `"}`
 		require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte(command)))
 		require.Eventually(t, func() bool {
 			data, _ := os.ReadFile(logPath)
-			return strings.Contains(string(data), "prompt:"+prompt+"\n")
+			return strings.Contains(string(data), record+prompt+"\n")
 		}, 10*time.Second, 20*time.Millisecond)
 		if index == 0 {
 			for {
@@ -341,10 +347,21 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 		}
 		require.NoError(t, conn.Close(websocket.StatusNormalClosure, "done"))
 		cancel()
+		if index == 0 {
+			require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "prompt", Text: "wait", ID: "coordinator-turn", Generation: 1}))
+			require.Eventually(t, func() bool {
+				data, err := chat.Snapshot()
+				if err != nil {
+					return false
+				}
+				var state localruntime.ACPState
+				return json.Unmarshal(data, &state) == nil && state.Busy && strings.Contains(string(data), "wait")
+			}, 10*time.Second, 20*time.Millisecond)
+		}
 	}
 	got, err := os.ReadFile(logPath)
 	require.NoError(t, err)
-	require.Equal(t, "prompt:inspect the failure\nprompt:try the fix\n", string(got))
+	require.Equal(t, "prompt:inspect the failure\nprompt:wait\nsteer:adjust\n", string(got))
 	sessions, err := os.ReadFile(filepath.Join(root, "sessions"))
 	require.NoError(t, err)
 	require.Equal(t, "session/new\n", string(sessions))

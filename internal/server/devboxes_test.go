@@ -259,7 +259,7 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	root := t.TempDir()
 	executable, err := os.Executable()
 	require.NoError(t, err)
-	agent := config.Agent{Key: "chat", Protocol: "acp", DisableForgeTools: true, Command: []string{executable, "-test.run=^TestSharedDevboxACPAgent$"}, Env: map[string]string{"KENN_FORGE_SERVER_RUNTIME_HELPER": "1", "KENN_FORGE_ACP_FIXTURE": "1", "KENN_FORGE_ACP_CONTINUE_DIR": root}}
+	agent := config.Agent{Key: "chat", Protocol: "acp", DisableForgeTools: true, Command: []string{executable, "-test.run=^TestSharedDevboxACPAgent$"}, Env: map[string]string{"KENN_FORGE_SERVER_RUNTIME_HELPER": "1", "KENN_FORGE_ACP_FIXTURE": "1", "KENN_FORGE_ACP_CONTINUE_DIR": root, "KENN_FORGE_ACP_STEERING": "1"}}
 	targets := localruntime.ResolveLaunchTargets([]config.Agent{agent}, []string{filepath.Join(root, "missing-tmux")}, nil)
 	manager := localruntime.NewManager(localruntime.Options{ACPSessionsDir: filepath.Join(root, "acp"), ACPOwnerCommand: []string{"env", "KENN_FORGE_SERVER_RUNTIME_HELPER=1", "KENN_FORGE_ACP_OWNER_FIXTURE=1", executable, "-test.run=^TestSharedDevboxACPOwner$", "--"}, Targets: targets, PtyOwnerRuntime: ptyownerruntime.New(&ptyowner.Client{Root: filepath.Join(root, "pty-owner"), InProcess: true}, nil)})
 	t.Cleanup(manager.Shutdown)
@@ -348,7 +348,7 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	require.NoError(t, observers[0].Write(ctx, websocket.MessageText, []byte(`{"type":"prompt","mode":"send","id":"prompt-a","text":"inspect the failure"}`)))
+	require.NoError(t, observers[0].Write(ctx, websocket.MessageText, []byte(`{"type":"prompt","mode":"send","id":"prompt-a","text":"wait"}`)))
 	for {
 		_, frame, err := observers[1].Read(ctx)
 		require.NoError(t, err)
@@ -365,13 +365,18 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 		}
 		var prompt, reply bool
 		for _, message := range messages {
-			prompt = prompt || message.Role == "user" && message.Text == "inspect the failure"
+			prompt = prompt || message.Role == "user" && message.Text == "wait"
 			reply = reply || message.Role == "assistant" && message.Text == "Hello workspace"
 		}
 		if prompt && reply {
 			break
 		}
 	}
+	require.NoError(t, observers[1].Write(ctx, websocket.MessageText, []byte(`{"type":"prompt","mode":"steer","id":"steer-b","text":"adjust"}`)))
+	require.Eventually(t, func() bool {
+		responses, err := os.ReadFile(filepath.Join(root, "responses"))
+		return err == nil && strings.Contains(string(responses), "steer:adjust\n")
+	}, 5*time.Second, 10*time.Millisecond, "the worker agent receives the second controller's correction during the active turn")
 }
 
 func TestDevboxShellLaunchDoesNotRefreshSourceContext(t *testing.T) {

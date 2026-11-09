@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, CodeBlock, ImagePreview, VideoPlayer } from "@kenn-io/kit-ui";
+  import { Button, CodeBlock, Disclosure, ImagePreview, VideoPlayer } from "@kenn-io/kit-ui";
   import Download from "@lucide/svelte/icons/download";
   import FileText from "@lucide/svelte/icons/file-text";
   import ImageIcon from "@lucide/svelte/icons/image";
@@ -101,15 +101,15 @@
   </div>
 {:else if content.type === "resource"}
   {#if content.text != null}
-    <details class="resource">
-      <summary><FileText size={14} aria-hidden="true" /><span>{label || "Embedded resource"}</span></summary>
+    <Disclosure variant="plain" class="chat-resource">
+      {#snippet summary()}<span class="resource-title"><FileText size={14} aria-hidden="true" /><span>{label || "Embedded resource"}</span></span>{/snippet}
       <CodeBlock
         code={content.text}
         title={content.uri || content.name || "resource"}
         maxHeight="20rem"
         {...languageProp}
       />
-    </details>
+    </Disclosure>
   {:else if !content.data}
     {@render placeholder(FileText, "Resource unavailable")}
   {:else}
@@ -196,18 +196,13 @@
     align-items: center;
     flex-wrap: wrap;
   }
-  .resource summary {
-    display: flex;
+  .resource-title {
+    display: inline-flex;
     align-items: center;
     gap: var(--space-2);
-    padding: var(--space-2) 0;
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    cursor: pointer;
-    overflow-wrap: anywhere;
   }
   @media (pointer: coarse) {
-    .resource summary {
+    :global(.chat-resource > .kit-disclosure__summary) {
       min-height: var(--mobile-chrome-hit-target);
     }
   }

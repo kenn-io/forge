@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Disclosure } from "@kenn-io/kit-ui";
   import Terminal from "@lucide/svelte/icons/terminal";
   import ChatContentBlock from "./ChatContentBlock.svelte";
   import { isInlineMediaContent, lineDiff, stripAnsi } from "./chat-content.js";
@@ -71,10 +72,10 @@
     {/if}
   {/each}
   {#if message.rawInput}
-    <details class="raw" open={rawInputOpen} ontoggle={(event) => onRawToggle("input", event.currentTarget.open)}><summary>Raw input</summary><pre {@attach preserveContentScroll(contentScroll, message.id, ["raw-input"])}>{message.rawInput}</pre></details>
+    <Disclosure variant="plain" class="raw" title="Raw input" open={rawInputOpen} ontoggle={(open) => onRawToggle("input", open)}><pre {@attach preserveContentScroll(contentScroll, message.id, ["raw-input"])}>{message.rawInput}</pre></Disclosure>
   {/if}
   {#if message.rawOutput}
-    <details class="raw" open={rawOutputOpen} ontoggle={(event) => onRawToggle("output", event.currentTarget.open)}><summary>Raw output</summary><pre {@attach preserveContentScroll(contentScroll, message.id, ["raw-output"])}>{message.rawOutput}</pre></details>
+    <Disclosure variant="plain" class="raw" title="Raw output" open={rawOutputOpen} ontoggle={(open) => onRawToggle("output", open)}><pre {@attach preserveContentScroll(contentScroll, message.id, ["raw-output"])}>{message.rawOutput}</pre></Disclosure>
   {/if}
 </div>
 
@@ -189,12 +190,5 @@
   }
   .exit--failed {
     color: var(--accent-red);
-  }
-  .raw summary {
-    color: var(--text-secondary);
-    cursor: pointer;
-  }
-  .raw pre {
-    margin-top: var(--space-2);
   }
 </style>

@@ -21,6 +21,7 @@ describe("DocMarkdownView details blocks (browser)", () => {
     const { container } = await render(DocMarkdownViewRuntimeHarness, {
       props: {
         source: [
+          // kit-ui-check-ignore: markdown source under test, not app markup
           "<details>",
           "",
           "<summary>Tips for collapsed sections</summary>",

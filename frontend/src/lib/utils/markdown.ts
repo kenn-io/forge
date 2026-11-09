@@ -631,8 +631,8 @@ function normalizePlayer(video: HTMLVideoElement, fileName: string | null): void
 }
 
 // Collapses and expands the player; markdown-video-toggle.ts handles clicks.
-// A button rather than <details>: a block-level <details> would split the
-// paragraph a GitLab inline video sits in when the HTML is parsed again.
+// A button rather than a details element: a block-level details element would
+// split the paragraph a GitLab inline video sits in when the HTML is parsed again.
 function markdownVideoHeader(doc: Document, fileName: string | null): HTMLButtonElement {
   const header = doc.createElement("button");
   header.type = "button";

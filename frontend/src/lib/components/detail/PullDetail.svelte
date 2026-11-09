@@ -4,7 +4,6 @@
 
 <script lang="ts">
   import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
-  import { tablistKeyTarget } from "../shared/tablist-keyboard.js";
   import { getCommentNavigation } from "../../stores/router.svelte.js";
   import { Effect } from "effect";
   import { pollWhileVisible } from "../../effect/poll-while-visible.js";
@@ -110,7 +109,7 @@
   import UsersIcon from "@lucide/svelte/icons/users";
   import WorkflowIcon from "@lucide/svelte/icons/workflow";
   import XIcon from "@lucide/svelte/icons/x";
-  import { Button, Chip } from "@kenn-io/kit-ui";
+  import { Button, Chip, Tabs } from "@kenn-io/kit-ui";
   import { Spinner } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
@@ -360,20 +359,10 @@
   );
 
   let activeTab = $state<"conversation" | "files">("conversation");
-  const detailTabKeys = ["conversation", "files"] as const;
-
-  // The tab strip is one tab stop: arrows move between the tabs and select
-  // them, so Tab from the active tab continues into the panel below.
-  function handleDetailTabKeydown(event: KeyboardEvent): void {
-    const target = tablistKeyTarget(event.key, detailTabKeys.indexOf(activeTab), detailTabKeys.length);
-    if (target === null) return;
-    event.preventDefault();
-    const next = detailTabKeys[target];
-    if (next === undefined || next === activeTab) return;
-    activeTab = next;
-    const strip = (event.currentTarget as HTMLElement).parentElement;
-    strip?.querySelectorAll<HTMLElement>("[role='tab']")[target]?.focus();
-  }
+  const detailTabs = [
+    { id: "conversation", label: "Conversation" },
+    { id: "files", label: "Files changed" },
+  ];
   let expandedPanel = $state<"ci" | "stack" | "merge" | null>(null);
   let pullDetailScroller: HTMLDivElement | undefined = $state();
   let pullDetailScrollRestoreExecution: AppExecution<void, never> | undefined;
@@ -2472,37 +2461,25 @@
         </div>
       {/if}
       {#if !hideTabs}
-        <div class="detail-tabs" role="tablist" aria-label="Pull request detail">
-          <button
-            type="button"
-            class="detail-tab"
-            class:detail-tab--active={activeTab === "conversation"}
-            role="tab"
-            aria-selected={activeTab === "conversation"}
-            tabindex={activeTab === "conversation" ? 0 : -1}
-            onclick={() => { activeTab = "conversation"; }}
-            onkeydown={handleDetailTabKeydown}
+        <div class="detail-tabs">
+          <Tabs
+            tabs={detailTabs}
+            value={activeTab}
+            ariaLabel="Pull request detail"
+            onchange={(id) => { activeTab = id === "files" ? "files" : "conversation"; }}
           >
-            Conversation
-          </button>
-          <button
-            type="button"
-            class="detail-tab"
-            class:detail-tab--active={activeTab === "files"}
-            role="tab"
-            aria-selected={activeTab === "files"}
-            tabindex={activeTab === "files" ? 0 : -1}
-            onclick={() => { activeTab = "files"; }}
-            onkeydown={handleDetailTabKeydown}
-          >
-            Files changed
-            {#if pr.Additions > 0}
-              <span class="files-stat files-stat--add">+{pr.Additions}</span>
-            {/if}
-            {#if pr.Deletions > 0}
-              <span class="files-stat files-stat--del">-{pr.Deletions}</span>
-            {/if}
-          </button>
+            {#snippet tab(item)}
+              {item.label}
+              {#if item.id === "files"}
+                {#if pr.Additions > 0}
+                  <span class="files-stat files-stat--add">+{pr.Additions}</span>
+                {/if}
+                {#if pr.Deletions > 0}
+                  <span class="files-stat files-stat--del">-{pr.Deletions}</span>
+                {/if}
+              {/if}
+            {/snippet}
+          </Tabs>
         </div>
       {/if}
       {#if !hideTabs && activeTab === "files"}
@@ -4733,39 +4710,8 @@
   }
 
   .detail-tabs {
-    display: flex;
-    gap: 0;
-    border-bottom: 1px solid var(--border-default);
     background: var(--bg-surface);
     flex-shrink: 0;
-  }
-
-  .detail-tab {
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    padding: 8px 16px;
-    color: var(--text-secondary);
-    border-bottom: 2px solid transparent;
-    transition: color 0.1s, border-color 0.1s;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: none;
-    border-top: none;
-    border-left: none;
-    border-right: none;
-    cursor: pointer;
-    font-family: inherit;
-  }
-
-  .detail-tab:hover {
-    color: var(--text-primary);
-    background: var(--bg-surface-hover);
-  }
-
-  .detail-tab--active {
-    color: var(--text-primary);
-    border-bottom-color: var(--accent-blue);
   }
 
   .edit-body-btn {
@@ -4891,7 +4837,7 @@
     .files-stat,
     .action-error,
     .loading-placeholder,
-    .detail-tab {
+    .detail-tabs :global(.kit-tabs__tab) {
       font-size: var(--font-size-sm);
       line-height: 1.35;
     }
@@ -4940,7 +4886,7 @@
 
     .actions-row :global(.kit-button),
     .actions-menu-trigger-host :global(.kit-button),
-    .detail-tab,
+    .detail-tabs :global(.kit-tabs__tab),
     .title-edit-save,
     .title-edit-cancel,
     .add-description-btn {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Card, Chip } from "@kenn-io/kit-ui";
+  import { Button, Card, Chip, Disclosure } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import { untrack } from "svelte";
   import type { ExternalContextAction } from "../../api/generated/models/externalContextAction.js";
@@ -121,8 +121,8 @@
         {/if}
         {#if !context.card.markdown}<p>{context.card.summary}</p>{/if}
         {#if context.card.markdown}
-          <details bind:open>
-            <summary>Details: <span>{context.card.summary}</span></summary>
+          <Disclosure variant="plain" bind:open>
+            {#snippet summary()}Details: <span>{context.card?.summary}</span>{/snippet}
             <div class="context-details">
               <div class="markdown-body"><MarkdownHtml raw={context.card.markdown} options={{ interactiveTasks: false }} /></div>
               {#if bodyActions.length}
@@ -131,7 +131,7 @@
                 </div>
               {/if}
             </div>
-          </details>
+          </Disclosure>
         {/if}
         {#if context.card.result_head_sha && context.card.result_head_sha !== pull.headSha}
           <p class="older-result">Results are for an older commit</p>
@@ -175,7 +175,6 @@
   .older-result { color: var(--accent-amber); }
   .context-error { color: var(--accent-red); }
   .disabled-reason { color: var(--text-muted); }
-  summary { cursor: pointer; color: var(--text-secondary); }
-  .context-details { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; margin-top: var(--space-3); }
+  .context-details { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
   .markdown-body { overflow: auto; }
 </style>

@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { tablistKeyTarget } from "../shared/tablist-keyboard.js";
-  import { Spinner } from "@kenn-io/kit-ui";
+  import { Spinner, Tabs } from "@kenn-io/kit-ui";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
   import MobileNavMenu from "./MobileNavMenu.svelte";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
@@ -41,20 +40,10 @@
     onViewWorkspaces,
   }: Props = $props();
 
-  const itemTabs = ["conversation", "files"] as const;
-
-  // The strip is one tab stop: arrows move between the two tabs and select
-  // them, so Tab from the active tab continues into the item content.
-  function handleTabKeydown(event: KeyboardEvent, current: (typeof itemTabs)[number]): void {
-    const target = tablistKeyTarget(event.key, itemTabs.indexOf(current), itemTabs.length);
-    if (target === null) return;
-    event.preventDefault();
-    const next = itemTabs[target];
-    if (next === undefined || next === current) return;
-    onTabChange(next);
-    const strip = (event.currentTarget as HTMLElement).parentElement;
-    strip?.querySelectorAll<HTMLElement>("[role='tab']")[target]?.focus();
-  }
+  const itemTabs = [
+    { id: "conversation", label: "Conversation" },
+    { id: "files", label: "Files" },
+  ];
   const appRuntime = getAppRuntime();
 
   let workspace = $state.raw<WorkspaceDetail | null>(null);
@@ -148,25 +137,13 @@
       {/if}
     </button>
     {#if showItemTabs}
-      <div class="mobile-workspace-item__tabs" role="tablist" aria-label="Pull request detail">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab !== "files"}
-          tabindex={tab !== "files" ? 0 : -1}
-          class:active={tab !== "files"}
-          onclick={() => onTabChange("conversation")}
-          onkeydown={(event) => handleTabKeydown(event, "conversation")}
-        >Conversation</button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "files"}
-          tabindex={tab === "files" ? 0 : -1}
-          class:active={tab === "files"}
-          onclick={() => onTabChange("files")}
-          onkeydown={(event) => handleTabKeydown(event, "files")}
-        >Files</button>
+      <div class="mobile-workspace-item__tabs">
+        <Tabs
+          tabs={itemTabs}
+          value={tab === "files" ? "files" : "conversation"}
+          ariaLabel="Pull request detail"
+          onchange={(id) => onTabChange(id === "files" ? "files" : "conversation")}
+        />
       </div>
     {/if}
     <span class="mobile-workspace-item__end">
@@ -235,10 +212,9 @@
   .mobile-workspace-item__end { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.5rem; }
   .mobile-workspace-item__badge { flex: 0 0 auto; padding: 0.25rem 0.625rem; border-radius: 999px; color: var(--text-on-accent); background: var(--accent-green); font-family: var(--font-mono); font-size: var(--font-size-sm); font-weight: 700; }
   .mobile-workspace-item__badge.issue { background: var(--accent-amber); }
-  .mobile-workspace-item__back:focus-visible, .mobile-workspace-item__tabs button:focus-visible, .mobile-workspace-item__state button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
-  .mobile-workspace-item__tabs { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 0.125rem; padding: 0.1875rem; border-radius: var(--radius-md); background: var(--bg-inset); }
-  .mobile-workspace-item__tabs button { min-width: 0; min-height: calc(var(--mobile-chrome-hit-target) - 0.375rem); padding: 0 0.375rem; overflow: hidden; border: 0; border-radius: var(--radius-sm); color: var(--text-muted); background: transparent; font: inherit; font-size: var(--font-size-sm); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-  .mobile-workspace-item__tabs button.active { color: var(--text-primary); background: var(--bg-surface-hover); }
+  .mobile-workspace-item__back:focus-visible, .mobile-workspace-item__state button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+  .mobile-workspace-item__tabs { flex: 1 1 auto; min-width: 0; }
+  .mobile-workspace-item__tabs :global(.kit-tabs__tab) { min-height: var(--mobile-chrome-hit-target); }
   .mobile-workspace-item__content { flex: 1; min-height: 0; display: flex; }
   .mobile-workspace-item__content :global(.collapsible-sidebar) { flex: 1; min-width: 0; }
   .mobile-workspace-item__state { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; padding: 2rem 1rem; color: var(--text-muted); text-align: center; font-size: var(--font-size-md); }

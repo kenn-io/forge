@@ -39,6 +39,8 @@ type externalSessionFixture struct {
 	worktree   string
 	head       string
 	transcript string
+	// activityRoot holds the agent activity reports.
+	activityRoot string
 }
 
 const externalClaudeTranscript = `{"type":"user","timestamp":"2026-01-02T03:04:05Z","message":{"role":"user","content":"Open a pull request"}}
@@ -71,10 +73,11 @@ func newExternalSessionFixture(t *testing.T) *externalSessionFixture {
 	tmux := filepath.Join(t.TempDir(), "tmux")
 	require.NoError(os.WriteFile(tmux, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 	manager.SetTmuxCommand([]string{tmux})
+	activityRoot := t.TempDir()
 	handler := New(Deps{
 		DB: database, Workspaces: manager, LaunchSpecResolver: resolver,
 		Runtime:            localruntime.NewManager(localruntime.Options{ACPSessionsDir: t.TempDir()}),
-		AgentActivity:      agentactivity.NewStore(t.TempDir()),
+		AgentActivity:      agentactivity.NewStore(activityRoot),
 		EnrichmentDisabled: true,
 	})
 	handler.ApplyConfig(ConfigSnapshot{KnownPlatformHosts: []projects.KnownPlatformHost{{Platform: "github", Host: "github.com"}}})
@@ -88,7 +91,7 @@ func newExternalSessionFixture(t *testing.T) *externalSessionFixture {
 	return &externalSessionFixture{
 		database: database, handler: handler, mux: mux, repoID: repoID, worktree: worktree,
 		head:       strings.TrimSpace(string(gitfixture.Run(t, repository.Dir, "rev-parse", "HEAD"))),
-		transcript: transcript,
+		transcript: transcript, activityRoot: activityRoot,
 	}
 }
 
@@ -100,6 +103,14 @@ func (f *externalSessionFixture) hook(t *testing.T, agent, session, event string
 // hookWith posts a hook event whose body also carries fields; the hook ignores
 // fields its event does not use.
 func (f *externalSessionFixture) hookWith(t *testing.T, agent, session, event string, fields map[string]any, headers map[string]string) {
+	t.Helper()
+	recorder := f.postHook(t, agent, session, event, fields, headers)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+}
+
+func (f *externalSessionFixture) postHook(
+	t *testing.T, agent, session, event string, fields map[string]any, headers map[string]string,
+) *httptest.ResponseRecorder {
 	t.Helper()
 	payload := map[string]any{
 		"session_id": session, "cwd": f.worktree, "hook_event_name": event, "transcript_path": f.transcript,
@@ -114,7 +125,7 @@ func (f *externalSessionFixture) hookWith(t *testing.T, agent, session, event st
 	}
 	recorder := httptest.NewRecorder()
 	f.mux.ServeHTTP(recorder, req)
-	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	return recorder
 }
 
 func (f *externalSessionFixture) openPull(t *testing.T, branch, head string) {
@@ -545,6 +556,56 @@ func TestExitedExternalAgentContinuesInTheChatAgent(t *testing.T) {
 	session, err := f.database.GetExternalAgentSession(t.Context(), "claude", "session-1")
 	require.NoError(t, err)
 	assert.Nil(session.HandedOffAt, "a failed start leaves the session to the next prompt")
+}
+
+// A Stop that removed the chat while another view hands the session to Forge
+// stays stopped: the handoff does not bring the chat's record back.
+func TestHandoffAfterStopStartsNothing(t *testing.T) {
+	f := newExternalSessionFixture(t)
+	f.openPull(t, "feature/login", f.head)
+	f.hook(t, "claude", "session-1", "UserPromptSubmit", runningAgentHeaders())
+	f.pass(t)
+	ws, rows := f.adopted(t)
+	key := rows[0].SessionKey
+	f.hook(t, "claude", "session-1", "SessionEnd", nil)
+	chat, err := f.handler.openWorkspaceChat(t.Context(), ws.ID, key)
+	require.NoError(t, err)
+	// A chat agent added after adoption makes the handoff update the record.
+	f.handler.runtime.UpdateTargets([]localruntime.LaunchTarget{{
+		Key: "claude-chat", Label: "Claude chat", Kind: localruntime.LaunchTargetACP, Command: []string{"claude-agent-acp"}, Available: true,
+	}})
+	require.NoError(t, f.database.DeleteWorkspaceRuntimeSession(t.Context(), ws.ID, key))
+
+	err = chat.Command(localruntime.ACPCommand{Type: "prompt", ID: "p1", Text: "continue"})
+
+	require.ErrorIs(t, err, localruntime.ErrSessionNotFound)
+	rows, err = f.database.ListWorkspaceRuntimeSessions(t.Context(), ws.ID)
+	require.NoError(t, err)
+	assert.Empty(t, rows)
+}
+
+// A SessionEnd whose activity report cannot be cleared fails the hook, so the
+// agent does not show as working on the chat indefinitely.
+func TestExternalSessionEndThatCannotClearActivityFails(t *testing.T) {
+	f := newExternalSessionFixture(t)
+	f.openPull(t, "feature/login", f.head)
+	f.hook(t, "claude", "session-1", "UserPromptSubmit", runningAgentHeaders())
+	f.pass(t)
+	f.adopted(t)
+	f.hook(t, "claude", "session-1", "PostToolUse", runningAgentHeaders())
+	entries, err := os.ReadDir(f.activityRoot)
+	require.NoError(t, err)
+	require.NotEmpty(t, entries)
+	for _, entry := range entries {
+		path := filepath.Join(f.activityRoot, entry.Name())
+		require.NoError(t, os.Remove(path))
+		require.NoError(t, os.Mkdir(path, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(path, "blocked"), nil, 0o600))
+	}
+
+	recorder := f.postHook(t, "claude", "session-1", "SessionEnd", nil, nil)
+
+	assert.Equal(t, http.StatusInternalServerError, recorder.Code, recorder.Body.String())
 }
 
 func TestRefusedCommandToAnExternalAgentIsAConflict(t *testing.T) {

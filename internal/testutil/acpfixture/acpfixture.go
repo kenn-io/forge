@@ -305,7 +305,7 @@ func Agent() {
 				// Holds the answer while the host accepts more steers, then refuses.
 				waitForParent(os.Getenv("KENN_FORGE_ACP_STEER_GATE"))
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"failed"}}`+"\n", message.ID)
-			case "adjust":
+			case "adjust", "adjust again":
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"injected"}}`+"\n", message.ID)
 			case "finish":
 				// The turn ends before the text is taken, so Forge must send it.

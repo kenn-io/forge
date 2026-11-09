@@ -285,7 +285,7 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
 	require.NoError(t, database.UpsertWorkspaceRuntimeSession(t.Context(), &db.WorkspaceRuntimeSession{WorkspaceID: "work-a", SessionKey: session.Key, TargetKey: "chat", Kind: "acp", Scope: "session", DisplayRegion: "workflow", CreatedAt: session.CreatedAt}))
 	require.NoError(t, database.SetWorkspaceActiveTab(t.Context(), "work-a", "session:"+session.Key))
-	for index, prompt := range []string{"inspect the failure", "adjust"} {
+	for index, prompt := range []string{"inspect the failure", "adjust again"} {
 		directory := t.TempDir()
 		raw, err := json.Marshal([]any{map[string]any{"id": "compute-a", "profile": devbox.Profile{Assignment: devbox.Assignment{URL: worker.URL}, Token: "worker-test-token"}}})
 		require.NoError(t, err)
@@ -317,6 +317,7 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 		if index == 1 {
 			assert.Contains(t, string(snapshot), "inspect the failure")
 			assert.Contains(t, string(snapshot), "Hello workspace")
+			assert.Contains(t, string(snapshot), "adjust")
 			var state localruntime.ACPState
 			require.NoError(t, json.Unmarshal(snapshot, &state))
 			require.NotNil(t, state.Supervision)
@@ -357,11 +358,36 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 				var state localruntime.ACPState
 				return json.Unmarshal(data, &state) == nil && state.Busy && strings.Contains(string(data), "wait")
 			}, 10*time.Second, 20*time.Millisecond)
+			first, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/compute-a/workspaces/work-a/runtime/sessions/"+session.Key+"/terminal?protocol=acp", nil, nil)
+			require.NoError(t, err)
+			ctx, stop := context.WithTimeout(t.Context(), 10*time.Second)
+			_, active, err := first.Read(ctx)
+			require.NoError(t, err)
+			var state localruntime.ACPState
+			require.NoError(t, json.Unmarshal(active, &state))
+			require.True(t, state.Busy)
+			require.NotNil(t, state.Supervision)
+			assert.Equal(t, "coordinator", state.Supervision.Supervisor)
+			assert.Equal(t, uint64(1), state.Supervision.Generation)
+			assert.Contains(t, string(active), "inspect the failure")
+			assert.Contains(t, string(active), "Hello workspace")
+			require.NoError(t, first.Write(ctx, websocket.MessageText, []byte(`{"type":"prompt","mode":"steer","id":"steer-first","text":"adjust"}`)))
+			require.Eventually(t, func() bool {
+				data, err := chat.Snapshot()
+				if err != nil {
+					return false
+				}
+				var state localruntime.ACPState
+				log, _ := os.ReadFile(logPath)
+				return json.Unmarshal(data, &state) == nil && state.Busy && !state.Steering && strings.Contains(string(log), "steer:adjust\n")
+			}, 10*time.Second, 20*time.Millisecond)
+			require.NoError(t, first.Close(websocket.StatusNormalClosure, "done"))
+			stop()
 		}
 	}
 	got, err := os.ReadFile(logPath)
 	require.NoError(t, err)
-	require.Equal(t, "prompt:inspect the failure\nprompt:wait\nsteer:adjust\n", string(got))
+	require.Equal(t, "prompt:inspect the failure\nprompt:wait\nsteer:adjust\nsteer:adjust again\n", string(got))
 	sessions, err := os.ReadFile(filepath.Join(root, "sessions"))
 	require.NoError(t, err)
 	require.Equal(t, "session/new\n", string(sessions))

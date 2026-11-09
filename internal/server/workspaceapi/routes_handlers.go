@@ -2856,7 +2856,7 @@ func (s *Handler) launchWorkspaceRuntimeService(
 	if targetKey == "" {
 		return localruntime.SessionInfo{}, httpapi.Validation("body.target_key", "target_key is required")
 	}
-	if workspaceRuntimeTargetIsAgent(s.runtime, targetKey) {
+	if workspaceRuntimeTargetKind(s.runtime, targetKey).IsAgent() {
 		if err := s.workspaces.ValidateExecutionIdentity(ctx, summary.WorktreePath); err != nil {
 			return localruntime.SessionInfo{}, httpapi.Validation("identity", err.Error())
 		}

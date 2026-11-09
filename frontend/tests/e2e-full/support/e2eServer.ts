@@ -39,7 +39,6 @@ export type IsolatedE2EServer = {
 };
 
 export type IsolatedE2EServerOptions = {
-  path?: string;
   defaultPlatformHost?: string;
   federatedForges?: boolean;
   visibleImportedModes?: boolean;
@@ -728,7 +727,7 @@ async function spawnServer(
     // Workspace runtime shells start from $SHELL. The developer's own
     // interactive shell config (zle widgets, autopairing, prompts) rewrites
     // the commands tests type, so pin a POSIX shell that loads no user config.
-    env: { ...process.env, SHELL: "/bin/sh", ...(options.path !== undefined && { PATH: options.path }) },
+    env: { ...process.env, SHELL: "/bin/sh" },
   });
   startingServers.add(child);
 
@@ -1260,7 +1259,7 @@ export async function startIsolatedE2EServer(): Promise<IsolatedE2EServer> {
 export async function startIsolatedE2EServerWithOptions(
   options: IsolatedE2EServerOptions = {},
 ): Promise<IsolatedE2EServer> {
-  if (options.freshProcess || options.federatedForges || options.markdownVideo || options.path !== undefined) {
+  if (options.freshProcess || options.federatedForges || options.markdownVideo) {
     const infoDir = mkdtempSync(path.join(os.tmpdir(), "kenn-forge-e2e-"));
     const infoFile = path.join(infoDir, "server-info.json");
     const started = await spawnServer(infoFile, options);

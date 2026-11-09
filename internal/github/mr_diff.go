@@ -9,7 +9,8 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-// syncMRDiff fetches the bare clone and computes diff SHAs for a single PR.
+// syncMRDiff computes diff SHAs for a single PR, fetching the bare clone
+// when the PR is merged or the clone lacks its head or base commit.
 // Returns nil when there is no clone manager (the caller has already opted
 // out of diff support); otherwise returns an error wrapping a
 // *DiffSyncError that describes the first failure encountered along the
@@ -24,10 +25,19 @@ func (s *Syncer) syncMRDiff(
 		return nil
 	}
 	host := repoHost(repo)
-	if err := s.ensureClone(ctx, repo); err != nil {
+	var cloneErr error
+	if ghPR.GetMerged() {
+		// The merged path reads the pull ref, which only a fetch refreshes.
+		cloneErr = s.ensureClone(ctx, repo)
+	} else {
+		cloneErr = s.ensureCloneHasCommits(
+			ctx, repo, normalized.PlatformHeadSHA, normalized.PlatformBaseSHA,
+		)
+	}
+	if cloneErr != nil {
 		return &DiffSyncError{
 			Code: DiffSyncCodeCloneUnavailable,
-			Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),
+			Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, cloneErr),
 		}
 	}
 
@@ -93,9 +103,11 @@ func (s *Syncer) syncProviderMRDiff(
 	// List sync already fetched the repo clone once for this cycle;
 	// refetching per MR would turn one repo sync into N network
 	// round-trips. Per-MR detail syncs have no prior fetch and pass
-	// ensureClone.
+	// ensureClone, which still fetches only when a commit is missing.
 	if ensureClone {
-		if err := s.ensureClone(ctx, repo); err != nil {
+		if err := s.ensureCloneHasCommits(
+			ctx, repo, normalized.PlatformHeadSHA, normalized.PlatformBaseSHA,
+		); err != nil {
 			return &DiffSyncError{
 				Code: DiffSyncCodeCloneUnavailable,
 				Err:  fmt.Errorf("ensure bare clone for #%d: %w", number, err),

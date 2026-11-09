@@ -237,24 +237,10 @@ func (s *Syncer) drainDetailQueue(
 		itemCtx, degraded := withDegradedSyncTracking(itemCtx)
 		readStarted := time.Now()
 
-		// Compute diff SHAs if clone available.
-		cloneFetchOK := false
-		if s.clones != nil {
-			if cloneErr := s.ensureClone(itemCtx, repo); cloneErr != nil {
-				if !isReportedGitAccessFailure(cloneErr) {
-					slog.Warn("detail drain: bare clone failed",
-						"repo", qi.RepoOwner+"/"+qi.RepoName,
-						"err", cloneErr,
-					)
-				}
-			} else {
-				cloneFetchOK = true
-			}
-		}
 		var providerCalls int
 		if qi.Type == QueueItemPR {
 			providerCalls, err = s.fetchMRDetail(
-				itemCtx, repo, repoID, qi.Number, cloneFetchOK,
+				itemCtx, repo, repoID, qi.Number,
 			)
 		} else {
 			providerCalls, err = s.fetchIssueDetail(

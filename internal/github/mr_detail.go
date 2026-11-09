@@ -24,7 +24,6 @@ func (s *Syncer) fetchMRDetail(
 	repo RepoRef,
 	repoID int64,
 	number int,
-	cloneFetchOK bool,
 ) (int, error) {
 	removed, err := s.removedUpstreamForLiveSync(
 		ctx, repoID, db.ArchiveItemTypeMergeRequest, number,
@@ -36,7 +35,7 @@ func (s *Syncer) fetchMRDetail(
 		return 0, nil
 	}
 	calls, err := s.fetchMRDetailWithRouteFence(
-		ctx, repo, repoID, number, cloneFetchOK,
+		ctx, repo, repoID, number,
 	)
 	if errors.Is(err, db.ErrRepositoryIdentityChanged) {
 		return calls, nil
@@ -51,7 +50,6 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 	repo RepoRef,
 	repoID int64,
 	number int,
-	cloneFetchOK bool,
 ) (int, error) {
 	ctx = withCloneRepositoryIdentity(ctx, repo)
 	calls := 0
@@ -146,10 +144,17 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 	if cloneRepoHost == "" {
 		cloneRepoHost = "github.com"
 	}
-	if s.clones != nil && cloneFetchOK {
+	if s.clones != nil {
 		headSHA := normalized.PlatformHeadSHA
 		baseSHA := normalized.PlatformBaseSHA
-		if headSHA != "" && baseSHA != "" {
+		if cloneErr := s.ensureCloneHasCommits(ctx, repo, headSHA, baseSHA); cloneErr != nil {
+			if !isReportedGitAccessFailure(cloneErr) {
+				slog.Warn("detail drain: bare clone failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"err", cloneErr,
+				)
+			}
+		} else if headSHA != "" && baseSHA != "" {
 			mb, mbErr := s.clones.MergeBase(
 				ctx, string(repoPlatform(repo)), cloneRepoHost, repo.Owner,
 				repo.Name, baseSHA, headSHA,
@@ -445,9 +450,21 @@ func (s *Syncer) fetchProviderMRDetail(
 		return calls, nil
 	}
 
+	// Commit liveness below reads the head's ancestry from the clone.
+	livenessHead := livenessHeadForRound(normalized, existing)
+	if s.clones != nil && livenessHead != "" {
+		if cloneErr := s.ensureCloneHasCommits(
+			ctx, repo, livenessHead,
+		); cloneErr != nil && !isReportedGitAccessFailure(cloneErr) {
+			slog.Warn("detail drain: bare clone failed",
+				"repo", repo.Owner+"/"+repo.Name,
+				"err", cloneErr,
+			)
+		}
+	}
 	detailCalls, pending, err := s.syncProviderMRDetailExtras(
 		ctx, reader, repo, mrID, number, revision, normalized.PlatformHeadSHA,
-		livenessHeadForRound(normalized, existing),
+		livenessHead,
 	)
 	calls += detailCalls
 	if err != nil {

@@ -202,6 +202,10 @@ is never identity. Owner, name, and `repo_path` are only the current route.
   (`internal/gitclone/clone.go::WithRequiredCredential`).
 - A failed repository-browser refresh keeps the prior clone, and readers never see a
   partial one (`internal/gitclone/repo_browser.go::refreshRepoBrowserClone`).
+- Per-item syncs fetch the clone only when it lacks the PR's head or base commit; a fetch
+  holds the clone lock workspace setup and deletion wait on. Merged GitHub PRs still fetch
+  for the pull ref, and repo sync and relay ref refreshes always fetch for fresh branch tips
+  (`internal/github/provider_routing.go::Syncer.ensureCloneHasCommits`).
 - Write scopes are required only for mutation capabilities; read scope covers repository
   metadata, merge requests, issues, comments, commits, tags, releases, and CI.
 

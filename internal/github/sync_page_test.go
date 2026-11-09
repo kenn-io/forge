@@ -55,7 +55,7 @@ func newPageSyncFixture(t *testing.T) pageSyncFixture {
 	t.Cleanup(clones.Wait)
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, clones, []RepoRef{repo}, time.Minute, nil, nil)
 	require.NoError(syncer.ensureClone(withCloneRepositoryIdentity(ctx, repo), repo))
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, true)
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1)
 	require.NoError(err)
 	before, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
 	require.NoError(err)
@@ -148,7 +148,7 @@ func TestPageSyncMRRepairsStaleSHAs(t *testing.T) {
 				}
 				f.client.nextETag = `"merged-v1"`
 				require.NoError(f.syncer.ensureClone(withCloneRepositoryIdentity(ctx, f.repo), f.repo))
-				_, err := f.syncer.fetchMRDetail(ctx, f.repo, f.repoID, 1, true)
+				_, err := f.syncer.fetchMRDetail(ctx, f.repo, f.repoID, 1)
 				require.NoError(err)
 			}
 			f.client.receivedETag = ""

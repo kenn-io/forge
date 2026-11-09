@@ -215,6 +215,9 @@
   .mobile-workspace-item__back:focus-visible, .mobile-workspace-item__state button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
   .mobile-workspace-item__tabs { flex: 1 1 auto; min-width: 0; }
   .mobile-workspace-item__tabs :global(.kit-tabs__tab) { min-height: var(--mobile-chrome-hit-target); }
+  /* On narrow phones the toolbar leaves too little room for both tabs; the Conversation label truncates so Files stays fully visible. */
+  .mobile-workspace-item__tabs :global(.kit-tabs__tab:first-child) { flex-shrink: 1; min-width: 0; }
+  .mobile-workspace-item__tabs :global(.kit-tabs__tab:first-child .kit-tabs__label) { overflow: hidden; text-overflow: ellipsis; }
   .mobile-workspace-item__content { flex: 1; min-height: 0; display: flex; }
   .mobile-workspace-item__content :global(.collapsible-sidebar) { flex: 1; min-width: 0; }
   .mobile-workspace-item__state { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; padding: 2rem 1rem; color: var(--text-muted); text-align: center; font-size: var(--font-size-md); }

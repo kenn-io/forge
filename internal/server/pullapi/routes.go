@@ -1429,14 +1429,7 @@ func (s *Handler) approvePR(ctx context.Context, input *approvePRInput) (*action
 
 	event := platformdb.DBMREvent(mr.ID, platformEvent)
 	_ = s.db.UpsertMREvents(ctx, []db.MREvent{event})
-
-	if syncErr := s.syncer.SyncMROnProvider(
-		ctx,
-		repoProviderKind(repo.Repo), repoProviderHost(repo.Repo),
-		repo.Owner, repo.Name, input.Number,
-	); syncErr != nil {
-		slog.Warn("sync after approval", "err", syncErr)
-	}
+	s.syncAfterProviderMutation(repo.Repo, input.Number, "approve", nil)
 
 	return &actionStatusOutput{Body: ActionStatusBody{Status: "approved"}}, nil
 }
@@ -1494,13 +1487,7 @@ func (s *Handler) requestChangesPR(ctx context.Context, input *requestChangesPRI
 		)
 	}
 
-	if syncErr := s.syncer.SyncMROnProvider(
-		ctx,
-		repoProviderKind(repo.Repo), repoProviderHost(repo.Repo),
-		repo.Owner, repo.Name, input.Number,
-	); syncErr != nil {
-		slog.Warn("sync after requesting changes", "err", syncErr)
-	}
+	s.syncAfterProviderMutation(repo.Repo, input.Number, "request_changes", nil)
 	return &actionStatusOutput{Body: ActionStatusBody{Status: "changes_requested"}}, nil
 }
 
@@ -1598,13 +1585,7 @@ func (s *Handler) approveWorkflows(ctx context.Context, input *repoNumberInput) 
 			ctx, platformRepoRefFromDB(repo.Repo), strconv.FormatInt(run.GetID(), 10),
 		); err != nil {
 			if approvedCount > 0 {
-				if syncErr := s.syncer.SyncMROnProvider(
-					context.WithoutCancel(ctx),
-					repoProviderKind(repo.Repo), repoProviderHost(repo.Repo),
-					repo.Owner, repo.Name, input.Number,
-				); syncErr != nil {
-					slog.Warn("sync after workflow approval failure", "err", syncErr)
-				}
+				s.syncAfterProviderMutation(repo.Repo, input.Number, "approve_workflows", nil)
 			}
 			return nil, httpapi.ProviderCallProblemWithDetail(
 				err,
@@ -1615,22 +1596,23 @@ func (s *Handler) approveWorkflows(ctx context.Context, input *repoNumberInput) 
 		approvedCount++
 	}
 
-	if syncErr := s.syncer.SyncMROnProvider(
-		context.WithoutCancel(ctx),
-		repoProviderKind(repo.Repo), repoProviderHost(repo.Repo),
-		repo.Owner, repo.Name, input.Number,
-	); syncErr != nil {
-		slog.Warn("sync after workflow approval", "err", syncErr)
+	clearApprovalState := func(ctx context.Context) {
+		if err := s.db.UpdateMRWorkflowApproval(
+			ctx, repo.ID, input.Number, s.now().UTC(), headSHA, false, 0,
+		); err != nil {
+			slog.Warn("clear workflow approval state after approval",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", input.Number,
+				"err", err,
+			)
+		}
 	}
-	if err := s.db.UpdateMRWorkflowApproval(
-		ctx, repo.ID, input.Number, s.now().UTC(), headSHA, false, 0,
-	); err != nil {
-		slog.Warn("clear workflow approval state after approval",
-			"repo", repo.Owner+"/"+repo.Name,
-			"number", input.Number,
-			"err", err,
-		)
-	}
+	// Clear now so the detail reload after this response hides the button,
+	// and again after the background sync: GitHub can still list an approved
+	// run as action_required for a moment, and the sync would otherwise
+	// restore the flag.
+	clearApprovalState(ctx)
+	s.syncAfterProviderMutation(repo.Repo, input.Number, "approve_workflows", clearApprovalState)
 
 	return &actionStatusOutput{Body: ActionStatusBody{
 		Status:        "approved_workflows",

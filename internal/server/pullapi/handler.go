@@ -57,6 +57,7 @@ type Deps struct {
 		string, []any, func(context.Context) error,
 	) bool
 	Broadcast                         func(Event) uint64
+	BroadcastPRDetailRefreshed        func(context.Context, int64, int)
 	MarkClosedLinkedNotificationsDone func(context.Context)
 }
 
@@ -83,6 +84,7 @@ type Handler struct {
 		string, []any, func(context.Context) error,
 	) bool
 	broadcast               func(Event) uint64
+	prDetailRefreshed       func(context.Context, int64, int)
 	markClosedNotifications func(context.Context)
 
 	configMu sync.RWMutex
@@ -135,6 +137,7 @@ func New(deps Deps) *Handler {
 		repoOperationsForMergeRequest: deps.RepoOperationsForMergeRequest,
 		enqueueDetailSyncRerun:        deps.EnqueueDetailSyncOrRerun,
 		broadcast:                     deps.Broadcast,
+		prDetailRefreshed:             deps.BroadcastPRDetailRefreshed,
 		markClosedNotifications:       deps.MarkClosedLinkedNotificationsDone,
 		config:                        deps.Config,
 		bgCtx:                         bgCtx,
@@ -168,6 +171,12 @@ func (s *Handler) publish(event Event) uint64 {
 		return 0
 	}
 	return s.broadcast(event)
+}
+
+func (s *Handler) broadcastPRDetailRefreshed(ctx context.Context, repoID int64, number int) {
+	if s.prDetailRefreshed != nil {
+		s.prDetailRefreshed(ctx, repoID, number)
+	}
 }
 
 func (s *Handler) selfFleetKey(hostKey string) string {

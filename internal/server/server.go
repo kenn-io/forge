@@ -1049,6 +1049,7 @@ func newServer(
 			Broadcast: func(event pullapi.Event) uint64 {
 				return s.hub.Broadcast(syncevents.Event{Type: event.Type, Data: event.Data})
 			},
+			BroadcastPRDetailRefreshed:        s.syncevents.BroadcastPRDetailRefresh,
 			MarkClosedLinkedNotificationsDone: s.notificationapi.MarkClosedLinkedNotificationsDone,
 		})
 		s.issueAPI = issueapi.New(issueapi.Deps{

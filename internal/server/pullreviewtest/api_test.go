@@ -810,6 +810,7 @@ func TestAPIApproveWorkflows(t *testing.T) {
 		t.Context(), repo.ID, 1, time.Now().UTC(), "abc123", true, 2,
 	))
 	client := servertest.SetupTestClient(t, srv)
+	events, _ := srv.Hub().Subscribe(t.Context(), false)
 
 	resp, err := client.HTTP.ApprovePullWorkflowsWithResponse(t.Context(), &generated.ApprovePullWorkflowsRequestOptions{PathParams: &generated.ApprovePullWorkflowsPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
@@ -820,6 +821,17 @@ func TestAPIApproveWorkflows(t *testing.T) {
 	assert.EqualValues(2, *resp.JSON200.ApprovedCount)
 	assert.Equal([]int64{81, 82}, approvedRunIDs)
 
+	// The fake still lists both runs, like GitHub's lagging run list right
+	// after an approval. The post-approval sync must not restore the flag.
+	deadline := time.After(10 * time.Second)
+	for refreshed := false; !refreshed; {
+		select {
+		case event := <-events:
+			refreshed = event.Event.Type == "pr_detail_refreshed"
+		case <-deadline:
+			require.FailNow("workflow approval sync did not finish")
+		}
+	}
 	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(err)
 	require.NotNil(pr)
@@ -871,10 +883,10 @@ func TestAPIApproveWorkflowsZeroMatchesStillSyncsPR(t *testing.T) {
 	require.NotNil(resp.JSON200)
 	assert.Equal("approved_workflows", resp.JSON200.Status)
 
-	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
-	require.NoError(err)
-	require.NotNil(pr)
-	assert.Equal("abc123", pr.PlatformHeadSHA)
+	assert.Eventually(func() bool {
+		pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
+		return err == nil && pr != nil && pr.PlatformHeadSHA == "abc123"
+	}, 10*time.Second, 20*time.Millisecond)
 }
 
 func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t *testing.T) {
@@ -3637,7 +3649,10 @@ func TestAPIGitealikeApproveRefreshesAfterMutation(t *testing.T) {
 	require := require.New(t)
 	transport := &serverfake.ApiTestGitealikeTransport{}
 	client := setupGitealikeHeadPinServer(t, transport)
-	transport.HeadCalls = 0
+	// The provider's copy moves on before the approval; only a post-mutation
+	// refresh can bring the new title into the stored pull request.
+	transport.Pulls[0].Title = "Add kettle, refreshed"
+	transport.Pulls[0].Updated = transport.Pulls[0].Updated.Add(time.Hour)
 
 	pin := "abc123"
 	resp, err := client.HTTP.ApprovePullOnHostWithResponse(t.Context(), &generated.ApprovePullOnHostRequestOptions{PathParams: &generated.ApprovePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.ApprovePullOnHostBody{
@@ -3646,8 +3661,12 @@ func TestAPIGitealikeApproveRefreshesAfterMutation(t *testing.T) {
 	}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
-	assert.Equal(1, transport.HeadCalls)
 	assert.Contains(transport.MutationCalls, "review:7:lgtm:abc123")
+	assert.Eventually(func() bool {
+		detail, err := client.HTTP.GetPullOnHostWithResponse(t.Context(), &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}})
+		return err == nil && detail.JSON200 != nil &&
+			detail.JSON200.MergeRequest.Title == "Add kettle, refreshed"
+	}, 10*time.Second, 20*time.Millisecond)
 }
 
 func TestAPIGitealikeMergeConflictReturnsConflict(t *testing.T) {

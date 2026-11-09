@@ -14,6 +14,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -275,7 +276,7 @@ func (s *Handler) applyReviewSuggestions(
 			Suggestions:      suggestions,
 		},
 	)
-	s.syncAfterReviewSuggestionApply(repo.Repo, input.Number)
+	s.syncAfterProviderMutation(repo.Repo, input.Number, "review_suggestion_apply", nil)
 	if err != nil {
 		return nil, httpapi.ProviderCallProblemWithDetail(
 			err,
@@ -454,7 +455,15 @@ func closesMarkdownFence(line string, fence markdownFence) bool {
 	return strings.TrimSpace(line[count:]) == ""
 }
 
-func (s *Handler) syncAfterReviewSuggestionApply(repo db.Repo, number int) {
+// syncAfterProviderMutation re-reads a pull request after the provider
+// accepted a mutation, without holding the HTTP response for the full
+// detail sync. It reruns after a sync already in flight for the same pull
+// request, because that sync may have read state from before the mutation.
+// When the sync lands, afterSync (if set) runs, then clients get data_changed
+// and pr_detail_refreshed so an open list and detail reload.
+func (s *Handler) syncAfterProviderMutation(
+	repo db.Repo, number int, source string, afterSync func(context.Context),
+) {
 	kind := repoProviderKind(repo)
 	host := repoProviderHost(repo)
 	key := "pr:" + string(kind) + ":" + host + ":" + repo.RepoPath +
@@ -469,10 +478,17 @@ func (s *Handler) syncAfterReviewSuggestionApply(repo db.Repo, number int) {
 			"owner", repo.Owner,
 			"name", repo.Name,
 			"number", number,
-			"source", "review_suggestion_apply",
+			"source", source,
 		},
 		func(ctx context.Context) error {
-			return s.syncMergeRequestIfVisible(ctx, repo, number)
+			err := s.syncMergeRequestIfVisible(ctx, repo, number)
+			if _, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err); err == nil || isDiffErr {
+				if afterSync != nil {
+					afterSync(ctx)
+				}
+				s.broadcastPRDetailRefreshed(ctx, repo.ID, number)
+			}
+			return err
 		},
 	)
 }

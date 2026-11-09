@@ -84,7 +84,7 @@ func TestReviewBackgroundSyncsRecheckRemovedUpstream(t *testing.T) {
 		require.NoError(handler.Shutdown(shutdownCtx))
 	})
 
-	handler.syncAfterReviewSuggestionApply(*repo, 7)
+	handler.syncAfterProviderMutation(*repo, 7, "review_suggestion_apply", nil)
 	require.NotNil(queued)
 	require.NoError(queued(ctx))
 	handler.syncAfterReviewDraftPublish(*repo, 7)

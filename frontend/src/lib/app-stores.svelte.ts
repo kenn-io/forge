@@ -304,6 +304,9 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     );
   }
 
+  // A connected hub leaves availability as it is while the visible view
+  // reconciles: a banner already shown stays until the refresh lands, and a
+  // reconnect that found the hub connected never raises one.
   function reconcileProviderStateAfterHubConnection() {
     return reconcileProviderState().pipe(
       Effect.tapError(() =>
@@ -314,6 +317,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
           Effect.catch(() => Effect.void),
         ),
       ),
+      Effect.andThen(Effect.sync(() => syncStore.setProviderAvailable(true))),
     );
   }
 
@@ -343,15 +347,8 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       settingsStore.getWorkspaceSettings().show_agent_status_in_lists ? refreshVisibleData(false) : Effect.void,
     onConnectionStateChange: (state) => syncStore.setLiveUpdatesConnected(state === "connected"),
     onSyncStatus: (status) => Effect.sync(() => syncStore.setSyncStatus(status)),
-    onHubConnectionChanged: ({ connected }) => {
-      if (!connected) {
-        return Effect.sync(() => syncStore.setProviderAvailable(false));
-      }
-      return Effect.sync(() => syncStore.setProviderAvailable(false)).pipe(
-        Effect.andThen(reconcileProviderStateAfterHubConnection()),
-        Effect.andThen(Effect.sync(() => syncStore.setProviderAvailable(true))),
-      );
-    },
+    onHubConnectionChanged: ({ connected }) =>
+      connected ? reconcileProviderStateAfterHubConnection() : Effect.sync(() => syncStore.setProviderAvailable(false)),
     onConfigChanged: handleConfigChanged,
     onWorklistsChanged: () => worklistsStore.refreshAllEffect(),
     onWorkspaceDeleted: (event) =>
@@ -459,17 +456,13 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
           }
         });
       }),
-    onReconnectStale: ({ hub_connected }) => {
-      const markUnavailable = Effect.sync(() => syncStore.setProviderAvailable(false));
-      if (hub_connected === false) return markUnavailable;
-      // The replay ring rolled past the client's cursor while it was
-      // disconnected. Keep cached provider projections visible and marked stale until
-      // the visible view is reconciled; missed events cannot be assumed to replay.
-      return markUnavailable.pipe(
-        Effect.andThen(reconcileProviderStateAfterHubConnection()),
-        Effect.andThen(Effect.sync(() => syncStore.setProviderAvailable(true))),
-      );
-    },
+    // The replay ring rolled past the client's cursor while it was
+    // disconnected. Missed events cannot be assumed to replay, so reconcile
+    // the visible view.
+    onReconnectStale: ({ hub_connected }) =>
+      hub_connected === false
+        ? Effect.sync(() => syncStore.setProviderAvailable(false))
+        : reconcileProviderStateAfterHubConnection(),
   });
 
   const si: StoreInstances = {

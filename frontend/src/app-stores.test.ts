@@ -491,7 +491,7 @@ describe("app store event wiring", () => {
       platformHost: "github.com",
       repoPath: "acme/widget",
     });
-    expect(setProviderAvailable).toHaveBeenNthCalledWith(1, false);
+    expect(setProviderAvailable).not.toHaveBeenCalledWith(false);
     expect(setProviderAvailable).toHaveBeenLastCalledWith(true);
   });
 

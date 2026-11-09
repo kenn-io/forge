@@ -244,17 +244,13 @@ test.describe("workspace create-and-launch full stack", () => {
 
       const binary = join(binDir, "claude");
       writeFileSync(binary, "#!/bin/sh\nexec /bin/cat\n", { mode: 0o755 });
-      const installed = page.waitForResponse((response) =>
-        new URL(response.url()).pathname.endsWith(`/workspaces/${workspace.id}/runtime`),
-      );
+      const installed = page.waitForResponse((response) => response.url().endsWith("/api/v1/settings/local"));
       await returnToVisibleWorkspace(page);
       expect((await installed).ok()).toBe(true);
       await expect(claude).toBeEnabled();
 
       rmSync(binary);
-      const removed = page.waitForResponse((response) =>
-        new URL(response.url()).pathname.endsWith(`/workspaces/${workspace.id}/runtime`),
-      );
+      const removed = page.waitForResponse((response) => response.url().endsWith("/api/v1/settings/local"));
       await returnToVisibleWorkspace(page);
       expect((await removed).ok()).toBe(true);
       await expect(claude).toBeDisabled();

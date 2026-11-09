@@ -205,6 +205,74 @@ test("links to the canonical kenn-forge downloads", async ({ browser }) => {
   await fallbackContext.close();
 });
 
+test("offers the Windows ARM64 archive and the Android APK", async ({ browser }) => {
+  const release = JSON.stringify({
+    tag_name: "v1.2.3",
+    assets: [
+      {
+        name: "forge_1.2.3_linux_arm64.tar.gz",
+        browser_download_url: "https://downloads.example/forge-linux-arm64.tar.gz",
+      },
+      {
+        name: "forge_1.2.3_windows_amd64.zip",
+        browser_download_url: "https://downloads.example/forge-windows-amd64.zip",
+      },
+      {
+        name: "forge_1.2.3_windows_arm64.zip",
+        browser_download_url: "https://downloads.example/forge-windows-arm64.zip",
+      },
+      { name: "forge_1.2.3_android.apk", browser_download_url: "https://downloads.example/forge-android.apk" },
+    ],
+  });
+  const cases = [
+    {
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; ARM64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+      label: "Download for Windows ARM64",
+      href: "https://downloads.example/forge-windows-arm64.zip",
+    },
+    {
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+      label: "Download for Windows x86-64",
+      href: "https://downloads.example/forge-windows-amd64.zip",
+    },
+    {
+      userAgent:
+        "Mozilla/5.0 (Linux; Android 14; aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36",
+      label: "Download for Android",
+      href: "https://downloads.example/forge-android.apk",
+    },
+  ];
+
+  for (const { userAgent, label, href } of cases) {
+    const context = await browser.newContext({ userAgent });
+    const page = await context.newPage();
+    await page.route("https://api.github.com/repos/kenn-io/forge/releases/latest", (route) =>
+      route.fulfill({ contentType: "application/json", body: release }),
+    );
+    await page.goto("/docs/");
+    await expect(page.getByRole("link", { name: label })).toHaveAttribute("href", href);
+    await context.close();
+  }
+
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.route("https://api.github.com/repos/kenn-io/forge/releases/latest", (route) =>
+    route.fulfill({ contentType: "application/json", body: release }),
+  );
+  await page.goto("/docs/quickstart/");
+  await expect(page.getByRole("link", { name: "forge_<version>_windows_arm64.zip" })).toHaveAttribute(
+    "href",
+    "https://downloads.example/forge-windows-arm64.zip",
+  );
+  await expect(page.getByRole("link", { name: "forge_<version>_android.apk" })).toHaveAttribute(
+    "href",
+    "https://downloads.example/forge-android.apk",
+  );
+  await context.close();
+});
+
 test("keeps the federated fleet in first-level navigation", async ({ page }) => {
   await page.goto("/docs/");
 

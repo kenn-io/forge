@@ -262,6 +262,9 @@ peer bearers and route scopes       internal/federationauth
 - While disconnected, the UI keeps loaded provider projections behind a stale-data banner and
   disables Sync and detail Refresh; it refreshes the selected projection before removing the banner
   (`frontend/src/lib/app-stores.svelte.ts::createAppStores`).
+- Only a disconnected hub raises the banner. A browser stream reconnect, stale or fresh, that
+  reports the hub connected reconciles without raising it, so a tab returning from the background
+  never flashes it.
 - A successful sync-status probe may restore hub availability while a projection-specific refresh
   error stays visible.
 - Opening a tracked pull with no cached row runs one item sync through the hub, not a full

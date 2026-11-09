@@ -390,6 +390,42 @@ describe("app store composition", () => {
     expect(api.requests.some(({ url }) => url.pathname === "/api/v1/activity")).toBe(false);
   });
 
+  it.each([
+    ["reconnect.stale", { hub_connected: true }],
+    ["hub_connection_changed", { connected: true }],
+  ])("keeps a connected hub available while %s reconciles the visible list", async (event, payload) => {
+    const api = createMockApiFetch();
+    let releasePulls = (): void => {};
+    const pullsReleased = new Promise<void>((resolve) => {
+      releasePulls = resolve;
+    });
+    let pullsRequested = false;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      if (url.pathname === "/api/v1/pulls") {
+        pullsRequested = true;
+        await pullsReleased;
+      }
+      return api.fetch(input, init);
+    });
+    const { stores } = createAppStores({ runtime, getPage: () => "pulls" });
+    runtime.runCommand(stores.events.streamEffect, {
+      operation: "test provider reconnect",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await vi.waitFor(() => expect(eventSources).toHaveLength(1));
+    expect(stores.sync.getProviderAvailable()).toBe(true);
+
+    emit(eventSources[0]!, event, payload);
+
+    await vi.waitFor(() => expect(pullsRequested).toBe(true));
+    expect(stores.sync.getProviderAvailable()).toBe(true);
+    releasePulls();
+    await vi.waitFor(() => expect(stores.pulls.getPulls().length).toBeGreaterThan(0));
+    expect(stores.sync.getProviderAvailable()).toBe(true);
+  });
+
   it("keeps provider data unavailable when reconnect reconciliation fails", async () => {
     const failures: string[] = [];
     vi.stubGlobal(
@@ -419,6 +455,8 @@ describe("app store composition", () => {
       onFailure: () => {},
     });
     await vi.waitFor(() => expect(eventSources).toHaveLength(1));
+    emit(eventSources[0]!, "hub_connection_changed", { connected: false });
+    await vi.waitFor(() => expect(composition.stores.sync.getProviderAvailable()).toBe(false));
 
     emit(eventSources[0]!, "hub_connection_changed", { connected: true });
 

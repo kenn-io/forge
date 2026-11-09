@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -17,7 +15,6 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
-	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
@@ -484,6 +481,7 @@ func TestWorkspaceCreationDoesNotWaitForHubAutoAssignment(t *testing.T) {
 }
 
 func TestLaunchWorkspaceRuntimeServiceReturnsSession(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -493,27 +491,6 @@ func TestLaunchWorkspaceRuntimeServiceReturnsSession(t *testing.T) {
 	targets := []localruntime.LaunchTarget{{
 		Key: targetKey, Label: "Shell", Kind: localruntime.LaunchTargetPlainShell, Source: "system", Available: true,
 	}}
-	if os.PathSeparator != '\\' {
-		worktree = gitfixture.NewRepository(t, false).Dir
-		git, err := exec.LookPath("git")
-		require.NoError(err)
-		chmod, err := exec.LookPath("chmod")
-		require.NoError(err)
-		bin := t.TempDir()
-		wrapper := `#!/bin/sh
-if [ "$1" = check-ignore ] && [ "$4" = CLAUDE.local.md ]; then
-  printf '#!/bin/sh\nexit 0\n' > "$TEST_AGENT"; "$TEST_CHMOD" +x "$TEST_AGENT"
-fi
-exec "$TEST_GIT" "$@"
-`
-		require.NoError(os.WriteFile(filepath.Join(bin, "git"), []byte(wrapper), 0o755))
-		t.Setenv("TEST_GIT", git)
-		t.Setenv("TEST_CHMOD", chmod)
-		t.Setenv("TEST_AGENT", filepath.Join(bin, "claude"))
-		t.Setenv("PATH", bin)
-		targetKey = "claude"
-		targets = localruntime.ResolveLaunchTargets(nil, nil, nil)
-	}
 	workspaceID := "ws-runtime-service"
 	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
 		ID: workspaceID, Platform: "github", PlatformHost: "github.com",

@@ -52,7 +52,7 @@ describe("app store composition", () => {
     const releasePulls = Promise.withResolvers<void>();
     const releaseLocal = Promise.withResolvers<Response>();
     const claude = { key: "claude", label: "Claude", kind: "agent", source: "builtin", available: true };
-    const saved = { ...claude, key: "saved", source: "config", command: ["saved-agent"] };
+    const saved = { ...claude, key: "saved", label: "Saved agent", source: "config", command: ["saved-agent"] };
     let pullReads = 0;
     let localReads = 0;
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -63,7 +63,7 @@ describe("app store composition", () => {
       }
       if (url.pathname === "/api/v1/settings/local") {
         localReads += 1;
-        return localReads === 1 ? releaseLocal.promise : Response.json({ launch_targets: [claude] });
+        return localReads === 1 ? releaseLocal.promise : Response.json({ launch_targets: [saved, claude] });
       }
       return api.fetch(input, init);
     });
@@ -78,15 +78,13 @@ describe("app store composition", () => {
     try {
       await vi.advanceTimersByTimeAsync(0);
       expect([pullReads, localReads]).toEqual([1, 1]);
-      stores.settings.setLaunchTargets([saved]);
-      releaseLocal.resolve(Response.json({ launch_targets: [claude] }));
+      stores.settings.setLaunchTargets([saved, { ...claude, available: false }]);
+      releaseLocal.resolve(Response.json({ launch_targets: [{ ...claude, available: false }] }));
       await vi.advanceTimersByTimeAsync(0);
-      expect(stores.settings.getLaunchTargets()).toMatchObject([saved]);
+      expect(stores.settings.getLaunchTargets()).toMatchObject([saved, { key: "claude", available: false }]);
       await vi.advanceTimersByTimeAsync(5_000);
       expect([pullReads, localReads]).toEqual([1, 2]);
-      expect(stores.settings.getLaunchTargets().map((target) => [target.key, target.available])).toEqual([
-        ["claude", true],
-      ]);
+      expect(stores.settings.getLaunchTargets()).toMatchObject([saved, claude]);
     } finally {
       releasePulls.resolve();
       polling.interrupt();

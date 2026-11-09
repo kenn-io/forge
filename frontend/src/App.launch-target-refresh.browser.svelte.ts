@@ -60,11 +60,15 @@ it.each([
   await options.click();
   await expect.element(page.getByRole("menuitem", { name: "Claude" })).toBeVisible();
   await options.click();
+  const quickActions = page.getByRole("button", { name: "Quick actions" });
+  await quickActions.click();
+  await expect.element(page.getByRole("menuitem", { name: "Review Claude" })).toBeEnabled();
+  await quickActions.click();
   setVisible(false);
   available = false;
   setVisible(true);
   await vi.waitFor(() => expect(options.element().hasAttribute("disabled")).toBe(true));
-  await page.getByRole("button", { name: "Quick actions" }).click();
+  await quickActions.click();
   await expect
     .element(page.getByRole("menuitem", { name: "Review claude not found on PATH" }))
     .toHaveAttribute("title", "claude not found on PATH");

@@ -140,3 +140,78 @@ func TestRegistryIdentityUsesUserOrExplicitUnambiguousPin(t *testing.T) {
 	_, err = cfg.developer(peer)
 	require.ErrorContains(err, "conflicts")
 }
+
+func TestRegistrySharedServiceWorker(t *testing.T) {
+	require := require.New(t)
+	identity := WorkerIdentity{NodeID: "0123456789abcdef0123456789abcdef", UID: 1001, GitHubUserID: 777, Role: "execution", Protocol: Protocol}
+	token := strings.Repeat("a", 64)
+	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer "+token, r.Header.Get("Authorization"))
+		assert.NoError(t, json.MarshalWrite(w, identity))
+	}))
+	t.Cleanup(worker.Close)
+	assignment := Assignment{NodeID: identity.NodeID, UID: 1001, GitHubUserID: 42, WorkerGitHubUserID: 777, Role: "execution", Protocol: Protocol, HostID: "compute-a", Name: "Compute A", URL: "http://compute-a.example.ts.net:9001", Account: "service", Enabled: true, TokenFile: "/run/example/token"}
+	second := assignment
+	second.GitHubUserID = 43
+	cfg := RegistryConfig{Socket: "/run/example/registry.sock", RegistryID: "example", Revision: "1", Developers: []Developer{{GitHubUserID: 42, TailscaleUserID: 11, Enabled: true}, {GitHubUserID: 43, TailscaleUserID: 12, Enabled: true}, {GitHubUserID: 44, TailscaleUserID: 13, Enabled: true}}, Assignments: []Assignment{assignment, second}}
+	require.NoError(cfg.validate())
+	peerID := int64(11)
+	handler := registryHandler(cfg, map[string]string{identity.NodeID: token}, func(context.Context, string) (tailnetPeer, error) {
+		peer := tailnetPeer{}
+		peer.UserProfile.ID = peerID
+		return peer, nil
+	})
+	registry := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("X-Devbox-Peer-IP", "100.64.0.2")
+		r.Header.Set("X-Devbox-Peer-Port", "12345")
+		handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(registry.Close)
+	for _, supervisor := range []struct{ tailscale, github int64 }{{11, 42}, {12, 43}} {
+		peerID = supervisor.tailscale
+		store, err := OpenConnections(t.TempDir())
+		require.NoError(err)
+		t.Cleanup(store.Close)
+		transport := registry.Client().Transport.(*http.Transport).Clone()
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if strings.HasPrefix(addr, "compute-a.example.ts.net:") {
+				addr = worker.Listener.Addr().String()
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		}
+		store.client.Transport = transport
+		discovery, err := store.Discover(t.Context(), registry.URL)
+		require.NoError(err)
+		require.Len(discovery.Devboxes, 1)
+		require.Equal(supervisor.github, discovery.Devboxes[0].GitHubUserID)
+		connection, err := store.Connect(t.Context(), registry.URL, "compute-a")
+		require.NoError(err)
+		require.Equal(int64(777), connection.WorkerGitHubUserID)
+	}
+	peerID = 13
+	store, err := OpenConnections(t.TempDir())
+	require.NoError(err)
+	t.Cleanup(store.Close)
+	store.client = registry.Client()
+	discovery, err := store.Discover(t.Context(), registry.URL)
+	require.NoError(err)
+	require.Empty(discovery.Devboxes)
+	_, err = store.Connect(t.Context(), registry.URL, "compute-a")
+	require.ErrorContains(err, "not assigned")
+
+	for name, change := range map[string]func(*Assignment){
+		"worker identity": func(a *Assignment) { a.WorkerGitHubUserID = 778 },
+		"worker details":  func(a *Assignment) { a.TokenFile = "/run/example/other" },
+		"personal worker": func(a *Assignment) { a.WorkerGitHubUserID = 0 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			other := second
+			change(&other)
+			cfg.Assignments[1] = other
+			assert.Error(t, cfg.validate())
+		})
+	}
+	cfg.Assignments[0].WorkerGitHubUserID = 0
+	cfg.Assignments[1].WorkerGitHubUserID = 0
+	require.Error(cfg.validate())
+}

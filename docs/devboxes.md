@@ -582,8 +582,11 @@ The assignment's `github_user_id` names the developer who can discover and
 connect to the account. Personal workers use that same GitHub identity. For a
 service account, set `worker_github_user_id` to the App's bot ID; the controller
 verifies that execution identity without changing the human owner.
+To grant several developers access to one service worker, add an assignment for
+each developer. Use the same worker details and `worker_github_user_id` in each
+assignment, changing only `github_user_id`. Personal worker NodeIDs remain unique.
 
-Upgrade the registry and controllers before adding `worker_github_user_id` to
+Upgrade the registry and each supervisor's controller before adding `worker_github_user_id` to
 service assignments. Existing personal assignments and connections continue
 working throughout that rollout. Older controllers still handle personal
 accounts but cannot connect to service workers. To roll the registry back to a

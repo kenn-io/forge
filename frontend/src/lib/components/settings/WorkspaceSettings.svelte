@@ -26,6 +26,13 @@ import DevboxSettings from "./DevboxSettings.svelte";
     { value: "diff", label: "Diff" },
     { value: "item", label: "PR/Issue" },
   ];
+  const detailSessionPlacementOptions: SelectDropdownOption[] = [
+    { value: "bottom", label: "Bottom" },
+    { value: "right", label: "Right" },
+    { value: "left", label: "Left" },
+    { value: "top", label: "Top" },
+    { value: "tab", label: "Same pane" },
+  ];
 
   function toggleListAgentStatus(): void {
     if (saving) return;
@@ -101,18 +108,20 @@ import DevboxSettings from "./DevboxSettings.svelte";
     );
   }
 
-  function setDefaultSidebarView(value: string): void {
-    const defaultSidebarView = value as Settings["workspaces"]["default_sidebar_view"];
-    if (saving || defaultSidebarView === workspaces.default_sidebar_view) return;
+  function saveWorkspaceChoice<K extends "default_sidebar_view" | "detail_session_placement">(
+    key: K,
+    value: Settings["workspaces"][K],
+  ): void {
+    if (saving || value === workspaces[key]) return;
     const baseline = workspaces;
-    const pending = { ...workspaces, default_sidebar_view: defaultSidebarView };
+    const pending = { ...workspaces, [key]: value };
     onUpdate(pending);
     saving = true;
     runtime.runCommand(
       Effect.gen(function* () {
         return yield* saveWorkspaceSettings({
           baseline,
-          changes: { default_sidebar_view: pending.default_sidebar_view },
+          changes: { [key]: value },
           store: settingsStore,
         });
       }).pipe(
@@ -230,7 +239,23 @@ import DevboxSettings from "./DevboxSettings.svelte";
       value={workspaces.default_sidebar_view}
       options={defaultSidebarViewOptions}
       disabled={saving}
-      onchange={setDefaultSidebarView}
+      onchange={(value) =>
+        saveWorkspaceChoice("default_sidebar_view", value as Settings["workspaces"]["default_sidebar_view"])}
+    />
+  </div>
+  <div class="setting-row">
+    <div class="setting-copy">
+      <span class="setting-label">Open new sessions from a PR or issue</span>
+      <span class="setting-description">Applies to agents and chats. Bottom uses the workspace pane, the other sides split the Conversation pane, and Same pane adds a tab next to Conversation.</span>
+    </div>
+    <SelectDropdown
+      class="sidebar-view-select"
+      title="Open new sessions from a PR or issue"
+      value={workspaces.detail_session_placement}
+      options={detailSessionPlacementOptions}
+      disabled={saving}
+      onchange={(value) =>
+        saveWorkspaceChoice("detail_session_placement", value as Settings["workspaces"]["detail_session_placement"])}
     />
   </div>
 </div>

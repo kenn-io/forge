@@ -12931,6 +12931,14 @@ components:
             - diff
             - item
           type: string
+        detail_session_placement:
+          enum:
+            - bottom
+            - right
+            - left
+            - top
+            - tab
+          type: string
         show_agent_status_in_lists:
           type: boolean
       type: object
@@ -13172,12 +13180,21 @@ components:
             - diff
             - item
           type: string
+        detail_session_placement:
+          enum:
+            - bottom
+            - right
+            - left
+            - top
+            - tab
+          type: string
         show_agent_status_in_lists:
           type: boolean
       required:
         - show_agent_status_in_lists
         - auto_assign_on_create
         - default_sidebar_view
+        - detail_session_placement
       type: object
     WorktreeFromMergeRequestResponse:
       additionalProperties: false

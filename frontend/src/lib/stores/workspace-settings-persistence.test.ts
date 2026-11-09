@@ -17,6 +17,7 @@ const initial: WorkspaceSettings = {
   default_execution_target: "",
   auto_assign_on_create: false,
   default_sidebar_view: "diff",
+  detail_session_placement: "bottom",
 };
 
 function settingsResponse(workspaces: WorkspaceSettings) {
@@ -97,6 +98,7 @@ describe("workspace settings persistence", () => {
       default_execution_target: "",
       auto_assign_on_create: true,
       default_sidebar_view: "item",
+      detail_session_placement: "bottom",
     });
   });
 
@@ -112,6 +114,7 @@ describe("workspace settings persistence", () => {
       default_execution_target: "",
       auto_assign_on_create: true,
       default_sidebar_view: "diff",
+      detail_session_placement: "bottom",
     };
     const hydration = beginWorkspaceSettingsHydration(store);
     hydrateWorkspaceSettings(hydration, persisted);
@@ -124,12 +127,14 @@ describe("workspace settings persistence", () => {
       default_execution_target: "",
       auto_assign_on_create: true,
       default_sidebar_view: "item",
+      detail_session_placement: "bottom",
     });
     expect(persisted).toEqual({
       show_agent_status_in_lists: false,
       default_execution_target: "",
       auto_assign_on_create: true,
       default_sidebar_view: "item",
+      detail_session_placement: "bottom",
     });
     expect(requests).toEqual([{ default_sidebar_view: "item" }]);
   });

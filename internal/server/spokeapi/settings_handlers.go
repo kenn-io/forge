@@ -89,6 +89,7 @@ type WorkspaceSettingsUpdate struct {
 	ShowAgentStatusInLists *bool   `json:"show_agent_status_in_lists,omitempty"`
 	AutoAssignOnCreate     *bool   `json:"auto_assign_on_create,omitempty"`
 	DefaultSidebarView     *string `json:"default_sidebar_view,omitempty" enum:"diff,item"`
+	DetailSessionPlacement *string `json:"detail_session_placement,omitempty" enum:"bottom,right,left,top,tab"`
 }
 
 type SyncSettingsUpdate struct {

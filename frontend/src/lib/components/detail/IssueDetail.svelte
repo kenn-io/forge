@@ -20,6 +20,8 @@
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
+  import { detailSessionLaunchLeaf } from "../../stores/paneLayout.svelte.js";
+  import type { WorkspaceRuntimeLaunchLeaf } from "../terminal/workspace-runtime-workflow.js";
   import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
   import MarkdownHtml from "../shared/MarkdownHtml.svelte";
@@ -812,10 +814,17 @@
     });
   }
 
+  // A quick action from this header opens where the user's placement setting
+  // says, like an agent launched from it.
+  function quickActionLeaf(): WorkspaceRuntimeLaunchLeaf | undefined {
+    if (!inlineWorkspace) return undefined;
+    return detailSessionLaunchLeaf(inlineWorkspace.surface, settings.getWorkspaceSettings().detail_session_placement);
+  }
+
   // Runs in the workspace this issue already has, then shows it the way a
   // create does: the inline pane, or the workspace route.
   function runQuickActionInWorkspace(workspaceId: string, action: QuickAction): void {
-    runWorkspaceQuickAction(runtime, workspaceId, "issue", action);
+    runWorkspaceQuickAction(runtime, workspaceId, "issue", action, undefined, undefined, quickActionLeaf());
     if (inlineWorkspace) inlineWorkspace.revealWorkspace();
     else if (onOpenWorkspace) onOpenWorkspace(workspaceId);
     else navigate(`/terminal/${workspaceId}`);
@@ -928,7 +937,9 @@
             promoteWorkspaceCreateLaunch(requestIdentity, createdRef.id, undefined);
             recordWorkspaceCreated(requestIdentity, createdRef);
             inlineWorkspace?.recordCreated(requestIdentity, createdRef);
-            if (quickAction) runWorkspaceQuickAction(runtime, createdRef.id, "issue", quickAction);
+            if (quickAction) {
+              runWorkspaceQuickAction(runtime, createdRef.id, "issue", quickAction, undefined, undefined, quickActionLeaf());
+            }
           }
           if (responseIsStale()) return;
           pendingWorkspaceLaunchTarget = null;

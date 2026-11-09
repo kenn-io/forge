@@ -40,6 +40,7 @@ const initial: WorkspaceSettings = {
   default_execution_target: "",
   auto_assign_on_create: false,
   default_sidebar_view: "diff",
+  detail_session_placement: "bottom",
   show_agent_status_in_lists: false,
 };
 
@@ -146,6 +147,22 @@ describe("WorkspaceSettings", () => {
     await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
     expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ workspaces: { default_sidebar_view: "item" } });
     expect(onUpdate).toHaveBeenNthCalledWith(1, saved);
+    expect(onUpdate).toHaveBeenLastCalledWith(saved);
+  });
+
+  it("saves where sessions started from a PR or issue open", async () => {
+    const onUpdate = vi.fn();
+    const saved = { ...initial, detail_session_placement: "right" as const };
+    mockPersistSettings.mockReturnValue(Effect.succeed({ workspaces: saved }));
+    render(SettingsRuntimeHarness, {
+      props: { component: WorkspaceSettings, componentProps: { onUpdate } },
+    });
+
+    await fireEvent.click(screen.getByRole("combobox", { name: "Open new sessions from a PR or issue: Bottom" }));
+    await fireEvent.click(screen.getByRole("option", { name: "Right" }));
+
+    await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
+    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ workspaces: { detail_session_placement: "right" } });
     expect(onUpdate).toHaveBeenLastCalledWith(saved);
   });
 

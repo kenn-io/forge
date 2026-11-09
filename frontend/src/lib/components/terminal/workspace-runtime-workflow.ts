@@ -29,6 +29,7 @@ import {
   expireAcceptedWorkspaceLaunch,
   pendingWorkspaceLaunch,
 } from "../../stores/workspace-create-pending.svelte.js";
+import type { TabbedPanelSplitEdge } from "../shared/tabbed-panel-layout.js";
 import type { WorkflowPreset } from "./workflow-presets.js";
 import { decodeWorkspaceDetail, type WorkspaceDetail } from "./workspace-detail.js";
 
@@ -117,6 +118,8 @@ export interface AcceptedWorkspaceLaunchReconciliation {
 export interface WorkspaceRuntimeLaunchLeaf {
   readonly surface: "workflow" | "detail";
   readonly id: string;
+  /** Detail leaves only: split off this side of the leaf instead of adding a tab to it. */
+  readonly edge?: TabbedPanelSplitEdge | undefined;
 }
 
 export type WorkspaceRuntimeLaunchPlacement =

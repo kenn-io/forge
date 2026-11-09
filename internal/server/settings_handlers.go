@@ -380,6 +380,9 @@ func (s *Server) commitLocalSettings(
 		if input.Body.Workspaces.DefaultSidebarView != nil {
 			s.cfg.Workspaces.DefaultSidebarView = *input.Body.Workspaces.DefaultSidebarView
 		}
+		if input.Body.Workspaces.DetailSessionPlacement != nil {
+			s.cfg.Workspaces.DetailSessionPlacement = *input.Body.Workspaces.DetailSessionPlacement
+		}
 	}
 	if input.Body.Issues != nil {
 		s.cfg.Issues = *input.Body.Issues

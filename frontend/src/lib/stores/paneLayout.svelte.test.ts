@@ -4,7 +4,11 @@ import { pushModalFrame, resetModalStack } from "./keyboard/modal-stack.svelte.j
 import {
   PANE_LAYOUT_STORAGE_PREFIX,
   createPaneLayoutStore,
+  detailLaunchInsertTarget,
+  detailSessionLaunchLeaf,
+  getPaneLayoutStore,
   promoteSessionBesideWorkspace,
+  resetPaneLayoutStoresForTest,
 } from "./paneLayout.svelte.js";
 import { isSessionPaneKey, sessionPaneKey } from "./session-pane-key.js";
 
@@ -430,5 +434,76 @@ describe("promoted session panes", () => {
 
     layout.noteFocused("not-a-pane-at-all");
     expect(layout.lastFocusedTabKey()).toBe(AGENT_PANE);
+  });
+});
+
+describe("detail session placement", () => {
+  beforeEach(() => resetPaneLayoutStoresForTest());
+
+  const rendered = {
+    activeInputTabKey: "conversation",
+    editableTabs: ["conversation", "files", "kata", "workspace"],
+    onScreenTabs: ["conversation", "workspace"],
+    flattened: false,
+    soloChromeTabs: [],
+  };
+
+  it("splits the on-screen detail leaf on the chosen side, or tabs into it", () => {
+    const layout = getPaneLayoutStore("prs");
+    layout.notePaneRender(rendered);
+    const detailLeaf = layout.leafIDForTab("conversation")!;
+
+    expect(detailSessionLaunchLeaf("prs", "right")).toEqual({ surface: "detail", id: detailLeaf, edge: "right" });
+    expect(detailSessionLaunchLeaf("prs", "tab")).toEqual({ surface: "detail", id: detailLeaf });
+    expect(detailLaunchInsertTarget(layout, { surface: "detail", id: detailLeaf, edge: "top" })).toEqual({
+      kind: "split",
+      leafID: detailLeaf,
+      direction: "vertical",
+      placement: "before",
+    });
+    expect(detailLaunchInsertTarget(layout, { surface: "detail", id: detailLeaf })).toEqual({
+      kind: "tab",
+      leafID: detailLeaf,
+    });
+  });
+
+  it("anchors on the Conversation pane that holds the header, not on the pane focused last", () => {
+    const layout = getPaneLayoutStore("prs");
+    layout.splitTab("files", layout.leafIDForTab("conversation")!, "horizontal", "before");
+    layout.noteFocused("files");
+    layout.notePaneRender({ ...rendered, onScreenTabs: ["files", "conversation", "workspace"] });
+
+    expect(detailSessionLaunchLeaf("prs", "right")?.id).toBe(layout.leafIDForTab("conversation"));
+  });
+
+  it("drops a launch target that left the screen before the launch completed", () => {
+    const layout = getPaneLayoutStore("prs");
+    layout.notePaneRender(rendered);
+    const leaf = detailSessionLaunchLeaf("prs", "right")!;
+
+    layout.notePaneRender({ ...rendered, flattened: true });
+    expect(detailLaunchInsertTarget(layout, leaf)).toBeNull();
+
+    // Another leaf maximized over it.
+    layout.notePaneRender({ ...rendered, onScreenTabs: ["workspace"] });
+    expect(detailLaunchInsertTarget(layout, leaf)).toBeNull();
+
+    layout.notePaneRender(rendered);
+    expect(detailLaunchInsertTarget(layout, leaf)).not.toBeNull();
+  });
+
+  it("leaves the session in the workspace pane for bottom, or when no detail pane can take it", () => {
+    const layout = getPaneLayoutStore("prs");
+    // Nothing rendered: a split could land off screen.
+    expect(detailSessionLaunchLeaf("prs", "right")).toBeUndefined();
+
+    layout.notePaneRender({ ...rendered, flattened: true });
+    expect(detailSessionLaunchLeaf("prs", "right")).toBeUndefined();
+
+    layout.notePaneRender({ ...rendered, onScreenTabs: ["workspace"] });
+    expect(detailSessionLaunchLeaf("prs", "left")).toBeUndefined();
+
+    layout.notePaneRender(rendered);
+    expect(detailSessionLaunchLeaf("prs", "bottom")).toBeUndefined();
   });
 });

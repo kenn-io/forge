@@ -3,32 +3,20 @@
  */
 
 export type ListIssuesParams = {
-  /**
-   * Item numbers in every repo unless repo is set; before pagination.
-   */
+  /** Item numbers in every repo unless repo is set; before pagination. */
   numbers?: number[];
-  /**
-   * Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
-   */
+  /** Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories. */
   repo?: string;
   state?: string;
   starred?: boolean;
-  /**
-   * Only include issues involving the authenticated viewer.
-   */
+  /** Only include issues involving the authenticated viewer. */
   involves_me?: boolean;
-  /**
-   * Only include issues with no assignees.
-   */
+  /** Only include issues with no assignees. */
   unassigned?: boolean;
-  /**
-   * Only include issues referenced by a pull request.
-   */
+  /** Only include issues referenced by a pull request. */
   referenced_by_pr?: boolean;
   q?: string;
-  /**
-   * Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers.
-   */
+  /** Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers. */
   semantic?: boolean;
   assignee?: string;
   limit?: number;

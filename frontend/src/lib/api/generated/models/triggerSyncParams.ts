@@ -3,12 +3,8 @@
  */
 
 export type TriggerSyncParams = {
-  /**
-   * Optional repository filters to sync first. Accepts repeated provider|platform_host/repo_path values or comma-separated values.
-   */
+  /** Optional repository filters to sync first. Accepts repeated provider|platform_host/repo_path values or comma-separated values. */
   priority_repo?: string[];
-  /**
-   * Optional repository filters to sync exclusively. Accepts repeated provider|platform_host/repo_path values or comma-separated values.
-   */
+  /** Optional repository filters to sync exclusively. Accepts repeated provider|platform_host/repo_path values or comma-separated values. */
   only_repo?: string[];
 };

@@ -3,24 +3,14 @@
  */
 
 export type GetWorkspaceFilesParams = {
-  /**
-   * Diff base: head, pushed, or merge-target
-   */
+  /** Diff base: head, pushed, or merge-target */
   base?: string;
-  /**
-   * Set to hide to ignore whitespace-only changes
-   */
+  /** Set to hide to ignore whitespace-only changes */
   whitespace?: string;
-  /**
-   * Scope to a single commit SHA
-   */
+  /** Scope to a single commit SHA */
   commit?: string;
-  /**
-   * Start SHA for range diff (inclusive)
-   */
+  /** Start SHA for range diff (inclusive) */
   from?: string;
-  /**
-   * End SHA for range diff (inclusive)
-   */
+  /** End SHA for range diff (inclusive) */
   to?: string;
 };

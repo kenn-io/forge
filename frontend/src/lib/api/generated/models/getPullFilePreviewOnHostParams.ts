@@ -4,24 +4,14 @@
 import type { GetPullFilePreviewOnHostSide } from "./getPullFilePreviewOnHostSide.ts";
 
 export type GetPullFilePreviewOnHostParams = {
-  /**
-   * Changed file path to preview
-   */
+  /** Changed file path to preview */
   path?: string;
-  /**
-   * Optional diff side to read for context expansion
-   */
+  /** Optional diff side to read for context expansion */
   side?: GetPullFilePreviewOnHostSide;
-  /**
-   * Scope to a single commit SHA
-   */
+  /** Scope to a single commit SHA */
   commit?: string;
-  /**
-   * Start SHA for range diff (inclusive)
-   */
+  /** Start SHA for range diff (inclusive) */
   from?: string;
-  /**
-   * End SHA for range diff (inclusive)
-   */
+  /** End SHA for range diff (inclusive) */
   to?: string;
 };

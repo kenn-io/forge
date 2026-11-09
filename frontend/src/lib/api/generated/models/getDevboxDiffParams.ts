@@ -3,32 +3,18 @@
  */
 
 export type GetDevboxDiffParams = {
-  /**
-   * Diff base: head, pushed, or merge-target
-   */
+  /** Diff base: head, pushed, or merge-target */
   base?: string;
-  /**
-   * Set to hide to ignore whitespace-only changes
-   */
+  /** Set to hide to ignore whitespace-only changes */
   whitespace?: string;
-  /**
-   * Optional file path to limit the returned patch
-   */
+  /** Optional file path to limit the returned patch */
   path?: string;
-  /**
-   * Scope to a single commit SHA
-   */
+  /** Scope to a single commit SHA */
   commit?: string;
-  /**
-   * Start SHA for range diff (inclusive)
-   */
+  /** Start SHA for range diff (inclusive) */
   from?: string;
-  /**
-   * End SHA for range diff (inclusive)
-   */
+  /** End SHA for range diff (inclusive) */
   to?: string;
-  /**
-   * Optional snapshot_version returned by the workspace files endpoint
-   */
+  /** Optional snapshot_version returned by the workspace files endpoint */
   revision?: string;
 };

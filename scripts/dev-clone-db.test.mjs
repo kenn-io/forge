@@ -38,9 +38,10 @@ test("dev-clone-db copies source database and rewrites cloned config", async () 
 
   const { stdout } = await execFileAsync("bash", ["scripts/dev-clone-db.sh"], {
     env: {
-      HOME: home,
+      HOME: process.env.HOME,
       PATH: process.env.PATH,
-      KENN_FORGE_CONFIG: "",
+      KENN_FORGE_HOME: sourceHome,
+      KENN_FORGE_CONFIG: path.join(sourceHome, "config.toml"),
       KENN_FORGE_DEV_CLONE_DIR: resolvedCloneDir,
       KENN_FORGE_DEV_CLONE_PORT: "8123",
     },

@@ -3,8 +3,6 @@
  */
 
 export type CompleteFleetFilesystemPathParams = {
-  /**
-   * The partial path to complete on the owning host.
-   */
+  /** The partial path to complete on the owning host. */
   path: string;
 };

@@ -3,8 +3,6 @@
  */
 
 export type ListArchiveStatusParams = {
-  /**
-   * Repeated provider|platform_host/repo_path filters.
-   */
+  /** Repeated provider|platform_host/repo_path filters. */
   repo?: string[];
 };

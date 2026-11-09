@@ -280,6 +280,9 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	require.NoError(t, err)
 	session, err := manager.LaunchWithInitialMessage(t.Context(), "work-a", ws.WorktreePath, "chat", "", nil)
 	require.NoError(t, err)
+	chat, err := manager.ACP("work-a", session.Key)
+	require.NoError(t, err)
+	require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
 	require.NoError(t, database.UpsertWorkspaceRuntimeSession(t.Context(), &db.WorkspaceRuntimeSession{WorkspaceID: "work-a", SessionKey: session.Key, TargetKey: "chat", Kind: "acp", Scope: "session", DisplayRegion: "workflow", CreatedAt: session.CreatedAt}))
 	require.NoError(t, database.SetWorkspaceActiveTab(t.Context(), "work-a", "session:"+session.Key))
 	for index, prompt := range []string{"inspect the failure", "try the fix"} {
@@ -314,6 +317,12 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 		if index == 1 {
 			assert.Contains(t, string(snapshot), "inspect the failure")
 			assert.Contains(t, string(snapshot), "Hello workspace")
+			var state localruntime.ACPState
+			require.NoError(t, json.Unmarshal(snapshot, &state))
+			require.NotNil(t, state.Supervision)
+			assert.Equal(t, "coordinator", state.Supervision.Supervisor)
+			assert.Equal(t, uint64(1), state.Supervision.Generation)
+			assert.False(t, state.Supervision.TakenOver)
 		}
 		command := `{"type":"prompt","mode":"send","id":"` + prompt + `","text":"` + prompt + `"}`
 		require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte(command)))

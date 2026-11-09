@@ -406,7 +406,7 @@ jobs:
 
       - name: Check shared Huma API contract
         if: matrix.lane == 'go-linux'
-        run: make huma-check
+        run: kit-retry 3 5 make huma-check
 
       - name: Run NilAway
         if: matrix.lane == 'go-linux'

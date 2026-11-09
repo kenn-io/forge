@@ -298,6 +298,7 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	var session localruntime.SessionInfo
 	require.NoError(t, json.Unmarshal(launchBody, &session))
 	var observers []*websocket.Conn
+	messages := make(map[string]localruntime.ACPMessage)
 	for index := range 2 {
 		directory := t.TempDir()
 		assignment := devbox.Assignment{NodeID: workerNode, UID: 1001, GitHubUserID: int64(42 + index), WorkerGitHubUserID: 777, Role: "execution", Protocol: 1, HostID: "compute-a", Name: "Compute A", URL: worker.URL, Account: "service"}
@@ -333,9 +334,16 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = conn.CloseNow() })
 		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-		_, _, err = conn.Read(ctx)
+		_, snapshot, err := conn.Read(ctx)
 		cancel()
 		require.NoError(t, err)
+		if index == 1 {
+			var state localruntime.ACPState
+			require.NoError(t, json.Unmarshal(snapshot, &state))
+			for _, message := range state.Messages {
+				messages[message.ID] = message
+			}
+		}
 		observers = append(observers, conn)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
@@ -344,7 +352,23 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	for {
 		_, frame, err := observers[1].Read(ctx)
 		require.NoError(t, err)
-		if strings.Contains(string(frame), "inspect the failure") && strings.Contains(string(frame), "Hello workspace") {
+		var update struct {
+			Updates *localruntime.ACPState `json:"updates"`
+		}
+		require.NoError(t, json.Unmarshal(frame, &update))
+		if update.Updates != nil {
+			for _, message := range update.Updates.Messages {
+				if previous, ok := messages[message.ID]; !ok || message.Version > previous.Version {
+					messages[message.ID] = message
+				}
+			}
+		}
+		var prompt, reply bool
+		for _, message := range messages {
+			prompt = prompt || message.Role == "user" && message.Text == "inspect the failure"
+			reply = reply || message.Role == "assistant" && message.Text == "Hello workspace"
+		}
+		if prompt && reply {
 			break
 		}
 	}

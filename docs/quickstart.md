@@ -20,6 +20,8 @@ also includes <a data-download-asset="checksums" href="https://github.com/kenn-i
 | macOS   | Intel         | <a data-download-asset="darwin-amd64" href="https://github.com/kenn-io/forge/releases"><code>forge\_&lt;version&gt;\_darwin_amd64.tar.gz</code></a> |
 | macOS   | Apple silicon | <a data-download-asset="darwin-arm64" href="https://github.com/kenn-io/forge/releases"><code>forge\_&lt;version&gt;\_darwin_arm64.tar.gz</code></a> |
 | Windows | x86-64        | <a data-download-asset="windows-amd64" href="https://github.com/kenn-io/forge/releases"><code>forge\_&lt;version&gt;\_windows_amd64.zip</code></a>  |
+| Windows | ARM64         | <a data-download-asset="windows-arm64" href="https://github.com/kenn-io/forge/releases"><code>forge\_&lt;version&gt;\_windows_arm64.zip</code></a>  |
+| Android | Universal     | <a data-download-asset="android" href="https://github.com/kenn-io/forge/releases"><code>forge\_&lt;version&gt;\_android.apk</code></a>              |
 
 Verify the downloaded archive against `SHA256SUMS`.
 

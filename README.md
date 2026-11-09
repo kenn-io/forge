@@ -66,6 +66,8 @@ include a `SHA256SUMS` file.
 | macOS | Intel | `forge_<version>_darwin_amd64.tar.gz` |
 | macOS | Apple silicon | `forge_<version>_darwin_arm64.tar.gz` |
 | Windows | x86-64 | `forge_<version>_windows_amd64.zip` |
+| Windows | ARM64 | `forge_<version>_windows_arm64.zip` |
+| Android | Universal | `forge_<version>_android.apk` |
 
 Extract the archive and move `kenn-forge` or `kenn-forge.exe` to a directory on
 your `PATH`.

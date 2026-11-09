@@ -140,7 +140,7 @@ func (c RegistryConfig) validate() error {
 	for _, assignment := range c.Assignments {
 		key := fmt.Sprintf("%d/%s", assignment.GitHubUserID, assignment.HostID)
 		if !githubIDs[assignment.GitHubUserID] || assignment.HostID == "" || strings.ContainsAny(assignment.HostID, "/?# ") || assignments[key] {
-			return errors.New("registry assignments must have an enrolled developer and unique host/account and worker identities")
+			return errors.New("registry assignments must have an enrolled developer and a unique developer/host assignment")
 		}
 		if err := validateAssignment(assignment); err != nil {
 			return err

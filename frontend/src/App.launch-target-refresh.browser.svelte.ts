@@ -22,6 +22,7 @@ let mounted: MountedBrowserApp | undefined;
 afterEach(() => {
   mounted?.unmount();
   mounted = undefined;
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -30,6 +31,8 @@ it.each([
   ["issue", "/issues/github/acme/widgets/7"],
 ])("refreshes %s launch choices after install and removal", async (_kind, route) => {
   await page.viewport(1400, 900);
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  const started = Date.now();
   let visible = true;
   vi.spyOn(document, "visibilityState", "get").mockImplementation(() => (visible ? "visible" : "hidden"));
   vi.spyOn(document, "hidden", "get").mockImplementation(() => !visible);
@@ -52,8 +55,10 @@ it.each([
   const options = page.getByRole("button", { name: "Create Workspace options" });
   await expect.element(options).toBeVisible();
   await vi.waitFor(() => expect(reads).toBeGreaterThan(0));
+  await vi.advanceTimersByTimeAsync(0);
   expect(options.element().hasAttribute("disabled")).toBe(true);
   setVisible(false);
+  await vi.advanceTimersByTimeAsync(0);
   available = true;
   setVisible(true);
   await vi.waitFor(() => expect(options.element().hasAttribute("disabled")).toBe(false));
@@ -65,6 +70,7 @@ it.each([
   await expect.element(page.getByRole("menuitem", { name: "Review Claude" })).toBeEnabled();
   await quickActions.click();
   setVisible(false);
+  await vi.advanceTimersByTimeAsync(0);
   available = false;
   setVisible(true);
   await vi.waitFor(() => expect(options.element().hasAttribute("disabled")).toBe(true));
@@ -72,4 +78,5 @@ it.each([
   await expect
     .element(page.getByRole("menuitem", { name: "Review claude not found on PATH" }))
     .toHaveAttribute("title", "claude not found on PATH");
+  expect(Date.now() - started).toBeLessThan(5_000);
 });

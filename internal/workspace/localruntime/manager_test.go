@@ -259,23 +259,26 @@ func TestManagerLaunchTargetsRefreshBuiltinAvailability(t *testing.T) {
 	t.Setenv("PATH", path)
 	owner := newFakeRuntimePtyOwner()
 	disabled := false
-	mgr := NewManager(Options{Targets: ResolveLaunchTargets([]config.Agent{{
+	targets := ResolveLaunchTargets([]config.Agent{{
 		Key: "codex", Command: []string{"claude"}, Enabled: &disabled,
-	}}, nil, nil), PtyOwnerRuntime: owner})
-	t.Cleanup(mgr.Shutdown)
+	}}, nil, nil)
+	listing := NewManager(Options{Targets: targets})
+	launcher := NewManager(Options{Targets: targets, PtyOwnerRuntime: owner})
+	t.Cleanup(listing.Shutdown)
+	t.Cleanup(launcher.Shutdown)
 	_, binary := writeFakeRuntimeTool(t, path, "claude")
-	_, err := mgr.Launch(t.Context(), "ws-1", t.TempDir(), "claude")
+	_, err := launcher.Launch(t.Context(), "ws-1", t.TempDir(), "claude")
 	require.NoError(t, err)
 	assert.Equal([]string{"claude"}, owner.startedCommand)
-	target := findTarget(t, mgr.LaunchTargets(), "claude")
+	target := findTarget(t, listing.LaunchTargets(), "claude")
 	assert.True(target.Available)
 	assert.Empty(target.DisabledReason)
-	assert.False(findTarget(t, mgr.LaunchTargets(), "codex").Available)
+	assert.False(findTarget(t, listing.LaunchTargets(), "codex").Available)
 
 	require.NoError(t, os.Remove(binary))
-	_, err = mgr.Launch(t.Context(), "ws-2", t.TempDir(), "claude")
+	_, err = launcher.Launch(t.Context(), "ws-2", t.TempDir(), "claude")
 	require.ErrorContains(t, err, `target "claude" not available`)
-	target = findTarget(t, mgr.LaunchTargets(), "claude")
+	target = findTarget(t, listing.LaunchTargets(), "claude")
 	assert.False(target.Available)
 	assert.Equal("claude not found on PATH", target.DisabledReason)
 }

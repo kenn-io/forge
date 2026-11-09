@@ -245,6 +245,50 @@ func TestOwnerCleanupRetainsSharedRoot(t *testing.T) {
 	require.True(info.IsDir())
 }
 
+// A stale-run reaper in another test binary holds the root lock while it reads
+// a run's owner.json, so Cleanup must not remove the run until it can take it.
+func TestOwnerCleanupRemovesRunOnlyUnderRootLock(t *testing.T) {
+	require := require.New(t)
+	root := filepath.Join(t.TempDir(), "root")
+	owner, err := newAt(root)
+	require.NoError(err)
+
+	held := make(chan struct{})
+	release := make(chan struct{})
+	lockDone := make(chan error, 1)
+	go func() {
+		lockDone <- withRootLock(root, func() error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+
+	cleaned := make(chan error, 1)
+	go func() { cleaned <- owner.Cleanup() }()
+	select {
+	case err := <-cleaned:
+		close(release)
+		require.Fail("Cleanup finished while another holder had the root lock", "cleanup error: %v", err)
+	case <-time.After(500 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; this test holds the root lock until it closes release
+	}
+	require.DirExists(owner.runDir)
+	require.DirExists(owner.admissionDir)
+
+	close(release)
+	require.NoError(<-lockDone)
+	select {
+	case err := <-cleaned:
+		require.NoError(err)
+	case <-time.After(5 * time.Second):
+		stacktest.Dump(t)
+		require.Fail("Cleanup did not finish after the root lock was released")
+	}
+	require.NoDirExists(owner.runDir)
+	require.NoDirExists(owner.admissionDir)
+}
+
 func TestHeldAdmissionLockHelperProcess(t *testing.T) {
 	require := require.New(t)
 	admissionDir := os.Getenv("KENN_FORGE_TEST_TMUX_HELD_ADMISSION")

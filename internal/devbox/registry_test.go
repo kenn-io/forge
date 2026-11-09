@@ -25,8 +25,13 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 			require := require.New(t)
 			identity := WorkerIdentity{NodeID: "0123456789abcdef0123456789abcdef", UID: 1001, GitHubUserID: workerID, Role: "execution", Protocol: Protocol}
 			token := strings.Repeat("a", 64)
+			var workerToken atomic.Value
+			workerToken.Store(token)
 			worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				assert.Equal("Bearer "+token, r.Header.Get("Authorization"))
+				if r.Header.Get("Authorization") != "Bearer "+workerToken.Load().(string) {
+					http.Error(w, "invalid worker bearer", http.StatusUnauthorized)
+					return
+				}
 				assert.Empty(r.Header.Get("Cookie"))
 				if r.URL.Path == "/api/v1/worker" {
 					assert.NoError(json.MarshalWrite(w, identity))
@@ -56,6 +61,12 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 		`, workerSetting), &assignment)
 			require.NoError(err)
 			cfg := RegistryConfig{Socket: "/run/example/registry.sock", RegistryID: "example-registry", Revision: "1", Developers: []Developer{{GitHubUserID: 42, TailscaleUserID: 11, Enabled: true}, {GitHubUserID: 43, TailscaleUserID: 12, Enabled: true}}, Assignments: []Assignment{assignment}}
+			if workerID == 777 {
+				second := assignment
+				second.GitHubUserID = 43
+				second.Name = "Shared compute"
+				cfg.Assignments = append(cfg.Assignments, second)
+			}
 			require.NoError(cfg.validate())
 			peerID := int64(11)
 			lookup := func(context.Context, string) (tailnetPeer, error) {
@@ -87,6 +98,7 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 			assert.Equal(int64(42), discovery.GitHubUserID)
 			require.Len(discovery.Devboxes, 1)
 			assert.Equal(int64(42), discovery.Devboxes[0].GitHubUserID)
+			assert.Equal(assignment.WorkerGitHubUserID, discovery.Devboxes[0].WorkerGitHubUserID)
 			connection, err := store.Connect(t.Context(), registry.URL, "compute-a")
 			require.NoError(err)
 			_, err = store.Connect(t.Context(), registry.URL, "compute-a")
@@ -99,13 +111,50 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 			info, err := os.Stat(store.path)
 			require.NoError(err)
 			assert.Equal(os.FileMode(0o600), info.Mode().Perm())
-			// Another enrolled developer must not inherit the owner's service account.
 			peerID = 12
 			discovery, err = store.Discover(t.Context(), registry.URL)
 			require.NoError(err)
-			assert.Empty(discovery.Devboxes)
-			_, err = store.Connect(t.Context(), registry.URL, "compute-a")
-			require.ErrorContains(err, "not assigned")
+			if workerID == 777 {
+				secondStore, err := OpenConnections(t.TempDir())
+				require.NoError(err)
+				t.Cleanup(secondStore.Close)
+				secondStore.client.Transport = transport.Clone()
+				discovery, err = secondStore.Discover(t.Context(), registry.URL)
+				require.NoError(err)
+				require.Len(discovery.Devboxes, 1)
+				assert.Equal(int64(43), discovery.Devboxes[0].GitHubUserID)
+				assert.Equal(workerID, discovery.Devboxes[0].WorkerGitHubUserID)
+				secondConnection, err := secondStore.Connect(t.Context(), registry.URL, "compute-a")
+				require.NoError(err)
+				assert.Equal(workerID, secondConnection.WorkerGitHubUserID)
+				cfg.Assignments[1].Enabled = false
+				require.NoError(cfg.validate())
+				handler = registryHandler(cfg, map[string]string{identity.NodeID: token}, lookup)
+				discovery, err = secondStore.Discover(t.Context(), registry.URL)
+				require.NoError(err)
+				assert.Empty(discovery.Devboxes)
+				_, err = secondStore.Connect(t.Context(), registry.URL, "compute-a")
+				require.ErrorContains(err, "not assigned")
+
+				newToken := strings.Repeat("b", 64)
+				workerToken.Store(newToken)
+				handler = registryHandler(cfg, map[string]string{identity.NodeID: newToken}, lookup)
+				response, err := secondStore.Do(t.Context(), secondConnection.ID, http.MethodGet, "/api/v1/worker", nil, nil)
+				require.NoError(err)
+				assert.Equal(http.StatusUnauthorized, response.StatusCode)
+				require.NoError(response.Body.Close())
+				peerID = 11
+				connection, err = store.Connect(t.Context(), registry.URL, "compute-a")
+				require.NoError(err)
+				response, err = store.Do(t.Context(), connection.ID, http.MethodGet, "/api/v1/worker", nil, nil)
+				require.NoError(err)
+				assert.Equal(http.StatusOK, response.StatusCode)
+				require.NoError(response.Body.Close())
+			} else {
+				assert.Empty(discovery.Devboxes)
+				_, err = store.Connect(t.Context(), registry.URL, "compute-a")
+				require.ErrorContains(err, "not assigned")
+			}
 			peerID = 11
 			identity.GitHubUserID = 99
 			_, err = store.Connect(t.Context(), registry.URL, "compute-a")
@@ -142,119 +191,27 @@ func TestRegistryIdentityUsesUserOrExplicitUnambiguousPin(t *testing.T) {
 	require.ErrorContains(err, "conflicts")
 }
 
-func TestRegistrySharedServiceWorker(t *testing.T) {
-	require := require.New(t)
-	identity := WorkerIdentity{NodeID: "0123456789abcdef0123456789abcdef", UID: 1001, GitHubUserID: 777, Role: "execution", Protocol: Protocol}
-	token := strings.Repeat("a", 64)
-	var workerToken atomic.Value
-	workerToken.Store(token)
-	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer "+workerToken.Load().(string) {
-			http.Error(w, "invalid worker bearer", http.StatusUnauthorized)
-			return
-		}
-		assert.NoError(t, json.MarshalWrite(w, identity))
-	}))
-	t.Cleanup(worker.Close)
-	assignment := Assignment{NodeID: identity.NodeID, UID: 1001, GitHubUserID: 42, WorkerGitHubUserID: 777, Role: "execution", Protocol: Protocol, HostID: "compute-a", Name: "Compute A", URL: "http://compute-a.example.ts.net:9001", Account: "service", Enabled: true, TokenFile: "/run/example/token"}
+func TestRegistrySharedServiceWorkerValidation(t *testing.T) {
+	assignment := Assignment{NodeID: "0123456789abcdef0123456789abcdef", UID: 1001, GitHubUserID: 42, WorkerGitHubUserID: 777, Role: "execution", Protocol: Protocol, HostID: "compute-a", Name: "Compute A", URL: "http://compute-a.example.ts.net:9001", Account: "service", Enabled: true, TokenFile: "/run/example/token"}
 	second := assignment
 	second.GitHubUserID = 43
 	second.Name = "Shared compute"
-	cfg := RegistryConfig{Socket: "/run/example/registry.sock", RegistryID: "example", Revision: "1", Developers: []Developer{{GitHubUserID: 42, TailscaleUserID: 11, Enabled: true}, {GitHubUserID: 43, TailscaleUserID: 12, Enabled: true}, {GitHubUserID: 44, TailscaleUserID: 13, Enabled: true}}, Assignments: []Assignment{assignment, second}}
-	require.NoError(cfg.validate())
-	peerID := int64(11)
-	tokens := map[string]string{identity.NodeID: token}
-	lookup := func(context.Context, string) (tailnetPeer, error) {
-		peer := tailnetPeer{}
-		peer.UserProfile.ID = peerID
-		return peer, nil
-	}
-	handler := registryHandler(cfg, tokens, lookup)
-	registry := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Set("X-Devbox-Peer-IP", "100.64.0.2")
-		r.Header.Set("X-Devbox-Peer-Port", "12345")
-		handler.ServeHTTP(w, r)
-	}))
-	t.Cleanup(registry.Close)
-	var stores []*Connections
-	var connectionIDs []string
-	for _, supervisor := range []struct{ tailscale, github int64 }{{11, 42}, {12, 43}} {
-		peerID = supervisor.tailscale
-		store, err := OpenConnections(t.TempDir())
-		require.NoError(err)
-		t.Cleanup(store.Close)
-		transport := registry.Client().Transport.(*http.Transport).Clone()
-		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			if strings.HasPrefix(addr, "compute-a.example.ts.net:") {
-				addr = worker.Listener.Addr().String()
-			}
-			return (&net.Dialer{}).DialContext(ctx, network, addr)
-		}
-		store.client.Transport = transport
-		discovery, err := store.Discover(t.Context(), registry.URL)
-		require.NoError(err)
-		require.Len(discovery.Devboxes, 1)
-		require.Equal(supervisor.github, discovery.Devboxes[0].GitHubUserID)
-		connection, err := store.Connect(t.Context(), registry.URL, "compute-a")
-		require.NoError(err)
-		require.Equal(int64(777), connection.WorkerGitHubUserID)
-		stores = append(stores, store)
-		connectionIDs = append(connectionIDs, connection.ID)
-	}
-	peerID = 13
-	store, err := OpenConnections(t.TempDir())
-	require.NoError(err)
-	t.Cleanup(store.Close)
-	store.client = registry.Client()
-	discovery, err := store.Discover(t.Context(), registry.URL)
-	require.NoError(err)
-	require.Empty(discovery.Devboxes)
-	_, err = store.Connect(t.Context(), registry.URL, "compute-a")
-	require.ErrorContains(err, "not assigned")
-
-	cfg.Assignments[1].Enabled = false
-	require.NoError(cfg.validate())
-	handler = registryHandler(cfg, tokens, lookup)
-	peerID = 12
-	discovery, err = stores[1].Discover(t.Context(), registry.URL)
-	require.NoError(err)
-	require.Empty(discovery.Devboxes)
-	_, err = stores[1].Connect(t.Context(), registry.URL, "compute-a")
-	require.ErrorContains(err, "not assigned")
-	response, err := stores[1].Do(t.Context(), connectionIDs[1], http.MethodGet, "/api/v1/worker", nil, nil)
-	require.NoError(err)
-	require.Equal(http.StatusOK, response.StatusCode)
-	require.NoError(response.Body.Close())
-
-	newToken := strings.Repeat("b", 64)
-	workerToken.Store(newToken)
-	tokens[identity.NodeID] = newToken
-	response, err = stores[1].Do(t.Context(), connectionIDs[1], http.MethodGet, "/api/v1/worker", nil, nil)
-	require.NoError(err)
-	require.Equal(http.StatusUnauthorized, response.StatusCode)
-	require.NoError(response.Body.Close())
-	peerID = 11
-	_, err = stores[0].Connect(t.Context(), registry.URL, "compute-a")
-	require.NoError(err)
-	response, err = stores[0].Do(t.Context(), connectionIDs[0], http.MethodGet, "/api/v1/worker", nil, nil)
-	require.NoError(err)
-	require.Equal(http.StatusOK, response.StatusCode)
-	require.NoError(response.Body.Close())
-
+	cfg := RegistryConfig{Socket: "/run/example/registry.sock", RegistryID: "example", Revision: "1", Developers: []Developer{{GitHubUserID: 42, TailscaleUserID: 11, Enabled: true}, {GitHubUserID: 43, TailscaleUserID: 12, Enabled: true}}, Assignments: []Assignment{assignment, second}}
+	require.NoError(t, cfg.validate())
 	for name, change := range map[string]func(*Assignment){
 		"worker identity": func(a *Assignment) { a.WorkerGitHubUserID = 778 },
 		"worker details":  func(a *Assignment) { a.TokenFile = "/run/example/other" },
 		"maintenance":     func(a *Assignment) { a.Maintenance = true },
-		"personal worker": func(a *Assignment) { a.WorkerGitHubUserID = 0 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			other := second
 			change(&other)
 			cfg.Assignments[1] = other
-			assert.Error(t, cfg.validate())
+			assert.ErrorContains(t, cfg.validate(), "same service worker")
 		})
 	}
+	cfg.Assignments[1] = second
 	cfg.Assignments[0].WorkerGitHubUserID = 0
 	cfg.Assignments[1].WorkerGitHubUserID = 0
-	require.Error(cfg.validate())
+	require.ErrorContains(t, cfg.validate(), "same service worker")
 }

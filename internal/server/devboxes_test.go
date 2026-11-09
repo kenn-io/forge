@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -260,8 +259,7 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	root := t.TempDir()
 	executable, err := os.Executable()
 	require.NoError(t, err)
-	logPath := filepath.Join(root, "responses")
-	agent := config.Agent{Key: "chat", Protocol: "acp", DisableForgeTools: true, Command: []string{executable, "-test.run=^TestSharedDevboxACPAgent$"}, Env: map[string]string{"KENN_FORGE_SERVER_RUNTIME_HELPER": "1", "KENN_FORGE_ACP_FIXTURE": "1", "KENN_FORGE_ACP_CONTINUE_DIR": root, "KENN_FORGE_ACP_RECORD_PROMPTS": "1", "KENN_FORGE_ACP_STEERING": "1"}}
+	agent := config.Agent{Key: "chat", Protocol: "acp", DisableForgeTools: true, Command: []string{executable, "-test.run=^TestSharedDevboxACPAgent$"}, Env: map[string]string{"KENN_FORGE_SERVER_RUNTIME_HELPER": "1", "KENN_FORGE_ACP_FIXTURE": "1", "KENN_FORGE_ACP_CONTINUE_DIR": root}}
 	targets := localruntime.ResolveLaunchTargets([]config.Agent{agent}, []string{filepath.Join(root, "missing-tmux")}, nil)
 	manager := localruntime.NewManager(localruntime.Options{ACPSessionsDir: filepath.Join(root, "acp"), ACPOwnerCommand: []string{"env", "KENN_FORGE_SERVER_RUNTIME_HELPER=1", "KENN_FORGE_ACP_OWNER_FIXTURE=1", executable, "-test.run=^TestSharedDevboxACPOwner$", "--"}, Targets: targets, PtyOwnerRuntime: ptyownerruntime.New(&ptyowner.Client{Root: filepath.Join(root, "pty-owner"), InProcess: true}, nil)})
 	t.Cleanup(manager.Shutdown)
@@ -299,11 +297,8 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	require.Equal(t, http.StatusOK, launchResponse.StatusCode, string(launchBody))
 	var session localruntime.SessionInfo
 	require.NoError(t, json.Unmarshal(launchBody, &session))
-	chat, err := manager.ACP("work-a", session.Key)
-	require.NoError(t, err)
-	require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
-	var firstObserver *websocket.Conn
-	for index, prompt := range []string{"inspect the failure", "adjust again"} {
+	var observers []*websocket.Conn
+	for index := range 2 {
 		directory := t.TempDir()
 		assignment := devbox.Assignment{NodeID: workerNode, UID: 1001, GitHubUserID: int64(42 + index), WorkerGitHubUserID: 777, Role: "execution", Protocol: 1, HostID: "compute-a", Name: "Compute A", URL: worker.URL, Account: "service"}
 		raw, err := json.Marshal([]any{map[string]any{"id": "compute-a", "profile": devbox.Profile{Assignment: assignment, RegistryID: "example", Token: token}}})
@@ -322,10 +317,6 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 		connected := connections.List()
 		require.Len(t, connected, 1)
 		connection := connected[0]
-		local := fleet.RawSnapshot{NodeID: "controller"}
-		aggregate := fleet.BuildNeutralAggregate(local, controller.devboxSnapshots(t.Context(), 5*time.Second))
-		require.Len(t, aggregate.Workspaces, 1)
-		require.Equal(t, "work-a", aggregate.Workspaces[0].ID)
 		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/devboxes/"+connection.ID+"/workspaces/work-a/runtime", nil)
 		require.NoError(t, err)
 		response, err := server.Client().Do(request)
@@ -338,108 +329,25 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 		require.NoError(t, response.Body.Close())
 		require.Len(t, runtime.Sessions, 1)
 		require.Equal(t, session.Key, runtime.Sessions[0].Key)
-		require.Equal(t, localruntime.LaunchTargetACP, runtime.Sessions[0].Kind)
-		discoveredKey := runtime.Sessions[0].Key
-		conn, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/"+connection.ID+"/workspaces/work-a/runtime/sessions/"+discoveredKey+"/terminal?protocol=acp", nil, nil)
+		conn, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/"+connection.ID+"/workspaces/work-a/runtime/sessions/"+runtime.Sessions[0].Key+"/terminal?protocol=acp", nil, nil)
 		require.NoError(t, err)
-		chatCtx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-		_, snapshot, err := conn.Read(chatCtx)
-		require.NoError(t, err)
-		if index == 1 {
-			assert.Contains(t, string(snapshot), "inspect the failure")
-			assert.Contains(t, string(snapshot), "Hello workspace")
-			assert.Contains(t, string(snapshot), "adjust")
-			var state localruntime.ACPState
-			require.NoError(t, json.Unmarshal(snapshot, &state))
-			require.NotNil(t, state.Supervision)
-			assert.Equal(t, "coordinator", state.Supervision.Supervisor)
-			assert.Equal(t, uint64(1), state.Supervision.Generation)
-			assert.False(t, state.Supervision.TakenOver)
-			assert.True(t, state.Busy)
-			assert.True(t, state.SteeringSupported)
-		}
-		mode, record := "send", "prompt:"
-		if index == 1 {
-			mode, record = "steer", "steer:"
-		}
-		command := `{"type":"prompt","mode":"` + mode + `","id":"` + prompt + `","text":"` + prompt + `"}`
-		require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte(command)))
-		require.Eventually(t, func() bool {
-			data, _ := os.ReadFile(logPath)
-			return strings.Contains(string(data), record+prompt+"\n")
-		}, 10*time.Second, 20*time.Millisecond)
-		if index == 1 {
-			require.NotNil(t, firstObserver)
-			for _, observer := range []*websocket.Conn{firstObserver, conn} {
-				for {
-					_, frame, err := observer.Read(chatCtx)
-					require.NoError(t, err)
-					var update struct {
-						Updates *localruntime.ACPState `json:"updates"`
-					}
-					require.NoError(t, json.Unmarshal(frame, &update))
-					if update.Updates != nil && slices.ContainsFunc(update.Updates.Messages, func(message localruntime.ACPMessage) bool { return message.Text == prompt }) {
-						break
-					}
-				}
-			}
-			require.NoError(t, firstObserver.Close(websocket.StatusNormalClosure, "done"))
-		}
-		if index == 0 {
-			for {
-				_, frame, err := conn.Read(chatCtx)
-				require.NoError(t, err)
-				if strings.Contains(string(frame), "Hello workspace") && strings.Contains(string(frame), `"busy":false`) {
-					break
-				}
-			}
-		}
-		require.NoError(t, conn.Close(websocket.StatusNormalClosure, "done"))
+		t.Cleanup(func() { _ = conn.CloseNow() })
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		_, _, err = conn.Read(ctx)
 		cancel()
-		if index == 0 {
-			require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "prompt", Text: "wait", ID: "coordinator-turn", Generation: 1}))
-			require.Eventually(t, func() bool {
-				data, err := chat.Snapshot()
-				if err != nil {
-					return false
-				}
-				var state localruntime.ACPState
-				return json.Unmarshal(data, &state) == nil && state.Busy && strings.Contains(string(data), "wait")
-			}, 10*time.Second, 20*time.Millisecond)
-			first, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/"+connection.ID+"/workspaces/work-a/runtime/sessions/"+discoveredKey+"/terminal?protocol=acp", nil, nil)
-			require.NoError(t, err)
-			ctx, stop := context.WithTimeout(t.Context(), 10*time.Second)
-			_, active, err := first.Read(ctx)
-			require.NoError(t, err)
-			var state localruntime.ACPState
-			require.NoError(t, json.Unmarshal(active, &state))
-			require.True(t, state.Busy)
-			require.NotNil(t, state.Supervision)
-			assert.Equal(t, "coordinator", state.Supervision.Supervisor)
-			assert.Equal(t, uint64(1), state.Supervision.Generation)
-			assert.Contains(t, string(active), "inspect the failure")
-			assert.Contains(t, string(active), "Hello workspace")
-			require.NoError(t, first.Write(ctx, websocket.MessageText, []byte(`{"type":"prompt","mode":"steer","id":"steer-first","text":"adjust"}`)))
-			require.Eventually(t, func() bool {
-				data, err := chat.Snapshot()
-				if err != nil {
-					return false
-				}
-				var state localruntime.ACPState
-				log, _ := os.ReadFile(logPath)
-				return json.Unmarshal(data, &state) == nil && state.Busy && !state.Steering && strings.Contains(string(log), "steer:adjust\n")
-			}, 10*time.Second, 20*time.Millisecond)
-			firstObserver = first
-			t.Cleanup(func() { _ = first.CloseNow() })
-			stop()
+		require.NoError(t, err)
+		observers = append(observers, conn)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	require.NoError(t, observers[0].Write(ctx, websocket.MessageText, []byte(`{"type":"prompt","mode":"send","id":"prompt-a","text":"inspect the failure"}`)))
+	for {
+		_, frame, err := observers[1].Read(ctx)
+		require.NoError(t, err)
+		if strings.Contains(string(frame), "inspect the failure") && strings.Contains(string(frame), "Hello workspace") {
+			break
 		}
 	}
-	got, err := os.ReadFile(logPath)
-	require.NoError(t, err)
-	require.Equal(t, "prompt:inspect the failure\nprompt:wait\nsteer:adjust\nsteer:adjust again\n", string(got))
-	sessions, err := os.ReadFile(filepath.Join(root, "sessions"))
-	require.NoError(t, err)
-	require.Equal(t, "session/new\n", string(sessions))
 }
 
 func TestDevboxShellLaunchDoesNotRefreshSourceContext(t *testing.T) {

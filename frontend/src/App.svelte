@@ -77,6 +77,7 @@
   import { isPhoneLikeViewport as isPhoneLikePresentation } from "./lib/utils/phone-presentation.js";
   import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
+  import { SettingsWorkflow } from "./lib/stores/settings-workflow.js";
   import {
     initTheme,
     cleanupTheme,
@@ -279,6 +280,7 @@
   }
 
   function stopFullAppShell() {
+    launchTargetRefresh?.interrupt();
     cleanupFullAppShell?.();
     cleanupFullAppShell = undefined;
     appReady = false;
@@ -453,6 +455,21 @@
 
   function isModeVisible(mode: keyof ModeVisibility): boolean {
     return stores?.settings.isModeVisible(mode) ?? true;
+  }
+
+  let launchTargetRefresh: AppExecution<void, never> | undefined;
+
+  function refreshLaunchTargets(): void {
+    const settings = stores?.settings;
+    if (document.visibilityState !== "visible" || !settings) return;
+    launchTargetRefresh?.interrupt();
+    launchTargetRefresh = appRuntime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        settings.setLaunchTargets((yield* workflow.readLocal).launch_targets ?? []);
+      }).pipe(Effect.ignore),
+      { operation: "refresh launch targets", safeContext: {}, onFailure: () => {} },
+    );
   }
 
   function startFullAppShell(startupStores: StoreInstances) {
@@ -1226,7 +1243,8 @@
   });
 </script>
 
-<svelte:window onresize={updateViewportState} />
+<svelte:window onresize={updateViewportState} onfocus={refreshLaunchTargets} />
+<svelte:document onvisibilitychange={refreshLaunchTargets} />
 
   {#snippet focusPresentation(phone: boolean)}
   {@const r = getRoute()}

@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   devices,
@@ -16,6 +17,7 @@ import {
   type IsolatedE2EServer,
 } from "./support/e2eServer";
 import { openSettingsPanel } from "./support/settingsPanel";
+import { runPaletteCommand } from "./support/paletteCommands";
 
 type WorkspaceResponse = {
   id: string;
@@ -195,6 +197,62 @@ function workspaceBaseWebSockets(page: Page, workspaceId: string) {
 
 test.describe("workspace create-and-launch full stack", () => {
   test.describe.configure({ timeout: workspaceTestTimeoutMs });
+
+  test("refreshes newly installed agents when the open app regains focus", async ({ page }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("sh", ["-c", ":"]),
+      "git, tmux, and sh are required for the isolated server",
+    );
+    const binDir = mkdtempSync(join(tmpdir(), "forge-agent-path-"));
+    const originalPath = process.env.PATH;
+    let server: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      for (const tool of ["git", "tmux", "sh", "mkdir", "rmdir", "sleep", "env"]) {
+        const source = execFileSync("sh", ["-c", 'command -v "$1"', "sh", tool], { encoding: "utf8" }).trim();
+        symlinkSync(source, join(binDir, tool));
+      }
+      process.env.PATH = binDir;
+      try {
+        server = await startIsolatedWorkspaceE2EServerWithOptions({ freshProcess: true });
+      } finally {
+        if (originalPath === undefined) delete process.env.PATH;
+        else process.env.PATH = originalPath;
+      }
+      api = await playwrightRequest.newContext({ baseURL: server.info.base_url });
+      const startup = page.waitForResponse((response) => response.url().endsWith("/api/v1/settings"));
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+      expect((await startup).ok()).toBe(true);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+      const created = page.waitForResponse(
+        (response) => response.request().method() === "POST" && response.url().endsWith("/api/v1/workspaces"),
+      );
+      await page.getByRole("button", { name: "Create Workspace", exact: true }).click();
+      const workspace = (await (await created).json()) as WorkspaceResponse;
+      await waitForWorkspaceReady(api, workspace.id);
+      const launcher = page.getByRole("dialog", { name: "Launch a session" });
+      const claude = launcher.getByRole("button", { name: "Claude", exact: true });
+      await expect(claude).toBeDisabled();
+
+      const binary = join(binDir, "claude");
+      writeFileSync(binary, "#!/bin/sh\nexec /bin/cat\n", { mode: 0o755 });
+      const focused = page.waitForResponse((response) => response.url().endsWith("/api/v1/settings/local"));
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      expect((await focused).ok()).toBe(true);
+      await expect(claude).toBeEnabled();
+
+      rmSync(binary);
+      const refocused = page.waitForResponse((response) => response.url().endsWith("/api/v1/settings/local"));
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      expect((await refocused).ok()).toBe(true);
+      await expect(claude).toBeDisabled();
+      await expect(claude).toHaveAttribute("title", "claude not found on PATH");
+    } finally {
+      await api?.dispose();
+      await server?.stop();
+      rmSync(binDir, { recursive: true, force: true });
+    }
+  });
 
   test("primary create on a reused issue branch does not launch an agent", async ({ page }) => {
     test.skip(

@@ -1378,9 +1378,7 @@ func (s *Handler) listLaunchTargets(
 	}
 	// Resolve fresh on every call so PATH changes (a newly installed
 	// agent, a deleted binary) take effect without restarting the
-	// server. The runtime manager caches targets at startup and is
-	// only initialized when options.WorktreeDir is set; this endpoint
-	// must work either way.
+	// server, including when no runtime manager is initialized.
 	snapshot := s.configSnapshot()
 	targets := projectWorktreeLaunchTargets(
 		localruntime.ResolveLaunchTargets(snapshot.Agents, snapshot.TmuxCommand, nil),

@@ -20,7 +20,7 @@ it.each([
   ["pull request", "/pulls/github/acme/widgets/42"],
   ["issue", "/issues/github/acme/widgets/7"],
 ])("refreshes %s launch choices after install and removal", async (_kind, route) => {
-  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   let available = false;
   let reads = 0;
   mounted = await mountBrowserApp(route, {

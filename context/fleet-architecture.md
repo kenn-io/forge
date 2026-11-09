@@ -20,6 +20,8 @@ or remote workspace and session operations.
   personal assignments usable during automatic rollout (`internal/devbox/registry.go::Assignment`).
 - Service workers keep the bot's execution and commit identity; the human supervising one is a
   separate owner. Verify both identities when connecting (`internal/devbox/connections.go::Connections.Connect`).
+- Supervisors of a shared service worker hold the same bearer. Revoking one supervisor's saved
+  access requires rotating that bearer and reconnecting the others (`internal/devbox/registry.go::RegistryConfig.validate`).
 - Machine lists, workspace selectors, and execution badges identify devboxes explicitly; they have
   no browser UI and must not appear as fleet spokes (`frontend/src/lib/components/layout/ForgeSelector.svelte`).
 - Maintenance blocks workspace creation without hiding existing workspaces or marking the worker

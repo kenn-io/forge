@@ -584,14 +584,17 @@ service account, set `worker_github_user_id` to the App's bot ID; the controller
 verifies that execution identity without changing the human owner.
 To grant several developers access to one service worker, add an assignment for
 each developer. Use the same worker details and `worker_github_user_id` in each
-assignment, changing only `github_user_id`. Personal worker NodeIDs remain unique.
+assignment. The developer's `github_user_id`, `enabled` flag, and display name
+may differ. Personal worker NodeIDs remain unique.
 
-Upgrade the registry and each supervisor's controller before adding `worker_github_user_id` to
-service assignments. Existing personal assignments and connections continue
-working throughout that rollout. Older controllers still handle personal
-accounts but cannot connect to service workers. To roll the registry back to a
-version without service-worker support, remove the optional setting first;
-keep personal assignments and existing worker data intact.
+Upgrade each supervisor's controller to Forge v0.6.0 or later before adding
+`worker_github_user_id` to service assignments. Upgrade the registry to a
+version that supports shared service workers before adding duplicate assignments.
+Older controllers still handle personal accounts but cannot connect to service
+workers. Remove duplicate assignments before rolling the registry back to a
+version without shared-worker support. For a version without service-worker
+support, also remove `worker_github_user_id`. Keep personal assignments and
+existing worker data intact.
 
 Save `/etc/systemd/system/forge-registry.service`:
 
@@ -682,9 +685,16 @@ tokens. A successful local health check alone does not prove this network path.
 Use `journalctl --user -u forge-worker` as the developer and
 `sudo journalctl -u forge-broker -u forge-registry` on the hosts that run those
 services. Ordinary deployment should not reset worktrees, worker identities or
-agent credentials. For offboarding, removing a registry assignment alone does
-not revoke an already saved bearer: also disable account access and stop the
-worker, and remove the broker admission for that account.
+agent credentials. For a personal account, offboarding also requires disabling
+account access, stopping the worker, and removing its broker admission.
+
+Supervisors of a shared service worker save the same bearer. To remove one
+supervisor, remove or disable that registry assignment. After active fixes
+finish, stop the worker, replace its `auth_token`, and restart it with the same
+`node_id` and workspace data. Copy the new token to the registry and restart
+the registry. Refresh any other services that hold a copy of the token, and
+have remaining supervisors use **Reconnect**. Removing the grant alone does
+not revoke a saved bearer.
 
 ### Commit identity and acceptance
 

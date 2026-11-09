@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/BurntSushi/toml"
@@ -145,28 +146,38 @@ func TestRegistrySharedServiceWorker(t *testing.T) {
 	require := require.New(t)
 	identity := WorkerIdentity{NodeID: "0123456789abcdef0123456789abcdef", UID: 1001, GitHubUserID: 777, Role: "execution", Protocol: Protocol}
 	token := strings.Repeat("a", 64)
+	var workerToken atomic.Value
+	workerToken.Store(token)
 	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "Bearer "+token, r.Header.Get("Authorization"))
+		if r.Header.Get("Authorization") != "Bearer "+workerToken.Load().(string) {
+			http.Error(w, "invalid worker bearer", http.StatusUnauthorized)
+			return
+		}
 		assert.NoError(t, json.MarshalWrite(w, identity))
 	}))
 	t.Cleanup(worker.Close)
 	assignment := Assignment{NodeID: identity.NodeID, UID: 1001, GitHubUserID: 42, WorkerGitHubUserID: 777, Role: "execution", Protocol: Protocol, HostID: "compute-a", Name: "Compute A", URL: "http://compute-a.example.ts.net:9001", Account: "service", Enabled: true, TokenFile: "/run/example/token"}
 	second := assignment
 	second.GitHubUserID = 43
+	second.Name = "Shared compute"
 	cfg := RegistryConfig{Socket: "/run/example/registry.sock", RegistryID: "example", Revision: "1", Developers: []Developer{{GitHubUserID: 42, TailscaleUserID: 11, Enabled: true}, {GitHubUserID: 43, TailscaleUserID: 12, Enabled: true}, {GitHubUserID: 44, TailscaleUserID: 13, Enabled: true}}, Assignments: []Assignment{assignment, second}}
 	require.NoError(cfg.validate())
 	peerID := int64(11)
-	handler := registryHandler(cfg, map[string]string{identity.NodeID: token}, func(context.Context, string) (tailnetPeer, error) {
+	tokens := map[string]string{identity.NodeID: token}
+	lookup := func(context.Context, string) (tailnetPeer, error) {
 		peer := tailnetPeer{}
 		peer.UserProfile.ID = peerID
 		return peer, nil
-	})
+	}
+	handler := registryHandler(cfg, tokens, lookup)
 	registry := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("X-Devbox-Peer-IP", "100.64.0.2")
 		r.Header.Set("X-Devbox-Peer-Port", "12345")
 		handler.ServeHTTP(w, r)
 	}))
 	t.Cleanup(registry.Close)
+	var stores []*Connections
+	var connectionIDs []string
 	for _, supervisor := range []struct{ tailscale, github int64 }{{11, 42}, {12, 43}} {
 		peerID = supervisor.tailscale
 		store, err := OpenConnections(t.TempDir())
@@ -187,6 +198,8 @@ func TestRegistrySharedServiceWorker(t *testing.T) {
 		connection, err := store.Connect(t.Context(), registry.URL, "compute-a")
 		require.NoError(err)
 		require.Equal(int64(777), connection.WorkerGitHubUserID)
+		stores = append(stores, store)
+		connectionIDs = append(connectionIDs, connection.ID)
 	}
 	peerID = 13
 	store, err := OpenConnections(t.TempDir())
@@ -199,9 +212,39 @@ func TestRegistrySharedServiceWorker(t *testing.T) {
 	_, err = store.Connect(t.Context(), registry.URL, "compute-a")
 	require.ErrorContains(err, "not assigned")
 
+	cfg.Assignments[1].Enabled = false
+	require.NoError(cfg.validate())
+	handler = registryHandler(cfg, tokens, lookup)
+	peerID = 12
+	discovery, err = stores[1].Discover(t.Context(), registry.URL)
+	require.NoError(err)
+	require.Empty(discovery.Devboxes)
+	_, err = stores[1].Connect(t.Context(), registry.URL, "compute-a")
+	require.ErrorContains(err, "not assigned")
+	response, err := stores[1].Do(t.Context(), connectionIDs[1], http.MethodGet, "/api/v1/worker", nil, nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, response.StatusCode)
+	require.NoError(response.Body.Close())
+
+	newToken := strings.Repeat("b", 64)
+	workerToken.Store(newToken)
+	tokens[identity.NodeID] = newToken
+	response, err = stores[1].Do(t.Context(), connectionIDs[1], http.MethodGet, "/api/v1/worker", nil, nil)
+	require.NoError(err)
+	require.Equal(http.StatusUnauthorized, response.StatusCode)
+	require.NoError(response.Body.Close())
+	peerID = 11
+	_, err = stores[0].Connect(t.Context(), registry.URL, "compute-a")
+	require.NoError(err)
+	response, err = stores[0].Do(t.Context(), connectionIDs[0], http.MethodGet, "/api/v1/worker", nil, nil)
+	require.NoError(err)
+	require.Equal(http.StatusOK, response.StatusCode)
+	require.NoError(response.Body.Close())
+
 	for name, change := range map[string]func(*Assignment){
 		"worker identity": func(a *Assignment) { a.WorkerGitHubUserID = 778 },
 		"worker details":  func(a *Assignment) { a.TokenFile = "/run/example/other" },
+		"maintenance":     func(a *Assignment) { a.Maintenance = true },
 		"personal worker": func(a *Assignment) { a.WorkerGitHubUserID = 0 },
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -150,6 +150,8 @@ func (c RegistryConfig) validate() error {
 		}
 		if worker, ok := workers[assignment.NodeID]; ok {
 			worker.GitHubUserID = assignment.GitHubUserID
+			worker.Enabled = assignment.Enabled
+			worker.Name = assignment.Name
 			if assignment.WorkerGitHubUserID == 0 || worker != assignment {
 				return errors.New("duplicate worker assignments must describe the same service worker")
 			}

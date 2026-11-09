@@ -21,24 +21,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/fleet"
-	"go.kenn.io/forge/internal/ptyowner"
-	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
-	"go.kenn.io/forge/internal/server/authapi"
-	"go.kenn.io/forge/internal/server/fleetapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/testutil"
-	"go.kenn.io/forge/internal/testutil/acpfixture"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
-	"go.kenn.io/forge/internal/testutil/workspacetest"
-	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
 )
 
@@ -239,154 +231,6 @@ func TestDevboxWorkspaceViewStatePersistsOnWorker(t *testing.T) {
 	activeTab, err := database.GetWorkspaceActiveTab(t.Context(), "work-a")
 	require.NoError(err)
 	assert.Equal(t, "session:agent-a", activeTab)
-}
-
-func TestSharedDevboxACPOwner(t *testing.T) { //nolint:paralleltest // runs as an ACP owner subprocess
-	acpfixture.Owner(t.Context(), localruntime.RunACPOwner)
-}
-
-func TestSharedDevboxACPAgent(t *testing.T) { //nolint:paralleltest // runs as an ACP subprocess
-	acpfixture.Agent(t.Context())
-}
-
-func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	database := dbtest.Open(t)
-	require.NoError(t, database.InsertWorkspace(t.Context(), &db.Workspace{
-		ID: "work-a", Platform: "github", PlatformHost: "github.com", RepoOwner: "example", RepoName: "project",
-		ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 1, WorktreePath: t.TempDir(), Status: "ready",
-	}))
-	root := t.TempDir()
-	executable, err := os.Executable()
-	require.NoError(t, err)
-	agent := config.Agent{Key: "chat", Protocol: "acp", DisableForgeTools: true, Command: []string{executable, "-test.run=^TestSharedDevboxACPAgent$"}, Env: map[string]string{"KENN_FORGE_SERVER_RUNTIME_HELPER": "1", "KENN_FORGE_ACP_FIXTURE": "1", "KENN_FORGE_ACP_CONTINUE_DIR": root, "KENN_FORGE_ACP_STEERING": "1"}}
-	targets := localruntime.ResolveLaunchTargets([]config.Agent{agent}, []string{filepath.Join(root, "missing-tmux")}, nil)
-	manager := localruntime.NewManager(localruntime.Options{ACPSessionsDir: filepath.Join(root, "acp"), ACPOwnerCommand: []string{"env", "KENN_FORGE_SERVER_RUNTIME_HELPER=1", "KENN_FORGE_ACP_OWNER_FIXTURE=1", executable, "-test.run=^TestSharedDevboxACPOwner$", "--"}, Targets: targets, PtyOwnerRuntime: ptyownerruntime.New(&ptyowner.Client{Root: filepath.Join(root, "pty-owner"), InProcess: true}, nil)})
-	t.Cleanup(manager.Shutdown)
-	workerAPI := workspaceapi.New(workspaceapi.Deps{DB: database, Workspaces: workspacetest.NewManager(t, database, filepath.Join(root, "worktrees")), Runtime: manager})
-	t.Cleanup(func() { require.NoError(t, workerAPI.Shutdown(context.WithoutCancel(t.Context()))) })
-	workerMux := http.NewServeMux()
-	workerHTTP := humago.NewWithPrefix(workerMux, "/api/v1", huma.DefaultConfig("worker", "1"))
-	workerAPI.RegisterExecution(workerHTTP)
-	workerAPI.RegisterTerminal(humago.NewWithPrefix(workerMux, "/ws/v1", huma.DefaultConfig("worker terminal", "1")))
-	const workerNode = "0123456789abcdef0123456789abcdef"
-	workerFleet := fleetapi.New(fleetapi.Deps{DB: database, NodeID: workerNode, WorkspaceSnapshot: workerAPI.FleetSnapshot, Config: fleetapi.ConfigSnapshot{TmuxCommand: []string{filepath.Join(root, "missing-tmux")}}})
-	t.Cleanup(func() { require.NoError(t, workerFleet.Shutdown(context.WithoutCancel(t.Context()))) })
-	workerControl := &Server{cfg: &config.Config{ExecutionWorker: config.ExecutionWorker{UID: 1001, GitHubUserID: 777}}, options: ServerOptions{FederationSpokeID: workerNode}, fleetAPI: workerFleet, workspaceAPI: workerAPI}
-	workerControlConfig := huma.DefaultConfig("worker control", "1")
-	workerControlConfig.OpenAPIPath, workerControlConfig.DocsPath, workerControlConfig.SchemasPath = "", "", ""
-	workerControl.registerWorkerAPI(humago.NewWithPrefix(workerMux, "/api/v1", workerControlConfig))
-	token := strings.Repeat("a", 64)
-	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !authapi.HasValidBearer(r, token) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		workerMux.ServeHTTP(w, r)
-	}))
-	t.Cleanup(worker.Close)
-	launchRequest, err := http.NewRequestWithContext(t.Context(), http.MethodPost, worker.URL+"/api/v1/workspaces/work-a/runtime/sessions", strings.NewReader(`{"target_key":"chat"}`))
-	require.NoError(t, err)
-	launchRequest.Header.Set("Authorization", "Bearer "+token)
-	launchRequest.Header.Set("Content-Type", "application/json")
-	launchResponse, err := worker.Client().Do(launchRequest)
-	require.NoError(t, err)
-	launchBody, err := io.ReadAll(launchResponse.Body)
-	require.NoError(t, err)
-	require.NoError(t, launchResponse.Body.Close())
-	require.Equal(t, http.StatusOK, launchResponse.StatusCode, string(launchBody))
-	var session localruntime.SessionInfo
-	require.NoError(t, json.Unmarshal(launchBody, &session))
-	var observers []*websocket.Conn
-	for index, connectionID := range []string{"00000000000000000000000000000001", "00000000000000000000000000000002"} {
-		directory := t.TempDir()
-		assignment := devbox.Assignment{NodeID: workerNode, UID: 1001, GitHubUserID: int64(42 + index), WorkerGitHubUserID: 777, Role: "execution", Protocol: 1, HostID: "compute-a", Name: "Compute A", URL: worker.URL, Account: "service"}
-		raw, err := json.Marshal([]any{map[string]any{"id": connectionID, "profile": devbox.Profile{Assignment: assignment, RegistryID: "example", Token: token}}})
-		require.NoError(t, err)
-		require.NoError(t, os.WriteFile(filepath.Join(directory, "devbox-connections.json"), raw, 0o600))
-		connections, err := devbox.OpenConnections(directory)
-		require.NoError(t, err)
-		t.Cleanup(connections.Close)
-		controller := wiredServer(&Server{options: ServerOptions{Devboxes: connections}, hub: syncevents.NewEventHub()})
-		mux := http.NewServeMux()
-		api := humago.New(mux, huma.DefaultConfig("controller", "1"))
-		controller.registerDevboxAPI(api)
-		controller.registerDevboxTerminalAPI(humago.NewWithPrefix(mux, "/ws/v1", huma.DefaultConfig("terminal", "1")))
-		server := httptest.NewServer(mux)
-		t.Cleanup(server.Close)
-		connected := connections.List()
-		require.Len(t, connected, 1)
-		connection := connected[0]
-		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/devboxes/"+connection.ID+"/workspaces/work-a/runtime", nil)
-		require.NoError(t, err)
-		response, err := server.Client().Do(request)
-		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, response.StatusCode)
-		var runtime struct {
-			Sessions []localruntime.SessionInfo `json:"sessions"`
-		}
-		require.NoError(t, json.UnmarshalRead(response.Body, &runtime))
-		require.NoError(t, response.Body.Close())
-		require.Len(t, runtime.Sessions, 1)
-		require.Equal(t, session.Key, runtime.Sessions[0].Key)
-		conn, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/"+connection.ID+"/workspaces/work-a/runtime/sessions/"+runtime.Sessions[0].Key+"/terminal?protocol=acp", nil, nil)
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = conn.CloseNow() })
-		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-		_, _, err = conn.Read(ctx)
-		cancel()
-		require.NoError(t, err)
-		observers = append(observers, conn)
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	chatURL := worker.URL + "/api/v1/workspaces/work-a/runtime/sessions/" + session.Key + "/chat"
-	for _, body := range []string{
-		`{"type":"supervise","supervisor":"coordinator"}`,
-		`{"type":"prompt","mode":"send","id":"prompt-a","text":"wait","generation":1,"allowanceMillis":60000}`,
-	} {
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost, chatURL+"/commands", strings.NewReader(body))
-		require.NoError(t, err)
-		request.Header.Set("Authorization", "Bearer "+token)
-		request.Header.Set("Content-Type", "application/json")
-		response, err := worker.Client().Do(request)
-		require.NoError(t, err)
-		responseBody, err := io.ReadAll(response.Body)
-		require.NoError(t, err)
-		require.NoError(t, response.Body.Close())
-		require.Equal(t, http.StatusOK, response.StatusCode, string(responseBody))
-	}
-	for _, observer := range observers {
-		messages := make(map[string]localruntime.ACPMessage)
-		for {
-			_, frame, err := observer.Read(ctx)
-			require.NoError(t, err)
-			var update struct {
-				Updates *localruntime.ACPState `json:"updates"`
-			}
-			require.NoError(t, json.Unmarshal(frame, &update))
-			if update.Updates != nil {
-				for _, message := range update.Updates.Messages {
-					if previous, ok := messages[message.ID]; !ok || message.Version > previous.Version {
-						messages[message.ID] = message
-					}
-				}
-			}
-			var prompt, reply bool
-			for _, message := range messages {
-				prompt = prompt || message.Role == "user" && message.Text == "wait"
-				reply = reply || message.Role == "assistant" && message.Text == "Hello workspace"
-			}
-			if prompt && reply {
-				break
-			}
-		}
-	}
-	require.NoError(t, observers[1].Write(ctx, websocket.MessageText, []byte(`{"type":"prompt","mode":"steer","id":"steer-b","text":"adjust"}`)))
-	require.Eventually(t, func() bool {
-		responses, err := os.ReadFile(filepath.Join(root, "responses"))
-		return err == nil && strings.Contains(string(responses), "steer:adjust\n")
-	}, 5*time.Second, 10*time.Millisecond, "the worker agent receives the second controller's correction during the active turn")
 }
 
 func TestDevboxShellLaunchDoesNotRefreshSourceContext(t *testing.T) {

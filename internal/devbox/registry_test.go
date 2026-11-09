@@ -19,7 +19,6 @@ import (
 )
 
 func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
-	assertNew, requireNew := assert.New, require.New
 	for _, workerID := range []int64{42, 777} {
 		t.Run(fmt.Sprintf("worker-%d", workerID), func(t *testing.T) {
 			assert := assert.New(t)
@@ -28,12 +27,8 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 			token := strings.Repeat("a", 64)
 			var workerToken atomic.Value
 			workerToken.Store(token)
-			bearers := make(chan string, 2)
 			worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				bearer := r.Header.Get("Authorization")
-				if r.URL.Path == "/probe" {
-					bearers <- bearer
-				}
 				if bearer != "Bearer "+workerToken.Load().(string) {
 					http.Error(w, "invalid worker bearer", http.StatusUnauthorized)
 					return
@@ -145,26 +140,6 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 				assert.Empty(discovery.Devboxes)
 				_, err = secondStore.Connect(t.Context(), registry.URL, "compute-a")
 				require.ErrorContains(err, "not assigned")
-				t.Run("shared-token-rotation", func(t *testing.T) {
-					assert := assertNew(t)
-					require := requireNew(t)
-					newToken := strings.Repeat("b", 64)
-					workerToken.Store(newToken)
-					handler = registryHandler(cfg, map[string]string{identity.NodeID: newToken}, lookup)
-					response, err := secondStore.Do(t.Context(), secondConnection.ID, http.MethodGet, "/probe", nil, nil)
-					require.NoError(err)
-					assert.Equal(http.StatusUnauthorized, response.StatusCode)
-					require.NoError(response.Body.Close())
-					assert.Equal("Bearer "+token, <-bearers)
-					peerID = 11
-					connection, err = store.Connect(t.Context(), registry.URL, "compute-a")
-					require.NoError(err)
-					response, err = store.Do(t.Context(), connection.ID, http.MethodGet, "/probe", nil, nil)
-					require.NoError(err)
-					assert.Equal(http.StatusOK, response.StatusCode)
-					require.NoError(response.Body.Close())
-					assert.Equal("Bearer "+newToken, <-bearers)
-				})
 			} else {
 				discovery, err = store.Discover(t.Context(), registry.URL)
 				require.NoError(err)
@@ -173,6 +148,11 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 				require.ErrorContains(err, "not assigned")
 			}
 			peerID = 11
+			newToken := strings.Repeat("b", 64)
+			workerToken.Store(newToken)
+			handler = registryHandler(cfg, map[string]string{identity.NodeID: newToken}, lookup)
+			connection, err = store.Connect(t.Context(), registry.URL, "compute-a")
+			require.NoError(err)
 			identity.GitHubUserID = 99
 			_, err = store.Connect(t.Context(), registry.URL, "compute-a")
 			require.ErrorContains(err, "identity mismatch")

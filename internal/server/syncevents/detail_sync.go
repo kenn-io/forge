@@ -44,6 +44,19 @@ func (s *Handlers) EnqueueDetailSyncOrRerun(
 	return s.enqueueDetailSyncOpts(key, attrs, fn, nil, true)
 }
 
+// EnqueueDetailSyncOrRerunWithCompletion is EnqueueDetailSyncOrRerun with
+// work that runs after a successful sync. A later request for the same key
+// replaces a pending rerun's sync but keeps its completion work, so a
+// mutation's follow-up still runs after the one sync that replaces it.
+func (s *Handlers) EnqueueDetailSyncOrRerunWithCompletion(
+	key string,
+	attrs []any,
+	fn func(context.Context) error,
+	after func(context.Context),
+) bool {
+	return s.enqueueDetailSyncOpts(key, attrs, fn, after, true)
+}
+
 func (s *Handlers) enqueueDetailSyncOpts(
 	key string,
 	attrs []any,
@@ -61,6 +74,9 @@ func (s *Handlers) enqueueDetailSyncOpts(
 			if (*s.DetailSyncPending) == nil {
 				(*s.DetailSyncPending) = make(map[string]DetailSyncJob)
 			}
+			if replaced, ok := (*s.DetailSyncPending)[key]; ok && replaced.after != nil {
+				job.after = chainDetailSyncCompletions(replaced.after, job.after)
+			}
 			(*s.DetailSyncPending)[key] = job
 		}
 		s.DetailSyncMu.Unlock()
@@ -70,6 +86,16 @@ func (s *Handlers) enqueueDetailSyncOpts(
 	s.DetailSyncMu.Unlock()
 
 	return s.startDetailSyncJob(key, job)
+}
+
+func chainDetailSyncCompletions(first, second func(context.Context)) func(context.Context) {
+	if second == nil {
+		return first
+	}
+	return func(ctx context.Context) {
+		first(ctx)
+		second(ctx)
+	}
 }
 
 func (s *Handlers) startDetailSyncJob(key string, job DetailSyncJob) bool {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v7"
+	"go.opentelemetry.io/otel"
 
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
@@ -320,6 +321,8 @@ func archiveLiveFloor(kind platform.Kind) int {
 	return floor
 }
 
+var providerWorkTracer = otel.Tracer("go.kenn.io/forge/internal/github")
+
 func (s *Syncer) beginProviderWork(ctx context.Context, key string, priority archive.WorkPriority) func() {
 	s.providerWorkMu.Lock()
 	if s.providerWork == nil {
@@ -338,10 +341,14 @@ func (s *Syncer) beginProviderWork(ctx context.Context, key string, priority arc
 	}
 	s.providerWorkMu.Unlock()
 	if waitForArchive {
+		// Live work yields the credential only after the cancelled archive
+		// request returns; trace the wait so it is not an unexplained gap.
+		_, span := providerWorkTracer.Start(ctx, "provider_work.wait_archive")
 		select {
 		case <-archiveRequest.done:
 		case <-ctx.Done():
 		}
+		span.End()
 	}
 
 	var once sync.Once

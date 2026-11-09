@@ -701,21 +701,28 @@ func TestGitLabMutationApprove(t *testing.T) {
 	events, err := database.ListMREvents(ctx, mr.ID)
 	require.NoError(err)
 	reviewSeen := false
-	commentSeen := false
 	for _, event := range events {
 		if event.EventType == "review" {
 			reviewSeen = true
 			assert.Equal("ada", event.Author)
 			assert.Equal("approved", event.Summary)
 		}
-		if event.EventType == "issue_comment" && event.Body == "ship it" {
-			commentSeen = true
-		}
 	}
-	assert.True(reviewSeen, "approval event was not persisted")
-	// The approval body lives in an upstream note; the inline sync after
-	// approve must make it visible locally right away.
-	assert.True(commentSeen, "approval comment was not synced into local events")
+	assert.True(reviewSeen, "approval event was not persisted before the response")
+	// The approval body lives in an upstream note; the background sync after
+	// approve brings it into local events.
+	assert.Eventually(func() bool {
+		events, err := database.ListMREvents(ctx, mr.ID)
+		if err != nil {
+			return false
+		}
+		for _, event := range events {
+			if event.EventType == "issue_comment" && event.Body == "ship it" {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 20*time.Millisecond, "approval comment was not synced into local events")
 }
 
 func TestGitLabMutationApproveAllowsOmittedHeadPin(t *testing.T) {

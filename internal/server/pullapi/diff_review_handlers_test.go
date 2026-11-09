@@ -72,7 +72,7 @@ func TestReviewBackgroundSyncsRecheckRemovedUpstream(t *testing.T) {
 	handler := New(Deps{
 		DB: database, Syncer: syncer,
 		EnqueueDetailSyncOrRerun: func(
-			_ string, _ []any, fn func(context.Context) error,
+			_ string, _ []any, fn func(context.Context) error, _ func(context.Context),
 		) bool {
 			queued = fn
 			return true
@@ -84,7 +84,7 @@ func TestReviewBackgroundSyncsRecheckRemovedUpstream(t *testing.T) {
 		require.NoError(handler.Shutdown(shutdownCtx))
 	})
 
-	handler.syncAfterReviewSuggestionApply(*repo, 7)
+	handler.syncAfterProviderMutation(*repo, 7, "review_suggestion_apply", nil)
 	require.NotNil(queued)
 	require.NoError(queued(ctx))
 	handler.syncAfterReviewDraftPublish(*repo, 7)

@@ -54,9 +54,10 @@ type Deps struct {
 		context.Context, db.Repo, db.MergeRequest,
 	) httpapi.RepoOperations
 	EnqueueDetailSyncOrRerun func(
-		string, []any, func(context.Context) error,
+		string, []any, func(context.Context) error, func(context.Context),
 	) bool
 	Broadcast                         func(Event) uint64
+	BroadcastPRDetailRefreshed        func(context.Context, int64, int)
 	MarkClosedLinkedNotificationsDone func(context.Context)
 }
 
@@ -80,9 +81,10 @@ type Handler struct {
 		context.Context, db.Repo, db.MergeRequest,
 	) httpapi.RepoOperations
 	enqueueDetailSyncRerun func(
-		string, []any, func(context.Context) error,
+		string, []any, func(context.Context) error, func(context.Context),
 	) bool
 	broadcast               func(Event) uint64
+	prDetailRefreshed       func(context.Context, int64, int)
 	markClosedNotifications func(context.Context)
 
 	configMu sync.RWMutex
@@ -135,6 +137,7 @@ func New(deps Deps) *Handler {
 		repoOperationsForMergeRequest: deps.RepoOperationsForMergeRequest,
 		enqueueDetailSyncRerun:        deps.EnqueueDetailSyncOrRerun,
 		broadcast:                     deps.Broadcast,
+		prDetailRefreshed:             deps.BroadcastPRDetailRefreshed,
 		markClosedNotifications:       deps.MarkClosedLinkedNotificationsDone,
 		config:                        deps.Config,
 		bgCtx:                         bgCtx,
@@ -156,11 +159,12 @@ func (s *Handler) enqueueDetailSyncOrRerun(
 	key string,
 	attrs []any,
 	fn func(context.Context) error,
+	after func(context.Context),
 ) bool {
 	if s.enqueueDetailSyncRerun == nil {
 		return false
 	}
-	return s.enqueueDetailSyncRerun(key, attrs, fn)
+	return s.enqueueDetailSyncRerun(key, attrs, fn, after)
 }
 
 func (s *Handler) publish(event Event) uint64 {
@@ -168,6 +172,12 @@ func (s *Handler) publish(event Event) uint64 {
 		return 0
 	}
 	return s.broadcast(event)
+}
+
+func (s *Handler) broadcastPRDetailRefreshed(ctx context.Context, repoID int64, number int) {
+	if s.prDetailRefreshed != nil {
+		s.prDetailRefreshed(ctx, repoID, number)
+	}
 }
 
 func (s *Handler) selfFleetKey(hostKey string) string {

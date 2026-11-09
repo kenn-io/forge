@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"go.opentelemetry.io/otel"
+
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/platform"
@@ -31,6 +33,8 @@ const (
 	capabilityReadReviewThreads           = "read_review_threads"
 	capabilityMutationHeadBinding         = "mutation_head_binding"
 )
+
+var pullTracer = otel.Tracer("go.kenn.io/forge/internal/server/pullapi")
 
 func providerRouteLookupError(err error) error {
 	return httpapi.ProviderRouteLookupError(err)
@@ -124,9 +128,17 @@ func (s *Handler) mergeRequestAuthoredByViewer(
 	if err != nil {
 		return false
 	}
+	// The viewer lookup can wait on a provider-wide cache lock or a network
+	// read before a review mutation reaches the provider; the span makes that
+	// wait visible in request traces.
+	ctx, span := pullTracer.Start(ctx, "pull.viewer_authored_check")
+	defer span.End()
 	authored, err := resolver.ViewerAuthoredMergeRequest(ctx, platform.MergeRequest{
 		Repo: platformRepoRefFromDB(repo), Number: mr.Number, Author: mr.Author,
 	})
+	if err != nil {
+		span.RecordError(err)
+	}
 	return err == nil && authored
 }
 

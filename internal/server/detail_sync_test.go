@@ -48,3 +48,41 @@ func TestEnqueueDetailSyncOrRerunRunsPendingAfterInFlight(t *testing.T) {
 		srv.bg.Wait()
 	})
 }
+
+func TestEnqueueDetailSyncOrRerunKeepsReplacedCompletion(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	srv, _, _ := setupTestServer(t)
+
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		const key = "pr:github:github.com:acme/widget#7"
+		releaseFirst := make(chan struct{})
+		var order []string
+		record := func(step string) func(context.Context) error {
+			return func(context.Context) error {
+				order = append(order, step)
+				return nil
+			}
+		}
+
+		require.True(srv.syncevents.EnqueueDetailSyncOrRerun(key, nil, func(context.Context) error {
+			<-releaseFirst
+			return nil
+		}))
+		synctest.Wait()
+
+		// A mutation queues a rerun with follow-up work, then a plain refresh
+		// replaces that rerun before the in-flight sync finishes.
+		require.False(srv.syncevents.EnqueueDetailSyncOrRerunWithCompletion(
+			key, nil, record("mutation sync"),
+			func(context.Context) { order = append(order, "mutation completion") },
+		))
+		require.False(srv.syncevents.EnqueueDetailSyncOrRerun(key, nil, record("refresh sync")))
+
+		close(releaseFirst)
+		synctest.Wait()
+		srv.bg.Wait()
+		assert.Equal([]string{"refresh sync", "mutation completion"}, order)
+	})
+}

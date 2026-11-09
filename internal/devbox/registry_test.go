@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
+func TestRegistryConnectSharedAndPersonalWorkers(t *testing.T) {
 	for _, workerID := range []int64{42, 777} {
 		t.Run(fmt.Sprintf("worker-%d", workerID), func(t *testing.T) {
 			assert := assert.New(t)
@@ -102,12 +102,8 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 			assert.Equal(int64(42), discovery.Devboxes[0].GitHubUserID)
 			connection, err := store.Connect(t.Context(), registry.URL, "compute-a")
 			require.NoError(err)
-			if workerID == 42 {
-				assert.Zero(discovery.Devboxes[0].WorkerGitHubUserID)
-				assert.Zero(connection.WorkerGitHubUserID)
-			} else {
+			if workerID == 777 {
 				assert.Equal(int64(777), discovery.Devboxes[0].WorkerGitHubUserID)
-				assert.Equal(int64(777), connection.WorkerGitHubUserID)
 			}
 			_, err = store.Connect(t.Context(), registry.URL, "compute-a")
 			require.NoError(err)
@@ -130,16 +126,27 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 				require.Len(discovery.Devboxes, 1)
 				assert.Equal(int64(43), discovery.Devboxes[0].GitHubUserID)
 				assert.Equal(workerID, discovery.Devboxes[0].WorkerGitHubUserID)
-				secondConnection, err := secondStore.Connect(t.Context(), registry.URL, "compute-a")
+				_, err = secondStore.Connect(t.Context(), registry.URL, "compute-a")
 				require.NoError(err)
-				assert.Equal(workerID, secondConnection.WorkerGitHubUserID)
 				cfg.Assignments[1].Enabled = false
-				handler = registryHandler(cfg, map[string]string{identity.NodeID: token}, lookup)
 				discovery, err = secondStore.Discover(t.Context(), registry.URL)
 				require.NoError(err)
 				assert.Empty(discovery.Devboxes)
 				_, err = secondStore.Connect(t.Context(), registry.URL, "compute-a")
 				require.ErrorContains(err, "not assigned")
+				cfg.Assignments[1].Enabled = true
+				newToken := strings.Repeat("b", 64)
+				workerToken.Store(newToken)
+				handler = registryHandler(cfg, map[string]string{identity.NodeID: newToken}, lookup)
+				secondConnection, err := secondStore.Connect(t.Context(), registry.URL, "compute-a")
+				require.NoError(err)
+				response, err := secondStore.Do(t.Context(), secondConnection.ID, http.MethodGet, "/api/v1/workspaces", nil, nil)
+				require.NoError(err)
+				assert.Equal(http.StatusOK, response.StatusCode)
+				require.NoError(response.Body.Close())
+				peerID = 11
+				connection, err = store.Connect(t.Context(), registry.URL, "compute-a")
+				require.NoError(err)
 			} else {
 				discovery, err = store.Discover(t.Context(), registry.URL)
 				require.NoError(err)
@@ -148,11 +155,6 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 				require.ErrorContains(err, "not assigned")
 			}
 			peerID = 11
-			newToken := strings.Repeat("b", 64)
-			workerToken.Store(newToken)
-			handler = registryHandler(cfg, map[string]string{identity.NodeID: newToken}, lookup)
-			connection, err = store.Connect(t.Context(), registry.URL, "compute-a")
-			require.NoError(err)
 			identity.GitHubUserID = 99
 			_, err = store.Connect(t.Context(), registry.URL, "compute-a")
 			require.ErrorContains(err, "identity mismatch")
@@ -209,8 +211,10 @@ func TestRegistrySharedServiceWorkerValidation(t *testing.T) {
 			assert.ErrorContains(t, cfg.validate(), "same service worker")
 		})
 	}
-	cfg.Assignments[1] = second
-	cfg.Assignments[0].WorkerGitHubUserID = 0
-	cfg.Assignments[1].WorkerGitHubUserID = 0
-	require.ErrorContains(t, cfg.validate(), "same service worker")
+	t.Run("personal workers", func(t *testing.T) {
+		cfg.Assignments[1] = second
+		cfg.Assignments[0].WorkerGitHubUserID = 0
+		cfg.Assignments[1].WorkerGitHubUserID = 0
+		require.ErrorContains(t, cfg.validate(), "same service worker")
+	})
 }

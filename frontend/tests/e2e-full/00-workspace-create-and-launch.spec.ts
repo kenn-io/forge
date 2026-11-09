@@ -197,7 +197,7 @@ function workspaceBaseWebSockets(page: Page, workspaceId: string) {
 test.describe("workspace create-and-launch full stack", () => {
   test.describe.configure({ timeout: workspaceTestTimeoutMs });
 
-  test("refreshes newly installed agents when the open app regains focus", async ({ page }) => {
+  test("refreshes installed and removed agents when the open workspace becomes visible", async ({ page }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("sh", ["-c", ":"]),
       "git, tmux, and sh are required for the isolated server",
@@ -235,10 +235,31 @@ test.describe("workspace create-and-launch full stack", () => {
 
       const binary = join(binDir, "claude");
       writeFileSync(binary, "#!/bin/sh\nexec /bin/cat\n", { mode: 0o755 });
-      const focused = page.waitForResponse((response) => response.url().endsWith("/api/v1/settings/local"));
-      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-      expect((await focused).ok()).toBe(true);
+      const installed = page.waitForResponse((response) =>
+        new URL(response.url()).pathname.endsWith(`/workspaces/${workspace.id}/runtime`),
+      );
+      await page.evaluate(() => {
+        Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+        document.dispatchEvent(new Event("visibilitychange"));
+        Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect((await installed).ok()).toBe(true);
       await expect(claude).toBeEnabled();
+
+      rmSync(binary);
+      const removed = page.waitForResponse((response) =>
+        new URL(response.url()).pathname.endsWith(`/workspaces/${workspace.id}/runtime`),
+      );
+      await page.evaluate(() => {
+        Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+        document.dispatchEvent(new Event("visibilitychange"));
+        Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect((await removed).ok()).toBe(true);
+      await expect(claude).toBeDisabled();
+      await expect(claude).toHaveAttribute("title", "claude not found on PATH");
     } finally {
       await api?.dispose();
       await server?.stop();

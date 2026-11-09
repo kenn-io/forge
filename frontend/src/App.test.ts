@@ -512,10 +512,7 @@ describe("App feature routes", () => {
     const runtime: OwnedAppRuntime = {
       ...testAppRuntime(() => {}),
       runCommand: <A, E>(program: unknown, options: { readonly operation: string }): AppExecution<A, E> => {
-        if (options.operation !== "report app opens") {
-          return { interrupt: () => {}, await: Effect.never, exit: new Promise(() => {}) };
-        }
-        appOpens = Effect.runFork(program as Effect.Effect<A, E>);
+        if (options.operation === "report app opens") appOpens = Effect.runFork(program as Effect.Effect<A, E>);
         return { interrupt: () => appOpens?.interruptUnsafe(), await: Effect.never, exit: new Promise(() => {}) };
       },
     };

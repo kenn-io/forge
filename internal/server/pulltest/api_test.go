@@ -1148,6 +1148,13 @@ func TestAPIGitHubSyncReadsCloneTokenFileAfterRotation(t *testing.T) {
 		assert.Equal("first-token", token)
 	}
 
+	// A per-PR sync fetches only when the clone lacks the PR's head, so
+	// push a new head to make the second sync authenticate again.
+	require.NoError(os.WriteFile(filepath.Join(work, "feature.txt"), []byte("feature v2\n"), 0o644))
+	gitfixture.Run(t, work, "commit", "-am", "feature update")
+	gitfixture.Run(t, work, "push", "origin", "feature/token-rotation")
+	headSHA = gitOutput(t, work, "rev-parse", "HEAD")
+
 	require.NoError(os.WriteFile(tokenPath, []byte("second-token\n"), 0o600))
 	secondRR := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/pulls/gh/acme/widget/7/sync", nil)
 	require.Equal(http.StatusOK, secondRR.Code, secondRR.Body.String())

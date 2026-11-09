@@ -168,20 +168,20 @@ func (d *mirrorDeliveries) delivered(key, id string) bool {
 // launch. Hooks are installed for the whole machine, so such an agent reports
 // from anywhere it runs; Forge learns its session, worktree, and transcript
 // with no step from the person running it.
-func (s *Handler) recordExternalAgentHook(ctx context.Context, agent string, input *receiveAgentHookInput) {
+func (s *Handler) recordExternalAgentHook(ctx context.Context, agent string, input *receiveAgentHookInput) error {
 	hook := input.Body
 	sessionID := strings.TrimSpace(hook.SessionID)
 	if s.db == nil || strings.TrimSpace(input.RuntimeSessionKey) != "" || hook.AgentID != "" ||
 		sessionID == "" || strings.TrimSpace(hook.CWD) == "" {
-		return
+		return nil
 	}
 	saved, err := s.db.GetExternalAgentSession(ctx, agent, sessionID)
 	if err != nil {
 		slog.Warn("read external agent session", "agent", agent, "err", err)
-		return
+		return nil
 	}
 	if saved != nil && saved.HandedOffAt != nil {
-		return
+		return nil
 	}
 	id := externalSessionID{agent, sessionID}
 	// A session first seen at its end is recorded too: its pull request may
@@ -194,33 +194,39 @@ func (s *Handler) recordExternalAgentHook(ctx context.Context, agent string, inp
 		Prompted: hookShowsPrompt(hook),
 	}); err != nil {
 		slog.Warn("record external agent session", "agent", agent, "err", err)
-		return
+		return nil
 	}
 	if hook.HookEventName == "SessionEnd" {
 		if err := s.db.MarkExternalAgentSessionEnded(ctx, agent, sessionID, time.Now()); err != nil {
 			slog.Warn("record external agent session end", "agent", agent, "err", err)
-			return
+			return nil
 		}
 		s.externalSessions.forget(id)
 	} else {
 		s.externalSessions.markDue(id, hook)
 	}
 	if saved == nil || saved.RuntimeSessionKey == "" || s.agentActivity == nil {
-		return
+		return nil
 	}
 	ws, err := s.db.GetWorkspace(ctx, saved.WorkspaceID)
 	if err != nil {
 		slog.Warn("get mirrored workspace", "session_key", saved.RuntimeSessionKey, "err", err)
-		return
+		return nil
 	}
 	if ws == nil {
-		return
+		return nil
 	}
 	// The chat's agent status comes from these events, as a launched agent's does.
 	hook.CWD = ws.WorktreePath
 	if err := s.agentActivity.HandleEvent(agent, hook, saved.RuntimeSessionKey); err != nil {
 		slog.Warn("record mirrored agent activity", "session_key", saved.RuntimeSessionKey, "err", err)
+		// A report SessionEnd fails to clear would show the agent working
+		// indefinitely, so the hook fails as a launched agent's does.
+		if hook.HookEventName == "SessionEnd" {
+			return fmt.Errorf("record mirrored agent activity: %w", err)
+		}
 	}
+	return nil
 }
 
 // hookShowsPrompt reports whether a hook shows the agent had a prompt, even one
@@ -543,11 +549,24 @@ func (s *Handler) startMirroredChat(
 	if !ok {
 		return nil, fmt.Errorf("To continue this session in Forge, add a chat agent in Settings whose key starts with %q, such as %s-chat.", session.Agent, session.Agent) //nolint:staticcheck // ST1005: the chat shows this text verbatim as a full sentence.
 	}
-	if target.Key != item.TargetKey {
-		item.TargetKey, item.Label = target.Key, target.Label
-		if err := s.workspaces.RecordRuntimeSession(ctx, item); err != nil {
-			return nil, fmt.Errorf("record chat agent: %w", err)
+	// The chat's row is re-read under the runtime lock: a Stop that removed it
+	// must not see this write bring it back and the agent start anyway.
+	err := s.withWorkspaceACP(ctx, ws.ID, func(stored []db.WorkspaceRuntimeSession) error {
+		current, ok := storedChat(stored, item.SessionKey)
+		if !ok {
+			return localruntime.ErrSessionNotFound
 		}
+		if current.TargetKey == target.Key {
+			return nil
+		}
+		current.TargetKey, current.Label = target.Key, target.Label
+		if err := s.workspaces.RecordRuntimeSession(ctx, current); err != nil {
+			return fmt.Errorf("record chat agent: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	if err := s.runtime.PrepareMirroredACP(ctx, target.Key, ws.ID, item.SessionKey, ws.WorktreePath); err != nil {
 		return nil, fmt.Errorf("prepare chat agent: %w", err)

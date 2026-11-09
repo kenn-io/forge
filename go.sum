@@ -486,6 +486,8 @@ github.com/shibumi/go-pathspec v1.3.0 h1:QUyMZhFo0Md5B8zV8x2tesohbb5kfbpTi9rBnKh
 github.com/shibumi/go-pathspec v1.3.0/go.mod h1:Xutfslp817l2I1cZvgcfeMQJG5QnU2lh5tVaaMCl3jE=
 github.com/shirou/gopsutil/v4 v4.26.9 h1:CaBo/hBFqvlJoLvAQEKdHdf5GD97/MN2ACfyv63+2Ig=
 github.com/shirou/gopsutil/v4 v4.26.9/go.mod h1:nKH+8wX2zxr/mDbsR+AAy6Qd2z4ZOQ7wfQaEp+yrYmg=
+github.com/shirou/gopsutil/v4 v4.26.10 h1:MJN6euesJx53MVEjscYeyRSRcrdIcy3sz5k9nosjldg=
+github.com/shirou/gopsutil/v4 v4.26.10/go.mod h1:XpkIrcUMQhwte/dGxu57KtnMMFsbKelI7PP23zweKBk=
 github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed h1:KT7hI8vYXgU0s2qaMkrfq9tCA1w/iEPgfredVP+4Tzw=
 github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed/go.mod h1:zqMwyHmnN/eDOZOdiTohqIUKUrTFX62PNlu7IJdu0q8=
 github.com/shurcooL/graphql v0.0.0-20240915155400-7ee5256398cf h1:o1uxfymjZ7jZ4MsgCErcwWGtVKSiNAXtS59Lhs6uI/g=
@@ -591,8 +593,12 @@ gitlab.com/gitlab-org/api/client-go/v3 v3.40.2 h1:Eu9GmOXoBBWJbGS4ceYDZNwqlpr/i/
 gitlab.com/gitlab-org/api/client-go/v3 v3.40.2/go.mod h1:jBFhGkTHLKkgeHEdS/A8yA0tQ6UHq96QVsS5muu6flM=
 go.kenn.io/kata v0.21.0 h1:xgZ0OY2S7vPvdOax8jTy2rLzvVrEG+oLfyFSVQoN1v0=
 go.kenn.io/kata v0.21.0/go.mod h1:RiShiVUxXZwTORDogeOq6n1VjaW52G5s868+By2ABmY=
+go.kenn.io/kata v0.23.0 h1:gIxDLGJOJUy01QvSuDpMGQFXOo0YIRxQf72TErY6dY4=
+go.kenn.io/kata v0.23.0/go.mod h1:DaPzNVWqCn8Y//W5yhZQwAxuD0Zs5Dn7wH280anDlfg=
 go.kenn.io/kit v0.48.1 h1:3MLZ+d1qB/RB3ZCq1ny5tbTMu/+aMn70Cm5lNVgc1D4=
 go.kenn.io/kit v0.48.1/go.mod h1:YlkROWmslf2wlWajWkDfDy2ydhTVAH6Cjc/C+KJ093g=
+go.kenn.io/kit v0.49.0 h1:dXTl3/Oj/w7SHOD/EqjJyH21tVdlDEvn5dxA13G0FLE=
+go.kenn.io/kit v0.49.0/go.mod h1:eqNzyD/bjy5tV8VDnJDSBtyzw0YOaq4lwqqGXUAiQD0=
 go.kenn.io/kwt v0.9.6 h1:0QD+PuAIfyIMZe88IoGwtzKaB80iDdTmsch8ouxGgvw=
 go.kenn.io/kwt v0.9.6/go.mod h1:aKg6/rrsyQFgoYs4IBA5g8WR2PbKJHLcOEMDgxjgMvo=
 go.opencensus.io v0.24.0 h1:y73uSU6J157QMP2kn2r30vwW1A2W2WFwSCGnAVxeaD0=

@@ -27,6 +27,7 @@ import { createGroupingStore } from "./stores/grouping.svelte.js";
 import { createDetailActivityViewStore } from "./stores/detail-activity-view.svelte.js";
 import { createCollapsedReposStore } from "./stores/collapsedRepos.svelte.js";
 import { createSettingsStore } from "./stores/settings.svelte.js";
+import { SettingsWorkflow } from "./stores/settings-workflow.js";
 import { createWorkflowActionsStore } from "./stores/workflow-actions.svelte.js";
 import { ExternalContextWorkflow } from "./stores/external-context-workflow.svelte.js";
 import { createWorkspaceItemSearchStore } from "./stores/workspace-item-search.svelte.js";
@@ -493,11 +494,23 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   // Agent hook reports do not emit workspace events. Refresh Activity badges
   // from workspaces without downloading the feed's event history again.
   const listAgentStatusPolling = pollWhileVisible(
-    Effect.suspend(() => {
-      const page = gp();
-      if (page === "activity" || page === "mobile-activity") return activityStore.refreshAgentStatusEffect();
-      return page === "worklists" || page === "mobile-worklists" ? Effect.void : refreshVisibleData(false);
-    }).pipe(Effect.catch(() => Effect.void)),
+    Effect.all(
+      [
+        Effect.gen(function* () {
+          const previous = settingsStore.getLaunchTargets();
+          const workflow = yield* SettingsWorkflow;
+          const local = yield* workflow.readLocal;
+          if (settingsStore.getLaunchTargets() === previous) settingsStore.setLaunchTargets(local.launch_targets ?? []);
+        }).pipe(Effect.catch(() => Effect.void)),
+        Effect.suspend(() => {
+          if (!settingsStore.getWorkspaceSettings().show_agent_status_in_lists) return Effect.void;
+          const page = gp();
+          if (page === "activity" || page === "mobile-activity") return activityStore.refreshAgentStatusEffect();
+          return page === "worklists" || page === "mobile-worklists" ? Effect.void : refreshVisibleData(false);
+        }).pipe(Effect.catch(() => Effect.void)),
+      ],
+      { concurrency: "unbounded", discard: true },
+    ),
     "5 seconds",
     { immediate: true },
   );

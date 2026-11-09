@@ -342,8 +342,8 @@ Resolution is deliberately exact (`internal/server/kata/workspace.go::Handler.re
 - A settings save replaces `agents` and `launch_targets` from its response, so fixes update
   availability without a reload.
 - Built-in agent availability is checked on every target-list and launch read; shell and
-  configured targets keep their resolved availability. Returning to a visible app refreshes
-  the shared launch choices.
+  configured targets keep their resolved availability. A visible app refreshes the shared
+  launch choices every five seconds and immediately on return.
 - Startup and `config_changed` hot reload hydrate the same `GET /settings` fields from two call
   sites; a field added to only one goes stale after a config edit
   (`frontend/src/lib/stores/settings-hydration.ts::applySettingsHydration`).

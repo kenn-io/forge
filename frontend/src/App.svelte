@@ -77,7 +77,6 @@
   import { isPhoneLikeViewport as isPhoneLikePresentation } from "./lib/utils/phone-presentation.js";
   import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
-  import { SettingsWorkflow } from "./lib/stores/settings-workflow.js";
   import {
     initTheme,
     cleanupTheme,
@@ -200,7 +199,6 @@
   untrack(() => appComposition.stores.workflowActions.setEnabled(false));
   stores = appComposition.stores;
   $effect(() => {
-    if (!stores?.settings.getWorkspaceSettings().show_agent_status_in_lists) return;
     // The first poll runs synchronously here. Untracked, so store state it
     // reads or writes cannot restart the poll and loop.
     const execution = untrack(() =>
@@ -280,7 +278,6 @@
   }
 
   function stopFullAppShell() {
-    launchTargetRefresh?.interrupt();
     cleanupFullAppShell?.();
     cleanupFullAppShell = undefined;
     appReady = false;
@@ -455,21 +452,6 @@
 
   function isModeVisible(mode: keyof ModeVisibility): boolean {
     return stores?.settings.isModeVisible(mode) ?? true;
-  }
-
-  let launchTargetRefresh: AppExecution<void, never> | undefined;
-
-  function refreshLaunchTargets(): void {
-    const settings = stores?.settings;
-    if (document.visibilityState !== "visible" || !settings) return;
-    launchTargetRefresh?.interrupt();
-    launchTargetRefresh = appRuntime.runCommand(
-      Effect.gen(function* () {
-        const workflow = yield* SettingsWorkflow;
-        settings.setLaunchTargets((yield* workflow.readLocal).launch_targets ?? []);
-      }).pipe(Effect.ignore),
-      { operation: "refresh launch targets", safeContext: {}, onFailure: () => {} },
-    );
   }
 
   function startFullAppShell(startupStores: StoreInstances) {
@@ -1243,8 +1225,7 @@
   });
 </script>
 
-<svelte:window onresize={updateViewportState} onfocus={refreshLaunchTargets} />
-<svelte:document onvisibilitychange={refreshLaunchTargets} />
+<svelte:window onresize={updateViewportState} />
 
   {#snippet focusPresentation(phone: boolean)}
   {@const r = getRoute()}

@@ -298,10 +298,10 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	var session localruntime.SessionInfo
 	require.NoError(t, json.Unmarshal(launchBody, &session))
 	var observers []*websocket.Conn
-	for index := range 2 {
+	for index, connectionID := range []string{"00000000000000000000000000000001", "00000000000000000000000000000002"} {
 		directory := t.TempDir()
 		assignment := devbox.Assignment{NodeID: workerNode, UID: 1001, GitHubUserID: int64(42 + index), WorkerGitHubUserID: 777, Role: "execution", Protocol: 1, HostID: "compute-a", Name: "Compute A", URL: worker.URL, Account: "service"}
-		raw, err := json.Marshal([]any{map[string]any{"id": "compute-a", "profile": devbox.Profile{Assignment: assignment, RegistryID: "example", Token: token}}})
+		raw, err := json.Marshal([]any{map[string]any{"id": connectionID, "profile": devbox.Profile{Assignment: assignment, RegistryID: "example", Token: token}}})
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(directory, "devbox-connections.json"), raw, 0o600))
 		connections, err := devbox.OpenConnections(directory)

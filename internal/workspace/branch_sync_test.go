@@ -494,3 +494,19 @@ func TestProviderBackedBranchSyncDoesNotFallBackToAnonymousGit(t *testing.T) {
 
 	require.ErrorIs(err, gitclone.ErrCredentialUnavailable)
 }
+
+func TestDirtyFilesKeepsFullPaths(t *testing.T) {
+	require := require.New(t)
+	work := gitfixture.DivergenceWorktree(t)
+	// Unstaged edit: porcelain prints " M path" with a leading space.
+	require.NoError(os.WriteFile(filepath.Join(work, "f.txt"), []byte("edited\n"), 0o644))
+	runWorkspaceTestGit(t, work, "mv", "base.txt", "renamed.txt")
+	require.NoError(os.WriteFile(filepath.Join(work, "with space.md"), []byte("x\n"), 0o644))
+
+	files, err := dirtyFiles(t.Context(), work)
+
+	require.NoError(err)
+	assert.New(t).ElementsMatch(
+		[]string{"f.txt", "renamed.txt", "with space.md"}, files,
+	)
+}

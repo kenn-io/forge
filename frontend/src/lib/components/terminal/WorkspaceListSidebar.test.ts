@@ -1995,9 +1995,9 @@ describe("WorkspaceListSidebar", () => {
     expect(rowTitles(container)).toEqual([
       "approval",
       "input",
-      "working",
       "done-newer-hook",
       "done",
+      "working",
       "idle",
       "unreported",
     ]);
@@ -2020,9 +2020,9 @@ describe("WorkspaceListSidebar", () => {
     expect(rowTitles(container)).toEqual([
       "approval",
       "input",
-      "working",
       "done-newer-hook",
       "done",
+      "working",
       "idle",
       "unreported",
     ]);

@@ -71,9 +71,9 @@ describe("mobile workspace list model", () => {
     expect(sortMobileWorkspaces(hookStates, "agent-status").map((item) => item.id)).toEqual([
       "approval",
       "input",
-      "working",
       "done-newer-hook",
       "done",
+      "working",
       "idle",
       "unreported",
     ]);

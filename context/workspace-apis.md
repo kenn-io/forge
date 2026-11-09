@@ -494,7 +494,7 @@ The workspace sidebar has two separate activity concepts:
   `created_at` as the fallback.
 - `Item activity`: provider item activity, ordered by `item_last_activity_at`
   with `created_at` as the fallback.
-- `Agent status` groups approval, input, working, done, idle, then rows without a report; ties use
+- `Agent status` groups approval, input, done, working, idle, then rows without a report; ties use
   hook recency, item activity, then creation (`frontend/src/lib/components/terminal/workspaceListSort.ts`).
 - Each flat sort shows its driving timestamp as an unlabeled relative time.
 

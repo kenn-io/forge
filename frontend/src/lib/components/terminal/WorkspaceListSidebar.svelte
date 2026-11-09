@@ -426,8 +426,8 @@
 
   // Flat ordering for status and timestamp sorts. The org/repo mode keeps
   // the API order (created_at DESC) inside each repo group.
-  // Agent status follows the same attention-first priority as the server's
-  // aggregate hook state, then keeps newer workspaces first within a status.
+  // Agent status puts workspaces needing attention first (approval, input,
+  // done), then keeps newer workspaces first within a status.
   // "Activity" means terminal output only (tmux_last_output_at).
   // "Item activity" means the synced PR/issue last_activity_at.
   // Missing timestamps fall back to workspace creation time.

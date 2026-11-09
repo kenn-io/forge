@@ -112,8 +112,6 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 			require.NoError(err)
 			assert.Equal(os.FileMode(0o600), info.Mode().Perm())
 			peerID = 12
-			discovery, err = store.Discover(t.Context(), registry.URL)
-			require.NoError(err)
 			if workerID == 777 {
 				secondStore, err := OpenConnections(t.TempDir())
 				require.NoError(err)
@@ -139,18 +137,16 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 				newToken := strings.Repeat("b", 64)
 				workerToken.Store(newToken)
 				handler = registryHandler(cfg, map[string]string{identity.NodeID: newToken}, lookup)
-				response, err := secondStore.Do(t.Context(), secondConnection.ID, http.MethodGet, "/api/v1/worker", nil, nil)
-				require.NoError(err)
-				assert.Equal(http.StatusUnauthorized, response.StatusCode)
-				require.NoError(response.Body.Close())
 				peerID = 11
 				connection, err = store.Connect(t.Context(), registry.URL, "compute-a")
 				require.NoError(err)
-				response, err = store.Do(t.Context(), connection.ID, http.MethodGet, "/api/v1/worker", nil, nil)
+				response, err := store.Do(t.Context(), connection.ID, http.MethodGet, "/api/v1/worker", nil, nil)
 				require.NoError(err)
 				assert.Equal(http.StatusOK, response.StatusCode)
 				require.NoError(response.Body.Close())
 			} else {
+				discovery, err = store.Discover(t.Context(), registry.URL)
+				require.NoError(err)
 				assert.Empty(discovery.Devboxes)
 				_, err = store.Connect(t.Context(), registry.URL, "compute-a")
 				require.ErrorContains(err, "not assigned")

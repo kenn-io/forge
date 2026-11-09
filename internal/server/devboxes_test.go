@@ -233,6 +233,79 @@ func TestDevboxWorkspaceViewStatePersistsOnWorker(t *testing.T) {
 	assert.Equal(t, "session:agent-a", activeTab)
 }
 
+func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	database := dbtest.Open(t)
+	require.NoError(t, database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID: "work-a", Platform: "github", PlatformHost: "github.com", RepoOwner: "example", RepoName: "project",
+		ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 1, WorktreePath: t.TempDir(), Status: "ready",
+	}))
+	require.NoError(t, database.SetWorkspaceActiveTab(t.Context(), "work-a", "session:chat-a"))
+	workerMux := http.NewServeMux()
+	workspaceAPI := workspaceapi.New(workspaceapi.Deps{DB: database})
+	t.Cleanup(func() { require.NoError(t, workspaceAPI.Shutdown(context.WithoutCancel(t.Context()))) })
+	workspaceAPI.RegisterExecution(humago.NewWithPrefix(workerMux, "/api/v1", huma.DefaultConfig("worker", "1")))
+	commands := make(chan string, 2)
+	workerMux.HandleFunc("/ws/v1/workspaces/work-a/runtime/sessions/chat-a/terminal", func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer worker-test-token", r.Header.Get("Authorization"))
+		assert.Equal(t, "acp", r.URL.Query().Get("protocol"))
+		conn, err := terminalwebsocket.Accept(w, r)
+		if !assert.NoError(t, err) {
+			return
+		}
+		defer conn.CloseNow()
+		if !assert.NoError(t, conn.Write(r.Context(), websocket.MessageText, []byte(`{"messages":[{"role":"assistant","text":"Shared reply"}]}`))) {
+			return
+		}
+		_, data, err := conn.Read(r.Context())
+		if assert.NoError(t, err) {
+			commands <- string(data)
+			_, _, _ = conn.Read(r.Context())
+		}
+	})
+	worker := httptest.NewServer(workerMux)
+	t.Cleanup(worker.Close)
+	for _, prompt := range []string{"inspect the failure", "try the fix"} {
+		directory := t.TempDir()
+		raw, err := json.Marshal([]any{map[string]any{"id": "compute-a", "profile": devbox.Profile{Assignment: devbox.Assignment{URL: worker.URL}, Token: "worker-test-token"}}})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(directory, "devbox-connections.json"), raw, 0o600))
+		connections, err := devbox.OpenConnections(directory)
+		require.NoError(t, err)
+		t.Cleanup(connections.Close)
+		controller := wiredServer(&Server{options: ServerOptions{Devboxes: connections}})
+		mux := http.NewServeMux()
+		api := humago.New(mux, huma.DefaultConfig("controller", "1"))
+		controller.registerDevboxAPI(api)
+		controller.registerDevboxTerminalAPI(humago.NewWithPrefix(mux, "/ws/v1", huma.DefaultConfig("terminal", "1")))
+		server := httptest.NewServer(mux)
+		t.Cleanup(server.Close)
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/devboxes/compute-a/workspaces/work-a/view-state", nil)
+		require.NoError(t, err)
+		response, err := server.Client().Do(request)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, response.StatusCode)
+		var workspace workspaceapi.WorkspaceViewState
+		require.NoError(t, json.UnmarshalRead(response.Body, &workspace))
+		require.NoError(t, response.Body.Close())
+		require.Equal(t, "session:chat-a", workspace.ActiveTab)
+		conn, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/compute-a/workspaces/work-a/runtime/sessions/chat-a/terminal?protocol=acp", nil, nil)
+		require.NoError(t, err)
+		_, state, err := conn.Read(t.Context())
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"messages":[{"role":"assistant","text":"Shared reply"}]}`, string(state))
+		command := `{"type":"prompt","text":"` + prompt + `"}`
+		require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte(command)))
+		select {
+		case received := <-commands:
+			assert.JSONEq(t, command, received)
+		case <-time.After(5 * time.Second):
+			t.Fatal("worker did not receive the chat command")
+		}
+		require.NoError(t, conn.Close(websocket.StatusNormalClosure, "done"))
+	}
+}
+
 func TestDevboxShellLaunchDoesNotRefreshSourceContext(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	for _, target := range []string{"plain_shell", "shell", "codex"} {

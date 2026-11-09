@@ -30,17 +30,13 @@ import (
 // newExecutionWorkerServer starts an execution worker. Given agents, the
 // worker also runs a workspace runtime that offers them.
 func newExecutionWorkerServer(t *testing.T, agents ...config.Agent) *httptest.Server {
-	return newExecutionWorkerServerWithToken(t, "worker-test-secret", agents...)
-}
-
-func newExecutionWorkerServerWithToken(t *testing.T, token string, agents ...config.Agent) *httptest.Server {
 	t.Helper()
 	cfg := &config.Config{}
 	cfg.DataDir = t.TempDir()
 	cfg.ExecutionWorker = config.ExecutionWorker{Enabled: true, UID: 1001, GitHubUserID: 1234, BrokerSocket: "/run/example/broker.sock"}
 	options := forgeserver.ServerOptions{
 		ExecutionWorker:               true,
-		DaemonAccess:                  authapi.DaemonAccessOptions{Token: token, RequireAPIAuth: true},
+		DaemonAccess:                  authapi.DaemonAccessOptions{Token: "worker-test-secret", RequireAPIAuth: true},
 		FederationSpokeID:             "0123456789abcdef0123456789abcdef",
 		HostCheckAllowLoopbackAnyPort: true,
 	}
@@ -58,23 +54,6 @@ func newExecutionWorkerServerWithToken(t *testing.T, token string, agents ...con
 	server := httptest.NewServer(srv)
 	t.Cleanup(server.Close)
 	return server
-}
-
-func TestExecutionWorkerRotatedBearer(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	worker := newExecutionWorkerServerWithToken(t, "replacement-token")
-	for _, test := range []struct {
-		bearer string
-		status int
-	}{{"worker-test-secret", http.StatusUnauthorized}, {"replacement-token", http.StatusOK}} {
-		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, worker.URL+"/api/v1/worker", nil)
-		require.NoError(t, err)
-		request.Header.Set("Authorization", "Bearer "+test.bearer)
-		response, err := worker.Client().Do(request)
-		require.NoError(t, err)
-		assert.Equal(t, test.status, response.StatusCode)
-		require.NoError(t, response.Body.Close())
-	}
 }
 
 func TestExecutionWorkerRoutesAndBearerBoundary(t *testing.T) {

@@ -487,10 +487,6 @@ func TestLaunchWorkspaceRuntimeServiceReturnsSession(t *testing.T) {
 	database := dbtest.Open(t)
 	ctx := t.Context()
 	worktree := t.TempDir()
-	targetKey := string(localruntime.LaunchTargetPlainShell)
-	targets := []localruntime.LaunchTarget{{
-		Key: targetKey, Label: "Shell", Kind: localruntime.LaunchTargetPlainShell, Source: "system", Available: true,
-	}}
 	workspaceID := "ws-runtime-service"
 	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
 		ID: workspaceID, Platform: "github", PlatformHost: "github.com",
@@ -501,7 +497,10 @@ func TestLaunchWorkspaceRuntimeServiceReturnsSession(t *testing.T) {
 	}))
 	owner := newInitialMessagePTYOwner()
 	runtime := localruntime.NewManager(localruntime.Options{
-		Targets:         targets,
+		Targets: []localruntime.LaunchTarget{{
+			Key: string(localruntime.LaunchTargetPlainShell), Label: "Shell",
+			Kind: localruntime.LaunchTargetPlainShell, Source: "system", Available: true,
+		}},
 		PtyOwnerRuntime: owner,
 	})
 	t.Cleanup(runtime.Shutdown)
@@ -512,13 +511,13 @@ func TestLaunchWorkspaceRuntimeServiceReturnsSession(t *testing.T) {
 	})
 
 	session, err := handler.LaunchWorkspaceRuntimeService(
-		ctx, workspaceID, targetKey, "",
+		ctx, workspaceID, string(localruntime.LaunchTargetPlainShell), "",
 	)
 
 	require.NoError(err)
 	assert.NotEmpty(session.Key)
 	assert.Equal(workspaceID, session.WorkspaceID)
-	assert.Equal(targetKey, session.TargetKey)
+	assert.Equal(string(localruntime.LaunchTargetPlainShell), session.TargetKey)
 	stored, err := workspaceManager.RuntimeSessionsForWorkspace(ctx, workspaceID)
 	require.NoError(err)
 	require.Len(stored, 1)

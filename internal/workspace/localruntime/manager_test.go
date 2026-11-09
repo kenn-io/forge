@@ -275,10 +275,15 @@ func TestManagerLaunchTargetsRefreshBuiltinAvailability(t *testing.T) {
 	assert.Empty(target.DisabledReason)
 	assert.False(findTarget(t, listing.LaunchTargets(), "codex").Available)
 
+	availableTargets := ResolveLaunchTargets(nil, nil, nil)
+	removalListing := NewManager(Options{Targets: availableTargets})
+	removalLauncher := NewManager(Options{Targets: availableTargets, PtyOwnerRuntime: newFakeRuntimePtyOwner()})
+	t.Cleanup(removalListing.Shutdown)
+	t.Cleanup(removalLauncher.Shutdown)
 	require.NoError(t, os.Remove(binary))
-	_, err = launcher.Launch(t.Context(), "ws-2", t.TempDir(), "claude")
+	_, err = removalLauncher.Launch(t.Context(), "ws-2", t.TempDir(), "claude")
 	require.ErrorContains(t, err, `target "claude" not available`)
-	target = findTarget(t, listing.LaunchTargets(), "claude")
+	target = findTarget(t, removalListing.LaunchTargets(), "claude")
 	assert.False(target.Available)
 	assert.Equal("claude not found on PATH", target.DisabledReason)
 }

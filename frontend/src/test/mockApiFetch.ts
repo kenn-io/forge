@@ -16,9 +16,16 @@ type SettingsResponse = GeneratedSettingsResponse;
 
 export function mockLaunchTargets(claudeAvailable: boolean) {
   return [
-    ..."codex claude pi gemini opencode aider".split(" ").map((key) => ({
+    ...([
+      ["codex", "Codex"],
+      ["claude", "Claude"],
+      ["pi", "Pi"],
+      ["gemini", "Gemini"],
+      ["opencode", "opencode"],
+      ["aider", "aider"],
+    ] as const).map(([key, label]) => ({
       key,
-      label: key === "opencode" ? key : key.slice(0, 1).toUpperCase() + key.slice(1),
+      label,
       kind: "agent",
       source: "builtin",
       command: [key],

@@ -30,7 +30,7 @@ func recordFixtureResponse(dir, response string) {
 
 // This executable fixture is the foreign ACP peer. It verifies the host's
 // initialization and workspace handoff before serving streamed turns.
-func Agent() {
+func Agent(ctx context.Context) {
 	if os.Getenv("KENN_FORGE_ACP_FIXTURE") != "1" {
 		return
 	}
@@ -138,7 +138,7 @@ func Agent() {
 			}
 			// The session answers only once the test writes to this socket.
 			if socket := os.Getenv("KENN_FORGE_ACP_SESSION_AWAITS"); socket != "" {
-				conn, err := net.Dial("unix", socket)
+				conn, err := (&net.Dialer{}).DialContext(ctx, "unix", socket)
 				if err == nil {
 					_, err = conn.Read(make([]byte, 1))
 					_ = conn.Close()

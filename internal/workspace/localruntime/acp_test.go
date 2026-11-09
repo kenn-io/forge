@@ -30,7 +30,7 @@ import (
 )
 
 func TestACPStdioHelper(t *testing.T) {
-	acpfixture.Agent()
+	acpfixture.Agent(t.Context())
 }
 
 func TestACPWorkspaceConversation(t *testing.T) {

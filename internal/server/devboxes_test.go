@@ -246,7 +246,7 @@ func TestSharedDevboxACPOwner(t *testing.T) { //nolint:paralleltest // runs as a
 }
 
 func TestSharedDevboxACPAgent(t *testing.T) { //nolint:paralleltest // runs as an ACP subprocess
-	acpfixture.Agent()
+	acpfixture.Agent(t.Context())
 }
 
 func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {

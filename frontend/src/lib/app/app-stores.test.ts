@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { makeAppRuntime, type AppServices, type OwnedAppRuntime } from "./runtime.js";
 import { createAppStores } from "../app-stores.svelte.js";
 import type { Issue, IssueDetail, PullDetail, PullRequest } from "../api/types.js";
-import { createMockApiFetch } from "../../test/mockApiFetch.js";
+import { createMockApiFetch, mockSettings } from "../../test/mockApiFetch.js";
 
 let runtime: OwnedAppRuntime;
 let eventSources: EventSourceStub[];
@@ -63,7 +63,9 @@ describe("app store composition", () => {
       }
       if (url.pathname === "/api/v1/settings/local") {
         localReads += 1;
-        return localReads === 1 ? releaseLocal.promise : Response.json({ launch_targets: [saved, claude] });
+        return localReads === 1
+          ? releaseLocal.promise
+          : Response.json({ ...mockSettings, launch_targets: [saved, claude] });
       }
       return api.fetch(input, init);
     });
@@ -79,7 +81,7 @@ describe("app store composition", () => {
       await vi.advanceTimersByTimeAsync(0);
       expect([pullReads, localReads]).toEqual([1, 1]);
       stores.settings.setLaunchTargets([saved, { ...claude, available: false }]);
-      releaseLocal.resolve(Response.json({ launch_targets: [{ ...claude, available: false }] }));
+      releaseLocal.resolve(Response.json({ ...mockSettings, launch_targets: [{ ...claude, available: false }] }));
       await vi.advanceTimersByTimeAsync(0);
       expect(stores.settings.getLaunchTargets()).toMatchObject([saved, { key: "claude", available: false }]);
       await vi.advanceTimersByTimeAsync(5_000);

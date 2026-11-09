@@ -273,7 +273,9 @@ func TestManagerLaunchTargetsRefreshBuiltinAvailability(t *testing.T) {
 	target := findTarget(t, listing.LaunchTargets(), "claude")
 	assert.True(target.Available)
 	assert.Empty(target.DisabledReason)
-	assert.False(findTarget(t, listing.LaunchTargets(), "codex").Available)
+	override := findTarget(t, listing.LaunchTargets(), "codex")
+	assert.False(override.Available)
+	assert.Equal("disabled by config", override.DisabledReason)
 
 	availableTargets := ResolveLaunchTargets(nil, nil, nil)
 	removalListing := NewManager(Options{Targets: availableTargets})

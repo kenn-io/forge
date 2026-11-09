@@ -5692,7 +5692,7 @@ func dirtyFiles(
 	ctx context.Context, worktreePath string,
 ) ([]string, error) {
 	cmd := workspaceGitCommand(
-		ctx, "", "-C", worktreePath, "status", "--porcelain",
+		ctx, "", "-C", worktreePath, "status", "--porcelain=v1", "-z",
 	)
 	out, err := procutil.Output(
 		ctx, cmd, "git subprocess capacity",
@@ -5700,20 +5700,20 @@ func dirtyFiles(
 	if err != nil {
 		return nil, err
 	}
-	out = bytes.TrimSpace(out)
-	if len(out) == 0 {
-		return nil, nil
-	}
+	// Each record is "XY path\0". X or Y is a space for changes on one
+	// side only, so records must not be trimmed. Renames and copies are
+	// followed by a second record that holds the source path.
 	var files []string
-	for line := range strings.SplitSeq(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			// porcelain format: "XY filename"
-			if len(line) > 3 {
-				files = append(files, line[3:])
-			} else {
-				files = append(files, line)
-			}
+	records := strings.Split(string(out), "\x00")
+	for i := 0; i < len(records); i++ {
+		record := records[i]
+		if len(record) < 4 {
+			continue
+		}
+		files = append(files, record[3:])
+		if record[0] == 'R' || record[0] == 'C' ||
+			record[1] == 'R' || record[1] == 'C' {
+			i++
 		}
 	}
 	return files, nil

@@ -286,15 +286,21 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 		workerMux.ServeHTTP(w, r)
 	}))
 	t.Cleanup(worker.Close)
-	ws, err := database.GetWorkspace(t.Context(), "work-a")
+	launchRequest, err := http.NewRequestWithContext(t.Context(), http.MethodPost, worker.URL+"/api/v1/workspaces/work-a/runtime/sessions", strings.NewReader(`{"target_key":"chat"}`))
 	require.NoError(t, err)
-	session, err := manager.LaunchWithInitialMessage(t.Context(), "work-a", ws.WorktreePath, "chat", "", nil)
+	launchRequest.Header.Set("Authorization", "Bearer "+token)
+	launchRequest.Header.Set("Content-Type", "application/json")
+	launchResponse, err := worker.Client().Do(launchRequest)
 	require.NoError(t, err)
+	launchBody, err := io.ReadAll(launchResponse.Body)
+	require.NoError(t, err)
+	require.NoError(t, launchResponse.Body.Close())
+	require.Equal(t, http.StatusOK, launchResponse.StatusCode, string(launchBody))
+	var session localruntime.SessionInfo
+	require.NoError(t, json.Unmarshal(launchBody, &session))
 	chat, err := manager.ACP("work-a", session.Key)
 	require.NoError(t, err)
 	require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
-	require.NoError(t, database.UpsertWorkspaceRuntimeSession(t.Context(), &db.WorkspaceRuntimeSession{WorkspaceID: "work-a", SessionKey: session.Key, TargetKey: "chat", Kind: "acp", Scope: "session", DisplayRegion: "workflow", CreatedAt: session.CreatedAt}))
-	require.NoError(t, database.SetWorkspaceActiveTab(t.Context(), "work-a", "session:"+session.Key))
 	for index, prompt := range []string{"inspect the failure", "adjust again"} {
 		directory := t.TempDir()
 		assignment := devbox.Assignment{NodeID: workerNode, UID: 1001, GitHubUserID: int64(42 + index), WorkerGitHubUserID: 777, Role: "execution", Protocol: 1, HostID: "compute-a", Name: "Compute A", URL: worker.URL, Account: "service"}
@@ -318,16 +324,21 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 		aggregate := fleet.BuildNeutralAggregate(local, controller.devboxSnapshots(t.Context(), 5*time.Second))
 		require.Len(t, aggregate.Workspaces, 1)
 		require.Equal(t, "work-a", aggregate.Workspaces[0].ID)
-		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/devboxes/"+connection.ID+"/workspaces/work-a/view-state", nil)
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/devboxes/"+connection.ID+"/workspaces/work-a/runtime", nil)
 		require.NoError(t, err)
 		response, err := server.Client().Do(request)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, response.StatusCode)
-		var workspace workspaceapi.WorkspaceViewState
-		require.NoError(t, json.UnmarshalRead(response.Body, &workspace))
+		var runtime struct {
+			Sessions []localruntime.SessionInfo `json:"sessions"`
+		}
+		require.NoError(t, json.UnmarshalRead(response.Body, &runtime))
 		require.NoError(t, response.Body.Close())
-		require.Equal(t, "session:"+session.Key, workspace.ActiveTab)
-		conn, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/"+connection.ID+"/workspaces/work-a/runtime/sessions/"+session.Key+"/terminal?protocol=acp", nil, nil)
+		require.Len(t, runtime.Sessions, 1)
+		require.Equal(t, session.Key, runtime.Sessions[0].Key)
+		require.Equal(t, localruntime.LaunchTargetACP, runtime.Sessions[0].Kind)
+		discoveredKey := runtime.Sessions[0].Key
+		conn, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/"+connection.ID+"/workspaces/work-a/runtime/sessions/"+discoveredKey+"/terminal?protocol=acp", nil, nil)
 		require.NoError(t, err)
 		chatCtx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 		_, snapshot, err := conn.Read(chatCtx)
@@ -376,7 +387,7 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 				var state localruntime.ACPState
 				return json.Unmarshal(data, &state) == nil && state.Busy && strings.Contains(string(data), "wait")
 			}, 10*time.Second, 20*time.Millisecond)
-			first, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/"+connection.ID+"/workspaces/work-a/runtime/sessions/"+session.Key+"/terminal?protocol=acp", nil, nil)
+			first, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/"+connection.ID+"/workspaces/work-a/runtime/sessions/"+discoveredKey+"/terminal?protocol=acp", nil, nil)
 			require.NoError(t, err)
 			ctx, stop := context.WithTimeout(t.Context(), 10*time.Second)
 			_, active, err := first.Read(ctx)

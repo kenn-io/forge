@@ -47,8 +47,12 @@ Select-String -Path .\SHA256SUMS -Pattern 'forge_<version>_windows_amd64.zip'
 
 Compare the printed SHA-256 values before extracting the archive.
 
-Extract the archive. Move `kenn-forge` or `kenn-forge.exe` to a directory on
-your `PATH`.
+On Linux, macOS, and Windows, extract the archive. Move `kenn-forge` or
+`kenn-forge.exe` to a directory on your `PATH`.
+
+The Android APK installs a client app for phones and tablets that connects to a
+Forge server you already run. Install the APK, open the app, and enter the
+server's full URL and its auth token if the server requires one.
 
 If the Releases page has no published version, build from source.
 

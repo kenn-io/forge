@@ -69,8 +69,12 @@ include a `SHA256SUMS` file.
 | Windows | ARM64 | `forge_<version>_windows_arm64.zip` |
 | Android | Universal | `forge_<version>_android.apk` |
 
-Extract the archive and move `kenn-forge` or `kenn-forge.exe` to a directory on
-your `PATH`.
+On Linux, macOS, and Windows, extract the archive and move `kenn-forge` or
+`kenn-forge.exe` to a directory on your `PATH`.
+
+The Android APK installs a client app for phones and tablets that connects to a
+Forge server you already run. Install the APK, open the app, and enter the
+server's full URL and its auth token if the server requires one.
 
 Build the current source when no release is published:
 

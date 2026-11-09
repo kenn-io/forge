@@ -16,14 +16,16 @@ type SettingsResponse = GeneratedSettingsResponse;
 
 export function mockLaunchTargets(claudeAvailable: boolean) {
   return [
-    ...([
-      ["codex", "Codex"],
-      ["claude", "Claude"],
-      ["pi", "Pi"],
-      ["gemini", "Gemini"],
-      ["opencode", "opencode"],
-      ["aider", "aider"],
-    ] as const).map(([key, label]) => ({
+    ...(
+      [
+        ["codex", "Codex"],
+        ["claude", "Claude"],
+        ["pi", "Pi"],
+        ["gemini", "Gemini"],
+        ["opencode", "opencode"],
+        ["aider", "aider"],
+      ] as const
+    ).map(([key, label]) => ({
       key,
       label,
       kind: "agent",

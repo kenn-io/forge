@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -301,6 +302,7 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 	chat, err := manager.ACP("work-a", session.Key)
 	require.NoError(t, err)
 	require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
+	var firstObserver *websocket.Conn
 	for index, prompt := range []string{"inspect the failure", "adjust again"} {
 		directory := t.TempDir()
 		assignment := devbox.Assignment{NodeID: workerNode, UID: 1001, GitHubUserID: int64(42 + index), WorkerGitHubUserID: 777, Role: "execution", Protocol: 1, HostID: "compute-a", Name: "Compute A", URL: worker.URL, Account: "service"}
@@ -366,6 +368,23 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 			data, _ := os.ReadFile(logPath)
 			return strings.Contains(string(data), record+prompt+"\n")
 		}, 10*time.Second, 20*time.Millisecond)
+		if index == 1 {
+			require.NotNil(t, firstObserver)
+			for _, observer := range []*websocket.Conn{firstObserver, conn} {
+				for {
+					_, frame, err := observer.Read(chatCtx)
+					require.NoError(t, err)
+					var update struct {
+						Updates *localruntime.ACPState `json:"updates"`
+					}
+					require.NoError(t, json.Unmarshal(frame, &update))
+					if update.Updates != nil && slices.ContainsFunc(update.Updates.Messages, func(message localruntime.ACPMessage) bool { return message.Text == prompt }) {
+						break
+					}
+				}
+			}
+			require.NoError(t, firstObserver.Close(websocket.StatusNormalClosure, "done"))
+		}
 		if index == 0 {
 			for {
 				_, frame, err := conn.Read(chatCtx)
@@ -410,7 +429,8 @@ func TestSharedDevboxWorkspaceAndChatRoutes(t *testing.T) {
 				log, _ := os.ReadFile(logPath)
 				return json.Unmarshal(data, &state) == nil && state.Busy && !state.Steering && strings.Contains(string(log), "steer:adjust\n")
 			}, 10*time.Second, 20*time.Millisecond)
-			require.NoError(t, first.Close(websocket.StatusNormalClosure, "done"))
+			firstObserver = first
+			t.Cleanup(func() { _ = first.CloseNow() })
 			stop()
 		}
 	}

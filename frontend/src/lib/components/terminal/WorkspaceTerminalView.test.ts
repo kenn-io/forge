@@ -4938,6 +4938,44 @@ describe("WorkspaceTerminalView", () => {
     expect(getPaneLayoutStore("prs").hasTab(sessionPaneKey("ws-1", undefined, "ws-1:codex"))).toBe(false);
   });
 
+  it("shows the workspace pane when a pane maximized mid-launch covers a header launch's destination", async () => {
+    mocks.detailSessionPlacement = "right";
+    const launchRequest = deferred<typeof runningSession>();
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    mocks.launchWorkspaceSession.mockReturnValue(launchRequest.promise);
+    claimForPrs();
+    const layout = getPaneLayoutStore("prs");
+    layout.splitTab("files", layout.leafIDForTab("conversation")!, "horizontal", "before");
+    layout.notePaneRender({
+      activeInputTabKey: "conversation",
+      editableTabs: ["files", "conversation", "workspace"],
+      onScreenTabs: ["files", "conversation", "workspace"],
+      flattened: false,
+      soloChromeTabs: [],
+    });
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    const controller = getInlineWorkspaceController("prs");
+
+    controller.launchSession("codex");
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+    const filesLeaf = layout.leafIDForTab("files")!;
+    layout.toggleZoom(filesLeaf);
+    layout.notePaneRender({
+      activeInputTabKey: "files",
+      editableTabs: ["files"],
+      onScreenTabs: ["files"],
+      flattened: false,
+      soloChromeTabs: [],
+    });
+    launchRequest.resolve({ ...runningSession, key: "ws-1:codex", target_key: "codex", label: "Codex" });
+
+    await waitFor(() => expect(controller.sessionLaunching()).toBe(false));
+    expect(layout.hasTab(sessionPaneKey("ws-1", undefined, "ws-1:codex"))).toBe(false);
+    expect(layout.zoomedLeafID()).toBeNull();
+    expect(layout.isTabActive("workspace")).toBe(true);
+  });
+
   it("keeps a session launched from the detail header in the workspace pane when placement is bottom", async () => {
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
     mocks.launchWorkspaceSession.mockResolvedValue({

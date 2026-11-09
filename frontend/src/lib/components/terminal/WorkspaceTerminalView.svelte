@@ -63,6 +63,7 @@
     type SessionHostKey,
   } from "../../stores/session-host.svelte.ts";
   import {
+    getInlineWorkspaceController,
     publishHostedSessions,
     registerWorkspaceControls,
     registerWorkspaceLauncher,
@@ -1316,7 +1317,14 @@
 
   function promoteIntoDetailLeaf(session: RuntimeSession, leaf: WorkspaceRuntimeLaunchLeaf): void {
     const target = surfaceLayout === null ? null : detailLaunchInsertTarget(surfaceLayout, leaf);
-    if (target !== null) surfaceLayout?.promoteTab(sessionPaneKeyFor(session), target);
+    if (target !== null) {
+      surfaceLayout?.promoteTab(sessionPaneKeyFor(session), target);
+      return;
+    }
+    // The destination left the screen while the agent started, so the session stays
+    // in the workspace pane. Show that pane: whatever took the destination away, such
+    // as another pane maximized since the launch began, may cover it too.
+    if (paneSurface !== undefined) getInlineWorkspaceController(paneSurface).revealWorkspace();
   }
 
   function rememberQuickActionSessionPlacement(sessionKey: string): void {

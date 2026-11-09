@@ -42,6 +42,15 @@ const workspaceTestTimeoutMs = 120_000;
 const agentKey = "e2e-agent";
 const agentLabel = "E2E Agent";
 
+async function returnToVisibleWorkspace(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+}
+
 type LaunchDialogProbe = {
   phase?: string;
   firstAppearancePhase?: string | null;
@@ -238,12 +247,7 @@ test.describe("workspace create-and-launch full stack", () => {
       const installed = page.waitForResponse((response) =>
         new URL(response.url()).pathname.endsWith(`/workspaces/${workspace.id}/runtime`),
       );
-      await page.evaluate(() => {
-        Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
-        document.dispatchEvent(new Event("visibilitychange"));
-        Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
-        document.dispatchEvent(new Event("visibilitychange"));
-      });
+      await returnToVisibleWorkspace(page);
       expect((await installed).ok()).toBe(true);
       await expect(claude).toBeEnabled();
 
@@ -251,12 +255,7 @@ test.describe("workspace create-and-launch full stack", () => {
       const removed = page.waitForResponse((response) =>
         new URL(response.url()).pathname.endsWith(`/workspaces/${workspace.id}/runtime`),
       );
-      await page.evaluate(() => {
-        Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
-        document.dispatchEvent(new Event("visibilitychange"));
-        Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
-        document.dispatchEvent(new Event("visibilitychange"));
-      });
+      await returnToVisibleWorkspace(page);
       expect((await removed).ok()).toBe(true);
       await expect(claude).toBeDisabled();
       await expect(claude).toHaveAttribute("title", "claude not found on PATH");

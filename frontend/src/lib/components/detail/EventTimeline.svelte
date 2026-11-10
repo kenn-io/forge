@@ -5,6 +5,7 @@
   import CopyIcon from "@lucide/svelte/icons/copy";
   import EyeOffIcon from "@lucide/svelte/icons/eye-off";
   import LinkIcon from "@lucide/svelte/icons/link";
+  import MessageSquarePlusIcon from "@lucide/svelte/icons/message-square-plus";
   import MessageSquareReplyIcon from "@lucide/svelte/icons/message-square-reply";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
@@ -45,6 +46,7 @@
     type MarkdownSuggestionBlock,
   } from "../../utils/markdown-suggestions.js";
   import { getStores } from "../../context.js";
+  import { addToChat, hasChatComposer } from "../../stores/chat-composer.svelte.js";
   import { createProgressiveMountController } from "../../utils/progressive-mount.js";
   import {
     buildItemReferenceLink,
@@ -1411,6 +1413,14 @@
     });
   }
 
+  // Names who wrote the comment and where, so the agent can tell it apart
+  // from the user's own words.
+  function chatQuote(event: PREvent | IssueEvent): string {
+    const author = event.Author ? ` from @${event.Author}` : "";
+    const where = event.DirectURL ? ` (${event.DirectURL})` : "";
+    return `Comment${author}${where}:\n\n${event.Body}`;
+  }
+
   function copyText(id: string, text: string): void {
     copyExecution?.interrupt();
     copyExecution = runtime.runCommand(
@@ -1655,6 +1665,15 @@
         <CopyIcon size={14} />
       {/if}
     </IconButton>
+    {#if hasChatComposer()}
+      <IconButton
+        size="sm"
+        onclick={() => addToChat(chatQuote(event))}
+        ariaLabel="Add to chat"
+      >
+        <MessageSquarePlusIcon size={14} />
+      </IconButton>
+    {/if}
   {/if}
 {/snippet}
 

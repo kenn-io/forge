@@ -14,6 +14,8 @@ import type { TerminalSessionOptions } from "../terminal/terminal-session.js";
 import { fixtureMessages, fixtureState } from "./chat-test-fixtures.js";
 import ACPWorkspace from "./ACPWorkspace.svelte";
 import CIStatus from "../detail/CIStatus.svelte";
+import EventTimeline from "../detail/EventTimeline.svelte";
+import type { PREvent } from "../../api/types.js";
 import { STORES_KEY } from "../../context.js";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
 
@@ -45,7 +47,7 @@ function encodeFixture(frame: Record<string, unknown>) {
 
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
 
-async function renderChat(width: number) {
+async function renderChat(width: number, props: { active?: boolean } = {}) {
   const host = document.createElement("div");
   // Mirrors the pooled session host: a full-size flex column.
   host.style.cssText = `width: ${width}px; height: 600px; display: flex; flex-direction: column;`;
@@ -53,7 +55,7 @@ async function renderChat(width: number) {
   await render(ACPWorkspace, {
     context: new Map([[STORES_KEY, { settings }]]),
     target: host,
-    props: { websocketPath: "/ws/chat" },
+    props: { websocketPath: "/ws/chat", ...props },
   });
   await expect.poll(() => socket.options).toBeDefined();
   socket.options!.onOpen?.();
@@ -1295,5 +1297,58 @@ describe("ACPWorkspace dropped prompts (browser)", () => {
     await userEvent.dragAndDrop(page.getByRole("link", { name: /lint/ }), page.elementLocator(composer));
 
     expect(composer.value).not.toContain("failing CI check");
+  });
+});
+
+describe("ACPWorkspace add to chat (browser)", () => {
+  const comment = {
+    ID: 7,
+    MergeRequestID: 42,
+    PlatformID: null,
+    EventType: "issue_comment",
+    Author: "reviewer-bot",
+    Body: "Terminal quick actions send Enter too early.",
+    Summary: "",
+    MetadataJSON: "",
+    DedupeKey: "comment-7",
+    CreatedAt: "2026-09-28T21:00:00Z",
+    ThreadID: null,
+    Resolvable: false,
+    Resolved: false,
+    DirectURL: "https://github.com/acme/widgets/pull/42#issuecomment-7",
+  } as unknown as PREvent;
+
+  async function renderTimeline() {
+    const panel = document.createElement("div");
+    document.body.prepend(panel);
+    await render(EventTimeline, { target: panel, props: { events: [comment] } });
+  }
+
+  it("offers no add to chat button while no chat is on screen", async () => {
+    await renderTimeline();
+    await expect.element(page.getByRole("button", { name: "Copy comment" })).toBeInTheDocument();
+    expect(page.getByRole("button", { name: "Add to chat" }).query()).toBeNull();
+
+    await renderChat(700, { active: false });
+    await nextFrame();
+    expect(page.getByRole("button", { name: "Add to chat" }).query()).toBeNull();
+  });
+
+  it("appends the comment to the visible chat's composer without sending it", async () => {
+    await renderTimeline();
+    const { host } = await renderChat(700);
+    const composer = host.querySelector("textarea")!;
+    composer.value = "Context first.";
+    composer.dispatchEvent(new Event("input", { bubbles: true }));
+
+    (page.getByRole("button", { name: "Add to chat" }).element() as HTMLButtonElement).click();
+
+    await expect
+      .poll(() => composer.value)
+      .toBe(
+        "Context first.\n\nComment from @reviewer-bot (https://github.com/acme/widgets/pull/42#issuecomment-7):\n\nTerminal quick actions send Enter too early.",
+      );
+    expect(document.activeElement).toBe(composer);
+    expect(socket.sent.some((frame) => frame.includes("Enter too early"))).toBe(false);
   });
 });

@@ -86,6 +86,39 @@ func TestSeedFixtures_IssueCounts(t *testing.T) {
 	assert.Equal("Crash on empty input", closedIssues[0].Title)
 }
 
+func TestSeedFixtures_ProviderItemIdentities(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d, result := OpenFixtureTestDB(t)
+	ctx := t.Context()
+	client := result.FixtureClient()
+
+	repos, err := d.ListRepos(ctx)
+	require.NoError(err)
+	for _, repo := range repos {
+		pulls, err := d.ListMergeRequests(ctx, db.ListMergeRequestsOpts{RepoID: repo.ID, State: "all"})
+		require.NoError(err)
+		for _, pull := range pulls {
+			providerPull, err := client.GetPullRequest(ctx, repo.Owner, repo.Name, pull.Number)
+			require.NoError(err)
+			require.NotNil(providerPull)
+			assert.NotEmpty(pull.PlatformExternalID, "pull %s#%d must support Kata links before a detail sync", repo.FullName(), pull.Number)
+			assert.Equal(providerPull.GetNodeID(), pull.PlatformExternalID)
+		}
+
+		issues, err := d.ListIssues(ctx, db.ListIssuesOpts{RepoOwner: repo.Owner, RepoName: repo.Name, State: "all"})
+		require.NoError(err)
+		for _, issue := range issues {
+			providerIssue, err := client.GetIssue(ctx, repo.Owner, repo.Name, issue.Number)
+			require.NoError(err)
+			require.NotNil(providerIssue)
+			assert.NotEmpty(issue.PlatformExternalID, "issue %s#%d must support Kata links before a detail sync", repo.FullName(), issue.Number)
+			assert.Equal(providerIssue.GetNodeID(), issue.PlatformExternalID)
+		}
+	}
+}
+
 func TestSeedFixtures_Activity(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

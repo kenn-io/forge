@@ -136,11 +136,11 @@ func (c RegistryConfig) validate() error {
 			nodes[node] = true
 		}
 	}
-	assignments, workers := map[string]bool{}, map[string]bool{}
+	assignments, workers := map[string]bool{}, map[string]Assignment{}
 	for _, assignment := range c.Assignments {
 		key := fmt.Sprintf("%d/%s", assignment.GitHubUserID, assignment.HostID)
-		if !githubIDs[assignment.GitHubUserID] || assignment.HostID == "" || strings.ContainsAny(assignment.HostID, "/?# ") || assignments[key] || workers[assignment.NodeID] {
-			return errors.New("registry assignments must have an enrolled developer and unique host/account and worker identities")
+		if !githubIDs[assignment.GitHubUserID] || assignment.HostID == "" || strings.ContainsAny(assignment.HostID, "/?# ") || assignments[key] {
+			return errors.New("registry assignments must have an enrolled developer and a unique developer/host assignment")
 		}
 		if err := validateAssignment(assignment); err != nil {
 			return err
@@ -148,7 +148,15 @@ func (c RegistryConfig) validate() error {
 		if !filepath.IsAbs(assignment.TokenFile) {
 			return errors.New("worker token_file must be absolute")
 		}
-		assignments[key], workers[assignment.NodeID] = true, true
+		if worker, ok := workers[assignment.NodeID]; ok {
+			worker.GitHubUserID = assignment.GitHubUserID
+			worker.Enabled = assignment.Enabled
+			worker.Name = assignment.Name
+			if assignment.WorkerGitHubUserID == 0 || worker != assignment {
+				return errors.New("duplicate worker assignments must describe the same service worker")
+			}
+		}
+		assignments[key], workers[assignment.NodeID] = true, assignment
 	}
 	return nil
 }

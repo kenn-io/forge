@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
+func TestRegistryConnectSharedAndPersonalWorkers(t *testing.T) {
 	for _, workerID := range []int64{42, 777} {
 		t.Run(fmt.Sprintf("worker-%d", workerID), func(t *testing.T) {
 			assert := assert.New(t)
@@ -55,6 +55,13 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 		`, workerSetting), &assignment)
 			require.NoError(err)
 			cfg := RegistryConfig{Socket: "/run/example/registry.sock", RegistryID: "example-registry", Revision: "1", Developers: []Developer{{GitHubUserID: 42, TailscaleUserID: 11, Enabled: true}, {GitHubUserID: 43, TailscaleUserID: 12, Enabled: true}}, Assignments: []Assignment{assignment}}
+			if workerID == 777 {
+				cfg.Developers = append(cfg.Developers, Developer{GitHubUserID: 44, TailscaleUserID: 13, Enabled: true})
+				second := assignment
+				second.GitHubUserID = 43
+				second.Name = "Shared compute"
+				cfg.Assignments = append(cfg.Assignments, second)
+			}
 			require.NoError(cfg.validate())
 			peerID := int64(11)
 			lookup := func(context.Context, string) (tailnetPeer, error) {
@@ -98,8 +105,25 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 			info, err := os.Stat(store.path)
 			require.NoError(err)
 			assert.Equal(os.FileMode(0o600), info.Mode().Perm())
-			// Another enrolled developer must not inherit the owner's service account.
 			peerID = 12
+			if workerID == 777 {
+				secondStore, err := OpenConnections(t.TempDir())
+				require.NoError(err)
+				t.Cleanup(secondStore.Close)
+				secondStore.client.Transport = transport.Clone()
+				discovery, err = secondStore.Discover(t.Context(), registry.URL)
+				require.NoError(err)
+				require.Len(discovery.Devboxes, 1)
+				assert.Equal(int64(43), discovery.Devboxes[0].GitHubUserID)
+				secondConnection, err := secondStore.Connect(t.Context(), registry.URL, "compute-a")
+				require.NoError(err)
+				response, err := secondStore.Do(t.Context(), secondConnection.ID, http.MethodGet, "/api/v1/workspaces", nil, nil)
+				require.NoError(err)
+				assert.Equal(http.StatusOK, response.StatusCode)
+				require.NoError(response.Body.Close())
+				peerID = 13
+			}
+			// Another enrolled developer must not inherit the owner's service account.
 			discovery, err = store.Discover(t.Context(), registry.URL)
 			require.NoError(err)
 			assert.Empty(discovery.Devboxes)
@@ -139,4 +163,33 @@ func TestRegistryIdentityUsesUserOrExplicitUnambiguousPin(t *testing.T) {
 	peer.Node.Tags, peer.UserProfile.ID = nil, 12
 	_, err = cfg.developer(peer)
 	require.ErrorContains(err, "conflicts")
+}
+
+func TestRegistrySharedServiceWorkerValidation(t *testing.T) {
+	assignment := Assignment{NodeID: "0123456789abcdef0123456789abcdef", UID: 1001, GitHubUserID: 42, WorkerGitHubUserID: 777, Role: "execution", Protocol: Protocol, HostID: "compute-a", Name: "Compute A", URL: "http://compute-a.example.ts.net:9001", Account: "service", Enabled: true, TokenFile: "/run/example/token"}
+	second := assignment
+	second.GitHubUserID = 43
+	second.Name = "Shared compute"
+	cfg := RegistryConfig{Socket: "/run/example/registry.sock", RegistryID: "example", Revision: "1", Developers: []Developer{{GitHubUserID: 42, TailscaleUserID: 11, Enabled: true}, {GitHubUserID: 43, TailscaleUserID: 12, Enabled: true}}, Assignments: []Assignment{assignment, second}}
+	require.NoError(t, cfg.validate())
+	cfg.Assignments[1].Enabled = false
+	require.NoError(t, cfg.validate())
+	for name, change := range map[string]func(*Assignment){
+		"worker identity": func(a *Assignment) { a.WorkerGitHubUserID = 778 },
+		"worker details":  func(a *Assignment) { a.TokenFile = "/run/example/other" },
+		"maintenance":     func(a *Assignment) { a.Maintenance = true },
+	} {
+		t.Run(name, func(t *testing.T) {
+			other := second
+			change(&other)
+			cfg.Assignments[1] = other
+			assert.ErrorContains(t, cfg.validate(), "same service worker")
+		})
+	}
+	t.Run("personal workers", func(t *testing.T) {
+		cfg.Assignments[1] = second
+		cfg.Assignments[0].WorkerGitHubUserID = 0
+		cfg.Assignments[1].WorkerGitHubUserID = 0
+		require.ErrorContains(t, cfg.validate(), "same service worker")
+	})
 }

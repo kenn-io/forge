@@ -208,6 +208,10 @@ func copyProviderWorkspaceFields(target *RawWorkspace, source RawWorkspace) {
 	target.MRReviewDecision = source.MRReviewDecision
 	target.MRAdditions = source.MRAdditions
 	target.MRDeletions = source.MRDeletions
+	target.MRDeferredMergePending = source.MRDeferredMergePending
+	target.MRMergeableState = source.MRMergeableState
+	target.MRCommentCount = source.MRCommentCount
+	target.MRChecks = source.MRChecks
 }
 
 // MapConnectionState maps internal connection states to the protocol enum
@@ -465,7 +469,12 @@ func buildWorkspaceSummaries(
 			MRIsDraft: workspace.MRIsDraft, MRCIStatus: lowerPtr(workspace.MRCIStatus),
 			MRReviewDecision: lowerPtr(workspace.MRReviewDecision),
 			MRAdditions:      workspace.MRAdditions, MRDeletions: workspace.MRDeletions,
-			CommitsAhead: workspace.CommitsAhead, CommitsBehind: workspace.CommitsBehind,
+			MRMergeQueued:          workspace.MRMergeQueued,
+			MRDeferredMergePending: workspace.MRDeferredMergePending,
+			MRMergeableState:       lowerPtr(workspace.MRMergeableState),
+			MRCommentCount:         workspace.MRCommentCount,
+			MRChecks:               lowerChecks(workspace.MRChecks),
+			CommitsAhead:           workspace.CommitsAhead, CommitsBehind: workspace.CommitsBehind,
 			CommitsVsPRHead:       workspace.CommitsVsPRHead,
 			BranchUpstreamMissing: workspace.BranchUpstreamMissing,
 			WorktreeDirty:         workspace.WorktreeDirty,

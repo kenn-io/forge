@@ -183,7 +183,7 @@ func (s *Handler) buildHubAggregate(
 	results []fleet.PeerResult,
 ) (fleet.NeutralSnapshot, error) {
 	aggregate := fleet.BuildNeutralAggregate(local, results)
-	return fleet.EnrichProviderState(ctx, s.db, aggregate)
+	return fleet.EnrichProviderState(ctx, s.db, aggregate, s.deferredMergeInFlight)
 }
 
 // fetchPeerResults fans out to enrolled members and execution targets.

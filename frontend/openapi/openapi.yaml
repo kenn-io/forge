@@ -3587,8 +3587,17 @@ components:
         mr_additions:
           format: int64
           type: integer
+        mr_checks:
+          items:
+            $ref: "#/components/schemas/CheckDetail"
+          type: array
         mr_ci_status:
           type: string
+        mr_comment_count:
+          format: int64
+          type: integer
+        mr_deferred_merge_pending:
+          type: boolean
         mr_deletions:
           format: int64
           type: integer
@@ -3596,6 +3605,8 @@ components:
           type: boolean
         mr_merge_queued:
           type: boolean
+        mr_mergeable_state:
+          type: string
         mr_review_decision:
           type: string
         mr_state:
@@ -7971,6 +7982,15 @@ components:
           type: integer
         mrCIStatus:
           type: string
+        mrChecks:
+          items:
+            $ref: "#/components/schemas/CheckDetail"
+          type: array
+        mrCommentCount:
+          format: int64
+          type: integer
+        mrDeferredMergePending:
+          type: boolean
         mrDeletions:
           format: int64
           type: integer
@@ -7978,6 +7998,8 @@ components:
           type: boolean
         mrMergeQueued:
           type: boolean
+        mrMergeableState:
+          type: string
         mrReviewDecision:
           type: string
         mrState:
@@ -12999,13 +13021,26 @@ components:
         mr_additions:
           format: int64
           type: integer
+        mr_checks:
+          items:
+            $ref: "#/components/schemas/CheckDetail"
+          type: array
         mr_ci_status:
           type: string
+        mr_comment_count:
+          format: int64
+          type: integer
+        mr_deferred_merge_pending:
+          type: boolean
         mr_deletions:
           format: int64
           type: integer
         mr_is_draft:
           type: boolean
+        mr_merge_queued:
+          type: boolean
+        mr_mergeable_state:
+          type: string
         mr_review_decision:
           type: string
         mr_state:

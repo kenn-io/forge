@@ -61,6 +61,7 @@
   import type { HostSummary as GeneratedHostSummary } from "../../api/generated/models/index.js";
   import { DiffStats, FilterDropdown, ScrollBox, SidebarToggle } from "@kenn-io/kit-ui";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
+  import PullStatusTokens from "../shared/PullStatusTokens.svelte";
   import SidebarTitlePopover from "../sidebar/SidebarTitlePopover.svelte";
   import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
   import {
@@ -118,6 +119,8 @@
   import { loadFleetSnapshot } from "../../api/fleet-snapshot.js";
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
   import { workspaceItemAccent, workspaceItemState, type WorkspaceItemState } from "./workspace-item-state.js";
+  import { workspaceHoverDetails } from "./workspace-hover-details.js";
+  import { workspacePullStatus } from "./workspace-pull-status.js";
   import { isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
 
   type Workspace = WorkspaceListItem;
@@ -1872,6 +1875,7 @@
           {@const sortTimestamp = workspaceListSortTimestamp(ws, sortMode)}
           {@const workspaceReadable = workspaceOperationAvailable(ws, "workspaceRead") && workspaceOperationAvailable(ws, "terminalAttach")}
           {@const rowKey = workspaceRowKey(ws)}
+          {@const pullStatus = workspacePullStatus(ws)}
           <div
             class={["ws-row", {
               selected: isSelectedWorkspace(ws),
@@ -2030,6 +2034,18 @@
                     {/if}
                   </span>
                 {/if}
+                {#if pullStatus?.hasIcons}
+                  <span class="pull-status">
+                    <PullStatusTokens
+                      reviewDecision={pullStatus.reviewDecision}
+                      mergeAfterCI={pullStatus.mergeAfterCI}
+                      mergeQueueLabel={pullStatus.mergeQueued ? "In merge queue" : undefined}
+                      bucketed={pullStatus.checks}
+                      conflict={pullStatus.conflict}
+                      commentCount={pullStatus.commentCount}
+                    />
+                  </span>
+                {/if}
                 {#if displayOptions.showDiffStats &&
                   ws.item_type === "pull_request" &&
                   ((adds ?? 0) > 0 || (dels ?? 0) > 0)}
@@ -2086,7 +2102,30 @@
             repository={repoLabel(ws)}
             branch={shortBranch(ws.git_head_ref)}
             truncationSelector=".ws-name"
+            details={hoverDetails}
           />
+          {#snippet hoverDetails()}
+            {@const details = workspaceHoverDetails(ws, showWorkspaceHostBadges ? workspaceHostName(ws) : undefined)}
+            {#each [details.item, details.workspace] as rows, group (group)}
+              {#if rows.length > 0}
+                <dl class="ws-hover-details">
+                  {#each rows as row (row.label)}
+                    <dt>{row.label}</dt>
+                    <dd>
+                      {#if row.diff}
+                        <DiffStats additions={row.diff.additions} deletions={row.diff.deletions} />
+                      {:else}
+                        <span class={`ws-hover-tone--${row.tone}`}>{row.value}</span>
+                      {/if}
+                      {#each row.notes ?? [] as note}
+                        <span class={["ws-hover-note", `ws-hover-tone--${note.tone}`]}>{note.text}</span>
+                      {/each}
+                    </dd>
+                  {/each}
+                </dl>
+              {/if}
+            {/each}
+          {/snippet}
     {/snippet}
     {#if workspaceListStatus === "loading" && workspaces.length === 0}
       <p class="filter-empty">Loading workspaces...</p>
@@ -2796,12 +2835,99 @@
     min-width: 224px;
   }
 
+  /* The status icons keep their width while the repo and branch shrink
+   * beside them. Whatever the shedding below still cannot fit is clipped at
+   * the text column, so no icon reaches the item column. */
+  .pull-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+  }
+
+  .ws-row-meta:has(.pull-status) {
+    overflow: hidden;
+  }
+
+  /* The hover card's rows render in the title popover, which moves to the document body. */
+  :global(.ws-hover-details) {
+    display: grid;
+    /* One label width for both groups, so their values share a column. */
+    grid-template-columns: 6.25em minmax(0, 1fr);
+    gap: var(--space-1) var(--space-5);
+    margin: 0;
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border-muted);
+    font-size: var(--font-size-xs);
+    line-height: 1.35;
+  }
+
+  :global(.ws-hover-details dt) {
+    color: var(--text-muted);
+  }
+
+  :global(.ws-hover-details dd) {
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  :global(.ws-hover-details .ws-hover-tone--success) {
+    color: var(--accent-green);
+  }
+
+  :global(.ws-hover-details .ws-hover-tone--warning) {
+    color: var(--accent-amber);
+  }
+
+  :global(.ws-hover-details .ws-hover-tone--danger) {
+    color: var(--accent-red);
+  }
+
+  :global(.ws-hover-details .ws-hover-tone--waiting) {
+    color: var(--accent-purple);
+  }
+
+  :global(.ws-hover-details .ws-hover-tone--info) {
+    color: var(--accent-blue);
+  }
+
+  :global(.ws-hover-details .ws-hover-note) {
+    display: block;
+  }
+
+  :global(.ws-hover-details .ws-hover-note.ws-hover-tone--neutral) {
+    color: var(--text-secondary);
+  }
+
   /* Width-aware hiding: shed least-critical chrome first as the
    * rail narrows. Push state outranks diff stats because branch
    * hygiene matters more for "should I open this workspace?" than
-   * line counts. */
+   * line counts. A row with pull request status icons sheds its line
+   * counts sooner, since the icons need the room and the hover card
+   * always carries the counts. */
   @container workspace-rail (max-width: 260px) {
     .workspace-diff-stats {
+      display: none;
+    }
+  }
+
+  @container workspace-rail (max-width: 380px) {
+    .pull-status ~ .workspace-diff-stats {
+      display: none;
+    }
+  }
+
+  /* Narrower rails keep the states that block a merge: the comment count
+   * goes first, then the passed and skipped check counts of a pull request
+   * that also has failed or running checks. */
+  @container workspace-rail (max-width: 300px) {
+    .pull-status :global(.comment-indicator) {
+      display: none;
+    }
+  }
+
+  @container workspace-rail (max-width: 260px) {
+    .pull-status :global(.ci:has(.tok-red, .tok-amber) :is(.tok-green, .tok-muted)) {
       display: none;
     }
   }

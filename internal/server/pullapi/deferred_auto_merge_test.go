@@ -182,7 +182,7 @@ func (f *autoMergeFixture) workerQueued(t *testing.T) bool {
 	t.Helper()
 	repo, err := f.database.GetRepoByID(t.Context(), f.repoID)
 	require.NoError(t, err)
-	return f.srv.handler.isDeferredMergePending(*repo, 7)
+	return f.srv.handler.DeferredMergeInFlight(*repo, 7)
 }
 
 func (f *autoMergeFixture) keptCleanups(t *testing.T) []db.ObservedMergeWorkspaceCleanup {

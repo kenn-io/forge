@@ -279,7 +279,7 @@ func TestHubEnrichesWorkspaceByStableProviderIdentity(t *testing.T) {
 		}},
 	}
 
-	enriched, err := EnrichProviderState(t.Context(), database, aggregate)
+	enriched, err := EnrichProviderState(t.Context(), database, aggregate, nil)
 	require.NoError(err)
 	require.Len(enriched.Workspaces, 3)
 	require.NotNil(enriched.Workspaces[0].MRTitle)
@@ -322,7 +322,7 @@ func TestHubEnrichesAdHocWorkspaceFromAssociatedPull(t *testing.T) {
 		}},
 	}
 
-	enriched, err := EnrichProviderState(t.Context(), database, aggregate)
+	enriched, err := EnrichProviderState(t.Context(), database, aggregate, nil)
 	require.NoError(err)
 	require.Len(enriched.Workspaces, 1)
 	require.NotNil(enriched.Workspaces[0].MRState)
@@ -330,6 +330,165 @@ func TestHubEnrichesAdHocWorkspaceFromAssociatedPull(t *testing.T) {
 	require.NotNil(enriched.Workspaces[0].MRTitle)
 	assert.Equal("Add search", *enriched.Workspaces[0].MRTitle)
 	assert.Equal(new("dev"), enriched.Workspaces[0].ItemAuthor)
+}
+
+func TestHubEnrichesWorkspaceMergeStatus(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	repository := RepositoryIdentity{
+		Provider: "gitlab", PlatformHost: "gitlab.example", Key: platform.RepositoryIDKey(77),
+		Owner: "acme", Name: "widget",
+	}
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
+		Platform: repository.Provider, PlatformHost: repository.PlatformHost,
+		Key: repository.Key, Owner: repository.Owner, Name: repository.Name,
+	})
+	require.NoError(err)
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	for number, mergeable := range map[int]string{11: "DIRTY", 12: "clean"} {
+		_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(number), Number: number, Title: "Change",
+			State: db.MergeRequestStateOpen, HeadBranch: "change", BaseBranch: "main",
+			MergeableState: mergeable, CommentCount: number - 11,
+			CIChecksJSON: `[{"name":"unit","status":"completed","conclusion":"SUCCESS"}]`,
+			CreatedAt:    now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
+	var asked []int
+	inFlight := func(repo db.Repo, number int) bool {
+		assert.Equal(repoID, repo.ID)
+		asked = append(asked, number)
+		return number == 12
+	}
+
+	enriched, err := EnrichProviderState(t.Context(), database, NeutralSnapshot{
+		Workspaces: []RawWorkspace{
+			{ID: "ws-conflict", Repository: repository, ItemType: "pull_request", ItemNumber: 11},
+			{ID: "ws-waiting", Repository: repository, ItemType: "pull_request", ItemNumber: 12},
+		},
+	}, inFlight)
+	require.NoError(err)
+
+	projected := buildWorkspaceSummaries(enriched.Workspaces, nil, "")
+	require.Len(projected, 2)
+	assert.Equal([]int{11, 12}, asked)
+	assert.Equal(new("dirty"), projected[0].MRMergeableState)
+	assert.Equal(new(false), projected[0].MRDeferredMergePending)
+	assert.Equal(new(false), projected[0].MRMergeQueued)
+	assert.Nil(projected[0].MRCommentCount, "a pull request without comments carries no count")
+	assert.Equal(new("clean"), projected[1].MRMergeableState)
+	assert.Equal(new(true), projected[1].MRDeferredMergePending, "the deferred merge worker holds this pull request")
+	assert.Equal(new(1), projected[1].MRCommentCount)
+	assert.Equal(
+		[]CheckDetail{{Name: "unit", Status: "completed", Conclusion: "success"}},
+		projected[1].MRChecks,
+	)
+}
+
+func TestHubEnrichesIssueAndTaskWorkspacesWithLinkedPullStatus(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	repository := RepositoryIdentity{
+		Provider: "gitlab", PlatformHost: "gitlab.example", Key: platform.RepositoryIDKey(78),
+		Owner: "acme", Name: "widget",
+	}
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
+		Platform: repository.Provider, PlatformHost: repository.PlatformHost,
+		Key: repository.Key, Owner: repository.Owner, Name: repository.Name,
+	})
+	require.NoError(err)
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	_, err = database.UpsertIssue(t.Context(), &db.Issue{
+		RepoID: repoID, PlatformID: 5, Number: 5, Title: "Parser drops dates", Author: "bob",
+		State: "open", CreatedAt: now, UpdatedAt: now,
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 21, Number: 21, Title: "Fix date parsing", Author: "dev",
+		State: db.MergeRequestStateOpen, HeadBranch: "fix", BaseBranch: "main",
+		ReviewDecision: "CHANGES_REQUESTED", CIStatus: "failure", Additions: 9, AdditionsKnown: true,
+		CIChecksJSON: `[{"name":"lint","status":"completed","conclusion":"failure"}]`,
+		CreatedAt:    now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+
+	enriched, err := EnrichProviderState(t.Context(), database, NeutralSnapshot{
+		Workspaces: []RawWorkspace{
+			{ID: "ws-issue", Repository: repository, ItemType: "issue", ItemNumber: 5, AssociatedPRNumber: new(21)},
+			{ID: "ws-task", Repository: repository, ItemType: "kata_task", AssociatedPRNumber: new(21)},
+			{ID: "ws-issue-only", Repository: repository, ItemType: "issue", ItemNumber: 5},
+		},
+	}, nil)
+	require.NoError(err)
+
+	projected := buildWorkspaceSummaries(enriched.Workspaces, nil, "")
+	require.Len(projected, 3)
+	failing := []CheckDetail{{Name: "lint", Status: "completed", Conclusion: "failure"}}
+	issue, task, issueOnly := projected[0], projected[1], projected[2]
+	assert.Equal(new("Parser drops dates"), issue.MRTitle, "the issue keeps its own title")
+	assert.Equal(new("bob"), issue.ItemAuthor, "the issue keeps its own author")
+	assert.Equal(new("open"), issue.MRState)
+	assert.Nil(issue.MRIsDraft, "draft and line counts describe a pull request item only")
+	assert.Nil(issue.MRAdditions)
+	assert.Equal(new("changes_requested"), issue.MRReviewDecision)
+	assert.Equal(failing, issue.MRChecks)
+	assert.Equal(new(false), issue.MRMergeQueued)
+	assert.Nil(task.MRTitle, "a Kata task takes no title from its pull request")
+	assert.Nil(task.ItemAuthor)
+	assert.Equal(new("changes_requested"), task.MRReviewDecision)
+	assert.Equal(failing, task.MRChecks)
+	assert.Nil(issueOnly.MRReviewDecision, "an issue without a pull request has no pull request status")
+	assert.Nil(issueOnly.MRChecks)
+	assert.Nil(issueOnly.MRMergeQueued)
+}
+
+func TestHubEnrichmentReportsStackConflictOnWorkspacesAbove(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	repository := RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(79),
+		Owner: "acme", Name: "widget",
+	}
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
+		Platform: repository.Provider, PlatformHost: repository.PlatformHost,
+		Key: repository.Key, Owner: repository.Owner, Name: repository.Name,
+	})
+	require.NoError(err)
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	pullIDs := make(map[int]int64)
+	for number, mergeable := range map[int]string{31: "dirty", 32: "clean", 33: "clean"} {
+		pullIDs[number], err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(number), Number: number, Title: "Change",
+			State: db.MergeRequestStateOpen, HeadBranch: "change", BaseBranch: "main",
+			MergeableState: mergeable, CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
+	stackID, err := database.UpsertStack(t.Context(), repoID, 31, "stack", false)
+	require.NoError(err)
+	require.NoError(database.ReplaceStackMembers(t.Context(), stackID, []db.StackMember{
+		{StackID: stackID, MergeRequestID: pullIDs[31], Position: 1},
+		{StackID: stackID, MergeRequestID: pullIDs[32], Position: 2},
+	}))
+
+	enriched, err := EnrichProviderState(t.Context(), database, NeutralSnapshot{
+		Workspaces: []RawWorkspace{
+			{ID: "ws-above", Repository: repository, ItemType: "pull_request", ItemNumber: 32},
+			{ID: "ws-above-issue", Repository: repository, ItemType: "kata_task", AssociatedPRNumber: new(32)},
+			{ID: "ws-unstacked", Repository: repository, ItemType: "pull_request", ItemNumber: 33},
+		},
+	}, nil)
+	require.NoError(err)
+
+	projected := buildWorkspaceSummaries(enriched.Workspaces, nil, "")
+	require.Len(projected, 3)
+	assert.Equal(new("dirty"), projected[0].MRMergeableState, "a conflict below blocks the pull request above it")
+	assert.Equal(new("dirty"), projected[1].MRMergeableState, "every workspace on the blocked pull request reports it")
+	assert.Equal(new("clean"), projected[2].MRMergeableState)
 }
 
 func TestHubEnrichmentReportsHubRepositoryPrivacy(t *testing.T) {
@@ -363,7 +522,7 @@ func TestHubEnrichmentReportsHubRepositoryPrivacy(t *testing.T) {
 			{HostKey: "spoke-a", ID: "stale", Repository: private, ItemType: "pull_request", RepoPrivate: new(false)},
 			{HostKey: "spoke-a", ID: "unreported", Repository: unreported, ItemType: "pull_request", RepoPrivate: new(true)},
 		},
-	})
+	}, nil)
 	require.NoError(err)
 
 	require.Len(enriched.Workspaces, 3)

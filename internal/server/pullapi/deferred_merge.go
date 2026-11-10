@@ -199,7 +199,7 @@ func (s *Handler) enqueueDeferredMerge(
 	// A worker already waiting keeps the merge; the admission below rejects
 	// the duplicate without asking the provider.
 	var autoMerge *providerAutoMerge
-	if !s.isDeferredMergePending(repo.Repo, number) {
+	if !s.DeferredMergeInFlight(repo.Repo, number) {
 		autoMerge, err = s.readProviderAutoMerge(ctx, repo.Repo, number)
 		if err != nil {
 			return deferMergePRBody{}, err
@@ -1364,7 +1364,10 @@ func (s *Handler) markDeferredMergeInFlight(
 	return handle, true
 }
 
-func (s *Handler) isDeferredMergePending(repo db.Repo, number int) bool {
+// DeferredMergeInFlight reports whether this daemon's worker is holding a
+// merge of the pull request for CI. Provider auto-merge is stored on the pull
+// request instead.
+func (s *Handler) DeferredMergeInFlight(repo db.Repo, number int) bool {
 	s.deferredMergeMu.Lock()
 	defer s.deferredMergeMu.Unlock()
 	_, ok := s.deferredMergeInFlight[deferredMergeKey(repo, number)]

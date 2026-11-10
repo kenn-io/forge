@@ -695,18 +695,22 @@ type workspaceProviderStateResponse struct {
 }
 
 type workspaceProviderState struct {
-	ID                 string  `json:"id"`
-	RepoPrivate        *bool   `json:"repo_private,omitempty"`
-	ItemAuthor         *string `json:"item_author,omitempty"`
-	ItemLastActivityAt *string `json:"item_last_activity_at,omitempty"`
-	MRTitle            *string `json:"mr_title,omitempty"`
-	MRState            *string `json:"mr_state,omitempty"`
-	MRIsDraft          *bool   `json:"mr_is_draft,omitempty"`
-	MRMergeQueued      *bool   `json:"mr_merge_queued,omitempty"`
-	MRCIStatus         *string `json:"mr_ci_status,omitempty"`
-	MRReviewDecision   *string `json:"mr_review_decision,omitempty"`
-	MRAdditions        *int    `json:"mr_additions,omitempty"`
-	MRDeletions        *int    `json:"mr_deletions,omitempty"`
+	ID                     string              `json:"id"`
+	RepoPrivate            *bool               `json:"repo_private,omitempty"`
+	ItemAuthor             *string             `json:"item_author,omitempty"`
+	ItemLastActivityAt     *string             `json:"item_last_activity_at,omitempty"`
+	MRTitle                *string             `json:"mr_title,omitempty"`
+	MRState                *string             `json:"mr_state,omitempty"`
+	MRIsDraft              *bool               `json:"mr_is_draft,omitempty"`
+	MRMergeQueued          *bool               `json:"mr_merge_queued,omitempty"`
+	MRCIStatus             *string             `json:"mr_ci_status,omitempty"`
+	MRReviewDecision       *string             `json:"mr_review_decision,omitempty"`
+	MRAdditions            *int                `json:"mr_additions,omitempty"`
+	MRDeletions            *int                `json:"mr_deletions,omitempty"`
+	MRDeferredMergePending *bool               `json:"mr_deferred_merge_pending,omitempty"`
+	MRMergeableState       *string             `json:"mr_mergeable_state,omitempty"`
+	MRCommentCount         *int                `json:"mr_comment_count,omitempty"`
+	MRChecks               []fleet.CheckDetail `json:"mr_checks,omitempty"`
 }
 
 // WorkspaceProviderState returns a copy of workspaces with the hub's provider
@@ -768,6 +772,10 @@ func (s *HubProviderSource) WorkspaceProviderState(
 		workspace.MRMergeQueued = state.MRMergeQueued
 		workspace.MRReviewDecision = state.MRReviewDecision
 		workspace.MRAdditions, workspace.MRDeletions = state.MRAdditions, state.MRDeletions
+		workspace.MRDeferredMergePending = state.MRDeferredMergePending
+		workspace.MRMergeableState = state.MRMergeableState
+		workspace.MRCommentCount = state.MRCommentCount
+		workspace.MRChecks = state.MRChecks
 	}
 	return out, nil
 }

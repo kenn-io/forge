@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { Issue } from "../../api/types.js";
@@ -110,15 +111,19 @@ describe("IssueItem", () => {
     const row = screen.getByRole("button", { name: /An issue title too long for the sidebar/i });
     setElementWidths(row.querySelector(".title-text")!, { scrollWidth: 320, clientWidth: 160 });
 
-    await fireEvent.focusIn(row);
+    await fireEvent.keyDown(document.body, { key: "Tab" });
+    row.focus();
+    await tick();
     const tooltip = screen.getByRole("tooltip");
     expect(Array.from(tooltip.children, (line) => line.textContent)).toEqual([
       "An issue title too long for the sidebar",
       "acme/widgets",
     ]);
     expect(row.getAttribute("aria-describedby")).toBe(tooltip.id);
+    expect(tooltip.dataset.side).toBe("right");
 
-    await fireEvent.focusOut(row);
+    row.blur();
+    await tick();
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
@@ -127,7 +132,9 @@ describe("IssueItem", () => {
     const row = screen.getByRole("button", { name: /Short issue/i });
     setElementWidths(row.querySelector(".title-text")!, { scrollWidth: 160, clientWidth: 160 });
 
-    await fireEvent.focusIn(row);
+    await fireEvent.keyDown(document.body, { key: "Tab" });
+    row.focus();
+    await tick();
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 });

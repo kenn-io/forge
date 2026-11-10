@@ -217,6 +217,14 @@ function sortFixtures() {
   ];
 }
 
+// Focuses a row the way the Tab key does. jsdom tracks whether the last input
+// was a key or a pointer, and the hover card opens only for keyboard focus.
+async function keyboardFocus(row: HTMLElement): Promise<void> {
+  await fireEvent.keyDown(document.body, { key: "Tab" });
+  row.focus();
+  await tick();
+}
+
 function rowTitles(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll(".ws-name")).map((el) => el.textContent?.trim() ?? "");
 }
@@ -1435,7 +1443,7 @@ describe("WorkspaceListSidebar", () => {
     expect(container.querySelectorAll(".ws-row")).toHaveLength(0);
   });
 
-  it("shows a full-detail popover on row focus only while the name is truncated", async () => {
+  it("opens the detail card beside the row on keyboard focus and closes it on a press", async () => {
     mockGet.mockResolvedValue({
       data: {
         workspaces: [
@@ -1458,27 +1466,35 @@ describe("WorkspaceListSidebar", () => {
     });
     await waitFor(() => expect(container.querySelectorAll(".ws-row")).toHaveLength(1));
     const row = container.querySelector<HTMLElement>(".ws-row")!;
-    const name = row.querySelector(".ws-name")!;
 
-    // jsdom reports zero layout widths, so the test chooses whether the name
-    // is ellipsis-truncated by stubbing the measurements the popover reads.
-    Object.defineProperty(name, "scrollWidth", { configurable: true, value: 180 });
-    Object.defineProperty(name, "clientWidth", { configurable: true, value: 180 });
-    await fireEvent.focusIn(row);
-    expect(screen.queryByRole("tooltip")).toBeNull();
-    await fireEvent.focusOut(row);
-
-    Object.defineProperty(name, "scrollWidth", { configurable: true, value: 360 });
-    await fireEvent.focusIn(row);
+    // jsdom reports zero layout widths, so the name is not truncated; the
+    // card opens for its details alone.
+    await keyboardFocus(row);
     const tooltip = screen.getByRole("tooltip");
-    expect(Array.from(tooltip.children, (line) => line.textContent)).toEqual([
+    expect(Array.from(tooltip.children, (line) => line.textContent).slice(0, 3)).toEqual([
       "A workspace title too long for the sidebar rail",
       "kenn-io/kenn-forge",
       "feature/full-sidebar-popover-details",
     ]);
+    expect(Array.from(tooltip.querySelectorAll("dt"), (term) => term.textContent)).toEqual(["Pull request", "Created"]);
+    expect(tooltip.querySelector("dd")?.textContent?.trim()).toBe("#41 Open");
+    expect(tooltip.dataset.side).toBe("right");
     expect(row.contains(tooltip)).toBe(false);
 
-    await fireEvent.focusOut(row);
+    await fireEvent.mouseDown(row);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+
+    // Focus that follows a press is the click's own, so the card stays closed.
+    row.blur();
+    row.focus();
+    await tick();
+    expect(screen.queryByRole("tooltip")).toBeNull();
+
+    row.blur();
+    await keyboardFocus(row);
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+    row.blur();
+    await tick();
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
@@ -2287,6 +2303,78 @@ describe("WorkspaceListSidebar", () => {
     expect(
       Array.from(container.querySelectorAll(".sidebar-group-header__count")).map((el) => el.textContent?.trim()),
     ).toEqual(["1", "1"]);
+  });
+
+  it("shows the linked pull request's status on the row and names it on hover", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          {
+            ...workspaceFixture({
+              id: "ws-status",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "kenn-io",
+              name: "kenn-forge",
+              number: 61,
+              title: "Waiting on CI",
+              additions: 42,
+              deletions: 7,
+              commitsAhead: 2,
+            }),
+            mr_review_decision: "approved",
+            mr_deferred_merge_pending: true,
+            mr_merge_queued: true,
+            mr_mergeable_state: "dirty",
+            mr_comment_count: 3,
+            mr_checks: [
+              { name: "lint", status: "completed", conclusion: "failure" },
+              { name: "build", status: "in_progress" },
+              { name: "unit", status: "completed", conclusion: "success" },
+            ],
+          },
+          workspaceFixture({
+            id: "ws-plain",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 62,
+            title: "Nothing to report",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    await waitFor(() => expect(container.querySelectorAll(".ws-row")).toHaveLength(2));
+    const [row, plain] = Array.from(container.querySelectorAll<HTMLElement>(".ws-row"));
+    const meta = within(row!.querySelector<HTMLElement>(".ws-row-meta")!);
+
+    expect(meta.getByLabelText("PR approved")).toBeTruthy();
+    expect(meta.getByLabelText("Merges after CI")).toBeTruthy();
+    expect(meta.getByLabelText("In merge queue")).toBeTruthy();
+    expect(meta.getByTitle("Has merge conflicts")).toBeTruthy();
+    expect(meta.getByLabelText("3 comments")).toBeTruthy();
+    expect(meta.getByText("CI: 1 failed check, 1 pending check, 1 passed check")).toBeTruthy();
+    expect(plain!.querySelector(".ws-row-meta [aria-label], .ws-row-meta .ci")).toBeNull();
+
+    await keyboardFocus(row!);
+    const tooltip = screen.getByRole("tooltip");
+    const terms = Array.from(tooltip.querySelectorAll("dt"), (term) => term.textContent);
+    const values = Array.from(tooltip.querySelectorAll("dd"), (value) =>
+      Array.from(value.children, (part) => part.textContent?.replace(/\s+/g, " ").trim()).join(" | "),
+    );
+    expect(terms).toEqual(["Pull request", "Review", "CI", "Merge", "Changes", "Comments", "Worktree", "Created"]);
+    expect(values.slice(0, 7)).toEqual([
+      "#61 Open",
+      "Approved",
+      "1 failed, 1 running, 1 passed | lint",
+      "Conflicts, In merge queue, After CI",
+      "+42 −7",
+      "3",
+      "2 ahead, 0 behind upstream",
+    ]);
   });
 
   it("can hide PR diff stats while keeping branch metadata visible", async () => {

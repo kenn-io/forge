@@ -3,6 +3,8 @@ package fleet
 import (
 	"context"
 	"encoding/json/v2"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -13,10 +15,14 @@ import (
 // observer-neutral aggregate. Repository lookup crosses the federation
 // boundary only through provider identity; daemon-local numeric repository IDs
 // are used only inside this function and never copied into the result.
+//
+// deferredMergeInFlight reports a pull request this daemon's deferred merge
+// worker is holding for CI; nil means no worker runs here.
 func EnrichProviderState(
 	ctx context.Context,
 	database *db.DB,
 	aggregate NeutralSnapshot,
+	deferredMergeInFlight func(repo db.Repo, number int) bool,
 ) (NeutralSnapshot, error) {
 	out := aggregate
 	out.Worktrees = append([]RawWorktree(nil), aggregate.Worktrees...)
@@ -53,6 +59,8 @@ func EnrichProviderState(
 		}
 	}
 
+	// openPulls maps each open pull request to the workspaces that show its status.
+	openPulls := make(map[int64][]int)
 	for index := range out.Workspaces {
 		workspace := &out.Workspaces[index]
 		clearWorkspaceProviderState(workspace)
@@ -76,12 +84,13 @@ func EnrichProviderState(
 			// An ad-hoc workspace's linked PR is its item for display.
 			itemType, itemNumber = db.WorkspaceItemTypePullRequest, *workspace.AssociatedPRNumber
 		}
-		if itemNumber <= 0 {
-			continue
-		}
+		var pull *db.MergeRequest
 		switch itemType {
 		case "pr", "pull_request", "merge_request":
-			pull, err := database.GetVisibleMergeRequestByRepoIDAndNumber(
+			if itemNumber <= 0 {
+				continue
+			}
+			pull, err = database.GetVisibleMergeRequestByRepoIDAndNumber(
 				ctx, repository.Repository.ID, itemNumber,
 			)
 			if err != nil {
@@ -89,22 +98,57 @@ func EnrichProviderState(
 			}
 			if pull != nil {
 				enrichWorkspaceFromPull(workspace, pull)
-				queue, err := database.GetMergeQueueState(ctx, repository.Repository.ID, itemNumber)
+			}
+		default:
+			if itemType == "issue" && itemNumber > 0 {
+				issue, err := database.GetVisibleIssueByRepoIDAndNumber(
+					ctx, repository.Repository.ID, itemNumber,
+				)
 				if err != nil {
 					return NeutralSnapshot{}, err
 				}
-				workspace.MRMergeQueued = new(queue != nil && queue.Queued)
+				if issue != nil {
+					enrichWorkspaceFromIssue(workspace, issue)
+				}
 			}
-		case "issue":
-			issue, err := database.GetVisibleIssueByRepoIDAndNumber(
-				ctx, repository.Repository.ID, itemNumber,
-			)
-			if err != nil {
-				return NeutralSnapshot{}, err
+			// An issue or Kata task workspace keeps its own item's title,
+			// state, and author. The pull request pushed from it supplies
+			// only the status below.
+			if workspace.AssociatedPRNumber != nil && *workspace.AssociatedPRNumber > 0 {
+				pull, err = database.GetVisibleMergeRequestByRepoIDAndNumber(
+					ctx, repository.Repository.ID, *workspace.AssociatedPRNumber,
+				)
+				if err != nil {
+					return NeutralSnapshot{}, err
+				}
 			}
-			if issue != nil {
-				enrichWorkspaceFromIssue(workspace, issue)
-			}
+		}
+		if pull == nil {
+			continue
+		}
+		enrichWorkspacePullStatus(workspace, pull)
+		queue, err := database.GetMergeQueueState(ctx, repository.Repository.ID, pull.Number)
+		if err != nil {
+			return NeutralSnapshot{}, err
+		}
+		workspace.MRMergeQueued = new(queue != nil && queue.Queued)
+		workspace.MRDeferredMergePending = new(pull.State == db.MergeRequestStateOpen &&
+			(pull.AutoMergeEnabled || deferredMergeInFlight != nil &&
+				deferredMergeInFlight(repository.Repository, pull.Number)))
+		if pull.State == db.MergeRequestStateOpen {
+			openPulls[pull.ID] = append(openPulls[pull.ID], index)
+		}
+	}
+
+	// A conflict in an earlier unmerged pull request of the same stack blocks
+	// the ones above it, as the pull request list and detail report.
+	blocked, err := database.ListMRsBlockedByStackConflicts(ctx, slices.Collect(maps.Keys(openPulls)))
+	if err != nil {
+		return NeutralSnapshot{}, err
+	}
+	for pullID := range blocked {
+		for _, index := range openPulls[pullID] {
+			out.Workspaces[index].MRMergeableState = new("dirty")
 		}
 	}
 	return out, nil
@@ -185,6 +229,10 @@ func clearWorkspaceProviderState(workspace *RawWorkspace) {
 	workspace.MRReviewDecision = nil
 	workspace.MRAdditions = nil
 	workspace.MRDeletions = nil
+	workspace.MRDeferredMergePending = nil
+	workspace.MRMergeableState = nil
+	workspace.MRCommentCount = nil
+	workspace.MRChecks = nil
 }
 
 func enrichWorkspaceFromPull(workspace *RawWorkspace, pull *db.MergeRequest) {
@@ -193,10 +241,18 @@ func enrichWorkspaceFromPull(workspace *RawWorkspace, pull *db.MergeRequest) {
 	workspace.MRTitle = pointerIfNotEmpty(pull.Title)
 	workspace.MRState = pointerIfNotEmpty(string(pull.State))
 	workspace.MRIsDraft = &pull.IsDraft
-	workspace.MRCIStatus = pointerIfNotEmpty(pull.CIStatus)
-	workspace.MRReviewDecision = pointerIfNotEmpty(pull.ReviewDecision)
 	workspace.MRAdditions = pointerIfKnown(pull.Additions, pull.AdditionsKnown)
 	workspace.MRDeletions = pointerIfKnown(pull.Deletions, pull.DeletionsKnown)
+}
+
+// enrichWorkspacePullStatus sets the status of the pull request a workspace
+// shows status icons for: its own item, or the one pushed from it.
+func enrichWorkspacePullStatus(workspace *RawWorkspace, pull *db.MergeRequest) {
+	workspace.MRCIStatus = pointerIfNotEmpty(pull.CIStatus)
+	workspace.MRReviewDecision = pointerIfNotEmpty(pull.ReviewDecision)
+	workspace.MRMergeableState = pointerIfNotEmpty(pull.MergeableState)
+	workspace.MRCommentCount = pointerIfNonzero(pull.CommentCount)
+	workspace.MRChecks = decodeCheckDetails(pull.CIChecksJSON)
 }
 
 func enrichWorkspaceFromIssue(workspace *RawWorkspace, issue *db.Issue) {

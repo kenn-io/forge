@@ -758,6 +758,7 @@ func newServer(
 	}
 	s.fleetAPI = fleetapi.New(fleetapi.Deps{
 		WorkspaceProviderState: workspaceProviderState,
+		DeferredMergeInFlight:  s.deferredMergeInFlight,
 		DB:                     database,
 		Syncer:                 syncer,
 		Config:                 streamapi.FleetConfigSnapshot(cfg, tmuxCmd),

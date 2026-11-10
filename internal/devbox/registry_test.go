@@ -64,6 +64,7 @@ func TestRegistryConnectSharedAndPersonalWorkers(t *testing.T) {
 			require.NoError(err)
 			cfg := RegistryConfig{Socket: "/run/example/registry.sock", RegistryID: "example-registry", Revision: "1", Developers: []Developer{{GitHubUserID: 42, TailscaleUserID: 11, Enabled: true}, {GitHubUserID: 43, TailscaleUserID: 12, Enabled: true}}, Assignments: []Assignment{assignment}}
 			if workerID == 777 {
+				cfg.Developers = append(cfg.Developers, Developer{GitHubUserID: 44, TailscaleUserID: 13, Enabled: true})
 				second := assignment
 				second.GitHubUserID = 43
 				second.Name = "Shared compute"
@@ -128,6 +129,18 @@ func TestRegistryConnectSharedAndPersonalWorkers(t *testing.T) {
 				assert.Equal(workerID, discovery.Devboxes[0].WorkerGitHubUserID)
 				_, err = secondStore.Connect(t.Context(), registry.URL, "compute-a")
 				require.NoError(err)
+				thirdStore, err := OpenConnections(t.TempDir())
+				require.NoError(err)
+				t.Cleanup(thirdStore.Close)
+				thirdStore.client.Transport = transport.Clone()
+				peerID = 13
+				discovery, err = thirdStore.Discover(t.Context(), registry.URL)
+				require.NoError(err)
+				assert.Equal(int64(44), discovery.GitHubUserID)
+				assert.Empty(discovery.Devboxes)
+				_, err = thirdStore.Connect(t.Context(), registry.URL, "compute-a")
+				require.ErrorContains(err, "not assigned")
+				peerID = 12
 				cfg.Assignments[1].Enabled = false
 				discovery, err = secondStore.Discover(t.Context(), registry.URL)
 				require.NoError(err)

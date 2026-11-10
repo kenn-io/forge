@@ -16,24 +16,15 @@ type SettingsResponse = GeneratedSettingsResponse;
 
 export function mockLaunchTargets(claudeAvailable: boolean) {
   return [
-    ...(
-      [
-        ["codex", "Codex"],
-        ["claude", "Claude"],
-        ["pi", "Pi"],
-        ["gemini", "Gemini"],
-        ["opencode", "opencode"],
-        ["aider", "aider"],
-      ] as const
-    ).map(([key, label]) => ({
-      key,
-      label,
+    {
+      key: "claude",
+      label: "Claude",
       kind: "agent",
       source: "builtin",
-      command: [key],
-      available: key === "claude" && claudeAvailable,
-      ...(key === "claude" && claudeAvailable ? {} : { disabled_reason: `${key} not found on PATH` }),
-    })),
+      command: ["claude"],
+      available: claudeAvailable,
+      ...(claudeAvailable ? {} : { disabled_reason: "claude not found on PATH" }),
+    },
     { key: "plain_shell", label: "Shell", kind: "plain_shell", source: "system", available: true },
   ];
 }

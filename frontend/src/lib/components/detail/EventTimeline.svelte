@@ -48,6 +48,7 @@
   } from "../../utils/markdown-suggestions.js";
   import { getStores } from "../../context.js";
   import { addToChat, hasChatComposer } from "../../stores/chat-composer.svelte.js";
+  import { untrustedSourceText } from "../../utils/ci-fix-prompt.js";
   import { createProgressiveMountController } from "../../utils/progressive-mount.js";
   import {
     buildItemReferenceLink,
@@ -1414,12 +1415,12 @@
     });
   }
 
-  // Names who wrote the comment and where, so the agent can tell it apart
-  // from the user's own words.
+  // Names who wrote the comment and where, and fences its text as untrusted
+  // data: anyone who can comment wrote it, and the agent may act on it.
   function chatQuote(event: PREvent | IssueEvent): string {
     const author = event.Author ? ` from @${event.Author}` : "";
     const where = event.DirectURL ? ` (${event.DirectURL})` : "";
-    return `Comment${author}${where}:\n\n${event.Body}`;
+    return `Comment${author}${where}:\n\n${untrustedSourceText(event.Body)}`;
   }
 
   function copyText(id: string, text: string): void {

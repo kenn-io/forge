@@ -2856,7 +2856,15 @@ func (s *Handler) launchWorkspaceRuntimeService(
 	if targetKey == "" {
 		return localruntime.SessionInfo{}, httpapi.Validation("body.target_key", "target_key is required")
 	}
-	if workspaceRuntimeTargetIsAgent(s.runtime, targetKey) {
+	target, found := workspaceRuntimeTarget(s.runtime, targetKey)
+	if found && !target.Available {
+		reason := target.DisabledReason
+		if reason == "" {
+			reason = "target not available"
+		}
+		return localruntime.SessionInfo{}, httpapi.BadRequest(httpapi.CodeBadRequest, fmt.Sprintf("target %q not available: %s", targetKey, reason), nil)
+	}
+	if found && target.Kind.IsAgent() {
 		if err := s.workspaces.ValidateExecutionIdentity(ctx, summary.WorktreePath); err != nil {
 			return localruntime.SessionInfo{}, httpapi.Validation("identity", err.Error())
 		}
@@ -2908,30 +2916,25 @@ func (s *Handler) LaunchWorkspaceRuntimeSession(
 	return s.launchWorkspaceRuntimeSession(ctx, input)
 }
 
-// workspaceRuntimeTargetKind is the kind of a configured launch target, or
-// empty when there is none.
-func workspaceRuntimeTargetKind(runtime *localruntime.Manager, targetKey string) localruntime.LaunchTargetKind {
-	if runtime == nil {
-		return ""
-	}
-	for _, target := range runtime.LaunchTargets() {
-		if target.Key == targetKey {
-			return target.Kind
+func workspaceRuntimeTarget(runtime *localruntime.Manager, targetKey string) (localruntime.LaunchTarget, bool) {
+	if runtime != nil {
+		for _, target := range runtime.LaunchTargets() {
+			if target.Key == targetKey {
+				return target, true
+			}
 		}
 	}
-	return ""
+	return localruntime.LaunchTarget{}, false
+}
+
+func workspaceRuntimeTargetKind(runtime *localruntime.Manager, targetKey string) localruntime.LaunchTargetKind {
+	target, _ := workspaceRuntimeTarget(runtime, targetKey)
+	return target.Kind
 }
 
 func workspaceRuntimeTargetIsAgent(runtime *localruntime.Manager, targetKey string) bool {
-	if runtime == nil {
-		return false
-	}
-	for _, target := range runtime.LaunchTargets() {
-		if target.Key == targetKey {
-			return target.Kind.IsAgent() && target.Available
-		}
-	}
-	return false
+	target, found := workspaceRuntimeTarget(runtime, targetKey)
+	return found && target.Kind.IsAgent() && target.Available
 }
 
 func (s *Handler) forgetRecordedRuntimeSessionIfExited(

@@ -264,6 +264,8 @@ func TestManagerLaunchTargetsRefreshBuiltinAvailability(t *testing.T) {
 	}}, nil, nil)
 	manager := NewManager(Options{Targets: targets, PtyOwnerRuntime: owner})
 	t.Cleanup(manager.Shutdown)
+	assert.False(findTarget(t, manager.LaunchTargets(), "claude").Available)
+	assert.Equal("claude not found on PATH", findTarget(t, manager.LaunchTargets(), "claude").DisabledReason)
 	_, binary := writeFakeRuntimeTool(t, path, "claude")
 	_, err := manager.Launch(t.Context(), "ws-1", t.TempDir(), "claude")
 	require.NoError(t, err)

@@ -9,7 +9,16 @@
 // coverage (00-workspace-sidebar.spec.ts) only asserts that the empty-state
 // example's buttons are disabled, which proves nothing about launching.
 
-import { existsSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -107,14 +116,28 @@ test.describe("embedded workspace launcher", () => {
 
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
-    const binDir = mkdtempSync(path.join(os.tmpdir(), "forge-launcher-bin-"));
+    const root = mkdtempSync(path.join(os.tmpdir(), "forge-launcher-bin-"));
+    const binDir = path.join(root, "bin");
+    mkdirSync(binDir);
+    const source = path.join(root, "source");
+    mkdirSync(source);
+    writeFileSync(path.join(source, "claude"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    writeFileSync(path.join(source, "fixture-tool"), "#!/bin/sh\nprintf preserved\n", { mode: 0o755 });
     const claudePath = path.join(binDir, "claude");
     const originalPath = process.env.PATH;
     try {
-      process.env.PATH = [
-        binDir,
-        ...(originalPath ?? "").split(path.delimiter).filter((dir) => dir && !existsSync(path.join(dir, "claude"))),
-      ].join(path.delimiter);
+      const searchPath = [source, ...(originalPath ?? "").split(path.delimiter)];
+      const shadows = searchPath.map((dir, index) => {
+        if (!dir || !existsSync(path.join(dir, "claude"))) return dir;
+        const shadow = path.join(root, `shadow-${index}`);
+        mkdirSync(shadow);
+        for (const entry of readdirSync(dir)) {
+          if (entry !== "claude") symlinkSync(path.resolve(dir, entry), path.join(shadow, entry));
+        }
+        return shadow;
+      });
+      process.env.PATH = [binDir, ...shadows].join(path.delimiter);
+      expect(execFileSync("fixture-tool", { encoding: "utf8" })).toBe("preserved");
       try {
         isolatedServer = await startIsolatedWorkspaceE2EServerWithOptions({ freshProcess: true });
       } finally {
@@ -218,8 +241,7 @@ test.describe("embedded workspace launcher", () => {
       process.env.PATH = originalPath;
       await api?.dispose();
       await isolatedServer?.stop();
-      if (existsSync(claudePath)) unlinkSync(claudePath);
-      rmdirSync(binDir);
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

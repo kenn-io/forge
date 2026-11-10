@@ -3,6 +3,7 @@ package runtimetest
 import (
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -113,6 +114,49 @@ func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
 	assertServerGitIgnored(t, worktree, "AGENTS.override.md")
 	status := strings.TrimSpace(string(runServerWorkspaceTestGit(t, worktree, "status", "--porcelain")))
 	assert.Empty(status)
+}
+
+func TestLaunchWorkspaceRuntimeSessionPreparesContextForNewlyInstalledAgent(t *testing.T) {
+	binDir := t.TempDir()
+	git, err := exec.LookPath("git")
+	require.NoError(t, err)
+	require.NoError(t, os.Symlink(git, filepath.Join(binDir, "git")))
+	t.Setenv("PATH", binDir)
+	d := dbtest.Open(t)
+	worktree := initServerWorkspaceGitRepo(t)
+	repoID := seedServerWorkspaceRepo(t, d)
+	seedServerWorkspaceMR(t, d, repoID)
+	ws := &db.Workspace{
+		ID: "ws-new-agent", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypePullRequest,
+		ItemNumber: 42, GitHeadRef: "feature/widgets", WorkspaceBranch: "feature/widgets",
+		WorktreePath: worktree, TmuxSession: "kenn-forge-ws-new-agent", TerminalBackend: "tmux", Status: "ready",
+	}
+	require.NoError(t, d.InsertWorkspace(t.Context(), ws))
+	seedServerWorkspaceLaunchSpec(t, d, ws, repoID)
+	tmuxPath := writeRuntimeTmuxLifecycleRecorder(t, binDir, filepath.Join(t.TempDir(), "tmux-record"))
+	require.NoError(t, os.Symlink(tmuxPath, filepath.Join(binDir, "tmux")))
+	fixture := localruntime.NewTmuxRuntimeFixture(t, nil)
+	runtime := fixture.NewManager([]string{tmuxPath}, localruntime.Options{
+		WrapAgentSessionsInTmux: true, Targets: localruntime.ResolveLaunchTargets(nil, nil, nil),
+	})
+	handler := workspaceapi.New(workspaceapi.Deps{
+		DB: d, Workspaces: workspacetest.NewManager(t, d, t.TempDir()), Runtime: runtime,
+	})
+	input := &workspaceapi.LaunchWorkspaceRuntimeSessionInput{ID: ws.ID}
+	input.Body.TargetKey = "claude"
+	_, err = handler.LaunchWorkspaceRuntimeSession(t.Context(), input)
+	var statusErr huma.StatusError
+	require.ErrorAs(t, err, &statusErr)
+	assert.Equal(t, http.StatusBadRequest, statusErr.GetStatus())
+	contextPath := filepath.Join(worktree, "CLAUDE.local.md")
+	assert.NoFileExists(t, contextPath)
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "claude"), []byte("#!/bin/sh\nexit 0\n"), 0o755))
+	_, err = handler.LaunchWorkspaceRuntimeSession(t.Context(), input)
+	require.NoError(t, err)
+	content, err := os.ReadFile(contextPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "PR: #42")
 }
 
 func seedServerWorkspaceRepo(t *testing.T, d *db.DB) int64 {

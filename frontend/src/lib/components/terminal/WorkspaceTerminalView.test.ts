@@ -6516,13 +6516,14 @@ describe("WorkspaceTerminalView", () => {
       const strip = screen.getAllByRole("tablist", { name: "Workflow group tabs" })[0]!;
       const terminalFocus = mocks.mockTerminalInstances[0]!.focus;
       const send = async () => {
+        // Cleared first, so a focus made by the click itself stays visible.
+        terminalFocus.mockClear();
         await fireEvent.click(within(strip).getByRole("button", { name: "Quick actions" }));
         await fireEvent.click(
           within(screen.getByRole("dialog", { name: "Quick actions" })).getByRole("button", {
             name: "Send Review to Helper",
           }),
         );
-        terminalFocus.mockClear();
       };
 
       // Keys typed before the server writes the prompt would be submitted with it.

@@ -48,7 +48,15 @@ describe("workspacePullStatusLines", () => {
 
     expect(workspacePullStatusLines(status)).toEqual([
       { label: "Review", value: "Approved", tone: "success" },
-      { label: "CI", value: "5 failed, 1 running, 1 passed", tone: "danger", detail: "a, b, c, d, +1 more" },
+      {
+        label: "CI",
+        value: "5 failed, 1 running, 1 passed",
+        tone: "danger",
+        notes: [
+          { text: "a, b, c, d, +1 more", tone: "danger" },
+          { text: "build", tone: "warning" },
+        ],
+      },
       { label: "Merge", value: "After CI", tone: "waiting" },
     ]);
   });

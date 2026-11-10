@@ -119,7 +119,8 @@
   import { loadFleetSnapshot } from "../../api/fleet-snapshot.js";
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
   import { workspaceItemAccent, workspaceItemState, type WorkspaceItemState } from "./workspace-item-state.js";
-  import { workspacePullStatus, workspacePullStatusLines } from "./workspace-pull-status.js";
+  import { workspaceHoverDetails } from "./workspace-hover-details.js";
+  import { workspacePullStatus } from "./workspace-pull-status.js";
   import { isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
 
   type Workspace = WorkspaceListItem;
@@ -972,43 +973,6 @@
   function pullRequestClosed(ws: Workspace): boolean {
     const state = workspaceItemState(ws, "pr");
     return state === "merged" || state === "closed";
-  }
-
-  // What the hover card adds to the row: the pull request status in words,
-  // and the row's icon-only facts. Null when the row already says everything.
-  function workspaceHoverDetails(ws: Workspace): {
-    lines: ReturnType<typeof workspacePullStatusLines>;
-    diff: { additions: number; deletions: number } | null;
-    comments: number;
-    branch: string;
-    agent: string;
-  } | null {
-    const pullStatus = workspacePullStatus(ws);
-    const additions = ws.mr_additions ?? 0;
-    const deletions = ws.mr_deletions ?? 0;
-    const ahead = ws.commits_ahead ?? 0;
-    const behind = ws.commits_behind ?? 0;
-    const branch = [
-      ahead > 0 || behind > 0
-        ? `${ahead} ahead, ${behind} behind ${ws.commits_vs_pr_head === true ? "PR head" : "upstream"}`
-        : "",
-      ws.worktree_dirty ? "Dirty worktree" : "",
-    ].filter((part) => part !== "").join(", ");
-    const agentState = agentStatePresentation(ws);
-    const details = {
-      lines: pullStatus ? workspacePullStatusLines(pullStatus) : [],
-      diff: additions > 0 || deletions > 0 ? { additions, deletions } : null,
-      comments: pullStatus?.commentCount ?? 0,
-      branch,
-      agent: agentState
-        ? ws.agent_state_updated_at
-          ? `${agentState.label} ${formatRelativeTime(ws.agent_state_updated_at)}`
-          : agentState.label
-        : "",
-    };
-    const empty = details.lines.length === 0 && details.diff === null && details.comments === 0 &&
-      details.branch === "" && details.agent === "";
-    return empty ? null : details;
   }
 
   function shortBranch(ref: string): string {
@@ -2134,39 +2098,29 @@
             repository={repoLabel(ws)}
             branch={shortBranch(ws.git_head_ref)}
             truncationSelector=".ws-name"
-            details={workspaceHoverDetails(ws) ? hoverDetails : undefined}
+            details={hoverDetails}
           />
           {#snippet hoverDetails()}
-            {@const details = workspaceHoverDetails(ws)}
-            {#if details}
-              <dl class="ws-hover-details">
-                {#each details.lines as line (line.label)}
-                  <dt>{line.label}</dt>
-                  <dd class={`ws-hover-value ws-hover-value--${line.tone}`}>
-                    {line.value}
-                    {#if line.detail}
-                      <span class="ws-hover-detail">{line.detail}</span>
-                    {/if}
-                  </dd>
-                {/each}
-                {#if details.diff}
-                  <dt>Changes</dt>
-                  <dd><DiffStats additions={details.diff.additions} deletions={details.diff.deletions} /></dd>
-                {/if}
-                {#if details.comments > 0}
-                  <dt>Comments</dt>
-                  <dd>{details.comments}</dd>
-                {/if}
-                {#if details.branch}
-                  <dt>Branch</dt>
-                  <dd>{details.branch}</dd>
-                {/if}
-                {#if details.agent}
-                  <dt>Agent</dt>
-                  <dd>{details.agent}</dd>
-                {/if}
-              </dl>
-            {/if}
+            {@const details = workspaceHoverDetails(ws, showWorkspaceHostBadges ? workspaceHostName(ws) : undefined)}
+            {#each [details.item, details.workspace] as rows, group (group)}
+              {#if rows.length > 0}
+                <dl class="ws-hover-details">
+                  {#each rows as row (row.label)}
+                    <dt>{row.label}</dt>
+                    <dd>
+                      {#if row.diff}
+                        <DiffStats additions={row.diff.additions} deletions={row.diff.deletions} />
+                      {:else}
+                        <span class={`ws-hover-tone--${row.tone}`}>{row.value}</span>
+                      {/if}
+                      {#each row.notes ?? [] as note (note.text)}
+                        <span class={["ws-hover-note", `ws-hover-tone--${note.tone}`]}>{note.text}</span>
+                      {/each}
+                    </dd>
+                  {/each}
+                </dl>
+              {/if}
+            {/each}
           {/snippet}
     {/snippet}
     {#if workspaceListStatus === "loading" && workspaces.length === 0}
@@ -2876,15 +2830,25 @@
     min-width: 224px;
   }
 
-  /* The hover card's status lines render in the title popover, which moves to the document body. */
-  /* The icons space themselves with the meta line's gap. */
+  /* The status icons keep their width while the repo and branch shrink
+   * beside them. Whatever the shedding below still cannot fit is clipped at
+   * the text column, so no icon reaches the item column. */
   .pull-status {
-    display: contents;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
   }
 
+  .ws-row-meta:has(.pull-status) {
+    overflow: hidden;
+  }
+
+  /* The hover card's rows render in the title popover, which moves to the document body. */
   :global(.ws-hover-details) {
     display: grid;
-    grid-template-columns: max-content minmax(0, 1fr);
+    /* One label width for both groups, so their values share a column. */
+    grid-template-columns: 5.75rem minmax(0, 1fr);
     gap: var(--space-1) var(--space-5);
     margin: 0;
     padding-top: var(--space-2);
@@ -2902,24 +2866,31 @@
     color: var(--text-primary);
   }
 
-  :global(.ws-hover-details .ws-hover-value--success) {
+  :global(.ws-hover-details .ws-hover-tone--success) {
     color: var(--accent-green);
   }
 
-  :global(.ws-hover-details .ws-hover-value--warning) {
+  :global(.ws-hover-details .ws-hover-tone--warning) {
     color: var(--accent-amber);
   }
 
-  :global(.ws-hover-details .ws-hover-value--danger) {
+  :global(.ws-hover-details .ws-hover-tone--danger) {
     color: var(--accent-red);
   }
 
-  :global(.ws-hover-details .ws-hover-value--waiting) {
+  :global(.ws-hover-details .ws-hover-tone--waiting) {
     color: var(--accent-purple);
   }
 
-  :global(.ws-hover-detail) {
+  :global(.ws-hover-details .ws-hover-tone--info) {
+    color: var(--accent-blue);
+  }
+
+  :global(.ws-hover-details .ws-hover-note) {
     display: block;
+  }
+
+  :global(.ws-hover-details .ws-hover-note.ws-hover-tone--neutral) {
     color: var(--text-secondary);
   }
 
@@ -2937,6 +2908,21 @@
 
   @container workspace-rail (max-width: 380px) {
     .pull-status ~ .workspace-diff-stats {
+      display: none;
+    }
+  }
+
+  /* Narrower rails keep the states that block a merge: the comment count
+   * goes first, then the passed and skipped check counts of a pull request
+   * that also has failed or running checks. */
+  @container workspace-rail (max-width: 300px) {
+    .pull-status :global(.comment-indicator) {
+      display: none;
+    }
+  }
+
+  @container workspace-rail (max-width: 260px) {
+    .pull-status :global(.ci:has(.tok-red, .tok-amber) :is(.tok-green, .tok-muted)) {
       display: none;
     }
   }

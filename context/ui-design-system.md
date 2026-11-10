@@ -250,9 +250,11 @@ Use kit `Modal`, `ConfirmDialog`, and `DialogButton`.
 - Hosts request the floating overlay through `CollapsibleSidebar`'s `overlay` prop
   from container width; kit's `overlayOnNarrow` is viewport-based, a different signal.
 - `SidebarTitlePopover` shows the full title and repository (plus head branch for PR
-  and workspace rows) on sidebar rows, opening only while a named element is truncated.
-  A row that passes `details` opens it regardless: a workspace row's card names in words
-  the pull request status its icons show.
+  and workspace rows) beside a sidebar row, never over the list: right of the row, or left
+  when the right has no room. Its top edge lines up with the row's; without room below,
+  the bottom edges line up. It opens on hover or keyboard focus, not on focus from a click,
+  and only while a named element is truncated. A row that passes `details` opens it
+  regardless: a workspace row's card details its linked item and its worktree.
 - Workspace rows draw the linked pull request's status with `PullStatusTokens`, the icons
   `PullStatusIcons` draws for PR and worklist rows. A row with status icons drops its diff
   stats below a 380px rail so the icons fit the two-line row.

@@ -59,15 +59,28 @@ export function workspacePullStatus(workspace: PullStatusFields): WorkspacePullS
   };
 }
 
+export type WorkspaceStatusTone = "success" | "warning" | "danger" | "waiting" | "info" | "neutral";
+
+export interface WorkspaceStatusNote {
+  readonly text: string;
+  readonly tone: WorkspaceStatusTone;
+}
+
 export interface WorkspacePullStatusLine {
   readonly label: "Review" | "CI" | "Merge";
   readonly value: string;
-  readonly tone: "success" | "warning" | "danger" | "waiting" | "neutral";
-  /** Names of the failed checks, on the CI line only. */
-  readonly detail?: string;
+  readonly tone: WorkspaceStatusTone;
+  /** Names of the failed and running checks, on the CI line only. */
+  readonly notes?: readonly WorkspaceStatusNote[];
 }
 
-const maxFailedCheckNames = 4;
+const maxCheckNames = 4;
+
+function checkNames(checks: CIBucketedChecks["all"]): string {
+  const names = checks.slice(0, maxCheckNames).map((check) => check.name);
+  const more = checks.length - names.length;
+  return more > 0 ? `${names.join(", ")}, +${more} more` : names.join(", ");
+}
 
 function reviewLine(decision: string): WorkspacePullStatusLine | null {
   switch (decision) {
@@ -96,10 +109,10 @@ function ciLine(checks: CIBucketedChecks): WorkspacePullStatusLine | null {
     .map(([count, name]) => `${count} ${name}`)
     .join(", ");
   const tone = checks.failed.length > 0 ? "danger" : checks.pending.length > 0 ? "warning" : "success";
-  if (checks.failed.length === 0) return { label: "CI", value, tone };
-  const names = checks.failed.slice(0, maxFailedCheckNames).map((check) => check.name);
-  const more = checks.failed.length - names.length;
-  return { label: "CI", value, tone, detail: more > 0 ? `${names.join(", ")}, +${more} more` : names.join(", ") };
+  const notes: WorkspaceStatusNote[] = [];
+  if (checks.failed.length > 0) notes.push({ text: checkNames(checks.failed), tone: "danger" });
+  if (checks.pending.length > 0) notes.push({ text: checkNames(checks.pending), tone: "warning" });
+  return notes.length > 0 ? { label: "CI", value, tone, notes } : { label: "CI", value, tone };
 }
 
 function mergeLine(status: WorkspacePullStatus): WorkspacePullStatusLine | null {

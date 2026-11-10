@@ -7320,12 +7320,27 @@ test.describe("workspace list drag reorder", () => {
   });
 });
 
-test("workspace rows show linked pull request status without growing, and name it on hover", async ({ page }) => {
-  const wsPlain = { ...testWorkspace, id: "ws-plain", item_number: 101, mr_title: "Add auth middleware" };
+test("workspace rows show linked pull request status without growing, and detail it in a card beside the list", async ({
+  page,
+}) => {
+  const wsPlain = {
+    ...testWorkspace,
+    id: "ws-plain",
+    item_number: 101,
+    mr_title: "Add auth middleware",
+    created_at: "2026-04-12T12:00:00Z",
+  };
   const wsWaiting = {
     ...testWorkspace,
     id: "ws-waiting",
     item_number: 102,
+    created_at: "2026-04-10T12:00:00Z",
+    item_author: "alice",
+    agent_state: "done",
+    agent_state_updated_at: "2026-04-11T12:00:00Z",
+    tmux_pane_title: "agent: retry backoff",
+    commits_ahead: 2,
+    worktree_dirty: true,
     git_head_ref: "feature/retry-backoff",
     mr_title: "Add request retry backoff",
     mr_additions: 591,
@@ -7346,6 +7361,7 @@ test("workspace rows show linked pull request status without growing, and name i
     ...testWorkspace,
     id: "ws-blocked",
     item_number: 103,
+    created_at: "2026-04-11T12:00:00Z",
     git_head_ref: "fix/date-parsing",
     mr_title: "Fix date parsing",
     mr_review_decision: "changes_requested",
@@ -7357,7 +7373,16 @@ test("workspace rows show linked pull request status without growing, and name i
       { name: "unit", status: "completed", conclusion: "success" },
     ],
   };
-  const list = [wsPlain, wsWaiting, wsBlocked];
+  // Newer rows above push the two status rows down the list, so the lowest
+  // one has no room below it in a short window.
+  const wsNewer = Array.from({ length: 4 }, (_, index) => ({
+    ...testWorkspace,
+    id: `ws-newer-${index}`,
+    item_number: 201 + index,
+    mr_title: `Newer change ${index + 1}`,
+    created_at: `2026-04-${13 + index}T12:00:00Z`,
+  }));
+  const list = [...wsNewer, wsPlain, wsBlocked, wsWaiting];
 
   await mockApi(page);
   await page.addInitScript(() => {
@@ -7397,20 +7422,96 @@ test("workspace rows show linked pull request status without growing, and name i
   await expect(waitingRow.locator(".workspace-diff-stats")).toBeHidden();
   const plainHeight = (await plainRow.boundingBox())!.height;
   for (const row of [waitingRow, blockedRow]) {
-    expect((await row.boundingBox())!.height).toBe(plainHeight);
+    // Firefox reports fractional heights that differ in the fifth decimal.
+    expect((await row.boundingBox())!.height).toBeCloseTo(plainHeight, 1);
     const overflow = await row.locator(".ws-row-meta").evaluate((meta) => meta.scrollWidth - meta.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
   }
 
-  await waitingRow.hover();
+  // The card opens beside the list, top edges lined up, and covers no row.
   const card = page.getByRole("tooltip");
-  await expect(card).toContainText("Add request retry backoff");
-  await expect(card.locator("dt")).toHaveText(["Review", "CI", "Merge", "Changes", "Comments"]);
-  await expect(card.locator("dd").nth(1)).toHaveText("5 running, 29 passed");
-  await expect(card.locator("dd").nth(2)).toHaveText("After CI");
-
+  const value = (label: string) => card.locator(`dt:text-is("${label}") + dd`);
   await blockedRow.hover();
-  await expect(card.locator("dd").nth(1)).toContainText("2 failed, 1 passed");
-  await expect(card.locator("dd").nth(1)).toContainText("lint, build");
-  await expect(card.locator("dd").nth(2)).toHaveText("Conflicts, In merge queue");
+  await expect(card).toContainText("Fix date parsing");
+  await expect(value("Pull request")).toHaveText("#103 Open");
+  await expect(value("Review")).toHaveText("Changes requested");
+  await expect(value("CI").locator("> *")).toHaveText(["2 failed, 1 passed", "lint, build"]);
+  await expect(value("Merge")).toHaveText("Conflicts, In merge queue");
+  await expect(value("Path")).toHaveText("/tmp/worktrees/ws-123");
+  const blockedBox = (await blockedRow.boundingBox())!;
+  const blockedCard = (await card.boundingBox())!;
+  expect(blockedCard.x).toBeGreaterThanOrEqual(blockedBox.x + blockedBox.width);
+  expect(Math.abs(blockedCard.y - blockedBox.y)).toBeLessThanOrEqual(1);
+
+  // Without room below the row, the bottom edges line up and the card stays
+  // inside the window.
+  await page.mouse.move(900, 600);
+  await expect(card).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 560 });
+  await waitingRow.hover();
+  await expect(card).toContainText("Add request retry backoff");
+  await expect(card.locator("dt")).toHaveText([
+    "Pull request",
+    "Author",
+    "Review",
+    "CI",
+    "Merge",
+    "Changes",
+    "Comments",
+    "Agent",
+    "Worktree",
+    "Created",
+    "Path",
+  ]);
+  await expect(value("CI").locator("> *")).toHaveText(["5 running, 29 passed", "e2e-0, e2e-1, e2e-2, e2e-3, +1 more"]);
+  await expect(value("Merge")).toHaveText("After CI");
+  await expect(value("Agent").locator("> *").nth(1)).toHaveText("agent: retry backoff");
+  await expect(value("Worktree")).toHaveText("2 ahead, 0 behind upstream, dirty");
+  const waitingBox = (await waitingRow.boundingBox())!;
+  const waitingCard = (await card.boundingBox())!;
+  expect(waitingBox.y + waitingCard.height).toBeGreaterThan(560);
+  expect(waitingCard.x).toBeGreaterThanOrEqual(waitingBox.x + waitingBox.width);
+  expect(Math.abs(waitingCard.y + waitingCard.height - (waitingBox.y + waitingBox.height))).toBeLessThanOrEqual(1);
+  expect(waitingCard.y).toBeGreaterThanOrEqual(0);
+
+  // At the narrowest rail the row sheds the comment count and the passed
+  // check count, so the states that block a merge still fit beside the item
+  // column and the row keeps its height.
+  await page.mouse.move(900, 500);
+  await expect(card).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.evaluate(() => localStorage.setItem("kenn-forge-sidebar-width", "220"));
+  await page.reload();
+  await expect(rows).toHaveCount(list.length);
+  expect((await page.locator(".workspace-list-sidebar").boundingBox())!.width).toBe(220);
+  const narrowPlainHeight = (await plainRow.boundingBox())!.height;
+  for (const row of [waitingRow, blockedRow]) {
+    expect((await row.boundingBox())!.height).toBeCloseTo(narrowPlainHeight, 1);
+    const metaBox = (await row.locator(".ws-row-meta").boundingBox())!;
+    const asideBox = (await row.locator(".ws-row-aside").boundingBox())!;
+    expect(metaBox.x + metaBox.width).toBeLessThanOrEqual(asideBox.x);
+  }
+  await expect(waitingRow.getByLabel("2 comments")).toBeHidden();
+  await expect(waitingRow.getByTestId("ci-token-passed")).toBeHidden();
+  await expect(blockedRow.getByTestId("ci-token-passed")).toBeHidden();
+  const blockedMeta = (await blockedRow.locator(".ws-row-meta").boundingBox())!;
+  for (const icon of [
+    blockedRow.getByLabel("Changes requested"),
+    blockedRow.getByLabel("In merge queue"),
+    blockedRow.getByTestId("ci-token-failed"),
+    blockedRow.getByTitle("Has merge conflicts"),
+  ]) {
+    const box = (await icon.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(blockedMeta.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(blockedMeta.x + blockedMeta.width + 0.5);
+  }
+  const waitingMeta = (await waitingRow.locator(".ws-row-meta").boundingBox())!;
+  for (const icon of [
+    waitingRow.getByLabel("PR approved"),
+    waitingRow.getByLabel("Merges after CI"),
+    waitingRow.getByTestId("ci-token-pending"),
+  ]) {
+    const box = (await icon.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(waitingMeta.x + waitingMeta.width + 0.5);
+  }
 });

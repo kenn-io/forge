@@ -24,7 +24,10 @@
   const hoverDelayMs = 600;
 
   let open = $state(false);
-  let side = $state<"top" | "bottom">("bottom");
+  let side = $state<"right" | "left" | "top" | "bottom">("right");
+  const edgeGap = 8;
+  const sideGap = 6;
+
   let popoverEl = $state<HTMLDivElement>();
   let popoverStyle = $state("");
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -38,17 +41,32 @@
   async function position(): Promise<void> {
     await tick();
     if (!target || !popoverEl) return;
+    const row = target.getBoundingClientRect();
+    const width = popoverEl.offsetWidth;
+    const height = popoverEl.offsetHeight;
+    // Beside the row, so the list stays readable: right first, then left.
+    const right = row.right + sideGap;
+    const left = row.left - sideGap - width;
+    const fitsRight = right + width <= window.innerWidth - edgeGap;
+    if (fitsRight || left >= edgeGap) {
+      // Top edges line up; without room below the row, bottom edges do.
+      const top = row.top + height <= window.innerHeight - edgeGap ? row.top : row.bottom - height;
+      popoverStyle = `left: ${Math.round(fitsRight ? right : left)}px; top: ${Math.round(Math.max(edgeGap, top))}px`;
+      side = fitsRight ? "right" : "left";
+      return;
+    }
+    // A row as wide as the viewport has no side; open below or above it.
     popoverStyle = floatingPopoverStyle({
-      trigger: target.getBoundingClientRect(),
+      trigger: row,
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
-      popoverWidth: popoverEl.offsetWidth,
-      popoverHeight: popoverEl.offsetHeight,
+      popoverWidth: width,
+      popoverHeight: height,
       align: "start",
-      triggerGap: 6,
+      triggerGap: sideGap,
     });
     const top = Number.parseFloat(/top: (-?[0-9.]+)px/.exec(popoverStyle)?.[1] ?? "0");
-    side = top < target.getBoundingClientRect().top ? "top" : "bottom";
+    side = top < row.top ? "top" : "bottom";
   }
 
   // Measured at show time (not mount) so resizes since render are honored.
@@ -72,8 +90,11 @@
     }, hoverDelayMs);
   }
 
-  function showNow(): void {
+  // Keyboard focus opens the popover at once. Focus from a click, or from
+  // code after one, does not: the user chose the row and is looking past it.
+  function showOnFocus(event: FocusEvent): void {
     clearTimer();
+    if (!(event.target instanceof Element) || !event.target.matches(":focus-visible")) return;
     if (open || !hasContent()) return;
     open = true;
     void position();
@@ -98,16 +119,18 @@
 
     target.addEventListener("mouseenter", showAfterDelay);
     target.addEventListener("mouseleave", hide);
-    target.addEventListener("focusin", showNow);
+    target.addEventListener("focusin", showOnFocus);
     target.addEventListener("focusout", hide);
+    target.addEventListener("mousedown", hide);
     target.addEventListener("keydown", handleKeydown);
 
     return () => {
       clearTimer();
       target.removeEventListener("mouseenter", showAfterDelay);
       target.removeEventListener("mouseleave", hide);
-      target.removeEventListener("focusin", showNow);
+      target.removeEventListener("focusin", showOnFocus);
       target.removeEventListener("focusout", hide);
+      target.removeEventListener("mousedown", hide);
       target.removeEventListener("keydown", handleKeydown);
     };
   });
@@ -153,6 +176,7 @@
     z-index: var(--z-tooltip);
     width: max-content;
     max-width: min(420px, calc(100vw - 32px));
+    max-height: calc(100dvh - 16px);
     padding: var(--space-4) var(--space-5);
     display: grid;
     gap: var(--space-2);
@@ -177,7 +201,15 @@
     font-family: "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
   }
 
-  .sidebar-title-popover::before {
+  /* Beside the row there is no arrow to clip, so a card taller than the
+     viewport cuts off at its edge. */
+  .sidebar-title-popover[data-side="right"],
+  .sidebar-title-popover[data-side="left"] {
+    overflow: hidden;
+  }
+
+  .sidebar-title-popover[data-side="bottom"]::before,
+  .sidebar-title-popover[data-side="top"]::before {
     content: "";
     position: absolute;
     left: 18px;

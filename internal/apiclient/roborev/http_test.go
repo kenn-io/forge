@@ -47,8 +47,8 @@ func TestHTTPClientScopesCredential(t *testing.T) {
 				require.NoError(t, err)
 				foreign.Header = request.Header.Clone()
 				_, err = client.Do(foreign)
-				assert.Error(err, "target %s", target)
 				require.Len(t, delivered, 1, "target %s", target)
+				require.Error(t, err, "target %s", target)
 			}
 		})
 	}

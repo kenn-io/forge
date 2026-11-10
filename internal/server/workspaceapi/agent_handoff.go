@@ -23,7 +23,10 @@ const defaultAgentHandoffTimeout = 5 * time.Minute
 type WorkspaceAgentHandoffRequest struct {
 	WorkspaceID string
 	TargetKey   string
-	Message     string
+	// SessionKey names a live agent session that takes the message as a
+	// prompt from its user. Nothing launches, and TargetKey is ignored.
+	SessionKey string
+	Message    string
 	// ACPOptions are ACP session options for the launched chat only, keyed by
 	// option ID; only ACP targets accept them.
 	ACPOptions map[string]string
@@ -39,7 +42,8 @@ type WorkspaceAgentHandoffResult struct {
 type launchWorkspaceAgentHandoffInput struct {
 	ID   string `path:"id"`
 	Body struct {
-		TargetKey  string            `json:"target_key"`
+		TargetKey  string            `json:"target_key,omitempty" doc:"Agent launch target. Required unless session_key is set."`
+		SessionKey string            `json:"session_key,omitempty" doc:"A live agent session that takes the message instead of a newly launched agent. target_key is then ignored."`
 		Message    string            `json:"message"`
 		ACPOptions map[string]string `json:"acp_options,omitempty" doc:"ACP session options for this chat only, keyed by option ID. Only ACP targets accept them."`
 	}
@@ -60,7 +64,7 @@ func (s *Handler) launchWorkspaceAgentHandoff(
 ) (*workspaceAgentHandoffOutput, error) {
 	result, err := s.LaunchWorkspaceAgentHandoffService(ctx, WorkspaceAgentHandoffRequest{
 		WorkspaceID: input.ID, TargetKey: input.Body.TargetKey, Message: input.Body.Message,
-		ACPOptions: input.Body.ACPOptions,
+		SessionKey: input.Body.SessionKey, ACPOptions: input.Body.ACPOptions,
 	})
 	if err != nil {
 		return nil, err
@@ -84,6 +88,9 @@ func (s *Handler) launchWorkspaceAgentHandoff(
 // can tell "the agent is running without its prompt" apart from "nothing
 // started". The session is left running: it may already hold the prompt when
 // delivery is uncertain, and stopping it would destroy the evidence.
+//
+// A request that names a live session delivers the message there and
+// launches nothing.
 func (s *Handler) LaunchWorkspaceAgentHandoffService(
 	ctx context.Context, req WorkspaceAgentHandoffRequest,
 ) (result WorkspaceAgentHandoffResult, err error) {
@@ -95,6 +102,16 @@ func (s *Handler) LaunchWorkspaceAgentHandoffService(
 	}()
 	if s.workspaces == nil || s.runtime == nil {
 		return WorkspaceAgentHandoffResult{}, httpapi.ServiceUnavailable("workspace runtime not configured")
+	}
+	if sessionKey := strings.TrimSpace(req.SessionKey); sessionKey != "" {
+		if len(req.ACPOptions) > 0 {
+			return WorkspaceAgentHandoffResult{}, httpapi.Validation(
+				"body.acp_options", "acp_options apply only to a newly launched chat",
+			)
+		}
+		handoffCtx, cancel := context.WithTimeout(s.agentHandoffContext(), s.agentHandoffTimeoutOrDefault())
+		defer cancel()
+		return s.deliverToLiveAgent(handoffCtx, req.WorkspaceID, sessionKey, req.Message)
 	}
 	targetKey := strings.ToLower(strings.TrimSpace(req.TargetKey))
 	if targetKey == "" {
@@ -150,6 +167,33 @@ func (s *Handler) LaunchWorkspaceAgentHandoffService(
 			postLaunchHandoffProblem(err, session, status)
 	}
 	return WorkspaceAgentHandoffResult{Session: session, InitialMessage: status}, nil
+}
+
+// deliverToLiveAgent sends the message once to an agent that is already
+// running. It does not wait for terminal input to become ready the way a
+// launch does: an agent that has been running without bracketed paste will
+// not turn it on, so the caller gets the refusal at once.
+func (s *Handler) deliverToLiveAgent(
+	ctx context.Context, workspaceID, sessionKey, message string,
+) (WorkspaceAgentHandoffResult, error) {
+	submitted, err := s.submitAgentMessage(ctx, workspaceID, sessionKey, message, messageSender(false))
+	if errors.Is(err, ErrInitialMessageInputModeNotReady) {
+		return WorkspaceAgentHandoffResult{}, httpapi.Validation("body.message", err.Error())
+	}
+	if err != nil {
+		return WorkspaceAgentHandoffResult{}, err
+	}
+	result := WorkspaceAgentHandoffResult{InitialMessage: InitialMessageResult{
+		TargetKey: submitted.TargetKey, State: initialMessageDelivered, MessageBytes: submitted.MessageBytes,
+		ReservedAt: submitted.SubmittedAt, DeliveredAt: &submitted.SubmittedAt,
+	}}
+	for _, session := range s.runtime.ListSessions(workspaceID) {
+		if session.Key == sessionKey {
+			result.Session = session
+			break
+		}
+	}
+	return result, nil
 }
 
 // postLaunchHandoffProblem annotates a delivery failure with the runtime that

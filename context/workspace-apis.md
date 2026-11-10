@@ -364,6 +364,9 @@ Resolution is deliberately exact (`internal/server/kata/workspace.go::Handler.re
 - A post-launch delivery failure leaves the runtime running and returns `session_key`, `target_key`,
   and `initial_message_state`; the header reports a launched-but-promptless agent, not a failed
   start, and only `not_delivered` is worded as a definite loss.
+- A handoff that names `session_key` delivers the prompt once to that live agent session and launches
+  nothing. A terminal agent takes a quick action only this way, never as input the browser types; a
+  chat sends it itself, through its own queue (`internal/server/workspaceapi/agent_handoff.go::Handler.deliverToLiveAgent`).
 - Quick action prompts are normalized at config load so a saved action is never rejected after its
   workspace exists. Nothing is queued in frontend launch state; the session arrives via runtime events.
 

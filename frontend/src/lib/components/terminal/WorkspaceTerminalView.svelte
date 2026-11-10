@@ -8,6 +8,7 @@
     quickActionLaunches,
     quickActionWorkspaceKey,
     quickActionWorkspaces,
+    runQuickActionInSession,
     runWorkspaceQuickAction,
   } from "../../stores/workspace-quick-actions.js";
   import { EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
@@ -3155,15 +3156,19 @@
     );
   }
 
+  // A chat sends the prompt itself, so it joins the chat's own queue and
+  // outbox. A terminal agent gets it from the server, which types it.
   function sendQuickActionToSession(action: QuickAction, session: RuntimeSession): void {
-    if (actionsBlocked) return;
+    if (!workspaceId || actionsBlocked) return;
     const hostKey = sessionHostKeyFor(session);
-    if (!sendSessionPrompt(hostKey, action.prompt)) {
-      showFlash(`"${action.label}" was not sent: ${session.label} is not connected.`, { tone: "danger" });
+    if (session.kind === "acp") {
+      if (!sendSessionPrompt(hostKey, action.prompt)) {
+        showFlash(`"${action.label}" was not sent: ${session.label} is not connected.`, { tone: "danger" });
+      }
       return;
     }
-    // A chat focuses its own composer; the pooled focus request only reaches a terminal.
-    if (session.kind !== "acp") requestSessionFocus(hostKey);
+    runQuickActionInSession(appRuntime, workspaceId, action, session, workspaceHostKey);
+    requestSessionFocus(hostKey);
   }
 
   function startAcceptedWorkspaceLaunchReconciliation(

@@ -2,7 +2,7 @@
 // That is paint, which jsdom cannot see: its click reaches an invisible button.
 import { mount, unmount } from "svelte";
 import { afterEach, expect, it } from "vite-plus/test";
-import { page, userEvent } from "vite-plus/test/browser";
+import { cdp, page, userEvent } from "vite-plus/test/browser";
 import "@kenn-io/kit-ui/theme.css";
 
 import LaunchMenu from "./LaunchMenu.svelte";
@@ -11,6 +11,7 @@ let app: Record<string, unknown> | undefined;
 let host: HTMLElement | undefined;
 
 afterEach(async () => {
+  await cdp().send("Emulation.setTouchEmulationEnabled", { enabled: false });
   if (app) await unmount(app);
   host?.remove();
   app = undefined;
@@ -21,7 +22,7 @@ function opacity(name: string): string {
   return getComputedStyle(page.getByRole("button", { name }).element()).opacity;
 }
 
-it("shows a row's send button only while that row is hovered or keyboard-focused", async () => {
+async function openMenu(): Promise<void> {
   host = document.createElement("div");
   host.style.cssText = "position: fixed; left: 300px; top: 20px;";
   document.body.append(host);
@@ -33,6 +34,7 @@ it("shows a row's send button only while that row is hovered or keyboard-focused
       quickActions: [
         { label: "audit", agent: "codex", prompt: "Audit this change" },
         { label: "review", agent: "codex", prompt: "Review this change" },
+        { label: "triage", agent: "codex", prompt: "Triage this change" },
       ],
       onQuickAction: () => {},
       onQuickActionInSession: () => {},
@@ -40,17 +42,30 @@ it("shows a row's send button only while that row is hovered or keyboard-focused
     },
   });
   await page.getByRole("button", { name: "Quick actions" }).click();
+}
 
-  // Opening focuses the first row, which must not reveal its button.
-  expect(opacity("Send audit to Helper")).toBe("0");
-  expect(opacity("Send review to Helper")).toBe("0");
+it("shows a row's send button only while that row is hovered or keyboard-focused", async () => {
+  await openMenu();
+  // Opening focuses the first row. Whether a browser counts that as keyboard
+  // focus depends on the window being active, so the rows below it carry the
+  // resting state.
+  expect([opacity("Send review to Helper"), opacity("Send triage to Helper")]).toEqual(["0", "0"]);
 
   await userEvent.hover(page.getByRole("button", { name: "review", exact: true }));
-  await expect.poll(() => opacity("Send review to Helper")).toBe("1");
-  expect(opacity("Send audit to Helper")).toBe("0");
+  await expect.poll(() => [opacity("Send review to Helper"), opacity("Send triage to Helper")]).toEqual(["1", "0"]);
 
-  await userEvent.unhover(page.getByRole("button", { name: "review", exact: true }));
+  await userEvent.hover(page.getByRole("button", { name: "Quick actions" }));
   await expect.poll(() => opacity("Send review to Helper")).toBe("0");
-  await userEvent.keyboard("{Tab}");
-  await expect.poll(() => opacity("Send audit to Helper")).toBe("1");
+
+  page.getByRole("button", { name: "review", exact: true }).element().focus();
+  await userEvent.tab();
+  expect(document.activeElement?.getAttribute("aria-label")).toBe("Send review to Helper");
+  await expect.poll(() => [opacity("Send review to Helper"), opacity("Send triage to Helper")]).toEqual(["1", "0"]);
+});
+
+it("keeps every send button visible when the pointer cannot hover", async () => {
+  await cdp().send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+  expect(matchMedia("(hover: none)").matches).toBe(true);
+  await openMenu();
+  expect([opacity("Send review to Helper"), opacity("Send triage to Helper")]).toEqual(["1", "1"]);
 });

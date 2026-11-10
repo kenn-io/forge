@@ -214,11 +214,8 @@
 
   $effect(() => {
     const chatPane = chat;
-    const pane = terminalPane;
-    if (!chatPane && !pane) return;
-    return registerSessionPrompt(session.hostKey, (prompt) =>
-      chatPane ? chatPane.sendPrompt(prompt) : (pane?.sendPastedInput(prompt, "\r") ?? false),
-    );
+    if (!chatPane) return;
+    return registerSessionPrompt(session.hostKey, (prompt) => chatPane.sendPrompt(prompt));
   });
 
   // The wrapper is reparented out of this component's own fragment, so Svelte

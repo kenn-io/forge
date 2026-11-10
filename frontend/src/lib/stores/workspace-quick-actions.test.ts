@@ -12,6 +12,7 @@ import {
   quickActionLaunches,
   quickActionWorkspaces,
   quickActionWorkspaceKey,
+  runQuickActionInSession,
   runWorkspaceQuickAction,
 } from "./workspace-quick-actions.js";
 
@@ -184,4 +185,50 @@ describe("quick-action launch serialization", () => {
       expect(quickActionLaunches.has(quickActionWorkspaceKey("ws-a", "devbox:peer-a"))).toBe(true);
     },
   );
+  describe("send to a running session", () => {
+    const action = { label: "Review", agent: "missing", prompt: "Review this change" };
+    const helper = { key: "helper-1", label: "Helper" };
+
+    it("asks the session's own host to deliver the prompt and records no launch", async () => {
+      launchHandoff.mockResolvedValue({ session, initial_message: { state: "delivered" } });
+      launchDevboxHandoff.mockResolvedValue({ session, initial_message: { state: "delivered" } });
+      runQuickActionInSession(runtime, "ws-a", action, helper);
+      runQuickActionInSession(runtime, "ws-a", action, helper, "devbox:peer-a");
+      await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(launchDevboxHandoff).toHaveBeenCalledOnce());
+      // No target_key, so a server without session delivery refuses instead of launching.
+      const body = { session_key: "helper-1", message: "Review this change" };
+      expect(launchHandoff.mock.calls[0]?.slice(0, 2)).toEqual([{ id: "ws-a" }, body]);
+      expect(launchDevboxHandoff.mock.calls[0]?.slice(0, 2)).toEqual([{ connectionId: "peer-a", id: "ws-a" }, body]);
+      await tick();
+      expect(getFlashes()).toEqual([]);
+      expect(quickActionLaunches.size).toBe(0);
+      expect(quickActionWorkspaces.size).toBe(0);
+    });
+
+    it("says the prompt was not sent when the server refuses it", async () => {
+      launchHandoff.mockRejectedValue(
+        new GeneratedProblemResponse(
+          { code: "conflict", title: "Conflict", status: 409, detail: "agent runtime session is not live" },
+          new Response(null, { status: 409 }),
+        ),
+      );
+      runQuickActionInSession(runtime, "ws-a", action, helper);
+      await vi.waitFor(() =>
+        expect(getFlashes().map((flash) => flash.message)).toEqual([
+          '"Review" was not sent to Helper: agent runtime session is not live',
+        ]),
+      );
+    });
+
+    it("does not claim a failure when the request itself was lost", async () => {
+      launchHandoff.mockRejectedValue(new TypeError("fetch failed"));
+      runQuickActionInSession(runtime, "ws-a", action, helper);
+      await vi.waitFor(() =>
+        expect(getFlashes().map((flash) => flash.message)).toEqual([
+          '"Review": lost contact with Kenn Forge; check Helper before sending it again.',
+        ]),
+      );
+    });
+  });
 });

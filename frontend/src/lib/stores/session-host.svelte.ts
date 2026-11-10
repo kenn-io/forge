@@ -250,10 +250,7 @@ export function sendSessionKey(key: SessionHostKey, terminalKey: TerminalKey): b
   return inputSenders.get(key)?.sendKey(terminalKey) ?? false;
 }
 
-/**
- * Publish how a pooled session takes a whole prompt: a chat sends it as a
- * message, a terminal pastes it and presses Enter.
- */
+/** Publish a pooled chat's way to send a whole prompt as a message. */
 export function registerSessionPrompt(key: SessionHostKey, send: (prompt: string) => boolean): () => void {
   promptSenders.set(key, send);
   return () => {
@@ -261,7 +258,7 @@ export function registerSessionPrompt(key: SessionHostKey, send: (prompt: string
   };
 }
 
-/** Submit a prompt to a pooled session; false when it cannot take one now. */
+/** Send a prompt to a pooled chat; false when it cannot take one now. */
 export function sendSessionPrompt(key: SessionHostKey, prompt: string): boolean {
   return promptSenders.get(key)?.(prompt) ?? false;
 }

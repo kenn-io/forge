@@ -214,6 +214,14 @@ func messageSender(fromAgent bool) localruntime.ACPSender {
 func (s *Handler) SubmitAgentMessageService(
 	ctx context.Context, workspaceID, runtimeSessionKey, message string,
 ) (AgentMessageResult, error) {
+	return s.submitAgentMessage(ctx, workspaceID, runtimeSessionKey, message, messageSender(true))
+}
+
+// submitAgentMessage delivers one message from sender to a live agent
+// session, starting a stored chat's agent first.
+func (s *Handler) submitAgentMessage(
+	ctx context.Context, workspaceID, runtimeSessionKey, message string, sender localruntime.ACPSender,
+) (AgentMessageResult, error) {
 	if s.runtime == nil {
 		return AgentMessageResult{}, httpapi.ServiceUnavailable("agent message delivery not configured")
 	}
@@ -248,7 +256,7 @@ func (s *Handler) SubmitAgentMessageService(
 			httpapi.CodeConflict, "agent runtime session is not live", nil,
 		)
 	}
-	if err := s.runtime.SubmitAgentMessage(ctx, workspaceID, runtimeSessionKey, message, messageSender(true)); err != nil {
+	if err := s.runtime.SubmitAgentMessage(ctx, workspaceID, runtimeSessionKey, message, sender); err != nil {
 		if errors.Is(err, localruntime.ErrBracketedPasteInactive) {
 			return AgentMessageResult{}, ErrInitialMessageInputModeNotReady
 		}

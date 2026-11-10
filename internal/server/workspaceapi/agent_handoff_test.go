@@ -89,6 +89,13 @@ func (f agentHandoffFixture) post(t *testing.T, body map[string]any) *httptest.R
 	return f.serve(f.request(t, body))
 }
 
+// latestPTY is the terminal of the runtime launched last.
+func (f agentHandoffFixture) latestPTY() *initialMessagePTY {
+	f.owner.mu.Lock()
+	defer f.owner.mu.Unlock()
+	return f.owner.pty
+}
+
 func TestAgentHandoffLaunchesAndDeliversPrompt(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
@@ -129,6 +136,103 @@ func TestAgentHandoffLaunchesAndDeliversPrompt(t *testing.T) {
 	sessions := fixture.handler.runtime.ListSessions("ws-runtime-token")
 	require.Len(sessions, 1)
 	assert.Equal(body.Session.Key, sessions[0].Key)
+}
+
+func TestAgentHandoffDeliversToLiveSessionWithoutLaunching(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newAgentHandoffFixture(t, "ready")
+	worktree := t.TempDir()
+	agent, err := fixture.handler.runtime.Launch(t.Context(), "ws-runtime-token", worktree, "codex")
+	require.NoError(err)
+	agentPTY := fixture.latestPTY()
+	shell, err := fixture.handler.runtime.Launch(t.Context(), "ws-runtime-token", worktree, "shell")
+	require.NoError(err)
+	shellPTY := fixture.latestPTY()
+	require.NotSame(agentPTY, shellPTY)
+
+	// target_key names a different, unknown agent: the live session decides.
+	response := fixture.post(t, map[string]any{
+		"session_key": agent.Key, "target_key": "missing", "message": "rebase this\r\nonto main",
+	})
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	var body struct {
+		Session struct {
+			Key string `json:"key"`
+		} `json:"session"`
+		InitialMessage struct {
+			TargetKey    string `json:"target_key"`
+			State        string `json:"state"`
+			MessageBytes int    `json:"message_bytes"`
+		} `json:"initial_message"`
+	}
+	require.NoError(json.NewDecoder(response.Body).Decode(&body))
+	assert.Equal(agent.Key, body.Session.Key)
+	assert.Equal("codex", body.InitialMessage.TargetKey)
+	assert.Equal(initialMessageDelivered, body.InitialMessage.State)
+	assert.Equal(len("rebase this\nonto main"), body.InitialMessage.MessageBytes)
+	assert.Equal("\x1b[200~rebase this\nonto main\x1b[201~\r", string(agentPTY.written()))
+
+	// A quick action can run again in the same session.
+	response = fixture.post(t, map[string]any{"session_key": agent.Key, "message": "rebase this\nonto main"})
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	assert.Equal(
+		"\x1b[200~rebase this\nonto main\x1b[201~\r\x1b[200~rebase this\nonto main\x1b[201~\r",
+		string(agentPTY.written()),
+	)
+
+	refused := []struct {
+		name string
+		body map[string]any
+		code int
+		want string
+	}{
+		{
+			name: "shell session", body: map[string]any{"session_key": shell.Key, "message": "rm -rf build"},
+			code: http.StatusConflict, want: "agent runtime session is not live",
+		},
+		{
+			name: "unknown session", body: map[string]any{"session_key": "nope", "message": "hi"},
+			code: http.StatusConflict, want: "agent runtime session is not live",
+		},
+		{
+			name: "blank message", body: map[string]any{"session_key": agent.Key, "message": " \n"},
+			code: http.StatusBadRequest, want: "must not be blank",
+		},
+		{
+			name: "ACP options",
+			body: map[string]any{"session_key": agent.Key, "message": "hi", "acp_options": map[string]string{"model": "deep"}},
+			code: http.StatusBadRequest, want: "acp_options apply only to a newly launched chat",
+		},
+	}
+	written := string(agentPTY.written())
+	for _, tc := range refused {
+		t.Run(tc.name, func(t *testing.T) {
+			response := fixture.post(t, tc.body)
+			assert.Equal(tc.code, response.Code, response.Body.String())
+			assert.Contains(response.Body.String(), tc.want)
+		})
+	}
+	assert.Equal(written, string(agentPTY.written()))
+	assert.Empty(shellPTY.written())
+	assert.Len(fixture.handler.runtime.ListSessions("ws-runtime-token"), 2)
+}
+
+func TestAgentHandoffToLiveSessionRefusesWhenInputModeIsNotReady(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newAgentHandoffFixture(t, "ready")
+	fixture.owner.setEmitBracketedPaste(false)
+	agent, err := fixture.handler.runtime.Launch(t.Context(), "ws-runtime-token", t.TempDir(), "codex")
+	require.NoError(err)
+
+	// A wait for the mode would end in the fixture's handoff timeout instead.
+	response := fixture.post(t, map[string]any{"session_key": agent.Key, "message": "triage this"})
+	assert.Equal(http.StatusBadRequest, response.Code, response.Body.String())
+	assert.Contains(response.Body.String(), "input mode is not ready")
+	assert.Empty(fixture.latestPTY().written())
 }
 
 func TestClaudeHandoffProvidesPromptAtLaunchWithoutTypingIntoStartupDialogs(t *testing.T) {

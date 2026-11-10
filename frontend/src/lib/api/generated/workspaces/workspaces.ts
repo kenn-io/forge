@@ -537,7 +537,7 @@ export const getLaunchWorkspaceAgentHandoffUrl = ({ id }: LaunchWorkspaceAgentHa
 };
 
 /**
- * Waits for the workspace to become ready, launches the agent target, and delivers the message as its initial prompt.
+ * Waits for the workspace to become ready, launches the agent target, and delivers the message as its initial prompt. With session_key, delivers the message to that live agent session and launches nothing.
  * @summary Launch an agent with an initial message
  */
 export const launchWorkspaceAgentHandoff = async (

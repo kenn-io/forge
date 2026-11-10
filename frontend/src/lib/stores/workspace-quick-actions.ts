@@ -207,6 +207,70 @@ function quickActionHandoff(
   return { workspaceKey, handoff };
 }
 
+/**
+ * Sends a quick action's prompt to a terminal agent that is already running.
+ * The server types it, as it does a launch's first prompt, so the agent gets
+ * the paste and then Enter. Nothing launches.
+ */
+export function sendQuickActionToSession(
+  workspaceId: string,
+  action: QuickAction,
+  session: Pick<RuntimeSession, "key" | "label">,
+  hostKey?: string,
+) {
+  // No target_key: a server that predates session_key refuses the request
+  // instead of launching the action's agent.
+  const body = { session_key: session.key, message: action.prompt };
+  return executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
+    hostKey?.startsWith("devbox:")
+      ? client.DevboxesService.launchDevboxHandoff({ connectionId: hostKey.slice(7), id: workspaceId }, body, {
+          signal,
+        })
+      : client.WorkspacesService.launchWorkspaceAgentHandoff({ id: workspaceId }, body, { signal }),
+  ).pipe(
+    Effect.match({
+      onSuccess: (): QuickActionOutcome => ({ type: "started" }),
+      onFailure: (failure): QuickActionOutcome => {
+        if (failure._tag !== "ApiProblemError") {
+          const reason = `lost contact with Kenn Forge; check ${session.label} before sending it again`;
+          return { type: "unconfirmed", reason, message: `"${action.label}": ${reason}.` };
+        }
+        const reason = failure.problem.detail ?? failure.problem.title ?? "the prompt was not delivered";
+        return {
+          type: "failed",
+          reason,
+          message: `"${action.label}" was not sent to ${session.label}: ${reason}`,
+        };
+      },
+    }),
+  );
+}
+
+/** Sends a quick action to a running terminal agent and reports anything but a clean send. */
+export function runQuickActionInSession(
+  runtime: AppRuntime,
+  workspaceId: string,
+  action: QuickAction,
+  session: Pick<RuntimeSession, "key" | "label">,
+  hostKey?: string,
+): void {
+  runtime.runCommand(
+    sendQuickActionToSession(workspaceId, action, session, hostKey).pipe(
+      Effect.flatMap((outcome) =>
+        Effect.sync(() => {
+          if (outcome.type === "failed") showFlash(outcome.message, { tone: "danger" });
+          else if (outcome.type === "unconfirmed") showFlash(outcome.message, { tone: "warning" });
+        }),
+      ),
+    ),
+    {
+      operation: "send workspace quick action to session",
+      safeContext: { workspaceId },
+      onFailure: () => showFlash(`"${action.label}" was not sent to ${session.label}.`, { tone: "danger" }),
+    },
+  );
+}
+
 /** Runs a quick action in the background and reports anything but a clean start. */
 export function runWorkspaceQuickAction(
   runtime: AppRuntime,

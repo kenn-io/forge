@@ -192,7 +192,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		body, cut := snapshotText(row.Body, 2048)
 		pull.Reviews = append(pull.Reviews, snapshot.SnapshotReview{ID: pull.ID + "/review/" + url.QueryEscape(row.Key), Author: row.Author, AuthorAssociation: row.AuthorAssociation, Body: body, BodyTruncated: cut, State: row.State, URL: row.URL, CreatedAt: row.CreatedAt.UTC()})
 	}
-	links, err := db.LoadArchiveSnapshotReferences(ctx, tx, mrIDs)
+	links, err := db.LoadArchiveSnapshotReferences(ctx, tx, repoIDs, mrIDs)
 	if err != nil {
 		return result, err
 	}

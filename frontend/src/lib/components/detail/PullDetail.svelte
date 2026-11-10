@@ -37,7 +37,7 @@
     type ConflictReason,
   } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import { runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
+  import { runReturnedWorkspaceQuickAction, runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
   import { detailSessionLaunchLeaf } from "../../stores/paneLayout.svelte.js";
   import type { WorkspaceRuntimeLaunchLeaf } from "../terminal/workspace-runtime-workflow.js";
   import {
@@ -115,7 +115,9 @@
   import { Spinner } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
-  import { createDefaultWorkspaceTarget } from "../../stores/workspace-target.svelte.js";
+  import { createDefaultWorkspaceTarget, type WorkspaceHostChoice } from "../../stores/workspace-target.svelte.js";
+  import { createItemWorkspace, type ItemWorkspaceRequest } from "../../api/item-workspace.js";
+  import WorkspaceHostAlternatives from "../workspace/WorkspaceHostAlternatives.svelte";
   import { ScrollBox } from "@kenn-io/kit-ui";
   import LabelPicker from "./LabelPicker.svelte";
   import PickerModal from "./PickerModal.svelte";
@@ -192,6 +194,7 @@
     settings,
     sync,
     workflowActions,
+    events,
   } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
@@ -303,7 +306,7 @@
     workflowApprovalSync?: boolean;
     onStackMemberNavigate?: (ref: PullRequestRouteRef) => boolean | void;
     onDetailTabChange?: ((tab: "conversation" | "files") => void) | undefined;
-    onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
+    onOpenWorkspace?: ((workspaceId: string, hostKey?: string) => void) | undefined;
     onViewWorkspaces?: (() => void) | undefined;
     inlineWorkspace?: InlineWorkspaceController | null;
   }
@@ -1547,7 +1550,7 @@
   });
 
   let wsCreating = $state(false);
-  const workspaceTarget = createDefaultWorkspaceTarget(runtime,
+  const workspaceTarget = createDefaultWorkspaceTarget(runtime, events.subscribeWorkspaceEvents,
     () => settings.getWorkspaceSettings().default_execution_target ?? "",
     () => itemIdentity,
   );
@@ -2029,8 +2032,10 @@
 
   // A quick action never queues a frontend launch: the server launches the
   // agent and delivers the prompt once the workspace is ready.
-  function createWorkspace(launchTargetKey?: string, quickAction?: QuickAction): void {
-    if (stalePR || workspaceTarget.reason) return;
+  // hostChoice overrides the saved default, for a machine offered when that
+  // default cannot take the workspace.
+  function createWorkspace(launchTargetKey?: string, quickAction?: QuickAction, hostChoice?: WorkspaceHostChoice): void {
+    if (stalePR || (!hostChoice && workspaceTarget.reason)) return;
     const detail = detailStore.getDetail();
     if (!detail) return;
     const requestIdentity = $state.snapshot(itemIdentity);
@@ -2045,35 +2050,33 @@
       requestGen !== wsRequestGen ||
       !identityEquals(requestIdentity, $state.snapshot(itemIdentity));
     const responseIsStale = () => componentDestroyed || identityLeft();
-    const requestBody = {
-      provider: requestIdentity.provider,
-      platform_host: detail.platform_host,
-      ...repositoryKeyToWire(repositoryKeyFromWire(detail.repo)),
-      owner: detail.repo_owner,
-      name: detail.repo_name,
-      mr_number: detail.merge_request.Number,
+    const request: ItemWorkspaceRequest = {
+      kind: "pull",
+      repo: {
+        provider: requestIdentity.provider,
+        platformHost: detail.platform_host,
+        repositoryKey: repositoryKeyFromWire(detail.repo),
+        owner: detail.repo_owner,
+        name: detail.repo_name,
+        repoPath: requestIdentity.repoPath,
+      },
+      number: detail.merge_request.Number,
     };
 
     wsCreating = true;
     beginWorkspaceCreate(requestIdentity, launchTargetKey);
-    const devboxTarget = workspaceTarget.hostKey;
-    const program = executeGeneratedApiRequest("POST pull request workspace", (client, signal) =>
-      devboxTarget
-        ? client.DevboxesService.createDevboxWorkspace(
-            { connectionId: devboxTarget.slice(7) },
-            requestBody,
-            { signal },
-          )
-        : client.WorkspacesService.createWorkspace(requestBody, { signal }),
-    ).pipe(
+    const hostKey = hostChoice ? hostChoice.hostKey : workspaceTarget.hostKey;
+    const program = createItemWorkspace(hostKey, request).pipe(
       Effect.flatMap((data) =>
         Effect.sync(() => {
-          if (data?.id && devboxTarget) {
-            promoteWorkspaceCreateLaunch(requestIdentity, data.id, devboxTarget);
-            if (quickAction) runWorkspaceQuickAction(runtime, data.id, "pull_request", quickAction, devboxTarget);
-            if (!responseIsStale()) {
-              navigate(`/terminal/fleet/${encodeURIComponent(devboxTarget)}/${encodeURIComponent(data.id)}`);
+          if (data?.id && hostKey) {
+            promoteWorkspaceCreateLaunch(requestIdentity, data.id, hostKey, data.reused ? "existing" : "create");
+            if (quickAction) {
+              runReturnedWorkspaceQuickAction(runtime, { id: data.id, status: data.status }, "pull_request", quickAction, hostKey);
             }
+            if (responseIsStale()) return;
+            if (onOpenWorkspace) onOpenWorkspace(data.id, hostKey);
+            else navigate(`/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(data.id)}`);
             return;
           }
           if (data?.id) {
@@ -2120,6 +2123,8 @@
         number: requestIdentity.number,
       },
       onFailure: (failure) => {
+        // The default may have gone offline since this page checked it.
+        if (!hostChoice && hostKey) workspaceTarget.recheck();
         if (responseIsStale()) return;
         const message =
           failure._tag === "ApiProblemError"
@@ -3185,7 +3190,16 @@
             onCreate={(targetKey) => createWorkspace(targetKey)}
             quickActions={settings.getQuickActions()}
             onQuickAction={(action) => createWorkspace(undefined, action)}
+            remoteHost={workspaceTarget.hostKey !== undefined}
           />
+          {#if !stalePR && workspaceTarget.alternatives.length > 0}
+            <WorkspaceHostAlternatives
+              reason={workspaceTarget.reason}
+              choices={workspaceTarget.alternatives}
+              disabled={wsCreateBlocked}
+              onChoose={(choice) => createWorkspace(undefined, undefined, choice)}
+            />
+          {/if}
         {/if}
       {/snippet}
       {#snippet workflowActionsMenu(presentation: "inline" | "floating" | "modal")}

@@ -49,7 +49,7 @@
     onSidebarResize?: (width: number) => void;
     onDetailTabChange?: (tab: DetailTab, options?: { replace?: boolean }) => void;
     onStackMemberNavigate?: StackMemberNavigate;
-    onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
+    onOpenWorkspace?: ((workspaceId: string, hostKey?: string) => void) | undefined;
     onViewWorkspaces?: (() => void) | undefined;
     /** Phone-like routes render PR actions as one kit action grid. */
     phonePresentation?: boolean;

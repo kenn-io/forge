@@ -339,6 +339,18 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 			},
 		},
 		{
+			operationID:  "launch-fleet-workspace-agent-handoff",
+			responseType: reflect.TypeFor[workspaceapi.WorkspaceAgentHandoffResponse](),
+			method:       http.MethodPost,
+			path:         "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs",
+			summary:      "Launch an agent with a prompt in a workspace on fleet host",
+			pathParams:   []string{"host_key", "id"},
+			body:         true,
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/runtime/agent-handoffs"
+			},
+		},
+		{
 			operationID: "rename-fleet-workspace-runtime-session",
 			method:      http.MethodPatch,
 			path:        "/fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions/{session_key}",
@@ -888,7 +900,7 @@ func (s *Handler) serveFleetRESTProxy(
 	r *http.Request,
 	targetPath string,
 ) {
-	target, ok := s.resolveFleetHostTarget(r.PathValue("host_key"))
+	target, targetPath, ok := s.resolveFleetRouteTarget(r, targetPath)
 	if !ok {
 		writeProblemResponse(w, fleetHostNotFoundProblem(r.PathValue("host_key")))
 		return
@@ -971,7 +983,7 @@ func (s *Handler) serveFleetWebSocketProxy(
 	r *http.Request,
 	targetPath string,
 ) {
-	target, ok := s.resolveFleetHostTarget(r.PathValue("host_key"))
+	target, targetPath, ok := s.resolveFleetRouteTarget(r, targetPath)
 	if !ok {
 		writeProblemResponse(w, fleetHostNotFoundProblem(r.PathValue("host_key")))
 		return
@@ -1096,6 +1108,52 @@ func (s *Handler) resolveFleetHostTarget(hostKey string) (fleetHostTarget, bool)
 		}
 	}
 	return fleetHostTarget{}, false
+}
+
+// resolveFleetRouteTarget resolves the member a fleet host route addresses
+// and the path to send it. A hub forwards to the owning member's own route.
+// An active spoke sends a route for another member to its hub unchanged; the
+// hub resolves the owner. Requests from federation peers are never forwarded
+// again, so a peer cannot bounce a request between members.
+func (s *Handler) resolveFleetRouteTarget(
+	r *http.Request, targetPath string,
+) (fleetHostTarget, string, bool) {
+	hostKey := r.PathValue("host_key")
+	if target, ok := s.resolveFleetHostTarget(hostKey); ok {
+		return target, targetPath, true
+	}
+	if _, peer := federationauth.PrincipalFromContext(r.Context()); peer {
+		return fleetHostTarget{}, "", false
+	}
+	target, ok := s.resolveSpokeHub()
+	if !ok {
+		return fleetHostTarget{}, "", false
+	}
+	return target, hubFleetHostPath(hostKey, targetPath), true
+}
+
+// resolveSpokeHub returns the hub of an active spoke as a proxy target.
+func (s *Handler) resolveSpokeHub() (fleetHostTarget, bool) {
+	fleetCfg := s.configSnapshot().Fleet
+	if !fleetCfg.Enabled || fleetCfg.RoleOrDefault() != config.FleetRoleSpoke ||
+		fleetCfg.Hub == nil || !s.federationActive {
+		return fleetHostTarget{}, false
+	}
+	return s.resolveEnrolledMember(config.FleetMember{
+		NodeID: fleetCfg.Hub.NodeID, Name: fleetCfg.Hub.Name,
+		BaseURL: fleetCfg.Hub.BaseURL, State: federation.EnrollmentActive,
+	})
+}
+
+// hubFleetHostPath turns a member's own route, such as /api/v1/workspaces,
+// back into the hub's fleet host route for hostKey.
+func hubFleetHostPath(hostKey, targetPath string) string {
+	for _, prefix := range []string{"/api/v1", "/ws/v1"} {
+		if rest, ok := strings.CutPrefix(targetPath, prefix+"/"); ok {
+			return prefix + "/fleet/hosts/" + escapePath(hostKey) + "/" + rest
+		}
+	}
+	return targetPath
 }
 
 func (s *Handler) fleetSelfKey(localHostname string) string {

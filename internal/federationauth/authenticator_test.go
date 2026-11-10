@@ -72,3 +72,29 @@ func TestFederationCredentialAuthorizationUsesExactRouteInventory(t *testing.T) 
 	)
 	assert.False(listed)
 }
+
+func TestFleetHostRoutesRequireTheirTargetRouteScope(t *testing.T) {
+	const host = "/fleet/hosts/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	for _, tc := range []struct {
+		method, path string
+		want         Scope
+	}{
+		{http.MethodPost, "/api/v1" + host + "/workspaces", ScopeWorkspaceWrite},
+		{http.MethodGet, "/api/v1" + host + "/workspaces/ws-1", ScopeWorkspaceRead},
+		{http.MethodDelete, "/api/v1" + host + "/workspaces/ws-1", ScopeWorkspaceWrite},
+		{http.MethodPost, "/api/v1" + host + "/issues/github/acme/widget/7/workspace", ScopeWorkspaceWrite},
+		{http.MethodGet, "/ws/v1" + host + "/workspaces/ws-1/terminal", ScopeTerminalAttach},
+	} {
+		required, listed := RouteScope(tc.method, tc.path)
+		assert.True(t, listed, tc.path)
+		assert.Equal(t, tc.want, required, tc.path)
+	}
+	for _, path := range []string{
+		"/api/v1" + host + "/browser-login",
+		"/api/v1" + host + "/settings",
+		"/api/v1/fleet/hosts/",
+	} {
+		_, listed := RouteScope(http.MethodPost, path)
+		assert.False(t, listed, "a fleet route whose target is not peer-callable stays forbidden: "+path)
+	}
+}

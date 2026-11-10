@@ -172,6 +172,7 @@ function renderWithRealPullDetail(
             pulls: { loadPulls: vi.fn(), getPulls: () => [] },
             activity: { loadActivity: vi.fn() },
             detailActivityView: createDetailActivityViewStore(),
+            events: { subscribeWorkspaceEvents: () => () => undefined },
             settings: {
               getLaunchTargets: () => [],
               getQuickActions: () => [],

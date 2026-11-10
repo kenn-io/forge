@@ -17981,6 +17981,48 @@ paths:
       summary: Get workspace runtime on fleet host
       tags:
         - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs:
+    post:
+      operationId: launch-fleet-workspace-agent-handoff
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceAgentHandoffResponse"
+          description: Response returned by the owning fleet host.
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Launch an agent with a prompt in a workspace on fleet host
+      tags:
+        - Fleet
   /fleet/hosts/{host_key}/workspaces/{id}/runtime/sessions:
     post:
       operationId: launch-fleet-workspace-runtime-session
@@ -22986,12 +23028,12 @@ paths:
           name: q
           schema:
             type: string
-        - description: "Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers."
+        - description: Rank titles, descriptions, and comments by meaning. Requires q and semantic search on the Forge that syncs providers.
           explode: false
           in: query
           name: semantic
           schema:
-            description: "Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers."
+            description: Rank titles, descriptions, and comments by meaning. Requires q and semantic search on the Forge that syncs providers.
             type: boolean
         - explode: false
           in: query
@@ -24956,12 +24998,12 @@ paths:
           name: q
           schema:
             type: string
-        - description: "Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers."
+        - description: Rank titles, descriptions, and comments by meaning. Requires q and semantic search on the Forge that syncs providers.
           explode: false
           in: query
           name: semantic
           schema:
-            description: "Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers."
+            description: Rank titles, descriptions, and comments by meaning. Requires q and semantic search on the Forge that syncs providers.
             type: boolean
         - explode: false
           in: query

@@ -2,10 +2,13 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"net/mail"
 	"net/url"
 	"path/filepath"
 	"strings"
+
+	"go.kenn.io/forge/internal/federation"
 )
 
 // ExecutionWorker is an explicit startup role. Its Git authority comes only
@@ -24,22 +27,37 @@ type Devboxes struct {
 	RegistryURL string `toml:"registry_url,omitempty"`
 }
 
-// ValidateDefaultExecutionTarget checks target syntax without requiring a live connection.
-func ValidateDefaultExecutionTarget(target string) error {
-	if target == "" {
-		return nil
+// NormalizeDefaultExecutionTarget checks target syntax without requiring a
+// live connection and returns its canonical form. A target names a devbox
+// connection (devbox:<connection-id>), or a fleet member by its HTTPS origin
+// or node ID.
+func NormalizeDefaultExecutionTarget(target string) (string, error) {
+	target = strings.TrimSpace(target)
+	if target == "" || federation.ValidNodeID(target) {
+		return target, nil
 	}
-	id, ok := strings.CutPrefix(target, "devbox:")
-	if !ok || id == "" || strings.Trim(id, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != "" {
-		return errors.New("config: workspaces.default_execution_target must be empty or devbox:<connection-id>, using only letters, digits, hyphens, or underscores")
+	if id, ok := strings.CutPrefix(target, "devbox:"); ok {
+		if id == "" || strings.Trim(id, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != "" {
+			return "", errors.New("config: workspaces.default_execution_target devbox:<connection-id> may use only letters, digits, hyphens, or underscores")
+		}
+		return target, nil
 	}
-	return nil
+	if strings.HasPrefix(strings.ToLower(target), "https://") {
+		origin, err := federation.CanonicalOrigin(target)
+		if err != nil {
+			return "", fmt.Errorf("config: workspaces.default_execution_target: %w", err)
+		}
+		return origin, nil
+	}
+	return "", errors.New("config: workspaces.default_execution_target must be empty, devbox:<connection-id>, a fleet member's HTTPS origin, or its 32-character node ID")
 }
 
 func (c *Config) validateDevboxes() error {
-	if err := ValidateDefaultExecutionTarget(c.Workspaces.DefaultExecutionTarget); err != nil {
+	target, err := NormalizeDefaultExecutionTarget(c.Workspaces.DefaultExecutionTarget)
+	if err != nil {
 		return err
 	}
+	c.Workspaces.DefaultExecutionTarget = target
 	if raw := c.Devboxes.RegistryURL; raw != "" {
 		u, err := url.Parse(raw)
 		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {

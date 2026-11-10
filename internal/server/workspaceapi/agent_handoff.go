@@ -49,13 +49,14 @@ type launchWorkspaceAgentHandoffInput struct {
 	}
 }
 
-type workspaceAgentHandoffResponse struct {
+// WorkspaceAgentHandoffResponse reports the launched session and its prompt delivery.
+type WorkspaceAgentHandoffResponse struct {
 	Session        localruntime.SessionInfo          `json:"session"`
 	InitialMessage agentInitialMessageStatusResponse `json:"initial_message"`
 }
 
 type workspaceAgentHandoffOutput struct {
-	Body workspaceAgentHandoffResponse
+	Body WorkspaceAgentHandoffResponse
 }
 
 func (s *Handler) launchWorkspaceAgentHandoff(
@@ -69,7 +70,7 @@ func (s *Handler) launchWorkspaceAgentHandoff(
 	if err != nil {
 		return nil, err
 	}
-	return &workspaceAgentHandoffOutput{Body: workspaceAgentHandoffResponse{
+	return &workspaceAgentHandoffOutput{Body: WorkspaceAgentHandoffResponse{
 		Session:        result.Session,
 		InitialMessage: *initialMessageResultResponse(result.InitialMessage),
 	}}, nil

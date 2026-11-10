@@ -298,6 +298,7 @@ async function renderWorkflowDetail(phoneShell = false) {
           pulls: { loadPulls: vi.fn() },
           activity: { loadActivity: vi.fn() },
           detailActivityView: createDetailActivityViewStore(),
+          events: { subscribeWorkspaceEvents: () => () => undefined },
           settings,
           workflowActions,
         },

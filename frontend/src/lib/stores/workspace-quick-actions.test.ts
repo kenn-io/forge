@@ -13,6 +13,7 @@ import {
   quickActionWorkspaces,
   quickActionWorkspaceKey,
   runQuickActionInSession,
+  runReturnedWorkspaceQuickAction,
   runWorkspaceQuickAction,
 } from "./workspace-quick-actions.js";
 
@@ -31,6 +32,8 @@ describe("quick-action launch serialization", () => {
   let runtime: OwnedAppRuntime;
   const launchHandoff = vi.fn();
   const launchDevboxHandoff = vi.fn();
+  const launchFleetHandoff = vi.fn();
+  const retryFleetWorkspace = vi.fn();
   const telemetry = vi.fn(async (_event: VisitEvent, _options?: unknown) => ({ status: "queued" }));
 
   beforeEach(async () => {
@@ -38,11 +41,14 @@ describe("quick-action launch serialization", () => {
     quickActionWorkspaces.clear();
     launchHandoff.mockReset();
     launchDevboxHandoff.mockReset();
+    launchFleetHandoff.mockReset();
+    retryFleetWorkspace.mockReset();
     telemetry.mockClear();
     runtime = makeAppRuntime(
       makeGeneratedClient({
         WorkspacesService: { launchWorkspaceAgentHandoff: launchHandoff },
         DevboxesService: { launchDevboxHandoff },
+        FleetService: { launchFleetWorkspaceAgentHandoff: launchFleetHandoff, retryFleetWorkspace },
       }),
     );
     await startTestTelemetry(runtime, telemetry).ready;
@@ -122,6 +128,67 @@ describe("quick-action launch serialization", () => {
       { event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } },
       {},
     );
+  });
+
+  it("reports a lost link to another machine as unconfirmed, and the same error here as a failure", async () => {
+    const relayError = () =>
+      new GeneratedProblemResponse(
+        { code: "upstreamError", title: "Bad Gateway", status: 502, detail: "fleet host connection closed" },
+        new Response(null, { status: 502 }),
+      );
+    launchFleetHandoff.mockRejectedValue(relayError());
+    launchHandoff.mockRejectedValue(relayError());
+    const action = { label: "Review", agent: "chat", prompt: "Review this change" };
+
+    runWorkspaceQuickAction(runtime, "ws-remote", "pull_request", action, "b".repeat(32));
+    await vi.waitFor(() => expect(getFlashes()).toHaveLength(1));
+    expect(getFlashes()[0]).toMatchObject({
+      tone: "warning",
+      message: '"Review": lost contact with the workspace\'s machine; check the workspace for the agent.',
+    });
+    dismissFlash();
+
+    runWorkspaceQuickAction(runtime, "ws-local", "pull_request", action);
+    await vi.waitFor(() => expect(getFlashes()).toHaveLength(1));
+    expect(getFlashes()[0]).toMatchObject({
+      tone: "danger",
+      message: '"Review" could not start: fleet host connection closed',
+    });
+  });
+
+  it("sets up a failed workspace on another machine again before running the action there", async () => {
+    const hostKey = "b".repeat(32);
+    retryFleetWorkspace.mockResolvedValue({ id: "ws-failed", status: "provisioning" });
+    launchFleetHandoff.mockResolvedValue({ session, initial_message: { state: "delivered" } });
+    const action = { label: "Review", agent: "chat", prompt: "Review this change" };
+
+    runReturnedWorkspaceQuickAction(runtime, { id: "ws-failed", status: "error" }, "pull_request", action, hostKey);
+    await vi.waitFor(() => expect(launchFleetHandoff).toHaveBeenCalledOnce());
+    expect(retryFleetWorkspace).toHaveBeenCalledExactlyOnceWith({ hostKey, id: "ws-failed" }, expect.anything());
+    expect(retryFleetWorkspace.mock.invocationCallOrder[0]).toBeLessThan(
+      launchFleetHandoff.mock.invocationCallOrder[0]!,
+    );
+
+    runReturnedWorkspaceQuickAction(runtime, { id: "ws-ready", status: "ready" }, "pull_request", action, hostKey);
+    await vi.waitFor(() => expect(launchFleetHandoff).toHaveBeenCalledTimes(2));
+    expect(retryFleetWorkspace).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a workspace on another machine that is being deleted without asking it to launch", async () => {
+    const hostKey = "b".repeat(32);
+    const action = { label: "Review", agent: "chat", prompt: "Review this change" };
+
+    for (const status of ["deleting", "deletion_failed"]) {
+      runReturnedWorkspaceQuickAction(runtime, { id: "ws-going", status }, "pull_request", action, hostKey);
+      await vi.waitFor(() => expect(getFlashes()).toHaveLength(1));
+      expect(getFlashes()[0]).toMatchObject({
+        tone: "danger",
+        message: '"Review" could not start: its workspace is being deleted',
+      });
+      dismissFlash();
+    }
+    expect(launchFleetHandoff).not.toHaveBeenCalled();
+    expect(retryFleetWorkspace).not.toHaveBeenCalled();
   });
 
   it("allows another action after the previous request fails", async () => {

@@ -19,7 +19,7 @@
   } from "../../context.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import { runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
+  import { runReturnedWorkspaceQuickAction, runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
   import { detailSessionLaunchLeaf } from "../../stores/paneLayout.svelte.js";
   import type { WorkspaceRuntimeLaunchLeaf } from "../terminal/workspace-runtime-workflow.js";
   import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
@@ -34,7 +34,9 @@
   import DetailRefreshButton from "./DetailRefreshButton.svelte";
   import IssueCommentBox from "./IssueCommentBox.svelte";
   import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
-  import { createDefaultWorkspaceTarget } from "../../stores/workspace-target.svelte.js";
+  import { createDefaultWorkspaceTarget, type WorkspaceHostChoice } from "../../stores/workspace-target.svelte.js";
+  import { createItemWorkspace, type ItemWorkspaceRequest } from "../../api/item-workspace.js";
+  import WorkspaceHostAlternatives from "../workspace/WorkspaceHostAlternatives.svelte";
     import { AdaptiveActionGrid, Button, Chip, Modal } from "@kenn-io/kit-ui";
   import { Spinner } from "@kenn-io/kit-ui";
   import LabelRow from "../shared/LabelRow.svelte";
@@ -79,7 +81,7 @@
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
-  const { issues, activity, detailActivityView, settings } = getStores();
+  const { issues, activity, detailActivityView, settings, events } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
   let manualRefreshPending = $state(false);
@@ -179,7 +181,7 @@
     repoPath: string;
     hideStaleWhileLoading?: boolean;
     autoSync?: IssueDetailSyncMode;
-    onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
+    onOpenWorkspace?: ((workspaceId: string, hostKey?: string) => void) | undefined;
     onViewWorkspaces?: (() => void) | undefined;
     inlineWorkspace?: InlineWorkspaceController | null;
   }
@@ -387,6 +389,7 @@
     branchConflict = null;
     pendingWorkspaceLaunchTarget = null;
     pendingWorkspaceQuickAction = null;
+    pendingWorkspaceHostChoice = null;
     workspaceCreating = false;
     closeLabelPicker();
   });
@@ -650,12 +653,14 @@
   // Survives the branch-conflict dialog like the launch target: the retry
   // must still run the action the user picked.
   let pendingWorkspaceQuickAction = $state<QuickAction | null>(null);
+  // A machine chosen in place of an unavailable default also survives it.
+  let pendingWorkspaceHostChoice = $state.raw<WorkspaceHostChoice | null>(null);
   // The shared pending store outlives this component and its local flag:
   // route resets and remounts clear workspaceCreating while the POST is
   // still in flight, and a round-trip back to this issue must keep the
   // button disabled or a second click sends a duplicate create.
   const workspaceCreateBlocked = $derived(workspaceCreating || isWorkspaceCreatePending(itemIdentity));
-  const workspaceTarget = createDefaultWorkspaceTarget(runtime,
+  const workspaceTarget = createDefaultWorkspaceTarget(runtime, events.subscribeWorkspaceEvents,
     () => settings.getWorkspaceSettings().default_execution_target ?? "",
     () => itemIdentity,
   );
@@ -799,6 +804,7 @@
     fromConflictDialog?: boolean;
     launchTargetKey?: string;
     quickAction?: QuickAction;
+    hostChoice?: WorkspaceHostChoice;
   };
 
   // Re-checks the identity at call time (not just at the caller's check)
@@ -833,13 +839,15 @@
   function createWorkspace(
     options: CreateWorkspaceOptions = {},
   ): void {
-    if (staleIssue || workspaceTarget.reason) return;
+    const hostChoice = options.fromConflictDialog ? pendingWorkspaceHostChoice : options.hostChoice ?? null;
+    if (staleIssue || (!hostChoice && workspaceTarget.reason)) return;
     const detail = issues.getIssueDetail();
     if (!detail) return;
     const requestIdentity = $state.snapshot(itemIdentity);
     if (!options.fromConflictDialog) {
       pendingWorkspaceLaunchTarget = options.launchTargetKey ?? null;
       pendingWorkspaceQuickAction = options.quickAction ?? null;
+      pendingWorkspaceHostChoice = hostChoice;
     }
     const launchTargetKey =
       options.launchTargetKey ?? pendingWorkspaceLaunchTarget ?? undefined;
@@ -869,18 +877,20 @@
       requestGen !== workspaceRequestGen ||
       !identityEquals(requestIdentity, $state.snapshot(itemIdentity));
     const responseIsStale = () => componentDestroyed || identityLeft();
-    const selectedRef = {
-      provider: requestIdentity.provider,
-      platformHost: requestIdentity.platformHost,
-      owner: requestIdentity.owner,
-      name: requestIdentity.name,
-      repoPath: requestIdentity.repoPath,
-    };
-    const requestBody = {
-      ...repositoryKeyToWire(repositoryKeyFromWire(detail.repo)),
-      ...(options.gitHeadRef ? { git_head_ref: options.gitHeadRef.trim() } : {}),
-      ...(options.reuseExistingBranch ? { reuse_existing_branch: true } : {}),
-      ...(options.reuseExistingDirectory ? { reuse_existing_directory: true } : {}),
+    const request: ItemWorkspaceRequest = {
+      kind: "issue",
+      repo: {
+        provider: requestIdentity.provider,
+        platformHost: requestIdentity.platformHost,
+        repositoryKey: repositoryKeyFromWire(detail.repo),
+        owner: requestIdentity.owner,
+        name: requestIdentity.name,
+        repoPath: requestIdentity.repoPath,
+      },
+      number: requestIdentity.number,
+      gitHeadRef: options.gitHeadRef,
+      reuseExistingBranch: options.reuseExistingBranch,
+      reuseExistingDirectory: options.reuseExistingDirectory,
     };
 
     workspaceCreating = true;
@@ -888,43 +898,19 @@
     if (branchConflict) {
       branchConflict.error = null;
     }
-    const devboxTarget = workspaceTarget.hostKey;
-    const program = executeGeneratedApiRequest("POST issue workspace", (client, signal) =>
-      devboxTarget
-        ? client.DevboxesService.createDevboxWorkspace(
-            { connectionId: devboxTarget.slice(7) },
-            {
-              provider: requestIdentity.provider,
-              platform_host: requestIdentity.platformHost ?? "github.com",
-              ...repositoryKeyToWire(repositoryKeyFromWire(detail.repo)),
-              owner: requestIdentity.owner,
-              name: requestIdentity.name,
-              issue_number: requestIdentity.number,
-              branch: options.gitHeadRef ?? "",
-              reuse_existing_branch: options.reuseExistingBranch ?? false,
-            },
-            { signal },
-          )
-        : providerUsesHostRoute(selectedRef)
-          ? client.IssuesService.createIssueWorkspaceOnHost(
-              { ...providerHostRouteParams(selectedRef), number: requestIdentity.number },
-              requestBody,
-              { signal },
-            )
-          : client.IssuesService.createIssueWorkspace(
-              { ...providerRouteParams(selectedRef), number: requestIdentity.number },
-              requestBody,
-              { signal },
-            ),
-    ).pipe(
+    const hostKey = hostChoice ? hostChoice.hostKey : workspaceTarget.hostKey;
+    const program = createItemWorkspace(hostKey, request).pipe(
       Effect.flatMap((data) =>
         Effect.sync(() => {
-          if (data?.id && devboxTarget) {
-            promoteWorkspaceCreateLaunch(requestIdentity, data.id, devboxTarget);
-            if (quickAction) runWorkspaceQuickAction(runtime, data.id, "issue", quickAction, devboxTarget);
-            if (!responseIsStale()) {
-              navigate(`/terminal/fleet/${encodeURIComponent(devboxTarget)}/${encodeURIComponent(data.id)}`);
+          if (data?.id && hostKey) {
+            promoteWorkspaceCreateLaunch(requestIdentity, data.id, hostKey, data.reused ? "existing" : "create");
+            if (quickAction) {
+              runReturnedWorkspaceQuickAction(runtime, { id: data.id, status: data.status }, "issue", quickAction, hostKey);
             }
+            if (responseIsStale()) return;
+            pendingWorkspaceHostChoice = null;
+            if (onOpenWorkspace) onOpenWorkspace(data.id, hostKey);
+            else navigate(`/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(data.id)}`);
             return;
           }
           if (data?.id) {
@@ -944,6 +930,7 @@
           if (responseIsStale()) return;
           pendingWorkspaceLaunchTarget = null;
           pendingWorkspaceQuickAction = null;
+          pendingWorkspaceHostChoice = null;
           if (!data?.id) return;
           if (inlineWorkspace) {
             refetchDetailForIdentity(requestIdentity);
@@ -973,6 +960,8 @@
         number: requestIdentity.number,
       },
       onFailure: (failure) => {
+        // The default may have gone offline since this page checked it.
+        if (!hostChoice && hostKey) workspaceTarget.recheck();
         if (responseIsStale()) return;
         const problem = failure._tag === "ApiProblemError" ? failure.problem : undefined;
         const conflict = parseBranchConflict(problem);
@@ -1001,6 +990,7 @@
     branchConflict = null;
     pendingWorkspaceLaunchTarget = null;
     pendingWorkspaceQuickAction = null;
+    pendingWorkspaceHostChoice = null;
   }
 
   // Task-list checkbox clicks update the body locally for instant
@@ -1518,7 +1508,16 @@
             )}
             quickActions={settings.getQuickActions()}
             onQuickAction={(action) => void createWorkspace({ quickAction: action })}
+            remoteHost={workspaceTarget.hostKey !== undefined}
           />
+          {#if !staleIssue && workspaceTarget.alternatives.length > 0}
+            <WorkspaceHostAlternatives
+              reason={workspaceTarget.reason}
+              choices={workspaceTarget.alternatives}
+              disabled={workspaceCreateBlocked}
+              onChoose={(choice) => void createWorkspace({ hostChoice: choice })}
+            />
+          {/if}
         {/if}
       {/snippet}
       {#snippet workspaceSecondaryAction()}

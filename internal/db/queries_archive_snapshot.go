@@ -88,6 +88,8 @@ func LoadArchiveSnapshotRepository(ctx context.Context, tx *sql.Tx, identity Rep
 const archiveSnapshotLinks = `link_candidates AS (
  SELECT f.*, p.id AS merge_request_id
  FROM forge_issue_pr_references f
+ JOIN forge_issues i ON i.id=f.issue_id
+ JOIN scoped_repos r ON r.id=i.repo_id
  JOIN pulls p ON p.repo_id = f.source_repo_id AND p.number = f.source_number
 ), links AS (
  SELECT * FROM (
@@ -193,13 +195,18 @@ func LoadArchiveSnapshotReviews(ctx context.Context, tx *sql.Tx, mrIDs []int64) 
 	return result, rows.Err()
 }
 
-func LoadArchiveSnapshotReferences(ctx context.Context, tx *sql.Tx, mrIDs []int64) ([]ArchiveSnapshotReference, error) {
+func LoadArchiveSnapshotReferences(ctx context.Context, tx *sql.Tx, repoIDs, mrIDs []int64) ([]ArchiveSnapshotReference, error) {
 	ids, err := json.Marshal(mrIDs)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `WITH pulls AS (SELECT id,repo_id,number FROM forge_merge_requests WHERE id IN (SELECT value FROM json_each(?))), `+archiveSnapshotLinks+`
- SELECT issue_id,merge_request_id,source_url,observed_event_key,observed_at FROM links ORDER BY merge_request_id,issue_id`, string(ids))
+	repos, err := json.Marshal(repoIDs)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `WITH scoped_repos AS (SELECT value AS id FROM json_each(?)),
+ pulls AS (SELECT id,repo_id,number FROM forge_merge_requests WHERE id IN (SELECT value FROM json_each(?))), `+archiveSnapshotLinks+`
+ SELECT issue_id,merge_request_id,source_url,observed_event_key,observed_at FROM links ORDER BY merge_request_id,issue_id`, string(repos), string(ids))
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot references: %w", err)
 	}

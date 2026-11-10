@@ -191,7 +191,7 @@ function renderIssueDetail(
     deferRefresh?: boolean;
     refreshFailure?: string;
     inlineWorkspace?: InlineWorkspaceController | null;
-    onOpenWorkspace?: (workspaceId: string) => void;
+    onOpenWorkspace?: (workspaceId: string, hostKey?: string) => void;
     runtimeClient?: GeneratedClient;
     quickActions?: QuickAction[];
     detailProps?: Partial<ComponentProps<typeof IssueDetailComponent>>;
@@ -266,6 +266,7 @@ function renderIssueDetail(
           issues: issuesStore,
           activity: { loadActivity: vi.fn() },
           detailActivityView: createDetailActivityViewStore(),
+          events: { subscribeWorkspaceEvents: () => () => undefined },
           settings: {
             getWorkspaceSettings: () => ({ default_execution_target: options.defaultExecutionTarget ?? "" }),
             getLaunchTargets: () => launchTargets,
@@ -487,6 +488,7 @@ describe("IssueDetail activity view", () => {
             issues: issuesStore,
             activity: { loadActivity: vi.fn() },
             detailActivityView: createDetailActivityViewStore(),
+            events: { subscribeWorkspaceEvents: () => () => undefined },
             settings: {
               getWorkspaceSettings: () => ({ default_execution_target: "" }),
               getLaunchTargets: () => launchTargets,
@@ -1236,6 +1238,37 @@ describe("IssueDetail inline workspace handoff", () => {
     // terminal route is unusable from the phone shell.
     await vi.waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledWith("ws-new"));
     expect(navigate).not.toHaveBeenCalledWith("/terminal/ws-new");
+  });
+
+  it("opens a workspace created on another fleet member through the host callback", async () => {
+    const buildBNode = "b".repeat(32);
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: {
+          hosts: [
+            {
+              configKey: buildBNode,
+              kind: "remote",
+              name: "build-b",
+              operationAvailability: { workspaceWrite: { available: true } },
+            },
+          ],
+        },
+      })),
+      POST: vi.fn(async () => ({ data: { id: "ws-remote", status: "provisioning" } })),
+    };
+    const onOpenWorkspace = vi.fn();
+    const { navigate } = renderIssueDetail(
+      issueDetail(),
+      undefined,
+      { onOpenWorkspace, defaultExecutionTarget: buildBNode },
+      apiClient,
+    );
+
+    await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
+
+    await vi.waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledWith("ws-remote", buildBNode));
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it("discards a create failure that lands after the component unmounted (no flash)", async () => {

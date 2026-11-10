@@ -3953,6 +3953,39 @@ func (o *GetFleetWorkspaceRuntimeRequestOptions) GetHeader() (map[string]string,
 	return nil, nil
 }
 
+// LaunchFleetWorkspaceAgentHandoffRequestOptions is the options needed to make a request to LaunchFleetWorkspaceAgentHandoff.
+type LaunchFleetWorkspaceAgentHandoffRequestOptions struct {
+	PathParams *LaunchFleetWorkspaceAgentHandoffPath
+	Body       *LaunchFleetWorkspaceAgentHandoffBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *LaunchFleetWorkspaceAgentHandoffRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *LaunchFleetWorkspaceAgentHandoffRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *LaunchFleetWorkspaceAgentHandoffRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *LaunchFleetWorkspaceAgentHandoffRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // LaunchFleetWorkspaceRuntimeSessionRequestOptions is the options needed to make a request to LaunchFleetWorkspaceRuntimeSession.
 type LaunchFleetWorkspaceRuntimeSessionRequestOptions struct {
 	PathParams *LaunchFleetWorkspaceRuntimeSessionPath
@@ -13184,6 +13217,7 @@ type ClientInterface interface {
 	RetryFleetWorkspaceWithResponse(ctx context.Context, options *RetryFleetWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RetryFleetWorkspaceResp, error)
 	RevealFleetWorkspaceWithResponse(ctx context.Context, options *RevealFleetWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RevealFleetWorkspaceResp, error)
 	GetFleetWorkspaceRuntimeWithResponse(ctx context.Context, options *GetFleetWorkspaceRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceRuntimeResp, error)
+	LaunchFleetWorkspaceAgentHandoffWithResponse(ctx context.Context, options *LaunchFleetWorkspaceAgentHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchFleetWorkspaceAgentHandoffResp, error)
 	LaunchFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *LaunchFleetWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchFleetWorkspaceRuntimeSessionResp, error)
 	StopFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *StopFleetWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopFleetWorkspaceRuntimeSessionResp, error)
 	RenameFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *RenameFleetWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RenameFleetWorkspaceRuntimeSessionResp, error)
@@ -21820,6 +21854,75 @@ func (c *Client) GetFleetWorkspaceRuntimeWithResponse(ctx context.Context, optio
 		}
 		if resp.StatusCode/100 == 2 {
 			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// LaunchFleetWorkspaceAgentHandoff Launch an agent with a prompt in a workspace on fleet host
+func (c *Client) LaunchFleetWorkspaceAgentHandoffWithResponse(ctx context.Context, options *LaunchFleetWorkspaceAgentHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchFleetWorkspaceAgentHandoffResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &LaunchFleetWorkspaceAgentHandoffResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(LaunchFleetWorkspaceAgentHandoffErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(LaunchFleetWorkspaceAgentHandoffResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "LaunchFleetWorkspaceAgentHandoffResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.JSONDefault = new(LaunchFleetWorkspaceAgentHandoffErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "LaunchFleetWorkspaceAgentHandoffErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
 		}
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
@@ -44510,6 +44613,22 @@ func (c *Client) GetFleetWorkspaceRuntimeRaw(ctx context.Context, httpClient *ht
 	return httpClient.Do(req)
 }
 
+// LaunchFleetWorkspaceAgentHandoffRaw returns an unread response. The caller must close its body.
+func (c *Client) LaunchFleetWorkspaceAgentHandoffRaw(ctx context.Context, httpClient *http.Client, options *LaunchFleetWorkspaceAgentHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // LaunchFleetWorkspaceRuntimeSessionRaw returns an unread response. The caller must close its body.
 func (c *Client) LaunchFleetWorkspaceRuntimeSessionRaw(ctx context.Context, httpClient *http.Client, options *LaunchFleetWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -51914,6 +52033,23 @@ func NewGetFleetWorkspaceRuntimeRequest(ctx context.Context, baseURL string, opt
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewLaunchFleetWorkspaceAgentHandoffRequest constructs a typed request for a caller-owned transport.
+func NewLaunchFleetWorkspaceAgentHandoffRequest(ctx context.Context, baseURL string, options *LaunchFleetWorkspaceAgentHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewLaunchFleetWorkspaceRuntimeSessionRequest constructs a typed request for a caller-owned transport.
 func NewLaunchFleetWorkspaceRuntimeSessionRequest(ctx context.Context, baseURL string, options *LaunchFleetWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -58429,6 +58565,11 @@ type GetFleetWorkspaceRuntimePath struct {
 	ID      string `json:"id"`
 }
 
+type LaunchFleetWorkspaceAgentHandoffPath struct {
+	HostKey string `json:"host_key"`
+	ID      string `json:"id"`
+}
+
 type LaunchFleetWorkspaceRuntimeSessionPath struct {
 	HostKey string `json:"host_key"`
 	ID      string `json:"id"`
@@ -60120,6 +60261,8 @@ type StoreFleetTerminalPasteImageBody = runtime.File
 
 type CreateFleetWorkspaceBody map[string]any
 
+type LaunchFleetWorkspaceAgentHandoffBody map[string]any
+
 type LaunchFleetWorkspaceRuntimeSessionBody map[string]any
 
 type RenameFleetWorkspaceRuntimeSessionBody map[string]any
@@ -60842,7 +60985,7 @@ type ListIssuesQuery struct {
 	ReferencedByPr *bool   `json:"referenced_by_pr,omitempty"`
 	Q              *string `json:"q,omitempty"`
 
-	// Semantic Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers.
+	// Semantic Rank titles, descriptions, and comments by meaning. Requires q and semantic search on the Forge that syncs providers.
 	Semantic *bool   `json:"semantic,omitempty"`
 	Assignee *string `json:"assignee,omitempty"`
 	Limit    *int64  `json:"limit,omitempty"`
@@ -60907,7 +61050,7 @@ type ListPullsQuery struct {
 	Unassigned *bool   `json:"unassigned,omitempty"`
 	Q          *string `json:"q,omitempty"`
 
-	// Semantic Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers.
+	// Semantic Rank titles, descriptions, and comments by meaning. Requires q and semantic search on the Forge that syncs providers.
 	Semantic *bool  `json:"semantic,omitempty"`
 	Limit    *int64 `json:"limit,omitempty"`
 	Offset   *int64 `json:"offset,omitempty"`
@@ -61586,6 +61729,14 @@ type RetryFleetWorkspaceResponse map[string]any
 type RevealFleetWorkspaceResponse map[string]any
 
 type GetFleetWorkspaceRuntimeResponse map[string]any
+
+type LaunchFleetWorkspaceAgentHandoffResponse = WorkspaceAgentHandoffResponse
+
+type LaunchFleetWorkspaceAgentHandoffErrorResponse map[string]any
+
+func (r LaunchFleetWorkspaceAgentHandoffErrorResponse) Error() string {
+	return "unmapped client error"
+}
 
 type LaunchFleetWorkspaceRuntimeSessionResponse map[string]any
 
@@ -63851,6 +64002,15 @@ type GetFleetWorkspaceRuntimeResp struct {
 	Body         []byte
 	StatusCode   int
 	JSONDefault  *GetFleetWorkspaceRuntimeResponse
+}
+
+type LaunchFleetWorkspaceAgentHandoffResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *LaunchFleetWorkspaceAgentHandoffErrorResponse
+	JSON200      *LaunchFleetWorkspaceAgentHandoffResponse
+	JSONDefault  *LaunchFleetWorkspaceAgentHandoffErrorResponse
 }
 
 type LaunchFleetWorkspaceRuntimeSessionResp struct {

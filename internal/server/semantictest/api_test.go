@@ -56,7 +56,7 @@ func TestListsRankSyncedItemsByMeaningWhenSemanticIsSet(t *testing.T) {
 	}}))
 
 	endpoint := embedfake.New(t, "cache", "login", "flaky")
-	encoder, err := semantic.NewEncoder(endpoint.Embedder("test-model"))
+	encoder, err := semantic.NewEncoder(endpoint.Embedder("test-model"), nil)
 	require.NoError(t, err)
 	indexer, err := semantic.Open(ctx, filepath.Join(t.TempDir(), semantic.SidecarFile), encoder, database, time.Hour)
 	require.NoError(t, err)

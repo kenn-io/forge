@@ -130,7 +130,9 @@ test("shows a player's length and first frame before it is played", async ({ pag
 test("previews a description's players one at a time and holds no request afterwards", async ({ page }) => {
   const media = trackMediaRequests(page);
   await page.goto(route("/pulls/github/acme/widgets/1"));
-  const frames = page.locator(".markdown-body .markdown-video-frame");
+  // Let the review comment's video render first so it cannot race this count.
+  await expect(page.locator(".event-body .markdown-video-frame")).toHaveCount(1);
+  const frames = page.locator(".body-section .markdown-body .markdown-video-frame");
   await expect(frames).toHaveCount(5);
 
   for (const frame of await frames.all()) {

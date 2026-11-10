@@ -2113,7 +2113,7 @@
                       {:else}
                         <span class={`ws-hover-tone--${row.tone}`}>{row.value}</span>
                       {/if}
-                      {#each row.notes ?? [] as note (note.text)}
+                      {#each row.notes ?? [] as note}
                         <span class={["ws-hover-note", `ws-hover-tone--${note.tone}`]}>{note.text}</span>
                       {/each}
                     </dd>

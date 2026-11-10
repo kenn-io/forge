@@ -70,17 +70,13 @@ export interface WorkspacePullStatusLine {
   readonly label: "Review" | "CI" | "Merge";
   readonly value: string;
   readonly tone: WorkspaceStatusTone;
-  /** Names of the failed and running checks, on the CI line only. */
+  /** Names of the failed checks, on the CI line only, when there are few. */
   readonly notes?: readonly WorkspaceStatusNote[];
 }
 
-const maxCheckNames = 4;
-
-function checkNames(checks: CIBucketedChecks["all"]): string {
-  const names = checks.slice(0, maxCheckNames).map((check) => check.name);
-  const more = checks.length - names.length;
-  return more > 0 ? `${names.join(", ")}, +${more} more` : names.join(", ");
-}
+// More failed checks than this are a count only: a long list of names says
+// less than the number does.
+const maxFailedCheckNames = 3;
 
 function reviewLine(decision: string): WorkspacePullStatusLine | null {
   switch (decision) {
@@ -109,10 +105,9 @@ function ciLine(checks: CIBucketedChecks): WorkspacePullStatusLine | null {
     .map(([count, name]) => `${count} ${name}`)
     .join(", ");
   const tone = checks.failed.length > 0 ? "danger" : checks.pending.length > 0 ? "warning" : "success";
-  const notes: WorkspaceStatusNote[] = [];
-  if (checks.failed.length > 0) notes.push({ text: checkNames(checks.failed), tone: "danger" });
-  if (checks.pending.length > 0) notes.push({ text: checkNames(checks.pending), tone: "warning" });
-  return notes.length > 0 ? { label: "CI", value, tone, notes } : { label: "CI", value, tone };
+  if (checks.failed.length === 0 || checks.failed.length > maxFailedCheckNames) return { label: "CI", value, tone };
+  const names = checks.failed.map((check) => check.name).join(", ");
+  return { label: "CI", value, tone, notes: [{ text: names, tone: "danger" }] };
 }
 
 function mergeLine(status: WorkspacePullStatus): WorkspacePullStatusLine | null {

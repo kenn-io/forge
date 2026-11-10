@@ -129,7 +129,6 @@ export function workspaceHoverDetails(
     hostName ? row("Host", hostName) : null,
     workspace.tmux_last_output_at ? row("Last output", formatRelativeTime(workspace.tmux_last_output_at)) : null,
     row("Created", formatRelativeTime(workspace.created_at)),
-    row("Path", workspace.worktree_path),
   ];
   const present = (entry: WorkspaceHoverRow | null): entry is WorkspaceHoverRow => entry !== null;
   return { item: item.filter(present), workspace: details.filter(present) };

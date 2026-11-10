@@ -79,7 +79,6 @@ describe("workspaceHoverDetails", () => {
       { label: "Host", value: "build-host", tone: "neutral" },
       { label: "Last output", value: "2m ago", tone: "neutral" },
       { label: "Created", value: "2d ago", tone: "neutral" },
-      { label: "Path", value: "/tmp/worktrees/ws-1", tone: "neutral" },
     ]);
   });
 
@@ -120,7 +119,7 @@ describe("workspaceHoverDetails", () => {
     );
 
     expect(details.item).toEqual([]);
-    expect(labels(details.workspace)).toEqual(["Status", "Created", "Path"]);
+    expect(labels(details.workspace)).toEqual(["Status", "Created"]);
     expect(details.workspace[0]).toEqual({
       label: "Status",
       value: "Error",

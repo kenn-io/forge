@@ -7441,7 +7441,6 @@ test("workspace rows show linked pull request status without growing, and detail
   await expect(value("Review")).toHaveText("Changes requested");
   await expect(value("CI").locator("> *")).toHaveText(["2 failed, 1 passed", "lint, build"]);
   await expect(value("Merge")).toHaveText("Conflicts, In merge queue");
-  await expect(value("Path")).toHaveText("/tmp/worktrees/ws-123");
   const blockedBox = (await blockedRow.boundingBox())!;
   const blockedCard = (await card.boundingBox())!;
   expect(blockedCard.x).toBeGreaterThanOrEqual(blockedBox.x + blockedBox.width);
@@ -7465,9 +7464,9 @@ test("workspace rows show linked pull request status without growing, and detail
     "Agent",
     "Worktree",
     "Created",
-    "Path",
   ]);
-  await expect(value("CI").locator("> *")).toHaveText(["5 running, 29 passed", "e2e-0, e2e-1, e2e-2, e2e-3, +1 more"]);
+  // Running checks are a count only; names are for the few that failed.
+  await expect(value("CI").locator("> *")).toHaveText(["5 running, 29 passed"]);
   await expect(value("Merge")).toHaveText("After CI");
   await expect(value("Agent").locator("> *").nth(1)).toHaveText("agent: retry backoff");
   await expect(value("Worktree")).toHaveText("2 ahead, 0 behind upstream, dirty");

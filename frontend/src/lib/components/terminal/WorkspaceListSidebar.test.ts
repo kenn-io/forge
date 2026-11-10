@@ -1476,11 +1476,7 @@ describe("WorkspaceListSidebar", () => {
       "kenn-io/kenn-forge",
       "feature/full-sidebar-popover-details",
     ]);
-    expect(Array.from(tooltip.querySelectorAll("dt"), (term) => term.textContent)).toEqual([
-      "Pull request",
-      "Created",
-      "Path",
-    ]);
+    expect(Array.from(tooltip.querySelectorAll("dt"), (term) => term.textContent)).toEqual(["Pull request", "Created"]);
     expect(tooltip.querySelector("dd")?.textContent?.trim()).toBe("#41 Open");
     expect(tooltip.dataset.side).toBe("right");
     expect(row.contains(tooltip)).toBe(false);
@@ -2369,27 +2365,16 @@ describe("WorkspaceListSidebar", () => {
     const values = Array.from(tooltip.querySelectorAll("dd"), (value) =>
       Array.from(value.children, (part) => part.textContent?.replace(/\s+/g, " ").trim()).join(" | "),
     );
-    expect(terms).toEqual([
-      "Pull request",
-      "Review",
-      "CI",
-      "Merge",
-      "Changes",
-      "Comments",
-      "Worktree",
-      "Created",
-      "Path",
-    ]);
+    expect(terms).toEqual(["Pull request", "Review", "CI", "Merge", "Changes", "Comments", "Worktree", "Created"]);
     expect(values.slice(0, 7)).toEqual([
       "#61 Open",
       "Approved",
-      "1 failed, 1 running, 1 passed | lint | build",
+      "1 failed, 1 running, 1 passed | lint",
       "Conflicts, In merge queue, After CI",
       "+42 −7",
       "3",
       "2 ahead, 0 behind upstream",
     ]);
-    expect(values.at(-1)).toBe("/tmp/ws-status");
   });
 
   it("can hide PR diff stats while keeping branch metadata visible", async () => {

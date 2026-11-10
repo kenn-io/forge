@@ -34,13 +34,13 @@ describe("workspacePullStatus", () => {
 });
 
 describe("workspacePullStatusLines", () => {
-  it("names each state and lists the failed checks", () => {
+  it("names each state and the failed checks when they are few", () => {
     const status = workspacePullStatus({
       item_type: "pull_request",
       mr_review_decision: "approved",
       mr_deferred_merge_pending: true,
       mr_checks: [
-        ...["a", "b", "c", "d", "e"].map((name) => ({ name, status: "completed", conclusion: "failure" })),
+        ...["a", "b", "c"].map((name) => ({ name, status: "completed", conclusion: "failure" })),
         { name: "build", status: "queued" },
         { name: "unit", status: "completed", conclusion: "success" },
       ],
@@ -50,15 +50,27 @@ describe("workspacePullStatusLines", () => {
       { label: "Review", value: "Approved", tone: "success" },
       {
         label: "CI",
-        value: "5 failed, 1 running, 1 passed",
+        value: "3 failed, 1 running, 1 passed",
         tone: "danger",
-        notes: [
-          { text: "a, b, c, d, +1 more", tone: "danger" },
-          { text: "build", tone: "warning" },
-        ],
+        notes: [{ text: "a, b, c", tone: "danger" }],
       },
       { label: "Merge", value: "After CI", tone: "waiting" },
     ]);
+  });
+
+  it("counts the checks without naming them when many failed or none did", () => {
+    const failed = (names: string[]) => names.map((name) => ({ name, status: "completed", conclusion: "failure" }));
+    const many = workspacePullStatus({ item_type: "pull_request", mr_checks: failed(["a", "b", "c", "d"]) })!;
+    const running = workspacePullStatus({
+      item_type: "pull_request",
+      mr_checks: [
+        { name: "build", status: "in_progress" },
+        { name: "unit", status: "completed", conclusion: "success" },
+      ],
+    })!;
+
+    expect(workspacePullStatusLines(many)).toEqual([{ label: "CI", value: "4 failed", tone: "danger" }]);
+    expect(workspacePullStatusLines(running)).toEqual([{ label: "CI", value: "1 running, 1 passed", tone: "warning" }]);
   });
 
   it("puts a conflict ahead of the merge queue", () => {

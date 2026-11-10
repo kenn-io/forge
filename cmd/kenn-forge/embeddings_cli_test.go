@@ -18,9 +18,11 @@ import (
 )
 
 func TestLocalEmbeddingsSetup(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	path := filepath.Join(t.TempDir(), "config.toml")
 	deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
-		assert.False(t, opts.SkipOllama)
 		return "http://127.0.0.1:1234/v1", nil
 	}}
 	cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, deps)
@@ -33,6 +35,9 @@ func TestLocalEmbeddingsSetup(t *testing.T) {
 }
 
 func TestLocalEmbeddingsSwitchPreservesSelectionDuringConcurrentEdit(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	for _, compatible := range []bool{true, false} {
 		t.Run(fmt.Sprint(compatible), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
@@ -80,6 +85,9 @@ func TestLocalEmbeddingsSwitchPreservesSelectionDuringConcurrentEdit(t *testing.
 }
 
 func TestLocalEmbeddingsDownloadFailureAndNoninteractiveRefusal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	for _, yes := range []bool{false, true} {
 		t.Run(fmt.Sprint(yes), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
@@ -110,11 +118,17 @@ func TestLocalEmbeddingsDownloadFailureAndNoninteractiveRefusal(t *testing.T) {
 			saved, err := os.ReadFile(path)
 			require.NoError(t, err)
 			assert.Equal(t, original, string(saved))
+			recorded, err := embedlocal.ChoiceRecorded()
+			require.NoError(t, err)
+			assert.False(t, recorded)
 		})
 	}
 }
 
 func TestLocalEmbeddingsRerun(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	for _, mode := range []string{"auto", "builtin"} {
 		t.Run(mode, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
@@ -148,6 +162,9 @@ func TestLocalEmbeddingsRerun(t *testing.T) {
 }
 
 func TestLocalEmbeddingsCachedResolution(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	calls := 0
 	deps := localEmbeddingDeps{
 		endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
@@ -167,4 +184,44 @@ func TestLocalEmbeddingsCachedResolution(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "http://127.0.0.1:1234/v1", endpoint)
 	assert.Equal(t, 2, calls)
+}
+
+func TestLocalEmbeddingsRecordsBuiltinChoice(t *testing.T) {
+	for _, builtin := range []bool{true, false} {
+		t.Run(fmt.Sprint(builtin), func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+			path := filepath.Join(t.TempDir(), "config.toml")
+			deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
+				if opts.SkipOllama && !builtin {
+					return "http://127.0.0.1:1235/v1", nil
+				}
+				return "http://127.0.0.1:1234/v1", nil
+			}}
+			cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, deps)
+			cmd.SetArgs([]string{"local", "--config", path})
+			require.NoError(t, cmd.ExecuteContext(t.Context()))
+			recorded, err := embedlocal.ChoiceRecorded()
+			require.NoError(t, err)
+			assert.Equal(t, builtin, recorded)
+		})
+	}
+}
+
+func TestLocalEmbeddingsChoiceWriteFailureWarns(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	require.NoError(t, os.WriteFile(filepath.Join(home, ".kenn"), []byte("block"), 0o600))
+	path := filepath.Join(t.TempDir(), "config.toml")
+	deps := localEmbeddingDeps{endpoint: func(context.Context, embedlocal.Options) (string, error) { return "http://127.0.0.1:1234/v1", nil }}
+	var stderr bytes.Buffer
+	cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &stderr, deps)
+	cmd.SetArgs([]string{"local", "--config", path})
+	require.NoError(t, cmd.ExecuteContext(t.Context()))
+	assert.Contains(t, stderr.String(), "could not record search by meaning choice")
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "auto", cfg.LocalEmbeddings)
 }

@@ -5,6 +5,10 @@ import (
 	"go.kenn.io/kit/embedlocal"
 )
 
+func DefaultLocalEmbeddingRecipe() embedconfig.Embedder {
+	return embedconfig.Embedder{Model: embedlocal.TextModel, Dims: 768, DocumentPrefix: "search_document: ", QueryPrefix: "search_query: "}
+}
+
 // LocalEmbeddingRecipe supplies a temporary URL for an endpointless recipe.
 func LocalEmbeddingRecipe(e embedconfig.Embedder) embedconfig.Embedder {
 	e.BaseURL = "http://127.0.0.1:1/v1"

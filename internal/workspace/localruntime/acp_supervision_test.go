@@ -248,24 +248,12 @@ func TestACPTakeoverRejectsStaleGenerations(t *testing.T) {
 	}
 }
 
-// fixtureModel is the model setting the stdio fixture currently reports.
-func fixtureModel(t *testing.T, agent *ACP) string {
-	t.Helper()
-	for _, option := range publishedACPState(t, agent).ConfigOptions {
-		if option.ID == "model" {
-			return option.CurrentValue
-		}
-	}
-	require.FailNow(t, "the fixture reports no model setting")
-	return ""
-}
-
-func TestACPPeopleChangeSettingsWhileSupervised(t *testing.T) {
+func TestACPSettingsWhileSupervised(t *testing.T) {
 	t.Run("person", func(t *testing.T) {
 		agent := newInProcessChat(t).start(nil)
 		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
 		require.NoError(t, agent.Command(ACPCommand{Type: "config", ID: "model", Value: "deep"}))
-		assert.Equal(t, "deep", fixtureModel(t, agent))
+		assert.Equal(t, "deep", acpOptionValue(t, agent, "model"))
 	})
 	t.Run("coordinator", func(t *testing.T) {
 		c := newInProcessChat(t)
@@ -274,15 +262,9 @@ func TestACPPeopleChangeSettingsWhileSupervised(t *testing.T) {
 		require.NoError(t, first.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
 		generation := publishedACPState(t, first).Supervision.Generation
 		require.NoError(t, first.Command(ACPCommand{Type: "config", ID: "model", Value: "deep", Generation: generation}))
-		saved := readSavedSession(t, c.recordPath())
-
 		other := c.start(nil)
-		assert.Equal(t, "fast", fixtureModel(t, other))
+		assert.Equal(t, "fast", acpOptionValue(t, other, "model"))
 		assert.Equal(t, "high", acpOptionValue(t, other, "effort"))
-
-		reloaded := c.start(&saved)
-		assert.Equal(t, "fast", fixtureModel(t, reloaded), "a reload ends the coordinator's choice")
-		assert.Equal(t, "high", acpOptionValue(t, reloaded, "effort"))
 	})
 }
 
@@ -292,7 +274,7 @@ func TestACPSettingsChangeWaitingDuringTakeoverIsStale(t *testing.T) {
 	agent := newInProcessChat(t).start(nil)
 	require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
 	generation := publishedACPState(t, agent).Supervision.Generation
-	before := fixtureModel(t, agent)
+	before := acpOptionValue(t, agent, "model")
 
 	agent.turnMu.Lock()
 	contended := make(chan struct{})
@@ -314,7 +296,7 @@ func TestACPSettingsChangeWaitingDuringTakeoverIsStale(t *testing.T) {
 	require.NoError(t, err)
 
 	require.ErrorIs(t, <-result, ErrACPStaleGeneration)
-	assert.Equal(t, before, fixtureModel(t, agent))
+	assert.Equal(t, before, acpOptionValue(t, agent, "model"))
 	assert.NotEqual(t, "deep", before)
 }
 

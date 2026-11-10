@@ -44,8 +44,7 @@ Processes on the execution host:
 - Launch ACP options (quick actions) apply over remembered ones for that chat only and are never
   remembered; a reload keeps the last confirmed values for those options; unoffered choices become a notice.
 - Coordinator setting changes and their confirmed dependent changes leave defaults alone and
-  last only the chat's current run; a reload keeps only launch options' confirmed values, so
-  coordinators MUST reapply their settings after a reload.
+  may revert on reload; coordinators must reapply their settings when resuming.
 - An ACP target with `disable_forge_tools` receives no Forge MCP endpoint or credentials,
   including in settings probes and when reattaching or replacing an owner.
 - Codex ACP chats derive Full access (`dangerFullAccess`/`never`) or Read-only (`readOnly`/

@@ -3168,11 +3168,14 @@
       return;
     }
     // Focus waits for the server to finish typing: keys typed into a focused
-    // terminal before then would be submitted with the prompt.
+    // terminal before then would be submitted with the prompt. By then the
+    // user may be typing elsewhere, so the request is soft and yields to that.
     const id = workspaceId;
     const workspaceHost = workspaceHostKey;
     runQuickActionInSession(appRuntime, id, action, session, workspaceHost, () => {
-      if (isCurrentWorkspace(id, workspaceHost)) requestSessionFocus(hostKey);
+      if (isCurrentWorkspace(id, workspaceHost) && isSessionSlotVisible(hostKey)) {
+        requestSessionFocus(hostKey, { soft: true });
+      }
     });
   }
 

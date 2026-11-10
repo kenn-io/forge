@@ -6493,6 +6493,57 @@ describe("WorkspaceTerminalView", () => {
       expect(within(strip).getAllByRole("tab")).toHaveLength(1);
     });
 
+    it("focuses the terminal once the prompt is delivered, unless the user is typing elsewhere", async () => {
+      let handoff = deferred<Response>();
+      const delivered = () =>
+        Response.json({
+          session: runningSession,
+          initial_message: { state: "delivered", target_key: "helper", message_bytes: 18 },
+        });
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: Request | URL | string, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(String(input), init);
+          if (!request.url.includes("/workspaces/ws-1/runtime/agent-handoffs")) return originalFetch(input, init);
+          return handoff.promise;
+        }),
+      );
+      mocks.quickActions = [{ label: "Review", agent: "helper", prompt: "Review this change" }];
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+      await screen.findByRole("tab", { name: /Helper/ });
+      await waitFor(() => expect(sockets).toHaveLength(1));
+      const strip = screen.getAllByRole("tablist", { name: "Workflow group tabs" })[0]!;
+      const terminalFocus = mocks.mockTerminalInstances[0]!.focus;
+      const send = async () => {
+        await fireEvent.click(within(strip).getByRole("button", { name: "Quick actions" }));
+        await fireEvent.click(
+          within(screen.getByRole("dialog", { name: "Quick actions" })).getByRole("button", {
+            name: "Send Review to Helper",
+          }),
+        );
+        terminalFocus.mockClear();
+      };
+
+      // Keys typed before the server writes the prompt would be submitted with it.
+      await send();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(terminalFocus).not.toHaveBeenCalled();
+      handoff.resolve(delivered());
+      await waitFor(() => expect(terminalFocus).toHaveBeenCalled());
+
+      handoff = deferred<Response>();
+      await send();
+      const elsewhere = document.createElement("input");
+      document.body.append(elsewhere);
+      elsewhere.focus();
+      handoff.resolve(delivered());
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(terminalFocus).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(elsewhere);
+      elsewhere.remove();
+    });
+
     it.each(["plain_shell", "shell"])(
       "offers no send to a %s session, where a prompt would run as commands",
       async (kind) => {

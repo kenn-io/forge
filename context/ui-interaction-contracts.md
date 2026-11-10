@@ -196,8 +196,8 @@ Interactive surfaces must agree on which item is selected.
   deliver them; normal eviction resumes once its outbox is empty
   (`frontend/src/lib/stores/session-host.svelte.ts::noteSessionHolding`).
 - Timeline comments show Add to chat beside Copy only while a chat that accepts input is on screen; it
-  appends to the last-focused visible chat's composer and never sends
-  (`frontend/src/lib/stores/chat-composer.svelte.ts`).
+  appends to the visible chat focused last, counting focus from before it was ready or shown, and never
+  sends (`frontend/src/lib/stores/chat-composer.svelte.ts`).
 - Clicking empty pane space focuses the composer; text, media, controls, selection ends, and touch keep
   normal behavior. Decide touch from the click's pointer type, not the device's primary pointer.
 - Thoughts and interleaved tool calls share one collapsed activity group; reasoning stays opt-in even

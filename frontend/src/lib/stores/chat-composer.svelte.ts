@@ -1,39 +1,40 @@
 /**
  * Agent chat composers on screen that can take text from elsewhere on the
- * page, most recently focused last. "Add to chat" buttons render only while
- * one exists and append to the last one. A chat that appears or becomes ready
- * joins at the front, so it never takes over from the chat the user focused.
+ * page. "Add to chat" buttons render only while one exists and append to the
+ * one the user focused last. Each chat keeps its own focus time, so focus
+ * before it was ready, or before it was hidden, still counts once it is back.
  */
 
 import { untrack } from "svelte";
 
-type Insert = (text: string) => void;
-
-let composers = $state<Insert[]>([]);
-
-// Registration runs inside the chat's effect; reading the list there would
-// make the effect depend on the list it writes.
-const others = (insert: Insert) => untrack(() => composers).filter((entry) => entry !== insert);
-
-/** Publish a visible chat composer; returns the function that withdraws it. */
-export function registerChatComposer(insert: Insert): () => void {
-  composers = [insert, ...others(insert)];
-  return () => {
-    composers = others(insert);
-  };
+export interface ChatComposer {
+  insert: (text: string) => void;
+  /** When the user last focused this chat; 0 if never. */
+  lastFocused: () => number;
 }
 
-/** Make a registered composer the one "Add to chat" targets. */
-export function noteChatComposerUsed(insert: Insert): void {
-  if (composers.at(-1) === insert || !composers.includes(insert)) return;
-  composers = [...others(insert), insert];
+// Raw: a deep proxy would wrap each entry, and unregistering compares identity.
+let composers = $state.raw<ChatComposer[]>([]);
+
+/** Publish a visible chat composer; returns the function that withdraws it. */
+export function registerChatComposer(composer: ChatComposer): () => void {
+  // Registration runs inside the chat's effect; reading the list there would
+  // make the effect depend on the list it writes.
+  composers = [...untrack(() => composers), composer];
+  return () => {
+    composers = untrack(() => composers).filter((entry) => entry !== composer);
+  };
 }
 
 export function hasChatComposer(): boolean {
   return composers.length > 0;
 }
 
-/** Append text to the target chat's composer without sending it. */
+/** Append text to the last-focused chat's composer without sending it. */
 export function addToChat(text: string): void {
-  composers.at(-1)?.(text);
+  const target = composers.reduce<ChatComposer | undefined>(
+    (best, entry) => (best && best.lastFocused() >= entry.lastFocused() ? best : entry),
+    undefined,
+  );
+  target?.insert(text);
 }

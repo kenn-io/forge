@@ -26,7 +26,7 @@
   import type { ContentScrollPositions } from "./chat-content-scroll.js";
   import { mediaDataURL } from "./chat-content.js";
   import { AGENT_PROMPT_DRAG_MIME } from "../../utils/ci-fix-prompt.js";
-  import { noteChatComposerUsed, registerChatComposer } from "../../stores/chat-composer.svelte.js";
+  import { registerChatComposer } from "../../stores/chat-composer.svelte.js";
   import type { AgentCommand, ChatCommand, ChatContent, ChatMessage, ChatState, PromptMode } from "./chat-types.js";
 
   let { websocketPath, sessionKey = "", label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onHoldingChange, onExit }: {
@@ -458,16 +458,19 @@
     textarea?.setSelectionRange(draft.length, draft.length);
     syncCaret();
   }
-  const insertFromPage = (text: string) => void appendToComposer(text);
+  // Recorded even while this chat cannot take text, so Add to chat still
+  // prefers it once it is ready or shown again.
+  let lastFocused = 0;
+  const composer = { insert: (text: string) => void appendToComposer(text), lastFocused: () => lastFocused };
   $effect(() => {
-    return active && !disabled && accepting && !stopped ? registerChatComposer(insertFromPage) : undefined;
+    return active && !disabled && accepting && !stopped ? registerChatComposer(composer) : undefined;
   });
   // Focus Terminal focuses the pooled session wrapper around this chat, not
   // anything inside it, so focus there counts as using this chat too.
   function noteFocus(event: FocusEvent) {
     const target = event.target;
     if (!section || !(target instanceof Node)) return;
-    if (section.contains(target) || section.closest("[data-session-host]") === target) noteChatComposerUsed(insertFromPage);
+    if (section.contains(target) || section.closest("[data-session-host]") === target) lastFocused = performance.now();
   }
   function keydown(event: KeyboardEvent) {
     if (commandKeydown(event)) return;

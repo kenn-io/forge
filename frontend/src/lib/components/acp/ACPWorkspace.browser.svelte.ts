@@ -52,7 +52,7 @@ async function renderChat(width: number, props: { active?: boolean } = {}) {
   // Mirrors the pooled session host: a full-size flex column.
   host.style.cssText = `width: ${width}px; height: 600px; display: flex; flex-direction: column;`;
   document.body.append(host);
-  await render(ACPWorkspace, {
+  const { rerender } = await render(ACPWorkspace, {
     context: new Map([[STORES_KEY, { settings }]]),
     target: host,
     props: { websocketPath: "/ws/chat", ...props },
@@ -81,6 +81,7 @@ async function renderChat(width: number, props: { active?: boolean } = {}) {
   const article = host.querySelector<HTMLElement>('article[aria-label="Assistant"]')!;
   return {
     host,
+    rerender,
     article,
     cell: article.querySelector<HTMLElement>(".cell")!,
     gutter: article.querySelector<HTMLElement>(".gutter")!,
@@ -1366,13 +1367,13 @@ describe("ACPWorkspace add to chat (browser)", () => {
     await renderTimeline();
     // Each chat sits in a pooled-session wrapper, which Focus Terminal focuses.
     const wrapped = async () => {
-      const { host } = await renderChat(700);
+      const { host, rerender } = await renderChat(700);
       const wrapper = document.createElement("div");
       wrapper.dataset.sessionHost = `chat-${document.querySelectorAll("[data-session-host]").length}`;
       wrapper.tabIndex = -1;
       host.replaceWith(wrapper);
       wrapper.append(host);
-      return { wrapper, composer: host.querySelector("textarea")! };
+      return { wrapper, rerender, composer: host.querySelector("textarea")! };
     };
     const first = await wrapped();
     first.composer.focus();
@@ -1388,5 +1389,29 @@ describe("ACPWorkspace add to chat (browser)", () => {
     add();
     await expect.poll(() => second.composer.value).toContain("Enter too early");
     expect(first.composer.value.match(/Enter too early/g)).toHaveLength(1);
+  });
+
+  it("goes back to the last-focused chat when it is shown again", async () => {
+    await renderTimeline();
+    const first = await renderChat(700);
+    const second = await renderChat(700);
+    const firstComposer = first.host.querySelector("textarea")!;
+    const secondComposer = second.host.querySelector("textarea")!;
+    firstComposer.focus();
+    secondComposer.focus();
+    const add = () => (page.getByRole("button", { name: "Add to chat" }).element() as HTMLButtonElement).click();
+
+    // Hidden and shown again, it is still the target without a new focus.
+    await second.rerender({ websocketPath: "/ws/chat", active: false });
+    await second.rerender({ websocketPath: "/ws/chat", active: true });
+    add();
+    await expect.poll(() => secondComposer.value).toContain("Enter too early");
+    expect(firstComposer.value).toBe("");
+
+    // While it is hidden, the other chat is the target.
+    await second.rerender({ websocketPath: "/ws/chat", active: false });
+    add();
+    await expect.poll(() => firstComposer.value).toContain("Enter too early");
+    expect(secondComposer.value.match(/Enter too early/g)).toHaveLength(1);
   });
 });

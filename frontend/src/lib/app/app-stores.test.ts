@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { makeAppRuntime, type AppServices, type OwnedAppRuntime } from "./runtime.js";
 import { createAppStores } from "../app-stores.svelte.js";
 import type { Issue, IssueDetail, PullDetail, PullRequest } from "../api/types.js";
-import { createMockApiFetch } from "../../test/mockApiFetch.js";
+import { createMockApiFetch, mockLaunchTargets, mockSettings } from "../../test/mockApiFetch.js";
 
 let runtime: OwnedAppRuntime;
 let eventSources: EventSourceStub[];
@@ -47,6 +47,56 @@ afterEach(async () => {
 });
 
 describe("app store composition", () => {
+  it("keeps newer saved targets and refreshes while a page read stalls", async () => {
+    const api = createMockApiFetch();
+    const releasePulls = Promise.withResolvers<void>();
+    const releaseLocal = Promise.withResolvers<Response>();
+    const agent = { key: "saved", label: "Saved agent", command: ["worker"] };
+    const saved = { ...agent, kind: "agent", source: "config", available: true };
+    let pullReads = 0;
+    let localReads = 0;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+      if (url.pathname === "/api/v1/pulls") {
+        pullReads += 1;
+        await releasePulls.promise;
+      }
+      if (url.pathname === "/api/v1/settings/local") {
+        localReads += 1;
+        return localReads === 1
+          ? releaseLocal.promise
+          : Response.json({
+              ...mockSettings,
+              launch_targets: [saved, ...mockLaunchTargets(true)],
+            });
+      }
+      return api.fetch(input, init);
+    });
+    const { stores, listAgentStatusPolling } = createAppStores({ runtime, getPage: () => "pulls" });
+    stores.settings.setWorkspaceSettings({ show_agent_status_in_lists: true });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const polling = runtime.runCommand(listAgentStatusPolling, {
+      operation: "test launch refresh",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect([pullReads, localReads]).toEqual([1, 1]);
+      stores.settings.setLaunchTargets([saved, ...mockLaunchTargets(false)]);
+      releaseLocal.resolve(Response.json({ ...mockSettings, launch_targets: mockLaunchTargets(false) }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(stores.settings.getLaunchTargets()).toMatchObject([saved, ...mockLaunchTargets(false)]);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect([pullReads, localReads]).toEqual([1, 2]);
+      expect(stores.settings.getLaunchTargets()).toMatchObject([saved, ...mockLaunchTargets(true)]);
+    } finally {
+      releasePulls.resolve();
+      polling.interrupt();
+      await polling.exit;
+    }
+  });
+
   it.each(["activity", "mobile-activity"])(
     "refreshes existing agent badges on %s every five seconds without events or feed reads",
     async (page) => {

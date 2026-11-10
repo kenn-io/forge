@@ -199,7 +199,6 @@
   untrack(() => appComposition.stores.workflowActions.setEnabled(false));
   stores = appComposition.stores;
   $effect(() => {
-    if (!stores?.settings.getWorkspaceSettings().show_agent_status_in_lists) return;
     // The first poll runs synchronously here. Untracked, so store state it
     // reads or writes cannot restart the poll and loop.
     const execution = untrack(() =>

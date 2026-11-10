@@ -253,6 +253,40 @@ func TestManagerLaunchUnavailableTarget(t *testing.T) {
 	require.Contains(t, err.Error(), "not available")
 }
 
+func TestManagerLaunchTargetsRefreshBuiltinAvailability(t *testing.T) {
+	assert := assert.New(t)
+	path := t.TempDir()
+	t.Setenv("PATH", path)
+	owner := newFakeRuntimePtyOwner()
+	disabled := false
+	targets := ResolveLaunchTargets([]config.Agent{{
+		Key: "codex", Command: []string{"claude"}, Enabled: &disabled,
+	}}, nil, nil)
+	manager := NewManager(Options{Targets: targets, PtyOwnerRuntime: owner})
+	t.Cleanup(manager.Shutdown)
+	assert.False(findTarget(t, manager.LaunchTargets(), "claude").Available)
+	assert.Equal("claude not found on PATH", findTarget(t, manager.LaunchTargets(), "claude").DisabledReason)
+	_, binary := writeFakeRuntimeTool(t, path, "claude")
+	_, err := manager.Launch(t.Context(), "ws-1", t.TempDir(), "claude")
+	require.NoError(t, err)
+	target := findTarget(t, manager.LaunchTargets(), "claude")
+	assert.True(target.Available)
+	assert.Empty(target.DisabledReason)
+	override := findTarget(t, manager.LaunchTargets(), "codex")
+	assert.False(override.Available)
+	assert.Equal("disabled by config", override.DisabledReason)
+
+	availableTargets := ResolveLaunchTargets(nil, nil, nil)
+	removalManager := NewManager(Options{Targets: availableTargets, PtyOwnerRuntime: newFakeRuntimePtyOwner()})
+	t.Cleanup(removalManager.Shutdown)
+	require.NoError(t, os.Remove(binary))
+	_, err = removalManager.Launch(t.Context(), "ws-2", t.TempDir(), "claude")
+	require.ErrorContains(t, err, `target "claude" not available`)
+	target = findTarget(t, removalManager.LaunchTargets(), "claude")
+	assert.False(target.Available)
+	assert.Equal("claude not found on PATH", target.DisabledReason)
+}
+
 func TestManagerLaunchMissingTarget(t *testing.T) {
 	ctx := t.Context()
 	mgr := NewManager(Options{})

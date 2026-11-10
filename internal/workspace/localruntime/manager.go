@@ -895,7 +895,6 @@ func isTmuxCommandUnavailable(err error) bool {
 
 func (m *Manager) LaunchTargets() []LaunchTarget {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	targets := make([]LaunchTarget, 0, len(m.targetsList))
 	for _, target := range m.targetsList {
@@ -903,6 +902,10 @@ func (m *Manager) LaunchTargets() []LaunchTarget {
 			continue
 		}
 		targets = append(targets, cloneTarget(target))
+	}
+	m.mu.Unlock()
+	for i := range targets {
+		targets[i] = refreshBuiltinAvailability(targets[i], exec.LookPath)
 	}
 	return targets
 }
@@ -2049,13 +2052,13 @@ func (m *Manager) finishStart() {
 
 func (m *Manager) target(key string) (LaunchTarget, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	target, ok := m.targets[key]
+	target = cloneTarget(target)
+	m.mu.Unlock()
 	if !ok {
 		return LaunchTarget{}, fmt.Errorf("target not found: %s", key)
 	}
-	target = cloneTarget(target)
+	target = refreshBuiltinAvailability(target, exec.LookPath)
 	target.Command = agentCommand(target.Command, target.Env)
 	return target, nil
 }

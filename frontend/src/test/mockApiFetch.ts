@@ -14,6 +14,21 @@ import type { SettingsResponse as GeneratedSettingsResponse } from "../lib/api/g
 
 type SettingsResponse = GeneratedSettingsResponse;
 
+export function mockLaunchTargets(claudeAvailable: boolean) {
+  return [
+    {
+      key: "claude",
+      label: "Claude",
+      kind: "agent",
+      source: "builtin",
+      command: ["claude"],
+      available: claudeAvailable,
+      ...(claudeAvailable ? {} : { disabled_reason: "claude not found on PATH" }),
+    },
+    { key: "plain_shell", label: "Shell", kind: "plain_shell", source: "system", available: true },
+  ];
+}
+
 const defaultProviderCapabilities = {
   read_repositories: true,
   read_merge_requests: true,

@@ -27,6 +27,7 @@ import { createGroupingStore } from "./stores/grouping.svelte.js";
 import { createDetailActivityViewStore } from "./stores/detail-activity-view.svelte.js";
 import { createCollapsedReposStore } from "./stores/collapsedRepos.svelte.js";
 import { createSettingsStore } from "./stores/settings.svelte.js";
+import { SettingsWorkflow } from "./stores/settings-workflow.js";
 import { createWorkflowActionsStore } from "./stores/workflow-actions.svelte.js";
 import { ExternalContextWorkflow } from "./stores/external-context-workflow.svelte.js";
 import { createWorkspaceItemSearchStore } from "./stores/workspace-item-search.svelte.js";
@@ -58,6 +59,14 @@ export interface AppStoreComposition {
   readonly stores: StoreInstances;
   readonly listAgentStatusPolling: Effect.Effect<void, never, AppServices>;
   readonly roborevClient?: RoborevClient;
+}
+
+// Each read keeps its own cadence, so one that stays pending cannot hold back the others.
+function pollEachWhileVisible<R>(polls: ReadonlyArray<Effect.Effect<void, never, R>>) {
+  return Effect.all(
+    polls.map((poll) => pollWhileVisible(poll, "5 seconds", { immediate: true })),
+    { concurrency: "unbounded", discard: true },
+  );
 }
 
 export function createAppStores(options: AppStoreOptions): AppStoreComposition {
@@ -492,15 +501,20 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
 
   // Agent hook reports do not emit workspace events. Refresh Activity badges
   // from workspaces without downloading the feed's event history again.
-  const listAgentStatusPolling = pollWhileVisible(
+  const listAgentStatusPolling = pollEachWhileVisible([
+    Effect.gen(function* () {
+      const previous = settingsStore.getLaunchTargets();
+      const workflow = yield* SettingsWorkflow;
+      const local = yield* workflow.readLocal;
+      if (settingsStore.getLaunchTargets() === previous) settingsStore.setLaunchTargets(local.launch_targets ?? []);
+    }).pipe(Effect.catch(() => Effect.void)),
     Effect.suspend(() => {
+      if (!settingsStore.getWorkspaceSettings().show_agent_status_in_lists) return Effect.void;
       const page = gp();
       if (page === "activity" || page === "mobile-activity") return activityStore.refreshAgentStatusEffect();
       return page === "worklists" || page === "mobile-worklists" ? Effect.void : refreshVisibleData(false);
     }).pipe(Effect.catch(() => Effect.void)),
-    "5 seconds",
-    { immediate: true },
-  );
+  ]);
 
   return { stores: si, listAgentStatusPolling, ...(roborevClient !== undefined && { roborevClient }) };
 }

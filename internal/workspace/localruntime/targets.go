@@ -78,13 +78,7 @@ func ResolveLaunchTargets(
 		if _, ok := seen[builtin.Key]; ok {
 			continue
 		}
-		target := cloneTarget(builtin)
-		if _, err := lookPath(target.Command[0]); err != nil {
-			target.Available = false
-			target.DisabledReason = target.Command[0] + " not found on PATH"
-		} else {
-			target.Available = true
-		}
+		target := refreshBuiltinAvailability(cloneTarget(builtin), lookPath)
 		targets = append(targets, target)
 		seen[target.Key] = struct{}{}
 	}
@@ -98,6 +92,20 @@ func ResolveLaunchTargets(
 		Available: true,
 	})
 	return targets
+}
+
+func refreshBuiltinAvailability(target LaunchTarget, lookPath lookPathFunc) LaunchTarget {
+	if target.Source != "builtin" {
+		return target
+	}
+	if _, err := lookPath(target.Command[0]); err != nil {
+		target.Available = false
+		target.DisabledReason = target.Command[0] + " not found on PATH"
+	} else {
+		target.Available = true
+		target.DisabledReason = ""
+	}
+	return target
 }
 
 func shellTarget(

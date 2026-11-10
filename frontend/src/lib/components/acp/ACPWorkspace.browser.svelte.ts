@@ -1362,7 +1362,7 @@ describe("ACPWorkspace add to chat (browser)", () => {
     await renderChat(700);
     await expect.element(page.getByRole("button", { name: "Add to chat" })).toBeInTheDocument();
 
-    socket.options!.onMessage(JSON.stringify({ command: "connect", commandError: "agent exited" }));
+    socket.options!.onMessage(JSON.stringify({ command: "connect", commandError: "agent exited", id: "" }));
 
     await expect.poll(() => page.getByRole("button", { name: "Add to chat" }).query()).toBeNull();
   });

@@ -258,9 +258,24 @@ export function runWorkspaceQuickAction(
 }
 
 /**
- * Runs a quick action in a workspace another machine returned for an item.
- * One whose setup failed is set up again first, as the item list does.
+ * Starts a quick action in a workspace another machine returned for an item.
+ * One whose setup failed is set up again first, as the item list does; one
+ * being deleted never becomes ready, so it is refused at once.
  */
+export function startReturnedWorkspaceQuickAction(
+  workspace: { readonly id: string; readonly status?: string | undefined },
+  action: QuickAction,
+  hostKey: string,
+): ReturnType<typeof launchWorkspaceQuickAction> {
+  if (workspace.status === "deleting" || workspace.status === "deletion_failed") {
+    const reason = "its workspace is being deleted";
+    return Effect.succeed({ type: "failed", reason, message: `"${action.label}" could not start: ${reason}` });
+  }
+  if (workspace.status === "error") return retryWorkspaceQuickAction(workspace.id, action, hostKey);
+  return launchWorkspaceQuickAction(workspace.id, action, hostKey);
+}
+
+/** Runs a quick action in a workspace another machine returned for an item. */
 export function runReturnedWorkspaceQuickAction(
   runtime: AppRuntime,
   workspace: { readonly id: string; readonly status?: string | undefined },
@@ -273,9 +288,7 @@ export function runReturnedWorkspaceQuickAction(
     workspace.id,
     itemType,
     action,
-    workspace.status === "error"
-      ? retryWorkspaceQuickAction(workspace.id, action, hostKey)
-      : launchWorkspaceQuickAction(workspace.id, action, hostKey),
+    startReturnedWorkspaceQuickAction(workspace, action, hostKey),
   );
 }
 

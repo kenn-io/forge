@@ -255,3 +255,69 @@ it("creates on the fleet member the saved default names, or reports it unavailab
     }
   }
 });
+
+it("refuses the existing workspace another machine reports while it is being deleted", async () => {
+  const api = createMockApiFetch();
+  const pulls: PullRequest[] = await (await api.fetch("/api/v1/pulls")).json();
+  const pull = pulls[0]!;
+  const node = "b".repeat(32);
+  const handoffs: string[] = [];
+  const mixed = createMockApiFetch([
+    ({ method, url }) => {
+      if (method === "GET" && url.pathname === "/api/v1/snapshot") {
+        return Response.json({
+          hosts: [
+            {
+              configKey: node,
+              kind: "remote",
+              name: "build-b",
+              baseURL: "https://build-b.example.test",
+              operationAvailability: { workspaceWrite: { available: true } },
+            },
+          ],
+          workspaces: [
+            {
+              id: "ws-going",
+              status: "deletion_failed",
+              fleet_host_key: node,
+              item_type: "pull_request",
+              item_number: pull.Number,
+              platform_host: pull.repo.platform_host,
+              repo_owner: pull.repo.owner,
+              repo_name: pull.repo.name,
+              repo: pull.repo,
+            },
+          ],
+        });
+      }
+      if (method === "POST" && url.pathname === `/api/v1/fleet/hosts/${node}/workspaces`) {
+        return Response.json({ code: "workspaceAlreadyExists", title: "Conflict", status: 409 }, { status: 409 });
+      }
+      if (method === "POST" && url.pathname.endsWith("/runtime/agent-handoffs")) {
+        handoffs.push(url.pathname);
+        return Response.json({});
+      }
+      return undefined;
+    },
+  ]);
+  vi.stubGlobal("fetch", mixed.fetch);
+  const runtime = makeAppRuntime();
+  try {
+    runQuickActionOnItems(
+      runtime,
+      [{ kind: "pull", item: { ...pull, workspace: undefined } }],
+      { label: "Review", agent: "helper", prompt: "Review this change" },
+      "https://build-b.example.test",
+    );
+    await vi.waitFor(() =>
+      expect(getFlashes()).toEqual([
+        expect.objectContaining({ tone: "danger", message: expect.stringContaining("its workspace is being deleted") }),
+      ]),
+    );
+    expect(handoffs).toEqual([]);
+  } finally {
+    await Effect.runPromise(runtime.disposeEffect);
+    for (const flash of getFlashes()) dismissFlash(flash.id);
+    vi.unstubAllGlobals();
+  }
+});

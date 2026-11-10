@@ -289,12 +289,15 @@ describe("ItemActionsMenu with a mixed selection", () => {
 describe("ItemActionsMenu quick actions with a default machine", () => {
   const node = "b".repeat(32);
   const getSnapshot = vi.fn();
+  const createFleetWorkspace = vi.fn();
+  const launchFleetWorkspaceAgentHandoff = vi.fn();
+  const launchWorkspaceAgentHandoff = vi.fn();
 
   afterEach(() => {
     cleanup();
   });
 
-  function renderWithDefault(item: PullRequest, hostKind: "self" | "remote") {
+  function renderWithDefault(items: PullRequest | PullRequest[], hostKind: "self" | "remote") {
     getSnapshot.mockReset().mockResolvedValue({
       hosts: [
         {
@@ -312,11 +315,14 @@ describe("ItemActionsMenu quick actions with a default machine", () => {
     settings.setWorkspaceSettings({ ...settings.getWorkspaceSettings(), default_execution_target: node });
     return render(ItemActionsMenu, {
       props: {
-        client: makeGeneratedClient({ FleetService: { getSnapshot } }),
+        client: makeGeneratedClient({
+          FleetService: { getSnapshot, createFleetWorkspace, launchFleetWorkspaceAgentHandoff },
+          WorkspacesService: { launchWorkspaceAgentHandoff },
+        }),
         settings,
         anchor: { x: 10, y: 10 },
         returnFocus: undefined,
-        targets: [{ kind: "pull", item }],
+        targets: [items].flat().map((item) => ({ kind: "pull" as const, item })),
         selectionActive: false,
         onClearSelection: () => {},
         onChanged: () => {},
@@ -337,6 +343,28 @@ describe("ItemActionsMenu quick actions with a default machine", () => {
     renderWithDefault({ ...pullOnGitHub, workspace: { id: "ws-local", status: "ready" } } as PullRequest, "remote");
     await waitFor(() => expect(getSnapshot).toHaveBeenCalled());
     expect(reviewDisabled()).toBe(true);
+  });
+
+  it("runs an agent this machine lacks on the selected items that go to the default machine", async () => {
+    createFleetWorkspace.mockReset().mockResolvedValue({ id: "ws-remote", status: "ready" });
+    launchFleetWorkspaceAgentHandoff.mockReset().mockResolvedValue({ initial_message: { state: "delivered" } });
+    launchWorkspaceAgentHandoff.mockReset();
+    const remote = { ...pullOnMirror, workspace: undefined } as PullRequest;
+    renderWithDefault(
+      [{ ...pullOnGitHub, workspace: { id: "ws-local", status: "ready" } } as PullRequest, remote],
+      "remote",
+    );
+    await waitFor(() => expect(reviewDisabled()).toBe(false));
+    const review = screen.getByRole("menuitem", { name: /^Review/ });
+    expect(review.textContent).toContain("Review on 1 of 2");
+    await fireEvent.click(review);
+    await waitFor(() => expect(launchFleetWorkspaceAgentHandoff).toHaveBeenCalledOnce());
+    expect(createFleetWorkspace).toHaveBeenCalledExactlyOnceWith(
+      { hostKey: node },
+      expect.objectContaining({ mr_number: remote.Number }),
+      expect.anything(),
+    );
+    expect(launchWorkspaceAgentHandoff).not.toHaveBeenCalled();
   });
 
   it("checks this machine's agents when the default names this machine", async () => {

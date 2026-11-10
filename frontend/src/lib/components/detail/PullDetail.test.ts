@@ -17,6 +17,7 @@ import { dismissFlash, getFlashes, showFlash } from "../../stores/flash.svelte.j
 import {
   discardWorkspaceLaunch,
   nextWorkspaceLifecycleTick,
+  pendingWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
 import type { GeneratedClient } from "../../api/generated-api.js";
@@ -4660,6 +4661,62 @@ describe("PullDetail inline workspace handoff", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith(`/terminal/fleet/${buildBNode}/ws-existing`));
     expect(getFlashes()).toEqual([]);
   });
+
+  it.each([
+    ["a new workspace", false, "create"],
+    ["the workspace that already exists", true, "existing"],
+  ] as const)(
+    "asks for the agent chosen at create in %s on the default fleet member",
+    async (_label, exists, origin) => {
+      const apiClient = {
+        GET: vi.fn().mockResolvedValue({
+          data: {
+            hosts: fleetHosts({ available: true }),
+            workspaces: [
+              {
+                id: "ws-existing",
+                status: "ready",
+                fleet_host_key: buildBNode,
+                item_type: "pull_request",
+                item_number: 1,
+                platform_host: "github.com",
+                repo_owner: "acme",
+                repo_name: "widget",
+                repo: {
+                  provider: "github",
+                  platform_host: "github.com",
+                  platform_repo_id: 1001,
+                  owner: "acme",
+                  name: "widget",
+                  repo_path: "acme/widget",
+                },
+              },
+            ],
+          },
+        }),
+        POST: vi.fn().mockResolvedValue(
+          exists
+            ? {
+                error: { type: "about:blank", title: "Conflict", status: 409, code: "workspaceAlreadyExists" },
+                response: new Response(null, { status: 409 }),
+              }
+            : { data: { id: "ws-new", status: "creating" } },
+        ),
+      };
+      renderPullDetail(pullDetail(), undefined, apiClient, {
+        hideWorkspaceAction: false,
+        defaultExecutionTarget: "https://build-b.example.test",
+      });
+      const options = screen.getAllByRole("button", { name: "Create Workspace options" })[0] as HTMLButtonElement;
+      await waitFor(() => expect(options.disabled).toBe(false));
+      await fireEvent.click(options);
+      await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+      const workspaceId = exists ? "ws-existing" : "ws-new";
+      await waitFor(() =>
+        expect(pendingWorkspaceLaunch(workspaceId, buildBNode)).toMatchObject({ targetKey: "codex", origin }),
+      );
+    },
+  );
 
   it("keeps rechecking after a failed read when the saved devbox cannot take the repository", async () => {
     let snapshots = 0;

@@ -47,10 +47,7 @@ type fleetRESTProxyRoute struct {
 const fleetProxyMaxBodyBytes int64 = 1 << 20
 
 type fleetHostTarget struct {
-	self bool
-	// viaHub marks a spoke forwarding a fleet host route to its hub, which
-	// resolves the owning member and forwards the request again.
-	viaHub     bool
+	self       bool
 	member     config.FleetMember
 	credential federationauth.Credential
 	clients    federationMemberClients
@@ -1132,7 +1129,6 @@ func (s *Handler) resolveFleetRouteTarget(
 	if !ok {
 		return fleetHostTarget{}, "", false
 	}
-	target.viaHub = true
 	return target, hubFleetHostPath(hostKey, targetPath), true
 }
 

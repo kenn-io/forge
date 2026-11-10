@@ -903,7 +903,7 @@
       Effect.flatMap((data) =>
         Effect.sync(() => {
           if (data?.id && hostKey) {
-            promoteWorkspaceCreateLaunch(requestIdentity, data.id, hostKey);
+            promoteWorkspaceCreateLaunch(requestIdentity, data.id, hostKey, data.reused ? "existing" : "create");
             if (quickAction) {
               runReturnedWorkspaceQuickAction(runtime, { id: data.id, status: data.status }, "issue", quickAction, hostKey);
             }

@@ -21,7 +21,8 @@ export type ItemWorkspaceRequest = {
   readonly reuseExistingDirectory?: boolean | undefined;
 };
 
-export type CreatedItemWorkspace = { readonly id?: string; readonly status?: string };
+/** reused marks a workspace that already existed, so a launch request joins its sessions. */
+export type CreatedItemWorkspace = { readonly id?: string; readonly status?: string; readonly reused?: true };
 
 function created(value: unknown): CreatedItemWorkspace {
   if (typeof value !== "object" || value === null) return {};
@@ -127,7 +128,9 @@ function existingFleetItemWorkspace(hostKey: string, request: ItemWorkspaceReque
           ws.repo_name === repo.name &&
           repositoryKeyAllows(repo.repositoryKey, repositoryKeyFromWire(ws.repo)),
       );
-      return existing ? Effect.succeed({ id: existing.id, status: existing.status }) : Effect.fail(conflict);
+      return existing
+        ? Effect.succeed<CreatedItemWorkspace>({ id: existing.id, status: existing.status, reused: true })
+        : Effect.fail(conflict);
     }),
   );
 }

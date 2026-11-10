@@ -173,6 +173,23 @@ describe("quick-action launch serialization", () => {
     expect(retryFleetWorkspace).toHaveBeenCalledOnce();
   });
 
+  it("refuses a workspace on another machine that is being deleted without asking it to launch", async () => {
+    const hostKey = "b".repeat(32);
+    const action = { label: "Review", agent: "chat", prompt: "Review this change" };
+
+    for (const status of ["deleting", "deletion_failed"]) {
+      runReturnedWorkspaceQuickAction(runtime, { id: "ws-going", status }, "pull_request", action, hostKey);
+      await vi.waitFor(() => expect(getFlashes()).toHaveLength(1));
+      expect(getFlashes()[0]).toMatchObject({
+        tone: "danger",
+        message: '"Review" could not start: its workspace is being deleted',
+      });
+      dismissFlash();
+    }
+    expect(launchFleetHandoff).not.toHaveBeenCalled();
+    expect(retryFleetWorkspace).not.toHaveBeenCalled();
+  });
+
   it("allows another action after the previous request fails", async () => {
     const handoff = Promise.withResolvers<{ session: RuntimeSession; initial_message: { state: string } }>();
     launchHandoff.mockReturnValueOnce(handoff.promise).mockReturnValue(new Promise(() => {}));

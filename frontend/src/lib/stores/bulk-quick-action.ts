@@ -20,6 +20,7 @@ import {
 import {
   launchWorkspaceQuickAction,
   retryWorkspaceQuickAction,
+  startReturnedWorkspaceQuickAction,
   type QuickActionOutcome,
 } from "./workspace-quick-actions.js";
 import {
@@ -144,9 +145,9 @@ function runOnItem(
         ),
       onSuccess: (data) => {
         if (!data?.id) return failed("failed to create workspace");
-        // A remote item's existing workspace can come back in error; set it up again.
-        if (hostKey && data.status === "error") return retryWorkspaceQuickAction(data.id, action, hostKey);
-        return launchWorkspaceQuickAction(data.id, action, hostKey);
+        // A remote item's existing workspace can come back failed or being deleted.
+        if (hostKey) return startReturnedWorkspaceQuickAction({ id: data.id, status: data.status }, action, hostKey);
+        return launchWorkspaceQuickAction(data.id, action);
       },
     }),
   );

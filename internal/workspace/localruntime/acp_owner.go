@@ -54,7 +54,8 @@ type acpSavedSession struct {
 	State     ACPState
 	// LoadSession records that the agent can load this session back, so a
 	// replacement owner keeps the agent's context.
-	LoadSession bool
+	LoadSession   bool
+	ChatOptionIDs []string `json:",omitempty"`
 }
 
 func (m *Manager) acpSessionPath(key string) string {
@@ -93,7 +94,7 @@ func (a *ACP) persistLocked() error {
 		return nil
 	}
 	a.initializeMessagesLocked()
-	data, err := json.Marshal(acpSavedSession{SessionID: a.sessionID, State: a.state, LoadSession: a.loadSession}, json.Deterministic(true))
+	data, err := json.Marshal(acpSavedSession{SessionID: a.sessionID, State: a.state, LoadSession: a.loadSession, ChatOptionIDs: a.chatOptionIDs}, json.Deterministic(true))
 	if err != nil {
 		return err
 	}

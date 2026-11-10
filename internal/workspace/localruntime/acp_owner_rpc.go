@@ -13,7 +13,7 @@ import (
 
 // Increment when the owner chat frames or RPC contracts change incompatibly.
 // Owners outlive the daemon; attaching a new UI must not reuse an old decoder.
-const ACPOwnerProtocol = 2
+const ACPOwnerProtocol = 3
 
 type (
 	// ACPWatch names the revision the daemon has seen. Viewing reports that

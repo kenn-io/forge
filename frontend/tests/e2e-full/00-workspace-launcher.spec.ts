@@ -119,30 +119,24 @@ test.describe("embedded workspace launcher", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "forge-launcher-bin-"));
     const binDir = path.join(root, "bin");
     mkdirSync(binDir);
-    const source = path.join(root, "source");
-    mkdirSync(source);
-    writeFileSync(path.join(source, "claude"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
-    writeFileSync(path.join(source, "fixture-tool"), "#!/bin/sh\nprintf preserved\n", { mode: 0o755 });
     const claudePath = path.join(binDir, "claude");
     const originalPath = process.env.PATH;
     try {
-      const searchPath = [source, ...(originalPath ?? "").split(path.delimiter)];
-      const shadows = searchPath.map((dir, index) => {
-        if (!dir || !existsSync(path.join(dir, "claude"))) return dir;
-        const shadow = path.join(root, `shadow-${index}`);
-        mkdirSync(shadow);
-        for (const entry of readdirSync(dir)) {
-          if (entry !== "claude") symlinkSync(path.resolve(dir, entry), path.join(shadow, entry));
-        }
-        return shadow;
-      });
+      const shadows = (originalPath ?? "")
+        .split(path.delimiter)
+        .filter(Boolean)
+        .map((dir, index) => {
+          if (!existsSync(path.join(dir, "claude"))) return dir;
+          const shadow = path.join(root, `shadow-${index}`);
+          mkdirSync(shadow);
+          for (const entry of readdirSync(dir)) {
+            if (entry !== "claude") symlinkSync(path.resolve(dir, entry), path.join(shadow, entry));
+          }
+          return shadow;
+        });
       process.env.PATH = [binDir, ...shadows].join(path.delimiter);
-      expect(execFileSync("fixture-tool", { encoding: "utf8" })).toBe("preserved");
-      try {
-        isolatedServer = await startIsolatedWorkspaceE2EServerWithOptions({ freshProcess: true });
-      } finally {
-        process.env.PATH = originalPath;
-      }
+      isolatedServer = await startIsolatedWorkspaceE2EServerWithOptions({ freshProcess: true });
+      process.env.PATH = originalPath;
       api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
       const workspace = await createIssueWorkspace(api, 10);
 

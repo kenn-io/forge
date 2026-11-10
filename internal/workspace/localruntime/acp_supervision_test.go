@@ -274,10 +274,15 @@ func TestACPPeopleChangeSettingsWhileSupervised(t *testing.T) {
 		require.NoError(t, first.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
 		generation := publishedACPState(t, first).Supervision.Generation
 		require.NoError(t, first.Command(ACPCommand{Type: "config", ID: "model", Value: "deep", Generation: generation}))
+		saved := readSavedSession(t, c.recordPath())
 
 		other := c.start(nil)
 		assert.Equal(t, "fast", fixtureModel(t, other))
 		assert.Equal(t, "high", acpOptionValue(t, other, "effort"))
+
+		reloaded := c.start(&saved)
+		assert.Equal(t, "fast", fixtureModel(t, reloaded), "a reload ends the coordinator's choice")
+		assert.Equal(t, "high", acpOptionValue(t, reloaded, "effort"))
 	})
 }
 

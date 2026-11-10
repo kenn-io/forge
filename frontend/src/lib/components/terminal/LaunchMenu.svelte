@@ -47,6 +47,7 @@
 
   const visibleTargets = $derived(visibleLaunchTargets(launchTargets));
   const sortedQuickActions = $derived(sortQuickActionsByLabel(quickActions));
+  const canSendToSession = $derived(currentSession !== null && onQuickActionInSession !== undefined);
 
   $effect(() => {
     if (disabled || !hostVisible) open = null;
@@ -123,7 +124,7 @@
       aria-label="Quick actions"
       aria-haspopup="dialog"
       aria-expanded={open === "quick"}
-      disabled={disabled || quickActionBusy}
+      disabled={disabled || (quickActionBusy && !canSendToSession)}
       onclick={() => { open = open === "quick" ? null : "quick"; }}
     >
       <ZapIcon size="13" strokeWidth="2.2" aria-hidden="true" />
@@ -154,7 +155,7 @@
             >
               <LaunchTargetName target={{ kind: "agent", key: action.agent }} label={action.label} iconSize={13} fallbackIcon />
             </button>
-            {#if currentSession && onQuickActionInSession}
+            {#if canSendToSession && currentSession && onQuickActionInSession}
               <!-- The session is already running, so the action's own agent
                    being unavailable does not block this. -->
               <button

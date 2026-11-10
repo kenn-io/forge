@@ -82,6 +82,31 @@ describe("LaunchMenu", () => {
     ).toEqual(["audit", "Review"]);
   });
 
+  it("still sends to the open session while a quick action launch is pending", async () => {
+    const onQuickAction = vi.fn();
+    const onQuickActionInSession = vi.fn();
+    const review = { label: "Review", agent: "codex", prompt: "Review this change" };
+    render(LaunchMenu, {
+      props: {
+        launchTargets: [{ key: "codex", label: "Codex", kind: "agent", source: "builtin", available: true }],
+        quickActions: [review],
+        quickActionBusy: true,
+        onQuickAction,
+        onQuickActionInSession,
+        currentSession: { label: "Claude" },
+      },
+    });
+    const trigger = screen.getByRole("button", { name: "Quick actions", exact: true });
+    expect(trigger.hasAttribute("disabled")).toBe(false);
+    await fireEvent.click(trigger);
+    const menu = screen.getByRole("dialog", { name: "Quick actions" });
+    // A second launch still waits for the first.
+    expect((within(menu).getByRole("button", { name: "Review" }) as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(within(menu).getByRole("button", { name: "Send Review to Claude" }));
+    expect(onQuickActionInSession).toHaveBeenCalledExactlyOnceWith(review);
+    expect(onQuickAction).not.toHaveBeenCalled();
+  });
+
   it("enables quick actions that target available ACP agents", async () => {
     const onQuickAction = vi.fn();
     const { rerender } = render(LaunchMenu, {

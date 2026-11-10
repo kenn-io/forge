@@ -18,6 +18,18 @@ test.describe("label editing", () => {
     try {
       isolatedServer = await startIsolatedE2EServer();
       const baseURL = isolatedServer.info.base_url;
+      const detailURL = `${baseURL}/api/v1/pulls/github/acme/widgets/1`;
+      // Give the initial sync a distinct timestamp even when both reads finish
+      // within the same second, the precision of the server's fetched marker.
+      await page.route(detailURL, async (route) => {
+        const response = await route.fetch();
+        const detail = await response.json();
+        await route.fulfill({ response, json: { ...detail, detail_fetched_at: "2000-01-01T00:00:00Z" } });
+      });
+      await page.route(`${detailURL}/sync/async`, async (route) => {
+        await page.unroute(detailURL);
+        await route.continue();
+      });
       let holdDetailRead = false;
       await page.route(`${baseURL}/api/v1/pulls/github/acme/widgets/1/sync`, async (route) => {
         if (!holdDetailRead) {

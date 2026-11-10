@@ -87,7 +87,7 @@ type searchItemsInput struct {
 	ItemTypes []string        `json:"item_types,omitempty" jsonschema:"pr, issue"`
 	Repo      repoFilterInput `json:"repo,omitzero"`
 	State     string          `json:"state,omitempty" jsonschema:"open, closed, merged or all; default open"`
-	Semantic  bool            `json:"semantic,omitempty" jsonschema:"rank by meaning across titles, descriptions, and comments instead of matching text; requires semantic search on the Forge that syncs providers; enable it with kenn-forge embeddings local"`
+	Semantic  bool            `json:"semantic,omitempty" jsonschema:"rank by meaning across titles, descriptions, and comments instead of matching text; needs an embeddings endpoint on the Forge that syncs providers"`
 	Limit     int             `json:"limit,omitempty"`
 }
 

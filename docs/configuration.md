@@ -450,10 +450,10 @@ Forge can embed pull request and issue titles, descriptions, and comments so
 agents can find work by meaning instead of keywords, for example when building
 a worklist about "flaky CI" or looking for duplicates of a bug. Code and diffs
 are never embedded. Run `kenn-forge embeddings local` to enable local search.
-Setup uses a running Ollama with Nomic when available; otherwise it downloads
-the shared built-in server with your consent. Run setup again to switch from a
-configured endpoint to the built-in server. A configured endpoint takes precedence
-over `local_embeddings = true`. Restart Forge after setup. To configure an endpoint yourself, for example Ollama:
+Forge prefers a running Ollama with Nomic, then the shared built-in server.
+Setup downloads missing shared assets with your consent. Run setup again to
+switch from automatic discovery or a configured endpoint to the built-in server. A configured endpoint
+takes precedence over `local_embeddings = "builtin"`. Restart Forge after setup. To configure an endpoint yourself, for example Ollama:
 
 ```toml
 [embeddings]

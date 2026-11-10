@@ -100,8 +100,8 @@ Worklists:
   flaky CI", "duplicates of this bug"), gather candidates with
   `kenn_forge_search_items` and `semantic: true`, which ranks by meaning
   across titles, descriptions, and comments. Scores only order one response;
-  judge each candidate from its context. If semantic search is unavailable,
-  run `kenn-forge embeddings local` on the Forge that syncs providers or search by text.
+  judge each candidate from its context. Without an embeddings endpoint it
+  answers `serviceUnavailable`; search by text then.
 - Every item must be a PR or issue Forge has synced. Copy identities from
   Forge reads; one unknown item fails the whole write.
 - To refresh a list, read it with `kenn_forge_get_worklist`, rerun its

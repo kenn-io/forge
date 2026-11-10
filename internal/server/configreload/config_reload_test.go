@@ -90,6 +90,6 @@ func TestEmbeddingsChangeRequiresRestart(t *testing.T) {
 	require.True(t, snapshot.RestartRequiredFor(&enabled), "the encoder is built once at startup")
 
 	local := *boot
-	local.LocalEmbeddings = true
+	local.LocalEmbeddings = "auto"
 	require.True(t, snapshot.RestartRequiredFor(&local))
 }

@@ -32,12 +32,7 @@ type Encoder struct {
 
 // NewEncoder builds an encoder from the [embeddings] configuration. It
 // resolves the API key once; changing the key source requires a restart.
-func NewEncoder(cfg embedconfig.Embedder) (*Encoder, error) {
-	return NewEncoderWithResolver(cfg, nil)
-}
-
-// NewEncoderWithResolver resolves a local endpoint for each request.
-func NewEncoderWithResolver(cfg embedconfig.Embedder, resolve func(context.Context) (string, error)) (*Encoder, error) {
+func NewEncoder(cfg embedconfig.Embedder, resolve func(context.Context) (string, error)) (*Encoder, error) {
 	parts, err := cfg.Parts()
 	if err != nil {
 		return nil, fmt.Errorf("semantic: configure embeddings: %w", err)

@@ -95,7 +95,7 @@ type StartupConfigSnapshot struct {
 	// Embeddings builds the semantic index's encoder and resolves its API
 	// key once at startup.
 	Embeddings      embedconfig.Embedder
-	LocalEmbeddings bool
+	LocalEmbeddings string
 }
 
 type fleetHubStartupBinding struct {

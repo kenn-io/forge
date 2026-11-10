@@ -5153,10 +5153,10 @@ model = "nomic-embed-text"
 }
 
 func TestLocalEmbeddingsConfig(t *testing.T) {
-	_, saved := roundTripConfigString(t, "local_embeddings = true\n[embeddings]\nmodel = \"nomic-embed-text\"\ndims = 768\n")
-	assert.True(t, saved.LocalEmbeddings)
-	_, err := Load(writeConfig(t, "local_embeddings = true\n"))
+	_, saved := roundTripConfigString(t, "local_embeddings = \"builtin\"\n[embeddings]\nmodel = \"nomic-embed-text\"\ndims = 768\n")
+	assert.Equal(t, "builtin", saved.LocalEmbeddings)
+	_, err := Load(writeConfig(t, "local_embeddings = \"builtin\"\n"))
 	require.ErrorContains(t, err, "model")
-	_, err = Load(writeConfig(t, "local_embeddings = true\n[embeddings]\nmodel = \"nomic-embed-text\"\n"))
-	require.ErrorContains(t, err, "dims")
+	_, err = Load(writeConfig(t, "local_embeddings = \"invalid\"\n"))
+	require.ErrorContains(t, err, "must be auto or builtin")
 }

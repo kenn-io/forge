@@ -1160,7 +1160,7 @@ type Config struct {
 	// Embeddings configures the optional embedding endpoint behind semantic
 	// search. The zero value disables it.
 	Embeddings      embedconfig.Embedder `toml:"embeddings"`
-	LocalEmbeddings bool                 `toml:"local_embeddings"`
+	LocalEmbeddings string               `toml:"local_embeddings"`
 
 	// parsedAllowedHosts is the canonicalised form of AllowedHosts,
 	// populated by Validate so the server constructor does not have
@@ -1596,8 +1596,11 @@ func (c *Config) validate() error {
 	if err := c.Relay.Validate(); err != nil {
 		return err
 	}
+	if c.LocalEmbeddings != "" && c.LocalEmbeddings != "auto" && c.LocalEmbeddings != "builtin" {
+		return errors.New("config: local_embeddings must be auto or builtin")
+	}
 	embeddings := c.Embeddings
-	if c.LocalEmbeddings && strings.TrimSpace(embeddings.BaseURL) == "" {
+	if c.LocalEmbeddings != "" && strings.TrimSpace(embeddings.BaseURL) == "" {
 		embeddings = LocalEmbeddingRecipe(embeddings)
 	}
 	if err := embeddings.Validate(); err != nil {
@@ -4014,7 +4017,7 @@ type configFile struct {
 	ExecutionWorker             ExecutionWorker          `toml:"execution_worker,omitempty"`
 	Devboxes                    Devboxes                 `toml:"devboxes,omitempty"`
 	Embeddings                  *embedconfig.Embedder    `toml:"embeddings,omitempty"`
-	LocalEmbeddings             bool                     `toml:"local_embeddings,omitempty"`
+	LocalEmbeddings             string                   `toml:"local_embeddings,omitempty"`
 }
 
 // CheckSavable reports whether Save could replace the config at path. It

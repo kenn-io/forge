@@ -14,10 +14,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/embedfake"
-	"go.kenn.io/kit/embedconfig"
 )
 
 type fakeSources struct {
@@ -89,7 +87,7 @@ func newFixture(t *testing.T) *fixture {
 
 func (f *fixture) open(t *testing.T, model string) *Indexer {
 	t.Helper()
-	encoder, err := NewEncoder(f.endpoint.Embedder(model))
+	encoder, err := NewEncoder(f.endpoint.Embedder(model), nil)
 	require.NoError(t, err)
 	x, err := Open(t.Context(), f.path, encoder, f.sources, time.Hour)
 	require.NoError(t, err)
@@ -222,7 +220,7 @@ func TestModelChangeRebuildsTheIndex(t *testing.T) {
 		before := rank(t, first, "cache", "pr", 0, 0, candidates...)
 		require.NoError(t, first.Close())
 		secondEndpoint := embedfake.New(t, "cache", "login", "flaky", "docs")
-		encoder, err := NewEncoder(secondEndpoint.Embedder("nomic-embed-text"))
+		encoder, err := NewEncoder(secondEndpoint.Embedder("nomic-embed-text"), nil)
 		require.NoError(t, err)
 		second, err := Open(t.Context(), f.path, encoder, f.sources, time.Hour)
 		require.NoError(t, err)
@@ -282,9 +280,9 @@ func TestWakesNeverStartPassesLessThanAMinuteApart(t *testing.T) {
 func TestLocalEndpointRediscoveredForRequests(t *testing.T) {
 	first := embedfake.New(t, "cache")
 	second := embedfake.New(t, "cache")
-	endpoint := first.Embedder("nomic-embed-text").BaseURL
-	cfg := config.LocalEmbeddingRecipe(embedconfig.Embedder{Model: "nomic-embed-text", Dims: 2})
-	encoder, err := NewEncoderWithResolver(cfg, func(context.Context) (string, error) { return endpoint, nil })
+	cfg := first.Embedder("nomic-embed-text")
+	endpoint := cfg.BaseURL
+	encoder, err := NewEncoder(cfg, func(context.Context) (string, error) { return endpoint, nil })
 	require.NoError(t, err)
 	_, err = encoder.query(t.Context(), "cache")
 	require.NoError(t, err)

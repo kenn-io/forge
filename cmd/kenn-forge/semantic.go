@@ -16,17 +16,18 @@ import (
 func openSemanticSearch(ctx context.Context, cfg *config.Config, database *db.DB) (*semantic.Indexer, error) {
 	recipe := cfg.Embeddings
 	var resolve func(context.Context) (string, error)
-	if cfg.LocalEmbeddings && strings.TrimSpace(recipe.BaseURL) == "" {
+	if strings.TrimSpace(recipe.BaseURL) == "" {
 		recipe = config.LocalEmbeddingRecipe(recipe)
+		builtin := cfg.LocalEmbeddings == "builtin"
 		resolve = func(ctx context.Context) (string, error) {
-			endpoint, err := defaultLocalEmbeddingDeps().resolve(ctx, true, nil)
+			endpoint, err := defaultLocalEmbeddingDeps().resolve(ctx, builtin, nil)
 			if err != nil {
 				return "", fmt.Errorf("local embeddings: run kenn-forge embeddings local: %w", err)
 			}
 			return endpoint, nil
 		}
 	}
-	encoder, err := semantic.NewEncoderWithResolver(recipe, resolve)
+	encoder, err := semantic.NewEncoder(recipe, resolve)
 	if err != nil {
 		return nil, err
 	}

@@ -15,14 +15,12 @@ import (
 )
 
 type localEmbeddingDeps struct {
-	inspect  func(context.Context, embedlocal.Options) (embedlocal.Status, error)
 	endpoint func(context.Context, embedlocal.Options) (string, error)
 	install  func(context.Context, embedlocal.InstallOptions) (embedlocal.Installation, error)
-	dir      func() (string, error)
 }
 
 func defaultLocalEmbeddingDeps() localEmbeddingDeps {
-	return localEmbeddingDeps{embedlocal.Inspect, embedlocal.Endpoint, embedlocal.Install, embedlocal.DefaultDir}
+	return localEmbeddingDeps{embedlocal.Endpoint, embedlocal.Install}
 }
 
 func (d localEmbeddingDeps) resolve(ctx context.Context, builtin bool, confirm func(context.Context, int64) (bool, error)) (string, error) {
@@ -31,7 +29,7 @@ func (d localEmbeddingDeps) resolve(ctx context.Context, builtin bool, confirm f
 	if !errors.Is(err, embedlocal.ErrNotFound) {
 		return endpoint, err
 	}
-	dir, err := d.dir()
+	dir, err := embedlocal.DefaultDir()
 	if err != nil {
 		return "", err
 	}
@@ -57,27 +55,24 @@ func newEmbeddingsCommand(stdin io.Reader, stdout, stderr io.Writer, deps localE
 		if fresh {
 			cfg = &config.Config{}
 		}
-		switching := strings.TrimSpace(cfg.Embeddings.BaseURL) != ""
+		switching := strings.TrimSpace(cfg.Embeddings.BaseURL) != "" || cfg.LocalEmbeddings == "auto"
 		recipe := cfg.Embeddings
 		local := cfg.LocalEmbeddings
-		rebuild := switching && !config.LocalEmbeddingCompatible(recipe)
-		if rebuild || (!switching && !local) {
+		checkRecipe := recipe
+		if strings.TrimSpace(checkRecipe.BaseURL) == "" {
+			checkRecipe = config.LocalEmbeddingRecipe(checkRecipe)
+		}
+		rebuild := switching && !config.LocalEmbeddingCompatible(checkRecipe)
+		if rebuild || !cfg.Embeddings.Enabled() {
 			recipe = embedconfig.Embedder{Model: embedlocal.TextModel, Dims: 768, DocumentPrefix: "search_document: ", QueryPrefix: "search_query: "}
+		}
+		if local == "" {
+			local = "auto"
 		}
 		if switching {
 			recipe.BaseURL = ""
 			recipe.APIKey = embedconfig.Embedder{}.APIKey
-			local = true
-		} else if !local {
-			status, err := deps.inspect(cmd.Context(), embedlocal.Options{})
-			if err != nil {
-				return err
-			}
-			if status.OllamaAvailable {
-				recipe.BaseURL = "http://127.0.0.1:11434/v1"
-			} else {
-				local = true
-			}
+			local = "builtin"
 		}
 		confirmed := false
 		confirm := func(_ context.Context, size int64) (bool, error) {
@@ -107,10 +102,8 @@ func newEmbeddingsCommand(stdin io.Reader, stdout, stderr io.Writer, deps localE
 			return ok, err
 		}
 		// Discover first, so a switch and any download share one confirmation.
-		if local {
-			if _, err = deps.resolve(cmd.Context(), true, confirm); err != nil {
-				return err
-			}
+		if _, err = deps.resolve(cmd.Context(), local == "builtin", confirm); err != nil {
+			return err
 		}
 		if switching && !confirmed {
 			ok, err := confirm(cmd.Context(), 0)

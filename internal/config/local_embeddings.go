@@ -1,17 +1,13 @@
 package config
 
 import (
-	"strings"
-
 	"go.kenn.io/kit/embedconfig"
 	"go.kenn.io/kit/embedlocal"
 )
 
 // LocalEmbeddingRecipe supplies a temporary URL for an endpointless recipe.
 func LocalEmbeddingRecipe(e embedconfig.Embedder) embedconfig.Embedder {
-	if strings.TrimSpace(e.BaseURL) == "" {
-		e.BaseURL = "http://127.0.0.1:1/v1"
-	}
+	e.BaseURL = "http://127.0.0.1:1/v1"
 	return e
 }
 

@@ -10,7 +10,7 @@ kenn-forge embeddings local
 kenn-forge embeddings local --yes --config /path/to/config.toml
 ```
 
-Setup asks before downloads and before switching a configured endpoint. Restart
+Setup asks before downloads and before switching to the built-in server. Restart
 Forge to apply the settings.
 
 ## Manage the daemon

@@ -18,35 +18,46 @@ import (
 )
 
 func TestLocalEmbeddingsSetup(t *testing.T) {
-	for _, ollama := range []bool{false, true} {
-		t.Run(fmt.Sprint(ollama), func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "config.toml")
-			deps := localEmbeddingDeps{
-				inspect: func(context.Context, embedlocal.Options) (embedlocal.Status, error) {
-					return embedlocal.Status{OllamaAvailable: ollama}, nil
-				},
-				endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
-					assert.True(t, opts.SkipOllama)
-					return "http://127.0.0.1:1234/v1", nil
-				},
-			}
-			cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, deps)
-			cmd.SetArgs([]string{"local", "--config", path})
-			require.NoError(t, cmd.ExecuteContext(t.Context()))
-			cfg, err := config.Load(path)
-			require.NoError(t, err)
-			assert.Equal(t, !ollama, cfg.LocalEmbeddings)
-			if ollama {
-				assert.Equal(t, "http://127.0.0.1:11434/v1", cfg.Embeddings.BaseURL)
-			} else {
-				assert.Empty(t, cfg.Embeddings.BaseURL)
-			}
-			assert.Equal(t, "nomic-embed-text", cfg.Embeddings.Model)
-			assert.Equal(t, 768, cfg.Embeddings.Dims)
-			assert.Equal(t, "search_document: ", cfg.Embeddings.DocumentPrefix)
-			assert.Equal(t, "search_query: ", cfg.Embeddings.QueryPrefix)
-		})
+	path := filepath.Join(t.TempDir(), "config.toml")
+	deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
+		assert.False(t, opts.SkipOllama)
+		return "http://127.0.0.1:1234/v1", nil
+	}}
+	cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, deps)
+	cmd.SetArgs([]string{"local", "--config", path})
+	require.NoError(t, cmd.ExecuteContext(t.Context()))
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "auto", cfg.LocalEmbeddings)
+	assert.Equal(t, embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768, DocumentPrefix: "search_document: ", QueryPrefix: "search_query: "}, cfg.Embeddings)
+}
+
+func TestLocalEmbeddingsAutomaticDiscovery(t *testing.T) {
+	available := true
+	deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
+		assert.False(t, opts.SkipOllama)
+		if available {
+			return "http://127.0.0.1:11434/v1", nil
+		}
+		return "http://127.0.0.1:1234/v1", nil
+	}}
+	for _, expected := range []string{"http://127.0.0.1:11434/v1", "http://127.0.0.1:1234/v1", "http://127.0.0.1:11434/v1"} {
+		endpoint, err := deps.resolve(t.Context(), false, nil)
+		require.NoError(t, err)
+		assert.Equal(t, expected, endpoint)
+		available = !available
 	}
+	missing := errors.New("download requires consent")
+	deps.endpoint = func(_ context.Context, opts embedlocal.Options) (string, error) {
+		assert.False(t, opts.SkipOllama)
+		return "", embedlocal.ErrNotFound
+	}
+	deps.install = func(_ context.Context, opts embedlocal.InstallOptions) (embedlocal.Installation, error) {
+		assert.Nil(t, opts.Confirm)
+		return embedlocal.Installation{}, missing
+	}
+	_, err := deps.resolve(t.Context(), false, nil)
+	require.ErrorIs(t, err, missing)
 }
 
 func TestLocalEmbeddingsSwitchPreservesSelectionDuringConcurrentEdit(t *testing.T) {
@@ -81,15 +92,13 @@ func TestLocalEmbeddingsSwitchPreservesSelectionDuringConcurrentEdit(t *testing.
 			cfg, err := config.Load(path)
 			require.NoError(t, err)
 			assert.Equal(t, 9999, cfg.Port)
-			assert.True(t, cfg.LocalEmbeddings)
+			assert.Equal(t, "builtin", cfg.LocalEmbeddings)
 			assert.Empty(t, cfg.Embeddings.BaseURL)
 			if compatible {
 				assert.Contains(t, output.String(), "keeps the semantic index")
-				assert.Equal(t, " nomic-embed-text:latest ", cfg.Embeddings.Model)
-				assert.Equal(t, "  ", cfg.Embeddings.FingerprintSalt)
-				assert.Equal(t, 512, cfg.Embeddings.Dims)
-				assert.True(t, cfg.Embeddings.RequestDimensions)
-				assert.Equal(t, "custom: ", cfg.Embeddings.DocumentPrefix)
+				expected := initial.Embeddings
+				expected.BaseURL = ""
+				assert.Equal(t, expected, cfg.Embeddings)
 			} else {
 				assert.Contains(t, output.String(), "rebuild")
 				assert.Equal(t, "search_document: ", cfg.Embeddings.DocumentPrefix)
@@ -105,7 +114,7 @@ func TestLocalEmbeddingsDownloadFailureAndNoninteractiveRefusal(t *testing.T) {
 			original := "[embeddings]\nbase_url = \"http://127.0.0.1:1234/v1\"\nmodel = \"other\"\ndims = 768\n"
 			require.NoError(t, os.WriteFile(path, []byte(original), 0o600))
 			var output bytes.Buffer
-			deps := localEmbeddingDeps{endpoint: func(context.Context, embedlocal.Options) (string, error) { return "", embedlocal.ErrNotFound }, dir: func() (string, error) { return t.TempDir(), nil }, install: func(ctx context.Context, opts embedlocal.InstallOptions) (embedlocal.Installation, error) {
+			deps := localEmbeddingDeps{endpoint: func(context.Context, embedlocal.Options) (string, error) { return "", embedlocal.ErrNotFound }, install: func(ctx context.Context, opts embedlocal.InstallOptions) (embedlocal.Installation, error) {
 				_, err := opts.Confirm(ctx, 12_345_000)
 				if err != nil {
 					return embedlocal.Installation{}, err
@@ -138,7 +147,7 @@ func TestLocalEmbeddingsBuiltinRerun(t *testing.T) {
 	require.NoError(t, config.EnsureDefault(path))
 	cfg, err := config.Load(path)
 	require.NoError(t, err)
-	cfg.LocalEmbeddings = true
+	cfg.LocalEmbeddings = "builtin"
 	cfg.Embeddings = embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768, DocumentPrefix: "custom: "}
 	require.NoError(t, cfg.Save(path))
 	deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
@@ -150,7 +159,7 @@ func TestLocalEmbeddingsBuiltinRerun(t *testing.T) {
 	require.NoError(t, cmd.ExecuteContext(t.Context()))
 	cfg, err = config.Load(path)
 	require.NoError(t, err)
-	assert.True(t, cfg.LocalEmbeddings)
+	assert.Equal(t, "builtin", cfg.LocalEmbeddings)
 	assert.Equal(t, "custom: ", cfg.Embeddings.DocumentPrefix)
 }
 
@@ -166,7 +175,6 @@ func TestLocalEmbeddingsCachedResolution(t *testing.T) {
 			assert.Equal(t, "/cache/kennembed", opts.Executable)
 			return "http://127.0.0.1:1234/v1", nil
 		},
-		dir: func() (string, error) { return "/cache", nil },
 		install: func(_ context.Context, opts embedlocal.InstallOptions) (embedlocal.Installation, error) {
 			return embedlocal.Installation{DataDir: "/cache", Executable: "/cache/kennembed"}, nil
 		},
@@ -175,4 +183,27 @@ func TestLocalEmbeddingsCachedResolution(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "http://127.0.0.1:1234/v1", endpoint)
 	assert.Equal(t, 2, calls)
+}
+
+func TestLocalEmbeddingsAutoOffersBuiltinSwitch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(t, config.EnsureDefault(path))
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	cfg.LocalEmbeddings = "auto"
+	cfg.Embeddings = embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768, DocumentPrefix: "custom: "}
+	require.NoError(t, cfg.Save(path))
+	deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
+		assert.True(t, opts.SkipOllama)
+		return "http://127.0.0.1:1234/v1", nil
+	}}
+	var output bytes.Buffer
+	cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &output, deps)
+	cmd.SetArgs([]string{"local", "--config", path, "--yes"})
+	require.NoError(t, cmd.ExecuteContext(t.Context()))
+	cfg, err = config.Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, "builtin", cfg.LocalEmbeddings)
+	assert.Equal(t, "custom: ", cfg.Embeddings.DocumentPrefix)
+	assert.Contains(t, output.String(), "keeps the semantic index")
 }

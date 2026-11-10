@@ -4691,6 +4691,49 @@ describe("PullDetail inline workspace handoff", () => {
     expect(await screen.findByRole("group", { name: "Create on another machine" })).toBeTruthy();
   });
 
+  it("offers other machines after a create fails because the default went offline", async () => {
+    let offline = false;
+    const apiClient = {
+      GET: vi.fn(async (path: string) =>
+        path === "/snapshot"
+          ? {
+              data: {
+                hosts: fleetHosts(
+                  offline ? { available: false, unavailableReason: "Host is offline." } : { available: true },
+                ),
+              },
+            }
+          : { data: {} },
+      ),
+      POST: vi.fn(async () => {
+        offline = true;
+        return {
+          error: {
+            type: "about:blank",
+            title: "Bad Gateway",
+            status: 502,
+            code: "upstreamError",
+            detail: "host offline",
+          },
+          response: new Response(null, { status: 502 }),
+        };
+      }),
+    };
+    renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "https://build-b.example.test",
+    });
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    expect(screen.queryByRole("group", { name: "Create on another machine" })).toBeNull();
+    await fireEvent.click(create);
+    const notice = within(await screen.findByRole("group", { name: "Create on another machine" }));
+    expect(notice.getByRole("status").textContent).toBe(
+      "Your default machine, build-b, is unavailable: Host is offline.",
+    );
+    expect(create.disabled).toBe(true);
+  });
+
   it("leaves agent checks for a quick action on another machine to that machine", async () => {
     const apiClient = {
       GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),

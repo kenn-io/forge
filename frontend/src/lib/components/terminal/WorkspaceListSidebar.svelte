@@ -2106,16 +2106,17 @@
   {#if quickActions.length > 0}
     <MenuSeparator />
     {#each quickActions as action (action.label)}
-      {@const reason = quickActionDisabledReason(action, launchTargets, targets.length > 0 && targets.every(onOtherFleetMember)) ||
-        (targets.length === 0 ? "Not available in these workspaces" : "")}
-      <MenuItem disabled={reason !== ""} textValue={action.label} onselect={() => chooseQuickAction(action, targets)}>
+      {@const localReason = quickActionDisabledReason(action, launchTargets)}
+      {@const eligible = localReason ? targets.filter(onOtherFleetMember) : targets}
+      {@const reason = eligible.length === 0 ? localReason || "Not available in these workspaces" : ""}
+      <MenuItem disabled={reason !== ""} textValue={action.label} onselect={() => chooseQuickAction(action, eligible)}>
         {#snippet icon()}<ZapIcon size={14} />{/snippet}
         {#snippet trailing()}{reason || quickActionAgentLabel(action)}{/snippet}
         {selectedCount === 1
           ? action.label
-          : targets.length === selectedCount
+          : eligible.length === selectedCount
             ? `${action.label} in ${selectedCount} workspaces...`
-            : `${action.label} in ${targets.length} of ${selectedCount} workspaces...`}
+            : `${action.label} in ${eligible.length} of ${selectedCount} workspaces...`}
       </MenuItem>
     {/each}
   {/if}

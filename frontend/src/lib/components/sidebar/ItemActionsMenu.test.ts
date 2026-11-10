@@ -6,6 +6,7 @@ import { createMockApiFetch, mockIssueFixture, mockPullFixture } from "../../../
 import { makeGeneratedClient } from "../../testing/generated-client.js";
 import type { ListItemTarget } from "../../stores/item-actions.js";
 import ItemActionsMenu from "./ItemActionsMenuTestHarness.svelte";
+import { createSettingsStore } from "../../stores/settings.svelte.js";
 
 const pullOnGitHub = mockPullFixture(42) as unknown as PullRequest;
 pullOnGitHub.repo.capabilities = { ...pullOnGitHub.repo.capabilities, merge_credential_rules: true };
@@ -282,5 +283,64 @@ describe("ItemActionsMenu with a mixed selection", () => {
     ]);
 
     expect(screen.queryByRole("menuitem", { name: /^Approve workflows/ })).toBeNull();
+  });
+});
+
+describe("ItemActionsMenu quick actions with a default machine", () => {
+  const node = "b".repeat(32);
+  const getSnapshot = vi.fn();
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  function renderWithDefault(item: PullRequest, hostKind: "self" | "remote") {
+    getSnapshot.mockReset().mockResolvedValue({
+      hosts: [
+        {
+          configKey: node,
+          kind: hostKind,
+          name: "build-b",
+          operationAvailability: { workspaceWrite: { available: true } },
+        },
+      ],
+    });
+    const settings = createSettingsStore();
+    // This machine has no "helper" agent.
+    settings.setLaunchTargets([]);
+    settings.setQuickActions([{ label: "Review", agent: "helper", prompt: "Review this change" }]);
+    settings.setWorkspaceSettings({ ...settings.getWorkspaceSettings(), default_execution_target: node });
+    return render(ItemActionsMenu, {
+      props: {
+        client: makeGeneratedClient({ FleetService: { getSnapshot } }),
+        settings,
+        anchor: { x: 10, y: 10 },
+        returnFocus: undefined,
+        targets: [{ kind: "pull", item }],
+        selectionActive: false,
+        onClearSelection: () => {},
+        onChanged: () => {},
+      },
+    });
+  }
+
+  const reviewDisabled = () =>
+    screen.getByRole("menuitem", { name: /^Review/ }).getAttribute("aria-disabled") === "true";
+
+  it("leaves the agent check to another default machine", async () => {
+    renderWithDefault({ ...pullOnGitHub, workspace: undefined } as PullRequest, "remote");
+    await waitFor(() => expect(getSnapshot).toHaveBeenCalled());
+    await waitFor(() => expect(reviewDisabled()).toBe(false));
+  });
+
+  it("checks this machine's agents when the item already has a local workspace", async () => {
+    renderWithDefault({ ...pullOnGitHub, workspace: { id: "ws-local", status: "ready" } } as PullRequest, "remote");
+    await waitFor(() => expect(getSnapshot).toHaveBeenCalled());
+    expect(reviewDisabled()).toBe(true);
+  });
+
+  it("checks this machine's agents when the default names this machine", async () => {
+    renderWithDefault({ ...pullOnGitHub, workspace: undefined } as PullRequest, "self");
+    await waitFor(() => expect(reviewDisabled()).toBe(true));
   });
 });

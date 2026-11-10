@@ -185,6 +185,19 @@ export function createDefaultWorkspaceTarget(
       .map((candidate) => ({ hostKey: workspaceHostKey(candidate), label: workspaceHostLabel(candidate) }));
   });
   return {
+    /** Checks the machines again, such as after a create on the default failed. */
+    recheck() {
+      if (!target) return;
+      untrack(() =>
+        runtime.runCommand(loadHosts, {
+          operation: "recheck workspace machine",
+          safeContext: {},
+          onFailure: () => {
+            loadFailed = true;
+          },
+        }),
+      );
+    },
     get hostKey() {
       return hostKey;
     },

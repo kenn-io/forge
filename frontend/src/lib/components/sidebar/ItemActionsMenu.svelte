@@ -26,6 +26,7 @@
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
+  import { createDefaultWorkspaceTarget } from "../../stores/workspace-target.svelte.js";
   import { runQuickActionOnItems } from "../../stores/bulk-quick-action.js";
   import { loadLabelCatalogWithRefresh } from "../detail/labelCatalogRefresh.js";
   import { showFlash } from "../../stores/flash.svelte.js";
@@ -81,7 +82,7 @@
   }: Props = $props();
 
   const runtime = getAppRuntime();
-  const { settings } = getStores();
+  const { settings, events } = getStores();
 
   type StateAction = "close" | "reopen" | "draft" | "ready" | "approveWorkflows";
   const stateActionVerbs: Record<StateAction, string> = {
@@ -98,8 +99,19 @@
   const multi = $derived(count > 1);
   const quickActions = $derived(sortQuickActionsByLabel(settings.getQuickActions()));
   const launchTargets = $derived(settings.getLaunchTargets());
-  // A default machine elsewhere checks its own agents; the run resolves it.
   const defaultExecutionTarget = $derived(settings.getWorkspaceSettings().default_execution_target ?? "");
+  // Resolve the default only while the menu is open; it may name this Forge.
+  const defaultTarget = createDefaultWorkspaceTarget(
+    runtime,
+    (subscriber) => events.subscribeWorkspaceEvents(subscriber),
+    () => (open ? defaultExecutionTarget : ""),
+    () => ({ provider: targets[0]?.item.repo.provider ?? "", platformHost: targets[0]?.item.repo.platform_host }),
+  );
+  // An item's existing local workspace takes the action; otherwise it runs on
+  // the default machine, which checks its own agents when it is another one.
+  const allRunElsewhere = $derived(
+    defaultTarget.hostKey !== undefined && targets.every((target) => !target.item.workspace?.id),
+  );
 
   let running = $state(false);
   let confirmQuickAction = $state.raw<{ action: QuickAction; targets: readonly ListItemTarget[] } | null>(null);
@@ -574,7 +586,7 @@
     {#if quickActions.length > 0}
       <MenuSeparator />
       {#each quickActions as action (action.label)}
-        {@const reason = quickActionDisabledReason(action, launchTargets, defaultExecutionTarget !== "")}
+        {@const reason = quickActionDisabledReason(action, launchTargets, allRunElsewhere)}
         <MenuItem disabled={reason !== "" || running} textValue={action.label} onselect={() => chooseQuickAction(action)}>
           {#snippet icon()}<ZapIcon size={14} />{/snippet}
           {#snippet trailing()}{reason || agentLabel(action)}{/snippet}

@@ -37,7 +37,7 @@
     type ConflictReason,
   } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import { runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
+  import { runReturnedWorkspaceQuickAction, runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
   import { detailSessionLaunchLeaf } from "../../stores/paneLayout.svelte.js";
   import type { WorkspaceRuntimeLaunchLeaf } from "../terminal/workspace-runtime-workflow.js";
   import {
@@ -2071,7 +2071,9 @@
         Effect.sync(() => {
           if (data?.id && hostKey) {
             promoteWorkspaceCreateLaunch(requestIdentity, data.id, hostKey);
-            if (quickAction) runWorkspaceQuickAction(runtime, data.id, "pull_request", quickAction, hostKey);
+            if (quickAction) {
+              runReturnedWorkspaceQuickAction(runtime, { id: data.id, status: data.status }, "pull_request", quickAction, hostKey);
+            }
             if (responseIsStale()) return;
             if (onOpenWorkspace) onOpenWorkspace(data.id, hostKey);
             else navigate(`/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(data.id)}`);
@@ -2121,6 +2123,8 @@
         number: requestIdentity.number,
       },
       onFailure: (failure) => {
+        // The default may have gone offline since this page checked it.
+        if (!hostChoice && hostKey) workspaceTarget.recheck();
         if (responseIsStale()) return;
         const message =
           failure._tag === "ApiProblemError"

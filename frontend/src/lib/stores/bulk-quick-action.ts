@@ -144,6 +144,8 @@ function runOnItem(
         ),
       onSuccess: (data) => {
         if (!data?.id) return failed("failed to create workspace");
+        // A remote item's existing workspace can come back in error; set it up again.
+        if (hostKey && data.status === "error") return retryWorkspaceQuickAction(data.id, action, hostKey);
         return launchWorkspaceQuickAction(data.id, action, hostKey);
       },
     }),

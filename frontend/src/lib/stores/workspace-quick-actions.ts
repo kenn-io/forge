@@ -5,7 +5,8 @@ import type { AppRuntime } from "../app/runtime.js";
 import { reportWorkspaceOpened, reportWorkspaceOpenError } from "../app/telemetry.js";
 import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
 import type { WorkspaceRuntimeLaunchLeaf } from "../components/terminal/workspace-runtime-workflow.js";
-import { executeGeneratedApiRequest } from "../api/generated-api.js";
+import { executeGeneratedApiRequest, executeOpaqueGeneratedApiRequest } from "../api/generated-api.js";
+import { ProblemCodes } from "../api/problems.js";
 import { showFlash } from "./flash.svelte.js";
 
 /** Quick actions ordered by label, ignoring case; ties keep their settings order. */
@@ -106,14 +107,25 @@ export function launchWorkspaceQuickAction(
 }
 
 /**
- * Sets up a local workspace whose setup failed again, then launches the
- * quick action there. The retry takes the workspace's place in the launch
- * queue, so launches still run in the order requested.
+ * Sets up a workspace whose setup failed again, on the machine that owns it,
+ * then launches the quick action there. The retry takes the workspace's place
+ * in the launch queue, so launches still run in the order requested.
  */
-export function retryWorkspaceQuickAction(workspaceId: string, action: QuickAction) {
-  const { workspaceKey, handoff } = quickActionHandoff(workspaceId, action);
-  const retry = executeGeneratedApiRequest("POST retry workspace", (client, signal) =>
-    client.WorkspacesService.retryWorkspace({ id: workspaceId }, { signal }),
+export function retryWorkspaceQuickAction(workspaceId: string, action: QuickAction, hostKey?: string) {
+  const { workspaceKey, handoff } = quickActionHandoff(workspaceId, action, hostKey);
+  const retry = (
+    hostKey
+      ? executeOpaqueGeneratedApiRequest<unknown>("POST retry workspace", (client, signal) =>
+          hostKey.startsWith("devbox:")
+            ? client.DevboxesService.retryDevboxWorkspace(
+                { connectionId: hostKey.slice(7), id: workspaceId },
+                { signal },
+              )
+            : client.FleetService.retryFleetWorkspace({ hostKey, id: workspaceId }, { signal }),
+        )
+      : executeGeneratedApiRequest("POST retry workspace", (client, signal) =>
+          client.WorkspacesService.retryWorkspace({ id: workspaceId }, { signal }),
+        )
   ).pipe(
     Effect.matchEffect({
       onFailure: (failure) => {
@@ -189,6 +201,15 @@ function quickActionHandoff(
             message: `"${action.label}": lost contact with Kenn Forge; check the workspace for the agent.`,
           };
         }
+        // A remote machine may have accepted the handoff before the link to it
+        // broke, so a relay error is as unknown as a lost request.
+        if (hostKey && failure.problem.code === ProblemCodes.upstreamError) {
+          return {
+            type: "unconfirmed",
+            reason: "lost contact with the workspace's machine; check the workspace for the agent",
+            message: `"${action.label}": lost contact with the workspace's machine; check the workspace for the agent.`,
+          };
+        }
         const detail = failure.problem.detail ?? failure.problem.title ?? "agent handoff failed";
         // A post-launch failure carries the live session: the agent is running
         // but did not get its prompt, which is a different situation from a
@@ -227,9 +248,47 @@ export function runWorkspaceQuickAction(
   onLaunched?: (session: RuntimeSession) => void,
   leaf?: WorkspaceRuntimeLaunchLeaf,
 ): void {
+  reportQuickAction(
+    runtime,
+    workspaceId,
+    itemType,
+    action,
+    launchWorkspaceQuickAction(workspaceId, action, hostKey, onLaunched, leaf),
+  );
+}
+
+/**
+ * Runs a quick action in a workspace another machine returned for an item.
+ * One whose setup failed is set up again first, as the item list does.
+ */
+export function runReturnedWorkspaceQuickAction(
+  runtime: AppRuntime,
+  workspace: { readonly id: string; readonly status?: string | undefined },
+  itemType: WorkspaceDetail["item_type"],
+  action: QuickAction,
+  hostKey: string,
+): void {
+  reportQuickAction(
+    runtime,
+    workspace.id,
+    itemType,
+    action,
+    workspace.status === "error"
+      ? retryWorkspaceQuickAction(workspace.id, action, hostKey)
+      : launchWorkspaceQuickAction(workspace.id, action, hostKey),
+  );
+}
+
+function reportQuickAction(
+  runtime: AppRuntime,
+  workspaceId: string,
+  itemType: WorkspaceDetail["item_type"] | undefined,
+  action: QuickAction,
+  launch: ReturnType<typeof launchWorkspaceQuickAction>,
+): void {
   if (itemType !== undefined) reportWorkspaceOpened(runtime, itemType);
   runtime.runCommand(
-    launchWorkspaceQuickAction(workspaceId, action, hostKey, onLaunched, leaf).pipe(
+    launch.pipe(
       Effect.flatMap((outcome) =>
         Effect.sync(() => {
           if (outcome.type === "started") return;

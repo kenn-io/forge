@@ -56,13 +56,13 @@ func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) { //nolint:paral
 		Tmux: config.Tmux{
 			Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
 		},
-		Shell: config.Shell{Command: rustPtyManagerShellCommandForTest()},
 	}
 	fixture := setupWorkspaceServerFixture(t, cfg, server.ServerOptions{
 		DisableWorkspaceBackgroundMonitors: true,
 		HostCheckAllowLoopbackAnyPort:      true,
 		PtyOwnerDir:                        ptyOwnerDir,
 		PtyOwnerManagerPath:                managerPath,
+		PtyOwnerCommand:                    rustPtyManagerShellCommandForTest(),
 	})
 	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
@@ -83,11 +83,11 @@ func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) { //nolint:paral
 
 	if runtime.GOOS == "windows" {
 		workspaceTerminalConnWriteRead(
-			t, ctx, conn, "echo rust-owner-one\r", "rust-owner-one",
+			t, ctx, conn, "rust-owner-one\r", "echo:rust-owner-one",
 		)
 	} else {
 		workspaceTerminalConnWriteRead(
-			t, ctx, conn, "printf 'rust-owner-one\n'\r", "rust-owner-one",
+			t, ctx, conn, "printf 'rust-owner-%s\\n' one\r", "rust-owner-one",
 		)
 		require.NoError(conn.Write(
 			ctx,

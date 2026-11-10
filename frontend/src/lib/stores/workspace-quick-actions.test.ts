@@ -274,6 +274,30 @@ describe("quick-action launch serialization", () => {
       expect(quickActionWorkspaces.size).toBe(0);
     });
 
+    it("sends a second prompt to the same session only after the first settles", async () => {
+      const first = Promise.withResolvers<{ session: RuntimeSession; initial_message: { state: string } }>();
+      launchHandoff
+        .mockReturnValueOnce(first.promise)
+        .mockResolvedValue({ session, initial_message: { state: "delivered" } });
+      const fix = { label: "Fix", agent: "missing", prompt: "Fix this change" };
+      runQuickActionInSession(runtime, "ws-a", action, helper);
+      runQuickActionInSession(runtime, "ws-a", fix, helper);
+      // Another session, and a launch in the same workspace, do not wait behind it.
+      runQuickActionInSession(runtime, "ws-a", action, { key: "helper-2", label: "Helper 2" });
+      runWorkspaceQuickAction(runtime, "ws-a", "pull_request", fix);
+      await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledTimes(3));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(launchHandoff.mock.calls.map(([, body]) => body)).toEqual([
+        { session_key: "helper-1", message: "Review this change" },
+        { session_key: "helper-2", message: "Review this change" },
+        { target_key: "missing", message: "Fix this change" },
+      ]);
+
+      first.resolve({ session, initial_message: { state: "delivered" } });
+      await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledTimes(4));
+      expect(launchHandoff.mock.calls[3]?.[1]).toEqual({ session_key: "helper-1", message: "Fix this change" });
+    });
+
     it("says the prompt was not sent when the server refuses it", async () => {
       launchHandoff.mockRejectedValue(
         new GeneratedProblemResponse(

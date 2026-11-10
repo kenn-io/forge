@@ -252,7 +252,7 @@ export function sendQuickActionToSession(
   // No target_key: a server that predates session_key refuses the request
   // instead of launching the action's agent.
   const body = { session_key: session.key, message: action.prompt };
-  return executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
+  const send = executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
     hostKey?.startsWith("devbox:")
       ? client.DevboxesService.launchDevboxHandoff({ connectionId: hostKey.slice(7), id: workspaceId }, body, {
           signal,
@@ -284,6 +284,9 @@ export function sendQuickActionToSession(
       },
     }),
   );
+  // Prompts for one session arrive in the order chosen. They get their own
+  // queue: behind the workspace's launches they could wait minutes.
+  return enqueueLaunch(`${quickActionWorkspaceKey(workspaceId, hostKey)}\0session:${session.key}`, send);
 }
 
 /**

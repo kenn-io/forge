@@ -364,6 +364,8 @@ func TestExitedMirrorWithoutATranscriptShowsTheAgentsHistory(t *testing.T) {
 
 			state := awaitIdleMessages(t, chat, 4)
 			assert.Equal(t, []string{"remember", "restored answer", "continue here"}, messageTexts(state)[:3])
+			assert.Equal(t, []ACPContent{{Type: "image", MimeType: "image/png", Data: "iVBORw0KGgo="}}, state.Messages[0].Images,
+				"the replayed prompt shows its image")
 		})
 	}
 }

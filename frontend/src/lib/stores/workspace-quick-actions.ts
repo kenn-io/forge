@@ -236,6 +236,15 @@ export function sendQuickActionToSession(
           return { type: "unconfirmed", reason, message: `"${action.label}": ${reason}.` };
         }
         const reason = failure.problem.detail ?? failure.problem.title ?? "the prompt was not delivered";
+        // A server or upstream error can come after the write began, so the
+        // agent may still receive the prompt. Only a refusal is definite.
+        if ((failure.problem.status ?? 0) >= 500) {
+          return {
+            type: "unconfirmed",
+            reason,
+            message: `"${action.label}" may not have reached ${session.label}: ${reason}. Check it before sending again.`,
+          };
+        }
         return {
           type: "failed",
           reason,
@@ -246,20 +255,25 @@ export function sendQuickActionToSession(
   );
 }
 
-/** Sends a quick action to a running terminal agent and reports anything but a clean send. */
+/**
+ * Sends a quick action to a running terminal agent and reports anything but
+ * a clean send. onSent runs once the server has typed the prompt.
+ */
 export function runQuickActionInSession(
   runtime: AppRuntime,
   workspaceId: string,
   action: QuickAction,
   session: Pick<RuntimeSession, "key" | "label">,
   hostKey?: string,
+  onSent?: () => void,
 ): void {
   runtime.runCommand(
     sendQuickActionToSession(workspaceId, action, session, hostKey).pipe(
       Effect.flatMap((outcome) =>
         Effect.sync(() => {
-          if (outcome.type === "failed") showFlash(outcome.message, { tone: "danger" });
-          else if (outcome.type === "unconfirmed") showFlash(outcome.message, { tone: "warning" });
+          if (outcome.type === "started") onSent?.();
+          else if (outcome.type === "failed") showFlash(outcome.message, { tone: "danger" });
+          else showFlash(outcome.message, { tone: "warning" });
         }),
       ),
     ),

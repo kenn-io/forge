@@ -176,7 +176,7 @@ func (s *Handler) LaunchWorkspaceAgentHandoffService(
 func (s *Handler) deliverToLiveAgent(
 	ctx context.Context, workspaceID, sessionKey, message string,
 ) (WorkspaceAgentHandoffResult, error) {
-	submitted, err := s.submitAgentMessage(ctx, workspaceID, sessionKey, message, messageSender(false))
+	submitted, err := s.submitAgentMessage(ctx, workspaceID, sessionKey, message, messageSender(false), false)
 	if errors.Is(err, ErrInitialMessageInputModeNotReady) {
 		return WorkspaceAgentHandoffResult{}, httpapi.Validation("body.message", err.Error())
 	}

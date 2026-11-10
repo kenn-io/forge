@@ -192,7 +192,8 @@ describe("quick-action launch serialization", () => {
     it("asks the session's own host to deliver the prompt and records no launch", async () => {
       launchHandoff.mockResolvedValue({ session, initial_message: { state: "delivered" } });
       launchDevboxHandoff.mockResolvedValue({ session, initial_message: { state: "delivered" } });
-      runQuickActionInSession(runtime, "ws-a", action, helper);
+      const sent = vi.fn();
+      runQuickActionInSession(runtime, "ws-a", action, helper, undefined, sent);
       runQuickActionInSession(runtime, "ws-a", action, helper, "devbox:peer-a");
       await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledOnce());
       await vi.waitFor(() => expect(launchDevboxHandoff).toHaveBeenCalledOnce());
@@ -200,7 +201,7 @@ describe("quick-action launch serialization", () => {
       const body = { session_key: "helper-1", message: "Review this change" };
       expect(launchHandoff.mock.calls[0]?.slice(0, 2)).toEqual([{ id: "ws-a" }, body]);
       expect(launchDevboxHandoff.mock.calls[0]?.slice(0, 2)).toEqual([{ connectionId: "peer-a", id: "ws-a" }, body]);
-      await tick();
+      await vi.waitFor(() => expect(sent).toHaveBeenCalledOnce());
       expect(getFlashes()).toEqual([]);
       expect(quickActionLaunches.size).toBe(0);
       expect(quickActionWorkspaces.size).toBe(0);
@@ -219,6 +220,26 @@ describe("quick-action launch serialization", () => {
           '"Review" was not sent to Helper: agent runtime session is not live',
         ]),
       );
+    });
+
+    it("reports a server error as unconfirmed, since the write may have begun", async () => {
+      launchHandoff.mockRejectedValue(
+        new GeneratedProblemResponse(
+          { code: "internal_error", title: "submit agent message failed", status: 500 },
+          new Response(null, { status: 500 }),
+        ),
+      );
+      const sent = vi.fn();
+      runQuickActionInSession(runtime, "ws-a", action, helper, undefined, sent);
+      await vi.waitFor(() =>
+        expect(getFlashes().map((flash) => [flash.message, flash.tone])).toEqual([
+          [
+            '"Review" may not have reached Helper: submit agent message failed. Check it before sending again.',
+            "warning",
+          ],
+        ]),
+      );
+      expect(sent).not.toHaveBeenCalled();
     });
 
     it("does not claim a failure when the request itself was lost", async () => {

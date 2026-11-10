@@ -153,9 +153,15 @@ func TestAgentHandoffDeliversToLiveSessionWithoutLaunching(t *testing.T) {
 	require.NotSame(agentPTY, shellPTY)
 
 	// target_key names a different, unknown agent: the live session decides.
-	response := fixture.post(t, map[string]any{
-		"session_key": agent.Key, "target_key": "missing", "message": "rebase this\r\nonto main",
-	})
+	// The runtime reads the agent's bracketed-paste announcement on its own
+	// goroutine, and a live-session handoff does not wait for it.
+	var response *httptest.ResponseRecorder
+	require.Eventually(func() bool {
+		response = fixture.post(t, map[string]any{
+			"session_key": agent.Key, "target_key": "missing", "message": "rebase this\r\nonto main",
+		})
+		return response.Code != http.StatusBadRequest
+	}, 2*time.Second, 5*time.Millisecond)
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	var body struct {
 		Session struct {

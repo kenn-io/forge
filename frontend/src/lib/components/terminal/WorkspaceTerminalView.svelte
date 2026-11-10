@@ -3167,8 +3167,13 @@
       }
       return;
     }
-    runQuickActionInSession(appRuntime, workspaceId, action, session, workspaceHostKey);
-    requestSessionFocus(hostKey);
+    // Focus waits for the server to finish typing: keys typed into a focused
+    // terminal before then would be submitted with the prompt.
+    const id = workspaceId;
+    const workspaceHost = workspaceHostKey;
+    runQuickActionInSession(appRuntime, id, action, session, workspaceHost, () => {
+      if (isCurrentWorkspace(id, workspaceHost)) requestSessionFocus(hostKey);
+    });
   }
 
   function startAcceptedWorkspaceLaunchReconciliation(

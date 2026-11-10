@@ -214,13 +214,15 @@ func messageSender(fromAgent bool) localruntime.ACPSender {
 func (s *Handler) SubmitAgentMessageService(
 	ctx context.Context, workspaceID, runtimeSessionKey, message string,
 ) (AgentMessageResult, error) {
-	return s.submitAgentMessage(ctx, workspaceID, runtimeSessionKey, message, messageSender(true))
+	return s.submitAgentMessage(ctx, workspaceID, runtimeSessionKey, message, messageSender(true), true)
 }
 
 // submitAgentMessage delivers one message from sender to a live agent
-// session, starting a stored chat's agent first.
+// session. With startStoredChat it first starts the agent of a stored chat
+// that is not running.
 func (s *Handler) submitAgentMessage(
-	ctx context.Context, workspaceID, runtimeSessionKey, message string, sender localruntime.ACPSender,
+	ctx context.Context, workspaceID, runtimeSessionKey, message string,
+	sender localruntime.ACPSender, startStoredChat bool,
 ) (AgentMessageResult, error) {
 	if s.runtime == nil {
 		return AgentMessageResult{}, httpapi.ServiceUnavailable("agent message delivery not configured")
@@ -235,8 +237,10 @@ func (s *Handler) submitAgentMessage(
 			"runtime_session_key", "runtime_session_key is required",
 		)
 	}
-	if err := s.startStoredChatForMessage(ctx, workspaceID, runtimeSessionKey); err != nil {
-		return AgentMessageResult{}, err
+	if startStoredChat {
+		if err := s.startStoredChatForMessage(ctx, workspaceID, runtimeSessionKey); err != nil {
+			return AgentMessageResult{}, err
+		}
 	}
 	message, messageBytes, err := normalizeAgentMessage(message, s.runtimeSessionKind(workspaceID, runtimeSessionKey))
 	if err != nil {

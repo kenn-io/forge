@@ -161,23 +161,33 @@ func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messag
 		return false
 	}
 	turn := a.agentOutputLocked()
+	last := len(a.state.Messages) - 1
+	// Consecutive text of one role is one message while its message ID stays
+	// the same; any change, including gaining or losing an ID, starts a new
+	// message.
+	continues := last >= 0 && a.state.Messages[last].Role == role && a.state.Messages[last].Content == nil &&
+		a.state.Messages[last].MessageID == messageID && (a.promptIndex == nil || last >= *a.promptIndex) && turn == nil
+	if content != nil && role == "user" && content.Type == "image" {
+		// The chat shows a user's images, like a prompt sent from Forge, with
+		// the prompt's text.
+		a.releaseHeldTextLocked()
+		if continues {
+			a.state.Messages[last].Images = append(a.state.Messages[last].Images, *content)
+			a.publishMessageLocked(last)
+		} else {
+			a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, Turn: turn, MessageID: messageID, Images: []ACPContent{*content}, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+		}
+		return true
+	}
 	if content != nil {
 		a.releaseHeldTextLocked()
 		a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, Turn: turn, MessageID: messageID, Content: content, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
 		return true
 	}
-	last := len(a.state.Messages) - 1
-	if last >= 0 {
-		previous := a.state.Messages[last]
-		// Consecutive text of one role is one message while its message ID
-		// stays the same; any change, including gaining or losing an ID,
-		// starts a new message.
-		if previous.Role == role && previous.Content == nil && previous.MessageID == messageID &&
-			(a.promptIndex == nil || last >= *a.promptIndex) && turn == nil {
-			a.state.Messages[last].Text += text
-			a.holdTextLocked(false, text)
-			return false
-		}
+	if continues {
+		a.state.Messages[last].Text += text
+		a.holdTextLocked(false, text)
+		return false
 	}
 	if a.heldBytes > 0 {
 		// The finished message becomes visible before the next one starts.

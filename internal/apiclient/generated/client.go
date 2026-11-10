@@ -60878,7 +60878,7 @@ type ListIssuesQuery struct {
 	// NotInvolvesMe Only include issues that do not involve the authenticated viewer. With involves_me, neither filter applies.
 	NotInvolvesMe *bool `json:"not_involves_me,omitempty"`
 
-	// Assigned Drop issues with no assignees; an issue whose assignees never synchronized stays. With unassigned, neither filter applies.
+	// Assigned Drop issues with no assignees. With unassigned, neither filter applies.
 	Assigned *bool `json:"assigned,omitempty"`
 
 	// NotReferencedByPr Only include issues no pull request references. With referenced_by_pr, neither filter applies.

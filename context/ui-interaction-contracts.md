@@ -268,7 +268,7 @@ and back.
   `no_merge_conflicts`), so both directions apply before limits.
 - Phone Activity shows a three-state filter as an Any/Yes/No choice, since a switch has no third state.
 - `Unassigned` matches only PR/issue subjects with an empty synchronized assignee set; its opposite
-  matches every other subject, including one whose assignees never synchronized.
+  matches every other subject, including a PR whose assignees never synchronized.
 - `Referenced by PR` is a browser-local Issues preference, default off, exposed in every issue-filter
   presentation; it ANDs with involvement and unassigned before limits, and reset clears it.
 - `Referenced by PR` shows whenever any configured provider-host supplies reference edges; edges never

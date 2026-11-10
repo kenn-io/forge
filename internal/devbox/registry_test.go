@@ -121,24 +121,14 @@ func TestRegistryConnectSharedAndPersonalWorkers(t *testing.T) {
 				require.NoError(err)
 				assert.Equal(http.StatusOK, response.StatusCode)
 				require.NoError(response.Body.Close())
-				thirdStore, err := OpenConnections(t.TempDir())
-				require.NoError(err)
-				t.Cleanup(thirdStore.Close)
-				thirdStore.client.Transport = transport.Clone()
 				peerID = 13
-				discovery, err = thirdStore.Discover(t.Context(), registry.URL)
-				require.NoError(err)
-				assert.Empty(discovery.Devboxes)
-				_, err = thirdStore.Connect(t.Context(), registry.URL, "compute-a")
-				require.ErrorContains(err, "not assigned")
-			} else {
-				// Another enrolled developer must not inherit the owner's service account.
-				discovery, err = store.Discover(t.Context(), registry.URL)
-				require.NoError(err)
-				assert.Empty(discovery.Devboxes)
-				_, err = store.Connect(t.Context(), registry.URL, "compute-a")
-				require.ErrorContains(err, "not assigned")
 			}
+			// Another enrolled developer must not inherit the owner's service account.
+			discovery, err = store.Discover(t.Context(), registry.URL)
+			require.NoError(err)
+			assert.Empty(discovery.Devboxes)
+			_, err = store.Connect(t.Context(), registry.URL, "compute-a")
+			require.ErrorContains(err, "not assigned")
 			peerID = 11
 			identity.GitHubUserID = 99
 			_, err = store.Connect(t.Context(), registry.URL, "compute-a")

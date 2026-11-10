@@ -87,7 +87,7 @@ func newFixture(t *testing.T) *fixture {
 
 func (f *fixture) open(t *testing.T, model string) *Indexer {
 	t.Helper()
-	encoder, err := NewEncoder(f.endpoint.Embedder(model))
+	encoder, err := NewEncoder(f.endpoint.Embedder(model), nil)
 	require.NoError(t, err)
 	x, err := Open(t.Context(), f.path, encoder, f.sources, time.Hour)
 	require.NoError(t, err)
@@ -211,6 +211,25 @@ func TestModelChangeRebuildsTheIndex(t *testing.T) {
 	assert.Equal([]db.RepoItemNumber{item(10, 101)}, rank(t, second, "cache", "pr", 0, 0, item(10, 101)))
 }
 
+func TestEndpointSwitchKeepsIndex(t *testing.T) {
+	f := newFixture(t)
+	f.sources.set(pull(1, 10, 101, "Cache fix", "cache"), pull(2, 10, 102, "Login fix", "login"))
+	first := f.open(t, "nomic-embed-text")
+	require.NoError(t, first.Refresh(t.Context()))
+	candidates := []db.RepoItemNumber{item(10, 101), item(10, 102)}
+	before := rank(t, first, "cache", "pr", 0, 0, candidates...)
+	require.NoError(t, first.Close())
+	secondEndpoint := embedfake.New(t, "cache", "login", "flaky", "docs")
+	encoder, err := NewEncoder(secondEndpoint.Embedder("nomic-embed-text"), nil)
+	require.NoError(t, err)
+	second, err := Open(t.Context(), f.path, encoder, f.sources, time.Hour)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = second.Close() })
+	require.NoError(t, second.Refresh(t.Context()))
+	assert.Empty(t, secondEndpoint.Inputs())
+	assert.Equal(t, before, rank(t, second, "cache", "pr", 0, 0, candidates...))
+}
+
 func TestWakesNeverStartPassesLessThanAMinuteApart(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
@@ -255,4 +274,20 @@ func TestWakesNeverStartPassesLessThanAMinuteApart(t *testing.T) {
 		assert.Equal([]time.Duration{0, time.Minute, 11 * time.Minute}, started(),
 			"a wake after the gap starts a pass immediately")
 	})
+}
+
+func TestLocalEndpointRediscoveredForRequests(t *testing.T) {
+	first := embedfake.New(t, "cache")
+	second := embedfake.New(t, "cache")
+	cfg := first.Embedder("nomic-embed-text")
+	endpoint := cfg.BaseURL
+	encoder, err := NewEncoder(cfg, func(context.Context) (string, error) { return endpoint, nil })
+	require.NoError(t, err)
+	_, err = encoder.query(t.Context(), "cache")
+	require.NoError(t, err)
+	endpoint = second.Embedder("nomic-embed-text").BaseURL
+	_, err = encoder.documents(t.Context(), []string{"cache document"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"cache"}, first.Inputs())
+	assert.Equal(t, []string{"cache document"}, second.Inputs())
 }

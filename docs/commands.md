@@ -3,6 +3,16 @@
 Run `kenn-forge` or `kenn-forge --help` for the complete command tree. Flags
 are scoped to the commands that use them; check command help before scripting.
 
+## Set up local embeddings
+
+```sh
+kenn-forge embeddings local
+kenn-forge embeddings local --yes --config /path/to/config.toml
+```
+
+Setup asks before downloads and before switching to the built-in server. Restart
+Forge to apply the settings.
+
 ## Manage the daemon
 
 ```sh

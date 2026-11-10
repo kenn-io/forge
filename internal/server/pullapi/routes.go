@@ -50,7 +50,7 @@ type listPullsInput struct {
 	InvolvesMe bool    `query:"involves_me" doc:"Only include pull requests involving the authenticated viewer."`
 	Unassigned bool    `query:"unassigned" doc:"Only include pull requests with no assignees."`
 	Q          string  `query:"q"`
-	Semantic   bool    `query:"semantic" doc:"Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers."`
+	Semantic   bool    `query:"semantic" doc:"Rank titles, descriptions, and comments by meaning. Requires q and semantic search on the Forge that syncs providers."`
 	Limit      int     `query:"limit"`
 	Offset     int     `query:"offset"`
 }

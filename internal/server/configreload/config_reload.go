@@ -94,7 +94,8 @@ type StartupConfigSnapshot struct {
 
 	// Embeddings builds the semantic index's encoder and resolves its API
 	// key once at startup.
-	Embeddings embedconfig.Embedder
+	Embeddings      embedconfig.Embedder
+	LocalEmbeddings string
 }
 
 type fleetHubStartupBinding struct {
@@ -136,6 +137,7 @@ func SnapshotStartupConfig(cfg *config.Config) StartupConfigSnapshot {
 		GitHubAppSplitHosts:             githubAppSplitHosts(cfg),
 		RoborevEndpoint:                 cfg.RoborevEndpoint(),
 		Embeddings:                      cfg.Embeddings,
+		LocalEmbeddings:                 cfg.LocalEmbeddings,
 	}
 	snap.Tmux.Command = slices.Clone(cfg.Tmux.Command)
 	if cfg.Tmux.AgentSessions != nil {

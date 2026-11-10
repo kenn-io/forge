@@ -36,6 +36,7 @@
     Modal,
     Timeline,
     TimelineItem,
+    Tooltip,
     copyToClipboard,
     formatRelativeTime,
     type TimelineTone,
@@ -1666,13 +1667,17 @@
       {/if}
     </IconButton>
     {#if hasChatComposer()}
-      <IconButton
-        size="sm"
-        onclick={() => addToChat(chatQuote(event))}
-        ariaLabel="Add to chat"
-      >
-        <MessageSquarePlusIcon size={14} />
-      </IconButton>
+      <!-- An empty title keeps the browser's own tooltip from stacking on this one. -->
+      <Tooltip text="Add to the chat's message box without sending">
+        <IconButton
+          size="sm"
+          onclick={() => addToChat(chatQuote(event))}
+          ariaLabel="Add to chat"
+          title=""
+        >
+          <MessageSquarePlusIcon size={14} />
+        </IconButton>
+      </Tooltip>
     {/if}
   {/if}
 {/snippet}

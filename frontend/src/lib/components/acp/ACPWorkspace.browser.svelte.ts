@@ -1342,7 +1342,11 @@ describe("ACPWorkspace add to chat (browser)", () => {
     composer.value = "Context first.";
     composer.dispatchEvent(new Event("input", { bubbles: true }));
 
-    (page.getByRole("button", { name: "Add to chat" }).element() as HTMLButtonElement).click();
+    const button = page.getByRole("button", { name: "Add to chat" }).element() as HTMLButtonElement;
+    button.focus();
+    await expect.element(page.getByText("Add to the chat's message box without sending")).toBeVisible();
+    expect(button.title).toBe("");
+    button.click();
 
     await expect
       .poll(() => composer.value)

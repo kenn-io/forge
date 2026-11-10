@@ -3,8 +3,12 @@ package semantic
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"sync"
 	"time"
 
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/kit/embedclient"
 	"go.kenn.io/kit/embedconfig"
 	"go.kenn.io/kit/embedlocal"
@@ -77,43 +81,20 @@ func (e *Encoder) documents(ctx context.Context, texts []string) ([][]float32, e
 	if e.resolve == nil {
 		return e.client.EmbedTexts(ctx, embedconfig.RoleDocument, texts)
 	}
-	options, builtin, err := e.optionsForRequest(ctx)
+	client, err := e.clientForRequest(ctx)
 	if err != nil {
 		return nil, err
 	}
-	client, err := embedclient.New(options)
-	if err != nil {
-		return nil, err
-	}
-	if !builtin {
-		return client.EmbedTexts(ctx, embedconfig.RoleDocument, texts)
-	}
-	var result [][]float32
-	for start := 0; start < len(texts); start += options.Batch.Items {
-		end := min(start+options.Batch.Items, len(texts))
-		select {
-		case e.localSlot <- struct{}{}:
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-		vectors, err := client.EmbedTexts(ctx, embedconfig.RoleDocument, texts[start:end])
-		<-e.localSlot
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, vectors...)
-	}
-	return result, nil
+	return client.EmbedTexts(ctx, embedconfig.RoleDocument, texts)
 }
 
 // query encodes one search query with the configured query affixes.
 func (e *Encoder) query(ctx context.Context, text string) (vector.Vector, error) {
 	return vector.EncodeOne(ctx, func(ctx context.Context, texts []string) ([][]float32, error) {
-		client, release, err := e.clientForRequest(ctx)
+		client, err := e.clientForRequest(ctx)
 		if err != nil {
 			return nil, err
 		}
-		defer release()
 		return client.EmbedTexts(ctx, embedconfig.RoleQuery, texts)
 	}, text)
 }
@@ -139,27 +120,69 @@ func (e *Encoder) optionsForRequest(ctx context.Context) (embedclient.Options, b
 	return options, builtin, nil
 }
 
-func (e *Encoder) clientForRequest(ctx context.Context) (*embedclient.Client, func(), error) {
+func (e *Encoder) clientForRequest(ctx context.Context) (*embedclient.Client, error) {
 	if e.resolve == nil {
-		return e.client, func() {}, nil
+		return e.client, nil
 	}
 	options, builtin, err := e.optionsForRequest(ctx)
 	if err != nil {
-		return nil, nil, err
-	}
-	client, err := embedclient.New(options)
-	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if builtin {
-		select {
-		case e.localSlot <- struct{}{}:
-			return client, func() { <-e.localSlot }, nil
-		case <-ctx.Done():
-			return nil, nil, ctx.Err()
+		client := &http.Client{Timeout: options.Transport.Timeout}
+		if options.HTTP != nil {
+			*client = *options.HTTP
 		}
+		base := client.Transport
+		if base == nil {
+			base = tracing.HTTPTransport(nil)
+		}
+		client.Transport = localTransport{base: base, slot: e.localSlot}
+		options.HTTP = client
 	}
-	return client, func() {}, nil
+	return embedclient.New(options)
+}
+
+type localTransport struct {
+	base http.RoundTripper
+	slot chan struct{}
+}
+
+func (t localTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	select {
+	case t.slot <- struct{}{}:
+	case <-req.Context().Done():
+		if req.Body != nil {
+			_ = req.Body.Close()
+		}
+		return nil, req.Context().Err()
+	}
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		<-t.slot
+		return nil, err
+	}
+	resp.Body = &localResponseBody{ReadCloser: resp.Body, release: sync.OnceFunc(func() { <-t.slot })}
+	return resp, nil
+}
+
+type localResponseBody struct {
+	io.ReadCloser
+	release func()
+}
+
+func (b *localResponseBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err == io.EOF {
+		b.release()
+	}
+	return n, err
+}
+
+func (b *localResponseBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.release()
+	return err
 }
 
 func (e *Encoder) fillBatchOptions() []vector.BatchOption {

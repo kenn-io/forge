@@ -191,3 +191,49 @@ func TestBuiltinQueryRunsBetweenDocumentBatches(t *testing.T) {
 	releaseSecond.Do(func() { close(finishSecond) })
 	require.NoError(t, <-done)
 }
+
+func TestBuiltinQueryRunsBeforeTimedOutBatchSplits(t *testing.T) {
+	started := make(chan string, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Input []string `json:"input"`
+		}
+		if !assert.NoError(t, json.UnmarshalRead(r.Body, &body)) {
+			return
+		}
+		if len(body.Input) == 8 {
+			started <- "doc8"
+			<-r.Context().Done()
+			return
+		}
+		if body.Input[0] == "query" {
+			started <- "query"
+		} else {
+			started <- "doc4"
+		}
+		data := make([]map[string]any, len(body.Input))
+		for i := range data {
+			data[i] = map[string]any{"index": i, "embedding": []float32{1, 1}}
+		}
+		assert.NoError(t, json.MarshalWrite(w, map[string]any{"data": data}))
+	}))
+	t.Cleanup(server.Close)
+	cfg := embedconfig.Embedder{BaseURL: server.URL, Model: "test", Dims: 2}
+	enc, err := NewEncoder(cfg, func(context.Context) (string, bool, error) { return server.URL, true, nil })
+	require.NoError(t, err)
+	enc.options.HTTP = &http.Client{Timeout: time.Second}
+	docsDone := make(chan error, 1)
+	go func() {
+		_, err := enc.documents(t.Context(), []string{"doc", "doc", "doc", "doc", "doc", "doc", "doc", "doc"})
+		docsDone <- err
+	}()
+	require.Equal(t, "doc8", <-started)
+	enc.options.HTTP = &http.Client{Timeout: 5 * time.Second}
+	queryDone := make(chan error, 1)
+	go func() { _, err := enc.query(t.Context(), "query"); queryDone <- err }()
+	assert.Equal(t, "query", <-started)
+	assert.Equal(t, "doc4", <-started)
+	assert.Equal(t, "doc4", <-started)
+	require.NoError(t, <-queryDone)
+	require.NoError(t, <-docsDone)
+}

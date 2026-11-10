@@ -5237,10 +5237,13 @@ components:
           type: object
         message:
           type: string
+        session_key:
+          description: A live agent session that takes the message instead of a newly launched agent. target_key is then ignored.
+          type: string
         target_key:
+          description: Agent launch target. Required unless session_key is set.
           type: string
       required:
-        - target_key
         - message
       type: object
     LaunchWorkspaceRuntimeSessionInputBody:
@@ -30097,7 +30100,7 @@ paths:
         - Workspaces
   /workspaces/{id}/runtime/agent-handoffs:
     post:
-      description: Waits for the workspace to become ready, launches the agent target, and delivers the message as its initial prompt.
+      description: Waits for the workspace to become ready, launches the agent target, and delivers the message as its initial prompt. With session_key, delivers the message to that live agent session and launches nothing.
       operationId: launch-workspace-agent-handoff
       parameters:
         - in: path

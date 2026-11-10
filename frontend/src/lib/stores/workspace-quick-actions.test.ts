@@ -12,6 +12,7 @@ import {
   quickActionLaunches,
   quickActionWorkspaces,
   quickActionWorkspaceKey,
+  runQuickActionInSession,
   runReturnedWorkspaceQuickAction,
   runWorkspaceQuickAction,
 } from "./workspace-quick-actions.js";
@@ -251,4 +252,95 @@ describe("quick-action launch serialization", () => {
       expect(quickActionLaunches.has(quickActionWorkspaceKey("ws-a", "devbox:peer-a"))).toBe(true);
     },
   );
+  describe("send to a running session", () => {
+    const action = { label: "Review", agent: "missing", prompt: "Review this change" };
+    const helper = { key: "helper-1", label: "Helper" };
+
+    it("asks the session's own host to deliver the prompt and records no launch", async () => {
+      launchHandoff.mockResolvedValue({ session, initial_message: { state: "delivered" } });
+      launchDevboxHandoff.mockResolvedValue({ session, initial_message: { state: "delivered" } });
+      const sent = vi.fn();
+      runQuickActionInSession(runtime, "ws-a", action, helper, undefined, sent);
+      runQuickActionInSession(runtime, "ws-a", action, helper, "devbox:peer-a");
+      await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(launchDevboxHandoff).toHaveBeenCalledOnce());
+      // No target_key, so a server without session delivery refuses instead of launching.
+      const body = { session_key: "helper-1", message: "Review this change" };
+      expect(launchHandoff.mock.calls[0]?.slice(0, 2)).toEqual([{ id: "ws-a" }, body]);
+      expect(launchDevboxHandoff.mock.calls[0]?.slice(0, 2)).toEqual([{ connectionId: "peer-a", id: "ws-a" }, body]);
+      await vi.waitFor(() => expect(sent).toHaveBeenCalledOnce());
+      expect(getFlashes()).toEqual([]);
+      expect(quickActionLaunches.size).toBe(0);
+      expect(quickActionWorkspaces.size).toBe(0);
+    });
+
+    it("sends a second prompt to the same session only after the first settles", async () => {
+      const first = Promise.withResolvers<{ session: RuntimeSession; initial_message: { state: string } }>();
+      launchHandoff
+        .mockReturnValueOnce(first.promise)
+        .mockResolvedValue({ session, initial_message: { state: "delivered" } });
+      const fix = { label: "Fix", agent: "missing", prompt: "Fix this change" };
+      runQuickActionInSession(runtime, "ws-a", action, helper);
+      runQuickActionInSession(runtime, "ws-a", fix, helper);
+      // Another session, and a launch in the same workspace, do not wait behind it.
+      runQuickActionInSession(runtime, "ws-a", action, { key: "helper-2", label: "Helper 2" });
+      runWorkspaceQuickAction(runtime, "ws-a", "pull_request", fix);
+      await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledTimes(3));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(launchHandoff.mock.calls.map(([, body]) => body)).toEqual([
+        { session_key: "helper-1", message: "Review this change" },
+        { session_key: "helper-2", message: "Review this change" },
+        { target_key: "missing", message: "Fix this change" },
+      ]);
+
+      first.resolve({ session, initial_message: { state: "delivered" } });
+      await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledTimes(4));
+      expect(launchHandoff.mock.calls[3]?.[1]).toEqual({ session_key: "helper-1", message: "Fix this change" });
+    });
+
+    it("says the prompt was not sent when the server refuses it", async () => {
+      launchHandoff.mockRejectedValue(
+        new GeneratedProblemResponse(
+          { code: "conflict", title: "Conflict", status: 409, detail: "agent runtime session is not live" },
+          new Response(null, { status: 409 }),
+        ),
+      );
+      runQuickActionInSession(runtime, "ws-a", action, helper);
+      await vi.waitFor(() =>
+        expect(getFlashes().map((flash) => flash.message)).toEqual([
+          '"Review" was not sent to Helper: agent runtime session is not live',
+        ]),
+      );
+    });
+
+    it("reports a server error as unconfirmed, since the write may have begun", async () => {
+      launchHandoff.mockRejectedValue(
+        new GeneratedProblemResponse(
+          { code: "internal_error", title: "submit agent message failed", status: 500 },
+          new Response(null, { status: 500 }),
+        ),
+      );
+      const sent = vi.fn();
+      runQuickActionInSession(runtime, "ws-a", action, helper, undefined, sent);
+      await vi.waitFor(() =>
+        expect(getFlashes().map((flash) => [flash.message, flash.tone])).toEqual([
+          [
+            '"Review" may not have reached Helper: submit agent message failed. Check it before sending again.',
+            "warning",
+          ],
+        ]),
+      );
+      expect(sent).not.toHaveBeenCalled();
+    });
+
+    it("does not claim a failure when the request itself was lost", async () => {
+      launchHandoff.mockRejectedValue(new TypeError("fetch failed"));
+      runQuickActionInSession(runtime, "ws-a", action, helper);
+      await vi.waitFor(() =>
+        expect(getFlashes().map((flash) => flash.message)).toEqual([
+          '"Review": lost contact with Kenn Forge; check Helper before sending it again.',
+        ]),
+      );
+    });
+  });
 });

@@ -16,6 +16,7 @@ import {
   onSessionExited,
   registerSessionSlot,
   registerSessionInput,
+  registerSessionPrompt,
   requestSessionFocus,
   releaseSessionSlot,
   resetSessionHostForTest,
@@ -24,6 +25,7 @@ import {
   sendSessionInput,
   sendSessionKey,
   sendSessionPastedInput,
+  sendSessionPrompt,
   setRetainedSessionLimit,
   setSessionSlotVisible,
 } from "./session-host.svelte.ts";
@@ -83,6 +85,25 @@ describe("session host registry", () => {
     expect(sendSessionInput(agentOnA, "ignored\r")).toBe(false);
     expect(sendSessionPastedInput(agentOnA, "ignored", "\r")).toBe(false);
     expect(sendSessionKey(agentOnA, "ArrowUp")).toBe(false);
+  });
+
+  it("routes a prompt to the session's current sender and to no other session", () => {
+    const first = vi.fn(() => true);
+    const unregisterFirst = registerSessionPrompt(agentOnA, first);
+    expect(sendSessionPrompt(agentOnA, "Review this change")).toBe(true);
+    expect(first).toHaveBeenCalledExactlyOnceWith("Review this change");
+    expect(sendSessionPrompt(sessionHostKey("ws-2", undefined, "agent", "2026-01-01T00:00:00Z"), "other")).toBe(false);
+
+    // A remount registers before the old component unregisters.
+    const second = vi.fn(() => false);
+    const unregisterSecond = registerSessionPrompt(agentOnA, second);
+    unregisterFirst();
+    expect(sendSessionPrompt(agentOnA, "again")).toBe(false);
+    expect(second).toHaveBeenCalledExactlyOnceWith("again");
+
+    unregisterSecond();
+    expect(sendSessionPrompt(agentOnA, "ignored")).toBe(false);
+    expect(first).toHaveBeenCalledTimes(1);
   });
 
   it("keeps parts that contain the separator distinct", () => {

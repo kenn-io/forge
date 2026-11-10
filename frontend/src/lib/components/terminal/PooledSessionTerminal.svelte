@@ -12,6 +12,7 @@
     consumeSessionFocus,
     pendingSessionFocus,
     registerSessionInput,
+    registerSessionPrompt,
     restoreSessionFocus,
     type MountedSession,
   } from "../../stores/session-host.svelte.ts";
@@ -32,6 +33,7 @@
 
   let wrapper = $state<HTMLElement | null>(null);
   let terminalPane = $state<TerminalPane | null>(null);
+  let chat = $state<ACPWorkspace | null>(null);
   // True only once the wrapper actually sits in its destination and the browser
   // has laid it out. Activating a terminal earlier makes the fit addon measure
   // the parking node and resize the real tmux pane to one row.
@@ -210,6 +212,12 @@
     });
   });
 
+  $effect(() => {
+    const chatPane = chat;
+    if (!chatPane) return;
+    return registerSessionPrompt(session.hostKey, (prompt) => chatPane.sendPrompt(prompt));
+  });
+
   // The wrapper is reparented out of this component's own fragment, so Svelte
   // cannot remove it on destroy. Without this an unmounted session leaves a dead
   // terminal sitting in whatever slot last held it.
@@ -229,7 +237,7 @@
   inert={!active || !attached}
 >
   {#if session.kind === "acp"}
-    <ACPWorkspace websocketPath={session.websocketPath} sessionKey={session.hostKey} label={session.label ?? "Agent"} status={session.status} active={active && attached} disabled={session.disabled ?? false} {onConnectionChange} {onHoldingChange} {onExit} />
+    <ACPWorkspace bind:this={chat} websocketPath={session.websocketPath} sessionKey={session.hostKey} label={session.label ?? "Agent"} status={session.status} active={active && attached} disabled={session.disabled ?? false} {onConnectionChange} {onHoldingChange} {onExit} />
   {:else if showTerminal}
   {#key stoppedShell}
   <TerminalPane

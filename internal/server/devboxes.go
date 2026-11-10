@@ -253,6 +253,22 @@ func (s *Server) registerDevboxProxy(api huma.API, route devboxapi.DevboxProxyRo
 			// These reserved system targets launch shells; configured targets are agents.
 			refreshContext = target != string(localruntime.LaunchTargetShell) && target != string(localruntime.LaunchTargetPlainShell)
 		}
+		if r.Method == "POST" && strings.HasSuffix(route.Path, "/runtime/agent-handoffs") {
+			var handoff struct {
+				SessionKey string `json:"session_key"`
+			}
+			body, err := io.ReadAll(r.Body)
+			if err == nil {
+				err = json.Unmarshal(body, &handoff)
+			}
+			if err != nil {
+				routepolicy.WriteProblemResponse(w, httpapi.NewProblem(http.StatusBadRequest, httpapi.CodeBadRequest, "invalid agent handoff request", nil))
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			// A handoff to a live session launches nothing, so it needs no fresh launch context.
+			refreshContext = strings.TrimSpace(handoff.SessionKey) == ""
+		}
 		if refreshContext {
 			if err := s.refreshDevboxContext(r.Context(), connections, r.PathValue("connection_id"), r.PathValue("id")); err != nil {
 				routepolicy.WriteProblemResponse(w, httpapi.NewProblem(409, httpapi.CodeConflict, "Workspace context needs refresh: "+err.Error(), nil))

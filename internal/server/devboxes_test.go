@@ -293,6 +293,70 @@ func TestDevboxShellLaunchDoesNotRefreshSourceContext(t *testing.T) {
 	}
 }
 
+func TestDevboxHandoffToLiveSessionDoesNotRefreshSourceContext(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	tests := []struct {
+		name, body string
+		forwarded  bool
+	}{
+		{name: "live session", body: `{"session_key":"agent-a","message":"review this"}`, forwarded: true},
+		{name: "launch", body: `{"target_key":"codex","message":"review this"}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assert, require := assert.New(t), require.New(t)
+			var handoffs, contextReads atomic.Int32
+			worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.Method + " " + r.URL.Path {
+				case "GET /api/v1/workspaces/work-a":
+					contextReads.Add(1)
+					http.Error(w, "source context unavailable", http.StatusServiceUnavailable)
+				case "POST /api/v1/workspaces/work-a/runtime/agent-handoffs":
+					handoffs.Add(1)
+					raw, err := io.ReadAll(r.Body)
+					if !assert.NoError(err) {
+						return
+					}
+					assert.Equal(tc.body, string(raw), "forward the complete original handoff request")
+					_, _ = w.Write([]byte(`{"session":{"key":"agent-a"}}`))
+				default:
+					assert.Fail("unexpected worker request", "%s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(worker.Close)
+			directory := t.TempDir()
+			raw, err := json.Marshal([]any{map[string]any{
+				"id": "compute-a", "profile": devbox.Profile{
+					Assignment: devbox.Assignment{URL: worker.URL}, Token: "worker-test-token",
+				},
+			}})
+			require.NoError(err)
+			require.NoError(os.WriteFile(filepath.Join(directory, "devbox-connections.json"), raw, 0o600))
+			connections, err := devbox.OpenConnections(directory)
+			require.NoError(err)
+			t.Cleanup(connections.Close)
+			controller := wiredServer(&Server{options: ServerOptions{Devboxes: connections}})
+			mux := http.NewServeMux()
+			controller.registerDevboxAPI(humago.New(mux, huma.DefaultConfig("test", "1")))
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/devboxes/compute-a/workspaces/work-a/runtime/agent-handoffs", strings.NewReader(tc.body))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, request)
+			if tc.forwarded {
+				assert.Equal(http.StatusOK, response.Code, response.Body.String())
+				assert.JSONEq(`{"session":{"key":"agent-a"}}`, response.Body.String())
+				assert.Equal(int32(1), handoffs.Load())
+				assert.Zero(contextReads.Load())
+			} else {
+				assert.Equal(http.StatusConflict, response.Code, response.Body.String())
+				assert.Zero(handoffs.Load())
+				assert.Equal(int32(1), contextReads.Load())
+			}
+		})
+	}
+}
+
 func TestDevboxSnapshotMaintenanceBlocksCreation(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	for _, maintenance := range []bool{false, true} {

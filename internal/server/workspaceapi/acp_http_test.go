@@ -972,6 +972,23 @@ func TestAgentMessageStartsADormantChat(t *testing.T) {
 	assert.Contains(t, commands[0].Text, "hello")
 }
 
+// A handoff to a live session launches nothing, so one that names a chat
+// whose owner is gone is refused and leaves the chat stopped.
+func TestLiveSessionHandoffDoesNotStartADormantChat(t *testing.T) {
+	t.Parallel()
+	f, launches := launchingChat(t)
+
+	_, err := f.handler.LaunchWorkspaceAgentHandoffService(t.Context(), WorkspaceAgentHandoffRequest{
+		WorkspaceID: "workspace", SessionKey: chatKey, Message: "hello",
+	})
+
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
+	require.True(t, ok, "%v", err)
+	assert.Equal(t, http.StatusConflict, problem.Status)
+	assert.Contains(t, problem.Detail, "agent runtime session is not live")
+	assert.Zero(t, launches())
+}
+
 // cannotReloadChat is a supervised chat whose owner died while no daemon was
 // attached, so nothing marks it exited, and whose agent refuses to reload it.
 // launches counts the owner starts.

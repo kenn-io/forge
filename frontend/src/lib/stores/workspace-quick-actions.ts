@@ -238,6 +238,87 @@ function quickActionHandoff(
   return { workspaceKey, handoff };
 }
 
+/**
+ * Sends a quick action's prompt to a terminal agent that is already running.
+ * The server types it, as it does a launch's first prompt, so the agent gets
+ * the paste and then Enter. Nothing launches.
+ */
+export function sendQuickActionToSession(
+  workspaceId: string,
+  action: QuickAction,
+  session: Pick<RuntimeSession, "key" | "label">,
+  hostKey?: string,
+) {
+  // No target_key: a server that predates session_key refuses the request
+  // instead of launching the action's agent.
+  const body = { session_key: session.key, message: action.prompt };
+  const send = executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
+    hostKey?.startsWith("devbox:")
+      ? client.DevboxesService.launchDevboxHandoff({ connectionId: hostKey.slice(7), id: workspaceId }, body, {
+          signal,
+        })
+      : client.WorkspacesService.launchWorkspaceAgentHandoff({ id: workspaceId }, body, { signal }),
+  ).pipe(
+    Effect.match({
+      onSuccess: (): QuickActionOutcome => ({ type: "started" }),
+      onFailure: (failure): QuickActionOutcome => {
+        if (failure._tag !== "ApiProblemError") {
+          const reason = `lost contact with Kenn Forge; check ${session.label} before sending it again`;
+          return { type: "unconfirmed", reason, message: `"${action.label}": ${reason}.` };
+        }
+        const reason = failure.problem.detail ?? failure.problem.title ?? "the prompt was not delivered";
+        // A server or upstream error can come after the write began, so the
+        // agent may still receive the prompt. Only a refusal is definite.
+        if ((failure.problem.status ?? 0) >= 500) {
+          return {
+            type: "unconfirmed",
+            reason,
+            message: `"${action.label}" may not have reached ${session.label}: ${reason}. Check it before sending again.`,
+          };
+        }
+        return {
+          type: "failed",
+          reason,
+          message: `"${action.label}" was not sent to ${session.label}: ${reason}`,
+        };
+      },
+    }),
+  );
+  // Prompts for one session arrive in the order chosen. They get their own
+  // queue: behind the workspace's launches they could wait minutes.
+  return enqueueLaunch(`${quickActionWorkspaceKey(workspaceId, hostKey)}\0session:${session.key}`, send);
+}
+
+/**
+ * Sends a quick action to a running terminal agent and reports anything but
+ * a clean send. onSent runs once the server has typed the prompt.
+ */
+export function runQuickActionInSession(
+  runtime: AppRuntime,
+  workspaceId: string,
+  action: QuickAction,
+  session: Pick<RuntimeSession, "key" | "label">,
+  hostKey?: string,
+  onSent?: () => void,
+): void {
+  runtime.runCommand(
+    sendQuickActionToSession(workspaceId, action, session, hostKey).pipe(
+      Effect.flatMap((outcome) =>
+        Effect.sync(() => {
+          if (outcome.type === "started") onSent?.();
+          else if (outcome.type === "failed") showFlash(outcome.message, { tone: "danger" });
+          else showFlash(outcome.message, { tone: "warning" });
+        }),
+      ),
+    ),
+    {
+      operation: "send workspace quick action to session",
+      safeContext: { workspaceId },
+      onFailure: () => showFlash(`"${action.label}" was not sent to ${session.label}.`, { tone: "danger" }),
+    },
+  );
+}
+
 /** Runs a quick action in the background and reports anything but a clean start. */
 export function runWorkspaceQuickAction(
   runtime: AppRuntime,

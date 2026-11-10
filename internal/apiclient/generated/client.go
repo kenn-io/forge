@@ -68915,7 +68915,12 @@ type LaunchWorkspaceAgentHandoffInputBody struct {
 	// AcpOptions ACP session options for this chat only, keyed by option ID. Only ACP targets accept them.
 	AcpOptions map[string]string `json:"acp_options,omitempty"`
 	Message    string            `json:"message"`
-	TargetKey  string            `json:"target_key"`
+
+	// SessionKey A live agent session that takes the message instead of a newly launched agent. target_key is then ignored.
+	SessionKey *string `json:"session_key,omitempty"`
+
+	// TargetKey Agent launch target. Required unless session_key is set.
+	TargetKey *string `json:"target_key,omitempty"`
 }
 
 type LaunchWorkspaceRuntimeSessionInputBody struct {

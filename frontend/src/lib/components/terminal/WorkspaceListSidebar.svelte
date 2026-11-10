@@ -2848,7 +2848,7 @@
   :global(.ws-hover-details) {
     display: grid;
     /* One label width for both groups, so their values share a column. */
-    grid-template-columns: 5.75rem minmax(0, 1fr);
+    grid-template-columns: 6.25em minmax(0, 1fr);
     gap: var(--space-1) var(--space-5);
     margin: 0;
     padding-top: var(--space-2);

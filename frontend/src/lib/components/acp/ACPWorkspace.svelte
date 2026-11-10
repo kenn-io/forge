@@ -26,7 +26,7 @@
   import type { ContentScrollPositions } from "./chat-content-scroll.js";
   import { mediaDataURL } from "./chat-content.js";
   import { AGENT_PROMPT_DRAG_MIME } from "../../utils/ci-fix-prompt.js";
-  import { registerChatComposer } from "../../stores/chat-composer.svelte.js";
+  import { nextChatFocus, registerChatComposer } from "../../stores/chat-composer.svelte.js";
   import type { AgentCommand, ChatCommand, ChatContent, ChatMessage, ChatState, PromptMode } from "./chat-types.js";
 
   let { websocketPath, sessionKey = "", label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onHoldingChange, onExit }: {
@@ -470,7 +470,7 @@
   function noteFocus(event: FocusEvent) {
     const target = event.target;
     if (!section || !(target instanceof Node)) return;
-    if (section.contains(target) || section.closest("[data-session-host]") === target) lastFocused = performance.now();
+    if (section.contains(target) || section.closest("[data-session-host]") === target) lastFocused = nextChatFocus();
   }
   function keydown(event: KeyboardEvent) {
     if (commandKeydown(event)) return;

@@ -26,6 +26,15 @@ export function registerChatComposer(composer: ChatComposer): () => void {
   };
 }
 
+// A counter, not a clock: browsers coarsen timers, so two focuses in one
+// task could otherwise tie.
+let focusSequence = 0;
+
+/** A value for ChatComposer.lastFocused that is later than every earlier one. */
+export function nextChatFocus(): number {
+  return ++focusSequence;
+}
+
 export function hasChatComposer(): boolean {
   return composers.length > 0;
 }

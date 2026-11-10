@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -52,8 +51,8 @@ func (d localEmbeddingDeps) resolveSemantic(ctx context.Context, builtin bool) (
 		return endpoint, true, nil
 	}
 	local, err := d.endpoint(ctx, embedlocal.Options{SkipOllama: true})
-	if err != nil && !errors.Is(err, embedlocal.ErrNotFound) {
-		return "", false, fmt.Errorf("local embeddings: %w", err)
+	if ctx.Err() != nil {
+		return "", false, ctx.Err()
 	}
 	return endpoint, err == nil && endpoint == local, nil
 }

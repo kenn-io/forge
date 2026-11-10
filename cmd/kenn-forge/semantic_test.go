@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -33,4 +34,30 @@ func TestResolveSemanticEndpoint(t *testing.T) {
 			assert.Equal(t, tc.wantBuiltin, builtin)
 		})
 	}
+}
+
+func TestResolveSemanticIgnoresBuiltinDiscoveryFailure(t *testing.T) {
+	deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
+		if opts.SkipOllama {
+			return "", errors.New("built-in server unreachable")
+		}
+		return "http://127.0.0.1:11434/v1", nil
+	}}
+	endpoint, builtin, err := deps.resolveSemantic(t.Context(), false)
+	require.NoError(t, err)
+	assert.Equal(t, "http://127.0.0.1:11434/v1", endpoint)
+	assert.False(t, builtin)
+}
+
+func TestResolveSemanticPropagatesProbeCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
+		if opts.SkipOllama {
+			cancel()
+			return "", context.Canceled
+		}
+		return "http://127.0.0.1:11434/v1", nil
+	}}
+	_, _, err := deps.resolveSemantic(ctx, false)
+	require.ErrorIs(t, err, context.Canceled)
 }

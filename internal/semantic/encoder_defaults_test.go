@@ -136,3 +136,58 @@ func TestEncoderReportsTimeout(t *testing.T) {
 	_, err = enc.documents(t.Context(), []string{"slow"})
 	require.ErrorContains(t, err, "embed request timed out")
 }
+
+func TestBuiltinQueryRunsBetweenDocumentBatches(t *testing.T) {
+	firstStarted := make(chan struct{})
+	finishFirst := make(chan struct{})
+	secondStarted := make(chan struct{})
+	finishSecond := make(chan struct{})
+	var releaseFirst, releaseSecond sync.Once
+	defer releaseFirst.Do(func() { close(finishFirst) })
+	defer releaseSecond.Do(func() { close(finishSecond) })
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Input []string `json:"input"`
+		}
+		if !assert.NoError(t, json.UnmarshalRead(r.Body, &body)) {
+			return
+		}
+		switch body.Input[0] {
+		case "doc":
+			if len(body.Input) == embedlocal.BatchItems {
+				close(firstStarted)
+				<-finishFirst
+			} else {
+				close(secondStarted)
+				<-finishSecond
+			}
+		}
+		data := make([]map[string]any, len(body.Input))
+		for i := range data {
+			data[i] = map[string]any{"index": i, "embedding": []float32{1, 1}}
+		}
+		assert.NoError(t, json.MarshalWrite(w, map[string]any{"data": data}))
+	}))
+	t.Cleanup(server.Close)
+	cfg := embedconfig.Embedder{BaseURL: server.URL, Model: "test", Dims: 2}
+	enc, err := NewEncoder(cfg, func(context.Context) (string, bool, error) { return server.URL, true, nil })
+	require.NoError(t, err)
+	docs := make([]string, embedlocal.BatchItems+1)
+	for i := range docs {
+		docs[i] = "doc"
+	}
+	done := make(chan error, 1)
+	go func() { _, err := enc.documents(t.Context(), docs); done <- err }()
+	<-firstStarted
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second) //nolint:kennlint // deadlinetest: query must finish while indexing is blocked
+	defer cancel()
+	queryDone := make(chan error, 1)
+	go func() { _, err := enc.query(ctx, "query"); queryDone <- err }()
+	// Let the query queue while the first HTTP request holds the slot.
+	time.Sleep(50 * time.Millisecond) //nolint:kennlint // sleeptest: real HTTP requests cannot run in a synctest bubble
+	releaseFirst.Do(func() { close(finishFirst) })
+	require.NoError(t, <-queryDone)
+	<-secondStarted
+	releaseSecond.Do(func() { close(finishSecond) })
+	require.NoError(t, <-done)
+}

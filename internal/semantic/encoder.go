@@ -74,12 +74,36 @@ func NewEncoder(cfg embedconfig.Embedder, resolve func(context.Context) (string,
 
 // documents encodes document text with the configured document affixes.
 func (e *Encoder) documents(ctx context.Context, texts []string) ([][]float32, error) {
-	client, release, err := e.clientForRequest(ctx)
+	if e.resolve == nil {
+		return e.client.EmbedTexts(ctx, embedconfig.RoleDocument, texts)
+	}
+	options, builtin, err := e.optionsForRequest(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer release()
-	return client.EmbedTexts(ctx, embedconfig.RoleDocument, texts)
+	client, err := embedclient.New(options)
+	if err != nil {
+		return nil, err
+	}
+	if !builtin {
+		return client.EmbedTexts(ctx, embedconfig.RoleDocument, texts)
+	}
+	var result [][]float32
+	for start := 0; start < len(texts); start += options.Batch.Items {
+		end := min(start+options.Batch.Items, len(texts))
+		select {
+		case e.localSlot <- struct{}{}:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		vectors, err := client.EmbedTexts(ctx, embedconfig.RoleDocument, texts[start:end])
+		<-e.localSlot
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, vectors...)
+	}
+	return result, nil
 }
 
 // query encodes one search query with the configured query affixes.

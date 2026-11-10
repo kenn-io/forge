@@ -89,7 +89,7 @@ func (a *ACP) configure(id, value string, generation uint64) error {
 		}
 	}
 	a.mu.Unlock()
-	if a.saveConfig != nil {
+	if generation == 0 && a.saveConfig != nil {
 		if err := a.saveConfig(updates); err != nil {
 			return fmt.Errorf("setting applied but could not be remembered: %w", err)
 		}

@@ -12,7 +12,7 @@ func SemanticSearchAvailable(q string, indexed bool) error {
 		return Validation("query.q", "semantic ranking requires q")
 	}
 	if !indexed {
-		return ServiceUnavailable("enable semantic search with kenn-forge embeddings local")
+		return ServiceUnavailable("enable semantic search with kenn-forge embeddings local on the Forge that syncs providers")
 	}
 	return nil
 }

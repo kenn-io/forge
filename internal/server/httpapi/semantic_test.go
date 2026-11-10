@@ -24,4 +24,5 @@ func TestSemanticSearchDisabledOffersLocalSetup(t *testing.T) {
 	require.ErrorAs(t, err, &problem)
 	assert.Equal(t, http.StatusServiceUnavailable, problem.Status)
 	assert.Contains(t, problem.Detail, "kenn-forge embeddings local")
+	assert.Contains(t, problem.Detail, "on the Forge that syncs providers")
 }

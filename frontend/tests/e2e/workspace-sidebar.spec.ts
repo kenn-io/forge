@@ -1271,6 +1271,10 @@ test("chat messages stay put when a new message makes the conversation scroll", 
     await setupTerminalMocks(page, { runtime: { ...workspaceRuntime, sessions: [acpChatSession] } });
 
     await page.goto("/terminal/ws-123");
+    // An operating system set to overlay scrollbars gives them no layout
+    // width, so there would be no shift to guard against. A styled scrollbar
+    // takes its width on every machine.
+    await page.addStyleTag({ content: ".conversation::-webkit-scrollbar { width: 12px; }" });
     await page.getByRole("tab", { name: "Workspace Chat" }).click();
     const firstMessage = page.getByLabel("Assistant").first();
     await expect(firstMessage).toBeVisible();

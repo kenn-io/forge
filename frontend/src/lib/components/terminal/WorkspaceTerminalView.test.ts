@@ -6481,19 +6481,39 @@ describe("WorkspaceTerminalView", () => {
       ).toBe(false);
     });
 
-    it("offers no send to a shell, where a prompt would run as commands", async () => {
+    it.each(["plain_shell", "shell"])(
+      "offers no send to a %s session, where a prompt would run as commands",
+      async (kind) => {
+        mocks.getWorkspaceRuntime.mockResolvedValue({
+          ...runtimeWithStaleSession(),
+          sessions: [{ ...runningShellSession, kind, display_region: "workflow" }],
+        });
+        mocks.quickActions = [{ label: "Review", agent: "helper", prompt: "Review this change" }];
+        render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+        await screen.findByRole("tab", { name: /Shell/ });
+        const strip = screen.getAllByRole("tablist", { name: "Workflow group tabs" })[0]!;
+        await fireEvent.click(within(strip).getByRole("button", { name: "Quick actions" }));
+        const menu = screen.getByRole("dialog", { name: "Quick actions" });
+        expect(within(menu).getByRole("button", { name: "Review" })).toBeTruthy();
+        expect(within(menu).queryByRole("button", { name: /^Send Review to/ })).toBeNull();
+      },
+    );
+
+    it.each([
+      { kind: "acp", status: "parked", offered: true },
+      { kind: "agent", status: "parked", offered: false },
+    ])("offers the send for a parked $kind session: $offered", async ({ kind, status, offered }) => {
       mocks.getWorkspaceRuntime.mockResolvedValue({
         ...runtimeWithStaleSession(),
-        sessions: [{ ...runningShellSession, display_region: "workflow" }],
+        sessions: [{ ...runningSession, kind, status }],
       });
       mocks.quickActions = [{ label: "Review", agent: "helper", prompt: "Review this change" }];
       render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
-      await screen.findByRole("tab", { name: /Shell/ });
+      await screen.findByRole("tab", { name: /Helper/ });
       const strip = screen.getAllByRole("tablist", { name: "Workflow group tabs" })[0]!;
       await fireEvent.click(within(strip).getByRole("button", { name: "Quick actions" }));
       const menu = screen.getByRole("dialog", { name: "Quick actions" });
-      expect(within(menu).getByRole("button", { name: "Review" })).toBeTruthy();
-      expect(within(menu).queryByRole("button", { name: /^Send Review to/ })).toBeNull();
+      expect(within(menu).queryAllByRole("button", { name: "Send Review to Helper" })).toHaveLength(offered ? 1 : 0);
     });
 
     it("keeps an explicitly opened launcher dismissed when its workspace becomes visible", async () => {

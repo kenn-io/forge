@@ -433,6 +433,7 @@ export function resetSessionHostForTest(): void {
   connected.clear();
   holding.clear();
   inputSenders.clear();
+  promptSenders.clear();
   releasedKeys = [];
   retainedSessionLimit = DEFAULT_TERMINAL_SETTINGS.retained_sessions;
   mounted = [];

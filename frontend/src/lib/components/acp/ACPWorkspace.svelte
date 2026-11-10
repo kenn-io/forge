@@ -304,12 +304,14 @@
     if (!resyncPending) connection?.send(promptCommand(prompt));
   }
   /**
-   * Sends a prompt written outside the composer, the way Enter would, and
-   * leaves the draft alone. False when the chat is not taking prompts.
+   * Sends a prompt written outside the composer, the way Enter would. The
+   * draft stays, and the composer takes focus so typing continues it. False
+   * when the chat is not taking prompts.
    */
   export function sendPrompt(text: string): boolean {
     if (!accepting || stopped || disabled || !text.trim()) return false;
     enqueue({ text, mode: running ? busyMode : "send" });
+    textarea?.focus();
     return true;
   }
   function retry(id: string) {

@@ -121,6 +121,15 @@ describe("ACPWorkspace prompts sent from outside the composer", () => {
       { type: "prompt", mode: "send", id: expect.any(String), text: "Review this change" },
     ]);
     expect(composer.value).toBe("half typed");
+    expect(document.activeElement).toBe(composer);
+  });
+
+  it("starts a parked chat's agent with the prompt", async () => {
+    const chat = await openChatComponent({ connected: false, dormant: true });
+    expect(chat.sendPrompt("Review this change")).toBe(true);
+    expect(sentCommands()).toEqual([
+      { type: "prompt", mode: "send", id: expect.any(String), text: "Review this change" },
+    ]);
   });
 
   it("follows Enter while a reply is running", async () => {

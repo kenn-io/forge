@@ -3135,11 +3135,17 @@
     runWorkspaceQuickAction(appRuntime, workspaceId, workspace?.item_type, action, workspaceHostKey, undefined, leaf);
   }
 
-  // The running agent a pane is showing, which a quick action can send its
-  // prompt to. A shell is left out: the prompt would run there as commands.
+  // The agent a pane is showing, which a quick action can send its prompt to.
+  // Shells are left out: the prompt would run there as commands. A parked chat
+  // counts, because its first message starts its agent.
   function quickActionSession(sessionKey: string | null): RuntimeSession | null {
     const session = runtimeSessions.find((candidate) => candidate.key === sessionKey);
-    return session && session.status === "running" && session.kind !== "plain_shell" ? session : null;
+    if (!session) return null;
+    const takesPrompt =
+      session.kind === "acp"
+        ? session.status === "running" || session.status === "parked"
+        : session.kind === "agent" && session.status === "running";
+    return takesPrompt ? session : null;
   }
 
   function workflowLeafSession(leaf: TabbedPanelLeaf): RuntimeSession | null {
@@ -3152,8 +3158,12 @@
   function sendQuickActionToSession(action: QuickAction, session: RuntimeSession): void {
     if (actionsBlocked) return;
     const hostKey = sessionHostKeyFor(session);
-    if (sendSessionPrompt(hostKey, action.prompt)) requestSessionFocus(hostKey);
-    else showFlash(`"${action.label}" was not sent: ${session.label} is not connected.`, { tone: "danger" });
+    if (!sendSessionPrompt(hostKey, action.prompt)) {
+      showFlash(`"${action.label}" was not sent: ${session.label} is not connected.`, { tone: "danger" });
+      return;
+    }
+    // A chat focuses its own composer; the pooled focus request only reaches a terminal.
+    if (session.kind !== "acp") requestSessionFocus(hostKey);
   }
 
   function startAcceptedWorkspaceLaunchReconciliation(

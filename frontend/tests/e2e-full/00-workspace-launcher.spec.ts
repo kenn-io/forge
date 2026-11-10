@@ -9,7 +9,8 @@
 // coverage (00-workspace-sidebar.spec.ts) only asserts that the empty-state
 // example's buttons are disabled, which proves nothing about launching.
 
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import {
@@ -21,7 +22,11 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
-import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import {
+  startIsolatedWorkspaceE2EServer,
+  startIsolatedWorkspaceE2EServerWithOptions,
+  type IsolatedE2EServer,
+} from "./support/e2eServer";
 import { runPaletteCommand } from "./support/paletteCommands";
 import { trackTerminalReadiness, waitForTerminalInputReady } from "./support/terminalReadiness";
 
@@ -102,8 +107,19 @@ test.describe("embedded workspace launcher", () => {
 
     let isolatedServer: IsolatedE2EServer | null = null;
     let api: APIRequestContext | null = null;
+    const binDir = mkdtempSync(path.join(os.tmpdir(), "forge-launcher-bin-"));
+    const claudePath = path.join(binDir, "claude");
+    const originalPath = process.env.PATH;
     try {
-      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      process.env.PATH = [
+        binDir,
+        ...(originalPath ?? "").split(path.delimiter).filter((dir) => dir && !existsSync(path.join(dir, "claude"))),
+      ].join(path.delimiter);
+      try {
+        isolatedServer = await startIsolatedWorkspaceE2EServerWithOptions({ freshProcess: true });
+      } finally {
+        process.env.PATH = originalPath;
+      }
       api = await playwrightRequest.newContext({ baseURL: isolatedServer.info.base_url });
       const workspace = await createIssueWorkspace(api, 10);
 
@@ -114,6 +130,22 @@ test.describe("embedded workspace launcher", () => {
       // pane has no Home tab to fall back to.
       const launcher = page.getByRole("dialog", { name: "Launch a session" });
       await expect(launcher).toBeVisible();
+      const claude = launcher.getByRole("button", { name: "Claude", exact: true });
+      await expect(claude).toBeDisabled();
+      await expect(claude).toHaveAttribute("title", "claude not found on PATH");
+      await page.evaluate(() => {
+        Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      writeFileSync(claudePath, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      await page.evaluate(() => {
+        Reflect.deleteProperty(document, "visibilityState");
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      await expect(claude).toBeEnabled({ timeout: 3_000 });
+      unlinkSync(claudePath);
+      await expect(claude).toBeDisabled({ timeout: 10_000 });
+      await expect(claude).toHaveAttribute("title", "claude not found on PATH");
       const bounds = await launcher.evaluate((panel) => {
         const stage = panel.closest(".workspace-stage")!;
         const parent = stage.getBoundingClientRect();
@@ -183,8 +215,11 @@ test.describe("embedded workspace launcher", () => {
       );
       await typeMarkerCommand(page, activeContainer, workspace.worktree_path, "launcher-marker-after-header-launch");
     } finally {
+      process.env.PATH = originalPath;
       await api?.dispose();
       await isolatedServer?.stop();
+      if (existsSync(claudePath)) unlinkSync(claudePath);
+      rmdirSync(binDir);
     }
   });
 

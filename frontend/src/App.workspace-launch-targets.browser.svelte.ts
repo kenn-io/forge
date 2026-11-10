@@ -7,7 +7,7 @@ import {
   resetKeyboardModuleState,
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
-import { jsonResponse, mockLaunchTargets, type MockRouteOverride } from "./test/mockApiFetch.js";
+import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const workspace = {
   id: "ws-123",
@@ -116,8 +116,6 @@ describe("workspace launch targets (browser)", () => {
   afterEach(async () => {
     mounted?.unmount();
     mounted = null;
-    vi.useRealTimers();
-    vi.restoreAllMocks();
     localStorage.clear();
     await resetKeyboardModuleState();
   });
@@ -153,35 +151,5 @@ describe("workspace launch targets (browser)", () => {
     expect(missingOption?.hasAttribute("disabled")).toBe(true);
     expect(options.some((button) => optionText(button).includes("Shell"))).toBe(true);
     expect(menu!.textContent).not.toContain("Disabled config");
-  });
-
-  it("refreshes the workspace launcher after install and removal", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    let available = false;
-    let visible = true;
-    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => (visible ? "visible" : "hidden"));
-    mounted = await mountBrowserApp("/terminal/ws-123", {
-      overrides: [
-        (request) =>
-          request.url.pathname === "/api/v1/workspaces/ws-123/runtime"
-            ? jsonResponse({ launch_targets: mockLaunchTargets(available), sessions: [] })
-            : null,
-        workspaceRoutes,
-      ],
-    });
-    const claude = page.getByRole("region", { name: "Session launcher" }).getByRole("button", { name: "Claude" });
-    await vi.waitFor(() => expect(claude.element().hasAttribute("disabled")).toBe(true));
-    visible = false;
-    document.dispatchEvent(new Event("visibilitychange"));
-    await vi.advanceTimersByTimeAsync(0);
-    available = true;
-    visible = true;
-    document.dispatchEvent(new Event("visibilitychange"));
-    await vi.advanceTimersByTimeAsync(0);
-    await vi.waitFor(() => expect(claude.element().hasAttribute("disabled")).toBe(false));
-    available = false;
-    await vi.advanceTimersByTimeAsync(5_000);
-    await vi.waitFor(() => expect(claude.element().hasAttribute("disabled")).toBe(true));
-    expect(claude.element().getAttribute("title")).toBe("claude not found on PATH");
   });
 });

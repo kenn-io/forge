@@ -63,6 +63,7 @@ func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
 	runtime := fixture.NewManager([]string{tmuxPath}, localruntime.Options{
 		WrapAgentSessionsInTmux: true,
 		Targets: []localruntime.LaunchTarget{
+			{Key: "claude", Kind: localruntime.LaunchTargetAgent, Source: "config", Command: []string{"claude"}, DisabledReason: "disabled by config"},
 			{
 				Key:       "Codex yolo",
 				Label:     "Codex",
@@ -85,9 +86,15 @@ func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
 		Runtime:    runtime,
 	})
 	input := &workspaceapi.LaunchWorkspaceRuntimeSessionInput{ID: ws.ID}
+	input.Body.TargetKey = "claude"
+	_, err := handler.LaunchWorkspaceRuntimeSession(t.Context(), input)
+	var statusErr huma.StatusError
+	require.ErrorAs(err, &statusErr)
+	assert.Equal(http.StatusBadRequest, statusErr.GetStatus())
+	assert.NoFileExists(filepath.Join(worktree, "CLAUDE.local.md"))
 	input.Body.TargetKey = "Codex yolo"
 
-	_, err := handler.LaunchWorkspaceRuntimeSession(t.Context(), input)
+	_, err = handler.LaunchWorkspaceRuntimeSession(t.Context(), input)
 	require.NoError(err)
 
 	override, err := os.ReadFile(filepath.Join(worktree, "AGENTS.override.md"))
@@ -106,37 +113,6 @@ func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
 	assertServerGitIgnored(t, worktree, "AGENTS.override.md")
 	status := strings.TrimSpace(string(runServerWorkspaceTestGit(t, worktree, "status", "--porcelain")))
 	assert.Empty(status)
-}
-
-func TestUnavailableAgentDoesNotPrepareLaunchContext(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	serverfake.AcquireRootWorkspaceGitSlot(t)
-	d := dbtest.Open(t)
-	worktree := initServerWorkspaceGitRepo(t)
-	repoID := seedServerWorkspaceRepo(t, d)
-	seedServerWorkspaceMR(t, d, repoID)
-	ws := &db.Workspace{
-		ID: "ws-unavailable-agent", Platform: "github", PlatformHost: "github.com",
-		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypePullRequest,
-		ItemNumber: 42, GitHeadRef: "feature/widgets", WorkspaceBranch: "feature/widgets",
-		WorktreePath: worktree, TerminalBackend: "tmux", Status: "ready",
-	}
-	require.NoError(t, d.InsertWorkspace(t.Context(), ws))
-	seedServerWorkspaceLaunchSpec(t, d, ws, repoID)
-	runtime := localruntime.NewManager(localruntime.Options{Targets: []localruntime.LaunchTarget{{
-		Key: "claude", Kind: localruntime.LaunchTargetAgent, Source: "config", Command: []string{"claude"},
-		DisabledReason: "disabled by config",
-	}}})
-	handler := workspaceapi.New(workspaceapi.Deps{
-		DB: d, Workspaces: workspacetest.NewManager(t, d, t.TempDir()), Runtime: runtime,
-	})
-	input := &workspaceapi.LaunchWorkspaceRuntimeSessionInput{ID: ws.ID}
-	input.Body.TargetKey = "claude"
-	_, err := handler.LaunchWorkspaceRuntimeSession(t.Context(), input)
-	var statusErr huma.StatusError
-	require.ErrorAs(t, err, &statusErr)
-	assert.Equal(t, http.StatusBadRequest, statusErr.GetStatus())
-	assert.NoFileExists(t, filepath.Join(worktree, "CLAUDE.local.md"))
 }
 
 func seedServerWorkspaceRepo(t *testing.T, d *db.DB) int64 {

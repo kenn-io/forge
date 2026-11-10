@@ -13,6 +13,7 @@ import (
 
 // Increment when the owner chat frames or RPC contracts change incompatibly.
 // Owners outlive the daemon; attaching a new UI must not reuse an old decoder.
+// Version 3 replaces owners that save coordinator settings as defaults.
 const ACPOwnerProtocol = 3
 
 type (

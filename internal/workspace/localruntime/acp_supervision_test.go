@@ -250,10 +250,13 @@ func TestACPTakeoverRejectsStaleGenerations(t *testing.T) {
 
 func TestACPSettingsWhileSupervised(t *testing.T) {
 	t.Run("person", func(t *testing.T) {
-		agent := newInProcessChat(t).start(nil)
+		c := newInProcessChat(t)
+		agent := c.start(nil)
 		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
 		require.NoError(t, agent.Command(ACPCommand{Type: "config", ID: "model", Value: "deep"}))
 		assert.Equal(t, "deep", acpOptionValue(t, agent, "model"))
+		other := c.start(nil)
+		assert.Equal(t, "deep", acpOptionValue(t, other, "model"))
 	})
 	t.Run("coordinator", func(t *testing.T) {
 		c := newInProcessChat(t)

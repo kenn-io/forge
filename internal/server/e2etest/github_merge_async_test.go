@@ -28,6 +28,7 @@ import (
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/kit/stacktest"
 )
 
 type githubAsyncMergeUpstream struct {
@@ -402,8 +403,11 @@ func TestGitHubDeferredMergeUsesAsyncAPIAndPersistsTerminalSuccess(t *testing.T)
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
+	// Three polls take over three seconds with the real polling backoff.
 	srv, database, repoID, upstream := setupGitHubAsyncMergeE2E(
 		t,
+		`{"status":"pending","details":{"message":"Merge request is in progress.","uuid":"operation-id"}}`,
+		`{"status":"pending","details":{"message":"Merge request is in progress.","uuid":"operation-id"}}`,
 		`{"status":"pending","details":{"message":"Merge request is in progress.","uuid":"operation-id"}}`,
 		`{"status":"merged","details":{"message":"Pull request merged.","sha":"merge-sha"}}`,
 	)
@@ -428,7 +432,7 @@ func TestGitHubDeferredMergeUsesAsyncAPIAndPersistsTerminalSuccess(t *testing.T)
 	assert.Equal(db.MergeRequestStateMerged, mr.State)
 
 	requests := upstream.requests()
-	require.Len(requests, 2)
+	require.Len(requests, 4)
 	assert.Equal(http.MethodPut, requests[0].Method)
 	assert.Equal(http.MethodGet, requests[1].Method)
 	upstream.mu.Lock()
@@ -1117,12 +1121,13 @@ func TestGitHubCancelTrustsAStoredQueueEntryOverAFreshMergedRead(t *testing.T) {
 }
 
 // waitForDeferredMergeCompleted returns the next deferred_merge_completed
-// payload, failing the test if none arrives within three seconds.
+// payload, failing the test if the worker does not complete.
 func waitForDeferredMergeCompleted(
 	t *testing.T, events <-chan syncevents.RecordedEvent,
 ) pullapi.DeferredMergeCompletedPayload {
 	t.Helper()
-	deadline := time.After(3 * time.Second)
+	// The worker polls GitHub on real timers and syncs the result to SQLite.
+	deadline := time.After(30 * time.Second)
 	for {
 		select {
 		case event := <-events:
@@ -1133,6 +1138,7 @@ func waitForDeferredMergeCompleted(
 			require.True(t, ok)
 			return payload
 		case <-deadline:
+			stacktest.Dump(t)
 			require.FailNow(t, "timed out waiting for deferred merge completion")
 		}
 	}

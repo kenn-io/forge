@@ -100,6 +100,7 @@ function storeFixture(
   const loadPulls = vi.fn();
   const stores = {
     settings,
+    events: { subscribeWorkspaceEvents: () => () => undefined },
     sync: {
       getSyncState: () => ({
         running: false,

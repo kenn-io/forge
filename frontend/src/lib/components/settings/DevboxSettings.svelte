@@ -12,6 +12,7 @@
   import { loadSnapshotHosts } from "../../api/fleet-snapshot.js";
   import type { Connection, Discovery, HostSummary } from "../../api/generated/models/index.js";
   import { saveWorkspaceSettings } from "../../stores/workspace-settings-persistence.js";
+  import { findDefaultTargetHost } from "../../stores/workspace-target.svelte.js";
 
   const { settings } = getStores();
   const runtime = getAppRuntime();
@@ -34,10 +35,26 @@
       && connection.host_id === assignment.host_id && connection.github_user_id === assignment.github_user_id),
   ));
   const preferred = $derived(settings.getWorkspaceSettings().default_execution_target ?? "");
-  const preferredMissing = $derived(preferred !== "" && !connections.some((connection) => `devbox:${connection.id}` === preferred));
+  // Other fleet members, chosen by their origin. Config may name one by node ID instead.
+  const members = $derived((hosts ?? []).filter((host) => host.kind === "remote" && host.baseURL));
+  const preferredHost = $derived(findDefaultTargetHost(preferred, hosts ?? []));
+  const preferredMissing = $derived(
+    preferred.startsWith("devbox:")
+      ? !connections.some((connection) => `devbox:${connection.id}` === preferred)
+      : preferred !== "" && hosts !== null && !checkingHosts && !preferredHost,
+  );
   // Writable derived: the radio group edits it locally, and a saved or hydrated preference re-derives it.
-  let choice = $derived(preferred);
+  let choice = $derived(
+    preferredHost?.kind === "self" ? "" : preferredHost?.kind === "remote" ? (preferredHost.baseURL ?? preferred) : preferred,
+  );
   const selfHost = $derived(hosts?.find((host) => host.kind === "self") ?? null);
+
+  function memberStatus(host: HostSummary): { label: string; detail: string; offline: boolean } {
+    if (checkingHosts) return { label: "Checking…", detail: "", offline: false };
+    const write = host.operationAvailability.workspaceWrite;
+    if (write?.available) return { label: "Online", detail: "", offline: false };
+    return { label: "Unavailable", detail: write?.unavailableReason ?? host.error ?? "", offline: true };
+  }
 
   function status(connection: Connection): { label: string; detail: string; offline: boolean } {
     if (pending === `reconnect:${connection.id}`) return { label: "Reconnecting…", detail: "", offline: false };
@@ -180,6 +197,21 @@
         <p>Files, agents and tests run where Forge is running.</p>
       </div>
     </li>
+    {#each members as host (host.configKey)}
+      {@const current = memberStatus(host)}
+      <li class="machine-row">
+        <!-- kit-ui-check-ignore: a machine row shows an icon, status, and actions, which RadioGroup cannot -->
+        <input type="radio" name="workspace-machine" value={host.baseURL} bind:group={choice} disabled={mutating} aria-label={`Run new workspaces on ${host.name.trim() || host.baseURL}`} onchange={() => select(host.baseURL ?? "")} />
+        <ServerIcon size={18} aria-hidden="true" />
+        <div class="copy machine">
+          <div class="machine-heading">
+            <strong>{host.name.trim() || host.hostname?.trim() || host.baseURL}</strong>
+            <span class={["state", current.offline && "offline", current.label === "Online" && "online"]}>{current.label}</span>
+          </div>
+          <p>Fleet {host.federationRole === "hub" ? "hub" : "spoke"} · {host.baseURL}{current.detail ? ` · ${current.detail}` : ""}</p>
+        </div>
+      </li>
+    {/each}
     {#each connections as connection (connection.id)}
       {@const current = status(connection)}
       <li class="machine-row">

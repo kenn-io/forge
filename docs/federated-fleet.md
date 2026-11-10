@@ -10,13 +10,12 @@ Use a fleet when one machine is not the right place for every task. For example,
 you may keep routine work on a laptop, run large builds on a workstation, and
 use a machine with a special operating system or GPU when a task needs it.
 
-- Open the hub to see workspaces from every machine and the node that owns each
-  one.
-- Create a repository workspace on the hub itself or any writable spoke.
+- Open any machine's Forge to see workspaces from every machine and the node
+  that owns each one.
+- Create a workspace on any writable machine from any machine's Forge, and
+  choose which machine new workspaces use by default.
 - Sync pull requests, issues, and activity once instead of spending provider
   API budget on every machine.
-- Open a spoke directly for a local-only workspace view when you want to work
-  in that machine's environment.
 - Keep each repository, worktree, process, and tmux session on its execution
   machine.
 
@@ -87,15 +86,14 @@ start and supervise each daemon on its own machine.
 
 | Question | Hub | Spoke |
 | --- | --- | --- |
-| Which workspaces appear? | Workspaces from the full fleet, each with an execution-node badge | Workspaces owned by this spoke |
-| Where can **New workspace** run? | The hub or any writable spoke selected in the dialog | This spoke only |
-| Where do pull-request and issue workspace buttons run? | On the hub | On this spoke |
-| Who runs Git and agent processes? | The machine that owns the workspace | This spoke |
+| Which workspaces appear? | Workspaces from the full fleet, each with an execution-node badge | The same |
+| Where can **New workspace** run? | Any writable fleet member selected in **Run on** | The same; the spoke sends the request through the hub |
+| Where do pull-request, issue, and quick-action workspaces run? | On this Forge's [default machine](#choose-where-new-workspaces-run) | The same |
+| Who runs Git and agent processes? | The machine that owns the workspace | The machine that owns the workspace |
 | Who syncs provider data and applies provider changes? | The hub | The spoke asks the hub |
 
-The pull-request and issue buttons stay local to the Forge UI you opened. To
-choose a different machine, open **Workspaces**, select **New workspace**, and
-use **Run on**.
+Each Forge has its own default machine. Without one, new workspaces run on the
+Forge whose UI you opened.
 
 This guide uses the following example topology. Each name is a private HTTPS
 origin reachable from every fleet machine:
@@ -120,6 +118,11 @@ requires HTTPS, local browser authentication, and separate credentials created
 during enrollment. An activated hub and its spokes form one
 administrative trust domain. Someone who controls an active peer should be
 treated as controlling fleet workspace and terminal operations.
+
+An active spoke can create, inspect, remove, and attach to workspaces on every
+other member. It sends those requests to the hub, which forwards them with its
+own credential for the owning member. Spokes never hold credentials for each
+other.
 
 Pending spokes have narrower access. They can resolve only the provider facts
 needed for preparation, hand state to the hub, and use enrollment
@@ -532,6 +535,11 @@ base_url = "https://forge-hub.example.test"
 enrollment_secret_file = "/run/secrets/forge-fleet-build-a"
 ```
 
+Declared membership and a default machine combine. A spoke declared this way
+can also set `workspaces.default_execution_target` to another member's origin,
+which configuration management knows before any machine starts; see
+[Choose where new workspaces run](#choose-where-new-workspaces-run).
+
 Forge records what it learns in `config.toml`: the hub's node ID in
 `fleet.hub.node_id` on the spoke and each active spoke in `fleet.members` on
 the hub. The Forge service user must be able to write the file. If your
@@ -642,17 +650,12 @@ behavior an operator depends on.
 
 - Confirm every UI shows the same fleet host set and provider data.
 - Create a disposable workspace on each execution host.
-- Confirm each spoke UI shows fresh local state for its own workspace and does
-  not list workspaces owned by the hub or another spoke.
-- Confirm the hub shows each workspace under its owning spoke.
+- Confirm every UI lists each workspace under its owning machine.
 - Start a tmux-backed session and attach through the spoke's direct UI.
-- Attach to the same session through the hub's WebSocket proxy.
-- Remove the disposable spoke workspace from the hub and confirm the
-  spoke performs the deletion.
-
-A spoke UI keeps the fleet host directory in the Forge selector, but its
-workspace surface is local-only. Use the selector to open another spoke, or use
-the hub for the fleet-wide workspace view and remote mutations.
+- Attach to the same session through the hub's WebSocket proxy and through
+  another spoke's UI.
+- From one spoke's UI, create a workspace on another spoke, then remove it and
+  confirm the owning spoke performs the deletion.
 
 ### Provider and Git ownership
 
@@ -669,7 +672,8 @@ the hub for the fleet-wide workspace view and remote mutations.
 
 - Stop one spoke. Healthy machines and their workspaces should remain visible;
   only the stopped spoke should become unavailable.
-- Stop the hub. Each spoke should retain local workspace authority,
+- Stop the hub. Each spoke should retain local workspace authority, lose
+  access to other members' workspaces,
   keep provider data already loaded in that browser tab visible behind a
   stale-data banner, disable Sync and pull-request Refresh, and mark aggregate
   data incomplete.
@@ -691,27 +695,57 @@ Browser modifiers open the plain link in another tab or window. Each origin
 keeps its own browser state, filters, searches, terminal connections, and event
 cursors; changing one Forge tab does not retarget another.
 
-Open the hub UI for the aggregate workspace view and fleet-wide
-operations. Supported actions call the owning spoke's HTTPS API:
+Every member's UI shows the fleet-wide workspace view, and each workspace row
+shows its execution-node badge. Supported actions call the owning machine's
+HTTPS API, directly from the hub and through the hub from a spoke:
 
-- create a repository workspace on the hub or a selected writable spoke;
+- create a repository, pull-request, or issue workspace on any writable member;
 - inspect, refresh, or remove a workspace on its owning machine;
-- launch or stop a runtime session;
+- launch or stop a runtime session, including quick actions;
 - inspect local Git state;
 - open a terminal through the WebSocket bridge.
 
-Every hub workspace row shows its execution-node badge. The **Run on** selector
-in **New workspace** defaults to the hub, keeps unavailable spokes visible with
-their reason, and sends the create request directly to the selected owner.
+The **Run on** selector in **New workspace** starts on this Forge's default
+machine and keeps unavailable machines visible with their reason.
 
-The hub never creates a local proxy process for a remote terminal.
-Input, output, resize messages, and close events pass between the two WebSocket
-connections.
+No Forge creates a local proxy process for a remote terminal. Input, output,
+resize messages, and close events pass between WebSocket connections: one hop
+from the hub, two from a spoke.
 
-Open a spoke UI when you want that machine's local execution context while still
-seeing the aggregate fleet and global provider data. If the hub is
-down, the spoke remains useful for local workspace operations but cannot provide
-current hub-owned provider data.
+If the hub is down, a spoke remains useful for its own workspaces but cannot
+reach other members' workspaces or provide current hub-owned provider data.
+
+### Choose where new workspaces run
+
+Set `workspaces.default_execution_target` in a Forge's `config.toml` to the
+fleet member where new workspaces from that Forge's UI should run. Name the
+member by its HTTPS origin or its node ID:
+
+```toml
+[workspaces]
+default_execution_target = "https://build-b.example.test"
+```
+
+For example, set this on the `build-a` spoke to drive from its UI while every
+new workspace runs on `build-b`. The hub keeps syncing the provider and
+applying provider changes as before. The value also accepts `devbox:<id>` for
+a [devbox](devboxes.md) on a hub or standalone Forge. Leave it empty, or name
+this Forge itself, to create workspaces locally, so configuration management
+can write the same value on every machine.
+
+**Settings → Workspaces** lists the fleet members as well and saves the same
+key. The default applies to the pull-request and issue workspace buttons, quick
+actions, onboarding, and the **Run on** selector's starting choice.
+
+When the default machine is offline, Forge does not fall back to this Forge.
+The workspace button is disabled, the page names the unavailable machine and
+why, and it offers a **Create on** button for each machine that can take the
+workspace now. A quick action run on selected items reports the unavailable
+machine for each item and creates nothing.
+
+A spoke reaches other members only through an active hub. After upgrading,
+upgrade the hub first, then restart each spoke; the hub grants the spoke this
+access when the spoke next activates.
 
 ## Understand Sync, Refresh, and hub outages
 

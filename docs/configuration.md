@@ -551,6 +551,23 @@ These choices apply only to chats the quick action starts and never change
 your remembered choices. If the agent no longer offers a choice, the chat
 starts without it and says so.
 
+## Where new workspaces run
+
+`workspaces.default_execution_target` names the machine where workspaces
+created from this Forge's UI run. Leave it empty to create them on this Forge.
+It accepts a fleet member's HTTPS origin or node ID, or `devbox:<id>` for a
+connected devbox:
+
+```toml
+[workspaces]
+default_execution_target = "https://build-b.example.test"
+```
+
+A value naming this Forge itself creates workspaces locally. Forge never falls
+back to this Forge when the named machine is unavailable; the page offers the
+machines that are. See
+[Choose where new workspaces run](federated-fleet.md#choose-where-new-workspaces-run).
+
 ## Workspace terminals and tmux
 
 Workspace terminals and agent sessions run on a dedicated tmux server

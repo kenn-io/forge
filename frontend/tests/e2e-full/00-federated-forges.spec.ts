@@ -56,7 +56,7 @@ test("projects one provider view with a spoke-local workspace overlay", async ({
   await expect(spokeBPull.getByLabel("Workspace attached (ready)")).toBeVisible();
 });
 
-test("shows role-aware settings and routes a hub terminal to its owning spoke", async ({ page }) => {
+test("shows role-aware settings and routes hub and spoke terminals to the owning spoke", async ({ page }) => {
   const fixture = federation();
 
   await openAuthenticated(page, fixture.hub_url, fixture.hub_token, "/settings");
@@ -74,7 +74,27 @@ test("shows role-aware settings and routes a hub terminal to its owning spoke", 
   const siblingWorkspace = page.getByRole("button", { name: /Fix race condition in event loop/ }).first();
   await expect(localWorkspace).toBeVisible();
   await expect(localWorkspace).not.toContainText(fixture.spoke_a_node_id);
-  await expect(siblingWorkspace).toHaveCount(0);
+  await expect(siblingWorkspace).toBeVisible();
+
+  // Spoke A opens spoke B's workspace through the hub: it holds no
+  // credential for spoke B.
+  const siblingResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname ===
+      `/api/v1/fleet/hosts/${fixture.spoke_b_node_id}/workspaces/federated-spoke-b-workspace`,
+  );
+  await siblingWorkspace.click();
+  expect((await siblingResponse).status()).toBe(200);
+  await expect(page).toHaveURL(new RegExp(`/terminal/fleet/${fixture.spoke_b_node_id}/federated-spoke-b-workspace$`));
+  const siblingSocket = page.waitForEvent("websocket", {
+    predicate: (socket) =>
+      new URL(socket.url()).pathname.includes(
+        `/fleet/hosts/${fixture.spoke_b_node_id}/workspaces/federated-spoke-b-workspace/`,
+      ),
+  });
+  await page.getByRole("button", { name: "Open terminal panel" }).click();
+  await siblingSocket;
+  await expect(page.locator(".terminal-panel.open .terminal-container")).toBeVisible();
 
   // The fixture shares one loopback hostname across ports. Browser cookies do
   // not include the port in their scope, so re-bootstrap whenever the test

@@ -11,7 +11,7 @@ or remote workspace and session operations.
 - A successful push records the acknowledged commit in its tracking ref, even with main-only
   fetch configs; do not refetch just to update it, which repeats broker authorization (`internal/workspace/branch_sync.go::pushBranch`).
 - Hubs and standalone controllers own devbox connections and route directly to workers; spokes
-  stay local-only. Devbox keys are separate from fleet node keys, and worker bearer tokens never
+  cannot use devboxes and drop devbox work from their projection (`internal/fleet/enrich.go::withoutDevboxItems`). Devbox keys are separate from fleet node keys, and worker bearer tokens never
   reach browser data (`internal/server/devboxes.go`).
 - Devboxes are execution targets, not enrolled fleet peers. Roster, accounts, tools and deployment
   belong to an operator's private provisioning repository; public Forge owns the generic runtime
@@ -29,8 +29,15 @@ or remote workspace and session operations.
 - Pending or failed devbox discovery must not block creation; the backend admits the saved devbox.
   Fresh maintenance and provider restrictions still block, and an unavailable default never
   silently creates locally (`frontend/src/lib/stores/workspace-target.svelte.ts`).
-- Validate saved default destinations on config load and settings writes, but preserve valid
-  devbox selections while disconnected (`internal/config/devbox.go::ValidateDefaultExecutionTarget`).
+- `workspaces.default_execution_target` is the one default destination: `devbox:<id>`, or a fleet
+  member by canonical HTTPS origin or node ID, so configuration management can write an origin before
+  any node ID exists. A value naming the local Forge creates locally. Validate syntax on config load
+  and settings writes, but preserve valid selections while disconnected
+  (`internal/config/devbox.go::NormalizeDefaultExecutionTarget`).
+- Every workspace start honors the default: PR and issue buttons, quick actions, onboarding, and New
+  workspace's starting choice share one create path (`frontend/src/lib/api/item-workspace.ts`). An
+  unavailable default never falls back to local; the page names it and offers available machines
+  (`frontend/src/lib/stores/workspace-target.svelte.ts::createDefaultWorkspaceTarget`).
 - Devbox REST and terminal traffic must bypass environment proxies; worker bearer credentials
   belong only on the direct tailnet connection (`internal/server/devboxes.go::registerDevboxTerminalAPI`).
 - Devbox repository admission and launch context use GitHub's integer repository ID, the same ID
@@ -53,7 +60,7 @@ enrollment and protocol version     internal/federation
 peer bearers and route scopes       internal/federationauth
 ```
 
-- A fleet is a one-hop execution view over independent daemons, not a replicated database. Each
+- A fleet is an execution view over independent daemons, not a replicated database. Each
   host stays authoritative for its local repositories, workspaces, runtimes, and execution mutations.
 - Fleet identity is the data directory's random node ID; hostnames, listener addresses, and display
   names never establish it. Hub and spoke IDs must differ (`internal/runtimelock/node_id.go::EnsureNodeID`).
@@ -116,8 +123,12 @@ peer bearers and route scopes       internal/federationauth
   that budget for the full response (`internal/server/fleetapi/fleet_routes.go::Handler.getSnapshotAggregate`).
 - Member requests use the current `fleet.peer_timeout`; fixed transport deadlines must not cap
   hot-reloaded values (`internal/server/fleetapi/fleet_enrollment.go::hardenedFederationMemberHTTPClient`).
-- Hubs show the fleet-wide workspace surface. Spokes keep the full host directory for navigation
-  but project only their own actionable workspace data (`internal/fleet/enrich.go::ProjectForObserver`).
+- Hubs and spokes both show the fleet-wide workspace surface; a spoke acts on other members through
+  its hub (`internal/fleet/enrich.go::ProjectForObserver`).
+- An active spoke sends fleet host routes for other members to its hub unchanged, and the hub
+  forwards them to the owner. Spokes never hold credentials for each other, and a request from a
+  federation peer is never forwarded again, so peers cannot bounce requests between members
+  (`internal/server/fleetapi/fleet_proxy.go::Handler.resolveFleetRouteTarget`).
 - Hub Activity workspace indicators include the fleet; peer provider responses omit them so spokes
   apply local ownership (`internal/server/activityapi/huma_routes.go::Handlers.ListActivityService`).
 - Activity never waits on member fan-out beyond a short bound; missing or stale results refresh in
@@ -125,7 +136,7 @@ peer bearers and route scopes       internal/federationauth
 - Workspace lists use inline projected summaries without per-host fan-out; remote actions require
   the owner's projected availability. Incomplete aggregates keep absent-host rows; authoritative
   views keep only explicitly degraded hosts (`frontend/src/lib/components/terminal/workspace-list-schema.ts::retainDegradedHostWorkspaces`).
-- Hub workspace rows show a compact execution-host badge; spoke rows stay unlabeled. Fleet chrome
+- Hub and spoke workspace rows show a compact execution-host badge. Fleet chrome
   is reserved for actionable degradation (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte`).
 - The reserved `self` alias and the local node ID address local. An active spoke routes only when
   config matches its enrollment, which supplies the destination (`internal/server/fleetapi/fleet_proxy.go::Handler.resolveEnrolledSpoke`).
@@ -159,7 +170,12 @@ peer bearers and route scopes       internal/federationauth
   bearers have preparation, handoff, and enrollment access. Provider reads require activation
   (`internal/server/authapi/api_auth.go::PendingProviderRouteAllowed`).
 - Activation gives the hub workspace mutation and terminal attachment authority on a spoke
-  (`internal/federationauth/scope.go::HubToSpokeScopes`).
+  (`internal/federationauth/scope.go::HubToSpokeScopes`), and every active spoke the same authority
+  over other members through the hub's fleet routes, with no hub-side opt-in
+  (`internal/federationauth/scope.go::SpokeToHubScopes`). Activation rewrites stored grants, so new
+  scopes reach existing spokes at their next activation without re-enrollment.
+- A fleet host route needs the scope of the member route it forwards to; a target outside the peer
+  inventory stays forbidden (`internal/federationauth/authenticator.go::fleetHostTargetPath`).
 - Issuing and transferring an enrollment token approves eventual active membership, so transfer it
   only to a machine trusted with fleet provider data; the preparation seal proves retry-safe
   handoff, not a second approval (`internal/server/fleetapi/fleet_enrollment.go::Handler.sealSpokePreparation`).

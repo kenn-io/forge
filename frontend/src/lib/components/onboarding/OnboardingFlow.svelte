@@ -95,6 +95,7 @@
   let workspaceError = $state<string | null>(null);
   const workspaceTarget = createDefaultWorkspaceTarget(
     runtime,
+    (subscriber) => stores.events.subscribeWorkspaceEvents(subscriber),
     () => selectedPull && !selectedPull.workspace?.id
       ? stores.settings.getWorkspaceSettings().default_execution_target ?? ""
       : "",

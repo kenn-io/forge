@@ -287,10 +287,10 @@ func TestSpokeProjectionConsumesHubAggregateAndRefreshesSelf(t *testing.T) {
 		workspaceIDs[workspace.ID] = true
 	}
 	assert.True(workspaceIDs["ws-fresh-self"])
-	assert.False(workspaceIDs["ws-hub"])
-	assert.False(workspaceIDs["ws-sibling"])
+	assert.True(workspaceIDs["ws-hub"], "a spoke lists the whole fleet's workspaces")
+	assert.True(workspaceIDs["ws-sibling"])
 	assert.False(workspaceIDs["ws-stale-self"])
-	assert.Len(snapshot.Hosts, 3, "the Forge selector still needs the full host directory")
+	assert.Len(snapshot.Hosts, 3)
 	for _, host := range snapshot.Hosts {
 		assert.Equal(host.ConfigKey, host.NodeID)
 		if host.ConfigKey == testMemberNodeID {
@@ -301,9 +301,10 @@ func TestSpokeProjectionConsumesHubAggregateAndRefreshesSelf(t *testing.T) {
 			assert.Equal(fleet.RoleHub, host.FederationRole)
 			assert.Equal("https://hub.example", host.BaseURL)
 			availability := host.OperationAvailability[fleet.OpWorkspaceWrite]
-			assert.False(availability.Available)
-			require.NotNil(availability.UnavailableReason)
-			assert.Equal(fleet.ReasonSummaryOnly, *availability.UnavailableReason)
+			if availability.UnavailableReason != nil {
+				assert.NotEqual(fleet.ReasonSummaryOnly, *availability.UnavailableReason,
+					"a spoke routes hub workspace operations through the hub")
+			}
 			return
 		}
 	}

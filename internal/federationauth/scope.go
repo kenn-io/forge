@@ -68,10 +68,14 @@ func PendingHubToSpokeScopes() []Scope {
 }
 
 // SpokeToHubScopes returns the fixed grant used when an execution spoke
-// calls the hub.
+// calls the hub. The workspace and terminal scopes let a spoke's UI create
+// and drive workspaces on other members through the hub's fleet routes.
 func SpokeToHubScopes() []Scope {
 	return []Scope{
 		ScopeSnapshotRead,
+		ScopeWorkspaceRead,
+		ScopeWorkspaceWrite,
+		ScopeTerminalAttach,
 		ScopeProviderRead,
 		ScopeProviderWrite,
 		ScopeEventsRead,

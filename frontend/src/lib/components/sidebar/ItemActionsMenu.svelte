@@ -26,6 +26,7 @@
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
+  import { createDefaultWorkspaceTarget } from "../../stores/workspace-target.svelte.js";
   import { runQuickActionOnItems } from "../../stores/bulk-quick-action.js";
   import { loadLabelCatalogWithRefresh } from "../detail/labelCatalogRefresh.js";
   import { showFlash } from "../../stores/flash.svelte.js";
@@ -81,7 +82,7 @@
   }: Props = $props();
 
   const runtime = getAppRuntime();
-  const { settings } = getStores();
+  const { settings, events } = getStores();
 
   type StateAction = "close" | "reopen" | "draft" | "ready" | "approveWorkflows";
   const stateActionVerbs: Record<StateAction, string> = {
@@ -98,6 +99,27 @@
   const multi = $derived(count > 1);
   const quickActions = $derived(sortQuickActionsByLabel(settings.getQuickActions()));
   const launchTargets = $derived(settings.getLaunchTargets());
+  const defaultExecutionTarget = $derived(settings.getWorkspaceSettings().default_execution_target ?? "");
+  // Resolve the default only while the menu is open; it may name this Forge.
+  const defaultTarget = createDefaultWorkspaceTarget(
+    runtime,
+    (subscriber) => events.subscribeWorkspaceEvents(subscriber),
+    () => (open ? defaultExecutionTarget : ""),
+    () => ({ provider: targets[0]?.item.repo.provider ?? "", platformHost: targets[0]?.item.repo.platform_host }),
+  );
+  // An item's existing local workspace takes the action; otherwise it runs on
+  // the default machine, which checks its own agents when it is another one.
+  function withoutLocalWorkspace(target: ListItemTarget): boolean {
+    return !target.item.workspace?.id;
+  }
+
+  // An agent this Forge cannot run still runs on the items that go elsewhere.
+  function quickActionPlan(action: QuickAction) {
+    const localReason = quickActionDisabledReason(action, launchTargets);
+    if (!localReason) return { eligible: targets.length, reason: "" };
+    const eligible = defaultTarget.hostKey === undefined ? 0 : targets.filter(withoutLocalWorkspace).length;
+    return { eligible, reason: eligible === 0 ? localReason : "" };
+  }
 
   let running = $state(false);
   let confirmQuickAction = $state.raw<{ action: QuickAction; targets: readonly ListItemTarget[] } | null>(null);
@@ -239,8 +261,10 @@
 
   // Quick actions
 
+  // Choosing closes the menu, which drops the resolved default; an enabled
+  // action this Forge cannot run means the default is another machine.
   function chooseQuickAction(action: QuickAction): void {
-    const items = [...targets];
+    const items = quickActionDisabledReason(action, launchTargets) ? targets.filter(withoutLocalWorkspace) : [...targets];
     if (items.length === 1) runQuick(action, items);
     else confirmQuickAction = { action, targets: items };
   }
@@ -250,7 +274,7 @@
   function runQuick(action: QuickAction, items: readonly ListItemTarget[]): void {
     confirmQuickAction = null;
     onClearSelection();
-    runQuickActionOnItems(runtime, items, action, settings.getWorkspaceSettings().default_execution_target ?? "");
+    runQuickActionOnItems(runtime, items, action, defaultExecutionTarget);
   }
 
   function agentLabel(action: QuickAction): string {
@@ -572,11 +596,11 @@
     {#if quickActions.length > 0}
       <MenuSeparator />
       {#each quickActions as action (action.label)}
-        {@const reason = quickActionDisabledReason(action, launchTargets)}
+        {@const { eligible, reason } = quickActionPlan(action)}
         <MenuItem disabled={reason !== "" || running} textValue={action.label} onselect={() => chooseQuickAction(action)}>
           {#snippet icon()}<ZapIcon size={14} />{/snippet}
           {#snippet trailing()}{reason || agentLabel(action)}{/snippet}
-          {multi ? `${action.label} on ${count} ${noun(count)}...` : action.label}
+          {multi ? `${countLabel(action.label + " on", eligible)}...` : action.label}
         </MenuItem>
       {/each}
     {/if}

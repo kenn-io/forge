@@ -22,7 +22,6 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"go.kenn.io/forge/internal/agentactivity"
-	roborevclient "go.kenn.io/forge/internal/apiclient/roborev"
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/browserlogin"
 	"go.kenn.io/forge/internal/config"
@@ -578,12 +577,6 @@ func newServer(
 		bgDeadline:              bgDeadline,
 		workspaceDependentsDone: make(chan struct{}),
 	}
-	roborevConfig := cfg
-	if roborevConfig == nil {
-		roborevConfig = &config.Config{}
-	}
-	s.roborevEndpoint = roborevConfig.RoborevEndpoint()
-	s.roborevClient = roborevclient.NewHTTPClient(s.roborevEndpoint, roborevConfig.RoborevAuthKey())
 	s.wireHandlers()
 	s.browserLoginTickets = browserlogin.NewTicketStore(func() time.Time { return s.now() })
 	var contextSources []config.ExternalContextSource

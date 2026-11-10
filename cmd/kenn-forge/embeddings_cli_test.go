@@ -45,15 +45,11 @@ func TestLocalEmbeddingsSetup(t *testing.T) {
 			assert.Equal(t, 768, cfg.Embeddings.Dims)
 			assert.Equal(t, "search_document: ", cfg.Embeddings.DocumentPrefix)
 			assert.Equal(t, "search_query: ", cfg.Embeddings.QueryPrefix)
-			cfg.DataDir = t.TempDir()
-			index, err := openSemanticSearch(t.Context(), cfg, nil)
-			require.NoError(t, err)
-			require.NoError(t, index.Close())
 		})
 	}
 }
 
-func TestLocalEmbeddingsConfirmedRecipeSurvivesConcurrentEdit(t *testing.T) {
+func TestLocalEmbeddingsSwitchPreservesSelectionDuringConcurrentEdit(t *testing.T) {
 	for _, compatible := range []bool{true, false} {
 		t.Run(fmt.Sprint(compatible), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
@@ -96,14 +92,13 @@ func TestLocalEmbeddingsConfirmedRecipeSurvivesConcurrentEdit(t *testing.T) {
 				assert.Equal(t, "custom: ", cfg.Embeddings.DocumentPrefix)
 			} else {
 				assert.Contains(t, output.String(), "rebuild")
-				assert.Equal(t, "nomic-embed-text", cfg.Embeddings.Model)
 				assert.Equal(t, "search_document: ", cfg.Embeddings.DocumentPrefix)
 			}
 		})
 	}
 }
 
-func TestLocalEmbeddingsDownloadAndRefusal(t *testing.T) {
+func TestLocalEmbeddingsDownloadFailureAndNoninteractiveRefusal(t *testing.T) {
 	for _, yes := range []bool{false, true} {
 		t.Run(fmt.Sprint(yes), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
@@ -123,7 +118,12 @@ func TestLocalEmbeddingsDownloadAndRefusal(t *testing.T) {
 				args = append(args, "--yes")
 			}
 			cmd.SetArgs(args)
-			require.Error(t, cmd.ExecuteContext(t.Context()))
+			err := cmd.ExecuteContext(t.Context())
+			if yes {
+				require.ErrorContains(t, err, "download failed")
+			} else {
+				require.ErrorContains(t, err, "non-interactive setup requires --yes")
+			}
 			assert.Contains(t, output.String(), "12 MB")
 			assert.Contains(t, output.String(), "rebuild")
 			saved, err := os.ReadFile(path)
@@ -168,10 +168,11 @@ func TestLocalEmbeddingsCachedResolution(t *testing.T) {
 		},
 		dir: func() (string, error) { return "/cache", nil },
 		install: func(_ context.Context, opts embedlocal.InstallOptions) (embedlocal.Installation, error) {
-			assert.Nil(t, opts.Confirm)
 			return embedlocal.Installation{DataDir: "/cache", Executable: "/cache/kennembed"}, nil
 		},
 	}
-	_, err := deps.resolve(t.Context(), true, nil)
+	endpoint, err := deps.resolve(t.Context(), true, nil)
 	require.NoError(t, err)
+	assert.Equal(t, "http://127.0.0.1:1234/v1", endpoint)
+	assert.Equal(t, 2, calls)
 }

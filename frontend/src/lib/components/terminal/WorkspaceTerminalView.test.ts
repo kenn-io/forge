@@ -6452,6 +6452,50 @@ describe("WorkspaceTerminalView", () => {
       expect(screen.queryByRole("dialog", { name: "Quick actions" })).toBeNull();
     });
 
+    it("sends a quick action's prompt to the agent open in the pane without launching another", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      mocks.quickActions = [{ label: "Review", agent: "missing", prompt: "Review this change" }];
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+      await screen.findByRole("tab", { name: /Helper/ });
+      await waitFor(() => expect(sockets).toHaveLength(1));
+      const strip = screen.getAllByRole("tablist", { name: "Workflow group tabs" })[0]!;
+      await fireEvent.click(within(strip).getByRole("button", { name: "Quick actions" }));
+      await fireEvent.click(
+        within(screen.getByRole("dialog", { name: "Quick actions" })).getByRole("button", {
+          name: "Send Review to Helper",
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          sockets[0]!.send.mock.calls.map(([data]) =>
+            typeof data === "string" ? data : new TextDecoder().decode(data as Uint8Array),
+          ),
+        ).toContain("Review this change\r"),
+      );
+      expect(mocks.showFlash).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog", { name: "Quick actions" })).toBeNull();
+      expect(
+        fetchSpy.mock.calls.some(([input]) =>
+          String(input instanceof Request ? input.url : input).includes("agent-handoffs"),
+        ),
+      ).toBe(false);
+    });
+
+    it("offers no send to a shell, where a prompt would run as commands", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue({
+        ...runtimeWithStaleSession(),
+        sessions: [{ ...runningShellSession, display_region: "workflow" }],
+      });
+      mocks.quickActions = [{ label: "Review", agent: "helper", prompt: "Review this change" }];
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+      await screen.findByRole("tab", { name: /Shell/ });
+      const strip = screen.getAllByRole("tablist", { name: "Workflow group tabs" })[0]!;
+      await fireEvent.click(within(strip).getByRole("button", { name: "Quick actions" }));
+      const menu = screen.getByRole("dialog", { name: "Quick actions" });
+      expect(within(menu).getByRole("button", { name: "Review" })).toBeTruthy();
+      expect(within(menu).queryByRole("button", { name: /^Send Review to/ })).toBeNull();
+    });
+
     it("keeps an explicitly opened launcher dismissed when its workspace becomes visible", async () => {
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
       claimForPrs();

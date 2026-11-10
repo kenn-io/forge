@@ -57,6 +57,7 @@
     isRestoringSessionFocus,
     onSessionExited,
     requestSessionFocus,
+    sendSessionPrompt,
     sessionHostKey,
     sessionHostPrefix,
     type MountedSession,
@@ -1219,6 +1220,8 @@
       sessionKeyFromWorkflowTab(activeTabKey) ??
       (terminalLayout.open ? terminalLayout.activeSessionKey : null),
   );
+
+  const currentQuickActionSession = $derived(quickActionSession(currentSessionKey));
 
   // Input ownership ends on blur; the toolbar still targets the session last
   // selected in the workflow, dock, or a promoted pane.
@@ -3132,6 +3135,27 @@
     runWorkspaceQuickAction(appRuntime, workspaceId, workspace?.item_type, action, workspaceHostKey, undefined, leaf);
   }
 
+  // The running agent a pane is showing, which a quick action can send its
+  // prompt to. A shell is left out: the prompt would run there as commands.
+  function quickActionSession(sessionKey: string | null): RuntimeSession | null {
+    const session = runtimeSessions.find((candidate) => candidate.key === sessionKey);
+    return session && session.status === "running" && session.kind !== "plain_shell" ? session : null;
+  }
+
+  function workflowLeafSession(leaf: TabbedPanelLeaf): RuntimeSession | null {
+    return quickActionSession(
+      sessionKeyFromWorkflowTab(leaf.activeTabKey as WorkflowTabKey) ??
+        (leaf.activeTabKey === "terminal" && terminalLayout.open ? terminalLayout.activeSessionKey : null),
+    );
+  }
+
+  function sendQuickActionToSession(action: QuickAction, session: RuntimeSession): void {
+    if (actionsBlocked) return;
+    const hostKey = sessionHostKeyFor(session);
+    if (sendSessionPrompt(hostKey, action.prompt)) requestSessionFocus(hostKey);
+    else showFlash(`"${action.label}" was not sent: ${session.label} is not connected.`, { tone: "danger" });
+  }
+
   function startAcceptedWorkspaceLaunchReconciliation(
     acceptedWorkspaceId: string,
     acceptedWorkspaceHostKey: string | undefined,
@@ -5032,6 +5056,8 @@
                     quickActions={workspaceQuickActions}
                     {quickActionBusy}
                     onQuickAction={handleQuickAction}
+                    currentSession={currentQuickActionSession}
+                    onQuickActionInSession={(action) => { if (currentQuickActionSession) sendQuickActionToSession(action, currentQuickActionSession); }}
                     onLaunch={(key) => handleLaunch(key)}
                   />
                 {/if}
@@ -5124,6 +5150,7 @@
                       }}
                     >
                       {#snippet leafActions(leaf)}
+                        {@const leafSession = workflowLeafSession(leaf)}
                         <div class="workflow-actions" style:margin-right={leaf.id === topRightWorkflowLeafID ? "var(--tabbed-panel-solo-actions-width, 0px)" : undefined}>
                           {#if !controlsInPane}{@render workspaceInfo()}{/if}
                           <LaunchMenu
@@ -5134,6 +5161,8 @@
                             quickActions={workspaceQuickActions}
                             {quickActionBusy}
                             onQuickAction={(action) => handleQuickAction(action, { surface: "workflow", id: leaf.id })}
+                            currentSession={leafSession}
+                            onQuickActionInSession={(action) => { if (leafSession) sendQuickActionToSession(action, leafSession); }}
                             onLaunch={(key) => handleLaunch(key, undefined, { surface: "workflow", id: leaf.id })}
                           />
                         </div>
@@ -5683,6 +5712,8 @@
       quickActions={workspaceQuickActions}
       {quickActionBusy}
       onQuickAction={handleQuickAction}
+      currentSession={currentQuickActionSession}
+      onQuickActionInSession={(action) => { if (currentQuickActionSession) sendQuickActionToSession(action, currentQuickActionSession); }}
       onLaunch={(key) => void handleLaunch(key)}
     />
   {/if}
@@ -5694,6 +5725,9 @@
   {@const launchLeaf = leaf === undefined || leaf.activeTabKey === "workspace"
     ? undefined
     : { surface: "detail" as const, id: leaf.id }}
+  {@const paneSession = launchLeaf === undefined
+    ? currentQuickActionSession
+    : quickActionSession(runtimeSessions.find((session) => sessionPaneKeyFor(session) === leaf?.activeTabKey)?.key ?? null)}
   {@render workspaceInfo()}
   <!-- Ready only. A workspace whose setup failed renders its own actions beside the
        Retry in the error panel, which is where the user is already looking, and one
@@ -5718,6 +5752,8 @@
       quickActions={workspaceQuickActions}
       {quickActionBusy}
       onQuickAction={(action) => handleQuickAction(action, launchLeaf)}
+      currentSession={paneSession}
+      onQuickActionInSession={(action) => { if (paneSession) sendQuickActionToSession(action, paneSession); }}
     />
   {/if}
   {#if workspaceLive && workspace?.status === "ready"}

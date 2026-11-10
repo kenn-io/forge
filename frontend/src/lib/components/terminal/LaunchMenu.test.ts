@@ -45,6 +45,43 @@ describe("LaunchMenu", () => {
     expect(screen.queryByRole("dialog", { name: "Quick actions" })).toBeNull();
   });
 
+  it("sends a quick action to the session open beside it without launching", async () => {
+    const onQuickAction = vi.fn();
+    const onQuickActionInSession = vi.fn();
+    const quickActions = [
+      { label: "Review", agent: "codex", prompt: "Review this change" },
+      { label: "audit", agent: "missing", prompt: "Audit this change" },
+    ];
+    const { rerender } = render(LaunchMenu, {
+      props: {
+        launchTargets: [{ key: "codex", label: "Codex", kind: "agent", source: "builtin", available: true }],
+        quickActions,
+        onQuickAction,
+        onQuickActionInSession,
+        currentSession: { label: "Claude" },
+      },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions", exact: true }));
+    const menu = screen.getByRole("dialog", { name: "Quick actions" });
+    // The session is already running, so an action whose own agent is missing
+    // can still be sent to it.
+    expect((within(menu).getByRole("button", { name: "audit" }) as HTMLButtonElement).disabled).toBe(true);
+    const sendAudit = within(menu).getByRole("button", { name: "Send audit to Claude" }) as HTMLButtonElement;
+    expect(sendAudit.disabled).toBe(false);
+    await fireEvent.click(sendAudit);
+    expect(onQuickActionInSession).toHaveBeenCalledExactlyOnceWith(quickActions[1]);
+    expect(onQuickAction).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Quick actions" })).toBeNull();
+
+    await rerender({ currentSession: null });
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions", exact: true }));
+    expect(
+      within(screen.getByRole("dialog", { name: "Quick actions" }))
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim()),
+    ).toEqual(["audit", "Review"]);
+  });
+
   it("enables quick actions that target available ACP agents", async () => {
     const onQuickAction = vi.fn();
     const { rerender } = render(LaunchMenu, {

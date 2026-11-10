@@ -74,6 +74,7 @@ interface SessionInputSender {
   sendKey: (key: TerminalKey) => boolean;
 }
 const inputSenders = new Map<SessionHostKey, SessionInputSender>();
+const promptSenders = new Map<SessionHostKey, (prompt: string) => boolean>();
 let releasedKeys: SessionHostKey[] = [];
 let retainedSessionLimit = DEFAULT_TERMINAL_SETTINGS.retained_sessions;
 
@@ -217,6 +218,7 @@ export function noteSessionDiscarded(key: SessionHostKey): void {
   connected.delete(key);
   holding.delete(key);
   inputSenders.delete(key);
+  promptSenders.delete(key);
   removeReleasedKey(key);
   mounted = mounted.filter((session) => session.hostKey !== key);
   registerSessionSlot(key, null);
@@ -246,6 +248,22 @@ export function sendSessionPastedInput(key: SessionHostKey, data: string, suffix
 /** Send a semantic key through the pooled terminal's mode-aware keyboard path. */
 export function sendSessionKey(key: SessionHostKey, terminalKey: TerminalKey): boolean {
   return inputSenders.get(key)?.sendKey(terminalKey) ?? false;
+}
+
+/**
+ * Publish how a pooled session takes a whole prompt: a chat sends it as a
+ * message, a terminal pastes it and presses Enter.
+ */
+export function registerSessionPrompt(key: SessionHostKey, send: (prompt: string) => boolean): () => void {
+  promptSenders.set(key, send);
+  return () => {
+    if (promptSenders.get(key) === send) promptSenders.delete(key);
+  };
+}
+
+/** Submit a prompt to a pooled session; false when it cannot take one now. */
+export function sendSessionPrompt(key: SessionHostKey, prompt: string): boolean {
+  return promptSenders.get(key)?.(prompt) ?? false;
 }
 
 function trimReleasedSessions(protectedPrefix?: string): void {

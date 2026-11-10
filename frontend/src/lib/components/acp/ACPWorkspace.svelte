@@ -287,18 +287,30 @@
   // until the host accepts it; a socket that is away gets it on reconnect.
   function send(mode: PromptMode) {
     if (!canSend) return;
-    // getRandomValues is available on plain HTTP origins as well as HTTPS.
-    const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
     const content = images.flatMap(image => image.content ? [image.content] : []);
-    const prompt: Outgoing = { id, text: draft, mode, ...(content.length ? { images: content } : {}) };
-    outbox = [...outbox, prompt];
+    enqueue({ text: draft, mode, ...(content.length ? { images: content } : {}) });
     draft = "";
     images = [];
+  }
+  function enqueue(outgoing: Omit<Outgoing, "id">) {
+    // getRandomValues is available on plain HTTP origins as well as HTTPS.
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
+    const prompt: Outgoing = { id, ...outgoing };
+    outbox = [...outbox, prompt];
     error = "";
     follow = true;
     // After a reconnect, the first snapshot resends the outbox oldest first;
     // sending before it could overtake an older prompt.
     if (!resyncPending) connection?.send(promptCommand(prompt));
+  }
+  /**
+   * Sends a prompt written outside the composer, the way Enter would, and
+   * leaves the draft alone. False when the chat is not taking prompts.
+   */
+  export function sendPrompt(text: string): boolean {
+    if (!accepting || stopped || disabled || !text.trim()) return false;
+    enqueue({ text, mode: running ? busyMode : "send" });
+    return true;
   }
   function retry(id: string) {
     const prompt = outbox.find((entry) => entry.id === id);

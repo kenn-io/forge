@@ -97,6 +97,48 @@ afterEach(async () => {
   runtimeCapture.current = undefined;
 });
 
+describe("ACPWorkspace prompts sent from outside the composer", () => {
+  async function openChatComponent(state: Record<string, unknown>, props: { disabled?: boolean } = {}) {
+    const { component } = render(ACPWorkspace, {
+      context: new Map([[STORES_KEY, { settings }]]),
+      props: { websocketPath: "/ws/chat", ...props },
+    });
+    await waitFor(() => expect(socket.options).toBeDefined());
+    socket.options!.onOpen?.();
+    await push(state);
+    return component;
+  }
+
+  it("sends the prompt as a message and leaves the draft alone", async () => {
+    const chat = await openChatComponent({});
+    const composer = screen.getByRole("textbox") as HTMLTextAreaElement;
+    await fireEvent.input(composer, { target: { value: "half typed" } });
+
+    expect(chat.sendPrompt("Review this change")).toBe(true);
+    await tick();
+
+    expect(sentCommands()).toEqual([
+      { type: "prompt", mode: "send", id: expect.any(String), text: "Review this change" },
+    ]);
+    expect(composer.value).toBe("half typed");
+  });
+
+  it("follows Enter while a reply is running", async () => {
+    const chat = await openChatComponent({ busy: true });
+    expect(chat.sendPrompt("Review this change")).toBe(true);
+    expect(sentCommands()).toEqual([
+      { type: "prompt", mode: "queue", id: expect.any(String), text: "Review this change" },
+    ]);
+  });
+
+  it("refuses when the chat is not taking prompts", async () => {
+    const chat = await openChatComponent({}, { disabled: true });
+    expect(chat.sendPrompt("Review this change")).toBe(false);
+    expect(chat.sendPrompt("  ")).toBe(false);
+    expect(sentCommands()).toEqual([]);
+  });
+});
+
 describe("ACPWorkspace final transcript", () => {
   it("keeps a recovery failure and the transcript visible without reporting an agent exit", async () => {
     const onExit = vi.fn();

@@ -5,6 +5,7 @@
   import CopyIcon from "@lucide/svelte/icons/copy";
   import EyeOffIcon from "@lucide/svelte/icons/eye-off";
   import LinkIcon from "@lucide/svelte/icons/link";
+  import MessageSquarePlusIcon from "@lucide/svelte/icons/message-square-plus";
   import MessageSquareReplyIcon from "@lucide/svelte/icons/message-square-reply";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
@@ -35,6 +36,7 @@
     Modal,
     Timeline,
     TimelineItem,
+    Tooltip,
     copyToClipboard,
     formatRelativeTime,
     type TimelineTone,
@@ -45,6 +47,8 @@
     type MarkdownSuggestionBlock,
   } from "../../utils/markdown-suggestions.js";
   import { getStores } from "../../context.js";
+  import { addToChat, hasChatComposer } from "../../stores/chat-composer.svelte.js";
+  import { untrustedSourceText } from "../../utils/ci-fix-prompt.js";
   import { createProgressiveMountController } from "../../utils/progressive-mount.js";
   import {
     buildItemReferenceLink,
@@ -1411,6 +1415,14 @@
     });
   }
 
+  // Names who wrote the comment and where, and fences its text as untrusted
+  // data: anyone who can comment wrote it, and the agent may act on it.
+  function chatQuote(event: PREvent | IssueEvent): string {
+    const author = event.Author ? ` from @${event.Author}` : "";
+    const where = event.DirectURL ? ` (${event.DirectURL})` : "";
+    return `Comment${author}${where}:\n\n${untrustedSourceText(event.Body)}`;
+  }
+
   function copyText(id: string, text: string): void {
     copyExecution?.interrupt();
     copyExecution = runtime.runCommand(
@@ -1655,6 +1667,19 @@
         <CopyIcon size={14} />
       {/if}
     </IconButton>
+    {#if hasChatComposer()}
+      <!-- An empty title keeps the browser's own tooltip from stacking on this one. -->
+      <Tooltip text="Add to the chat's message box without sending">
+        <IconButton
+          size="sm"
+          onclick={() => addToChat(chatQuote(event))}
+          ariaLabel="Add to chat"
+          title=""
+        >
+          <MessageSquarePlusIcon size={14} />
+        </IconButton>
+      </Tooltip>
+    {/if}
   {/if}
 {/snippet}
 

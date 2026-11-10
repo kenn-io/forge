@@ -26,6 +26,7 @@
   import type { ContentScrollPositions } from "./chat-content-scroll.js";
   import { mediaDataURL } from "./chat-content.js";
   import { AGENT_PROMPT_DRAG_MIME } from "../../utils/ci-fix-prompt.js";
+  import { nextChatFocus, registerChatComposer } from "../../stores/chat-composer.svelte.js";
   import type { AgentCommand, ChatCommand, ChatContent, ChatMessage, ChatState, PromptMode } from "./chat-types.js";
 
   let { websocketPath, sessionKey = "", label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onHoldingChange, onExit }: {
@@ -72,6 +73,7 @@
   let settingsOpen = $state(false);
   let settingPending = $state(false);
   let textarea = $state<HTMLTextAreaElement | null>(null);
+  let section = $state<HTMLElement | null>(null);
   let caret = $state(0);
   let commandMenuDismissed = $state(false);
   let promptDropActive = $state(false);
@@ -458,13 +460,31 @@
     promptDropActive = false;
     if (!acceptsPromptDrop(event)) return;
     event.preventDefault();
-    const prompt = event.dataTransfer?.getData(AGENT_PROMPT_DRAG_MIME) ?? "";
+    await appendToComposer(event.dataTransfer?.getData(AGENT_PROMPT_DRAG_MIME) ?? "");
+  }
+  // Text from elsewhere on the page goes after anything already typed and is
+  // left for the user to send.
+  async function appendToComposer(prompt: string) {
     if (!prompt.trim()) return;
     draft = draft.trim() ? `${draft.trimEnd()}\n\n${prompt}` : prompt;
     await tick();
     textarea?.focus();
     textarea?.setSelectionRange(draft.length, draft.length);
     syncCaret();
+  }
+  // Recorded even while this chat cannot take text, so Add to chat still
+  // prefers it once it is ready or shown again.
+  let lastFocused = 0;
+  const composer = { insert: (text: string) => void appendToComposer(text), lastFocused: () => lastFocused };
+  $effect(() => {
+    return active && !disabled && accepting && !stopped ? registerChatComposer(composer) : undefined;
+  });
+  // Focus Terminal focuses the pooled session wrapper around this chat, not
+  // anything inside it, so focus there counts as using this chat too.
+  function noteFocus(event: FocusEvent) {
+    const target = event.target;
+    if (!section || !(target instanceof Node)) return;
+    if (section.contains(target) || section.closest("[data-session-host]") === target) lastFocused = nextChatFocus();
   }
   function keydown(event: KeyboardEvent) {
     if (commandKeydown(event)) return;
@@ -475,8 +495,11 @@
   }
 </script>
 
+<svelte:document onfocusin={noteFocus} />
+
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 <section class="acp-workspace" class:prompt-drop={promptDropActive} aria-label={`${label} chat`} onclick={focusComposerFromClick}
+  bind:this={section}
   ondragenter={promptDragOver} ondragover={promptDragOver} ondragleave={promptDragLeave} ondrop={promptDrop}
   style:--font-size-acp={`${appearance.font_size}px`}
   style:--acp-font-family={appearance.font_family || undefined}

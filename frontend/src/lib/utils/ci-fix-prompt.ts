@@ -17,11 +17,20 @@ function oneLine(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-// Every check field comes from a CI app or the PR's CI configuration, which a
-// fork's author controls. Like the generated agent context, fence them as data.
-function untrusted(value: string): string {
-  const escaped = oneLine(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+/**
+ * Fences text from a source system (a CI app, a PR or issue comment) as data
+ * for an agent, like the generated agent context does. Escaping keeps the
+ * text from closing the fence early; line breaks stay.
+ */
+export function untrustedSourceText(value: string): string {
+  const escaped = value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return `<untrusted-source-text>${escaped}</untrusted-source-text>`;
+}
+
+// Every check field comes from a CI app or the PR's CI configuration, which a
+// fork's author controls.
+function untrusted(value: string): string {
+  return untrustedSourceText(oneLine(value));
 }
 
 function parseURL(url: string): URL | null {

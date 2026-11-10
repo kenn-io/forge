@@ -1351,4 +1351,42 @@ describe("ACPWorkspace add to chat (browser)", () => {
     expect(document.activeElement).toBe(composer);
     expect(socket.sent.some((frame) => frame.includes("Enter too early"))).toBe(false);
   });
+
+  it("stops offering a chat whose connection stopped for good", async () => {
+    await renderTimeline();
+    await renderChat(700);
+    await expect.element(page.getByRole("button", { name: "Add to chat" })).toBeInTheDocument();
+
+    socket.options!.onMessage(JSON.stringify({ command: "connect", commandError: "agent exited" }));
+
+    await expect.poll(() => page.getByRole("button", { name: "Add to chat" }).query()).toBeNull();
+  });
+
+  it("adds to the chat the user last focused, including through its session wrapper", async () => {
+    await renderTimeline();
+    // Each chat sits in a pooled-session wrapper, which Focus Terminal focuses.
+    const wrapped = async () => {
+      const { host } = await renderChat(700);
+      const wrapper = document.createElement("div");
+      wrapper.dataset.sessionHost = `chat-${document.querySelectorAll("[data-session-host]").length}`;
+      wrapper.tabIndex = -1;
+      host.replaceWith(wrapper);
+      wrapper.append(host);
+      return { wrapper, composer: host.querySelector("textarea")! };
+    };
+    const first = await wrapped();
+    first.composer.focus();
+    // A chat that becomes ready later does not take over from the focused one.
+    const second = await wrapped();
+    const add = () => (page.getByRole("button", { name: "Add to chat" }).element() as HTMLButtonElement).click();
+
+    add();
+    await expect.poll(() => first.composer.value).toContain("Enter too early");
+    expect(second.composer.value).toBe("");
+
+    second.wrapper.focus();
+    add();
+    await expect.poll(() => second.composer.value).toContain("Enter too early");
+    expect(first.composer.value.match(/Enter too early/g)).toHaveLength(1);
+  });
 });

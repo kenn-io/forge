@@ -73,6 +73,7 @@
   let settingsOpen = $state(false);
   let settingPending = $state(false);
   let textarea = $state<HTMLTextAreaElement | null>(null);
+  let section = $state<HTMLElement | null>(null);
   let caret = $state(0);
   let commandMenuDismissed = $state(false);
   let promptDropActive = $state(false);
@@ -459,8 +460,15 @@
   }
   const insertFromPage = (text: string) => void appendToComposer(text);
   $effect(() => {
-    return active && !disabled && accepting ? registerChatComposer(insertFromPage) : undefined;
+    return active && !disabled && accepting && !stopped ? registerChatComposer(insertFromPage) : undefined;
   });
+  // Focus Terminal focuses the pooled session wrapper around this chat, not
+  // anything inside it, so focus there counts as using this chat too.
+  function noteFocus(event: FocusEvent) {
+    const target = event.target;
+    if (!section || !(target instanceof Node)) return;
+    if (section.contains(target) || section.closest("[data-session-host]") === target) noteChatComposerUsed(insertFromPage);
+  }
   function keydown(event: KeyboardEvent) {
     if (commandKeydown(event)) return;
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !window.matchMedia("(pointer: coarse)").matches) {
@@ -470,9 +478,11 @@
   }
 </script>
 
+<svelte:document onfocusin={noteFocus} />
+
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 <section class="acp-workspace" class:prompt-drop={promptDropActive} aria-label={`${label} chat`} onclick={focusComposerFromClick}
-  onfocusin={() => noteChatComposerUsed(insertFromPage)}
+  bind:this={section}
   ondragenter={promptDragOver} ondragover={promptDragOver} ondragleave={promptDragLeave} ondrop={promptDrop}
   style:--font-size-acp={`${appearance.font_size}px`}
   style:--acp-font-family={appearance.font_family || undefined}

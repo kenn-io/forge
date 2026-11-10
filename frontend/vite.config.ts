@@ -499,6 +499,7 @@ const config = {
       "@lucide/svelte/icons/lock",
       "@lucide/svelte/icons/menu",
       "@lucide/svelte/icons/message-square",
+      "@lucide/svelte/icons/message-square-plus",
       "@lucide/svelte/icons/message-square-reply",
       "@lucide/svelte/icons/messages-square",
       "@lucide/svelte/icons/minus",

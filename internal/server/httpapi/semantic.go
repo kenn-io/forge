@@ -12,7 +12,7 @@ func SemanticSearchAvailable(q string, indexed bool) error {
 		return Validation("query.q", "semantic ranking requires q")
 	}
 	if !indexed {
-		return ServiceUnavailable("semantic search needs an [embeddings] endpoint on the Forge that syncs providers")
+		return ServiceUnavailable("enable semantic search with kenn-forge embeddings local")
 	}
 	return nil
 }
@@ -21,5 +21,5 @@ func SemanticSearchAvailable(q string, indexed bool) error {
 // embedding endpoint, without echoing endpoint details to the client.
 func SemanticSearchFailed(err error) error {
 	slog.Warn("semantic search failed", "err", err)
-	return ServiceUnavailable("semantic search failed; check the embeddings endpoint")
+	return ServiceUnavailable("semantic search failed; check the embeddings endpoint or run kenn-forge embeddings local")
 }

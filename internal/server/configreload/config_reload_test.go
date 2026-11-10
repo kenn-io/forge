@@ -88,4 +88,8 @@ func TestEmbeddingsChangeRequiresRestart(t *testing.T) {
 		BaseURL: "http://127.0.0.1:11434/v1", Model: "nomic-embed-text", Dims: 768,
 	}
 	require.True(t, snapshot.RestartRequiredFor(&enabled), "the encoder is built once at startup")
+
+	local := *boot
+	local.LocalEmbeddings = true
+	require.True(t, snapshot.RestartRequiredFor(&local))
 }

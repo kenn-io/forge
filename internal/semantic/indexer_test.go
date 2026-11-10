@@ -14,8 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/embedfake"
+	"go.kenn.io/kit/embedconfig"
 )
 
 type fakeSources struct {
@@ -255,4 +257,44 @@ func TestWakesNeverStartPassesLessThanAMinuteApart(t *testing.T) {
 		assert.Equal([]time.Duration{0, time.Minute, 11 * time.Minute}, started(),
 			"a wake after the gap starts a pass immediately")
 	})
+}
+
+func TestEndpointSwitchKeepsIndex(t *testing.T) {
+	f := newFixture(t)
+	f.sources.set(pull(1, 10, 101, "Cache fix", "cache"), pull(2, 10, 102, "Login fix", "login"))
+	first := f.open(t, "nomic-embed-text")
+	require.NoError(t, first.Refresh(t.Context()))
+	candidates := []db.RepoItemNumber{item(10, 101), item(10, 102)}
+	before := rank(t, first, "cache", "pr", 0, 0, candidates...)
+	require.NoError(t, first.Close())
+	secondEndpoint := embedfake.New(t, "cache", "login", "flaky", "docs")
+	encoder, err := NewEncoder(secondEndpoint.Embedder("nomic-embed-text"))
+	require.NoError(t, err)
+	second, err := Open(t.Context(), f.path, encoder, f.sources, time.Hour)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = second.Close() })
+	require.NoError(t, second.Refresh(t.Context()))
+	assert.Empty(t, secondEndpoint.Inputs())
+	assert.Equal(t, before, rank(t, second, "cache", "pr", 0, 0, candidates...))
+	secondEndpoint.ResetInputs()
+	f.sources.set(pull(1, 10, 101, "Cache fix", "cache"), pull(2, 10, 102, "Login fix", "login"), pull(3, 10, 103, "Docs", "docs"))
+	require.NoError(t, second.Refresh(t.Context()))
+	require.Len(t, secondEndpoint.Inputs(), 1)
+	assert.Contains(t, secondEndpoint.Inputs()[0], "Docs")
+}
+
+func TestLocalEndpointRediscoveredForRequests(t *testing.T) {
+	first := embedfake.New(t, "cache")
+	second := embedfake.New(t, "cache")
+	endpoint := first.Embedder("nomic-embed-text").BaseURL
+	cfg := config.LocalEmbeddingRecipe(embedconfig.Embedder{Model: "nomic-embed-text", Dims: 2})
+	encoder, err := NewEncoderWithResolver(cfg, func(context.Context) (string, error) { return endpoint, nil })
+	require.NoError(t, err)
+	_, err = encoder.query(t.Context(), "cache")
+	require.NoError(t, err)
+	endpoint = second.Embedder("nomic-embed-text").BaseURL
+	_, err = encoder.documents(t.Context(), []string{"cache document"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"cache"}, first.Inputs())
+	assert.Equal(t, []string{"cache document"}, second.Inputs())
 }

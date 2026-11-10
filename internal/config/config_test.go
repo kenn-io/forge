@@ -5151,3 +5151,12 @@ model = "nomic-embed-text"
 	_, err := Load(path)
 	require.ErrorContains(t, err, "embeddings")
 }
+
+func TestLocalEmbeddingsConfig(t *testing.T) {
+	_, saved := roundTripConfigString(t, "local_embeddings = true\n[embeddings]\nmodel = \"nomic-embed-text\"\ndims = 768\n")
+	assert.True(t, saved.LocalEmbeddings)
+	_, err := Load(writeConfig(t, "local_embeddings = true\n"))
+	require.ErrorContains(t, err, "model")
+	_, err = Load(writeConfig(t, "local_embeddings = true\n[embeddings]\nmodel = \"nomic-embed-text\"\n"))
+	require.ErrorContains(t, err, "dims")
+}

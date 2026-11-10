@@ -26,11 +26,18 @@ type Encoder struct {
 	generation vector.Generation
 	key        string
 	batch      embedconfig.Batch
+	resolve    func(context.Context) (string, error)
+	options    embedclient.Options
 }
 
 // NewEncoder builds an encoder from the [embeddings] configuration. It
 // resolves the API key once; changing the key source requires a restart.
 func NewEncoder(cfg embedconfig.Embedder) (*Encoder, error) {
+	return NewEncoderWithResolver(cfg, nil)
+}
+
+// NewEncoderWithResolver resolves a local endpoint for each request.
+func NewEncoderWithResolver(cfg embedconfig.Embedder, resolve func(context.Context) (string, error)) (*Encoder, error) {
 	parts, err := cfg.Parts()
 	if err != nil {
 		return nil, fmt.Errorf("semantic: configure embeddings: %w", err)
@@ -39,11 +46,12 @@ func NewEncoder(cfg embedconfig.Embedder) (*Encoder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("semantic: %w", err)
 	}
-	client, err := embedclient.New(embedclient.Options{
+	options := embedclient.Options{
 		Model: parts.Model, Roles: parts.Roles, Deployment: parts.Deployment,
 		Batch: parts.Batch, Transport: parts.Transport, APIKey: secret.Value,
 		Retry: embedclient.Retry{MaxAttempts: 3, MaxBackoff: 10 * time.Second},
-	})
+	}
+	client, err := embedclient.New(options)
 	if err != nil {
 		return nil, fmt.Errorf("semantic: configure embedding client: %w", err)
 	}
@@ -60,20 +68,41 @@ func NewEncoder(cfg embedconfig.Embedder) (*Encoder, error) {
 	generation.Params["recipe"] = recipe
 	return &Encoder{
 		client: client, generation: generation, key: generation.Fingerprint(),
-		batch: parts.Batch,
+		batch: parts.Batch, resolve: resolve, options: options,
 	}, nil
 }
 
 // documents encodes document text with the configured document affixes.
 func (e *Encoder) documents(ctx context.Context, texts []string) ([][]float32, error) {
-	return e.client.EmbedTexts(ctx, embedconfig.RoleDocument, texts)
+	client, err := e.clientForRequest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.EmbedTexts(ctx, embedconfig.RoleDocument, texts)
 }
 
 // query encodes one search query with the configured query affixes.
 func (e *Encoder) query(ctx context.Context, text string) (vector.Vector, error) {
 	return vector.EncodeOne(ctx, func(ctx context.Context, texts []string) ([][]float32, error) {
-		return e.client.EmbedTexts(ctx, embedconfig.RoleQuery, texts)
+		client, err := e.clientForRequest(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return client.EmbedTexts(ctx, embedconfig.RoleQuery, texts)
 	}, text)
+}
+
+func (e *Encoder) clientForRequest(ctx context.Context) (*embedclient.Client, error) {
+	if e.resolve == nil {
+		return e.client, nil
+	}
+	endpoint, err := e.resolve(ctx)
+	if err != nil {
+		return nil, err
+	}
+	options := e.options
+	options.Deployment.BaseURL = endpoint
+	return embedclient.New(options)
 }
 
 func (e *Encoder) fillBatchOptions() []vector.BatchOption {

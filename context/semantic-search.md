@@ -8,6 +8,7 @@ semantic ranking of the pull request and issue lists.
 - `[embeddings]` is kit's `embedconfig.Embedder`; the zero value disables
   semantic search and is omitted on save. Put Forge-specific settings beside
   it, never inside it (`internal/config/config.go::Config`).
+- `local_embeddings = true` selects the built-in server. A configured endpoint takes precedence. Local discovery runs per request; its recipe and API key are startup-bound. Setup saves a discovered Ollama endpoint as ordinary endpoint configuration.
 - `[embeddings]` is startup-bound: the encoder and its API key are resolved once
   (`internal/server/configreload/config_reload.go::StartupConfigSnapshot`).
 - Only the provider owner builds an index; spokes forward list requests with

@@ -1159,7 +1159,8 @@ type Config struct {
 	Devboxes          Devboxes                 `toml:"devboxes"`
 	// Embeddings configures the optional embedding endpoint behind semantic
 	// search. The zero value disables it.
-	Embeddings embedconfig.Embedder `toml:"embeddings"`
+	Embeddings      embedconfig.Embedder `toml:"embeddings"`
+	LocalEmbeddings bool                 `toml:"local_embeddings"`
 
 	// parsedAllowedHosts is the canonicalised form of AllowedHosts,
 	// populated by Validate so the server constructor does not have
@@ -1595,7 +1596,11 @@ func (c *Config) validate() error {
 	if err := c.Relay.Validate(); err != nil {
 		return err
 	}
-	if err := c.Embeddings.Validate(); err != nil {
+	embeddings := c.Embeddings
+	if c.LocalEmbeddings && strings.TrimSpace(embeddings.BaseURL) == "" {
+		embeddings = LocalEmbeddingRecipe(embeddings)
+	}
+	if err := embeddings.Validate(); err != nil {
 		return fmt.Errorf("config: embeddings: %w", err)
 	}
 	var err error
@@ -4009,6 +4014,7 @@ type configFile struct {
 	ExecutionWorker             ExecutionWorker          `toml:"execution_worker,omitempty"`
 	Devboxes                    Devboxes                 `toml:"devboxes,omitempty"`
 	Embeddings                  *embedconfig.Embedder    `toml:"embeddings,omitempty"`
+	LocalEmbeddings             bool                     `toml:"local_embeddings,omitempty"`
 }
 
 // CheckSavable reports whether Save could replace the config at path. It
@@ -4099,6 +4105,7 @@ func (c *Config) Save(path string) error {
 		MCP:                         cfg.MCP,
 		ExecutionWorker:             cfg.ExecutionWorker,
 		Devboxes:                    cfg.Devboxes,
+		LocalEmbeddings:             cfg.LocalEmbeddings,
 	}
 	if cfg.Embeddings != (embedconfig.Embedder{}) {
 		embeddings := cfg.Embeddings

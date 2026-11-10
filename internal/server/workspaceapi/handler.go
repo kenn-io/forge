@@ -503,7 +503,8 @@ func (s *Handler) RegisterExecution(api huma.API) {
 		Path:        "/workspaces/{id}/runtime/agent-handoffs",
 		Summary:     "Launch an agent with an initial message",
 		Description: "Waits for the workspace to become ready, launches the agent target, " +
-			"and delivers the message as its initial prompt.",
+			"and delivers the message as its initial prompt. With session_key, delivers the " +
+			"message to that live agent session and launches nothing.",
 		Tags: []string{"Workspaces"},
 	}, s.launchWorkspaceAgentHandoff)
 	huma.Register(api, huma.Operation{

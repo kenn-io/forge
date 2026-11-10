@@ -4,6 +4,7 @@
   import PlayIcon from "@lucide/svelte/icons/play";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ZapIcon from "@lucide/svelte/icons/zap";
+  import SendIcon from "@lucide/svelte/icons/send";
   import LaunchTargetName from "./LaunchTargetName.svelte";
   import { visibleLaunchTargets } from "./launchTargets";
   import { sortQuickActionsByLabel } from "../../stores/workspace-quick-actions.js";
@@ -21,6 +22,9 @@
     quickActions?: QuickAction[];
     quickActionBusy?: boolean;
     onQuickAction?: (action: QuickAction) => void;
+    /** The agent session showing beside this menu. Each quick action can then send its prompt there instead of launching. */
+    currentSession?: { label: string } | null;
+    onQuickActionInSession?: (action: QuickAction) => void;
   }
 
   const {
@@ -33,6 +37,8 @@
     quickActions = [],
     quickActionBusy = false,
     onQuickAction,
+    currentSession = null,
+    onQuickActionInSession,
   }: LaunchMenuProps = $props();
 
   let open = $state<"launch" | "quick" | null>(null);
@@ -41,6 +47,7 @@
 
   const visibleTargets = $derived(visibleLaunchTargets(launchTargets));
   const sortedQuickActions = $derived(sortQuickActionsByLabel(quickActions));
+  const canSendToSession = $derived(currentSession !== null && onQuickActionInSession !== undefined);
 
   $effect(() => {
     if (disabled || !hostVisible) open = null;
@@ -117,7 +124,7 @@
       aria-label="Quick actions"
       aria-haspopup="dialog"
       aria-expanded={open === "quick"}
-      disabled={disabled || quickActionBusy}
+      disabled={disabled || (quickActionBusy && !canSendToSession)}
       onclick={() => { open = open === "quick" ? null : "quick"; }}
     >
       <ZapIcon size="13" strokeWidth="2.2" aria-hidden="true" />
@@ -139,14 +146,30 @@
       {#if open === "quick"}
         {#each sortedQuickActions as action (action.label)}
           {@const target = launchTargets.find((candidate) => candidate.key === action.agent && (candidate.kind === "agent" || candidate.kind === "acp"))}
-          <button
-            class="launch-option"
-            disabled={disabled || quickActionBusy || !target?.available || launchingKey === action.agent}
-            title={!target ? `Agent "${action.agent}" is not configured` : !target.available ? target.disabled_reason || `Agent "${action.agent}" is not available` : action.prompt}
-            onclick={() => { open = null; onQuickAction?.(action); }}
-          >
-            <LaunchTargetName target={{ kind: "agent", key: action.agent }} label={action.label} iconSize={13} fallbackIcon />
-          </button>
+          <div class="quick-action-row">
+            <button
+              class="launch-option"
+              disabled={disabled || quickActionBusy || !target?.available || launchingKey === action.agent}
+              title={!target ? `Agent "${action.agent}" is not configured` : !target.available ? target.disabled_reason || `Agent "${action.agent}" is not available` : action.prompt}
+              onclick={() => { open = null; onQuickAction?.(action); }}
+            >
+              <LaunchTargetName target={{ kind: "agent", key: action.agent }} label={action.label} iconSize={13} fallbackIcon />
+            </button>
+            {#if canSendToSession && currentSession && onQuickActionInSession}
+              <!-- The session is already running, so the action's own agent
+                   being unavailable does not block this. -->
+              <button
+                class="send-to-session"
+                type="button"
+                disabled={disabled}
+                aria-label={`Send ${action.label} to ${currentSession.label}`}
+                title={`Send to ${currentSession.label}, open in this pane`}
+                onclick={() => { open = null; onQuickActionInSession(action); }}
+              >
+                <SendIcon size="12" strokeWidth="2.2" aria-hidden="true" />
+              </button>
+            {/if}
+          </div>
         {/each}
       {:else}
         {#each visibleTargets as target (target.key)}
@@ -257,8 +280,64 @@
     cursor: pointer;
   }
 
-  .launch-option + .launch-option {
+  .launch-option + .launch-option,
+  .quick-action-row + .quick-action-row {
     margin-top: 1px;
+  }
+
+  /* The send button floats over the row's trailing end, so the row highlight
+     runs the full width behind it. */
+  .quick-action-row {
+    position: relative;
+  }
+
+  .quick-action-row:has(.send-to-session) .launch-option {
+    padding-right: 32px;
+  }
+
+  .send-to-session {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 80ms ease, background-color 80ms ease, border-color 80ms ease, color 80ms ease;
+  }
+
+  /* Not :focus-within: opening the menu focuses its first row, which would
+     show that row's button alone. */
+  .quick-action-row:hover .send-to-session,
+  .quick-action-row:has(:focus-visible) .send-to-session {
+    opacity: 1;
+  }
+
+  /* Nothing hovers on touch, so the button is always there. */
+  @media (hover: none) {
+    .send-to-session {
+      opacity: 1;
+    }
+  }
+
+  .send-to-session:hover:not(:disabled),
+  .send-to-session:focus-visible {
+    background: var(--bg-surface);
+    border-color: color-mix(in srgb, var(--accent-blue) 55%, transparent);
+    color: var(--accent-blue);
+    outline: none;
+  }
+
+  .send-to-session:disabled {
+    cursor: not-allowed;
   }
 
   .launch-option:hover:not(:disabled),

@@ -16,7 +16,7 @@ func ProjectForObserver(
 ) Snapshot {
 	view := withFreshObserverState(aggregate, local, observer)
 	if observer.Role == RoleSpoke {
-		view = localSpokeProjection(view, string(observer.NodeID))
+		view = withoutDevboxItems(view)
 	}
 	active := ActivePlatformHost(view.Projects)
 	identity := DefaultIdentity()
@@ -36,21 +36,28 @@ func ProjectForObserver(
 	return resp
 }
 
-// localSpokeProjection keeps the fleet host directory available for direct
-// navigation while limiting a spoke's workspace surface to state it can act
-// on locally. The hub remains the one place that projects the full fleet.
-func localSpokeProjection(view NeutralSnapshot, observer string) NeutralSnapshot {
+// withoutDevboxItems keeps the fleet-wide workspace surface for a spoke,
+// which reaches other members through the hub, but drops work on the hub's
+// devboxes: only the hub holds devbox connections. Devbox hosts stay in the
+// directory for navigation.
+func withoutDevboxItems(view NeutralSnapshot) NeutralSnapshot {
+	devboxes := make(map[string]bool)
+	for _, host := range view.Hosts {
+		if host.FederationRole == RoleDevbox {
+			devboxes[string(host.NodeID)] = true
+		}
+	}
 	view.Projects = slices.DeleteFunc(slices.Clone(view.Projects), func(project RawProject) bool {
-		return project.HostKey != observer
+		return devboxes[project.HostKey]
 	})
 	view.Worktrees = slices.DeleteFunc(slices.Clone(view.Worktrees), func(worktree RawWorktree) bool {
-		return worktree.HostKey != observer
+		return devboxes[worktree.HostKey]
 	})
 	view.Sessions = slices.DeleteFunc(slices.Clone(view.Sessions), func(session RawSession) bool {
-		return session.HostKey != observer
+		return devboxes[session.HostKey]
 	})
 	view.Workspaces = slices.DeleteFunc(slices.Clone(view.Workspaces), func(workspace RawWorkspace) bool {
-		return workspace.HostKey != observer
+		return devboxes[workspace.HostKey]
 	})
 	return view
 }
@@ -241,7 +248,7 @@ func buildHost(host NeutralHost, observer Observer, identity Identity) HostSumma
 	if isSelf {
 		kind = "self"
 		transport = "local"
-	} else if observer.Role == RoleSpoke {
+	} else if observer.Role == RoleSpoke && host.FederationRole == RoleDevbox {
 		policy = SummaryOnlyPolicy{}
 	}
 	h := HostSummary{

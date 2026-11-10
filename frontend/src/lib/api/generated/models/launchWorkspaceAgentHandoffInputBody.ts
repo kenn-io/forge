@@ -9,5 +9,8 @@ export interface LaunchWorkspaceAgentHandoffInputBody {
   /** ACP session options for this chat only, keyed by option ID. Only ACP targets accept them. */
   acp_options?: LaunchWorkspaceAgentHandoffInputBodyAcpOptions;
   message: string;
-  target_key: string;
+  /** A live agent session that takes the message instead of a newly launched agent. target_key is then ignored. */
+  session_key?: string;
+  /** Agent launch target. Required unless session_key is set. */
+  target_key?: string;
 }

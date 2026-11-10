@@ -1,10 +1,16 @@
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { untrack } from "svelte";
 import { FleetSnapshotReads, type HostSummary } from "../api/fleet-snapshot.js";
 import { canonicalProvider, resolvedPlatformHost } from "../api/provider-routes.js";
 import type { AppRuntime } from "../app/runtime.js";
+import { workspaceEventStream } from "../components/terminal/workspace-event-stream.js";
+import { pollWhileVisible } from "../effect/poll-while-visible.js";
+import type { WorkspaceEventsNotification } from "./events.svelte.js";
 
 type Repository = { provider: string; platformHost?: string | undefined };
+
+/** A machine a workspace can be created on; hostKey is unset for this Forge. */
+export type WorkspaceHostChoice = { readonly hostKey: string | undefined; readonly label: string };
 
 export function devboxRepositoryUnavailableReason(repo: Repository): string {
   return canonicalProvider(repo.provider) === "github" &&
@@ -29,15 +35,56 @@ export function workspaceTargetUnavailableReason(
     : availability?.unavailableReason || "Workspace creation is unavailable on this machine.";
 }
 
+export function workspaceHostLabel(host: HostSummary): string {
+  const name = host.name.trim() || host.hostname?.trim() || host.configKey;
+  return `${name}${host.kind === "self" ? " (this machine)" : host.kind === "devbox" ? " (devbox)" : ""}`;
+}
+
+// A saved default names a devbox (devbox:<id>), or a fleet member by its node
+// ID or HTTPS origin. Settings validates the syntax; this only matches hosts.
+function isNodeID(target: string): boolean {
+  return /^[0-9a-f]{32}$/.test(target);
+}
+
+/** Finds the host a saved default names among the fleet snapshot's hosts. */
+export function findDefaultTargetHost(target: string, hosts: readonly HostSummary[]): HostSummary | undefined {
+  if (!target) return undefined;
+  return hosts.find(
+    (host) =>
+      host.configKey === target || (host.kind !== "devbox" && target.startsWith("https://") && host.baseURL === target),
+  );
+}
+
+/** The request host key for a host: unset for this Forge, so creation stays on its local routes. */
+export function workspaceHostKey(host: HostSummary): string | undefined {
+  return host.kind === "self" ? undefined : host.configKey;
+}
+
 // PR and issue actions use the saved target. Keep their gate and request target together.
-export function createDefaultWorkspaceTarget(runtime: AppRuntime, getTarget: () => string, getRepo: () => Repository) {
-  const hostKey = $derived(getTarget().startsWith("devbox:") ? getTarget() : undefined);
+export function createDefaultWorkspaceTarget(
+  runtime: AppRuntime,
+  subscribeWorkspaceEvents: (subscriber: (event: WorkspaceEventsNotification) => void) => () => void,
+  getTarget: () => string,
+  getRepo: () => Repository,
+) {
+  const target = $derived(getTarget());
   let hosts = $state.raw<HostSummary[] | null>(null);
   let checked = $state(false);
-  let hint = $state("");
+  let loadFailed = $state(false);
+  const loadHosts = Effect.gen(function* () {
+    const reads = yield* FleetSnapshotReads;
+    const snapshot = yield* reads.load;
+    yield* Effect.sync(() => {
+      hosts = snapshot.hosts ?? [];
+      checked = true;
+      loadFailed = false;
+    });
+  });
   $effect(() => {
-    hint = "";
-    if (!hostKey || devboxRepositoryUnavailableReason(getRepo())) return;
+    loadFailed = false;
+    // Load hosts even when a devbox default cannot take this repository, so
+    // the other machines can be offered instead.
+    if (!target) return;
     hosts = null;
     checked = false;
     const execution = untrack(() =>
@@ -47,34 +94,110 @@ export function createDefaultWorkspaceTarget(runtime: AppRuntime, getTarget: () 
           yield* Effect.sync(() => {
             hosts = reads.hosts ?? null;
           });
-          const snapshot = yield* reads.load;
-          yield* Effect.sync(() => {
-            hosts = snapshot.hosts ?? [];
-            checked = true;
-          });
+          yield* loadHosts;
         }),
         {
           operation: "check workspace machine",
           safeContext: {},
           onFailure: () => {
-            hint = "Preferred devbox status unavailable. Forge will check it when creating the workspace.";
+            loadFailed = true;
           },
         },
       ),
     );
     return () => execution.interrupt();
   });
+  const host = $derived(findDefaultTargetHost(target, hosts ?? []));
+  // A devbox or node ID can be sent before the snapshot arrives; the create
+  // route validates it. An origin must first resolve to a node ID.
+  const hostKey = $derived.by(() => {
+    if (!target) return undefined;
+    if (host) return workspaceHostKey(host);
+    return target.startsWith("devbox:") || isNodeID(target) ? target : undefined;
+  });
   const reason = $derived.by(() => {
-    if (!hostKey) return "";
+    if (!target) return "";
     const repo = getRepo();
-    const unsupported = devboxRepositoryUnavailableReason(repo);
-    if (unsupported) return unsupported;
-    const host = hosts?.find((candidate) => candidate.configKey === hostKey);
-    if (host) return workspaceTargetUnavailableReason(host, repo, checked);
-    // The create route validates this exact devbox; discovery is not admission.
-    return checked ? "Your preferred machine is unavailable. Choose another default in Settings → Workspaces." : "";
+    if (target.startsWith("devbox:")) {
+      const unsupported = devboxRepositoryUnavailableReason(repo);
+      if (unsupported) return unsupported;
+    }
+    if (host) {
+      const unavailable = workspaceTargetUnavailableReason(host, repo, checked);
+      if (!unavailable || host.kind === "devbox") return unavailable;
+      return `Your default machine, ${workspaceHostLabel(host)}, is unavailable: ${unavailable}`;
+    }
+    if (target.startsWith("devbox:")) {
+      // The create route validates this exact devbox; discovery is not admission.
+      return checked ? "Your preferred machine is unavailable. Choose another default in Settings → Workspaces." : "";
+    }
+    if (checked) return `Your default machine, ${target}, is not in this fleet.`;
+    if (loadFailed && !isNodeID(target)) return `Could not check your default machine, ${target}.`;
+    return isNodeID(target) ? "" : "Checking your default machine…";
+  });
+  const hint = $derived(
+    loadFailed && hostKey
+      ? target.startsWith("devbox:")
+        ? "Preferred devbox status unavailable. Forge will check it when creating the workspace."
+        : "Default machine status unavailable. Forge will check it when creating the workspace."
+      : "",
+  );
+  // An offline or unreachable default can come back; recheck until it does.
+  // A devbox that cannot take this repository will not, but a failed read
+  // still retries so the other machines can be offered.
+  const recheck = $derived(
+    loadFailed ||
+      (checked && reason !== "" && !(target.startsWith("devbox:") && devboxRepositoryUnavailableReason(getRepo()))),
+  );
+  $effect(() => {
+    if (!recheck) return;
+    const reload = loadHosts.pipe(
+      Effect.catch(() =>
+        Effect.sync(() => {
+          loadFailed = true;
+        }),
+      ),
+    );
+    const execution = untrack(() =>
+      runtime.runCommand(
+        Effect.all(
+          [
+            pollWhileVisible(reload, "15 seconds"),
+            Stream.runForEach(workspaceEventStream(subscribeWorkspaceEvents), () => reload),
+          ],
+          { concurrency: "unbounded", discard: true },
+        ),
+        {
+          operation: "recheck workspace machine",
+          safeContext: {},
+          onFailure: (failure) => console.error("Default machine recheck stopped", failure),
+        },
+      ),
+    );
+    return () => execution.interrupt();
+  });
+  // When the default cannot take the workspace, offer the machines that can.
+  const alternatives = $derived.by((): WorkspaceHostChoice[] => {
+    if (!reason || !checked || !hosts) return [];
+    const repo = getRepo();
+    return hosts
+      .filter((candidate) => candidate !== host && !workspaceTargetUnavailableReason(candidate, repo, true))
+      .map((candidate) => ({ hostKey: workspaceHostKey(candidate), label: workspaceHostLabel(candidate) }));
   });
   return {
+    /** Checks the machines again, such as after a create on the default failed. */
+    recheck() {
+      if (!target) return;
+      untrack(() =>
+        runtime.runCommand(loadHosts, {
+          operation: "recheck workspace machine",
+          safeContext: {},
+          onFailure: () => {
+            loadFailed = true;
+          },
+        }),
+      );
+    },
     get hostKey() {
       return hostKey;
     },
@@ -83,6 +206,9 @@ export function createDefaultWorkspaceTarget(runtime: AppRuntime, getTarget: () 
     },
     get hint() {
       return hint;
+    },
+    get alternatives() {
+      return alternatives;
     },
   };
 }

@@ -151,6 +151,8 @@ approvals, token permissions, and secrets are separate controls. See
 - Kata task identifiers are internal execution metadata; never include them in branch names, commit messages, PR titles or descriptions, or GitHub comments.
 - Pull requests must have a user-facing benefit or improve the developer experience, and the body must say which one.
 - Write issues and pull requests in English.
+- End every commit message with a `Co-authored-by:` trailer naming the agent that wrote the change.
+- End the pull request description with a `Model used:` line naming the model, such as `Model used: Opus 5.5` or `Model used: GPT-6.1 Sol`. Squash-merge keeps only the description, so put the `Co-authored-by:` trailer there too.
 - Write commit messages and PR titles as [Commit Messages](#commit-messages) requires.
 - Commit bodies must add any important context about the bug, regression, constraint, or tradeoff that motivated the change; do not rely on the diff to explain intent
 - Never push unless the repository's non-mutating lint check passes after the final relevant edit; keep local and CI linter versions aligned. (`Makefile`, `prek.toml`, `.github/workflows/ci.yml`)

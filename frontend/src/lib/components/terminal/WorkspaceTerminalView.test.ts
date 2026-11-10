@@ -6452,6 +6452,134 @@ describe("WorkspaceTerminalView", () => {
       expect(screen.queryByRole("dialog", { name: "Quick actions" })).toBeNull();
     });
 
+    it("has the server deliver a quick action's prompt to the terminal agent open in the pane", async () => {
+      const handoffBodies: unknown[] = [];
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: Request | URL | string, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(String(input), init);
+          if (!request.url.includes("/workspaces/ws-1/runtime/agent-handoffs")) return originalFetch(input, init);
+          handoffBodies.push(await request.json());
+          return Response.json({
+            session: runningSession,
+            initial_message: { state: "delivered", target_key: "helper", message_bytes: 18 },
+          });
+        }),
+      );
+      // The action names an agent that is not configured; the open session takes it anyway.
+      mocks.quickActions = [{ label: "Review", agent: "missing", prompt: "Review this change" }];
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+      await screen.findByRole("tab", { name: /Helper/ });
+      await waitFor(() => expect(sockets).toHaveLength(1));
+      const strip = screen.getAllByRole("tablist", { name: "Workflow group tabs" })[0]!;
+      await fireEvent.click(within(strip).getByRole("button", { name: "Quick actions" }));
+      await fireEvent.click(
+        within(screen.getByRole("dialog", { name: "Quick actions" })).getByRole("button", {
+          name: "Send Review to Helper",
+        }),
+      );
+      await waitFor(() =>
+        expect(handoffBodies).toEqual([{ session_key: runningSession.key, message: "Review this change" }]),
+      );
+      expect(screen.queryByRole("dialog", { name: "Quick actions" })).toBeNull();
+      expect(mocks.showFlash).not.toHaveBeenCalled();
+      // The browser types nothing itself, and the send is not a launch.
+      expect(
+        sockets[0]!.send.mock.calls
+          .map(([data]) => (typeof data === "string" ? data : new TextDecoder().decode(data as Uint8Array)))
+          .join(""),
+      ).not.toContain("Review this change");
+      expect(within(strip).getAllByRole("tab")).toHaveLength(1);
+    });
+
+    it("focuses the terminal once the prompt is delivered, unless the user is typing elsewhere", async () => {
+      let handoff = deferred<Response>();
+      const delivered = () =>
+        Response.json({
+          session: runningSession,
+          initial_message: { state: "delivered", target_key: "helper", message_bytes: 18 },
+        });
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: Request | URL | string, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(String(input), init);
+          if (!request.url.includes("/workspaces/ws-1/runtime/agent-handoffs")) return originalFetch(input, init);
+          return handoff.promise;
+        }),
+      );
+      mocks.quickActions = [{ label: "Review", agent: "helper", prompt: "Review this change" }];
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+      await screen.findByRole("tab", { name: /Helper/ });
+      await waitFor(() => expect(sockets).toHaveLength(1));
+      const strip = screen.getAllByRole("tablist", { name: "Workflow group tabs" })[0]!;
+      const terminalFocus = mocks.mockTerminalInstances[0]!.focus;
+      const send = async () => {
+        // Cleared first, so a focus made by the click itself stays visible.
+        terminalFocus.mockClear();
+        await fireEvent.click(within(strip).getByRole("button", { name: "Quick actions" }));
+        await fireEvent.click(
+          within(screen.getByRole("dialog", { name: "Quick actions" })).getByRole("button", {
+            name: "Send Review to Helper",
+          }),
+        );
+      };
+
+      // Keys typed before the server writes the prompt would be submitted with it.
+      await send();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(terminalFocus).not.toHaveBeenCalled();
+      handoff.resolve(delivered());
+      await waitFor(() => expect(terminalFocus).toHaveBeenCalled());
+
+      handoff = deferred<Response>();
+      await send();
+      const elsewhere = document.createElement("input");
+      document.body.append(elsewhere);
+      elsewhere.focus();
+      handoff.resolve(delivered());
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(terminalFocus).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(elsewhere);
+      elsewhere.remove();
+    });
+
+    it.each(["plain_shell", "shell"])(
+      "offers no send to a %s session, where a prompt would run as commands",
+      async (kind) => {
+        mocks.getWorkspaceRuntime.mockResolvedValue({
+          ...runtimeWithStaleSession(),
+          sessions: [{ ...runningShellSession, kind, display_region: "workflow" }],
+        });
+        mocks.quickActions = [{ label: "Review", agent: "helper", prompt: "Review this change" }];
+        render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+        await screen.findByRole("tab", { name: /Shell/ });
+        const strip = screen.getAllByRole("tablist", { name: "Workflow group tabs" })[0]!;
+        await fireEvent.click(within(strip).getByRole("button", { name: "Quick actions" }));
+        const menu = screen.getByRole("dialog", { name: "Quick actions" });
+        expect(within(menu).getByRole("button", { name: "Review" })).toBeTruthy();
+        expect(within(menu).queryByRole("button", { name: /^Send Review to/ })).toBeNull();
+      },
+    );
+
+    it.each([
+      { kind: "acp", status: "parked", offered: true },
+      { kind: "agent", status: "parked", offered: false },
+    ])("offers the send for a parked $kind session: $offered", async ({ kind, status, offered }) => {
+      mocks.getWorkspaceRuntime.mockResolvedValue({
+        ...runtimeWithStaleSession(),
+        sessions: [{ ...runningSession, kind, status }],
+      });
+      mocks.quickActions = [{ label: "Review", agent: "helper", prompt: "Review this change" }];
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+      await screen.findByRole("tab", { name: /Helper/ });
+      const strip = screen.getAllByRole("tablist", { name: "Workflow group tabs" })[0]!;
+      await fireEvent.click(within(strip).getByRole("button", { name: "Quick actions" }));
+      const menu = screen.getByRole("dialog", { name: "Quick actions" });
+      expect(within(menu).queryAllByRole("button", { name: "Send Review to Helper" })).toHaveLength(offered ? 1 : 0);
+    });
+
     it("keeps an explicitly opened launcher dismissed when its workspace becomes visible", async () => {
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
       claimForPrs();

@@ -102,7 +102,7 @@ func TestStoreBindsDigestOnlyPendingInboundCredential(t *testing.T) {
 	assert.Equal(testHubNodeID, principal.NodeID)
 }
 
-func TestDirectionalGrantsAreClosedAndNonOverlapping(t *testing.T) {
+func TestDirectionalGrantsAreClosed(t *testing.T) {
 	assert := assert.New(t)
 
 	hubToSpoke := scopeSet(HubToSpokeScopes())
@@ -116,12 +116,11 @@ func TestDirectionalGrantsAreClosedAndNonOverlapping(t *testing.T) {
 
 	spokeToHub := scopeSet(SpokeToHubScopes())
 	assert.Equal(map[Scope]struct{}{
-		ScopeSnapshotRead: {}, ScopeProviderRead: {}, ScopeProviderWrite: {},
+		ScopeSnapshotRead: {}, ScopeWorkspaceRead: {}, ScopeWorkspaceWrite: {},
+		ScopeTerminalAttach: {}, ScopeProviderRead: {}, ScopeProviderWrite: {},
 		ScopeEventsRead: {}, ScopeEnrollmentActivate: {}, ScopeBrowserLogin: {},
-	}, spokeToHub)
-	assert.NotContains(spokeToHub, ScopeWorkspaceRead)
-	assert.NotContains(spokeToHub, ScopeWorkspaceWrite)
-	assert.NotContains(spokeToHub, ScopeTerminalAttach)
+	}, spokeToHub, "spokes drive other members' workspaces through the hub")
+	assert.NotContains(spokeToHub, ScopeProviderHandoff)
 
 	assert.NotContains(scopeSet(PendingHubToSpokeScopes()), ScopeBrowserLogin,
 		"pending peers cannot sign browsers in")

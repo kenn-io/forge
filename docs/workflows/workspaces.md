@@ -34,6 +34,13 @@ prompt once the agent is ready, so a routine task such as "rebase this pull
 request" is one click. Configure quick actions under **Settings → Quick
 actions** (see [Configuration](../configuration.md#quick-actions)).
 
+Inside a workspace, the same lightning icon sits in each pane's tab strip. When
+the pane is showing a running agent or chat, point at a quick action and click
+the send icon at the end of its row to send the prompt to that agent instead of
+launching a new one. A chat receives it as a message and a terminal agent has it
+typed and submitted, whichever agent the quick action names. Shells have no send
+icon.
+
 ### Choose a machine in a fleet
 
 On a fleet hub, **New workspace** includes a **Run on** selector. Choose the hub

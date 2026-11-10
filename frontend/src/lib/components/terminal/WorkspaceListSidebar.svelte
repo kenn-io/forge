@@ -419,10 +419,11 @@
   const fleetDegraded = $derived(
     fleetError !== null || Object.keys(fleetPeerErrors).length > 0,
   );
-  const showWorkspaceHostBadges = $derived(
-    fleetHosts.length > 1 &&
-      fleetHosts.find((host) => host.kind === "self")?.federationRole === "hub",
-  );
+  // Hubs and spokes list the whole fleet's workspaces, so rows name their machine.
+  const showWorkspaceHostBadges = $derived.by(() => {
+    const role = fleetHosts.find((host) => host.kind === "self")?.federationRole;
+    return fleetHosts.length > 1 && (role === "hub" || role === "spoke");
+  });
 
   // Flat ordering for status and timestamp sorts. The org/repo mode keeps
   // the API order (created_at DESC) inside each repo group.
@@ -1360,12 +1361,15 @@
     );
   }
 
-  // Fleet workspaces cannot take an agent handoff, so quick actions run
-  // only in local and devbox workspaces that finished or are finishing setup.
+  // Quick actions run in workspaces that finished or are finishing setup.
   function quickActionAvailable(ws: Workspace): boolean {
-    return !workspaceActionsDisabled(ws) &&
-      ws.status !== "error" &&
-      (!isRemoteWorkspace(ws) || ws.fleet_host_key?.startsWith("devbox:") === true);
+    return !workspaceActionsDisabled(ws) && ws.status !== "error";
+  }
+
+  // This Forge's launch targets do not describe another fleet member, which
+  // checks its own agents when the action runs.
+  function onOtherFleetMember(ws: Workspace): boolean {
+    return isRemoteWorkspace(ws) && ws.fleet_host_key?.startsWith("devbox:") !== true;
   }
 
   function quickActionAgentLabel(action: QuickAction): string {
@@ -2102,16 +2106,17 @@
   {#if quickActions.length > 0}
     <MenuSeparator />
     {#each quickActions as action (action.label)}
-      {@const reason = quickActionDisabledReason(action, launchTargets) ||
-        (targets.length === 0 ? "Not available in these workspaces" : "")}
-      <MenuItem disabled={reason !== ""} textValue={action.label} onselect={() => chooseQuickAction(action, targets)}>
+      {@const localReason = quickActionDisabledReason(action, launchTargets)}
+      {@const eligible = localReason ? targets.filter(onOtherFleetMember) : targets}
+      {@const reason = eligible.length === 0 ? localReason || "Not available in these workspaces" : ""}
+      <MenuItem disabled={reason !== ""} textValue={action.label} onselect={() => chooseQuickAction(action, eligible)}>
         {#snippet icon()}<ZapIcon size={14} />{/snippet}
         {#snippet trailing()}{reason || quickActionAgentLabel(action)}{/snippet}
         {selectedCount === 1
           ? action.label
-          : targets.length === selectedCount
+          : eligible.length === selectedCount
             ? `${action.label} in ${selectedCount} workspaces...`
-            : `${action.label} in ${targets.length} of ${selectedCount} workspaces...`}
+            : `${action.label} in ${eligible.length} of ${selectedCount} workspaces...`}
       </MenuItem>
     {/each}
   {/if}

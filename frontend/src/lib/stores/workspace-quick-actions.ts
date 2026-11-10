@@ -5,7 +5,8 @@ import type { AppRuntime } from "../app/runtime.js";
 import { reportWorkspaceOpened, reportWorkspaceOpenError } from "../app/telemetry.js";
 import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
 import type { WorkspaceRuntimeLaunchLeaf } from "../components/terminal/workspace-runtime-workflow.js";
-import { executeGeneratedApiRequest } from "../api/generated-api.js";
+import { executeGeneratedApiRequest, executeOpaqueGeneratedApiRequest } from "../api/generated-api.js";
+import { ProblemCodes } from "../api/problems.js";
 import { showFlash } from "./flash.svelte.js";
 
 /** Quick actions ordered by label, ignoring case; ties keep their settings order. */
@@ -23,8 +24,16 @@ export function quickActionTarget(
   );
 }
 
-/** Why a quick action cannot run right now, or "" when it can. */
-export function quickActionDisabledReason(action: QuickAction, launchTargets: readonly LaunchTarget[]): string {
+/**
+ * Why a quick action cannot run right now, or "" when it can. launchTargets
+ * describe this Forge, so a remote execution host validates its own agents.
+ */
+export function quickActionDisabledReason(
+  action: QuickAction,
+  launchTargets: readonly LaunchTarget[],
+  remoteHost = false,
+): string {
+  if (remoteHost) return "";
   const target = quickActionTarget(action, launchTargets);
   if (!target) return `Agent "${action.agent}" is not configured`;
   if (!target.available) return target.disabled_reason || `Agent "${action.agent}" is not available`;
@@ -47,7 +56,7 @@ export const quickActionLaunches = new SvelteMap<
   }
 >();
 
-/** Identifies a workspace in quickActionWorkspaces; devbox workspace IDs are only unique per host. */
+/** Identifies a workspace in quickActionWorkspaces; remote workspace IDs are only unique per host. */
 export function quickActionWorkspaceKey(workspaceId: string, hostKey?: string): string {
   return hostKey ? `${hostKey}\0${workspaceId}` : workspaceId;
 }
@@ -98,14 +107,25 @@ export function launchWorkspaceQuickAction(
 }
 
 /**
- * Sets up a local workspace whose setup failed again, then launches the
- * quick action there. The retry takes the workspace's place in the launch
- * queue, so launches still run in the order requested.
+ * Sets up a workspace whose setup failed again, on the machine that owns it,
+ * then launches the quick action there. The retry takes the workspace's place
+ * in the launch queue, so launches still run in the order requested.
  */
-export function retryWorkspaceQuickAction(workspaceId: string, action: QuickAction) {
-  const { workspaceKey, handoff } = quickActionHandoff(workspaceId, action);
-  const retry = executeGeneratedApiRequest("POST retry workspace", (client, signal) =>
-    client.WorkspacesService.retryWorkspace({ id: workspaceId }, { signal }),
+export function retryWorkspaceQuickAction(workspaceId: string, action: QuickAction, hostKey?: string) {
+  const { workspaceKey, handoff } = quickActionHandoff(workspaceId, action, hostKey);
+  const retry = (
+    hostKey
+      ? executeOpaqueGeneratedApiRequest<unknown>("POST retry workspace", (client, signal) =>
+          hostKey.startsWith("devbox:")
+            ? client.DevboxesService.retryDevboxWorkspace(
+                { connectionId: hostKey.slice(7), id: workspaceId },
+                { signal },
+              )
+            : client.FleetService.retryFleetWorkspace({ hostKey, id: workspaceId }, { signal }),
+        )
+      : executeGeneratedApiRequest("POST retry workspace", (client, signal) =>
+          client.WorkspacesService.retryWorkspace({ id: workspaceId }, { signal }),
+        )
   ).pipe(
     Effect.matchEffect({
       onFailure: (failure) => {
@@ -151,7 +171,9 @@ function quickActionHandoff(
           ? client.DevboxesService.launchDevboxHandoff({ connectionId: hostKey.slice(7), id: workspaceId }, body, {
               signal,
             })
-          : client.WorkspacesService.launchWorkspaceAgentHandoff({ id: workspaceId }, body, { signal }),
+          : hostKey
+            ? client.FleetService.launchFleetWorkspaceAgentHandoff({ hostKey, id: workspaceId }, body, { signal })
+            : client.WorkspacesService.launchWorkspaceAgentHandoff({ id: workspaceId }, body, { signal }),
       ),
     ),
     Effect.match({
@@ -177,6 +199,15 @@ function quickActionHandoff(
             type: "unconfirmed",
             reason: "lost contact with Kenn Forge; check the workspace for the agent",
             message: `"${action.label}": lost contact with Kenn Forge; check the workspace for the agent.`,
+          };
+        }
+        // A remote machine may have accepted the handoff before the link to it
+        // broke, so a relay error is as unknown as a lost request.
+        if (hostKey && failure.problem.code === ProblemCodes.upstreamError) {
+          return {
+            type: "unconfirmed",
+            reason: "lost contact with the workspace's machine; check the workspace for the agent",
+            message: `"${action.label}": lost contact with the workspace's machine; check the workspace for the agent.`,
           };
         }
         const detail = failure.problem.detail ?? failure.problem.title ?? "agent handoff failed";
@@ -207,6 +238,87 @@ function quickActionHandoff(
   return { workspaceKey, handoff };
 }
 
+/**
+ * Sends a quick action's prompt to a terminal agent that is already running.
+ * The server types it, as it does a launch's first prompt, so the agent gets
+ * the paste and then Enter. Nothing launches.
+ */
+export function sendQuickActionToSession(
+  workspaceId: string,
+  action: QuickAction,
+  session: Pick<RuntimeSession, "key" | "label">,
+  hostKey?: string,
+) {
+  // No target_key: a server that predates session_key refuses the request
+  // instead of launching the action's agent.
+  const body = { session_key: session.key, message: action.prompt };
+  const send = executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
+    hostKey?.startsWith("devbox:")
+      ? client.DevboxesService.launchDevboxHandoff({ connectionId: hostKey.slice(7), id: workspaceId }, body, {
+          signal,
+        })
+      : client.WorkspacesService.launchWorkspaceAgentHandoff({ id: workspaceId }, body, { signal }),
+  ).pipe(
+    Effect.match({
+      onSuccess: (): QuickActionOutcome => ({ type: "started" }),
+      onFailure: (failure): QuickActionOutcome => {
+        if (failure._tag !== "ApiProblemError") {
+          const reason = `lost contact with Kenn Forge; check ${session.label} before sending it again`;
+          return { type: "unconfirmed", reason, message: `"${action.label}": ${reason}.` };
+        }
+        const reason = failure.problem.detail ?? failure.problem.title ?? "the prompt was not delivered";
+        // A server or upstream error can come after the write began, so the
+        // agent may still receive the prompt. Only a refusal is definite.
+        if ((failure.problem.status ?? 0) >= 500) {
+          return {
+            type: "unconfirmed",
+            reason,
+            message: `"${action.label}" may not have reached ${session.label}: ${reason}. Check it before sending again.`,
+          };
+        }
+        return {
+          type: "failed",
+          reason,
+          message: `"${action.label}" was not sent to ${session.label}: ${reason}`,
+        };
+      },
+    }),
+  );
+  // Prompts for one session arrive in the order chosen. They get their own
+  // queue: behind the workspace's launches they could wait minutes.
+  return enqueueLaunch(`${quickActionWorkspaceKey(workspaceId, hostKey)}\0session:${session.key}`, send);
+}
+
+/**
+ * Sends a quick action to a running terminal agent and reports anything but
+ * a clean send. onSent runs once the server has typed the prompt.
+ */
+export function runQuickActionInSession(
+  runtime: AppRuntime,
+  workspaceId: string,
+  action: QuickAction,
+  session: Pick<RuntimeSession, "key" | "label">,
+  hostKey?: string,
+  onSent?: () => void,
+): void {
+  runtime.runCommand(
+    sendQuickActionToSession(workspaceId, action, session, hostKey).pipe(
+      Effect.flatMap((outcome) =>
+        Effect.sync(() => {
+          if (outcome.type === "started") onSent?.();
+          else if (outcome.type === "failed") showFlash(outcome.message, { tone: "danger" });
+          else showFlash(outcome.message, { tone: "warning" });
+        }),
+      ),
+    ),
+    {
+      operation: "send workspace quick action to session",
+      safeContext: { workspaceId },
+      onFailure: () => showFlash(`"${action.label}" was not sent to ${session.label}.`, { tone: "danger" }),
+    },
+  );
+}
+
 /** Runs a quick action in the background and reports anything but a clean start. */
 export function runWorkspaceQuickAction(
   runtime: AppRuntime,
@@ -217,9 +329,60 @@ export function runWorkspaceQuickAction(
   onLaunched?: (session: RuntimeSession) => void,
   leaf?: WorkspaceRuntimeLaunchLeaf,
 ): void {
+  reportQuickAction(
+    runtime,
+    workspaceId,
+    itemType,
+    action,
+    launchWorkspaceQuickAction(workspaceId, action, hostKey, onLaunched, leaf),
+  );
+}
+
+/**
+ * Starts a quick action in a workspace another machine returned for an item.
+ * One whose setup failed is set up again first, as the item list does; one
+ * being deleted never becomes ready, so it is refused at once.
+ */
+export function startReturnedWorkspaceQuickAction(
+  workspace: { readonly id: string; readonly status?: string | undefined },
+  action: QuickAction,
+  hostKey: string,
+): ReturnType<typeof launchWorkspaceQuickAction> {
+  if (workspace.status === "deleting" || workspace.status === "deletion_failed") {
+    const reason = "its workspace is being deleted";
+    return Effect.succeed({ type: "failed", reason, message: `"${action.label}" could not start: ${reason}` });
+  }
+  if (workspace.status === "error") return retryWorkspaceQuickAction(workspace.id, action, hostKey);
+  return launchWorkspaceQuickAction(workspace.id, action, hostKey);
+}
+
+/** Runs a quick action in a workspace another machine returned for an item. */
+export function runReturnedWorkspaceQuickAction(
+  runtime: AppRuntime,
+  workspace: { readonly id: string; readonly status?: string | undefined },
+  itemType: WorkspaceDetail["item_type"],
+  action: QuickAction,
+  hostKey: string,
+): void {
+  reportQuickAction(
+    runtime,
+    workspace.id,
+    itemType,
+    action,
+    startReturnedWorkspaceQuickAction(workspace, action, hostKey),
+  );
+}
+
+function reportQuickAction(
+  runtime: AppRuntime,
+  workspaceId: string,
+  itemType: WorkspaceDetail["item_type"] | undefined,
+  action: QuickAction,
+  launch: ReturnType<typeof launchWorkspaceQuickAction>,
+): void {
   if (itemType !== undefined) reportWorkspaceOpened(runtime, itemType);
   runtime.runCommand(
-    launchWorkspaceQuickAction(workspaceId, action, hostKey, onLaunched, leaf).pipe(
+    launch.pipe(
       Effect.flatMap((outcome) =>
         Effect.sync(() => {
           if (outcome.type === "started") return;

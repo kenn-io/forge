@@ -16,7 +16,7 @@ export type ListIssuesParams = {
   /** Only include issues referenced by a pull request. */
   referenced_by_pr?: boolean;
   q?: string;
-  /** Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers. */
+  /** Rank titles, descriptions, and comments by meaning. Requires q and semantic search on the Forge that syncs providers. */
   semantic?: boolean;
   assignee?: string;
   limit?: number;

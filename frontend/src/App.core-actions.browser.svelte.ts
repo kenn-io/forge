@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
-import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
+import { jsonResponse, mockPullFixture, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
 let mounted: MountedBrowserApp | null = null;
@@ -67,5 +67,56 @@ describe("core action navigation", () => {
       () => expect(prViews()).toMatchObject([{ event: "pr_viewed", properties: { provider: "github" } }]),
       WAIT,
     );
+  });
+
+  it("opens a PR's local workspace from a fleet workspace's linked item on this machine", async () => {
+    window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = true;
+    const remoteWorkspace = {
+      id: "ws-remote",
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widgets",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repo_path: "acme/widgets",
+      },
+      item_type: "pull_request",
+      item_number: 42,
+      source_item_visible: true,
+      git_head_ref: "feature/auth",
+      worktree_path: "/tmp/worktrees/ws-remote",
+      tmux_session: "forge-remote",
+      status: "ready",
+      enrichment_status: "fresh",
+      created_at: "2026-04-10T12:00:00Z",
+    };
+    const pr = mockPullFixture(42);
+    const routes: MockRouteOverride = (request) => {
+      if (request.url.pathname === "/api/v1/fleet/hosts/peer-a/workspaces/ws-remote")
+        return jsonResponse(remoteWorkspace);
+      if (request.method === "GET" && request.url.pathname === "/api/v1/pulls/github/acme/widgets/42") {
+        return jsonResponse({
+          merge_request: pr,
+          repo: { ...pr.repo, platform_repo_id: 1001 },
+          repo_owner: pr.repo_owner,
+          repo_name: pr.repo_name,
+          platform_host: pr.platform_host,
+          platform_head_sha: pr.platform_head_sha ?? "",
+          detail_loaded: true,
+          detail_fetched_at: "2026-03-30T14:00:00Z",
+          workspace: { id: "ws-local", status: "ready" },
+        });
+      }
+      return null;
+    };
+    mounted = await mountBrowserApp("/m/workspaces/fleet/peer-a/ws-remote/item", { overrides: [routes] });
+    await page
+      .getByRole("button", { name: /Open Workspace|Workspace/ })
+      .first()
+      .click();
+    await vi.waitFor(() => expect(window.location.pathname).toBe("/m/workspaces/local/ws-local"), WAIT);
   });
 });

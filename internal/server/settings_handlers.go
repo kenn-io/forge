@@ -322,9 +322,11 @@ func (s *Server) commitLocalSettings(
 		return httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 	if workspaces := input.Body.Workspaces; workspaces != nil && workspaces.DefaultExecutionTarget != nil {
-		if err := config.ValidateDefaultExecutionTarget(*workspaces.DefaultExecutionTarget); err != nil {
+		target, err := config.NormalizeDefaultExecutionTarget(*workspaces.DefaultExecutionTarget)
+		if err != nil {
 			return httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
 		}
+		workspaces.DefaultExecutionTarget = &target
 	}
 
 	s.configReloadMu.Lock()

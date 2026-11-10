@@ -1236,7 +1236,7 @@ func acpNotices(t *testing.T, agent ACPChat) []string {
 	return state.Notices
 }
 
-func acpOptionValue(t *testing.T, agent ACPChat, id string) string {
+func acpOptionValue(t *testing.T, agent interface{ Snapshot() ([]byte, error) }, id string) string {
 	t.Helper()
 	data, err := agent.Snapshot()
 	require.NoError(t, err)

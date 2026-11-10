@@ -24,7 +24,7 @@
     onBack: () => void;
     onMissing: () => void;
     onTabChange: (tab: "conversation" | "files", options?: { replace?: boolean }) => void;
-    onOpenWorkspace: (workspaceId: string) => void;
+    onOpenWorkspace: (workspaceId: string, hostKey?: string) => void;
     onViewWorkspaces: () => void;
   }
 

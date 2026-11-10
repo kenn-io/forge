@@ -38,11 +38,13 @@ Processes on the execution host:
   chat state, not a second protocol decoder (`internal/workspace/localruntime/acp.go::startACPSession`).
 - ACP agents run on the workspace's execution host, including devboxes and Fleet nodes;
   browser disconnects leave the process and accepted turn running.
-- ACP option selections are remembered per configured client and execution host, across
+- People's ACP option selections are remembered per configured client and execution host, across
   workspaces and restarts; restore the model before dependent options, skip choices no longer
   offered, and merge only agent-confirmed changes (`internal/workspace/localruntime/acp_settings.go`).
 - Launch ACP options (quick actions) apply over remembered ones for that chat only and are never
-  remembered; a reload keeps the chat's last confirmed values; unoffered choices become a notice.
+  remembered; a reload keeps the last confirmed values for those options; unoffered choices become a notice.
+- Coordinator setting changes and their confirmed dependent changes leave defaults alone and
+  may revert on reload; coordinators must reapply their settings when resuming.
 - An ACP target with `disable_forge_tools` receives no Forge MCP endpoint or credentials,
   including in settings probes and when reattaching or replacing an owner.
 - Codex ACP chats derive Full access (`dangerFullAccess`/`never`) or Read-only (`readOnly`/

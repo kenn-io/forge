@@ -285,13 +285,14 @@ export function promoteWorkspaceCreateLaunch(
   identity: WorkspaceItemIdentity,
   workspaceId: string,
   workspaceHostKey: string | undefined,
+  origin: PendingWorkspaceLaunch["origin"] = "create",
 ): void {
   const targetKey = pendingWorkspaceCreateLaunch(identity);
   if (!workspaceId || targetKey === null) return;
 
   // Publish the workspace-scoped intent first. Svelte batches both assignments,
   // so reactive consumers can never observe a flush where neither form exists.
-  queueWorkspaceLaunch(workspaceId, targetKey, workspaceHostKey);
+  queueWorkspaceLaunch(workspaceId, targetKey, workspaceHostKey, origin);
   pending = pending.map((entry) =>
     identityEquals(entry.identity, identity) ? { ...entry, launchTargetKey: null } : entry,
   );

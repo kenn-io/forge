@@ -449,8 +449,12 @@ workflow.
 Forge can embed pull request and issue titles, descriptions, and comments so
 agents can find work by meaning instead of keywords, for example when building
 a worklist about "flaky CI" or looking for duplicates of a bug. Code and diffs
-are never embedded. It is off until you point Forge at an OpenAI-compatible
-embeddings endpoint, such as a local Ollama:
+are never embedded. Run `kenn-forge embeddings local` to enable local search.
+Forge prefers a running Ollama with Nomic, then the shared built-in server.
+Setup downloads missing shared assets with your consent. Run setup again to
+switch from automatic discovery or a configured endpoint to the built-in server. A configured endpoint
+takes precedence over `local_embeddings = "builtin"`. Restart Forge after setup.
+To configure an endpoint yourself, for example Ollama:
 
 ```toml
 [embeddings]
@@ -470,9 +474,11 @@ set `api_key` to the key itself or to `{ env = "NAME" }` or
 
 The Forge that syncs providers builds the index in `semantic.db` under
 `data_dir` after each sync and serves searches for its whole fleet. Changing
-`[embeddings]` requires a restart. A new model or prefix rebuilds the index;
-searches return partial results until the backfill finishes. The index is
-derived data: deleting `semantic.db` only costs a rebuild.
+`[embeddings]` or `local_embeddings` requires a restart. Switching a compatible
+Nomic recipe to the built-in server keeps the existing index. Changing the
+model, width, fingerprint salt, or prefix rebuilds it; searches return partial
+results until the backfill finishes. The index is derived data: deleting
+`semantic.db` only costs a rebuild.
 
 ## Workspace agents
 
@@ -544,6 +550,23 @@ effort = "high"
 These choices apply only to chats the quick action starts and never change
 your remembered choices. If the agent no longer offers a choice, the chat
 starts without it and says so.
+
+## Where new workspaces run
+
+`workspaces.default_execution_target` names the machine where workspaces
+created from this Forge's UI run. Leave it empty to create them on this Forge.
+It accepts a fleet member's HTTPS origin or node ID, or `devbox:<id>` for a
+connected devbox:
+
+```toml
+[workspaces]
+default_execution_target = "https://build-b.example.test"
+```
+
+A value naming this Forge itself creates workspaces locally. Forge never falls
+back to this Forge when the named machine is unavailable; the page offers the
+machines that are. See
+[Choose where new workspaces run](federated-fleet.md#choose-where-new-workspaces-run).
 
 ## Workspace terminals and tmux
 

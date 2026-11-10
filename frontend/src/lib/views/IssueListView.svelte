@@ -33,7 +33,7 @@
     autoSyncDetail?: IssueDetailSyncMode;
     hideStaleDetailWhileLoading?: boolean;
     onSidebarResize?: (width: number) => void;
-    onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
+    onOpenWorkspace?: ((workspaceId: string, hostKey?: string) => void) | undefined;
     onViewWorkspaces?: (() => void) | undefined;
     inlineWorkspace?: InlineWorkspaceController | null;
     /**

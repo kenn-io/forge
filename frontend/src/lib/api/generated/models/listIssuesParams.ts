@@ -23,7 +23,7 @@ export type ListIssuesParams = {
   offset?: number;
   /** Only include issues that do not involve the authenticated viewer. With involves_me, neither filter applies. */
   not_involves_me?: boolean;
-  /** Only include issues with an assignee. With unassigned, neither filter applies. */
+  /** Drop issues with no assignees; an issue whose assignees never synchronized stays. With unassigned, neither filter applies. */
   assigned?: boolean;
   /** Only include issues no pull request references. With referenced_by_pr, neither filter applies. */
   not_referenced_by_pr?: boolean;

@@ -23028,12 +23028,12 @@ paths:
           schema:
             description: Only include issues that do not involve the authenticated viewer. With involves_me, neither filter applies.
             type: boolean
-        - description: Only include issues with an assignee. With unassigned, neither filter applies.
+        - description: Drop issues with no assignees; an issue whose assignees never synchronized stays. With unassigned, neither filter applies.
           explode: false
           in: query
           name: assigned
           schema:
-            description: Only include issues with an assignee. With unassigned, neither filter applies.
+            description: Drop issues with no assignees; an issue whose assignees never synchronized stays. With unassigned, neither filter applies.
             type: boolean
         - description: Only include issues no pull request references. With referenced_by_pr, neither filter applies.
           explode: false
@@ -25014,12 +25014,12 @@ paths:
           schema:
             description: Only include pull requests that do not involve the authenticated viewer. With involves_me, neither filter applies.
             type: boolean
-        - description: Only include pull requests with an assignee. With unassigned, neither filter applies.
+        - description: Drop pull requests with no assignees; a pull request whose assignees never synchronized stays. With unassigned, neither filter applies.
           explode: false
           in: query
           name: assigned
           schema:
-            description: Only include pull requests with an assignee. With unassigned, neither filter applies.
+            description: Drop pull requests with no assignees; a pull request whose assignees never synchronized stays. With unassigned, neither filter applies.
             type: boolean
       responses:
         "200":

@@ -864,7 +864,7 @@ type ListMergeRequestsOpts struct {
 	ViewerLogins []RepoViewerLogin
 	// ViewerUninvolved inverts ViewerLogins: only subjects that do not involve the viewer.
 	ViewerUninvolved bool
-	// Assigned is the opposite of Unassigned: only pull requests with an assignee.
+	// Assigned is the opposite of Unassigned: every pull request Unassigned would drop.
 	Assigned bool
 }
 

@@ -46,7 +46,7 @@ type listIssuesInput struct {
 	Offset         int     `query:"offset"`
 	// The opposites of involves_me, unassigned, and referenced_by_pr.
 	NotInvolvesMe     bool `query:"not_involves_me" doc:"Only include issues that do not involve the authenticated viewer. With involves_me, neither filter applies."`
-	Assigned          bool `query:"assigned" doc:"Only include issues with an assignee. With unassigned, neither filter applies."`
+	Assigned          bool `query:"assigned" doc:"Drop issues with no assignees; an issue whose assignees never synchronized stays. With unassigned, neither filter applies."`
 	NotReferencedByPR bool `query:"not_referenced_by_pr" doc:"Only include issues no pull request references. With referenced_by_pr, neither filter applies."`
 }
 

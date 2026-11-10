@@ -55,7 +55,7 @@ type listPullsInput struct {
 	Offset     int     `query:"offset"`
 	// The opposites of involves_me and unassigned.
 	NotInvolvesMe bool `query:"not_involves_me" doc:"Only include pull requests that do not involve the authenticated viewer. With involves_me, neither filter applies."`
-	Assigned      bool `query:"assigned" doc:"Only include pull requests with an assignee. With unassigned, neither filter applies."`
+	Assigned      bool `query:"assigned" doc:"Drop pull requests with no assignees; a pull request whose assignees never synchronized stays. With unassigned, neither filter applies."`
 }
 
 type listPullsOutput = httpapi.BodyOutput[[]MergeRequestResponse]

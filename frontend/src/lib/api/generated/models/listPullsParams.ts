@@ -25,6 +25,6 @@ export type ListPullsParams = {
   offset?: number;
   /** Only include pull requests that do not involve the authenticated viewer. With involves_me, neither filter applies. */
   not_involves_me?: boolean;
-  /** Only include pull requests with an assignee. With unassigned, neither filter applies. */
+  /** Drop pull requests with no assignees; a pull request whose assignees never synchronized stays. With unassigned, neither filter applies. */
   assigned?: boolean;
 };

@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/apiclient/roborev"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/procutil"
@@ -1963,7 +1964,7 @@ fi
 				}
 			}))
 			t.Cleanup(server.Close)
-			mgr.SetRoborevEndpoint(server.URL)
+			mgr.SetRoborevEndpoint(server.URL, roborev.NewHTTPClient(server.URL, ""))
 			var invalidations atomic.Int32
 			mgr.SetRoborevRepositoryInvalidator(func() { invalidations.Add(1) })
 
@@ -2101,7 +2102,7 @@ chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
 	}))
 	t.Cleanup(server.Close)
 	t.Cleanup(release)
-	mgr.SetRoborevEndpoint(server.URL)
+	mgr.SetRoborevEndpoint(server.URL, roborev.NewHTTPClient(server.URL, ""))
 
 	firstDone := make(chan error, 1)
 	go func() {

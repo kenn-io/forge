@@ -98,7 +98,8 @@ back to TOML.
 - `workspaces.idle_runtime_stop_hours` is a TOML-only, hot-reloaded node-local setting bounded
   0-720; zero keeps runtimes running (`internal/config/config.go::Workspaces`).
 - `roborev.init_managed_clones` is a hot-reloaded, false-by-default setup policy; only the
-  effective Roborev endpoint is startup-bound (`internal/config/config.go::Roborev`).
+  effective Roborev endpoint and HTTP credential stay bound together until restart
+  (`internal/server/server.go::newServer`).
 - Quick-action agent keys are validated at use time, not config load, so a missing binary never
   rejects the file; `acp_options` need only non-blank IDs and values, since only the running agent
   knows what it offers (`internal/config/config.go::Config.validateQuickActions`).

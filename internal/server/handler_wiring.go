@@ -131,7 +131,8 @@ func (s *Server) wireHandlers() {
 		NewGitHubClient: &s.newGitHubClient,
 	}
 	s.roborevapi = &roborevapi.Handlers{
-		Cfg:                 &s.cfg,
+		Endpoint:            s.roborevEndpoint,
+		Client:              s.roborevClient,
 		RoborevRepositories: &s.roborevRepositories,
 	}
 	s.routepolicy = &routepolicy.Handlers{

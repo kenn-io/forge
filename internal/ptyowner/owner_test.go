@@ -447,6 +447,7 @@ func TestOwnerHelperEnvironmentStripsCredentials(t *testing.T) {
 	out := ownerHelperEnvironment([]string{
 		"PATH=/usr/bin",
 		"KENN_FORGE_GITHUB_TOKEN=secret-1",
+		"KENN_FORGE_ROBOREV_AUTH_KEY=secret-roborev",
 		"GITHUB_TOKEN=secret-2",
 		"GH_TOKEN_WORK=secret-3",
 		"KATA_AUTH_TOKEN=secret-4",

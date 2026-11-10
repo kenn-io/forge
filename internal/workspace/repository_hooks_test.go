@@ -1,13 +1,19 @@
 package workspace
 
 import (
+	"encoding/json/v2"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/apiclient/roborev"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
 
@@ -306,4 +312,33 @@ func TestRefreshManagedCloneExcludeSkipsALinkedWorktreeWithoutWorktreeConfig(t *
 	runWorkspaceTestGit(t, commonDir, "worktree", "add", "-b", "first", worktree, "main")
 
 	require.NoError(t, refreshManagedCloneExclude(t.Context(), worktree))
+}
+
+func TestConfirmRoborevRegistrationAuthentication(t *testing.T) {
+	t.Parallel()
+	for _, authorized := range []bool{true, false} {
+		t.Run(fmt.Sprint(authorized), func(t *testing.T) {
+			t.Parallel()
+			key := strings.Repeat("cd", 32)
+			root := t.TempDir()
+			var calls atomic.Int64
+			daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				assert.Equal(t, "Bearer "+key, r.Header.Get("Authorization"))
+				if !authorized {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				_ = json.MarshalWrite(w, map[string]any{"repos": []map[string]string{{"root_path": root}}, "total_count": 1})
+			}))
+			defer daemon.Close()
+			err := confirmRoborevRegistration(t.Context(), roborev.NewHTTPClient(daemon.URL, key), daemon.URL, root)
+			if authorized {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+			assert.Equal(t, int64(1), calls.Load())
+		})
+	}
 }

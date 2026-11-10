@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
 	"maps"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 // Overrides contains explicitly supplied foreground listener flags.
@@ -115,6 +117,17 @@ func (c *Config) applyRuntimeOverrides(meta toml.MetaData, flags Overrides) erro
 	}
 	if flags.Port != nil {
 		c.Port = *flags.Port
+	}
+	c.roborevAuthKey = os.Getenv("KENN_FORGE_ROBOREV_AUTH_KEY")
+	if c.roborevAuthKey != "" {
+		tokenauth.RegisterKnownSecret(c.roborevAuthKey)
+		if _, err := hex.DecodeString(c.roborevAuthKey); err != nil || len(c.roborevAuthKey) != 64 || strings.ToLower(c.roborevAuthKey) != c.roborevAuthKey {
+			return fmt.Errorf("KENN_FORGE_ROBOREV_AUTH_KEY must contain exactly 64 lowercase hexadecimal characters")
+		}
+		endpoint, err := url.Parse(c.Roborev.Endpoint)
+		if err != nil || endpoint.Hostname() == "" || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.User != nil {
+			return fmt.Errorf("KENN_FORGE_ROBOREV_AUTH_KEY requires an explicit absolute HTTP or HTTPS Roborev endpoint without userinfo")
+		}
 	}
 	return nil
 }

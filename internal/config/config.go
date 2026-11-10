@@ -1101,7 +1101,8 @@ type ExternalContextSource struct {
 }
 
 type Config struct {
-	runtime *runtimeOverlay
+	runtime        *runtimeOverlay
+	roborevAuthKey string
 
 	AirplaneMode                bool   `toml:"airplane_mode"`
 	SyncInterval                string `toml:"sync_interval"`
@@ -3780,6 +3781,11 @@ func (c *Config) ParsedAllowedHosts() []HostKey {
 
 func (c *Config) DBPath() string {
 	return filepath.Join(c.DataDir, "forge.db")
+}
+
+// RoborevAuthKey returns the startup-only daemon credential. It is never serialized.
+func (c *Config) RoborevAuthKey() string {
+	return c.roborevAuthKey
 }
 
 // RoborevEndpoint returns the configured roborev daemon endpoint,

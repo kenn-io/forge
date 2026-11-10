@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -88,6 +89,7 @@ type Manager struct {
 	// reconciliation writer against the held read lock.
 	beforeHeadRepoSnapshotRepoLookup func()
 	roborevEndpoint                  string
+	roborevClient                    *http.Client
 	roborevRepositoryInvalidator     func()
 }
 
@@ -294,8 +296,9 @@ func (m *Manager) SetRequireProviderCredential(required bool) {
 
 // SetRoborevEndpoint binds the startup-scoped daemon endpoint used for
 // managed-clone initialization. Endpoint edits require a server restart.
-func (m *Manager) SetRoborevEndpoint(endpoint string) {
+func (m *Manager) SetRoborevEndpoint(endpoint string, client *http.Client) {
 	m.roborevEndpoint = endpoint
+	m.roborevClient = client
 }
 
 // SetRoborevRepositoryInvalidator configures the cache invalidation callback

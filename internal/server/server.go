@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"go.kenn.io/forge/internal/agentactivity"
+	roborevclient "go.kenn.io/forge/internal/apiclient/roborev"
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/browserlogin"
 	"go.kenn.io/forge/internal/config"
@@ -236,6 +237,8 @@ type Server struct {
 	providerDescriptorBeforeSnapshotForTest func()
 	markdownImages                          *providerapi.MarkdownImageCache
 	roborevRepositories                     *roborevapi.RoborevRepositoryProbe
+	roborevEndpoint                         string
+	roborevClient                           *http.Client
 
 	// toolingStatus caches the assembled CLI tooling probe;
 	// toolingRun overrides the probe subprocess runner in tests.
@@ -575,6 +578,12 @@ func newServer(
 		bgDeadline:              bgDeadline,
 		workspaceDependentsDone: make(chan struct{}),
 	}
+	roborevConfig := cfg
+	if roborevConfig == nil {
+		roborevConfig = &config.Config{}
+	}
+	s.roborevEndpoint = roborevConfig.RoborevEndpoint()
+	s.roborevClient = roborevclient.NewHTTPClient(s.roborevEndpoint, roborevConfig.RoborevAuthKey())
 	s.wireHandlers()
 	s.browserLoginTickets = browserlogin.NewTicketStore(func() time.Time { return s.now() })
 	var contextSources []config.ExternalContextSource
@@ -649,13 +658,10 @@ func newServer(
 			s.syncevents.BroadcastHubConnection(false)
 		}
 	}
-	roborevConfig := cfg
-	if roborevConfig == nil {
-		roborevConfig = &config.Config{}
-	}
 	s.roborevRepositories = roborevapi.NewRoborevRepositoryProbe(
 		s.bgCtx,
-		roborevConfig.RoborevEndpoint(),
+		s.roborevEndpoint,
+		s.roborevClient,
 		streamapi.WorkspaceConfigSnapshot(cfg, nil).KnownPlatformHosts,
 	)
 	if syncer != nil {
@@ -855,7 +861,7 @@ func newServer(
 		s.workspaces.SetIssueBranchSlugEnabled(
 			cfg.IssueWorkspaceBranchSlugEnabled(),
 		)
-		s.workspaces.SetRoborevEndpoint(roborevConfig.RoborevEndpoint())
+		s.workspaces.SetRoborevEndpoint(s.roborevEndpoint, s.roborevClient)
 		s.workspaces.SetRoborevRepositoryInvalidator(s.roborevRepositories.Invalidate)
 		s.workspaces.SetWorktreeBasePathResolver(s.settingsapi.WorktreeBasePathForRepo)
 		ptyOwnerDir := options.PtyOwnerDir

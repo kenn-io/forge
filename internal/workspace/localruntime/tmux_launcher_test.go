@@ -69,6 +69,7 @@ func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	assert := assert.New(t)
 	t.Setenv("XDG_RUNTIME_DIR", "argv-visible-value")
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "secret-value")
+	t.Setenv("KENN_FORGE_ROBOREV_AUTH_KEY", "roborev-secret-value")
 
 	paneEnv := tmuxAgentEnvPolicy.paneEnvironment(
 		os.Environ(), []string{"/bin/sh", "-lc", "sleep 10"}, nil,

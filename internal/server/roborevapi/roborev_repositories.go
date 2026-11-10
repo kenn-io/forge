@@ -21,7 +21,6 @@ import (
 	"go.kenn.io/forge/internal/projects"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/itemapi"
-	"go.kenn.io/forge/internal/tracing"
 	gitenv "go.kenn.io/kit/git/env"
 )
 
@@ -92,12 +91,16 @@ type RoborevRepositoryProbe struct {
 func NewRoborevRepositoryProbe(
 	lifecycleCtx context.Context,
 	endpoint string,
+	client *http.Client,
 	knownHosts []projects.KnownPlatformHost,
 ) *RoborevRepositoryProbe {
-	client := &http.Client{Timeout: 2 * time.Second, Transport: tracing.HTTPTransport(nil)}
 	return newRoborevRepositoryProbeWithContextAndDeps(lifecycleCtx, knownHosts, RoborevRepositoryProbeDeps{
-		Now:             time.Now,
-		LoadInventory:   LoadRoborevRepositoryInventory(client, endpoint),
+		Now: time.Now,
+		LoadInventory: func(ctx context.Context) ([]RoborevTrackedRepository, error) {
+			ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			return LoadRoborevRepositoryInventory(client, endpoint)(ctx)
+		},
 		ResolveHookPath: resolveRoborevHookPath,
 		InspectHook:     InspectRoborevPostCommitHook,
 	})

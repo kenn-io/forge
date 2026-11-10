@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
@@ -33,18 +34,22 @@ type federationWorkspaceProviderStateResponse struct {
 }
 
 type federationWorkspaceProviderState struct {
-	ID                 string  `json:"id"`
-	RepoPrivate        *bool   `json:"repo_private,omitempty"`
-	ItemAuthor         *string `json:"item_author,omitempty"`
-	ItemLastActivityAt *string `json:"item_last_activity_at,omitempty"`
-	MRTitle            *string `json:"mr_title,omitempty"`
-	MRState            *string `json:"mr_state,omitempty"`
-	MRIsDraft          *bool   `json:"mr_is_draft,omitempty"`
-	MRMergeQueued      *bool   `json:"mr_merge_queued,omitempty"`
-	MRCIStatus         *string `json:"mr_ci_status,omitempty"`
-	MRReviewDecision   *string `json:"mr_review_decision,omitempty"`
-	MRAdditions        *int    `json:"mr_additions,omitempty"`
-	MRDeletions        *int    `json:"mr_deletions,omitempty"`
+	ID                     string              `json:"id"`
+	RepoPrivate            *bool               `json:"repo_private,omitempty"`
+	ItemAuthor             *string             `json:"item_author,omitempty"`
+	ItemLastActivityAt     *string             `json:"item_last_activity_at,omitempty"`
+	MRTitle                *string             `json:"mr_title,omitempty"`
+	MRState                *string             `json:"mr_state,omitempty"`
+	MRIsDraft              *bool               `json:"mr_is_draft,omitempty"`
+	MRMergeQueued          *bool               `json:"mr_merge_queued,omitempty"`
+	MRCIStatus             *string             `json:"mr_ci_status,omitempty"`
+	MRReviewDecision       *string             `json:"mr_review_decision,omitempty"`
+	MRAdditions            *int                `json:"mr_additions,omitempty"`
+	MRDeletions            *int                `json:"mr_deletions,omitempty"`
+	MRDeferredMergePending *bool               `json:"mr_deferred_merge_pending,omitempty"`
+	MRMergeableState       *string             `json:"mr_mergeable_state,omitempty"`
+	MRCommentCount         *int                `json:"mr_comment_count,omitempty"`
+	MRChecks               []fleet.CheckDetail `json:"mr_checks,omitempty"`
 }
 
 type federationWorkspaceProviderStateOutput = httpapi.BodyOutput[federationWorkspaceProviderStateResponse]
@@ -83,7 +88,7 @@ func (s *Server) federationQueryWorkspaceProviderState(
 		})
 	}
 	enriched, err := fleet.EnrichProviderState(
-		ctx, s.db, fleet.NeutralSnapshot{Workspaces: workspaces},
+		ctx, s.db, fleet.NeutralSnapshot{Workspaces: workspaces}, s.deferredMergeInFlight,
 	)
 	if err != nil {
 		return nil, httpapi.Internal("query workspace provider state failed")
@@ -100,9 +105,19 @@ func (s *Server) federationQueryWorkspaceProviderState(
 			MRMergeQueued:    workspace.MRMergeQueued,
 			MRReviewDecision: workspace.MRReviewDecision,
 			MRAdditions:      workspace.MRAdditions, MRDeletions: workspace.MRDeletions,
+			MRDeferredMergePending: workspace.MRDeferredMergePending,
+			MRMergeableState:       workspace.MRMergeableState,
+			MRCommentCount:         workspace.MRCommentCount,
+			MRChecks:               workspace.MRChecks,
 		})
 	}
 	return &federationWorkspaceProviderStateOutput{Body: federationWorkspaceProviderStateResponse{
 		Workspaces: states,
 	}}, nil
+}
+
+// deferredMergeInFlight reports a pull request the deferred merge worker is
+// holding for CI.
+func (s *Server) deferredMergeInFlight(repo db.Repo, number int) bool {
+	return s.pullAPI != nil && s.pullAPI.DeferredMergeInFlight(repo, number)
 }

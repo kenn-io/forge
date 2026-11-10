@@ -50,7 +50,10 @@ type Deps struct {
 	WorkspaceStatsSnapshot func(context.Context) (workspaceapi.FleetSnapshot, error)
 	// WorkspaceProviderState asks the hub for the provider state of this
 	// spoke's own workspaces. Nil on hubs, which enrich from their own store.
-	WorkspaceProviderState      func(context.Context, []fleet.RawWorkspace) ([]fleet.RawWorkspace, error)
+	WorkspaceProviderState func(context.Context, []fleet.RawWorkspace) ([]fleet.RawWorkspace, error)
+	// DeferredMergeInFlight reports a pull request the deferred merge worker
+	// is holding for CI.
+	DeferredMergeInFlight       func(db.Repo, int) bool
 	QueueWorkspaceDeletion      func(string) error
 	RuntimeSnapshot             func(string) workspaceapi.RuntimeSnapshot
 	RuntimeExited               func(sessionKey string) bool
@@ -87,6 +90,7 @@ type Handler struct {
 	generation                  func() uint64
 	workspaceSnapshot           func(context.Context) (workspaceapi.FleetSnapshot, error)
 	workspaceProviderState      func(context.Context, []fleet.RawWorkspace) ([]fleet.RawWorkspace, error)
+	deferredMergeInFlight       func(db.Repo, int) bool
 	queueWorkspaceDeletion      func(string) error
 	runtimeSnapshot             func(string) workspaceapi.RuntimeSnapshot
 	runtimeExited               func(string) bool
@@ -148,6 +152,7 @@ func New(deps Deps) *Handler {
 		generation:                  deps.Generation,
 		workspaceSnapshot:           deps.WorkspaceSnapshot,
 		workspaceProviderState:      deps.WorkspaceProviderState,
+		deferredMergeInFlight:       deps.DeferredMergeInFlight,
 		queueWorkspaceDeletion:      deps.QueueWorkspaceDeletion,
 		runtimeSnapshot:             deps.RuntimeSnapshot,
 		runtimeExited:               deps.RuntimeExited,

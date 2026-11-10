@@ -13,10 +13,14 @@ import (
 // observer-neutral aggregate. Repository lookup crosses the federation
 // boundary only through provider identity; daemon-local numeric repository IDs
 // are used only inside this function and never copied into the result.
+//
+// deferredMergeInFlight reports a pull request this daemon's deferred merge
+// worker is holding for CI; nil means no worker runs here.
 func EnrichProviderState(
 	ctx context.Context,
 	database *db.DB,
 	aggregate NeutralSnapshot,
+	deferredMergeInFlight func(repo db.Repo, number int) bool,
 ) (NeutralSnapshot, error) {
 	out := aggregate
 	out.Worktrees = append([]RawWorktree(nil), aggregate.Worktrees...)
@@ -94,6 +98,9 @@ func EnrichProviderState(
 					return NeutralSnapshot{}, err
 				}
 				workspace.MRMergeQueued = new(queue != nil && queue.Queued)
+				workspace.MRDeferredMergePending = new(pull.State == db.MergeRequestStateOpen &&
+					(pull.AutoMergeEnabled || deferredMergeInFlight != nil &&
+						deferredMergeInFlight(repository.Repository, itemNumber)))
 			}
 		case "issue":
 			issue, err := database.GetVisibleIssueByRepoIDAndNumber(
@@ -185,6 +192,10 @@ func clearWorkspaceProviderState(workspace *RawWorkspace) {
 	workspace.MRReviewDecision = nil
 	workspace.MRAdditions = nil
 	workspace.MRDeletions = nil
+	workspace.MRDeferredMergePending = nil
+	workspace.MRMergeableState = nil
+	workspace.MRCommentCount = nil
+	workspace.MRChecks = nil
 }
 
 func enrichWorkspaceFromPull(workspace *RawWorkspace, pull *db.MergeRequest) {
@@ -197,6 +208,9 @@ func enrichWorkspaceFromPull(workspace *RawWorkspace, pull *db.MergeRequest) {
 	workspace.MRReviewDecision = pointerIfNotEmpty(pull.ReviewDecision)
 	workspace.MRAdditions = pointerIfKnown(pull.Additions, pull.AdditionsKnown)
 	workspace.MRDeletions = pointerIfKnown(pull.Deletions, pull.DeletionsKnown)
+	workspace.MRMergeableState = pointerIfNotEmpty(pull.MergeableState)
+	workspace.MRCommentCount = pointerIfNonzero(pull.CommentCount)
+	workspace.MRChecks = decodeCheckDetails(pull.CIChecksJSON)
 }
 
 func enrichWorkspaceFromIssue(workspace *RawWorkspace, issue *db.Issue) {

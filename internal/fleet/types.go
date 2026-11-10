@@ -235,6 +235,12 @@ type RawWorkspace struct {
 	MRReviewDecision      *string            `json:"mrReviewDecision,omitempty"`
 	MRAdditions           *int               `json:"mrAdditions,omitempty"`
 	MRDeletions           *int               `json:"mrDeletions,omitempty"`
+	// MRDeferredMergePending reports a merge or enqueue that waits for CI,
+	// through provider auto-merge or this hub's deferred merge worker.
+	MRDeferredMergePending *bool         `json:"mrDeferredMergePending,omitempty"`
+	MRMergeableState       *string       `json:"mrMergeableState,omitempty"`
+	MRCommentCount         *int          `json:"mrCommentCount,omitempty"`
+	MRChecks               []CheckDetail `json:"mrChecks,omitempty"`
 }
 
 type RawWorkspaceKata struct {
@@ -490,49 +496,55 @@ type WorkspaceKataSummary struct {
 // WorkspaceSummary is the projected workspace-list contract. Remote host
 // attribution is omitted for the observer's own local workspaces.
 type WorkspaceSummary struct {
-	ID                    string                     `json:"id"`
-	Repo                  WorkspaceRepositorySummary `json:"repo"`
-	PlatformHost          string                     `json:"platform_host"`
-	RepoOwner             string                     `json:"repo_owner"`
-	RepoName              string                     `json:"repo_name"`
-	ItemType              string                     `json:"item_type"`
-	ItemNumber            int                        `json:"item_number"`
-	SourceItemVisible     bool                       `json:"source_item_visible"`
-	ItemKey               string                     `json:"item_key,omitempty"`
-	GitHeadRef            string                     `json:"git_head_ref"`
-	WorktreePath          string                     `json:"worktree_path"`
-	TmuxSession           string                     `json:"tmux_session,omitempty"`
-	TmuxPaneTitle         *string                    `json:"tmux_pane_title,omitempty"`
-	TmuxWorking           bool                       `json:"tmux_working"`
-	TmuxActivitySource    string                     `json:"tmux_activity_source"`
-	TmuxLastOutputAt      *string                    `json:"tmux_last_output_at"`
-	AgentState            *string                    `json:"agent_state,omitempty"`
-	AgentStateUpdatedAt   *string                    `json:"agent_state_updated_at,omitempty"`
-	Status                string                     `json:"status"`
-	ErrorMessage          *string                    `json:"error_message,omitempty"`
-	CreatedAt             string                     `json:"created_at"`
-	ItemAuthor            *string                    `json:"item_author,omitempty"`
-	ItemLastActivityAt    *string                    `json:"item_last_activity_at,omitempty"`
-	MRTitle               *string                    `json:"mr_title,omitempty"`
-	MRState               *string                    `json:"mr_state,omitempty"`
-	MRIsDraft             *bool                      `json:"mr_is_draft,omitempty"`
-	MRCIStatus            *string                    `json:"mr_ci_status,omitempty"`
-	MRReviewDecision      *string                    `json:"mr_review_decision,omitempty"`
-	MRAdditions           *int                       `json:"mr_additions,omitempty"`
-	MRDeletions           *int                       `json:"mr_deletions,omitempty"`
-	CommitsAhead          *int                       `json:"commits_ahead,omitempty"`
-	CommitsBehind         *int                       `json:"commits_behind,omitempty"`
-	CommitsVsPRHead       *bool                      `json:"commits_vs_pr_head,omitempty"`
-	BranchUpstreamMissing *bool                      `json:"branch_upstream_missing,omitempty"`
-	WorktreeDirty         *bool                      `json:"worktree_dirty,omitempty"`
-	EnrichmentStatus      string                     `json:"enrichment_status,omitempty"`
-	EnrichmentRefreshedAt *string                    `json:"enrichment_refreshed_at,omitempty"`
-	EnrichmentError       *string                    `json:"enrichment_error,omitempty"`
-	AssociatedPRNumber    *int                       `json:"associated_pr_number,omitempty"`
-	Kata                  *WorkspaceKataSummary      `json:"kata,omitempty"`
-	FleetHostKey          string                     `json:"fleet_host_key,omitempty"`
-	FleetHostName         string                     `json:"fleet_host_name,omitempty"`
-	Visible               bool                       `json:"visible"`
+	ID                  string                     `json:"id"`
+	Repo                WorkspaceRepositorySummary `json:"repo"`
+	PlatformHost        string                     `json:"platform_host"`
+	RepoOwner           string                     `json:"repo_owner"`
+	RepoName            string                     `json:"repo_name"`
+	ItemType            string                     `json:"item_type"`
+	ItemNumber          int                        `json:"item_number"`
+	SourceItemVisible   bool                       `json:"source_item_visible"`
+	ItemKey             string                     `json:"item_key,omitempty"`
+	GitHeadRef          string                     `json:"git_head_ref"`
+	WorktreePath        string                     `json:"worktree_path"`
+	TmuxSession         string                     `json:"tmux_session,omitempty"`
+	TmuxPaneTitle       *string                    `json:"tmux_pane_title,omitempty"`
+	TmuxWorking         bool                       `json:"tmux_working"`
+	TmuxActivitySource  string                     `json:"tmux_activity_source"`
+	TmuxLastOutputAt    *string                    `json:"tmux_last_output_at"`
+	AgentState          *string                    `json:"agent_state,omitempty"`
+	AgentStateUpdatedAt *string                    `json:"agent_state_updated_at,omitempty"`
+	Status              string                     `json:"status"`
+	ErrorMessage        *string                    `json:"error_message,omitempty"`
+	CreatedAt           string                     `json:"created_at"`
+	ItemAuthor          *string                    `json:"item_author,omitempty"`
+	ItemLastActivityAt  *string                    `json:"item_last_activity_at,omitempty"`
+	MRTitle             *string                    `json:"mr_title,omitempty"`
+	MRState             *string                    `json:"mr_state,omitempty"`
+	MRIsDraft           *bool                      `json:"mr_is_draft,omitempty"`
+	MRCIStatus          *string                    `json:"mr_ci_status,omitempty"`
+	MRReviewDecision    *string                    `json:"mr_review_decision,omitempty"`
+	MRAdditions         *int                       `json:"mr_additions,omitempty"`
+	MRDeletions         *int                       `json:"mr_deletions,omitempty"`
+	MRMergeQueued       *bool                      `json:"mr_merge_queued,omitempty"`
+	// MRDeferredMergePending reports a merge or enqueue that waits for CI.
+	MRDeferredMergePending *bool                 `json:"mr_deferred_merge_pending,omitempty"`
+	MRMergeableState       *string               `json:"mr_mergeable_state,omitempty"`
+	MRCommentCount         *int                  `json:"mr_comment_count,omitempty"`
+	MRChecks               []CheckDetail         `json:"mr_checks,omitempty"`
+	CommitsAhead           *int                  `json:"commits_ahead,omitempty"`
+	CommitsBehind          *int                  `json:"commits_behind,omitempty"`
+	CommitsVsPRHead        *bool                 `json:"commits_vs_pr_head,omitempty"`
+	BranchUpstreamMissing  *bool                 `json:"branch_upstream_missing,omitempty"`
+	WorktreeDirty          *bool                 `json:"worktree_dirty,omitempty"`
+	EnrichmentStatus       string                `json:"enrichment_status,omitempty"`
+	EnrichmentRefreshedAt  *string               `json:"enrichment_refreshed_at,omitempty"`
+	EnrichmentError        *string               `json:"enrichment_error,omitempty"`
+	AssociatedPRNumber     *int                  `json:"associated_pr_number,omitempty"`
+	Kata                   *WorkspaceKataSummary `json:"kata,omitempty"`
+	FleetHostKey           string                `json:"fleet_host_key,omitempty"`
+	FleetHostName          string                `json:"fleet_host_name,omitempty"`
+	Visible                bool                  `json:"visible"`
 }
 
 type SessionSummary struct {

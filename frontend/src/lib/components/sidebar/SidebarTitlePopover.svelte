@@ -1,6 +1,6 @@
 <script lang="ts">
   import { autoReposition, floatingPopoverStyle } from "@kenn-io/kit-ui";
-  import { tick } from "svelte";
+  import { tick, type Snippet } from "svelte";
 
   interface Props {
     target: HTMLElement | undefined;
@@ -11,9 +11,12 @@
     // reveals. The popover only opens while at least one match is actually
     // truncated, so untruncated rows never grow a redundant tooltip.
     truncationSelector: string;
+    // Extra lines under the branch. A row that passes them has more to say
+    // than its own text, so the popover opens whether or not it is truncated.
+    details?: Snippet | undefined;
   }
 
-  let { target, title, repository, branch = undefined, truncationSelector }: Props = $props();
+  let { target, title, repository, branch = undefined, truncationSelector, details = undefined }: Props = $props();
 
   const tooltipId = $props.id();
   // kit-ui-check-ignore: kit Tooltip neither portals to body nor describes the focused row button
@@ -49,8 +52,9 @@
   }
 
   // Measured at show time (not mount) so resizes since render are honored.
-  function hasTruncatedText(): boolean {
+  function hasContent(): boolean {
     if (!target) return false;
+    if (details) return true;
     for (const el of target.querySelectorAll(truncationSelector)) {
       if (el.scrollWidth > el.clientWidth) return true;
     }
@@ -62,7 +66,7 @@
     if (open) return;
     timer = setTimeout(() => {
       timer = undefined;
-      if (!hasTruncatedText()) return;
+      if (!hasContent()) return;
       open = true;
       void position();
     }, hoverDelayMs);
@@ -70,7 +74,7 @@
 
   function showNow(): void {
     clearTimer();
-    if (open || !hasTruncatedText()) return;
+    if (open || !hasContent()) return;
     open = true;
     void position();
   }
@@ -139,6 +143,7 @@
     {#if branch}
       <div class="sidebar-title-popover__metadata sidebar-title-popover__branch">{branch}</div>
     {/if}
+    {@render details?.()}
   </div>
 {/if}
 

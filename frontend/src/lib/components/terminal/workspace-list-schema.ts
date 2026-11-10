@@ -39,8 +39,14 @@ export type WorkspaceListItem = Pick<
     readonly item_author?: string | null;
     readonly item_last_activity_at?: string | null;
     readonly mr_additions?: number | null;
+    readonly mr_checks?: readonly Readonly<NonNullable<GeneratedWorkspace["mr_checks"]>[number]>[];
+    readonly mr_comment_count?: number | null;
+    readonly mr_deferred_merge_pending?: boolean;
     readonly mr_deletions?: number | null;
     readonly mr_is_draft?: boolean | null;
+    readonly mr_merge_queued?: boolean;
+    readonly mr_mergeable_state?: string | null;
+    readonly mr_review_decision?: string | null;
     readonly mr_state?: string | null;
     readonly mr_title?: string | null;
     readonly repo?: Pick<
@@ -81,6 +87,13 @@ const Kata = Schema.Struct({
   title: Schema.optionalKey(Schema.String),
 });
 
+const Check = Schema.Struct({
+  conclusion: Schema.optionalKey(Schema.String),
+  name: Schema.String,
+  status: Schema.String,
+  url: Schema.optionalKey(Schema.String),
+});
+
 const Workspace = Schema.Struct({
   agent_state: Schema.optionalKey(Schema.NullOr(Schema.Literals(["idle", "working", "input", "approval", "done"]))),
   agent_state_updated_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -102,8 +115,14 @@ const Workspace = Schema.Struct({
   item_type: Schema.String,
   kata: Schema.optionalKey(Kata),
   mr_additions: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  mr_checks: Schema.optionalKey(Schema.Array(Check)),
+  mr_comment_count: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  mr_deferred_merge_pending: Schema.optionalKey(Schema.Boolean),
   mr_deletions: Schema.optionalKey(Schema.NullOr(Schema.Number)),
   mr_is_draft: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+  mr_merge_queued: Schema.optionalKey(Schema.Boolean),
+  mr_mergeable_state: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  mr_review_decision: Schema.optionalKey(Schema.NullOr(Schema.String)),
   mr_state: Schema.optionalKey(Schema.NullOr(Schema.String)),
   mr_title: Schema.optionalKey(Schema.NullOr(Schema.String)),
   platform_host: Schema.String,

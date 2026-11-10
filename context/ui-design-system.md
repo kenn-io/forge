@@ -251,6 +251,11 @@ Use kit `Modal`, `ConfirmDialog`, and `DialogButton`.
   from container width; kit's `overlayOnNarrow` is viewport-based, a different signal.
 - `SidebarTitlePopover` shows the full title and repository (plus head branch for PR
   and workspace rows) on sidebar rows, opening only while a named element is truncated.
+  A row that passes `details` opens it regardless: a workspace row's card names in words
+  the pull request status its icons show.
+- Workspace rows draw the linked pull request's status with `PullStatusTokens`, the icons
+  `PullStatusIcons` draws for PR and worklist rows. A row with status icons drops its diff
+  stats below a 380px rail so the icons fit the two-line row.
 - `GroupedSidebarSection` provides collapsible list-rail groups; header controls go in
   its `actions` slot outside the collapse button.
 - Wrap large always-visible vertical scroll panes in kit `ScrollBox` with a concise

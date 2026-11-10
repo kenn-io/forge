@@ -45,7 +45,7 @@ func (s *Handler) ActivityWorkspaces(ctx context.Context) ([]fleet.WorkspaceSumm
 		return nil, err
 	}
 	aggregate, err := fleet.EnrichProviderState(
-		ctx, s.db, fleet.BuildNeutralAggregate(local, peers),
+		ctx, s.db, fleet.BuildNeutralAggregate(local, peers), s.deferredMergeInFlight,
 	)
 	if err != nil {
 		return nil, err

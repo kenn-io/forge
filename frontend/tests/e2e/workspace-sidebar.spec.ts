@@ -7319,3 +7319,98 @@ test.describe("workspace list drag reorder", () => {
     await expect(widgets).toHaveText(["Charlie workspace", "Alpha workspace", "Bravo workspace"]);
   });
 });
+
+test("workspace rows show linked pull request status without growing, and name it on hover", async ({ page }) => {
+  const wsPlain = { ...testWorkspace, id: "ws-plain", item_number: 101, mr_title: "Add auth middleware" };
+  const wsWaiting = {
+    ...testWorkspace,
+    id: "ws-waiting",
+    item_number: 102,
+    git_head_ref: "feature/retry-backoff",
+    mr_title: "Add request retry backoff",
+    mr_additions: 591,
+    mr_deletions: 50,
+    mr_review_decision: "approved",
+    mr_deferred_merge_pending: true,
+    mr_comment_count: 2,
+    mr_checks: [
+      ...Array.from({ length: 29 }, (_, index) => ({
+        name: `unit-${index}`,
+        status: "completed",
+        conclusion: "success",
+      })),
+      ...Array.from({ length: 5 }, (_, index) => ({ name: `e2e-${index}`, status: "in_progress" })),
+    ],
+  };
+  const wsBlocked = {
+    ...testWorkspace,
+    id: "ws-blocked",
+    item_number: 103,
+    git_head_ref: "fix/date-parsing",
+    mr_title: "Fix date parsing",
+    mr_review_decision: "changes_requested",
+    mr_merge_queued: true,
+    mr_mergeable_state: "dirty",
+    mr_checks: [
+      { name: "lint", status: "completed", conclusion: "failure" },
+      { name: "build", status: "completed", conclusion: "failure" },
+      { name: "unit", status: "completed", conclusion: "success" },
+    ],
+  };
+  const list = [wsPlain, wsWaiting, wsBlocked];
+
+  await mockApi(page);
+  await page.addInitScript(() => {
+    localStorage.setItem("kenn-forge:workspaceListSort", "created");
+  });
+  await page.route("**/api/v1/events", async (route) => {
+    await route.fulfill({ status: 200, contentType: "text/event-stream", body: "" });
+  });
+  await page.route("**/api/v1/snapshot**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ workspaces: list }),
+    });
+  });
+
+  await page.goto("/workspaces");
+  const rows = page.locator(".workspace-list-sidebar .ws-row");
+  await expect(rows).toHaveCount(list.length);
+  const plainRow = rows.filter({ has: page.getByTitle("Open PR #101") });
+  const waitingRow = rows.filter({ has: page.getByTitle("Open PR #102") });
+  const blockedRow = rows.filter({ has: page.getByTitle("Open PR #103") });
+
+  await expect(waitingRow.getByLabel("PR approved")).toBeVisible();
+  await expect(waitingRow.getByLabel("Merges after CI")).toBeVisible();
+  await expect(waitingRow.getByTestId("ci-token-pending")).toHaveText("5");
+  await expect(waitingRow.getByLabel("2 comments")).toBeVisible();
+  await expect(blockedRow.getByLabel("Changes requested")).toBeVisible();
+  await expect(blockedRow.getByLabel("In merge queue")).toBeVisible();
+  await expect(blockedRow.getByTestId("ci-token-failed")).toHaveText("2");
+  await expect(blockedRow.getByTitle("Has merge conflicts")).toBeVisible();
+  await expect(plainRow.locator(".ws-row-meta .ci")).toHaveCount(0);
+
+  // At the default rail width a row with status icons drops its line counts
+  // to make room, so every row keeps the plain row's height and no meta line
+  // spills past its row.
+  await expect(waitingRow.locator(".workspace-diff-stats")).toBeHidden();
+  const plainHeight = (await plainRow.boundingBox())!.height;
+  for (const row of [waitingRow, blockedRow]) {
+    expect((await row.boundingBox())!.height).toBe(plainHeight);
+    const overflow = await row.locator(".ws-row-meta").evaluate((meta) => meta.scrollWidth - meta.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  }
+
+  await waitingRow.hover();
+  const card = page.getByRole("tooltip");
+  await expect(card).toContainText("Add request retry backoff");
+  await expect(card.locator("dt")).toHaveText(["Review", "CI", "Merge", "Changes", "Comments"]);
+  await expect(card.locator("dd").nth(1)).toHaveText("5 running, 29 passed");
+  await expect(card.locator("dd").nth(2)).toHaveText("After CI");
+
+  await blockedRow.hover();
+  await expect(card.locator("dd").nth(1)).toContainText("2 failed, 1 passed");
+  await expect(card.locator("dd").nth(1)).toContainText("lint, build");
+  await expect(card.locator("dd").nth(2)).toHaveText("Conflicts, In merge queue");
+});

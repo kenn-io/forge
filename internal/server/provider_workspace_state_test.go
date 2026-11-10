@@ -45,10 +45,15 @@ func TestSpokePullsWorkspaceProviderStateFromHub(t *testing.T) {
 		pull.Title = "Merged change"
 		pull.Author = "alice"
 		pull.State = db.MergeRequestStateMerged
+		pull.AutoMergeEnabled = true
 	})
 	serverfake.SeedPR(t, database, "acme", "widget", 2, func(pull *db.MergeRequest) {
 		pull.Title = "Linked change"
 		pull.Author = "bob"
+		pull.AutoMergeEnabled = true
+		pull.MergeableState = "dirty"
+		pull.CommentCount = 3
+		pull.CIChecksJSON = `[{"name":"lint","status":"completed","conclusion":"FAILURE"},{"name":"build","status":"IN_PROGRESS"}]`
 	})
 	source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
 		_ context.Context, scope federationauth.Scope, request *http.Request,
@@ -89,6 +94,14 @@ func TestSpokePullsWorkspaceProviderStateFromHub(t *testing.T) {
 	require.NotNil(got[1].MRTitle)
 	assert.Equal("Linked change", *got[1].MRTitle)
 	assert.Equal(new("bob"), got[1].ItemAuthor)
+	assert.Equal(new(true), got[1].MRDeferredMergePending, "provider auto-merge on an open pull request waits for CI")
+	assert.Equal(new(false), got[0].MRDeferredMergePending, "a merged pull request has nothing left to merge")
+	assert.Equal(new("dirty"), got[1].MRMergeableState)
+	assert.Equal(new(3), got[1].MRCommentCount)
+	assert.Equal([]fleet.CheckDetail{
+		{Name: "lint", Status: "completed", Conclusion: "failure"},
+		{Name: "build", Status: "in_progress"},
+	}, got[1].MRChecks)
 	assert.Nil(got[2].MRState, "a workspace without a stable repository identity is not resolved")
 	assert.Equal(new(true), got[0].RepoPrivate, "the hub's privacy replaces the spoke's stale value")
 	assert.Equal(new(true), got[1].RepoPrivate, "the hub's privacy fills the spoke's unknown value")

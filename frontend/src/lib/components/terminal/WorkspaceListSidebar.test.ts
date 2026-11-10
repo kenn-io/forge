@@ -2289,6 +2289,82 @@ describe("WorkspaceListSidebar", () => {
     ).toEqual(["1", "1"]);
   });
 
+  it("shows the linked pull request's status on the row and names it on hover", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          {
+            ...workspaceFixture({
+              id: "ws-status",
+              provider: "github",
+              platformHost: "github.com",
+              owner: "kenn-io",
+              name: "kenn-forge",
+              number: 61,
+              title: "Waiting on CI",
+              additions: 42,
+              deletions: 7,
+              commitsAhead: 2,
+            }),
+            mr_review_decision: "approved",
+            mr_deferred_merge_pending: true,
+            mr_merge_queued: true,
+            mr_mergeable_state: "dirty",
+            mr_comment_count: 3,
+            mr_checks: [
+              { name: "lint", status: "completed", conclusion: "failure" },
+              { name: "build", status: "in_progress" },
+              { name: "unit", status: "completed", conclusion: "success" },
+            ],
+          },
+          workspaceFixture({
+            id: "ws-plain",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "kenn-io",
+            name: "kenn-forge",
+            number: 62,
+            title: "Nothing to report",
+          }),
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    await waitFor(() => expect(container.querySelectorAll(".ws-row")).toHaveLength(2));
+    const [row, plain] = Array.from(container.querySelectorAll<HTMLElement>(".ws-row"));
+    const meta = within(row!.querySelector<HTMLElement>(".ws-row-meta")!);
+
+    expect(meta.getByLabelText("PR approved")).toBeTruthy();
+    expect(meta.getByLabelText("Merges after CI")).toBeTruthy();
+    expect(meta.getByLabelText("In merge queue")).toBeTruthy();
+    expect(meta.getByTitle("Has merge conflicts")).toBeTruthy();
+    expect(meta.getByLabelText("3 comments")).toBeTruthy();
+    expect(meta.getByText("CI: 1 failed check, 1 pending check, 1 passed check")).toBeTruthy();
+    expect(plain!.querySelector(".ws-row-meta [aria-label], .ws-row-meta .ci")).toBeNull();
+
+    // The name is not truncated; the status alone opens the card.
+    await fireEvent.focusIn(row!);
+    const tooltip = screen.getByRole("tooltip");
+    const terms = Array.from(tooltip.querySelectorAll("dt"), (term) => term.textContent);
+    const values = Array.from(tooltip.querySelectorAll("dd"), (value) =>
+      value.textContent?.replace(/\s+/g, " ").trim(),
+    );
+    expect(terms).toEqual(["Review", "CI", "Merge", "Changes", "Comments", "Branch"]);
+    expect(values).toEqual([
+      "Approved",
+      "1 failed, 1 running, 1 passed lint",
+      "Conflicts, In merge queue, After CI",
+      "+42 −7",
+      "3",
+      "2 ahead, 0 behind upstream",
+    ]);
+    await fireEvent.focusOut(row!);
+
+    await fireEvent.focusIn(plain!);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
   it("can hide PR diff stats while keeping branch metadata visible", async () => {
     mockGet.mockResolvedValue({
       data: {

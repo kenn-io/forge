@@ -61,6 +61,7 @@
   import type { HostSummary as GeneratedHostSummary } from "../../api/generated/models/index.js";
   import { DiffStats, FilterDropdown, ScrollBox, SidebarToggle } from "@kenn-io/kit-ui";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
+  import PullStatusTokens from "../shared/PullStatusTokens.svelte";
   import SidebarTitlePopover from "../sidebar/SidebarTitlePopover.svelte";
   import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
   import {
@@ -118,6 +119,7 @@
   import { loadFleetSnapshot } from "../../api/fleet-snapshot.js";
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
   import { workspaceItemAccent, workspaceItemState, type WorkspaceItemState } from "./workspace-item-state.js";
+  import { workspacePullStatus, workspacePullStatusLines } from "./workspace-pull-status.js";
   import { isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
 
   type Workspace = WorkspaceListItem;
@@ -970,6 +972,43 @@
   function pullRequestClosed(ws: Workspace): boolean {
     const state = workspaceItemState(ws, "pr");
     return state === "merged" || state === "closed";
+  }
+
+  // What the hover card adds to the row: the pull request status in words,
+  // and the row's icon-only facts. Null when the row already says everything.
+  function workspaceHoverDetails(ws: Workspace): {
+    lines: ReturnType<typeof workspacePullStatusLines>;
+    diff: { additions: number; deletions: number } | null;
+    comments: number;
+    branch: string;
+    agent: string;
+  } | null {
+    const pullStatus = workspacePullStatus(ws);
+    const additions = ws.mr_additions ?? 0;
+    const deletions = ws.mr_deletions ?? 0;
+    const ahead = ws.commits_ahead ?? 0;
+    const behind = ws.commits_behind ?? 0;
+    const branch = [
+      ahead > 0 || behind > 0
+        ? `${ahead} ahead, ${behind} behind ${ws.commits_vs_pr_head === true ? "PR head" : "upstream"}`
+        : "",
+      ws.worktree_dirty ? "Dirty worktree" : "",
+    ].filter((part) => part !== "").join(", ");
+    const agentState = agentStatePresentation(ws);
+    const details = {
+      lines: pullStatus ? workspacePullStatusLines(pullStatus) : [],
+      diff: additions > 0 || deletions > 0 ? { additions, deletions } : null,
+      comments: pullStatus?.commentCount ?? 0,
+      branch,
+      agent: agentState
+        ? ws.agent_state_updated_at
+          ? `${agentState.label} ${formatRelativeTime(ws.agent_state_updated_at)}`
+          : agentState.label
+        : "",
+    };
+    const empty = details.lines.length === 0 && details.diff === null && details.comments === 0 &&
+      details.branch === "" && details.agent === "";
+    return empty ? null : details;
   }
 
   function shortBranch(ref: string): string {
@@ -1868,6 +1907,7 @@
           {@const sortTimestamp = workspaceListSortTimestamp(ws, sortMode)}
           {@const workspaceReadable = workspaceOperationAvailable(ws, "workspaceRead") && workspaceOperationAvailable(ws, "terminalAttach")}
           {@const rowKey = workspaceRowKey(ws)}
+          {@const pullStatus = workspacePullStatus(ws)}
           <div
             class={["ws-row", {
               selected: isSelectedWorkspace(ws),
@@ -2026,6 +2066,18 @@
                     {/if}
                   </span>
                 {/if}
+                {#if pullStatus?.hasIcons}
+                  <span class="pull-status">
+                    <PullStatusTokens
+                      reviewDecision={pullStatus.reviewDecision}
+                      mergeAfterCI={pullStatus.mergeAfterCI}
+                      mergeQueueLabel={pullStatus.mergeQueued ? "In merge queue" : undefined}
+                      bucketed={pullStatus.checks}
+                      conflict={pullStatus.conflict}
+                      commentCount={pullStatus.commentCount}
+                    />
+                  </span>
+                {/if}
                 {#if displayOptions.showDiffStats &&
                   ws.item_type === "pull_request" &&
                   ((adds ?? 0) > 0 || (dels ?? 0) > 0)}
@@ -2082,7 +2134,40 @@
             repository={repoLabel(ws)}
             branch={shortBranch(ws.git_head_ref)}
             truncationSelector=".ws-name"
+            details={workspaceHoverDetails(ws) ? hoverDetails : undefined}
           />
+          {#snippet hoverDetails()}
+            {@const details = workspaceHoverDetails(ws)}
+            {#if details}
+              <dl class="ws-hover-details">
+                {#each details.lines as line (line.label)}
+                  <dt>{line.label}</dt>
+                  <dd class={`ws-hover-value ws-hover-value--${line.tone}`}>
+                    {line.value}
+                    {#if line.detail}
+                      <span class="ws-hover-detail">{line.detail}</span>
+                    {/if}
+                  </dd>
+                {/each}
+                {#if details.diff}
+                  <dt>Changes</dt>
+                  <dd><DiffStats additions={details.diff.additions} deletions={details.diff.deletions} /></dd>
+                {/if}
+                {#if details.comments > 0}
+                  <dt>Comments</dt>
+                  <dd>{details.comments}</dd>
+                {/if}
+                {#if details.branch}
+                  <dt>Branch</dt>
+                  <dd>{details.branch}</dd>
+                {/if}
+                {#if details.agent}
+                  <dt>Agent</dt>
+                  <dd>{details.agent}</dd>
+                {/if}
+              </dl>
+            {/if}
+          {/snippet}
     {/snippet}
     {#if workspaceListStatus === "loading" && workspaces.length === 0}
       <p class="filter-empty">Loading workspaces...</p>
@@ -2791,12 +2876,67 @@
     min-width: 224px;
   }
 
+  /* The hover card's status lines render in the title popover, which moves to the document body. */
+  /* The icons space themselves with the meta line's gap. */
+  .pull-status {
+    display: contents;
+  }
+
+  :global(.ws-hover-details) {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--space-1) var(--space-5);
+    margin: 0;
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border-muted);
+    font-size: var(--font-size-xs);
+    line-height: 1.35;
+  }
+
+  :global(.ws-hover-details dt) {
+    color: var(--text-muted);
+  }
+
+  :global(.ws-hover-details dd) {
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  :global(.ws-hover-details .ws-hover-value--success) {
+    color: var(--accent-green);
+  }
+
+  :global(.ws-hover-details .ws-hover-value--warning) {
+    color: var(--accent-amber);
+  }
+
+  :global(.ws-hover-details .ws-hover-value--danger) {
+    color: var(--accent-red);
+  }
+
+  :global(.ws-hover-details .ws-hover-value--waiting) {
+    color: var(--accent-purple);
+  }
+
+  :global(.ws-hover-detail) {
+    display: block;
+    color: var(--text-secondary);
+  }
+
   /* Width-aware hiding: shed least-critical chrome first as the
    * rail narrows. Push state outranks diff stats because branch
    * hygiene matters more for "should I open this workspace?" than
-   * line counts. */
+   * line counts. A row with pull request status icons sheds its line
+   * counts sooner, since the icons need the room and the hover card
+   * always carries the counts. */
   @container workspace-rail (max-width: 260px) {
     .workspace-diff-stats {
+      display: none;
+    }
+  }
+
+  @container workspace-rail (max-width: 380px) {
+    .pull-status ~ .workspace-diff-stats {
       display: none;
     }
   }

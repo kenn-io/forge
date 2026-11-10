@@ -104,7 +104,7 @@ func TestRoborevAuthenticatedRequests(t *testing.T) {
 				{http.MethodGet, "/api/roborev/api/job/output?job_id=1&stream=1"},
 				{http.MethodPost, "/api/roborev/api/sync/now?stream=1"},
 			} {
-				req := httptest.NewRequest(tc.method, tc.path, nil).WithContext(t.Context())
+				req := httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, nil)
 				req.Header.Set("Authorization", "Bearer forge-caller-secret")
 				req.Header.Set("Cookie", "forge_session=caller-cookie")
 				req.Header.Set("Accept", "application/json")

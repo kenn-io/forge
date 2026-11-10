@@ -29,7 +29,6 @@ func roborevProxy(target string, transport http.RoundTripper) http.Handler {
 		Transport:     transport,
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(targetURL)
-			r.Out.Header.Del("Authorization")
 			r.Out.Header.Del("Cookie")
 		},
 		ErrorHandler: func(

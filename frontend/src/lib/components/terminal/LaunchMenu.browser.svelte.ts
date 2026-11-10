@@ -2,7 +2,7 @@
 // That is paint, which jsdom cannot see: its click reaches an invisible button.
 import { mount, unmount } from "svelte";
 import { afterEach, expect, it } from "vite-plus/test";
-import { cdp, page, userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import "@kenn-io/kit-ui/theme.css";
 
 import LaunchMenu from "./LaunchMenu.svelte";
@@ -11,7 +11,6 @@ let app: Record<string, unknown> | undefined;
 let host: HTMLElement | undefined;
 
 afterEach(async () => {
-  await cdp().send("Emulation.setTouchEmulationEnabled", { enabled: false });
   if (app) await unmount(app);
   host?.remove();
   app = undefined;
@@ -44,7 +43,13 @@ async function openMenu(): Promise<void> {
   await page.getByRole("button", { name: "Quick actions" }).click();
 }
 
-it("shows a row's send button only while that row is hovered or keyboard-focused", async () => {
+// Whether the pointer can hover belongs to the browser page, which spec files
+// share. A spec that emulates touch leaves hover off for every file after it:
+// turning the emulation off does not bring hover back, even in a new frame.
+// So this spec emulates nothing and checks the rule for the page it was given.
+const canHover = matchMedia("(hover: hover)").matches;
+
+it.runIf(canHover)("shows a row's send button only while that row is hovered or keyboard-focused", async () => {
   await openMenu();
   // Opening focuses the first row. Whether a browser counts that as keyboard
   // focus depends on the window being active, so the rows below it carry the
@@ -63,9 +68,7 @@ it("shows a row's send button only while that row is hovered or keyboard-focused
   await expect.poll(() => [opacity("Send review to Helper"), opacity("Send triage to Helper")]).toEqual(["1", "0"]);
 });
 
-it("keeps every send button visible when the pointer cannot hover", async () => {
-  await cdp().send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
-  expect(matchMedia("(hover: none)").matches).toBe(true);
+it.runIf(!canHover)("keeps every send button visible when the pointer cannot hover", async () => {
   await openMenu();
   expect([opacity("Send review to Helper"), opacity("Send triage to Helper")]).toEqual(["1", "1"]);
 });

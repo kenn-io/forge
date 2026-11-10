@@ -58,11 +58,7 @@ func newEmbeddingsCommand(stdin io.Reader, stdout, stderr io.Writer, deps localE
 		switching := strings.TrimSpace(cfg.Embeddings.BaseURL) != "" || cfg.LocalEmbeddings == "auto"
 		recipe := cfg.Embeddings
 		local := cfg.LocalEmbeddings
-		checkRecipe := recipe
-		if strings.TrimSpace(checkRecipe.BaseURL) == "" {
-			checkRecipe = config.LocalEmbeddingRecipe(checkRecipe)
-		}
-		rebuild := switching && !config.LocalEmbeddingCompatible(checkRecipe)
+		rebuild := switching && !config.LocalEmbeddingCompatible(recipe)
 		if rebuild || !cfg.Embeddings.Enabled() {
 			recipe = embedconfig.Embedder{Model: embedlocal.TextModel, Dims: 768, DocumentPrefix: "search_document: ", QueryPrefix: "search_query: "}
 		}

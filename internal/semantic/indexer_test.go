@@ -191,44 +191,43 @@ func TestRefreshSkipsOnlyDocumentsTheEndpointRejects(t *testing.T) {
 }
 
 func TestModelChangeRebuildsTheIndex(t *testing.T) {
-	t.Run("new model rebuilds", func(t *testing.T) {
-		assert := assert.New(t)
-		f := newFixture(t)
-		f.sources.set(pull(1, 10, 101, "Cache fix", "cache"))
-		first := f.open(t, "model-a")
-		require.NoError(t, first.Refresh(t.Context()))
-		require.NoError(t, first.Close())
+	assert := assert.New(t)
+	f := newFixture(t)
+	f.sources.set(pull(1, 10, 101, "Cache fix", "cache"))
+	first := f.open(t, "model-a")
+	require.NoError(t, first.Refresh(t.Context()))
+	require.NoError(t, first.Close())
 
-		// The new model's endpoint refuses every request, so its backfill fails
-		// rather than marking the document skipped.
-		f.endpoint.RefuseModel("model-b")
-		second := f.open(t, "model-b")
-		require.Error(t, second.Refresh(t.Context()))
-		f.endpoint.RefuseModel("")
-		assert.Empty(rank(t, second, "cache", "pr", 0, 0, item(10, 101)), "model-a vectors are never compared with a model-b query")
+	// The new model's endpoint refuses every request, so its backfill fails
+	// rather than marking the document skipped.
+	f.endpoint.RefuseModel("model-b")
+	second := f.open(t, "model-b")
+	require.Error(t, second.Refresh(t.Context()))
+	f.endpoint.RefuseModel("")
+	assert.Empty(rank(t, second, "cache", "pr", 0, 0, item(10, 101)), "model-a vectors are never compared with a model-b query")
 
-		require.NoError(t, second.Refresh(t.Context()))
-		assert.Equal("model-b", f.endpoint.LastModel())
-		assert.Equal([]db.RepoItemNumber{item(10, 101)}, rank(t, second, "cache", "pr", 0, 0, item(10, 101)))
-	})
-	t.Run("same model new endpoint keeps index", func(t *testing.T) {
-		f := newFixture(t)
-		f.sources.set(pull(1, 10, 101, "Cache fix", "cache"), pull(2, 10, 102, "Login fix", "login"))
-		first := f.open(t, "nomic-embed-text")
-		require.NoError(t, first.Refresh(t.Context()))
-		candidates := []db.RepoItemNumber{item(10, 101), item(10, 102)}
-		before := rank(t, first, "cache", "pr", 0, 0, candidates...)
-		require.NoError(t, first.Close())
-		secondEndpoint := embedfake.New(t, "cache", "login", "flaky", "docs")
-		encoder, err := NewEncoder(secondEndpoint.Embedder("nomic-embed-text"), nil)
-		require.NoError(t, err)
-		second, err := Open(t.Context(), f.path, encoder, f.sources, time.Hour)
-		require.NoError(t, err)
-		t.Cleanup(func() { _ = second.Close() })
-		require.NoError(t, second.Refresh(t.Context()))
-		assert.Empty(t, secondEndpoint.Inputs())
-		assert.Equal(t, before, rank(t, second, "cache", "pr", 0, 0, candidates...))
-	})
+	require.NoError(t, second.Refresh(t.Context()))
+	assert.Equal("model-b", f.endpoint.LastModel())
+	assert.Equal([]db.RepoItemNumber{item(10, 101)}, rank(t, second, "cache", "pr", 0, 0, item(10, 101)))
+}
+
+func TestEndpointSwitchKeepsIndex(t *testing.T) {
+	f := newFixture(t)
+	f.sources.set(pull(1, 10, 101, "Cache fix", "cache"), pull(2, 10, 102, "Login fix", "login"))
+	first := f.open(t, "nomic-embed-text")
+	require.NoError(t, first.Refresh(t.Context()))
+	candidates := []db.RepoItemNumber{item(10, 101), item(10, 102)}
+	before := rank(t, first, "cache", "pr", 0, 0, candidates...)
+	require.NoError(t, first.Close())
+	secondEndpoint := embedfake.New(t, "cache", "login", "flaky", "docs")
+	encoder, err := NewEncoder(secondEndpoint.Embedder("nomic-embed-text"), nil)
+	require.NoError(t, err)
+	second, err := Open(t.Context(), f.path, encoder, f.sources, time.Hour)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = second.Close() })
+	require.NoError(t, second.Refresh(t.Context()))
+	assert.Empty(t, secondEndpoint.Inputs())
+	assert.Equal(t, before, rank(t, second, "cache", "pr", 0, 0, candidates...))
 }
 
 func TestWakesNeverStartPassesLessThanAMinuteApart(t *testing.T) {

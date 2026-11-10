@@ -13,7 +13,7 @@ func LocalEmbeddingRecipe(e embedconfig.Embedder) embedconfig.Embedder {
 
 // LocalEmbeddingCompatible reports whether the built-in server can serve the recipe.
 func LocalEmbeddingCompatible(e embedconfig.Embedder) bool {
-	parts, err := e.Parts()
+	parts, err := LocalEmbeddingRecipe(e).Parts()
 	if err != nil {
 		return false
 	}

@@ -17,3 +17,11 @@ func TestSemanticSearchFailureOffersLocalSetup(t *testing.T) {
 	assert.Contains(t, problem.Detail, "kenn-forge embeddings local")
 	assert.NotContains(t, problem.Detail, "private endpoint")
 }
+
+func TestSemanticSearchDisabledOffersLocalSetup(t *testing.T) {
+	err := SemanticSearchAvailable("search", false)
+	var problem *ProblemError
+	require.ErrorAs(t, err, &problem)
+	assert.Equal(t, http.StatusServiceUnavailable, problem.Status)
+	assert.Contains(t, problem.Detail, "kenn-forge embeddings local")
+}

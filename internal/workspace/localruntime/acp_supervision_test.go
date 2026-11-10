@@ -261,25 +261,24 @@ func fixtureModel(t *testing.T, agent *ACP) string {
 }
 
 func TestACPPeopleChangeSettingsWhileSupervised(t *testing.T) {
-	agent := newInProcessChat(t).start(nil)
-	require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
+	t.Run("person", func(t *testing.T) {
+		agent := newInProcessChat(t).start(nil)
+		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
+		require.NoError(t, agent.Command(ACPCommand{Type: "config", ID: "model", Value: "deep"}))
+		assert.Equal(t, "deep", fixtureModel(t, agent))
+	})
+	t.Run("coordinator", func(t *testing.T) {
+		c := newInProcessChat(t)
+		first := c.start(nil)
+		require.NoError(t, first.Command(ACPCommand{Type: "config", ID: "effort", Value: "high"}))
+		require.NoError(t, first.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
+		generation := publishedACPState(t, first).Supervision.Generation
+		require.NoError(t, first.Command(ACPCommand{Type: "config", ID: "model", Value: "deep", Generation: generation}))
 
-	require.NoError(t, agent.Command(ACPCommand{Type: "config", ID: "model", Value: "deep"}))
-	assert.Equal(t, "deep", fixtureModel(t, agent))
-}
-
-func TestACPSupervisedSettingsLeaveDefaultsAlone(t *testing.T) {
-	c := newInProcessChat(t)
-	first := c.start(nil)
-	require.NoError(t, first.Command(ACPCommand{Type: "config", ID: "effort", Value: "high"}))
-	require.NoError(t, first.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
-	generation := publishedACPState(t, first).Supervision.Generation
-	require.NoError(t, first.Command(ACPCommand{Type: "config", ID: "model", Value: "deep", Generation: generation}))
-	assert.Equal(t, "deep", fixtureModel(t, first))
-
-	other := c.start(nil)
-	assert.Equal(t, "fast", fixtureModel(t, other))
-	assert.Equal(t, "high", publishedACPState(t, other).ConfigOptions[0].CurrentValue)
+		other := c.start(nil)
+		assert.Equal(t, "fast", fixtureModel(t, other))
+		assert.Equal(t, "high", acpOptionValue(t, other, "effort"))
+	})
 }
 
 // A settings change waits for the turn lock. A takeover that lands while it

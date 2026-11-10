@@ -643,9 +643,9 @@
     onfocusin={onFocusPane ? (event) => handleLeafFocusIn(event, node) : undefined}
   >
     {#if !soloChrome}
-    <div
+    <!-- kit-ui-check-ignore: panel tabs reorder and move between split leaves by drag and drop, which Tabs cannot -->
+    <div role="tablist"
       class={["tabbed-panel-tabs", { "drag-sorting": draggedTabKey !== null }]}
-      role="tablist"
       tabindex="-1"
       aria-label={tablistLabel}
       ondragover={handleTabStripDragOver}

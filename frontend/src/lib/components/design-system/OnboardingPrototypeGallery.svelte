@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { Tabs } from "@kenn-io/kit-ui";
   import OnboardingChecklistPrototype from "./OnboardingChecklistPrototype.svelte";
   import OnboardingGuidePrototype from "./OnboardingGuidePrototype.svelte";
   import OnboardingWizardPrototype from "./OnboardingWizardPrototype.svelte";
@@ -45,130 +45,66 @@
 
   let active = $state<PrototypeId>("wizard");
   const activePrototype = $derived(prototypes[active]);
-
-  async function selectAndFocus(prototypeId: PrototypeId): Promise<void> {
-    active = prototypeId;
-    await tick();
-    document.getElementById(`prototype-tab-${prototypeId}`)?.focus();
-  }
-
-  function handleTabKey(event: KeyboardEvent, prototypeId: PrototypeId): void {
-    const currentIndex = prototypeOrder.indexOf(prototypeId);
-    let nextIndex: number | null = null;
-    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % prototypeOrder.length;
-    else if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + prototypeOrder.length) % prototypeOrder.length;
-    else if (event.key === "Home") nextIndex = 0;
-    else if (event.key === "End") nextIndex = prototypeOrder.length - 1;
-    if (nextIndex === null) return;
-    const nextPrototype = prototypeOrder[nextIndex];
-    if (!nextPrototype) return;
-    event.preventDefault();
-    void selectAndFocus(nextPrototype);
-  }
+  const galleryTabs = prototypeOrder.map((id) => ({ id, label: prototypes[id].label }));
 </script>
 
 <div class="prototype-gallery">
-  <div class="gallery-nav" role="tablist" aria-label="Onboarding prototype">
-    {#each prototypeOrder as prototypeId (prototypeId)}
-      {@const prototype = prototypes[prototypeId]}
-      <button
-        type="button"
-        role="tab"
-        aria-label={prototype.label}
-        id={`prototype-tab-${prototype.id}`}
-        aria-controls={`prototype-panel-${prototype.id}`}
-        aria-selected={active === prototype.id}
-        tabindex={active === prototype.id ? 0 : -1}
-        onclick={() => { active = prototype.id; }}
-        onkeydown={(event) => handleTabKey(event, prototype.id)}
-      >
-        <span>{prototype.eyebrow}</span>
-        <strong>{prototype.label}</strong>
-      </button>
-    {/each}
-  </div>
+  <Tabs
+    tabs={galleryTabs}
+    value={active}
+    ariaLabel="Onboarding prototype"
+    onchange={(id) => { active = prototypeOrder.find((prototypeId) => prototypeId === id) ?? active; }}
+  >
+    {#snippet tab(item)}
+      <span class="gallery-tab">
+        <span>{prototypes[item.id as PrototypeId].eyebrow}</span>
+        <strong>{item.label}</strong>
+      </span>
+    {/snippet}
+    {#snippet children()}
+      <div class="gallery-panel">
+        <div class="comparison-note" aria-live="polite">
+          <p>{activePrototype.idea}</p>
+          <dl>
+            <div><dt>Strength</dt><dd>{activePrototype.strength}</dd></div>
+            <div><dt>Trade-off</dt><dd>{activePrototype.tradeoff}</dd></div>
+          </dl>
+        </div>
 
-  <div class="comparison-note" aria-live="polite">
-    <p>{activePrototype.idea}</p>
-    <dl>
-      <div><dt>Strength</dt><dd>{activePrototype.strength}</dd></div>
-      <div><dt>Trade-off</dt><dd>{activePrototype.tradeoff}</dd></div>
-    </dl>
-  </div>
-
-  <div class="browser-frame">
-    <div class="browser-chrome" aria-hidden="true">
-      <div class="traffic-lights"><span></span><span></span><span></span></div>
-      <div class="address">127.0.0.1:8091/{active === "guide" ? "start" : active === "checklist" ? "pulls" : "setup"}</div>
-      <div class="chrome-spacer"></div>
-    </div>
-    <div
-      class="prototype-panel"
-      role="tabpanel"
-      id={`prototype-panel-${active}`}
-      aria-labelledby={`prototype-tab-${active}`}
-    >
-      {#if active === "wizard"}
-        <OnboardingWizardPrototype />
-      {:else if active === "checklist"}
-        <OnboardingChecklistPrototype />
-      {:else}
-        <OnboardingGuidePrototype />
-      {/if}
-    </div>
-  </div>
+        <div class="browser-frame">
+          <div class="browser-chrome" aria-hidden="true">
+            <div class="traffic-lights"><span></span><span></span><span></span></div>
+            <div class="address">127.0.0.1:8091/{active === "guide" ? "start" : active === "checklist" ? "pulls" : "setup"}</div>
+            <div class="chrome-spacer"></div>
+          </div>
+          <div class="prototype-panel">
+            {#if active === "wizard"}
+              <OnboardingWizardPrototype />
+            {:else if active === "checklist"}
+              <OnboardingChecklistPrototype />
+            {:else}
+              <OnboardingGuidePrototype />
+            {/if}
+          </div>
+        </div>
+      </div>
+    {/snippet}
+  </Tabs>
 </div>
 
 <style>
-  .prototype-gallery {
+  .gallery-panel {
     display: grid;
     gap: var(--space-5);
   }
 
-  .gallery-nav {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    border-bottom: 1px solid var(--border-default);
-  }
-
-  .gallery-nav button {
-    position: relative;
+  .gallery-tab {
     display: grid;
     gap: var(--space-2);
-    padding: var(--space-4) var(--space-5) var(--space-5);
-    border: 0;
-    background: transparent;
-    color: var(--text-muted);
     text-align: left;
-    cursor: pointer;
-    font: inherit;
   }
 
-  .gallery-nav button::after {
-    position: absolute;
-    right: 0;
-    bottom: -1px;
-    left: 0;
-    height: 2px;
-    background: transparent;
-    content: "";
-  }
-
-  .gallery-nav button[aria-selected="true"] {
-    color: var(--text-primary);
-  }
-
-  .gallery-nav button[aria-selected="true"]::after {
-    background: var(--accent-blue);
-  }
-
-  .gallery-nav button:focus-visible {
-    z-index: 1;
-    outline: 2px solid var(--accent-blue);
-    outline-offset: -2px;
-  }
-
-  .gallery-nav span {
+  .gallery-tab span {
     color: var(--text-muted);
     font-size: var(--font-size-xs);
     font-weight: 700;
@@ -176,7 +112,7 @@
     text-transform: var(--label-transform, uppercase);
   }
 
-  .gallery-nav strong {
+  .gallery-tab strong {
     font-size: var(--font-size-md);
   }
 
@@ -274,29 +210,6 @@
   }
 
   @media (max-width: 760px) {
-    .gallery-nav {
-      grid-template-columns: 1fr;
-      border: 1px solid var(--border-default);
-      border-radius: var(--radius-md);
-    }
-
-    .gallery-nav button {
-      padding: var(--space-4);
-      border-bottom: 1px solid var(--border-muted);
-    }
-
-    .gallery-nav button:last-child {
-      border-bottom: 0;
-    }
-
-    .gallery-nav button::after {
-      top: 0;
-      right: auto;
-      bottom: 0;
-      width: 2px;
-      height: auto;
-    }
-
     .comparison-note {
       grid-template-columns: 1fr;
       gap: var(--space-4);

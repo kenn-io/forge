@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SearchInput, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
+  import { SearchInput, Tabs, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { Effect, Exit } from "effect";
   import { onDestroy, untrack } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
@@ -622,22 +622,15 @@
 </script>
 
 {#snippet refPickerHeader()}
-  <div class="repo-browser__ref-tabs" role="tablist" aria-label="Repository ref types">
-    <button
-      type="button"
-      role="tab"
-      aria-selected={refPickerType === "branch"}
-      class:repo-browser__ref-tab--active={refPickerType === "branch"}
-      onclick={() => setRefPickerType("branch")}
-    >Branches {branchRefs.length}</button>
-    <button
-      type="button"
-      role="tab"
-      aria-selected={refPickerType === "tag"}
-      class:repo-browser__ref-tab--active={refPickerType === "tag"}
-      onclick={() => setRefPickerType("tag")}
-    >Tags {tagRefs.length}</button>
-  </div>
+  <Tabs
+    tabs={[
+      { id: "branch", label: "Branches", count: branchRefs.length },
+      { id: "tag", label: "Tags", count: tagRefs.length },
+    ]}
+    value={refPickerType}
+    ariaLabel="Repository ref types"
+    onchange={(id) => setRefPickerType(id === "tag" ? "tag" : "branch")}
+  />
   {#if refPickerTruncated}
     <div class="repo-browser__ref-more">
       Showing first {refPickerOptions.length} of {refPickerFilteredRefs.length}
@@ -919,32 +912,6 @@
     --typeahead-max-width: min(280px, 38vw);
     --typeahead-control-height: 30px;
     --typeahead-control-font-size: var(--font-size-sm);
-  }
-
-  .repo-browser__ref-tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-1);
-  }
-
-  .repo-browser__ref-tabs button {
-    min-height: 26px;
-    border: 0;
-    border-radius: 3px;
-    color: var(--text-secondary);
-    background: transparent;
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-  }
-
-  .repo-browser__ref-tabs button:hover {
-    color: var(--text-primary);
-    background: var(--bg-surface-hover);
-  }
-
-  .repo-browser__ref-tab--active {
-    color: var(--text-primary) !important;
-    background: var(--bg-inset) !important;
   }
 
   .repo-browser__ref-more {

@@ -24,6 +24,7 @@ it("preserves highlighted review comments and expanded details when the timeline
     PlatformID: 1,
     EventType: "review_comment",
     Author: "alice",
+    // kit-ui-check-ignore: review comment markdown under test, not app markup
     Body: "```ts\nconst answer = 42;\n```\n\n<details><summary>Explanation</summary>Keep this open.</details>",
     Summary: "",
     MetadataJSON: "",

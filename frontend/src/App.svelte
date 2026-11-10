@@ -1897,7 +1897,7 @@
   .focus-layout--phone :global(.section-title),
   .focus-layout--phone :global(.section-title-inline),
   .focus-layout--phone :global(.loading-placeholder),
-  .focus-layout--phone :global(.detail-tab) {
+  .focus-layout--phone :global(.detail-tabs .kit-tabs__tab) {
     font-size: var(--font-size-sm);
     line-height: 1.35;
   }
@@ -1938,7 +1938,7 @@
   .focus-layout--phone :global(.copy-icon-btn),
   .focus-layout--phone :global(.detail-description__toggle),
   .focus-layout--phone :global(.kit-button),
-  .focus-layout--phone :global(.detail-tab),
+  .focus-layout--phone :global(.detail-tabs .kit-tabs__tab),
   .focus-layout--phone :global(.add-description-btn) {
     min-width: var(--focus-detail-hit-target);
     min-height: var(--focus-detail-hit-target);

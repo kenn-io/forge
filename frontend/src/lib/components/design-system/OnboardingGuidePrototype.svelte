@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Card, Checkbox } from "@kenn-io/kit-ui";
+  import { Card, Checkbox, Disclosure } from "@kenn-io/kit-ui";
   import BookOpenIcon from "@lucide/svelte/icons/book-open";
   import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
   import FolderGitIcon from "@lucide/svelte/icons/folder-git-2";
@@ -98,10 +98,11 @@
               <CircleCheckIcon size={17} />
               <span><strong>Ready on github.com</strong><small>Authenticated as @maintainer with repo access</small></span>
             </div>
-            <details>
-              <summary>What command is being checked?</summary>
-              <code>gh auth status --hostname github.com</code>
-            </details>
+            <div class="command-check">
+              <Disclosure variant="plain" title="What command is being checked?">
+                <code>gh auth status --hostname github.com</code>
+              </Disclosure>
+            </div>
             <button type="button" class="primary" onclick={moveToRepos}>Continue to repositories</button>
           </div>
         </article>
@@ -234,8 +235,7 @@
   button { font: inherit; }
   button { cursor: pointer; }
   button:focus-visible,
-  a:focus-visible,
-  summary:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+  a:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
 
   .guide-bar {
     min-height: 46px;
@@ -285,9 +285,8 @@
   .callout span { display: grid; gap: var(--space-1); }
   .callout strong { color: var(--text-primary); font-size: var(--font-size-sm); }
   .callout small { color: var(--text-muted); }
-  details { margin-top: var(--space-4); color: var(--text-secondary); font-size: var(--font-size-sm); }
-  summary { cursor: pointer; }
-  details code { display: block; margin-top: var(--space-3); padding: var(--space-4); border-radius: var(--radius-md); background: var(--bg-inset); }
+  .command-check { margin-top: var(--space-4); }
+  .command-check code { display: block; margin-top: var(--space-3); padding: var(--space-4); border-radius: var(--radius-md); background: var(--bg-inset); }
   .primary { min-height: 32px; margin-top: var(--space-5); display: inline-flex; align-items: center; padding: 0 var(--space-5); border: 1px solid var(--accent-blue); border-radius: var(--radius-md); background: var(--accent-blue); color: var(--bg-primary); font-weight: 650; }
   .primary:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
   .inline-picker { margin-top: var(--space-5); border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-surface); }

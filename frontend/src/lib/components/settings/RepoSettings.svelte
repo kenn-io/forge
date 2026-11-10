@@ -2,7 +2,7 @@
   import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import { Effect } from "effect";
   import { tick } from "svelte";
-  import { Button, IconButton, TextInput } from "@kenn-io/kit-ui";
+  import { Button, Disclosure, IconButton, TextInput } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import type { ConfigRepo } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -393,40 +393,40 @@
   {/each}
 </div>
 
-<details class="advanced-add">
-  <summary>Advanced: add provider-scoped repo or tracking glob directly</summary>
-  <div class="advanced-body">
-    <div class="add-form">
-      <TextInput
-        class="add-input"
-        block
-        placeholder="provider/owner/name"
-        bind:value={inputValue}
-        onkeydown={handleInputKeydown}
-        disabled={adding}
-      />
-      <Button
-        tone="info"
-        surface="solid"
-        onclick={handleAdd}
-        disabled={adding || !inputValue.trim()}
-      >
-        {adding ? "Adding..." : "Add"}
-      </Button>
-    </div>
+<div class="advanced-add">
+  <Disclosure variant="plain" title="Advanced: add provider-scoped repo or tracking glob directly">
+    <div class="advanced-body">
+      <div class="add-form">
+        <TextInput
+          class="add-input"
+          block
+          placeholder="provider/owner/name"
+          bind:value={inputValue}
+          onkeydown={handleInputKeydown}
+          disabled={adding}
+        />
+        <Button
+          tone="info"
+          surface="solid"
+          onclick={handleAdd}
+          disabled={adding || !inputValue.trim()}
+        >
+          {adding ? "Adding..." : "Add"}
+        </Button>
+      </div>
 
-    {#if addError}
-      <div class="error-msg">{addError}</div>
-    {/if}
-  </div>
-</details>
+      {#if addError}
+        <div class="error-msg">{addError}</div>
+      {/if}
+    </div>
+  </Disclosure>
+</div>
 
 <style>
   .repo-import-entry { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--border-muted); }
   .repo-import-entry p { margin: 0; color: var(--text-muted); font-size: var(--font-size-sm); }
   .advanced-add { padding-top: 8px; }
-  .advanced-add summary { cursor: pointer; color: var(--text-secondary); font-size: var(--font-size-sm); }
-  .advanced-body { padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .advanced-body { display: flex; flex-direction: column; gap: 6px; }
   .repo-list { display: flex; flex-direction: column; }
   .repo-row {
     display: flex; flex-direction: column; gap: 6px;

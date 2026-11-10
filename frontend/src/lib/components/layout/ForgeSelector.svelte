@@ -169,6 +169,7 @@
 {/snippet}
 
 {#if showSelector && currentHost}
+  <!-- kit-ui-check-ignore: the fleet switcher is a dropdown list anchored to its trigger; Disclosure expands inline content below its header -->
   <details
     bind:this={selectorEl}
     bind:open={selectorOpen}

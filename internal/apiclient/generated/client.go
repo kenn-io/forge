@@ -60842,7 +60842,7 @@ type ListIssuesQuery struct {
 	ReferencedByPr *bool   `json:"referenced_by_pr,omitempty"`
 	Q              *string `json:"q,omitempty"`
 
-	// Semantic Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers.
+	// Semantic Rank titles, descriptions, and comments by meaning. Requires q and semantic search on the Forge that syncs providers.
 	Semantic *bool   `json:"semantic,omitempty"`
 	Assignee *string `json:"assignee,omitempty"`
 	Limit    *int64  `json:"limit,omitempty"`
@@ -60907,7 +60907,7 @@ type ListPullsQuery struct {
 	Unassigned *bool   `json:"unassigned,omitempty"`
 	Q          *string `json:"q,omitempty"`
 
-	// Semantic Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers.
+	// Semantic Rank titles, descriptions, and comments by meaning. Requires q and semantic search on the Forge that syncs providers.
 	Semantic *bool  `json:"semantic,omitempty"`
 	Limit    *int64 `json:"limit,omitempty"`
 	Offset   *int64 `json:"offset,omitempty"`

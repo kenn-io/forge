@@ -70,11 +70,10 @@ export const rankByMeaning = Effect.fn("Palette.rankByMeaning")(function* (query
   return { pulls, issues } satisfies SemanticMatches;
 });
 
-// semanticFailureMessage shows the server's explanation, which names the
-// missing [embeddings] setup when semantic search is not configured.
+// semanticFailureMessage shows the server's explanation.
 export function semanticFailureMessage(failure: ApiProblemError | TransientTransportError): string {
   if (failure._tag === "ApiProblemError") {
-    return failure.problem.detail ?? failure.problem.title ?? "Semantic search failed";
+    return failure.problem.detail ?? failure.problem.title ?? "Search failed";
   }
   return "Could not reach Forge";
 }

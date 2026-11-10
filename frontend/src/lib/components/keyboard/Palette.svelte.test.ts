@@ -534,7 +534,7 @@ describe("Palette", () => {
 
   it("Meaning mode shows why semantic search is unavailable", async () => {
     localStorage.setItem(SEARCH_MODE_KEY, "meaning");
-    const detail = "semantic search needs an [embeddings] endpoint on the Forge that syncs providers";
+    const detail = "enable semantic search with kenn-forge embeddings local";
     const unavailable = new GeneratedProblemResponse(
       { status: 503, code: "serviceUnavailable", title: "Service Unavailable", detail },
       new Response(null, { status: 503 }),

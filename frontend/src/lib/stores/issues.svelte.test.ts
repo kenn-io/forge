@@ -143,9 +143,9 @@ describe("issues store paging", () => {
 
       if (filter === "starred") store.setIssueFilterStarred(true);
       if (filter === "repo") repo = "acme/widgets";
-      if (filter === "involves me") store.setInvolvesMe(true);
-      if (filter === "unassigned") store.setUnassigned(true);
-      if (filter === "referenced by PR") store.setReferencedByPR(true);
+      if (filter === "involves me") store.setInvolvesMe("require");
+      if (filter === "unassigned") store.setUnassigned("require");
+      if (filter === "referenced by PR") store.setReferencedByPR("require");
       await loadIssues(store);
       expect(get).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 200 }), expect.anything());
       expect(store.getIssues()).toHaveLength(200);
@@ -573,7 +573,7 @@ describe("createIssuesStore", () => {
     const get = vi.fn(async () => ({ data: [], error: undefined }));
     const store = createIssuesStore({ client: { GET: get } as unknown as GeneratedClient });
 
-    store.setInvolvesMe(true);
+    store.setInvolvesMe("require");
     store.loadIssues();
     await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
 
@@ -590,7 +590,7 @@ describe("createIssuesStore", () => {
     const get = vi.fn(async () => ({ data: [], error: undefined }));
     const store = createIssuesStore({ client: { GET: get } as unknown as GeneratedClient });
 
-    store.setUnassigned(true);
+    store.setUnassigned("require");
     store.loadIssues();
     await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
 
@@ -610,7 +610,7 @@ describe("createIssuesStore", () => {
       supportsIssuePRReferences: () => true,
     });
 
-    store.setReferencedByPR(true);
+    store.setReferencedByPR("require");
     store.loadIssues();
     await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
 
@@ -621,6 +621,33 @@ describe("createIssuesStore", () => {
         params: { query: expect.objectContaining({ referenced_by_pr: true }) },
       }),
     );
+  });
+
+  it("persists and sends the opposite of each issue filter", async () => {
+    const get = vi.fn(async () => ({ data: [], error: undefined }));
+    const options = { client: { GET: get } as unknown as GeneratedClient, supportsIssuePRReferences: () => true };
+    const store = createIssuesStore(options);
+
+    store.setInvolvesMe("exclude");
+    store.setUnassigned("exclude");
+    store.setReferencedByPR("exclude");
+    store.loadIssues();
+    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
+
+    expect(localStorage.getItem(involvesMeFilterStorageKey("issues"))).toBe("0");
+    expect(localStorage.getItem(unassignedFilterStorageKey("issues"))).toBe("0");
+    expect(localStorage.getItem(issuePRReferenceFilterStorageKey())).toBe("0");
+    const query = (get.mock.calls.at(-1) as unknown as [string, { params: { query: Record<string, unknown> } }])[1]
+      .params.query;
+    expect(query).toMatchObject({ not_involves_me: true, assigned: true, not_referenced_by_pr: true });
+    expect(query).not.toHaveProperty("involves_me");
+    expect(query).not.toHaveProperty("unassigned");
+    expect(query).not.toHaveProperty("referenced_by_pr");
+
+    const reloaded = createIssuesStore(options);
+    expect(reloaded.getInvolvesMe()).toBe("exclude");
+    expect(reloaded.getUnassigned()).toBe("exclude");
+    expect(reloaded.getReferencedByPR()).toBe("exclude");
   });
 
   it("keeps the preference dormant in an unsupported provider scope", async () => {
@@ -634,7 +661,7 @@ describe("createIssuesStore", () => {
     store.loadIssues();
     await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
 
-    expect(store.getReferencedByPR()).toBe(true);
+    expect(store.getReferencedByPR()).toBe("require");
     expect(store.canFilterReferencedByPR()).toBe(false);
     expect(get).toHaveBeenCalledWith(
       "/issues",

@@ -102,6 +102,8 @@ type ListActivityInput struct {
 	Author             string   `query:"author" doc:"Exact, case-insensitive pull request or issue author filter."`
 	InvolvesMe         bool     `query:"involves_me" doc:"Only include activity for pull requests and issues involving the authenticated viewer."`
 	Unassigned         bool     `query:"unassigned" doc:"Only include activity for pull requests and issues with no assignees."`
+	NotInvolvesMe      bool     `query:"not_involves_me" doc:"Drop activity for pull requests and issues involving the authenticated viewer. With involves_me, neither filter applies."`
+	Assigned           bool     `query:"assigned" doc:"Drop activity for pull requests and issues with no assignees. With unassigned, neither filter applies."`
 	After              string   `query:"after"`
 	Before             string   `query:"before"`
 	AtOrBefore         string   `query:"at_or_before"`

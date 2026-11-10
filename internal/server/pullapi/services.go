@@ -36,6 +36,9 @@ type ListQuery struct {
 	Semantic   bool
 	Limit      int
 	Offset     int
+	// NotInvolvesMe and Assigned are the opposites of InvolvesMe and Unassigned.
+	NotInvolvesMe bool
+	Assigned      bool
 }
 
 type ItemIdentity struct {
@@ -105,6 +108,7 @@ func (s *Handler) ListProviderService(
 	output, err := s.listPullsRouteCore(ctx, &listPullsInput{
 		Repo: req.Repo, State: req.State,
 		Starred: req.Starred, InvolvesMe: req.InvolvesMe, Unassigned: req.Unassigned,
+		NotInvolvesMe: req.NotInvolvesMe, Assigned: req.Assigned,
 		Numbers: req.Numbers, Q: req.Text, Semantic: req.Semantic, Label: req.Label, Attributes: req.Attributes, Limit: req.Limit, Offset: req.Offset,
 	}, nil)
 	if err != nil {

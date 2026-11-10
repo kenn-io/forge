@@ -15,6 +15,7 @@
   import ListLoadMore from "./ListLoadMore.svelte";
   import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
   import { labelFilterChoices, labelFilterSummary } from "../../utils/label-filter.js";
+  import { cycleTriFilter, triFilterRow } from "../../utils/tri-filter.js";
   import {
     Chip,
     FilterDropdown,
@@ -119,17 +120,17 @@
 
   function resetCompactView(): void {
     const reloadIssues = issues.getIssueFilterState() !== "open"
-      || issues.getInvolvesMe()
-      || issues.getUnassigned()
-      || issues.getReferencedByPR();
+      || issues.getInvolvesMe() !== undefined
+      || issues.getUnassigned() !== undefined
+      || issues.getReferencedByPR() !== undefined;
     if (issues.getIssueFilterState() !== "open") issues.setIssueFilterState("open");
     issues.clearLabelFilters();
     grouping.setGroupByRepo(true);
     grouping.setHideOrgName(false);
     if (issues.getHideBots()) void issues.setHideBots(false);
-    issues.setInvolvesMe(false);
-    issues.setUnassigned(false);
-    issues.setReferencedByPR(false);
+    issues.setInvolvesMe(undefined);
+    issues.setUnassigned(undefined);
+    issues.setReferencedByPR(undefined);
     if (reloadIssues) issues.loadIssues();
   }
 
@@ -137,10 +138,12 @@
     issues.clearLabelFilters();
     grouping.setHideOrgName(false);
     if (issues.getHideBots()) void issues.setHideBots(false);
-    const reloadIssues = issues.getInvolvesMe() || issues.getUnassigned() || issues.getReferencedByPR();
-    issues.setInvolvesMe(false);
-    issues.setUnassigned(false);
-    issues.setReferencedByPR(false);
+    const reloadIssues = issues.getInvolvesMe() !== undefined
+      || issues.getUnassigned() !== undefined
+      || issues.getReferencedByPR() !== undefined;
+    issues.setInvolvesMe(undefined);
+    issues.setUnassigned(undefined);
+    issues.setReferencedByPR(undefined);
     if (reloadIssues) {
       issues.loadIssues();
     }
@@ -162,27 +165,27 @@
       {
         id: "involves-me",
         label: "Involves me",
-        active: issues.getInvolvesMe(),
+        ...triFilterRow(issues.getInvolvesMe()),
         onSelect: () => {
-          issues.setInvolvesMe(!issues.getInvolvesMe());
+          issues.setInvolvesMe(cycleTriFilter(issues.getInvolvesMe()));
           issues.loadIssues();
         },
       },
       {
         id: "unassigned",
         label: "Unassigned",
-        active: issues.getUnassigned(),
+        ...triFilterRow(issues.getUnassigned()),
         onSelect: () => {
-          issues.setUnassigned(!issues.getUnassigned());
+          issues.setUnassigned(cycleTriFilter(issues.getUnassigned()));
           issues.loadIssues();
         },
       },
       ...(issues.canFilterReferencedByPR() ? [{
         id: "referenced-by-pr",
         label: "Referenced by PR",
-        active: issues.getReferencedByPR(),
+        ...triFilterRow(issues.getReferencedByPR()),
         onSelect: () => {
-          issues.setReferencedByPR(!issues.getReferencedByPR());
+          issues.setReferencedByPR(cycleTriFilter(issues.getReferencedByPR()));
           issues.loadIssues();
         },
       }] : []),
@@ -229,9 +232,9 @@
       || !grouping.getGroupByRepo()
       || grouping.getHideOrgName()
       || issues.getHideBots()
-      || issues.getInvolvesMe()
-      || issues.getUnassigned()
-      || issues.getReferencedByPR(),
+      || issues.getInvolvesMe() !== undefined
+      || issues.getUnassigned() !== undefined
+      || issues.getReferencedByPR() !== undefined,
   );
   const useCompactFilters = $derived(
     sidebarWidth <= COMPACT_FILTER_MAX_WIDTH,
@@ -433,9 +436,9 @@
         active={issues.getLabelFilters().size > 0
           || grouping.getHideOrgName()
           || issues.getHideBots()
-          || issues.getInvolvesMe()
-          || issues.getUnassigned()
-          || issues.getReferencedByPR()}
+          || issues.getInvolvesMe() !== undefined
+          || issues.getUnassigned() !== undefined
+          || issues.getReferencedByPR() !== undefined}
         showBadge={false}
         sections={[visibilityFilterSection]}
         resetLabel="Reset visibility"

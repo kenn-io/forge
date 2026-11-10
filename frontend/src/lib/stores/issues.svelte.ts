@@ -42,6 +42,7 @@ import {
 import { providerItemKey } from "./provider-key.js";
 import { SettingsWorkflow, settingsErrorMessage } from "./settings-workflow.js";
 import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js";
+import type { TriFilter } from "../utils/tri-filter.js";
 import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
 import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
 import { readIssuePRReferenceFilter, writeIssuePRReferenceFilter } from "./issue-pr-reference-filter.js";
@@ -265,13 +266,13 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function getIssueFilterStarred(): boolean {
     return filterStarred;
   }
-  function getInvolvesMe(): boolean {
+  function getInvolvesMe(): TriFilter {
     return involvesMe;
   }
-  function getUnassigned(): boolean {
+  function getUnassigned(): TriFilter {
     return unassigned;
   }
-  function getReferencedByPR(): boolean {
+  function getReferencedByPR(): TriFilter {
     return referencedByPR;
   }
   function canFilterReferencedByPR(): boolean {
@@ -388,15 +389,15 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function setIssueFilterStarred(v: boolean): void {
     filterStarred = v;
   }
-  function setInvolvesMe(value: boolean): void {
+  function setInvolvesMe(value: TriFilter): void {
     involvesMe = value;
     writeInvolvesMeFilter("issues", value);
   }
-  function setUnassigned(value: boolean): void {
+  function setUnassigned(value: TriFilter): void {
     unassigned = value;
     writeUnassignedFilter("issues", value);
   }
-  function setReferencedByPR(value: boolean): void {
+  function setReferencedByPR(value: TriFilter): void {
     referencedByPR = value;
     writeIssuePRReferenceFilter(value);
   }
@@ -465,9 +466,12 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       state: filterState,
       ...(globalRepo !== undefined && { repo: globalRepo }),
       ...(filterStarred && { starred: true }),
-      ...(involvesMe && { involves_me: true }),
-      ...(unassigned && { unassigned: true }),
-      ...(referencedByPR && canFilterReferencedByPR() && { referenced_by_pr: true }),
+      ...(involvesMe === "require" && { involves_me: true }),
+      ...(involvesMe === "exclude" && { not_involves_me: true }),
+      ...(unassigned === "require" && { unassigned: true }),
+      ...(unassigned === "exclude" && { assigned: true }),
+      ...(referencedByPR === "require" && canFilterReferencedByPR() && { referenced_by_pr: true }),
+      ...(referencedByPR === "exclude" && canFilterReferencedByPR() && { not_referenced_by_pr: true }),
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };

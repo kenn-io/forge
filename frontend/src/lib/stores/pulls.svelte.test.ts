@@ -237,7 +237,7 @@ describe("pulls store display order", () => {
     const get = vi.fn(async () => []);
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
 
-    store.setInvolvesMe(true);
+    store.setInvolvesMe("require");
     await loadPulls(store);
 
     expect(localStorage.getItem(involvesMeFilterStorageKey("pulls"))).toBe("1");
@@ -248,11 +248,36 @@ describe("pulls store display order", () => {
     const get = vi.fn(async () => []);
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
 
-    store.setUnassigned(true);
+    store.setUnassigned("require");
     await loadPulls(store);
 
     expect(localStorage.getItem(unassignedFilterStorageKey("pulls"))).toBe("1");
     expect(get).toHaveBeenCalledWith(expect.objectContaining({ unassigned: true }), expect.anything());
+  });
+
+  it("persists and sends the opposite of Involves me and Unassigned", async () => {
+    const get = vi.fn(async () => []);
+    const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+
+    store.setInvolvesMe("exclude");
+    store.setUnassigned("exclude");
+    await loadPulls(store);
+
+    expect(localStorage.getItem(involvesMeFilterStorageKey("pulls"))).toBe("0");
+    expect(localStorage.getItem(unassignedFilterStorageKey("pulls"))).toBe("0");
+    const query = get.mock.calls.at(-1)![0] as Record<string, unknown>;
+    expect(query).toMatchObject({ not_involves_me: true, assigned: true });
+    expect(query).not.toHaveProperty("involves_me");
+    expect(query).not.toHaveProperty("unassigned");
+    expect(store.getLocalFilterCount()).toBe(2);
+
+    const reloaded = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+    expect(reloaded.getInvolvesMe()).toBe("exclude");
+    expect(reloaded.getUnassigned()).toBe("exclude");
+
+    store.clearLocalFilters();
+    expect(store.getInvolvesMe()).toBeUndefined();
+    expect(localStorage.getItem(involvesMeFilterStorageKey("pulls"))).toBeNull();
   });
 
   it("aborts a list request when its query changes", async () => {
@@ -601,7 +626,7 @@ describe("pulls store display order", () => {
       .mockResolvedValueOnce([pull(1, "api", "2026-05-20T15:00:00Z")])
       .mockResolvedValue([pull(2, "api", "2026-05-20T14:00:00Z", { MergeableState: "dirty" })]);
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
-    store.setInvolvesMe(true);
+    store.setInvolvesMe("require");
     await loadPulls(store);
     expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([1]);
     store.toggleAttributeFilter("merge_conflicts");
@@ -623,7 +648,7 @@ describe("pulls store display order", () => {
         new GeneratedProblemResponse({ status: 400, title: "Bad request" }, Response.json({}, { status: 400 })),
       );
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
-    store.setInvolvesMe(true);
+    store.setInvolvesMe("require");
     await loadPulls(store);
     store.toggleAttributeFilter("ready");
     await vi.waitFor(() => expect(store.isLoading()).toBe(false));
@@ -633,6 +658,61 @@ describe("pulls store display order", () => {
     await vi.waitFor(() => expect(store.getError()).not.toBeNull());
     expect(store.getAttributeFilters()).toEqual(["draft"]);
     expect(store.getFilteredPulls()).toEqual([]);
+  });
+
+  it("cycles a condition through required, its opposite, and off", async () => {
+    const store = createPullsStore({
+      client: clientWithPulls([
+        pull(1, "api", "2026-05-20T15:00:00Z", {
+          workspace: { id: "ws-1", status: "ready" },
+          ReviewDecision: "APPROVED",
+          MergeableState: "dirty",
+        }),
+        pull(2, "web", "2026-05-20T14:00:00Z", { ReviewDecision: "", MergeableState: "clean" }),
+      ]),
+    });
+    await loadPulls(store);
+    const shown = () => store.getDisplayOrderPRs().map((pr) => pr.ID);
+
+    for (const [filter, opposite] of [
+      ["has_workspace", "no_workspace"],
+      ["approved", "not_approved"],
+      ["merge_conflicts", "no_merge_conflicts"],
+    ] as const) {
+      store.cycleAttributeFilter(filter, opposite);
+      expect(store.getAttributeFilters()).toEqual([filter]);
+      expect(shown()).toEqual([1]);
+
+      store.cycleAttributeFilter(filter, opposite);
+      expect(store.getAttributeFilters()).toEqual([opposite]);
+      expect(shown()).toEqual([2]);
+
+      store.cycleAttributeFilter(filter, opposite);
+      expect(store.getAttributeFilters()).toEqual([]);
+      expect(shown()).toEqual([1, 2]);
+    }
+  });
+
+  it("sends an opposite condition to the server but keeps workspace filters in the browser", async () => {
+    const get = vi.fn().mockResolvedValue([]);
+    const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+    store.setInvolvesMe("require");
+    await loadPulls(store);
+    const reads = () => get.mock.calls.length;
+
+    let before = reads();
+    store.cycleAttributeFilter("approved", "not_approved");
+    store.cycleAttributeFilter("approved", "not_approved");
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+    expect(reads()).toBeGreaterThan(before);
+    expect(get).toHaveBeenLastCalledWith(expect.objectContaining({ attributes: "not_approved" }), expect.anything());
+
+    before = reads();
+    store.cycleAttributeFilter("has_workspace", "no_workspace");
+    store.cycleAttributeFilter("has_workspace", "no_workspace");
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+    expect(store.getAttributeFilters()).toEqual(["not_approved", "no_workspace"]);
+    expect(reads()).toBe(before);
   });
 
   it("filters pull requests to entries with a workspace", async () => {

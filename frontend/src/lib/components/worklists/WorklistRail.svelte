@@ -57,7 +57,7 @@
     type WorklistOrder,
     type WorklistStateFilter,
   } from "./worklist-items.js";
-  import { toggleFilterInSections } from "../../utils/pull-attributes.js";
+  import { cycleFilterInSections, toggleFilterInSections } from "../../utils/pull-attributes.js";
 
   interface Props {
     worklist: Worklist;
@@ -188,14 +188,18 @@
     return stateFilter === "closed" ? "No items are closed." : "No open items remain. Closed items are hidden.";
   });
 
-  // Every selected filter must match. Review, CI, and Conflicts are pick-one pairs of opposites.
-  const filterGroups: { title: string; options: { value: WorklistItemFilter; label: string }[] }[] = [
+  // Every selected filter must match. Review, CI, and Conflicts are pick-one pairs of opposites;
+  // an Items row cycles through off, required, and its opposite.
+  const filterGroups: {
+    title: string;
+    options: { value: WorklistItemFilter; opposite?: WorklistItemFilter; label: string }[];
+  }[] = [
     {
       title: "Items",
       options: [
-        { value: "involves_me", label: "Involves me" },
-        { value: "approved", label: "Approved" },
-        { value: "has_workspace", label: "Has workspace" },
+        { value: "involves_me", opposite: "not_involves_me", label: "Involves me" },
+        { value: "approved", opposite: "not_approved", label: "Approved" },
+        { value: "has_workspace", opposite: "no_workspace", label: "Has workspace" },
       ],
     },
     {
@@ -221,9 +225,13 @@
     },
   ];
 
-  function toggleItemFilter(filter: WorklistItemFilter): void {
-    itemFilters = toggleFilterInSections(WORKLIST_FILTER_SECTIONS, itemFilters, filter);
-    onInvolvesMeChange(itemFilters.includes("involves_me"));
+  function selectItemFilter(filter: WorklistItemFilter, opposite?: WorklistItemFilter): void {
+    itemFilters =
+      opposite === undefined
+        ? toggleFilterInSections(WORKLIST_FILTER_SECTIONS, itemFilters, filter)
+        : cycleFilterInSections(WORKLIST_FILTER_SECTIONS, itemFilters, filter, opposite);
+    // Either direction needs the server to mark the items that involve the viewer.
+    onInvolvesMeChange(itemFilters.includes("involves_me") || itemFilters.includes("not_involves_me"));
   }
 
   const labelChoices = $derived(
@@ -250,7 +258,8 @@
           id: `worklist-${option.value}`,
           label: option.label,
           active: itemFilters.includes(option.value),
-          onSelect: () => toggleItemFilter(option.value),
+          excluded: option.opposite !== undefined && itemFilters.includes(option.opposite),
+          onSelect: () => selectItemFilter(option.value, option.opposite),
         })),
       ],
     })),

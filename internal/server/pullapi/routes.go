@@ -42,7 +42,7 @@ const (
 
 type listPullsInput struct {
 	Numbers    []int64 `query:"numbers" doc:"Item numbers in every repo unless repo is set; before pagination."`
-	Attributes string  `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Mutually exclusive filters match either: draft or ready, and failed_ci or passed_ci. Every other selected filter, including involves_me and unassigned, must also match before pagination."`
+	Attributes string  `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, and merge_conflicts or no_merge_conflicts. Every other selected filter, including involves_me and unassigned, must also match before pagination."`
 	Label      string  `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
 	Repo       string  `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
 	State      string  `query:"state" doc:"open (default), closed (including merged), merged, closed_unmerged, or all."`
@@ -53,6 +53,9 @@ type listPullsInput struct {
 	Semantic   bool    `query:"semantic" doc:"Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers."`
 	Limit      int     `query:"limit"`
 	Offset     int     `query:"offset"`
+	// The opposites of involves_me and unassigned.
+	NotInvolvesMe bool `query:"not_involves_me" doc:"Only include pull requests that do not involve the authenticated viewer. With involves_me, neither filter applies."`
+	Assigned      bool `query:"assigned" doc:"Only include pull requests with an assignee. With unassigned, neither filter applies."`
 }
 
 type listPullsOutput = httpapi.BodyOutput[[]MergeRequestResponse]
@@ -364,7 +367,8 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 	query := ListQuery{
 		Numbers: input.Numbers,
 		Repo:    input.Repo, State: input.State,
-		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, Text: input.Q, Semantic: input.Semantic,
+		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned,
+		NotInvolvesMe: input.NotInvolvesMe, Assigned: input.Assigned, Text: input.Q, Semantic: input.Semantic,
 		Label: input.Label, Attributes: input.Attributes, Limit: input.Limit, Offset: input.Offset,
 	}
 	var rows []MergeRequestResponse
@@ -406,7 +410,8 @@ func (s *Handler) listPullsRouteCore(
 	if input.Attributes != "" {
 		for attribute := range strings.SplitSeq(input.Attributes, ",") {
 			switch attribute {
-			case "approved", "draft", "ready", "merge_conflicts", "failed_ci", "passed_ci", "merge_queue":
+			case "approved", "not_approved", "draft", "ready", "merge_conflicts", "no_merge_conflicts",
+				"failed_ci", "passed_ci", "merge_queue":
 			default:
 				return nil, httpapi.Validation("query.attributes", "unknown PR inclusion filter")
 			}
@@ -452,7 +457,8 @@ func (s *Handler) listPullsRouteCore(
 		AllowedRepoIDs:    allowedRepoIDs,
 		State:             input.State,
 		Starred:           input.Starred,
-		Unassigned:        input.Unassigned,
+		Unassigned:        input.Unassigned && !input.Assigned,
+		Assigned:          input.Assigned && !input.Unassigned,
 		Search:            input.Q,
 		Label:             input.Label,
 		Limit:             input.Limit,
@@ -461,7 +467,8 @@ func (s *Handler) listPullsRouteCore(
 		WorkspaceActivity: overrides,
 		Items:             items,
 	}
-	if input.InvolvesMe {
+	if input.InvolvesMe != input.NotInvolvesMe {
+		opts.ViewerUninvolved = input.NotInvolvesMe
 		if s.viewerLogins == nil {
 			return nil, httpapi.Internal("authenticated viewer lookup unavailable")
 		}

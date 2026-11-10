@@ -26,7 +26,8 @@
   import type { PullRequest } from "../../api/types.js";
   import type { PullSidebarRow } from "../../utils/pull-stack-tree.js";
   import type { GroupingMode } from "../../stores/grouping.svelte.js";
-  import type { PullAttributeFilter } from "../../utils/pull-attributes.js";
+  import { triFilterInSelection, type PullAttributeFilter } from "../../utils/pull-attributes.js";
+  import { cycleTriFilter, triFilterRow } from "../../utils/tri-filter.js";
   import { createRepoLabelFormatter } from "../../utils/repo-label.js";
   import { labelFilterChoices, labelFilterSummary } from "../../utils/label-filter.js";
   import {
@@ -55,7 +56,8 @@
     grouping.getGroupingMode(),
   );
   const pullStateOptions = ["open", "closed", "all"] as const;
-  // Every selected filter must match. Review and CI are pick-one pairs of opposites.
+  // Every selected filter must match. Review and CI are pick-one pairs of opposites;
+  // a condition row cycles through off, required, and its opposite.
   const pickOneFilterSections: {
     title: string;
     options: { value: PullAttributeFilter; label: string }[];
@@ -75,10 +77,10 @@
       ],
     },
   ];
-  const conditionFilterOptions: { value: PullAttributeFilter; label: string }[] = [
-    { value: "approved", label: "Approved" },
-    { value: "merge_conflicts", label: "Merge conflicts" },
-    { value: "has_workspace", label: "Has workspace" },
+  const conditionFilterOptions: { value: PullAttributeFilter; opposite: PullAttributeFilter; label: string }[] = [
+    { value: "approved", opposite: "not_approved", label: "Approved" },
+    { value: "merge_conflicts", opposite: "no_merge_conflicts", label: "Merge conflicts" },
+    { value: "has_workspace", opposite: "no_workspace", label: "Has workspace" },
   ];
   const groupingOptions: {
     value: GroupingMode;
@@ -219,7 +221,7 @@
   const labelChoices = $derived(labelFilterChoices(pulls.getPulls(), pulls.getLabelFilters()));
   function attributeFilterItem(option: { value: PullAttributeFilter; label: string }) {
     return {
-      id: option.value === "has_workspace" ? "has-workspace" : `pr-${option.value}`,
+      id: `pr-${option.value}`,
       label: option.label,
       active: pulls.getAttributeFilters().includes(option.value),
       onSelect: () => pulls.toggleAttributeFilter(option.value),
@@ -241,22 +243,27 @@
         {
           id: "involves-me",
           label: "Involves me",
-          active: pulls.getInvolvesMe(),
+          ...triFilterRow(pulls.getInvolvesMe()),
           onSelect: () => {
-            pulls.setInvolvesMe(!pulls.getInvolvesMe());
+            pulls.setInvolvesMe(cycleTriFilter(pulls.getInvolvesMe()));
             pulls.loadPulls();
           },
         },
         {
           id: "unassigned",
           label: "Unassigned",
-          active: pulls.getUnassigned(),
+          ...triFilterRow(pulls.getUnassigned()),
           onSelect: () => {
-            pulls.setUnassigned(!pulls.getUnassigned());
+            pulls.setUnassigned(cycleTriFilter(pulls.getUnassigned()));
             pulls.loadPulls();
           },
         },
-        ...conditionFilterOptions.map(attributeFilterItem),
+        ...conditionFilterOptions.map((option) => ({
+          id: option.value === "has_workspace" ? "has-workspace" : `pr-${option.value}`,
+          label: option.label,
+          ...triFilterRow(triFilterInSelection(pulls.getAttributeFilters(), option.value, option.opposite)),
+          onSelect: () => pulls.cycleAttributeFilter(option.value, option.opposite),
+        })),
       ],
     },
     ...pickOneFilterSections.map((section) => ({

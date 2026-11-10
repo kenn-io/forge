@@ -1,10 +1,12 @@
+import type { TriFilter } from "../lib/utils/tri-filter.js";
+
 let pullSearch = $state<string | undefined>(undefined);
 let issueSearch = $state<string | undefined>(undefined);
-let pullInvolvesMe = $state(false);
-let issueInvolvesMe = $state(false);
-let pullUnassigned = $state(false);
-let issueUnassigned = $state(false);
-let issueReferencedByPR = $state(false);
+let pullInvolvesMe = $state<TriFilter>(undefined);
+let issueInvolvesMe = $state<TriFilter>(undefined);
+let pullUnassigned = $state<TriFilter>(undefined);
+let issueUnassigned = $state<TriFilter>(undefined);
+let issueReferencedByPR = $state<TriFilter>(undefined);
 
 export function getPullSearch(): string | undefined {
   return pullSearch;
@@ -22,52 +24,52 @@ export function setIssueSearch(value: string | undefined): void {
   issueSearch = value;
 }
 
-export function getPullInvolvesMe(): boolean {
+export function getPullInvolvesMe(): TriFilter {
   return pullInvolvesMe;
 }
 
-export function getIssueInvolvesMe(): boolean {
+export function getIssueInvolvesMe(): TriFilter {
   return issueInvolvesMe;
 }
 
-export function setPullInvolvesMe(value: boolean): void {
+export function setPullInvolvesMe(value: TriFilter): void {
   pullInvolvesMe = value;
 }
 
-export function setIssueInvolvesMe(value: boolean): void {
+export function setIssueInvolvesMe(value: TriFilter): void {
   issueInvolvesMe = value;
 }
 
-export function getPullUnassigned(): boolean {
+export function getPullUnassigned(): TriFilter {
   return pullUnassigned;
 }
 
-export function getIssueUnassigned(): boolean {
+export function getIssueUnassigned(): TriFilter {
   return issueUnassigned;
 }
 
-export function setPullUnassigned(value: boolean): void {
+export function setPullUnassigned(value: TriFilter): void {
   pullUnassigned = value;
 }
 
-export function setIssueUnassigned(value: boolean): void {
+export function setIssueUnassigned(value: TriFilter): void {
   issueUnassigned = value;
 }
 
-export function getIssueReferencedByPR(): boolean {
+export function getIssueReferencedByPR(): TriFilter {
   return issueReferencedByPR;
 }
 
-export function setIssueReferencedByPR(value: boolean): void {
+export function setIssueReferencedByPR(value: TriFilter): void {
   issueReferencedByPR = value;
 }
 
 export function resetFocusListViewState(): void {
   pullSearch = undefined;
   issueSearch = undefined;
-  pullInvolvesMe = false;
-  issueInvolvesMe = false;
-  pullUnassigned = false;
-  issueUnassigned = false;
-  issueReferencedByPR = false;
+  pullInvolvesMe = undefined;
+  issueInvolvesMe = undefined;
+  pullUnassigned = undefined;
+  issueUnassigned = undefined;
+  issueReferencedByPR = undefined;
 }

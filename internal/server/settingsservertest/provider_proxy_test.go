@@ -167,6 +167,11 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabelAndNumbers(t *t
 	) (*http.Response, error) {
 		assert.Equal(federationauth.ScopeProviderRead, scope)
 		seen[request.URL.Path] = request.URL.Query().Get("unassigned") == "true"
+		assert.Equal("true", request.URL.Query().Get("not_involves_me"), request.URL.Path)
+		assert.Equal("true", request.URL.Query().Get("assigned"), request.URL.Path)
+		if request.URL.Path == "/api/v1/issues" {
+			assert.Equal("true", request.URL.Query().Get("not_referenced_by_pr"))
+		}
 		if request.URL.Path == "/api/v1/pulls" || request.URL.Path == "/api/v1/issues" {
 			assert.Equal("7,42", request.URL.Query().Get("numbers"))
 			assert.Equal("true", request.URL.Query().Get("semantic"), "semantic ranking runs on the hub")
@@ -187,11 +192,11 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabelAndNumbers(t *t
 		}, nil
 	})}
 
-	_, err := source.ListPulls(t.Context(), pullapi.ListQuery{Numbers: []int64{7, 42}, Unassigned: true, Text: "flaky", Semantic: true, Label: "priority: high", Attributes: "failed_ci,draft"})
+	_, err := source.ListPulls(t.Context(), pullapi.ListQuery{Numbers: []int64{7, 42}, Unassigned: true, NotInvolvesMe: true, Assigned: true, Text: "flaky", Semantic: true, Label: "priority: high", Attributes: "failed_ci,draft"})
 	require.NoError(err)
-	_, err = source.ListIssues(t.Context(), issueapi.ListQuery{Numbers: []int64{7, 42}, Unassigned: true, Text: "flaky", Semantic: true})
+	_, err = source.ListIssues(t.Context(), issueapi.ListQuery{Numbers: []int64{7, 42}, Unassigned: true, NotInvolvesMe: true, Assigned: true, NotReferencedByPR: true, Text: "flaky", Semantic: true})
 	require.NoError(err)
-	_, err = source.ListActivity(t.Context(), &itemapi.ListActivityInput{Unassigned: true})
+	_, err = source.ListActivity(t.Context(), &itemapi.ListActivityInput{Unassigned: true, NotInvolvesMe: true, Assigned: true})
 	require.NoError(err)
 
 	assert.Equal(map[string]bool{

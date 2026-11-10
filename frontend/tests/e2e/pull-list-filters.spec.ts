@@ -115,7 +115,8 @@ test("PR filters all apply and each pair of opposites is pick-one", async ({ pag
 
   await filterPanel.getByRole("button", { name: "Has workspace" }).click();
   await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/]);
-  await filterPanel.getByRole("button", { name: "Has workspace" }).click();
+  await filterPanel.getByRole("button", { name: /^(Clear filters|Reset view)$/ }).click();
+  await expect(rows).toHaveCount(4);
 
   await filterPanel.getByRole("button", { name: "Draft", exact: true }).click();
   await expect(rows).toHaveText([/Draft parser cleanup/]);
@@ -136,6 +137,68 @@ test("PR filters all apply and each pair of opposites is pick-one", async ({ pag
   await filterPanel.getByRole("button", { name: "Ready for review" }).click();
   await filterPanel.getByRole("button", { name: "Approved", exact: true }).click();
   await expect(rows).toHaveText([/Approved review queue/]);
+});
+
+test("a condition row cycles through required, excluded, and off", async ({ page }) => {
+  await mockPulls(page);
+  await page.goto("/pulls");
+
+  const rows = page.locator(".pr-list-row");
+  await expect(rows).toHaveCount(4);
+  await openPrFilters(page);
+  const filterPanel = page.locator(".kit-filter-dropdown__panel");
+
+  for (const condition of [
+    {
+      label: "Approved",
+      required: [/Approved review queue/],
+      excluded: [/Draft parser cleanup/, /Ready failed workflow/, /Ready conflict resolver/],
+    },
+    {
+      label: "Merge conflicts",
+      required: [/Ready conflict resolver/],
+      excluded: [/Approved review queue/, /Draft parser cleanup/, /Ready failed workflow/],
+    },
+    {
+      label: "Has workspace",
+      required: [/Approved review queue/, /Ready failed workflow/],
+      excluded: [/Draft parser cleanup/, /Ready conflict resolver/],
+    },
+  ]) {
+    const row = filterPanel.locator(".kit-filter-dropdown__item", { hasText: condition.label });
+    await expect(row).toHaveAttribute("aria-pressed", "false");
+
+    await row.click();
+    await expect(row).toHaveAccessibleName(condition.label);
+    await expect(row.locator("svg.lucide-check")).toBeVisible();
+    await expect(rows).toHaveText(condition.required);
+
+    await row.click();
+    await expect(row).toHaveAccessibleName(/, excluded$/);
+    await expect(row.locator("svg.lucide-x")).toBeVisible();
+    await expect(row).toHaveAttribute("aria-pressed", "true");
+    await expect(rows).toHaveText(condition.excluded);
+
+    await row.click();
+    await expect(row).toHaveAttribute("aria-pressed", "false");
+    await expect(row.locator("svg")).toHaveCount(0);
+    await expect(rows).toHaveCount(4);
+  }
+
+  // Excluded conditions combine with each other and with a pick-one choice, and reset clears them.
+  const approved = filterPanel.locator(".kit-filter-dropdown__item", { hasText: "Approved" });
+  const workspace = filterPanel.locator(".kit-filter-dropdown__item", { hasText: "Has workspace" });
+  await approved.click();
+  await approved.click();
+  await workspace.click();
+  await workspace.click();
+  await expect(rows).toHaveText([/Draft parser cleanup/, /Ready conflict resolver/]);
+  await filterPanel.getByRole("button", { name: "Draft", exact: true }).click();
+  await expect(rows).toHaveText([/Draft parser cleanup/]);
+
+  await filterPanel.getByRole("button", { name: /^(Clear filters|Reset view)$/ }).click();
+  await expect(rows).toHaveCount(4);
+  await expect(approved).toHaveAttribute("aria-pressed", "false");
 });
 
 test("the Labels flyout requires, excludes, and clears each label", async ({ page }) => {

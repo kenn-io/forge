@@ -1,5 +1,6 @@
 import { buildActivityFilterTypes, type ActivityStore, type DEFAULT_EVENT_TYPES } from "../stores/activity.svelte.js";
 import type { GroupingStore } from "../stores/grouping.svelte.js";
+import { cycleTriFilter, triFilterRow, type TriFilter } from "../utils/tri-filter.js";
 
 const EVENT_OPTIONS = [
   { value: "comment", label: "Comments", color: "var(--accent-amber)" },
@@ -14,9 +15,20 @@ interface ActivityVisibilityFilter {
   mobileLabel?: string;
   color: string;
   active: boolean;
-  setActive: (active: boolean) => void;
+  /** The filter drops its matches; only a filter with `tri` can be excluded. */
+  excluded: boolean;
+  /** Set for a filter that can require or exclude its matches. `onSelect` cycles it. */
+  tri?: { value: TriFilter; set: (value: TriFilter) => void };
+  reset: () => void;
   onSelect: () => void;
 }
+
+/** Phone choices for a filter that can be required or excluded. */
+export const ACTIVITY_TRI_FILTER_OPTIONS = [
+  { value: "any", label: "Any" },
+  { value: "require", label: "Yes" },
+  { value: "exclude", label: "No" },
+];
 
 export function activityFilterOptions(activity: ActivityStore, grouping: GroupingStore) {
   function applyFilters(): void {
@@ -59,23 +71,45 @@ export function activityFilterOptions(activity: ActivityStore, grouping: Groupin
     },
   ];
 
-  const visibility: (Omit<ActivityVisibilityFilter, "onSelect"> & { refresh?: () => void })[] = [
+  const triFilters = [
     {
       id: "involves-me",
       label: "Involves me",
-      color: "var(--accent-blue)",
-      active: activity.getInvolvesMe(),
-      setActive: activity.setInvolvesMe,
-      refresh: activity.loadActivity,
+      get: activity.getInvolvesMe,
+      set: activity.setInvolvesMe,
     },
     {
       id: "unassigned",
       label: "Unassigned",
-      color: "var(--accent-blue)",
-      active: activity.getUnassigned(),
-      setActive: activity.setUnassigned,
-      refresh: activity.loadActivity,
+      get: activity.getUnassigned,
+      set: activity.setUnassigned,
     },
+  ].map(({ id, label, get, set }): ActivityVisibilityFilter => {
+    const value = get();
+    const choose = (next: TriFilter) => {
+      set(next);
+      activity.loadActivity();
+    };
+    return {
+      id,
+      label,
+      color: "var(--accent-blue)",
+      ...triFilterRow(value),
+      tri: { value, set: choose },
+      reset: () => set(undefined),
+      onSelect: () => choose(cycleTriFilter(get())),
+    };
+  });
+
+  const toggles: {
+    id: string;
+    label: string;
+    mobileLabel?: string;
+    color: string;
+    active: boolean;
+    setActive: (active: boolean) => void;
+    refresh?: () => void;
+  }[] = [
     {
       id: "hide-default-branch",
       label: "Hide default-branch activity",
@@ -130,12 +164,17 @@ export function activityFilterOptions(activity: ActivityStore, grouping: Groupin
   return {
     applyFilters,
     events,
-    visibility: visibility.map(({ refresh, ...filter }): ActivityVisibilityFilter => ({
-      ...filter,
-      onSelect: () => {
-        filter.setActive(!filter.active);
-        refresh?.();
-      },
-    })),
+    visibility: [
+      ...triFilters,
+      ...toggles.map(({ refresh, setActive, ...filter }): ActivityVisibilityFilter => ({
+        ...filter,
+        excluded: false,
+        reset: () => setActive(false),
+        onSelect: () => {
+          setActive(!filter.active);
+          refresh?.();
+        },
+      })),
+    ],
   };
 }

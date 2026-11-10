@@ -6,6 +6,11 @@ import (
 	"fmt"
 )
 
+// notCondition is the complement of a filter condition; a NULL result counts as not matching it.
+func notCondition(condition string) string {
+	return "NOT COALESCE(" + condition + ", 0)"
+}
+
 func unassignedCondition(alias string) string {
 	return alias + ".assignees_json = '[]'"
 }

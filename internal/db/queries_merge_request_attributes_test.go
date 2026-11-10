@@ -83,6 +83,7 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 			want             []int
 		}{
 			{"approved", "all", []int{3, 2, 1}},
+			{"not_approved", "all", []int{4}},
 			{"draft", "all", []int{2}},
 			{"ready", "all", []int{3, 1}},
 		} {

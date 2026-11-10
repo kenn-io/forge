@@ -88,22 +88,25 @@ func WorkspaceActivitySubjectIdentities(
 	return byKey, identities
 }
 
-func RetainActivitySubjectsByIdentity(
+// FilterActivitySubjectsByIdentity keeps the listed subjects when keep is true,
+// and every other subject when it is false.
+func FilterActivitySubjectsByIdentity(
 	snapshot *workspaceapi.WorkspaceSubjectSnapshot,
 	identitiesByKey map[db.WorkspaceSubjectKey]providerplane.ItemIdentity,
-	unassigned []providerplane.ItemIdentity,
+	listed []providerplane.ItemIdentity,
+	keep bool,
 ) {
-	allowed := make(map[providerplane.ItemIdentity]struct{}, len(unassigned))
-	for _, identity := range unassigned {
-		allowed[identity.Canonical()] = struct{}{}
+	matched := make(map[providerplane.ItemIdentity]struct{}, len(listed))
+	for _, identity := range listed {
+		matched[identity.Canonical()] = struct{}{}
 	}
 	for key := range snapshot.Subjects {
-		if _, ok := allowed[identitiesByKey[key]]; !ok {
+		if _, ok := matched[identitiesByKey[key]]; ok != keep {
 			delete(snapshot.Subjects, key)
 		}
 	}
 	for key := range snapshot.OwnReferences {
-		if _, ok := allowed[identitiesByKey[key]]; !ok {
+		if _, ok := matched[identitiesByKey[key]]; ok != keep {
 			delete(snapshot.OwnReferences, key)
 		}
 	}

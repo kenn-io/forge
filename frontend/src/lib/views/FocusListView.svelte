@@ -2,6 +2,7 @@
   import { Effect } from "effect";
   import { pollWhileVisible } from "../effect/poll-while-visible.js";
   import { onDestroy, tick, untrack } from "svelte";
+  import XIcon from "@lucide/svelte/icons/x";
   import type { Attachment } from "svelte/attachments";
   import {
     FilterDropdown,
@@ -20,6 +21,7 @@
   import { createRangeSelection, isSelectAllShortcut } from "../utils/range-selection.svelte.js";
   import type { Issue, PullRequest } from "../api/types.js";
   import { createRepoLabelFormatter } from "../utils/repo-label.js";
+  import { cycleTriFilter, triFilterRow, type TriFilter } from "../utils/tri-filter.js";
   import RepoTypeahead from "../components/RepoTypeahead.svelte";
   import MobileTriageSearchBar from "../components/mobile/MobileTriageSearchBar.svelte";
   import { getGlobalRepo, setGlobalRepo } from "../stores/filter.svelte.js";
@@ -83,24 +85,24 @@
 
   function toggleInvolvesMe(): void {
     if (listType === "mrs") {
-      pulls.setInvolvesMe(!pulls.getInvolvesMe());
+      pulls.setInvolvesMe(cycleTriFilter(pulls.getInvolvesMe()));
     } else {
-      issues.setInvolvesMe(!issues.getInvolvesMe());
+      issues.setInvolvesMe(cycleTriFilter(issues.getInvolvesMe()));
     }
     resetPageAndLoad();
   }
 
   function toggleUnassigned(): void {
     if (listType === "mrs") {
-      pulls.setUnassigned(!pulls.getUnassigned());
+      pulls.setUnassigned(cycleTriFilter(pulls.getUnassigned()));
     } else {
-      issues.setUnassigned(!issues.getUnassigned());
+      issues.setUnassigned(cycleTriFilter(issues.getUnassigned()));
     }
     resetPageAndLoad();
   }
 
   function toggleReferencedByPR(): void {
-    issues.setReferencedByPR(!issues.getReferencedByPR());
+    issues.setReferencedByPR(cycleTriFilter(issues.getReferencedByPR()));
     resetPageAndLoad();
   }
 
@@ -441,12 +443,12 @@
     listType === "mrs"
       ? prFilterState !== "open"
         || groupingMode !== "byRepo"
-        || involvesMe
-        || unassigned
+        || involvesMe !== undefined
+        || unassigned !== undefined
       : issueFilterState !== "open"
-        || involvesMe
-        || unassigned
-        || issues.getReferencedByPR()
+        || involvesMe !== undefined
+        || unassigned !== undefined
+        || issues.getReferencedByPR() !== undefined
         || issues.getHideBots(),
   );
   const compactFilterSections = $derived.by((): FilterDropdownSection[] => {
@@ -488,20 +490,20 @@
         {
           id: "involves-me",
           label: "Involves me",
-          active: involvesMe,
+          ...triFilterRow(involvesMe),
           onSelect: toggleInvolvesMe,
         },
         {
           id: "unassigned",
           label: "Unassigned",
-          active: unassigned,
+          ...triFilterRow(unassigned),
           onSelect: toggleUnassigned,
         },
         ...(listType === "issues" && issues.canFilterReferencedByPR()
           ? [{
               id: "referenced-by-pr",
               label: "Referenced by PR",
-              active: issues.getReferencedByPR(),
+              ...triFilterRow(issues.getReferencedByPR()),
               onSelect: toggleReferencedByPR,
             }]
           : []),
@@ -519,6 +521,22 @@
     return sections;
   });
 </script>
+
+{#snippet triFilterButton(label: string, value: TriFilter, onclick: () => void)}
+  <button
+    type="button"
+    class="visibility-btn"
+    class:visibility-btn--active={value === "require"}
+    class:visibility-btn--excluded={value === "exclude"}
+    aria-pressed={value !== undefined}
+    {onclick}
+  >
+    {#if value === "exclude"}
+      <XIcon size={11} strokeWidth={2.4} aria-hidden="true" />
+    {/if}
+    {label}{#if value === "exclude"}<span class="kit-sr-only">, excluded</span>{/if}
+  </button>
+{/snippet}
 
 {#snippet compactPhoneFilters()}
   <div class="compact-phone-filter-menu">
@@ -602,29 +620,11 @@
       {/if}
     </div>
     <div class="visibility-controls">
-      <button
-        type="button"
-        class="visibility-btn"
-        class:visibility-btn--active={involvesMe}
-        aria-pressed={involvesMe}
-        onclick={toggleInvolvesMe}
-      >Involves me</button>
-      <button
-        type="button"
-        class="visibility-btn"
-        class:visibility-btn--active={unassigned}
-        aria-pressed={unassigned}
-        onclick={toggleUnassigned}
-      >Unassigned</button>
+      {@render triFilterButton("Involves me", involvesMe, toggleInvolvesMe)}
+      {@render triFilterButton("Unassigned", unassigned, toggleUnassigned)}
       {#if listType === "issues"}
         {#if issues.canFilterReferencedByPR()}
-          <button
-            type="button"
-            class="visibility-btn"
-            class:visibility-btn--active={issues.getReferencedByPR()}
-            aria-pressed={issues.getReferencedByPR()}
-            onclick={toggleReferencedByPR}
-          >Referenced by PR</button>
+          {@render triFilterButton("Referenced by PR", issues.getReferencedByPR(), toggleReferencedByPR)}
         {/if}
         <button
           type="button"
@@ -855,6 +855,15 @@
     color: var(--accent-blue);
     background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
     border-color: color-mix(in srgb, var(--accent-blue) 34%, transparent);
+  }
+
+  .visibility-btn--excluded {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--accent-red);
+    background: color-mix(in srgb, var(--accent-red) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent-red) 34%, transparent);
   }
 
   .state-toggle {

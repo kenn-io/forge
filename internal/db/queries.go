@@ -1967,8 +1967,15 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 	if opts.Unassigned {
 		unassigned = append(unassigned, unassignedCondition("p"))
 	}
+	if opts.Assigned {
+		unassigned = append(unassigned, notCondition(unassignedCondition("p")))
+	}
 	if opts.ViewerLogins != nil {
-		involved = append(involved, mergeRequestInvolvementCondition("p", opts.ViewerLogins, &inclusionArgs))
+		involvement := mergeRequestInvolvementCondition("p", opts.ViewerLogins, &inclusionArgs)
+		if opts.ViewerUninvolved {
+			involvement = notCondition(involvement)
+		}
+		involved = append(involved, involvement)
 	}
 	// Empty and JSON null decode as no checks; invalid check arrays cannot match by check content.
 	const checks = `CASE
@@ -1982,12 +1989,16 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		switch attribute {
 		case "approved":
 			approval = append(approval, "upper(trim(p.review_decision)) = 'APPROVED'")
+		case "not_approved":
+			approval = append(approval, notCondition("upper(trim(p.review_decision)) = 'APPROVED'"))
 		case "draft":
 			review = append(review, "p.is_draft")
 		case "ready":
 			review = append(review, "(p.state = 'open' AND NOT p.is_draft)")
 		case "merge_conflicts":
 			conflicts = append(conflicts, "(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))")
+		case "no_merge_conflicts":
+			conflicts = append(conflicts, notCondition("(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))"))
 		case "merge_queue":
 			mergeQueue = append(mergeQueue, `(p.state = 'open' AND EXISTS (
 				SELECT 1 FROM forge_merge_queue_states q
@@ -3283,7 +3294,7 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 	)`)
 
 	pageAll := len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 &&
-		opts.Items == nil && opts.Numbers == nil && !opts.Starred && opts.Assignee == "" && !opts.ReferencedByPR && opts.ViewerLogins == nil &&
+		opts.Items == nil && opts.Numbers == nil && !opts.Starred && opts.Assignee == "" && !opts.ReferencedByPR && !opts.NotReferencedByPR && opts.ViewerLogins == nil &&
 		len(opts.WorkspaceActivity) == 0
 	allowedRepoCondIndex := len(conds)
 	if cond := repoIDCondition("i.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
@@ -3350,14 +3361,25 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 	if opts.Unassigned {
 		conds = append(conds, unassignedCondition("i"))
 	}
-	if opts.ViewerLogins != nil {
-		conds = append(conds, issueInvolvementCondition("i", opts.ViewerLogins, &args))
+	if opts.Assigned {
+		conds = append(conds, notCondition(unassignedCondition("i")))
 	}
-	if opts.ReferencedByPR {
-		conds = append(conds, `EXISTS (
+	if opts.ViewerLogins != nil {
+		involvement := issueInvolvementCondition("i", opts.ViewerLogins, &args)
+		if opts.ViewerUninvolved {
+			involvement = notCondition(involvement)
+		}
+		conds = append(conds, involvement)
+	}
+	const referencedByPR = `EXISTS (
 			SELECT 1 FROM forge_issue_pr_references ref
 			WHERE ref.issue_id = i.id
-		)`)
+		)`
+	if opts.ReferencedByPR {
+		conds = append(conds, referencedByPR)
+	}
+	if opts.NotReferencedByPR {
+		conds = append(conds, "NOT "+referencedByPR)
 	}
 
 	pageAll = pageAll && d.activityPageWalks(ctx, "forge_issues", "+last_activity_at", opts.AllowedRepoIDs, opts.Limit, opts.Offset)

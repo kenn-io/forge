@@ -114,7 +114,7 @@
   const popoverFilterCount = $derived(
     (activity.getActivityAuthor() ? 1 : 0)
     + filters.events.filter((filter) => !filter.active).length
-    + filters.visibility.filter((filter) => filter.active).length
+    + filters.visibility.filter((filter) => filter.active || filter.excluded).length
     + activity.getLabelFilters().size,
   );
 
@@ -396,7 +396,7 @@
     activity.clearLabelFilters();
     activity.setEnabledEvents(new Set(DEFAULT_EVENT_TYPES));
     activity.setShowNotifications(true);
-    for (const filter of filters.visibility) filter.setActive(false);
+    for (const filter of filters.visibility) filter.reset();
     filters.applyFilters();
   }
 

@@ -43,8 +43,7 @@ Processes on the execution host:
   offered, and merge only agent-confirmed changes (`internal/workspace/localruntime/acp_settings.go`).
 - Launch ACP options (quick actions) apply over remembered ones for that chat only and are never
   remembered; a reload keeps the chat's last confirmed values; unoffered choices become a notice.
-- Coordinator setting changes and their confirmed dependent changes belong to the chat, leaving
-  defaults alone. Reloads retain those choices, including later changes a person makes to them.
+- Coordinator setting changes and their confirmed dependent changes leave defaults alone.
 - An ACP target with `disable_forge_tools` receives no Forge MCP endpoint or credentials,
   including in settings probes and when reattaching or replacing an owner.
 - Codex ACP chats derive Full access (`dangerFullAccess`/`never`) or Read-only (`readOnly`/

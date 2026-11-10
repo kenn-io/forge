@@ -65,7 +65,6 @@ type ACP struct {
 	agentName       string
 	loadSession     bool
 	saveConfig      func(map[string]string) error
-	chatOptionIDs   []string
 	kill            func(*os.Process) error // nil uses killSessionProcess
 	sessionID       string
 	exitCode        int

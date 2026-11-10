@@ -1188,9 +1188,9 @@ func TestACPReloadKeepsTheChatsConfirmedLaunchOptions(t *testing.T) {
 	saved := &acpSavedSession{State: ACPState{ConfigOptions: []ACPConfigOption{
 		{ID: "model", Type: "select", CurrentValue: "fast"},
 		{ID: "effort", Type: "select", CurrentValue: "low"},
-	}}, ChatOptionIDs: []string{"effort"}}
+	}}}
 	launch := map[string]string{"model": "deep", "mode": "plan"}
-	assert.Equal(t, map[string]string{"model": "fast", "mode": "plan", "effort": "low"}, savedLaunchOptions(launch, saved),
+	assert.Equal(t, map[string]string{"model": "fast", "mode": "plan"}, savedLaunchOptions(launch, saved),
 		"a model changed in the chat survives its reload; options the chat never reported keep the launch value")
 	assert.Equal(t, map[string]string{"model": "deep", "mode": "plan"}, launch)
 	assert.Equal(t, launch, savedLaunchOptions(launch, nil))
@@ -1578,15 +1578,13 @@ func TestCodexACPRestoresMode(t *testing.T) {
 	t.Cleanup(func() { codexEffectiveAccess = previous })
 	command := codexACPFixtureCommand(t)
 	for _, tc := range []struct {
-		name, savedMode, chatMode, mode, notice string
-		probe, reject, reload, fatal            bool
-		env                                     map[string]string
+		name, savedMode, mode, notice string
+		probe, reject, reload, fatal  bool
+		env                           map[string]string
 	}{
 		{name: "saved offered mode wins", savedMode: "read-only", mode: "read-only"},
 		{name: "unoffered saved mode derives", savedMode: "removed", mode: "agent-full-access", probe: true},
 		{name: "native reload derives", mode: "agent-full-access", probe: true, reload: true},
-		{name: "chat choice wins", chatMode: "read-only", mode: "read-only", reload: true},
-		{name: "unavailable chat choice derives", chatMode: "removed", mode: "agent-full-access", probe: true, reload: true, notice: `The agent doesn't offer "removed" for Mode`},
 		{name: "derived setting failure keeps chat", mode: "agent", probe: true, reject: true, notice: "mode rejected"},
 		{name: "saved setting failure is fatal", savedMode: "read-only", reject: true, fatal: true},
 		// The agent's configured INITIAL_AGENT_MODE chooses the mode, so Forge
@@ -1619,10 +1617,6 @@ func TestCodexACPRestoresMode(t *testing.T) {
 			var saved *acpSavedSession
 			if tc.reload {
 				saved = &acpSavedSession{SessionID: "fixture-session", LoadSession: true}
-				if tc.chatMode != "" {
-					saved.ChatOptionIDs = []string{"mode"}
-					saved.State.ConfigOptions = []ACPConfigOption{{ID: "mode", Type: "select", CurrentValue: tc.chatMode}}
-				}
 			}
 			agent, err := manager.startACP(t.Context(), SessionInfo{TargetKey: "chat"}, command, worktree, nil, tc.env, saved, nil)
 			if tc.probe {

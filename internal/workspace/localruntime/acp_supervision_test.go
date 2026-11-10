@@ -268,52 +268,18 @@ func TestACPPeopleChangeSettingsWhileSupervised(t *testing.T) {
 	assert.Equal(t, "deep", fixtureModel(t, agent))
 }
 
-func TestACPSupervisedSettingsStayWithChat(t *testing.T) {
+func TestACPSupervisedSettingsLeaveDefaultsAlone(t *testing.T) {
 	c := newInProcessChat(t)
 	first := c.start(nil)
 	require.NoError(t, first.Command(ACPCommand{Type: "config", ID: "effort", Value: "high"}))
 	require.NoError(t, first.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
 	generation := publishedACPState(t, first).Supervision.Generation
 	require.NoError(t, first.Command(ACPCommand{Type: "config", ID: "model", Value: "deep", Generation: generation}))
+	assert.Equal(t, "deep", fixtureModel(t, first))
 
-	// The model resets effort. Both confirmed changes belong to this chat.
-	saved := readSavedSession(t, c.recordPath())
-	second := c.start(&saved)
-	assert.Equal(t, "deep", fixtureModel(t, second))
-	assert.Equal(t, "low", publishedACPState(t, second).ConfigOptions[0].CurrentValue)
 	other := c.start(nil)
 	assert.Equal(t, "fast", fixtureModel(t, other))
 	assert.Equal(t, "high", publishedACPState(t, other).ConfigOptions[0].CurrentValue)
-
-	// A person's change updates the chat's saved value and only its own default.
-	require.NoError(t, second.Command(ACPCommand{Type: "config", ID: "effort", Value: "high"}))
-	saved = readSavedSession(t, c.recordPath())
-	restored := c.start(&saved)
-	assert.Equal(t, "deep", fixtureModel(t, restored))
-	assert.Equal(t, "high", publishedACPState(t, restored).ConfigOptions[0].CurrentValue)
-	values, err := c.manager.acpConfigValues("chat", nil)
-	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"effort": "high"}, values)
-}
-
-func TestACPSettingsSaveFailureKeepsAppliedChange(t *testing.T) {
-	agent := newInProcessChat(t).start(nil)
-	require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
-	generation := publishedACPState(t, agent).Supervision.Generation
-	agent.recordPath = t.TempDir()
-	require.NoError(t, agent.Command(ACPCommand{Type: "config", ID: "model", Value: "deep", Generation: generation}))
-	state := publishedACPState(t, agent)
-	assert.Equal(t, "deep", fixtureModel(t, agent))
-	assert.Contains(t, state.Error, "save chat after changing a setting")
-}
-
-func TestACPSupervisedSettingsSurviveOwnerReplacement(t *testing.T) {
-	c := launchRequestChat(t)
-	require.NoError(t, c.chat.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
-	generation := c.state().Supervision.Generation
-	require.NoError(t, c.chat.Command(ACPCommand{Type: "config", ID: "model", Value: "deep", Generation: generation}))
-	c.restart()
-	assert.Equal(t, "deep", acpOptionValue(t, c.chat, "model"))
 }
 
 // A settings change waits for the turn lock. A takeover that lands while it

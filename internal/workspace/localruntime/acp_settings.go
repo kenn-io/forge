@@ -88,14 +88,6 @@ func (a *ACP) configure(id, value string, generation uint64) error {
 			updates[option.ID] = option.CurrentValue
 		}
 	}
-	if generation != 0 {
-		for _, id := range slices.Sorted(maps.Keys(updates)) {
-			if !slices.Contains(a.chatOptionIDs, id) {
-				a.chatOptionIDs = append(a.chatOptionIDs, id)
-			}
-		}
-	}
-	a.saveTakenEffectLocked("changing a setting")
 	a.mu.Unlock()
 	if generation == 0 && a.saveConfig != nil {
 		if err := a.saveConfig(updates); err != nil {
@@ -165,9 +157,6 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 	a.saveConfig = func(values map[string]string) error { _, err := m.acpConfigValues(info.TargetKey, values); return err }
 	a.mu.Lock()
 	a.recordPath = m.acpSessionPath(info.Key)
-	if saved != nil {
-		a.chatOptionIDs = slices.Clone(saved.ChatOptionIDs)
-	}
 	err = a.persistLocked()
 	a.mu.Unlock()
 	if err != nil {
@@ -226,19 +215,15 @@ func (a *ACP) applyConfigValues(ctx context.Context, values map[string]string, d
 	return nil
 }
 
-// savedLaunchOptions keeps a reloaded chat on its last confirmed launch and
-// coordinator-selected options, including later changes made in the chat.
+// savedLaunchOptions keeps a reloaded chat on the values it last confirmed for
+// its launch options, including ones changed in the chat since its launch.
 func savedLaunchOptions(options map[string]string, saved *acpSavedSession) map[string]string {
-	if saved == nil {
+	if saved == nil || len(options) == 0 {
 		return options
 	}
 	confirmed := maps.Clone(options)
-	if confirmed == nil {
-		confirmed = make(map[string]string)
-	}
 	for _, option := range saved.State.ConfigOptions {
-		_, launch := confirmed[option.ID]
-		if (launch || slices.Contains(saved.ChatOptionIDs, option.ID)) && option.Type == "select" {
+		if _, ok := confirmed[option.ID]; ok && option.Type == "select" {
 			confirmed[option.ID] = option.CurrentValue
 		}
 	}

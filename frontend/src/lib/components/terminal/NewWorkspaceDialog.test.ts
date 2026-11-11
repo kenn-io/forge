@@ -1319,7 +1319,7 @@ describe("NewWorkspaceDialog", () => {
     mockGet.mockRejectedValue(new Error("network down"));
     await renderDialog();
 
-    await waitFor(() => expect(repoPicker().textContent).toContain("No tracked repositories yet"), { timeout: 5000 });
+    await waitFor(() => expect(repoPicker().textContent).toContain("Could not load repositories"), { timeout: 5000 });
     expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -1327,7 +1327,7 @@ describe("NewWorkspaceDialog", () => {
     mockGet.mockResolvedValue({ error: { detail: "repositories unavailable" } });
     await renderDialog();
 
-    await waitFor(() => expect(repoPicker().textContent).toContain("No tracked repositories yet"));
+    await waitFor(() => expect(repoPicker().textContent).toContain("Could not load repositories"));
     expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
   });
 

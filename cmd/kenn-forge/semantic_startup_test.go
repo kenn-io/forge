@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/semantic"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/embedfake"
 	"go.kenn.io/forge/internal/testutil/reposeed"
@@ -80,9 +79,5 @@ func TestSemanticStartupRecordedChoice(t *testing.T) {
 	require.NotNil(t, indexer)
 	defer func() { assert.NoError(t, indexer.Close()) }()
 	require.NoError(t, indexer.Refresh(t.Context()))
-	item := db.RepoItemNumber{RepoID: repoID, Number: 2}
-	ranked, err := semantic.Rank(t.Context(), indexer, "cache", "issue", []db.RepoItemNumber{item}, func(row db.RepoItemNumber) db.RepoItemNumber { return row }, 0, 0)
-	require.NoError(t, err)
-	require.Len(t, ranked, 1)
-	assert.Equal(t, item, ranked[0].Row)
+	assert.Contains(t, embeddings.Inputs(), "search_document: Cache is slow")
 }

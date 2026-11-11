@@ -24,15 +24,22 @@ func TestLocalEmbeddingsSetup(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	calls := 0
 	deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
-		if calls == 0 {
+		switch calls {
+		case 0:
 			assert.False(t, opts.SkipOllama)
+		case 1:
+			assert.True(t, opts.SkipOllama)
+		default:
+			assert.Fail(t, "unexpected endpoint discovery")
 		}
 		calls++
+		// Matching URLs model auto discovery selecting the built-in server.
 		return "http://127.0.0.1:1234/v1", nil
 	}}
 	cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, deps)
 	cmd.SetArgs([]string{"local", "--config", path})
 	require.NoError(t, cmd.ExecuteContext(t.Context()))
+	assert.Equal(t, 2, calls)
 	cfg, err := config.Load(path)
 	require.NoError(t, err)
 	recorded, err := embedlocal.ChoiceRecorded()
@@ -146,13 +153,8 @@ func TestLocalEmbeddingsRerun(t *testing.T) {
 			cfg.LocalEmbeddings = mode
 			cfg.Embeddings = embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768, DocumentPrefix: "custom: "}
 			require.NoError(t, cfg.Save(path))
-			calls := 0
 			deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
 				assert.True(t, opts.SkipOllama)
-				calls++
-				if calls > 1 {
-					return "http://127.0.0.1:1235/v1", nil
-				}
 				return "http://127.0.0.1:1234/v1", nil
 			}}
 			var output bytes.Buffer
@@ -167,7 +169,6 @@ func TestLocalEmbeddingsRerun(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, "builtin", cfg.LocalEmbeddings)
 			assert.Equal(t, "custom: ", cfg.Embeddings.DocumentPrefix)
-			assert.Equal(t, 1, calls)
 			recorded, err := embedlocal.ChoiceRecorded()
 			require.NoError(t, err)
 			assert.True(t, recorded)

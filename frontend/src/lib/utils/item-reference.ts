@@ -44,6 +44,14 @@ function encodeRepoPath(repoPath: string): string {
     .join("/");
 }
 
+export function buildProviderIssueListURL(ref: RepositoryRouteRef): string | undefined {
+  const provider = canonicalProvider(ref.provider);
+  const host = providerHost(provider, ref.platformHost);
+  const repoPath = encodeRepoPath(ref.repoPath);
+  if (!host || !repoPath || (provider === "bitbucket" && host.toLowerCase() !== "bitbucket.org")) return undefined;
+  return `https://${host}/${repoPath}${provider === "gitlab" ? "/-/issues" : "/issues"}`;
+}
+
 export function buildCanonicalProviderItemURL(ref: ResolvableItemReference): string | undefined {
   const host = providerHost(ref.provider, ref.platformHost);
   const repoPath = encodeRepoPath(ref.repoPath);

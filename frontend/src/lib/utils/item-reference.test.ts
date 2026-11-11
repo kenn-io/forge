@@ -1,5 +1,25 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { buildCanonicalProviderItemURL, parseProviderItemURL } from "./item-reference.js";
+import { buildCanonicalProviderItemURL, buildProviderIssueListURL, parseProviderItemURL } from "./item-reference.js";
+
+describe("provider issue lists", () => {
+  it.each([
+    ["github", undefined, "team/widgets", "https://github.com/team/widgets/issues"],
+    [
+      "gitlab",
+      "gitlab.example.com",
+      "team/sub group/widgets",
+      "https://gitlab.example.com/team/sub%20group/widgets/-/issues",
+    ],
+    ["forgejo", "forge.example.com", "team/widgets", "https://forge.example.com/team/widgets/issues"],
+    ["gitea", "git.example.com", "team/widgets", "https://git.example.com/team/widgets/issues"],
+    ["bitbucket", undefined, "team/widgets", "https://bitbucket.org/team/widgets/issues"],
+    ["bitbucket", "bitbucket.example.com", "team/widgets", undefined],
+  ])("builds the %s issue list", (provider, platformHost, repoPath, expected) => {
+    expect(buildProviderIssueListURL({ provider, platformHost, owner: "team", name: "widgets", repoPath })).toBe(
+      expected,
+    );
+  });
+});
 
 const pull = {
   provider: "bitbucket",

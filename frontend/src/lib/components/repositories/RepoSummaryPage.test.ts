@@ -984,6 +984,9 @@ describe("RepoSummaryPage", () => {
       ).toBeTruthy();
       expect(flash.getFlash()).toBeNull();
       expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", true);
+      const issueList = screen.getByRole("link", { name: "Open issue list" });
+      expect(issueList.getAttribute("href")).toBe("https://github.com/acme/widgets/issues");
+      expect(issueList.getAttribute("target")).toBe("_blank");
     });
 
     await fireEvent.click(

@@ -3,6 +3,7 @@
   import { Button, Chip } from "@kenn-io/kit-ui";
   import CommentEditor from "../detail/CommentEditor.svelte";
   import Modal from "../shared/Modal.svelte";
+  import { buildProviderIssueListURL } from "../../utils/item-reference.js";
   import {
     repoKey,
     shouldShowPlatformHost,
@@ -39,6 +40,13 @@
 
   const key = $derived(repoKey(summary));
   const showPlatformHost = $derived(shouldShowPlatformHost(summary));
+  const issueListURL = $derived(buildProviderIssueListURL({
+    provider: summary.repo.provider,
+    platformHost: summary.repo.platform_host,
+    owner: summary.repo.owner,
+    name: summary.repo.name,
+    repoPath: summary.repo.repo_path,
+  }));
 </script>
 
 <Modal
@@ -103,6 +111,9 @@
           <p class="issue-modal__error">{error}</p>
         {/if}
         {#if outcomeUnknown}
+          {#if issueListURL}
+            <a href={issueListURL} target="_blank" rel="noopener noreferrer">Open issue list</a>
+          {/if}
           <Checkbox
             class="issue-modal__acknowledgement"
             label="I checked the provider's issue list and want to retry."

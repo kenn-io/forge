@@ -306,6 +306,10 @@ test.describe("repository summaries", () => {
       await expect(page.locator(".kit-flash-stack").getByRole("status")).toHaveCount(0);
       await expect(title).toHaveValue("Retry interrupted issue creation");
       await expect(create).toBeDisabled();
+      const issueList = dialog.getByRole("link", { name: "Open issue list" });
+      await expect(issueList).toBeVisible();
+      await expect(issueList).toHaveAttribute("href", "https://github.com/acme/widgets/issues");
+      await expect(issueList).toHaveAttribute("target", "_blank");
 
       await dialog.getByRole("checkbox", { name: "I checked the provider's issue list and want to retry." }).click();
       await expect(create).toBeEnabled();

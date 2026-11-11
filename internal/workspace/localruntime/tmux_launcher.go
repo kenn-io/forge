@@ -644,10 +644,12 @@ func TmuxClipboardArgs() []string {
 	for _, table := range []string{"copy-mode", "copy-mode-vi"} {
 		// Native copy output can be discarded while tmux redraws the pane.
 		// load-buffer -w writes directly to the client that made the selection.
+		// copy-pipe owns the selection buffer on older tmux versions; pipe leaks it.
+		// Remove the temporary delivery buffer to preserve normal paste history.
 		args = append(args,
 			";", "bind-key", "-T", table, "MouseDragEnd1Pane",
-			"send-keys", "-X", "pipe-and-cancel",
-			"tmux -S #{q:socket_path} load-buffer -w -t #{q:client_name} -",
+			"send-keys", "-X", "copy-pipe-and-cancel",
+			`tmux -S #{q:socket_path} load-buffer -w -t #{q:client_name} -b "forge-clipboard-$$" - \; delete-buffer -b "forge-clipboard-$$"`,
 		)
 	}
 	return args

@@ -902,6 +902,9 @@ func TestTmuxLauncherDeliversDragClipboardDuringRedraw(t *testing.T) {
 				}
 			}
 			require.Equal("line-one", run("show-buffer"))
+			require.Eventually(func() bool {
+				return len(strings.Fields(run("list-buffers", "-F", "#{buffer_name}"))) == 1
+			}, 5*time.Second, 20*time.Millisecond, "clipboard delivery must leave only the normal copy buffer")
 		})
 	}
 }

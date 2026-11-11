@@ -458,7 +458,7 @@
   );
 
   const repoFallbackLabel = $derived(
-    reposLoading ? "Loading repositories…" : reposError ? "Could not load repositories" : "No tracked repositories yet",
+    reposLoading ? "Loading repositories…" : reposError ? "Could not load repositories" : repos.length > 0 ? "Select a repository" : "No tracked repositories yet",
   );
 
   const canSubmit = $derived(

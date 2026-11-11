@@ -1349,6 +1349,17 @@ describe("NewWorkspaceDialog", () => {
     expect((screen.getByRole("textbox", { name: "Branch name" }) as HTMLInputElement).value).toBe("my-branch");
   });
 
+  it("asks for a repository when retry succeeds but the seeded repository is unavailable", async () => {
+    mockGet.mockResolvedValue({ error: { detail: "repositories unavailable" } });
+    await renderDialog({ seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget" } });
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    mockGet.mockResolvedValue({ data: [repoFixture("acme", "widget", 1001)] });
+    await fireEvent.click(retry);
+    await waitFor(() => expect(repoPicker().textContent).toContain("Select a repository"));
+    await pickRepo("acme/widget");
+    expect(repoPicker().textContent).toContain("acme/widget");
+  });
+
   it("recovers a repository read after a transient transport failure", async () => {
     mockGet.mockImplementation((path: string) => {
       if (path !== "/repos") return Promise.resolve({ data: [] });

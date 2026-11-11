@@ -70886,19 +70886,27 @@ type SpokePreparationAbortReport struct {
 	RestartRequired    bool    `json:"restart_required"`
 }
 
+type SpokePreparationConflict struct {
+	Description  string `json:"description"`
+	Kind         string `json:"kind"`
+	SourceDigest string `json:"source_digest"`
+	SourceKey    string `json:"source_key"`
+	TargetDigest string `json:"target_digest"`
+}
+
 type SpokePreparationReport struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                 *string                 `json:"$schema,omitempty"`
-	ActiveDeferredMerges   int64                   `json:"active_deferred_merges"`
-	HandoffConflicts       []ProviderStateConflict `json:"handoff_conflicts"`
-	HandoffErrors          []string                `json:"handoff_errors"`
-	InFlightProviderWrites int64                   `json:"in_flight_provider_writes"`
-	PreparationSeal        *string                 `json:"preparation_seal,omitempty"`
-	ReadyLaunchSpecs       int64                   `json:"ready_launch_specs"`
-	ReadyToActivate        bool                    `json:"ready_to_activate"`
-	RestartRequired        bool                    `json:"restart_required"`
-	UndrainedAcks          int64                   `json:"undrained_acks"`
-	Unprepared             []UnpreparedWorkspace   `json:"unprepared"`
+	Schema                 *string                    `json:"$schema,omitempty"`
+	ActiveDeferredMerges   int64                      `json:"active_deferred_merges"`
+	HandoffConflicts       []SpokePreparationConflict `json:"handoff_conflicts"`
+	HandoffErrors          []string                   `json:"handoff_errors"`
+	InFlightProviderWrites int64                      `json:"in_flight_provider_writes"`
+	PreparationSeal        *string                    `json:"preparation_seal,omitempty"`
+	ReadyLaunchSpecs       int64                      `json:"ready_launch_specs"`
+	ReadyToActivate        bool                       `json:"ready_to_activate"`
+	RestartRequired        bool                       `json:"restart_required"`
+	UndrainedAcks          int64                      `json:"undrained_acks"`
+	Unprepared             []UnpreparedWorkspace      `json:"unprepared"`
 }
 
 type SpokePreparationSeal struct {

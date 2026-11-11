@@ -233,6 +233,43 @@ base_url = %q
 	assert.Equal(config.FleetRoleSpoke, role)
 }
 
+func TestSpokePreparationReportsDraftHandoffProblems(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	database := dbtest.Open(t)
+	mrID := serverfake.SeedPR(t, database, "team", "project", 42)
+	_, err := database.GetOrCreateMRReviewDraft(t.Context(), mrID)
+	require.NoError(t, err)
+	records, err := database.ListProviderStateForHandoff(t.Context())
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	server := wiredServer(&Server{db: database, now: time.Now})
+
+	t.Run("conflict", func(t *testing.T) {
+		client := providerPlaneClientFunc(func(_ context.Context, scope federationauth.Scope, _ *http.Request) (*http.Response, error) {
+			assert.Equal(t, federationauth.ScopeProviderHandoff, scope)
+			body, err := json.Marshal(db.ProviderStateImportResult{Conflict: &db.ProviderStateConflict{Kind: records[0].Kind, SourceKey: records[0].SourceKey}})
+			require.NoError(t, err)
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}, nil
+		})
+		var report spokeapi.SpokePreparationReport
+		server.spokeapi.HandoffSpokeProviderState(t.Context(), client, &report)
+		encoded, err := json.Marshal(report.HandoffConflicts)
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), "review draft for team/project #42 on github.com (github)")
+		assert.Contains(t, string(encoded), `\u0000pr\u000042`)
+	})
+	t.Run("import error", func(t *testing.T) {
+		client := providerPlaneClientFunc(func(context.Context, federationauth.Scope, *http.Request) (*http.Response, error) {
+			return nil, fmt.Errorf("hub offline")
+		})
+		var report spokeapi.SpokePreparationReport
+		server.spokeapi.HandoffSpokeProviderState(t.Context(), client, &report)
+		require.Len(t, report.HandoffErrors, 1)
+		assert.Contains(t, report.HandoffErrors[0], "review draft for team/project #42 on github.com (github)")
+		assert.Contains(t, report.HandoffErrors[0], "hub offline")
+	})
+}
+
 func TestPersistPreparedSpokeRoleKeepsSealAndMembershipGuards(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

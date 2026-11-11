@@ -888,6 +888,7 @@ export * from "./snapshotReview.ts";
 export * from "./snippetRange.ts";
 export * from "./sourceState.ts";
 export * from "./spokePreparationAbortReport.ts";
+export * from "./spokePreparationConflict.ts";
 export * from "./spokePreparationReport.ts";
 export * from "./spokePreparationSeal.ts";
 export * from "./stackContextResponse.ts";

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -26,7 +27,11 @@ func TestFleetPrepareSpokeReportsReadyWithoutPrintingSeal(t *testing.T) {
 	require.NoError(t, cmd.Execute())
 	assert.Contains(stdout.String(), "preparation is complete")
 	assert.Contains(stdout.String(), "3 launch specifications")
-	assert.Contains(stdout.String(), "kenn-forge daemon restart --config '/tmp/forge config.toml'")
+	command := `kenn-forge daemon restart --config '/tmp/forge config.toml'`
+	if runtime.GOOS == "windows" {
+		command = `kenn-forge daemon restart --config "/tmp/forge config.toml"`
+	}
+	assert.Contains(stdout.String(), command)
 	assert.NotContains(stdout.String(), seal)
 }
 
@@ -38,8 +43,8 @@ func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
 			{Workspace: db.Workspace{ID: "ws-3"}, Reason: "sourceVisibilityExpired"},
 			{Workspace: db.Workspace{ID: "ws-4"}, Reason: "launchSpecMismatch"},
 		},
-		HandoffConflicts:       []db.ProviderStateConflict{{Kind: "review_draft", SourceKey: "github\x00github.com\x00123\x00pr\x0042"}},
-		HandoffErrors:          []string{"handoff review_draft github\x00github.com\x00123\x00pr\x0042: offline"},
+		HandoffConflicts:       []spokeapi.SpokePreparationConflict{{Description: "review draft for team/project #42 on github.com (github)"}},
+		HandoffErrors:          []string{"handoff review draft for team/project #42 on github.com (github): offline"},
 		InFlightProviderWrites: 4, ActiveDeferredMerges: 5, UndrainedAcks: 6,
 	}}
 	var stdout bytes.Buffer
@@ -53,16 +58,19 @@ func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
 	for _, want := range []string{
 		"4 unprepared", "1 handoff conflict", "1 handoff error",
 		"4 provider write", "5 deferred merge", "6 notification acknowledgement",
-		"Workspace ws-1: team/project issue 42: launch specification missing",
-		"Workspace ws-2: team/other pull_request 7: source is not visible",
-		"source visibility expired", "launch specification does not match the workspace",
-		"Handoff conflict review_draft: github / github.com / 123 / pr / 42", "Handoff error: handoff review_draft github / github.com / 123 / pr / 42: offline",
-		"Pending writes, merges, and acknowledgements can finish draining.",
+		"Workspace ws-1: team/project issue 42: launchSpecMissing",
+		"Workspace ws-2: team/other pull_request 7: sourceNotVisible",
+		"Workspace ws-3: sourceVisibilityExpired", "Workspace ws-4: launchSpecMismatch",
+		"Handoff conflict: review draft for team/project #42 on github.com (github)", "Handoff error: handoff review draft for team/project #42 on github.com (github): offline",
 		"Rerun after resolving the items above:",
-		"kenn-forge fleet prepare-spoke --config '/tmp/forge config.toml' --timeout 2m0s",
 	} {
 		assert.Contains(t, stdout.String(), want)
 	}
+	command := `kenn-forge fleet prepare-spoke --config '/tmp/forge config.toml' --timeout 2m0s`
+	if runtime.GOOS == "windows" {
+		command = `kenn-forge fleet prepare-spoke --config "/tmp/forge config.toml" --timeout 2m0s`
+	}
+	assert.Contains(t, stdout.String(), command)
 }
 
 func TestFleetPrepareSpokeDefaultCommand(t *testing.T) {
@@ -82,4 +90,13 @@ func TestFleetPrepareSpokeDefaultRestart(t *testing.T) {
 	cmd.SetArgs([]string{"prepare-spoke"})
 	require.NoError(t, cmd.Execute())
 	assert.Contains(t, stdout.String(), "kenn-forge daemon restart\n")
+}
+
+func TestFleetPrepareSpokeDrainPreservesExplicitDefaultTimeout(t *testing.T) {
+	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{InFlightProviderWrites: 1}}
+	var stdout bytes.Buffer
+	cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
+	cmd.SetArgs([]string{"prepare-spoke", "--timeout", "60s"})
+	require.Error(t, cmd.Execute())
+	assert.Contains(t, stdout.String(), "kenn-forge fleet prepare-spoke --timeout 1m0s\n")
 }

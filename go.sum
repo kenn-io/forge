@@ -591,10 +591,8 @@ gitlab.com/gitlab-org/api/client-go/v3 v3.40.2 h1:Eu9GmOXoBBWJbGS4ceYDZNwqlpr/i/
 gitlab.com/gitlab-org/api/client-go/v3 v3.40.2/go.mod h1:jBFhGkTHLKkgeHEdS/A8yA0tQ6UHq96QVsS5muu6flM=
 go.kenn.io/kata v0.23.0 h1:gIxDLGJOJUy01QvSuDpMGQFXOo0YIRxQf72TErY6dY4=
 go.kenn.io/kata v0.23.0/go.mod h1:DaPzNVWqCn8Y//W5yhZQwAxuD0Zs5Dn7wH280anDlfg=
-go.kenn.io/kit v0.49.0 h1:dXTl3/Oj/w7SHOD/EqjJyH21tVdlDEvn5dxA13G0FLE=
-go.kenn.io/kit v0.49.0/go.mod h1:eqNzyD/bjy5tV8VDnJDSBtyzw0YOaq4lwqqGXUAiQD0=
-go.kenn.io/kit v0.50.1 h1:c4pF7heZ+Slp8BDiyidLx/6WtnlULmyqPULnxwj1Qes=
-go.kenn.io/kit v0.50.1/go.mod h1:ps/bK19BCQUZGo1aRuK2XdFoCf7gPO5jmWFqPn8Ngns=
+go.kenn.io/kit v0.51.0 h1:LtZGNYOmkkMg8JcBclxTJP83MIQ4uwgzcVVsRGzBTww=
+go.kenn.io/kit v0.51.0/go.mod h1:ps/bK19BCQUZGo1aRuK2XdFoCf7gPO5jmWFqPn8Ngns=
 go.kenn.io/kwt v0.9.6 h1:0QD+PuAIfyIMZe88IoGwtzKaB80iDdTmsch8ouxGgvw=
 go.kenn.io/kwt v0.9.6/go.mod h1:aKg6/rrsyQFgoYs4IBA5g8WR2PbKJHLcOEMDgxjgMvo=
 go.opencensus.io v0.24.0 h1:y73uSU6J157QMP2kn2r30vwW1A2W2WFwSCGnAVxeaD0=

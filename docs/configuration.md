@@ -476,6 +476,10 @@ set `api_key` to the key itself or to `{ env = "NAME" }` or
 `trust_private_network = true`. Optional `batch_size`, `timeout_seconds`,
 `request_dimensions`, `input_type_mode`, `model_context_tokens`, and
 `max_batch_tokens` tune requests for endpoints that need it.
+The discovered built-in server defaults to eight inputs per request, a five-minute
+request timeout, and one request at a time. Explicit `batch_size` and
+`timeout_seconds` settings override these defaults. Configured endpoints and
+discovered Ollama default to 32 inputs and a 30-second timeout.
 
 The Forge that syncs providers builds the index in `semantic.db` under
 `data_dir` after each sync and serves searches for its whole fleet. Changing

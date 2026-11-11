@@ -50,16 +50,19 @@
   let webURLError = $state(false);
   let webURLLoading = $state(false);
   let retry = $state(0);
-  const webURL = $derived(summary.web_url || resolvedWebURL);
-  const issueListURL = $derived(webURL && buildProviderIssueListURL({
-    provider: summary.repo.provider,
-    platformHost: summary.repo.platform_host,
-    repoPath: summary.repo.repo_path,
-    webURL,
-  }));
+  function issueListFor(webURL: string | undefined) {
+    return webURL && buildProviderIssueListURL({
+      provider: summary.repo.provider,
+      platformHost: summary.repo.platform_host,
+      repoPath: summary.repo.repo_path,
+      webURL,
+    });
+  }
+  const cachedIssueListURL = $derived(issueListFor(summary.web_url));
+  const issueListURL = $derived(cachedIssueListURL || issueListFor(resolvedWebURL));
   const appRuntime = getAppRuntime();
   $effect(() => {
-    if (!outcomeUnknown || summary.web_url) return;
+    if (!outcomeUnknown || cachedIssueListURL) return;
     return loadWebURL(retry);
   });
   function loadWebURL(_attempt: number) {
@@ -74,7 +77,11 @@
           ? client.RepositoriesService.getRepoWebUrlOnHost(providerHostRouteParams(ref), repositoryKey, { signal })
           : client.RepositoriesService.getRepoWebUrl(providerRouteParams(ref), repositoryKey, { signal }),
       ).pipe(
-        Effect.tap((result) => Effect.sync(() => { resolvedWebURL = result.web_url; webURLLoading = false; })),
+        Effect.tap((result) => Effect.sync(() => {
+          resolvedWebURL = result.web_url;
+          webURLError = !issueListFor(result.web_url);
+          webURLLoading = false;
+        })),
         Effect.catch(() => Effect.sync(() => { webURLError = true; webURLLoading = false; })),
       ),
       { operation: "repositories.web-url.read", safeContext: { surface: "repositories" }, onFailure: () => undefined },

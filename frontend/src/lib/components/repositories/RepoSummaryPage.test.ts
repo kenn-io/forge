@@ -1041,6 +1041,43 @@ describe("RepoSummaryPage", () => {
     expect(reads).toBe(2);
   });
 
+  it.each([undefined, "javascript:alert(1)//"])(
+    "retries a rejected provider address with cached address %s",
+    async (webURL) => {
+      const summary = repoSummaryFixture({
+        provider: "gitea",
+        platformHost: "git.example.test",
+        owner: "acme",
+        name: "widgets",
+      });
+      let reads = 0;
+      mockGet.mockImplementation((path: string) => {
+        if (path.includes("web-url")) {
+          reads++;
+          return Promise.resolve({
+            data: { web_url: reads === 1 ? "javascript:alert(1)//" : "http://git.example.test/prefix/acme/widgets" },
+          });
+        }
+        return Promise.resolve({ data: [{ ...summary, web_url: webURL }] });
+      });
+      mockPost.mockRejectedValue(new Error("connection lost"));
+
+      render(RepoSummaryPage);
+      await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+      await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+      await fireEvent.input(screen.getByPlaceholderText("Issue title"), { target: { value: "Keep this draft" } });
+      await fireEvent.click(screen.getByRole("button", { name: "Create issue" }));
+      await screen.findByText("Could not load the issue list.", { exact: false });
+      expect(screen.queryByRole("link", { name: "Open issue list" })).toBeNull();
+      await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      expect((await screen.findByRole("link", { name: "Open issue list" })).getAttribute("href")).toBe(
+        "http://git.example.test/prefix/acme/widgets/issues",
+      );
+      expect(screen.getByDisplayValue("Keep this draft")).toBeTruthy();
+      expect(mockPost).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("allows issue creation to retry after a rejected request", async () => {
     mockGet.mockResolvedValue({
       data: [

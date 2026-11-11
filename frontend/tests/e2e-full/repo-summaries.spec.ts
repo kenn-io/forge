@@ -300,11 +300,10 @@ test.describe("repository summaries", () => {
       await title.fill("Retry interrupted issue creation");
       await create.click();
 
-      await expect(page.locator(".kit-flash-stack").getByRole("status")).not.toHaveText("");
-      await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText(
+      await expect(dialog).toContainText(
         "Forge couldn't confirm whether it created the issue. Check the issue list before trying again.",
       );
-      await expect(dialog).toBeVisible();
+      await expect(page.locator(".kit-flash-stack").getByRole("status")).toHaveCount(0);
       await expect(title).toHaveValue("Retry interrupted issue creation");
       await expect(create).toBeDisabled();
 

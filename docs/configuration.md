@@ -447,8 +447,14 @@ For a daemon using native shared-key authentication, set
 or `KENN_FORGE_ROBOREV_ENDPOINT` to an absolute HTTP(S) URL without userinfo, a
 query, or a fragment. A base path is supported. Forge refuses redirects on
 authenticated requests and connects directly to cleartext HTTP endpoints,
-bypassing forward proxies. Use HTTPS for remote bearer transport. An incorrect
+bypassing forward proxies. Use HTTPS for remote bearer transport with ordinary
+server-certificate verification and a certificate trusted by Forge.
+Client-certificate configuration for mutual TLS is a follow-up. An incorrect
 key makes the Reviews status show the daemon as unavailable.
+
+Every caller admitted by Forge can invoke Roborev job actions through this
+connection. With Forge authentication disabled, this includes every caller
+that can reach Forge.
 
 An unset or empty key keeps authentication disabled. The key is environment-only
 and stays out of saved configuration, settings responses, workspace session

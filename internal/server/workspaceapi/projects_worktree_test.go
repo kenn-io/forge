@@ -73,6 +73,7 @@ func TestProjectRepositoryLockProbe(t *testing.T) {
 		t.Skip("subprocess probe")
 	}
 	require := require.New(t)
+	require.Empty(os.Getenv("KENN_FORGE_ROBOREV_AUTH_KEY"))
 	lock := flock.New(path)
 	held, err := lock.TryLock()
 	require.NoError(err)
@@ -97,7 +98,7 @@ func projectLockProbeScript(t *testing.T, script, lockPath, output string, avail
 }
 
 func TestProjectsShareRepositoryLockWithItems(t *testing.T) {
-	t.Parallel()
+	t.Setenv("KENN_FORGE_ROBOREV_AUTH_KEY", "forge-native-hook-secret")
 	require := require.New(t)
 	root := t.TempDir()
 	h, project, repo := projectLifecycleFixture(t, root)

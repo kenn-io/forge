@@ -1152,6 +1152,12 @@ func worktreeCauseProblem(err error, hookField string) error {
 func runManagedWorktreeGit(
 	ctx context.Context, runner gitcmd.Runner, dir string, args ...string,
 ) ([]byte, error) {
+	env := runner.Env
+	if env == nil {
+		env = os.Environ()
+	}
+	runner = runner.WithEnv(env)
+	runner.Env = procutil.RemoveEnvironmentVariable(runner.Env, "KENN_FORGE_ROBOREV_AUTH_KEY")
 	release, err := procutil.TryAcquire(ctx, "worktree lifecycle git")
 	if err != nil {
 		return nil, err

@@ -2712,15 +2712,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
         optimistic: undefined,
         apply: () => Effect.void,
         commit,
-        refreshOnStale: executeGeneratedApiRequest(
-          "sync pull request after stale discussion reply",
-          (client, signal) =>
-            providerUsesHostRoute(ref)
-              ? client.PullRequestsService.syncPullOnHost(
-                  { ...providerHostRouteParams(ref), number: number },
-                  { signal },
-                )
-              : client.PullRequestsService.syncPull({ ...providerRouteParams(ref), number: number }, { signal }),
+        refreshOnStale: executeGeneratedApiRequest("sync pull request after stale discussion reply", (client, signal) =>
+          providerUsesHostRoute(ref)
+            ? client.PullRequestsService.syncPullOnHost({ ...providerHostRouteParams(ref), number: number }, { signal })
+            : client.PullRequestsService.syncPull({ ...providerRouteParams(ref), number: number }, { signal }),
         ).pipe(Effect.asVoid),
       });
       const shouldReconcile = yield* Effect.sync(() => {

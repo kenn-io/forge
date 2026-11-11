@@ -17,22 +17,6 @@ import (
 	"go.kenn.io/kit/embedlocal"
 )
 
-func TestLocalEmbeddingsSetup(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.toml")
-	deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
-		assert.False(t, opts.SkipOllama)
-		// Auto discovery selected the built-in server.
-		return "http://127.0.0.1:1234/v1", nil
-	}}
-	cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, deps)
-	cmd.SetArgs([]string{"local", "--config", path})
-	require.NoError(t, cmd.ExecuteContext(t.Context()))
-	cfg, err := config.Load(path)
-	require.NoError(t, err)
-	assert.Equal(t, "auto", cfg.LocalEmbeddings)
-	assert.Equal(t, embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768, DocumentPrefix: "search_document: ", QueryPrefix: "search_query: "}, cfg.Embeddings)
-}
-
 func TestLocalEmbeddingsSwitchPreservesSelectionDuringConcurrentEdit(t *testing.T) {
 	for _, compatible := range []bool{true, false} {
 		t.Run(fmt.Sprint(compatible), func(t *testing.T) {
@@ -190,8 +174,18 @@ func TestLocalEmbeddingsRecordsChoice(t *testing.T) {
 				return "http://127.0.0.1:1234/v1", nil
 			}}
 			cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, deps)
-			cmd.SetArgs([]string{"local", "--config", path, "--yes"})
+			args := []string{"local", "--config", path}
+			if mode != "fresh" {
+				args = append(args, "--yes")
+			}
+			cmd.SetArgs(args)
 			require.NoError(t, cmd.ExecuteContext(t.Context()))
+			if mode == "fresh" {
+				cfg, err := config.Load(path)
+				require.NoError(t, err)
+				assert.Equal(t, "auto", cfg.LocalEmbeddings)
+				assert.Equal(t, embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768, DocumentPrefix: "search_document: ", QueryPrefix: "search_query: "}, cfg.Embeddings)
+			}
 			recorded, err := embedlocal.ChoiceRecorded()
 			require.NoError(t, err)
 			assert.True(t, recorded)

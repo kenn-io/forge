@@ -1003,6 +1003,46 @@ describe("RepoSummaryPage", () => {
     });
   });
 
+  it.each([
+    ["github", "github.com", undefined, "https://github.com/acme/widgets/issues"],
+    ["github", "", undefined, "https://github.com/acme/widgets/issues"],
+    ["gh", "GitHub.Com", "javascript:alert(1)//", "https://github.com/acme/widgets/issues"],
+    ["gitlab", "gitlab.com", undefined, "https://gitlab.com/acme/widgets/-/issues"],
+    ["gl", "GitLab.Com", undefined, "https://gitlab.com/acme/widgets/-/issues"],
+    ["forgejo", "codeberg.org", undefined, "https://codeberg.org/acme/widgets/issues"],
+    ["forgejo", "", undefined, "https://codeberg.org/acme/widgets/issues"],
+    ["fj", "Codeberg.Org", undefined, "https://codeberg.org/acme/widgets/issues"],
+    ["gitea", "gitea.com", undefined, "https://gitea.com/acme/widgets/issues"],
+    ["bitbucket", "Bitbucket.Org", undefined, "https://bitbucket.org/acme/widgets/issues"],
+  ])("offers the %s public issue list when its address is missing", async (provider, host, webURL, expected) => {
+    const summary = {
+      ...repoSummaryFixture({ provider, platformHost: host, owner: "acme", name: "widgets" }),
+      web_url: webURL,
+    };
+    mockGet.mockImplementation((path: string) =>
+      path.includes("web-url")
+        ? Promise.resolve({ error: "provider unavailable" })
+        : Promise.resolve({ data: [summary] }),
+    );
+    mockPost.mockRejectedValueOnce(new Error("connection lost"));
+
+    render(RepoSummaryPage);
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), { target: { value: "Keep this draft" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Create issue" }));
+    expect((await screen.findByRole("link", { name: "Open issue list" })).getAttribute("href")).toBe(expected);
+    expect(screen.getByDisplayValue("Keep this draft")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", true);
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    await fireEvent.click(
+      screen.getByRole("checkbox", { name: "I checked the provider's issue list and want to retry." }),
+    );
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    await fireEvent.click(screen.getByRole("button", { name: "Create issue" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
+  });
+
   it("recovers a missing issue list address without repeating issue creation", async () => {
     const summary = repoSummaryFixture({
       provider: "gitea",

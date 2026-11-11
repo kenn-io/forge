@@ -2,6 +2,16 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { buildCanonicalProviderItemURL, buildProviderIssueListURL, parseProviderItemURL } from "./item-reference.js";
 
 describe("provider issue lists", () => {
+  it("does not build a Bitbucket Data Center issue list", () => {
+    expect(
+      buildProviderIssueListURL({
+        provider: "bitbucket",
+        platformHost: "bitbucket.example.com",
+        repoPath: "team/widgets",
+      }),
+    ).toBeUndefined();
+  });
+
   it.each([
     ["github", undefined, "team/widgets", undefined, "https://github.com/team/widgets/issues"],
     [

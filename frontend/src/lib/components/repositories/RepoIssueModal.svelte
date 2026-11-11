@@ -8,7 +8,7 @@
   import { Effect } from "effect";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
-  import { providerHostRouteParams, providerRouteParams, providerUsesHostRoute } from "../../api/provider-routes.js";
+  import { providerDefaultHost, providerHostRouteParams, providerRouteParams, providerUsesHostRoute, resolvedPlatformHost } from "../../api/provider-routes.js";
   import { repositoryKeyFromWire, repositoryKeyToWire } from "../../api/repository-key.js";
   import {
     repoKey,
@@ -51,12 +51,18 @@
   let webURLLoading = $state(false);
   let retry = $state(0);
   function issueListFor(webURL: string | undefined) {
-    return webURL && buildProviderIssueListURL({
+    const provider = summary.repo.provider;
+    const host = resolvedPlatformHost(provider, summary.repo.platform_host).toLowerCase();
+    const ref = {
       provider: summary.repo.provider,
-      platformHost: summary.repo.platform_host,
+      platformHost: host,
       repoPath: summary.repo.repo_path,
       webURL,
-    });
+    };
+    const supplied = webURL && buildProviderIssueListURL(ref);
+    if (supplied) return supplied;
+    if (!host || host !== providerDefaultHost(provider)) return undefined;
+    return buildProviderIssueListURL({ ...ref, webURL: undefined });
   }
   const cachedIssueListURL = $derived(issueListFor(summary.web_url));
   const issueListURL = $derived(cachedIssueListURL || issueListFor(resolvedWebURL));

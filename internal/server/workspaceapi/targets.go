@@ -387,7 +387,7 @@ func (s *Handler) SetKataTargets(source WorkspaceKataTargets) { s.kataTargets = 
 
 // CreateKataWorkspaceService creates or reuses the Kata-task workspace the UI would create.
 func (s *Handler) CreateKataWorkspaceService(ctx context.Context, target WorkspaceKataTarget) (WorkspaceResult, error) {
-	if s.kataTargets == nil || !s.kataTargets.WorkspaceKataTargetsAvailable() {
+	if s.kataTargets == nil {
 		return WorkspaceResult{}, httpapi.ServiceUnavailable("Kata workspaces are unavailable")
 	}
 	return s.kataTargets.CreateKataWorkspace(ctx, target)

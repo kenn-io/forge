@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // Match go-gh's auth.DefaultHost: GH_HOST, the sole configured host, github.com.

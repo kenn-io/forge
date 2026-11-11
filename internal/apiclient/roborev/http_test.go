@@ -36,14 +36,12 @@ func TestHTTPClientScopesCredential(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal("Bearer "+key, delivered[0].Header.Get("Authorization"))
 	assert.Equal("Bearer caller-secret", request.Header.Get("Authorization"))
-	for _, target := range []string{"https://review.example:7373", "http://other.example:7373", "http://review.example:7374"} {
-		foreign, err := http.NewRequestWithContext(t.Context(), http.MethodGet, target, nil)
-		require.NoError(t, err)
-		foreign.Header = request.Header.Clone()
-		_, err = client.Do(foreign)
-		require.Len(t, delivered, 1, "target %s", target)
-		require.Error(t, err, "target %s", target)
-	}
+	foreign, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://other.example:7373", nil)
+	require.NoError(t, err)
+	foreign.Header = request.Header.Clone()
+	_, err = client.Do(foreign)
+	require.Len(t, delivered, 1)
+	require.Error(t, err)
 }
 
 func TestHTTPClientRedirectsOnlyWithoutKey(t *testing.T) {

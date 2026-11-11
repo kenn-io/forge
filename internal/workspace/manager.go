@@ -6049,9 +6049,7 @@ func workspaceGitCommand(
 	// system config, and no terminal prompts. Callers remain responsible for
 	// wrapping commands in procutil when they need the shared capacity guard.
 	runner := gitcmd.New()
-	runner.Env = slices.DeleteFunc(runner.Env, func(entry string) bool {
-		return strings.HasPrefix(entry, "KENN_FORGE_ROBOREV_AUTH_KEY=")
-	})
+	runner.Env = procutil.RemoveEnvironmentVariable(runner.Env, "KENN_FORGE_ROBOREV_AUTH_KEY")
 	return runner.Command(ctx, dir, args...)
 }
 

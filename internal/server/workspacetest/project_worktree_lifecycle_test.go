@@ -118,18 +118,19 @@ func TestWorktreeCreateOnDiskBranchInUse(t *testing.T) {
 // response carries the hookFailed code with script detail, and the git work
 // is rolled back so nothing is registered and a retry is possible.
 func TestWorktreeCreateOnDiskHookFailure(t *testing.T) {
-	runParallelWorkspaceGitTest(t)
+	acquireWorkspaceGitSlot(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
 	srv, _ := setupProjectServer(t)
+	t.Setenv("KENN_FORGE_ROBOREV_AUTH_KEY", "forge-hook-secret")
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
 	repo := initLifecycleRouteRepo(t)
 	require.NoError(os.WriteFile(
 		filepath.Join(repo, "setup.sh"),
-		[]byte("#!/bin/sh\necho nope >&2\nexit 7\n"), 0o755,
+		[]byte("#!/bin/sh\necho \"nope ${KENN_FORGE_ROBOREV_AUTH_KEY:-}\" >&2\nexit 7\n"), 0o755,
 	))
 	projectID := registerProjectForTest(t, ts, repo)
 
@@ -159,7 +160,7 @@ func TestWorktreeCreateOnDiskHookFailure(t *testing.T) {
 	resp.Body.Close()
 	assert.Equal("hookFailed", problem.Code)
 	assert.Equal(7, problem.Details.ExitCode)
-	assert.Contains(problem.Details.Stderr, "nope")
+	assert.Equal("nope", problem.Details.Stderr)
 
 	_, statErr := os.Stat(dest)
 	assert.True(os.IsNotExist(statErr), "failed hook rolls the worktree back")

@@ -1168,7 +1168,8 @@ func runManagedWorktreeHook(
 ) error {
 	cmd := procutil.CommandContext(ctx, command.Script)
 	cmd.Dir = command.Dir
-	cmd.Env = command.Env
+	// Kit supplies a fresh environment for each hook, whose stderr can reach API callers.
+	cmd.Env = procutil.RemoveEnvironmentVariable(command.Env, "KENN_FORGE_ROBOREV_AUTH_KEY")
 	cmd.Stdout = command.Stdout
 	cmd.Stderr = command.Stderr
 	return procutil.Run(ctx, cmd, "worktree lifecycle hook")

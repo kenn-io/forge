@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import type { AppRuntime } from "../app/runtime.js";
+import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import type { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import { retryIdempotentRead } from "../api/retry-policy.js";
@@ -263,6 +263,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let expandOverrides = $state<Set<string>>(new Set());
   let pagedActivityGeneration = 0;
   let childProjectionInvalidationGeneration = 0;
+  let pageExecution: AppExecution<void, ApiProblemError | TransientTransportError> | undefined;
   let projectedChildInvalidationGeneration = 0;
   const threadRequestTokens = new Map<string, symbol>();
   let bulkRequestToken: symbol | undefined;
@@ -338,58 +339,64 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (!subjectCursor || isLoadingOlderItems()) return;
     requestedSubjectDepth += 1;
     const depth = requestedSubjectDepth;
-    const params = buildParams();
-    const scope = activityProjectionScope(params);
+    const scope = activityProjectionScope(buildParams());
     const epoch = childProjectionInvalidationGeneration;
-    const cursor = subjectCursor;
     const current = () =>
       epoch === childProjectionInvalidationGeneration && scope === activityProjectionScope(buildParams());
     const settle = Effect.sync(() => {
       if (current() && requestedSubjectDepth === depth) requestedSubjectDepth = displayedSubjectDepth;
     });
     storeError = null;
-    runtime.runCommand(
+    const execution = runtime.runCommand(
       Effect.gen(function* () {
         const workflow = yield* ActivityWorkflow;
-        yield* workflow.load(
-          scope,
-          activityRead({ ...params, subject_before: cursor }),
-          (result) =>
-            Effect.sync(() => {
-              if (!current()) return;
-              const existing = new Set(itemActivity.map(stableParentKey));
-              const added = (result.response.item_activity ?? []).filter(
-                (subject) => !existing.has(stableParentKey(subject)),
-              );
-              itemActivity = [...itemActivity, ...added];
-              const workspaces = new Set(workspaceActivity.map(stableParentKey));
-              workspaceActivity = [
-                ...workspaceActivity,
-                ...(result.response.workspace_activity ?? []).filter(
-                  (subject) => !workspaces.has(stableParentKey(subject)),
-                ),
-              ];
-              itemActivityCapped = result.response.item_activity_capped ?? false;
-              subjectCursor = result.response.next_subject_cursor ?? "";
-              displayedSubjectDepth = depth;
-              if (viewMode === "threaded" && activityPageLimit === undefined) {
-                for (const subject of added) {
-                  const key = stableParentKey(subject);
-                  if (key && isThreadItemExpanded(key)) loadThreadEvents(key);
-                }
-              }
-            }),
-          settle,
+        yield* workflow.page(
+          Effect.suspend(() => {
+            if (!current() || displayedSubjectDepth >= depth || !subjectCursor) return Effect.void;
+            const params = buildParams();
+            return activityRead({ ...params, subject_before: subjectCursor }).pipe(
+              Effect.tap((result) =>
+                Effect.sync(() => {
+                  if (!current()) return;
+                  const existing = new Set(itemActivity.map(stableParentKey));
+                  const added = (result.response.item_activity ?? []).filter(
+                    (subject) => !existing.has(stableParentKey(subject)),
+                  );
+                  itemActivity = [...itemActivity, ...added];
+                  const workspaces = new Set(workspaceActivity.map(stableParentKey));
+                  workspaceActivity = [
+                    ...workspaceActivity,
+                    ...(result.response.workspace_activity ?? []).filter(
+                      (subject) => !workspaces.has(stableParentKey(subject)),
+                    ),
+                  ];
+                  itemActivityCapped = result.response.item_activity_capped ?? false;
+                  subjectCursor = result.response.next_subject_cursor ?? "";
+                  displayedSubjectDepth = depth;
+                  if (params.projection === "collapsed" && activityPageLimit === undefined) {
+                    for (const subject of added) {
+                      const key = stableParentKey(subject);
+                      if (key && isThreadItemExpanded(key)) loadThreadEvents(key);
+                    }
+                  }
+                }),
+              ),
+              Effect.tapError((failure) =>
+                Effect.sync(() => {
+                  if (current()) storeError = readErrorMessage(failure);
+                }),
+              ),
+              Effect.asVoid,
+            );
+          }).pipe(Effect.ensuring(settle)),
         );
-      }).pipe(
-        Effect.tapError((failure) =>
-          Effect.sync(() => {
-            if (current()) storeError = readErrorMessage(failure);
-          }),
-        ),
-      ),
+      }),
       { operation: "load older activity items", safeContext: {}, onFailure: () => {} },
     );
+    pageExecution = execution;
+    void execution.exit.then(() => {
+      if (pageExecution === execution) pageExecution = undefined;
+    });
   }
   function canLoadMoreActivity(): boolean {
     return (
@@ -794,6 +801,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function invalidatePagedActivityRequests(): void {
     pagedActivityGeneration += 1;
     childProjectionInvalidationGeneration += 1;
+    pageExecution?.interrupt();
+    pageExecution = undefined;
     const params = buildParams();
     const scope = activityProjectionScope(params);
     if (subjectPageScope !== scope) {
@@ -1176,12 +1185,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     params: ActivityParams,
     owner: "foreground" | "poll" = "foreground",
     acceptsProjection: () => boolean = () => true,
-    depth = requestedSubjectDepth,
   ) {
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
       const scope = activityProjectionScope(params);
-      const read = activityReadPages(params, depth);
+      const read = Effect.suspend(() => activityReadPages({ ...params, since: computeSince() }, requestedSubjectDepth));
       const project = (result: ActivityReadResponse) =>
         Effect.sync(() => {
           if (acceptsProjection()) projectActivitySnapshot(result, params);
@@ -1203,7 +1211,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         if (!current) return Effect.void;
         loading = true;
         storeError = null;
-        return loadActivityProgram(params, "foreground", ownsProjection, depth);
+        return loadActivityProgram(params, "foreground", ownsProjection);
       }),
       Effect.tapError((failure) =>
         Effect.sync(() => {
@@ -1223,7 +1231,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const params = buildParams();
       if (shouldUseCollapsedAuthoritativeProjection()) params.projection = "collapsed";
       const scope = activityProjectionScope(params);
-      const read = activityReadPages(params, requestedSubjectDepth);
+      const read = Effect.suspend(() => activityReadPages({ ...params, since: computeSince() }, requestedSubjectDepth));
       const project = (result: ActivityReadResponse) =>
         Effect.sync(() => projectAuthoritativeActivitySnapshot(result, params));
       return Effect.gen(function* () {
@@ -1486,7 +1494,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const workflow = yield* ActivityWorkflow;
       yield* workflow.pollSnapshotRead(
         activityProjectionScope(params),
-        activityReadPages(params, requestedSubjectDepth),
+        Effect.suspend(() => activityReadPages({ ...params, since: computeSince() }, requestedSubjectDepth)),
         (result) => Effect.sync(() => projectAuthoritativeActivitySnapshot(result, params)),
         Effect.sync(() => {
           loading = false;
@@ -1606,7 +1614,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           if (shouldUseCollapsedAuthoritativeProjection()) replacementParams.projection = "collapsed";
           return workflow.pollSnapshotRead(
             activityProjectionScope(replacementParams),
-            activityReadPages(replacementParams, requestedSubjectDepth),
+            Effect.suspend(() =>
+              activityReadPages({ ...replacementParams, since: computeSince() }, requestedSubjectDepth),
+            ),
             (replacement) => projectPoll({ mode: "replace", result: replacement }),
           );
         },

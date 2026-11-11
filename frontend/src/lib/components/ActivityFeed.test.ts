@@ -23,7 +23,7 @@ beforeEach(() => {
   workspaceActivity.value = [];
   hideBots.value = false;
   hideDrafts.value = false;
-  hideMergeQueued.value = false;
+  mergeQueued.value = undefined;
   labelFilters.value = new Map();
   cycleLabelFilter.mockClear();
   setHideDrafts.mockClear();
@@ -114,7 +114,7 @@ const hideDefaultBranchActivity = vi.hoisted(() => ({ value: false }));
 const hideClosedMerged = vi.hoisted(() => ({ value: false }));
 const hideBots = vi.hoisted(() => ({ value: false }));
 const hideDrafts = vi.hoisted(() => ({ value: false }));
-const hideMergeQueued = vi.hoisted(() => ({ value: false }));
+const mergeQueued = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const labelFilters = vi.hoisted(() => ({ value: new Map() as LabelFilters }));
 const cycleLabelFilter = vi.hoisted(() =>
   vi.fn((name: string) => {
@@ -176,7 +176,7 @@ vi.mock("../context.js", () => ({
       getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => hideBots.value,
       getHideDrafts: () => hideDrafts.value,
-      getHideMergeQueued: () => hideMergeQueued.value,
+      getMergeQueued: () => mergeQueued.value,
       getLabelFilters: () => labelFilters.value,
       cycleLabelFilter,
       clearLabelFilters: vi.fn(() => {
@@ -228,8 +228,8 @@ vi.mock("../context.js", () => ({
       setHideClosedMerged: vi.fn(),
       setHideBots: vi.fn(),
       setHideDrafts,
-      setHideMergeQueued: (value: boolean) => {
-        hideMergeQueued.value = value;
+      setMergeQueued: (value: "require" | "exclude" | undefined) => {
+        mergeQueued.value = value;
       },
       setHideDefaultBranchActivity: vi.fn((value: boolean) => {
         hideDefaultBranchActivity.value = value;
@@ -569,7 +569,7 @@ describe("ActivityFeed compact mode", () => {
 
   it("resets popover filters and author without changing the PR and issue toggles", async () => {
     selectedAuthor.value = "Alice";
-    hideMergeQueued.value = true;
+    mergeQueued.value = "exclude";
     enabledItemTypes.value = new Set(["pr"]);
     render(ActivityFeed, { props: { compact: false } });
 
@@ -578,7 +578,7 @@ describe("ActivityFeed compact mode", () => {
 
     expect(setActivityAuthor).toHaveBeenCalledWith(undefined);
     expect(setHideDrafts).toHaveBeenCalledWith(false);
-    expect(hideMergeQueued.value).toBe(false);
+    expect(mergeQueued.value).toBeUndefined();
     expect(enabledItemTypes.value).toEqual(new Set(["pr"]));
   });
 
@@ -614,18 +614,19 @@ describe("ActivityFeed compact mode", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Unassigned" }));
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 4);
 
-    await fireEvent.click(screen.getByRole("button", { name: "Hide queued for merge" }));
-    expect(hideMergeQueued.value).toBe(true);
+    await fireEvent.click(screen.getByRole("button", { name: "Merge queued" }));
+    expect(mergeQueued.value).toBe("require");
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 5);
   });
 
-  it("cycles Involves me and Unassigned through required, excluded, and off", async () => {
+  it("cycles Involves me, Unassigned, and Merge queued through required, excluded, and off", async () => {
     render(ActivityFeed, { props: { compact: false } });
     await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
 
     for (const [label, state] of [
       ["Involves me", involvesMe],
       ["Unassigned", unassigned],
+      ["Merge queued", mergeQueued],
     ] as const) {
       loadActivity.mockClear();
       const row = screen.getByRole("button", { name: label });

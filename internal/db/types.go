@@ -891,19 +891,20 @@ type WorkspaceSubjectKey struct {
 }
 
 type WorkspaceSubjectMetadata struct {
-	Key           WorkspaceSubjectKey
-	Platform      string
-	PlatformHost  string
-	RepoKey       platform.RepositoryKey
-	RepoOwner     string
-	RepoName      string
-	RepoPath      string
-	RepoPrivate   *bool
-	Title         string
-	State         string
-	URL           string
-	Author        string
-	IsDraft       bool
+	Key          WorkspaceSubjectKey
+	Platform     string
+	PlatformHost string
+	RepoKey      platform.RepositoryKey
+	RepoOwner    string
+	RepoName     string
+	RepoPath     string
+	RepoPrivate  *bool
+	Title        string
+	State        string
+	URL          string
+	Author       string
+	IsDraft      bool
+	// IsMergeQueued: open and in a merge queue, or with provider auto-merge on.
 	IsMergeQueued bool
 }
 
@@ -1685,10 +1686,15 @@ type ListActivityOpts struct {
 	HideBots             bool
 	HideDrafts           bool
 	HideMergeQueued      bool
-	HideDefaultBranch    bool
-	ParentRepoID         int64
-	ParentItemType       string
-	ParentItemNumber     int
+	// OnlyMergeQueued keeps only activity on pull requests HideMergeQueued would hide: open and
+	// in a merge queue, with provider auto-merge on, or in DeferredMergeItems.
+	OnlyMergeQueued bool
+	// DeferredMergeItems are the pull requests this server's worker holds for a merge after CI.
+	DeferredMergeItems []RepoItemNumber
+	HideDefaultBranch  bool
+	ParentRepoID       int64
+	ParentItemType     string
+	ParentItemNumber   int
 	// DirectProjectionOnly selects rows that cannot be represented by the
 	// filtered parent projection, including repository/unparented rows and
 	// visible human events whose bot-authored parent is hidden.
@@ -1734,6 +1740,8 @@ type ListActivitySubjectsOpts struct {
 	HideBots                 bool
 	HideDrafts               bool
 	HideMergeQueued          bool
+	OnlyMergeQueued          bool
+	DeferredMergeItems       []RepoItemNumber
 	Limit                    int
 	Since                    *time.Time
 	// Assigned and ViewerUninvolved invert Unassigned and ViewerLogins, as in ListActivityOpts.

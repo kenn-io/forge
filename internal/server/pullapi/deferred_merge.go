@@ -1378,9 +1378,9 @@ func (s *Handler) DeferredMergeInFlight(repo db.Repo, number int) bool {
 	return ok
 }
 
-// deferredMergeItems lists the pull requests this daemon's workers hold for
+// DeferredMergeItems lists the pull requests this daemon's workers hold for
 // CI. Provider auto-merge is stored on the pull request instead.
-func (s *Handler) deferredMergeItems() []db.RepoItemNumber {
+func (s *Handler) DeferredMergeItems() []db.RepoItemNumber {
 	s.deferredMergeMu.Lock()
 	defer s.deferredMergeMu.Unlock()
 	items := make([]db.RepoItemNumber, 0, len(s.deferredMergeInFlight))

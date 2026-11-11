@@ -266,9 +266,9 @@ and back.
   Activity), sent as pre-limit server queries, never URL or config state.
 - A condition filter is three-state: a click cycles off, required (tick), excluded (cross), like a
   label. This covers `Involves me`, `Unassigned`, `Referenced by PR`, `Approved`, `Merge conflicts`,
-  and `Has workspace` wherever they are one row; a pair already shown as a pick-one section stays
+  `Merge queued`, and `Has workspace` wherever they are one row; a pair already shown as a pick-one section stays
   on/off (maintainer decision; `frontend/src/lib/utils/tri-filter.ts`). The server takes the opposite
-  as its own query (`not_involves_me`, `assigned`, `not_referenced_by_pr`, `not_approved`,
+  as its own query (`not_involves_me`, `assigned`, `not_referenced_by_pr`, `not_approved`, `not_merge_queued`,
   `no_merge_conflicts`), so both directions apply before limits.
 - Phone Activity shows a three-state filter as an Any/Yes/No choice, since a switch has no third state.
 - `Unassigned` matches only PR/issue subjects with an empty synchronized assignee set; its opposite
@@ -299,9 +299,14 @@ and back.
 - Desktop and phone Activity must share event/visibility definitions and actions; derive active indicators
   and reset from those lists. Layout and short phone labels may differ (maintainer decision;
   `frontend/src/lib/components/activityFilters.ts::activityFilterOptions`).
-- Activity's `Hide queued for merge` excludes currently queued open PRs, including their events, notifications,
-  and workspace activity. Removed queue entries remain visible. It defaults off in Settings/`config.toml`;
-  explicit on/off URL choices survive refresh and navigation, and Reset filters turns it off.
+- `Merge queued` matches an open PR that needs no more action to merge: in a provider merge queue, with
+  provider auto-merge on, or held by this server's "merge after CI" worker. Removed queue entries do not
+  match. The worker keeps its held PRs only in memory, so the server passes them into the query
+  (`internal/db/queries.go::mergeQueuedCondition`). On a spoke, workspace rows take the hub's view.
+- In Activity, excluded `Merge queued` is the saved `hide_merge_queued` choice: it applies to events,
+  notifications, and workspace activity, defaults off in Settings/`config.toml` (named `Hide queued for
+  merge` there), and its explicit on/off URL choice survives refresh and navigation. Required
+  (`merge_queued`) is a passing view and is not saved. Reset filters turns both off.
 - Activity filter defaults live in Settings and `config.toml`; URL overrides are session-scoped, and a
   partial Activity URL inherits the last validated route's missing params.
 - Explicit Activity choices survive refresh, Settings navigation, and late hydration; omit filter

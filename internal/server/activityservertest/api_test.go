@@ -524,10 +524,11 @@ func TestAPIListActivityHideMergeQueuedAppliesToEveryProjection(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	var queuedID int64
 	var repoID int64
-	for _, number := range []int{91, 92, 93} {
+	// 91 is in the merge queue and 94 has provider auto-merge on.
+	for _, number := range []int{91, 92, 93, 94} {
 		id := serverfake.SeedPR(t, database, "acme", "widget", number,
 			serverfake.WithSeedPRTimes(now.Add(-time.Hour), now.Add(-time.Hour), now.Add(-time.Hour)),
-			func(pr *db.MergeRequest) { repoID = pr.RepoID },
+			func(pr *db.MergeRequest) { repoID, pr.AutoMergeEnabled = pr.RepoID, number == 94 },
 		)
 		if number == 91 {
 			queuedID = id
@@ -552,12 +553,30 @@ func TestAPIListActivityHideMergeQueuedAppliesToEveryProjection(t *testing.T) {
 		var body itemapi.ActivityResponse
 		require.NoError(json.NewDecoder(rr.Body).Decode(&body))
 		for _, item := range body.Items {
-			assert.NotEqual(91, item.ItemNumber, projection)
+			assert.Contains([]int{92, 93}, item.ItemNumber, projection)
 		}
 		if projection != "events" {
 			require.Len(body.ItemActivity, 2, projection)
 			for _, subject := range body.ItemActivity {
 				assert.Contains([]int{92, 93}, subject.ItemNumber, projection)
+			}
+		}
+
+		rr = testutil.DoJSON(t, srv, http.MethodGet,
+			"/api/v1/activity?projection="+projection+"&merge_queued=true", nil)
+		require.Equal(http.StatusOK, rr.Code, projection)
+		body = itemapi.ActivityResponse{}
+		require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+		if projection != "collapsed" {
+			require.NotEmpty(body.Items, projection)
+		}
+		for _, item := range body.Items {
+			assert.Contains([]int{91, 94}, item.ItemNumber, projection)
+		}
+		if projection != "events" {
+			require.Len(body.ItemActivity, 2, projection)
+			for _, subject := range body.ItemActivity {
+				assert.Contains([]int{91, 94}, subject.ItemNumber, projection)
 			}
 		}
 	}

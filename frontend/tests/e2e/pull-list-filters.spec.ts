@@ -64,6 +64,12 @@ async function mockPulls(page: Page) {
           labels: [{ name: "bug", color: "d73a4a", is_default: true }],
           ReviewDecision: "APPROVED",
           workspace: { id: "ws-10", status: "ready" },
+          merge_queue: {
+            position: 1,
+            state: "queued",
+            enqueued_at: "2026-03-30T14:00:00Z",
+            observed_at: "2026-03-30T14:00:00Z",
+          },
         }),
         pull(11, "Draft parser cleanup", {
           labels: [
@@ -78,6 +84,7 @@ async function mockPulls(page: Page) {
           labels: [{ name: "docs", color: "0075ca", is_default: true }],
           CIStatus: "failure",
           workspace: { id: "ws-12", status: "ready" },
+          deferred_merge_pending: true,
         }),
         pull(13, "Ready conflict resolver", {
           MergeableState: "dirty",
@@ -158,6 +165,11 @@ test("a condition row cycles through required, excluded, and off", async ({ page
       label: "Merge conflicts",
       required: [/Ready conflict resolver/],
       excluded: [/Approved review queue/, /Draft parser cleanup/, /Ready failed workflow/],
+    },
+    {
+      label: "Merge queued",
+      required: [/Approved review queue/, /Ready failed workflow/],
+      excluded: [/Draft parser cleanup/, /Ready conflict resolver/],
     },
     {
       label: "Has workspace",

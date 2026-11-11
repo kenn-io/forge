@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -113,7 +114,8 @@ type ListActivityInput struct {
 	HideClosedMerged   bool     `query:"hide_closed_merged"`
 	HideBots           bool     `query:"hide_bots"`
 	HideDrafts         bool     `query:"hide_drafts" doc:"Exclude activity for draft pull requests."`
-	HideMergeQueued    bool     `query:"hide_merge_queued" doc:"Exclude activity for pull requests currently queued for merge."`
+	HideMergeQueued    bool     `query:"hide_merge_queued" doc:"Exclude activity for open pull requests in a merge queue or set to merge after CI."`
+	MergeQueued        bool     `query:"merge_queued" doc:"Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued."`
 	HideDefaultBranch  bool     `query:"hide_default_branch"`
 	ParentProvider     string
 	ParentPlatformHost string
@@ -433,7 +435,7 @@ func (s *Handlers) WorkspaceActivityResponse(
 		if opts.Author != "" && !strings.EqualFold(subject.Author, opts.Author) {
 			continue
 		}
-		if opts.HideMergeQueued && subject.IsMergeQueued {
+		if (opts.HideMergeQueued || opts.OnlyMergeQueued) && workspaceSubjectMergeQueued(subject, opts.DeferredMergeItems) != opts.OnlyMergeQueued {
 			continue
 		}
 		if opts.HideDrafts && subject.IsDraft {
@@ -475,6 +477,17 @@ func (s *Handlers) WorkspaceActivityResponse(
 		return left < right
 	})
 	return result
+}
+
+// workspaceSubjectMergeQueued reports an open pull request in a merge queue,
+// with provider auto-merge on, or held by this server's worker for a merge
+// after CI.
+func workspaceSubjectMergeQueued(subject db.WorkspaceSubjectMetadata, held []db.RepoItemNumber) bool {
+	if subject.IsMergeQueued {
+		return true
+	}
+	return subject.Key.ItemType == db.WorkspaceItemTypePullRequest && subject.State == string(db.MergeRequestStateOpen) &&
+		slices.Contains(held, db.RepoItemNumber{RepoID: subject.Key.RepoID, Number: subject.Key.ItemNumber})
 }
 
 func workspaceSubjectMatchesRepoFilters(

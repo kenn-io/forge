@@ -13747,12 +13747,19 @@ paths:
           schema:
             description: Exclude activity for draft pull requests.
             type: boolean
-        - description: Exclude activity for pull requests currently queued for merge.
+        - description: Exclude activity for open pull requests in a merge queue or set to merge after CI.
           explode: false
           in: query
           name: hide_merge_queued
           schema:
-            description: Exclude activity for pull requests currently queued for merge.
+            description: Exclude activity for open pull requests in a merge queue or set to merge after CI.
+            type: boolean
+        - description: Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
+          explode: false
+          in: query
+          name: merge_queued
+          schema:
+            description: Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
             type: boolean
         - explode: false
           in: query
@@ -13907,12 +13914,19 @@ paths:
           schema:
             description: Exclude activity for draft pull requests.
             type: boolean
-        - description: Exclude activity for pull requests currently queued for merge.
+        - description: Exclude activity for open pull requests in a merge queue or set to merge after CI.
           explode: false
           in: query
           name: hide_merge_queued
           schema:
-            description: Exclude activity for pull requests currently queued for merge.
+            description: Exclude activity for open pull requests in a merge queue or set to merge after CI.
+            type: boolean
+        - description: Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
+          explode: false
+          in: query
+          name: merge_queued
+          schema:
+            description: Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
             type: boolean
         - explode: false
           in: query

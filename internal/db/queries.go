@@ -1813,6 +1813,20 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 // filterSectionsCondition ORs the options within each section and ANDs the
 // sections. Only mutually exclusive options, such as draft and ready, share a
 // section, so every other selected filter narrows the list.
+// mergeQueuedCondition matches an open pull request in its provider merge
+// queue, with provider auto-merge on, or held by this server's worker for a
+// merge after CI.
+func mergeQueuedCondition(alias string, held []RepoItemNumber, args *[]any) string {
+	cond := alias + `.auto_merge_enabled OR EXISTS (
+		SELECT 1 FROM forge_merge_queue_states q
+		WHERE q.repo_id = ` + alias + `.repo_id AND q.number = ` + alias + `.number AND q.queued
+	)`
+	if len(held) > 0 {
+		cond += " OR " + repoItemCondition(alias, held, args)
+	}
+	return "(" + alias + ".state = 'open' AND (" + cond + "))"
+}
+
 func filterSectionsCondition(sections ...[]string) string {
 	var selected []string
 	for _, options := range sections {
@@ -1985,23 +1999,12 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		END`
 	const pending = `COALESCE(json_extract(c.value, '$.status'), '') IN ('in_progress', 'queued', 'pending', 'waiting')`
 	var review, approval, ci, conflicts, mergeQueue, merging []string
-	// Open and in a provider merge queue, or set to merge once CI passes.
-	mergingCondition := func() string {
-		cond := `p.auto_merge_enabled OR EXISTS (
-			SELECT 1 FROM forge_merge_queue_states q
-			WHERE q.repo_id = p.repo_id AND q.number = p.number AND q.queued
-		)`
-		if len(opts.DeferredMergeItems) > 0 {
-			cond += " OR " + repoItemCondition("p", opts.DeferredMergeItems, &inclusionArgs)
-		}
-		return "(p.state = 'open' AND (" + cond + "))"
-	}
 	for _, attribute := range opts.Attributes {
 		switch attribute {
 		case "merge_queued":
-			merging = append(merging, mergingCondition())
+			merging = append(merging, mergeQueuedCondition("p", opts.DeferredMergeItems, &inclusionArgs))
 		case "not_merge_queued":
-			merging = append(merging, notCondition(mergingCondition()))
+			merging = append(merging, notCondition(mergeQueuedCondition("p", opts.DeferredMergeItems, &inclusionArgs)))
 		case "approved":
 			approval = append(approval, "upper(trim(p.review_decision)) = 'APPROVED'")
 		case "not_approved":

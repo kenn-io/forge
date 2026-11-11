@@ -34,7 +34,9 @@ export type ListActivityParams = {
   hide_bots?: boolean;
   /** Exclude activity for draft pull requests. */
   hide_drafts?: boolean;
-  /** Exclude activity for pull requests currently queued for merge. */
+  /** Exclude activity for open pull requests in a merge queue or set to merge after CI. */
   hide_merge_queued?: boolean;
+  /** Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued. */
+  merge_queued?: boolean;
   hide_default_branch?: boolean;
 };

@@ -754,6 +754,26 @@ describe("activity store workspace activity", () => {
     );
   });
 
+  it("sends the Merge queued filter as required, excluded, or off", async () => {
+    const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    const lastQuery = () =>
+      (get.mock.lastCall as unknown as [string, { params: { query: Record<string, unknown> } }])[1].params.query;
+
+    for (const [value, required, hidden] of [
+      ["require", true, undefined],
+      ["exclude", undefined, true],
+      [undefined, undefined, undefined],
+    ] as const) {
+      store.setMergeQueued(value);
+      store.loadActivity();
+      await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+      expect(store.getMergeQueued()).toBe(value);
+      expect(lastQuery().merge_queued).toBe(required);
+      expect(lastQuery().hide_merge_queued).toBe(hidden);
+    }
+  });
+
   it("sends the Hide queued for merge filter", async () => {
     const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });

@@ -42,10 +42,7 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 		SELECT q.repo_id, q.item_type, q.item_number,
 		       r.platform, r.platform_host, r.platform_repo_id, r.bitbucket_repository_uuid, r.owner, r.name, r.repo_path, r.is_private,
 		       p.title, p.state, p.url, p.author, p.is_draft,
-		       (p.state = 'open' AND EXISTS (
-		           SELECT 1 FROM forge_merge_queue_states mq
-		           WHERE mq.repo_id = p.repo_id AND mq.number = p.number AND mq.queued = 1
-		       ))
+		       ` + mergeQueuedCondition("p", nil, nil) + `
 		FROM requested q
 		JOIN forge_repos r ON r.id = q.repo_id AND r.lifecycle_state = 'active'
 		JOIN forge_merge_requests p

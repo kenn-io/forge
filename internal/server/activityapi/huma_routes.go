@@ -88,7 +88,8 @@ type listActivityThreadEventsInput struct {
 	HideClosedMerged        bool     `query:"hide_closed_merged"`
 	HideBots                bool     `query:"hide_bots"`
 	HideDrafts              bool     `query:"hide_drafts" doc:"Exclude activity for draft pull requests."`
-	HideMergeQueued         bool     `query:"hide_merge_queued" doc:"Exclude activity for pull requests currently queued for merge."`
+	HideMergeQueued         bool     `query:"hide_merge_queued" doc:"Exclude activity for open pull requests in a merge queue or set to merge after CI."`
+	MergeQueued             bool     `query:"merge_queued" doc:"Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued."`
 	HideDefaultBranch       bool     `query:"hide_default_branch"`
 }
 
@@ -876,6 +877,15 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 	}, nil
 }
 
+// deferredMergeItems lists the pull requests this server's worker holds for
+// a merge after CI, when a merge-queued filter needs them.
+func (s *Handlers) deferredMergeItems(needed bool) []db.RepoItemNumber {
+	if !needed || s.PullAPI == nil || *s.PullAPI == nil {
+		return nil
+	}
+	return (*s.PullAPI).DeferredMergeItems()
+}
+
 func localWorkspaceActivityOptions(input *itemapi.ListActivityInput, now time.Time) (db.ListActivityOpts, error) {
 	opts := db.ListActivityOpts{
 		RepoFilters:     itemapi.ParseRepoFilters(input.Repo),
@@ -886,6 +896,7 @@ func localWorkspaceActivityOptions(input *itemapi.ListActivityInput, now time.Ti
 		Assigned:        input.Assigned && !input.Unassigned,
 		HideDrafts:      input.HideDrafts,
 		HideMergeQueued: input.HideMergeQueued,
+		OnlyMergeQueued: input.MergeQueued,
 	}
 	if input.Since == "" {
 		defaultSince := now.UTC().AddDate(0, 0, -7)
@@ -980,6 +991,8 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		HideBots:             input.HideBots,
 		HideDrafts:           input.HideDrafts,
 		HideMergeQueued:      input.HideMergeQueued,
+		OnlyMergeQueued:      input.MergeQueued,
+		DeferredMergeItems:   s.deferredMergeItems(input.HideMergeQueued || input.MergeQueued),
 		HideDefaultBranch:    input.HideDefaultBranch,
 	}
 
@@ -1148,6 +1161,8 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			HideBots:                 opts.HideBots,
 			HideDrafts:               opts.HideDrafts,
 			HideMergeQueued:          opts.HideMergeQueued,
+			OnlyMergeQueued:          opts.OnlyMergeQueued,
+			DeferredMergeItems:       opts.DeferredMergeItems,
 			Limit:                    pageLimit + 1,
 			Since:                    opts.Since,
 		})
@@ -1446,6 +1461,7 @@ func (s *Handlers) ListActivityThreadEvents(
 		HideBots:           input.HideBots,
 		HideDrafts:         input.HideDrafts,
 		HideMergeQueued:    input.HideMergeQueued,
+		MergeQueued:        input.MergeQueued,
 		HideDefaultBranch:  input.HideDefaultBranch,
 		ParentProvider:     input.Provider,
 		ParentPlatformHost: input.PlatformHost,

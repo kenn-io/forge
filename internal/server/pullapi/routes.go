@@ -468,7 +468,7 @@ func (s *Handler) listPullsRouteCore(
 		Items:             items,
 	}
 	if slices.Contains(attributes, "merge_queued") || slices.Contains(attributes, "not_merge_queued") {
-		opts.DeferredMergeItems = s.deferredMergeItems()
+		opts.DeferredMergeItems = s.DeferredMergeItems()
 	}
 	if input.InvolvesMe != input.NotInvolvesMe {
 		opts.ViewerUninvolved = input.NotInvolvesMe

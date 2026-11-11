@@ -4,6 +4,7 @@ import type { ProblemBody } from "./problems.js";
 import { executeGeneratedRequest, executeOpaqueGeneratedApiRequest, makeGeneratedApiLayer } from "./generated-api.js";
 import { GeneratedProblemResponse, InvalidGeneratedErrorResponse, orvalRequest } from "./runtime.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
+import { listRepos } from "./generated/repositories/repositories.js";
 
 it.effect("turns a rejected generated request into a transient transport failure", () =>
   Effect.gen(function* () {
@@ -49,6 +50,22 @@ it.effect("rejects an untyped generated error body at the API boundary", () =>
 
     assert.strictEqual(failure._tag, "InvalidExternalPayload");
     assert.strictEqual(failure.operation, "decode load fleet workspaces error response");
+  }),
+);
+
+it.effect("reports a malformed failed response as an invalid external payload", () =>
+  Effect.gen(function* () {
+    const failure = yield* Effect.flip(
+      executeOpaqueGeneratedApiRequest("load repositories", (_client, signal) =>
+        listRepos({
+          baseURL: "http://forge.test",
+          signal,
+          fetch: async () => new Response("{", { status: 502, headers: { "Content-Type": "application/json" } }),
+        }),
+      ).pipe(Effect.provide(makeGeneratedApiLayer(makeGeneratedClient()))),
+    );
+    assert.strictEqual(failure._tag, "InvalidExternalPayload");
+    if (failure._tag === "InvalidExternalPayload") assert.strictEqual(failure.cause, "{");
   }),
 );
 

@@ -1400,12 +1400,12 @@ describe("NewWorkspaceDialog", () => {
     expect(mockGet.mock.calls.filter(([path]) => path === "/repos")).toHaveLength(2);
   });
 
-  it("recovers a repository read after a plain-text 503", async () => {
+  it("recovers a repository read after a plain-text 502", async () => {
     mockGet.mockImplementation((path: string) => {
       if (path !== "/repos") return Promise.resolve({ data: [] });
       const calls = mockGet.mock.calls.filter(([requested]) => requested === "/repos").length;
       return calls === 1
-        ? Promise.resolve(new Response("unavailable", { status: 503 }))
+        ? Promise.resolve(new Response("unavailable", { status: 502 }))
         : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] });
     });
     await renderDialog();

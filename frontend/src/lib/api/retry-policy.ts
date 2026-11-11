@@ -19,12 +19,14 @@ export function isTransientFailure(failure: unknown): failure is TransientTransp
 
 export function isTransientPickerReadFailure(failure: unknown): boolean {
   if (isTransientFailure(failure)) {
-    if (failure.cause instanceof InvalidGeneratedErrorResponse) return failure.cause.status === 503;
+    if (failure.cause instanceof InvalidGeneratedErrorResponse) return [502, 503, 504].includes(failure.cause.status);
     return !(failure.cause instanceof SyntaxError);
   }
   return (
     failure instanceof ApiProblemError &&
-    (failure.problem.code === "serviceUnavailable" || failure.problem.code === "hubUnavailable")
+    (failure.problem.code === "serviceUnavailable" ||
+      failure.problem.code === "hubUnavailable" ||
+      failure.problem.code === "upstreamError")
   );
 }
 

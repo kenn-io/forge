@@ -48,10 +48,83 @@ it.effect("does not retry a generated validation problem", () =>
 
 it.effect("classifies generated repository responses before retrying", () =>
   Effect.gen(function* () {
-    const cases: Array<{ responses: Array<Response | Error>; attempts: number; succeeds: boolean }> = [
-      { responses: [new Response("forbidden", { status: 403 })], attempts: 1, succeeds: false },
-      { responses: [new Response("unavailable", { status: 503 }), Response.json([])], attempts: 2, succeeds: true },
+    const cases: Array<{ name: string; responses: Array<Response | Error>; attempts: number; succeeds: boolean }> = [
+      ...[502, 503, 504].flatMap((status) => [
+        {
+          name: `text ${status}`,
+          responses: [new Response("unavailable", { status }), Response.json([])],
+          attempts: 2,
+          succeeds: true,
+        },
+        {
+          name: `non-problem JSON ${status}`,
+          responses: [Response.json({ message: "unavailable" }, { status }), Response.json([])],
+          attempts: 2,
+          succeeds: true,
+        },
+        {
+          name: `malformed JSON ${status}`,
+          responses: [
+            new Response("{", { status, headers: { "Content-Type": "application/json" } }),
+            Response.json([]),
+          ],
+          attempts: 2,
+          succeeds: true,
+        },
+      ]),
+      ...[401, 403].flatMap((status) => [
+        { name: `text ${status}`, responses: [new Response("denied", { status })], attempts: 1, succeeds: false },
+        {
+          name: `malformed JSON ${status}`,
+          responses: [new Response("{", { status, headers: { "Content-Type": "application/json" } })],
+          attempts: 1,
+          succeeds: false,
+        },
+      ]),
       {
+        name: "typed forbidden",
+        responses: [Response.json({ code: "forbidden", status: 403 }, { status: 403 })],
+        attempts: 1,
+        succeeds: false,
+      },
+      {
+        name: "typed validation",
+        responses: [Response.json({ code: "validationError", status: 400 }, { status: 400 })],
+        attempts: 1,
+        succeeds: false,
+      },
+      ...(
+        [
+          ["upstreamError", 502],
+          ["serviceUnavailable", 503],
+          ["hubUnavailable", 503],
+        ] as const
+      ).map(([code, status]) => ({
+        name: `typed ${code}`,
+        responses: [Response.json({ code, status }, { status }), Response.json([])],
+        attempts: 2,
+        succeeds: true,
+      })),
+      {
+        name: "malformed successful JSON",
+        responses: [new Response("{", { status: 200, headers: { "Content-Type": "application/json" } })],
+        attempts: 1,
+        succeeds: false,
+      },
+      {
+        name: "transport recovery",
+        responses: [new TypeError("offline"), Response.json([])],
+        attempts: 2,
+        succeeds: true,
+      },
+      {
+        name: "transport exhaustion",
+        responses: [new TypeError("offline"), new TypeError("offline"), new TypeError("offline")],
+        attempts: 3,
+        succeeds: false,
+      },
+      {
+        name: "gateway exhaustion",
         responses: [
           new Response("unavailable", { status: 503 }),
           new Response("unavailable", { status: 503 }),
@@ -60,32 +133,21 @@ it.effect("classifies generated repository responses before retrying", () =>
         attempts: 3,
         succeeds: false,
       },
-      { responses: [Response.json({ code: "forbidden", status: 403 }, { status: 403 })], attempts: 1, succeeds: false },
       {
-        responses: [Response.json({ code: "validationError", status: 400 }, { status: 400 })],
-        attempts: 1,
-        succeeds: false,
-      },
-      {
-        responses: [new Response("{", { status: 503, headers: { "Content-Type": "application/json" } })],
-        attempts: 1,
-        succeeds: false,
-      },
-      { responses: [new TypeError("offline"), Response.json([])], attempts: 2, succeeds: true },
-      {
-        responses: [Response.json({ code: "serviceUnavailable", status: 503 }, { status: 503 }), Response.json([])],
+        name: "failed body read",
+        responses: [
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.error(new Error("interrupted"));
+              },
+            }),
+            { status: 502 },
+          ),
+          Response.json([]),
+        ],
         attempts: 2,
         succeeds: true,
-      },
-      {
-        responses: [Response.json({ code: "hubUnavailable", status: 503 }, { status: 503 }), Response.json([])],
-        attempts: 2,
-        succeeds: true,
-      },
-      {
-        responses: [new TypeError("offline"), new TypeError("offline"), new TypeError("offline")],
-        attempts: 3,
-        succeeds: false,
       },
     ];
     for (const fixture of cases) {
@@ -102,8 +164,9 @@ it.effect("classifies generated repository responses before retrying", () =>
       yield* Effect.yieldNow;
       yield* TestClock.adjust("10 seconds");
       const exit = yield* Fiber.join(fiber);
-      assert.strictEqual(attempts, fixture.attempts);
-      assert.strictEqual(exit._tag, fixture.succeeds ? "Success" : "Failure");
+      assert.strictEqual(attempts, fixture.attempts, fixture.name);
+      assert.strictEqual(exit._tag, fixture.succeeds ? "Success" : "Failure", fixture.name);
+      if (exit._tag === "Success") assert.deepStrictEqual(exit.value, [], fixture.name);
     }
   }),
 );

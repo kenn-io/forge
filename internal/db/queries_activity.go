@@ -241,8 +241,15 @@ func activityEventsQuery(opts ListActivityOpts) (string, []any) {
 	if opts.Unassigned {
 		whereClauses = append(whereClauses, activityUnassignedCondition())
 	}
+	if opts.Assigned {
+		whereClauses = append(whereClauses, notCondition(activityUnassignedCondition()))
+	}
 	if opts.ViewerLogins != nil {
-		whereClauses = append(whereClauses, activityInvolvementCondition(opts.ViewerLogins, &args))
+		involvement := activityInvolvementCondition(opts.ViewerLogins, &args)
+		if opts.ViewerUninvolved {
+			involvement = notCondition(involvement)
+		}
+		whereClauses = append(whereClauses, involvement)
 	}
 
 	// Time window filter.
@@ -827,8 +834,15 @@ func listActivitySubjectsWithQueryer(
 	if opts.Unassigned {
 		whereClauses = append(whereClauses, activityUnassignedCondition())
 	}
+	if opts.Assigned {
+		whereClauses = append(whereClauses, notCondition(activityUnassignedCondition()))
+	}
 	if opts.ViewerLogins != nil {
-		whereClauses = append(whereClauses, activityInvolvementCondition(opts.ViewerLogins, &args))
+		involvement := activityInvolvementCondition(opts.ViewerLogins, &args)
+		if opts.ViewerUninvolved {
+			involvement = notCondition(involvement)
+		}
+		whereClauses = append(whereClauses, involvement)
 	}
 	if opts.Since != nil {
 		whereClauses = append(whereClauses, "activity_at >= ?")

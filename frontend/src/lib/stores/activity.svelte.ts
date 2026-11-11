@@ -18,6 +18,7 @@ import { ActivityWorkflow } from "./activity-workflow.js";
 import { showFlash } from "./flash.svelte.js";
 import { createListPaging } from "./list-paging.svelte.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
+import type { TriFilter } from "../utils/tri-filter.js";
 import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
 import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
 import { repositoryKeyFromWire, repositoryKeyToWire } from "../api/repository-key.js";
@@ -415,10 +416,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function getShowNotifications(): boolean {
     return showNotifications;
   }
-  function getInvolvesMe(): boolean {
+  function getInvolvesMe(): TriFilter {
     return involvesMe;
   }
-  function getUnassigned(): boolean {
+  function getUnassigned(): TriFilter {
     return unassigned;
   }
 
@@ -521,12 +522,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     showNotifications = v;
     invalidatePagedActivityRequests();
   }
-  function setInvolvesMe(value: boolean): void {
+  function setInvolvesMe(value: TriFilter): void {
     involvesMe = value;
     invalidatePagedActivityRequests();
     writeInvolvesMeFilter("activity", value);
   }
-  function setUnassigned(value: boolean): void {
+  function setUnassigned(value: TriFilter): void {
     unassigned = value;
     invalidatePagedActivityRequests();
     writeUnassignedFilter("activity", value);
@@ -604,8 +605,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     }
     if (searchQuery) p.search = searchQuery;
     if (authorFilter) p.author = authorFilter;
-    if (involvesMe) p.involves_me = true;
-    if (unassigned) p.unassigned = true;
+    if (involvesMe === "require") p.involves_me = true;
+    if (involvesMe === "exclude") p.not_involves_me = true;
+    if (unassigned === "require") p.unassigned = true;
+    if (unassigned === "exclude") p.assigned = true;
     if (hideClosedMerged) p.hide_closed_merged = true;
     if (hideBots) p.hide_bots = true;
     if (hideDrafts) p.hide_drafts = true;
@@ -631,7 +634,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       params.search ?? "",
       params.author ?? "",
       params.involves_me ?? false,
+      params.not_involves_me ?? false,
       params.unassigned ?? false,
+      params.assigned ?? false,
       params.hide_closed_merged ?? false,
       params.hide_bots ?? false,
       params.hide_drafts ?? false,
@@ -936,8 +941,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const parentFilterActive =
       searchQuery !== undefined ||
       authorFilter !== undefined ||
-      involvesMe ||
-      unassigned ||
+      involvesMe !== undefined ||
+      unassigned !== undefined ||
       hideClosedMerged ||
       hideBots ||
       hideDrafts ||
@@ -1142,7 +1147,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       limit: loadAllPages ? 100 : 10,
       ...(filterTypes.length > 0 ? { types: [...filterTypes] } : {}),
       ...(searchQuery ? { search: searchQuery } : {}),
-      ...(unassigned ? { unassigned: true } : {}),
+      ...(unassigned === "require" ? { unassigned: true } : {}),
       ...(hideClosedMerged ? { hide_closed_merged: true } : {}),
       ...(hideBots ? { hide_bots: true } : {}),
       ...(hideDrafts ? { hide_drafts: true } : {}),

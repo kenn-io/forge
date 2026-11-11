@@ -51,8 +51,8 @@ const itemActivityCapped = vi.hoisted(() => ({ value: false }));
 const activityLoading = vi.hoisted(() => ({ value: false }));
 const activityError = vi.hoisted(() => ({ value: null as string | null }));
 const showFlash = vi.hoisted(() => vi.fn());
-const involvesMe = vi.hoisted(() => ({ value: false }));
-const unassigned = vi.hoisted(() => ({ value: false }));
+const involvesMe = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
+const unassigned = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const enabledEvents = vi.hoisted(() => ({
   value: new Set(["comment", "review", "commit", "force_push"]),
 }));
@@ -170,10 +170,10 @@ vi.mock("../context.js", () => ({
       setEnabledItemTypes,
       setHideClosedMerged,
       setShowNotifications,
-      setInvolvesMe: vi.fn((value: boolean) => {
+      setInvolvesMe: vi.fn((value: "require" | "exclude" | undefined) => {
         involvesMe.value = value;
       }),
-      setUnassigned: vi.fn((value: boolean) => {
+      setUnassigned: vi.fn((value: "require" | "exclude" | undefined) => {
         unassigned.value = value;
       }),
       setFullEventProjectionRequired,
@@ -229,8 +229,8 @@ vi.mock("../context.js", () => ({
 
 beforeEach(() => {
   hideBots.value = false;
-  involvesMe.value = false;
-  unassigned.value = false;
+  involvesMe.value = undefined;
+  unassigned.value = undefined;
   useWorkspaceActivityForRecency.value = false;
 });
 
@@ -282,17 +282,23 @@ describe("MobileActivityView branch activity", () => {
     expect([...setEnabledEvents.mock.calls[0]![0]]).toEqual(["review", "commit", "force_push"]);
   });
 
-  it("reloads unassigned activity from the mobile filter panel", async () => {
+  it("requires or excludes unassigned activity from the mobile filter panel", async () => {
     render(MobileActivityView, { props: { onSelectItem } });
     const mountedReads = loadActivity.mock.calls.length;
 
     await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    const control = screen.getByRole<HTMLInputElement>("switch", { name: "Unassigned" });
-    expect(control.checked).toBe(false);
-    await fireEvent.click(control);
+    // A switch has no third state, so a filter with an opposite is a three-way choice.
+    expect(screen.queryByRole("switch", { name: "Unassigned" })).toBeNull();
+    await fireEvent.click(screen.getByRole("combobox", { name: /Unassigned/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "No" }));
 
-    expect(unassigned.value).toBe(true);
+    expect(unassigned.value).toBe("exclude");
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 1);
+
+    await fireEvent.click(screen.getByRole("combobox", { name: /Unassigned/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "Any" }));
+    expect(unassigned.value).toBeUndefined();
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 2);
   });
 
   it.each([false, true])("shows and overrides the queued merge filter set to %s", async (initial) => {

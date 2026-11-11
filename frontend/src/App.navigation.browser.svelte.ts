@@ -183,8 +183,10 @@ function overrides(): MockRouteOverride[] {
   ];
 }
 
-function viewTab(label: string): Element {
-  return Array.from(document.querySelectorAll(".kit-top-bar__tab")).find((t) => (t.textContent ?? "").includes(label))!;
+// Look the tab up by role. `page.elementLocator` on a tab builds a selector from the label's
+// CSS-generated copy, which names no element.
+function viewTab(label: string) {
+  return page.getByRole("navigation", { name: "Page", exact: true }).getByRole("button", { name: label, exact: true });
 }
 
 describe("view navigation", () => {
@@ -211,10 +213,10 @@ describe("view navigation", () => {
     await vi.waitFor(() => expect(document.querySelector(".activity-shell--split")).not.toBeNull(), WAIT);
     expect(window.location.search).toContain("selected=pr%3A");
 
-    await page.elementLocator(viewTab("PRs")).click();
+    await viewTab("PRs").click();
     await vi.waitFor(() => expect(window.location.pathname).toMatch(/^\/pulls\//), WAIT);
 
-    await page.elementLocator(viewTab("Activity")).click();
+    await viewTab("Activity").click();
     await vi.waitFor(() => expect(document.querySelector(".activity-shell--split")).not.toBeNull(), WAIT);
     expect(window.location.search).toContain("selected=pr%3A");
   });
@@ -268,23 +270,23 @@ describe("view navigation", () => {
     mounted = await mountBrowserApp("/", { overrides: [routes, ...overrides()] });
     const activityRow = page.getByText("Add browser regression coverage", { exact: true });
     await expect.element(activityRow).toBeVisible();
-    await page.elementLocator(viewTab("Workspaces")).click();
+    await viewTab("Workspaces").click();
     await expect.element(page.getByText("Cached workspace", { exact: true })).toBeVisible();
 
     holdRefreshes = true;
     try {
       emitBrowserEventSource("data_changed", {});
       // The hidden feed is only marked stale; returning starts its refresh.
-      await page.elementLocator(viewTab("Activity")).click();
+      await viewTab("Activity").click();
       await vi.waitFor(() => expect(heldPaths.has("/api/v1/activity")).toBe(true));
       await expect.element(activityRow).toBeVisible();
-      await page.elementLocator(viewTab("Workspaces")).click();
+      await viewTab("Workspaces").click();
       await vi.waitFor(() => expect(heldPaths.has("/api/v1/snapshot")).toBe(true));
       await expect.element(page.getByText("Cached workspace", { exact: true })).toBeVisible();
 
       await page.getByTitle("Settings").click();
       await vi.waitFor(() => expect(window.location.pathname).toBe("/settings"), WAIT);
-      await page.elementLocator(viewTab("Workspaces")).click();
+      await viewTab("Workspaces").click();
       await vi.waitFor(() => expect(window.location.pathname).toBe("/workspaces"), WAIT);
       await expect.element(page.getByText("Cached workspace", { exact: true })).toBeVisible();
       expect(page.getByText("Loading workspaces...", { exact: true }).query()).toBeNull();
@@ -306,7 +308,7 @@ describe("view navigation", () => {
     await page.getByTitle("Settings").click();
     await vi.waitFor(() => expect(window.location.pathname).toBe("/settings"), WAIT);
 
-    await page.elementLocator(viewTab("Activity")).click();
+    await viewTab("Activity").click();
     await vi.waitFor(() => expect(document.querySelector(".activity-shell--split")).not.toBeNull(), WAIT);
     expect(window.location.search).toContain("selected=pr%3A");
   });

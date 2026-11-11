@@ -16,6 +16,10 @@ export type ListActivityParams = {
   involves_me?: boolean;
   /** Only include activity for pull requests and issues with no assignees. */
   unassigned?: boolean;
+  /** Drop activity for pull requests and issues involving the authenticated viewer. With involves_me, neither filter applies. */
+  not_involves_me?: boolean;
+  /** Drop activity for pull requests and issues with no assignees. With unassigned, neither filter applies. */
+  assigned?: boolean;
   after?: string;
   before?: string;
   at_or_before?: string;

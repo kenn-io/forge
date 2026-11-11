@@ -2,6 +2,8 @@ package db
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"testing"
 	"time"
 
@@ -84,6 +86,33 @@ func TestUnassignedFiltersPullsIssuesAndActivityBeforeLimit(t *testing.T) {
 		{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 1}: {},
 		{RepoID: repoID, ItemType: WorkspaceItemTypeIssue, ItemNumber: 3}:       {},
 	}, workspaceKeys)
+
+	// The opposite filters keep every row their filter drops, repository-level commits included.
+	require.NoError(d.UpsertBranchCommits(ctx, []BranchCommit{{
+		RepoID: repoID, BranchName: "main", CommitSHA: "abc123", AuthorName: "dev",
+		AuthoredAt: base.Add(10 * time.Minute), CommittedAt: base.Add(10 * time.Minute), Subject: "direct push",
+	}}))
+	subjects := func(opts ListActivityOpts) []string {
+		opts.Limit = 100
+		rows, err := d.ListActivity(ctx, opts)
+		require.NoError(err)
+		seen := map[string]struct{}{}
+		for _, row := range rows {
+			seen[fmt.Sprintf("%s:%d", row.ItemType, row.ItemNumber)] = struct{}{}
+		}
+		return slices.Sorted(maps.Keys(seen))
+	}
+	viewer := []RepoViewerLogin{{RepoID: repoID, Login: "reviewer"}}
+	assert.Equal([]string{"issue:3", "pr:1"}, subjects(ListActivityOpts{Unassigned: true}))
+	assert.Equal([]string{":0", "issue:4", "pr:2", "pr:5"}, subjects(ListActivityOpts{Assigned: true}))
+	assert.Equal([]string{"pr:1", "pr:2", "pr:5"}, subjects(ListActivityOpts{ViewerLogins: viewer}))
+	assert.Equal([]string{":0", "issue:3", "issue:4"},
+		subjects(ListActivityOpts{ViewerLogins: viewer, ViewerUninvolved: true}))
+
+	newestAssigned, err := d.ListActivity(ctx, ListActivityOpts{Assigned: true, ItemTypes: []string{"issue"}, Limit: 1})
+	require.NoError(err)
+	require.Len(newestAssigned, 1)
+	assert.Equal(4, newestAssigned[0].ItemNumber, "the filter applies before the limit")
 }
 
 func TestListUnassignedWorkspaceSubjectKeysSupportsLargeSetsAndHidesRemovedItems(t *testing.T) {

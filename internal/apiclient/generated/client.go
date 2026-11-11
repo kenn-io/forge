@@ -13813,6 +13813,7 @@ func (c *Client) ListActivityWithResponse(ctx context.Context, options *ListActi
 
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"after":               {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":            {Style: "form", Explode: &[]bool{false}[0]},
 		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
 		"author":              {Style: "form", Explode: &[]bool{false}[0]},
 		"before":              {Style: "form", Explode: &[]bool{false}[0]},
@@ -13824,6 +13825,7 @@ func (c *Client) ListActivityWithResponse(ctx context.Context, options *ListActi
 		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
 		"projection":          {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
 		"search":              {Style: "form", Explode: &[]bool{false}[0]},
@@ -28505,18 +28507,21 @@ func (c *Client) ListIssuesWithResponse(ctx context.Context, options *ListIssues
 	var err error
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"assignee":         {Style: "form", Explode: &[]bool{false}[0]},
-		"involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":            {Style: "form", Explode: &[]bool{false}[0]},
-		"numbers":          {Style: "form", Explode: &[]bool{false}[0]},
-		"offset":           {Style: "form", Explode: &[]bool{false}[0]},
-		"q":                {Style: "form", Explode: &[]bool{false}[0]},
-		"referenced_by_pr": {Style: "form", Explode: &[]bool{false}[0]},
-		"repo":             {Style: "form", Explode: &[]bool{false}[0]},
-		"semantic":         {Style: "form", Explode: &[]bool{false}[0]},
-		"starred":          {Style: "form", Explode: &[]bool{false}[0]},
-		"state":            {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":       {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":             {Style: "form", Explode: &[]bool{false}[0]},
+		"assignee":             {Style: "form", Explode: &[]bool{false}[0]},
+		"involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":                {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr": {Style: "form", Explode: &[]bool{false}[0]},
+		"numbers":              {Style: "form", Explode: &[]bool{false}[0]},
+		"offset":               {Style: "form", Explode: &[]bool{false}[0]},
+		"q":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":     {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"semantic":             {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":              {Style: "form", Explode: &[]bool{false}[0]},
+		"state":                {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":           {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/issues",
@@ -32204,18 +32209,20 @@ func (c *Client) ListPullsWithResponse(ctx context.Context, options *ListPullsRe
 	var err error
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"attributes":  {Style: "form", Explode: &[]bool{false}[0]},
-		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
-		"label":       {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
-		"numbers":     {Style: "form", Explode: &[]bool{false}[0]},
-		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
-		"q":           {Style: "form", Explode: &[]bool{false}[0]},
-		"repo":        {Style: "form", Explode: &[]bool{false}[0]},
-		"semantic":    {Style: "form", Explode: &[]bool{false}[0]},
-		"starred":     {Style: "form", Explode: &[]bool{false}[0]},
-		"state":       {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":  {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":        {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":      {Style: "form", Explode: &[]bool{false}[0]},
+		"involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
+		"label":           {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":           {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me": {Style: "form", Explode: &[]bool{false}[0]},
+		"numbers":         {Style: "form", Explode: &[]bool{false}[0]},
+		"offset":          {Style: "form", Explode: &[]bool{false}[0]},
+		"q":               {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":            {Style: "form", Explode: &[]bool{false}[0]},
+		"semantic":        {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":         {Style: "form", Explode: &[]bool{false}[0]},
+		"state":           {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":      {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/pulls",
@@ -42457,6 +42464,7 @@ func (c *Client) ListActivityRaw(ctx context.Context, httpClient *http.Client, o
 
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"after":               {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":            {Style: "form", Explode: &[]bool{false}[0]},
 		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
 		"author":              {Style: "form", Explode: &[]bool{false}[0]},
 		"before":              {Style: "form", Explode: &[]bool{false}[0]},
@@ -42468,6 +42476,7 @@ func (c *Client) ListActivityRaw(ctx context.Context, httpClient *http.Client, o
 		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
 		"projection":          {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
 		"search":              {Style: "form", Explode: &[]bool{false}[0]},
@@ -46268,18 +46277,21 @@ func (c *Client) UpdateRepoWorktreeBaseOnHostRaw(ctx context.Context, httpClient
 func (c *Client) ListIssuesRaw(ctx context.Context, httpClient *http.Client, options *ListIssuesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"assignee":         {Style: "form", Explode: &[]bool{false}[0]},
-		"involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":            {Style: "form", Explode: &[]bool{false}[0]},
-		"numbers":          {Style: "form", Explode: &[]bool{false}[0]},
-		"offset":           {Style: "form", Explode: &[]bool{false}[0]},
-		"q":                {Style: "form", Explode: &[]bool{false}[0]},
-		"referenced_by_pr": {Style: "form", Explode: &[]bool{false}[0]},
-		"repo":             {Style: "form", Explode: &[]bool{false}[0]},
-		"semantic":         {Style: "form", Explode: &[]bool{false}[0]},
-		"starred":          {Style: "form", Explode: &[]bool{false}[0]},
-		"state":            {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":       {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":             {Style: "form", Explode: &[]bool{false}[0]},
+		"assignee":             {Style: "form", Explode: &[]bool{false}[0]},
+		"involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":                {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr": {Style: "form", Explode: &[]bool{false}[0]},
+		"numbers":              {Style: "form", Explode: &[]bool{false}[0]},
+		"offset":               {Style: "form", Explode: &[]bool{false}[0]},
+		"q":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":     {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"semantic":             {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":              {Style: "form", Explode: &[]bool{false}[0]},
+		"state":                {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":           {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/issues",
@@ -47161,18 +47173,20 @@ func (c *Client) SetWorktreeSessionBackendRaw(ctx context.Context, httpClient *h
 func (c *Client) ListPullsRaw(ctx context.Context, httpClient *http.Client, options *ListPullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"attributes":  {Style: "form", Explode: &[]bool{false}[0]},
-		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
-		"label":       {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
-		"numbers":     {Style: "form", Explode: &[]bool{false}[0]},
-		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
-		"q":           {Style: "form", Explode: &[]bool{false}[0]},
-		"repo":        {Style: "form", Explode: &[]bool{false}[0]},
-		"semantic":    {Style: "form", Explode: &[]bool{false}[0]},
-		"starred":     {Style: "form", Explode: &[]bool{false}[0]},
-		"state":       {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":  {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":        {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":      {Style: "form", Explode: &[]bool{false}[0]},
+		"involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
+		"label":           {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":           {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me": {Style: "form", Explode: &[]bool{false}[0]},
+		"numbers":         {Style: "form", Explode: &[]bool{false}[0]},
+		"offset":          {Style: "form", Explode: &[]bool{false}[0]},
+		"q":               {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":            {Style: "form", Explode: &[]bool{false}[0]},
+		"semantic":        {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":         {Style: "form", Explode: &[]bool{false}[0]},
+		"state":           {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":      {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/pulls",
@@ -49751,6 +49765,7 @@ func NewListActivityRequest(ctx context.Context, baseURL string, options *ListAc
 
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"after":               {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":            {Style: "form", Explode: &[]bool{false}[0]},
 		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
 		"author":              {Style: "form", Explode: &[]bool{false}[0]},
 		"before":              {Style: "form", Explode: &[]bool{false}[0]},
@@ -49762,6 +49777,7 @@ func NewListActivityRequest(ctx context.Context, baseURL string, options *ListAc
 		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
 		"projection":          {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
 		"search":              {Style: "form", Explode: &[]bool{false}[0]},
@@ -53793,18 +53809,21 @@ func NewListIssuesRequest(ctx context.Context, baseURL string, options *ListIssu
 	c := NewClient(apiClient)
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"assignee":         {Style: "form", Explode: &[]bool{false}[0]},
-		"involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":            {Style: "form", Explode: &[]bool{false}[0]},
-		"numbers":          {Style: "form", Explode: &[]bool{false}[0]},
-		"offset":           {Style: "form", Explode: &[]bool{false}[0]},
-		"q":                {Style: "form", Explode: &[]bool{false}[0]},
-		"referenced_by_pr": {Style: "form", Explode: &[]bool{false}[0]},
-		"repo":             {Style: "form", Explode: &[]bool{false}[0]},
-		"semantic":         {Style: "form", Explode: &[]bool{false}[0]},
-		"starred":          {Style: "form", Explode: &[]bool{false}[0]},
-		"state":            {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":       {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":             {Style: "form", Explode: &[]bool{false}[0]},
+		"assignee":             {Style: "form", Explode: &[]bool{false}[0]},
+		"involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":                {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr": {Style: "form", Explode: &[]bool{false}[0]},
+		"numbers":              {Style: "form", Explode: &[]bool{false}[0]},
+		"offset":               {Style: "form", Explode: &[]bool{false}[0]},
+		"q":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":     {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"semantic":             {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":              {Style: "form", Explode: &[]bool{false}[0]},
+		"state":                {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":           {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/issues",
@@ -54741,18 +54760,20 @@ func NewListPullsRequest(ctx context.Context, baseURL string, options *ListPulls
 	c := NewClient(apiClient)
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"attributes":  {Style: "form", Explode: &[]bool{false}[0]},
-		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
-		"label":       {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
-		"numbers":     {Style: "form", Explode: &[]bool{false}[0]},
-		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
-		"q":           {Style: "form", Explode: &[]bool{false}[0]},
-		"repo":        {Style: "form", Explode: &[]bool{false}[0]},
-		"semantic":    {Style: "form", Explode: &[]bool{false}[0]},
-		"starred":     {Style: "form", Explode: &[]bool{false}[0]},
-		"state":       {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":  {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":        {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":      {Style: "form", Explode: &[]bool{false}[0]},
+		"involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
+		"label":           {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":           {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me": {Style: "form", Explode: &[]bool{false}[0]},
+		"numbers":         {Style: "form", Explode: &[]bool{false}[0]},
+		"offset":          {Style: "form", Explode: &[]bool{false}[0]},
+		"q":               {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":            {Style: "form", Explode: &[]bool{false}[0]},
+		"semantic":        {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":         {Style: "form", Explode: &[]bool{false}[0]},
+		"state":           {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":      {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/pulls",
@@ -60537,7 +60558,13 @@ type ListActivityQuery struct {
 	InvolvesMe *bool `json:"involves_me,omitempty"`
 
 	// Unassigned Only include activity for pull requests and issues with no assignees.
-	Unassigned       *bool                        `json:"unassigned,omitempty"`
+	Unassigned *bool `json:"unassigned,omitempty"`
+
+	// NotInvolvesMe Drop activity for pull requests and issues involving the authenticated viewer. With involves_me, neither filter applies.
+	NotInvolvesMe *bool `json:"not_involves_me,omitempty"`
+
+	// Assigned Drop activity for pull requests and issues with no assignees. With unassigned, neither filter applies.
+	Assigned         *bool                        `json:"assigned,omitempty"`
 	After            *string                      `json:"after,omitempty"`
 	Before           *string                      `json:"before,omitempty"`
 	AtOrBefore       *string                      `json:"at_or_before,omitempty"`
@@ -60990,6 +61017,15 @@ type ListIssuesQuery struct {
 	Assignee *string `json:"assignee,omitempty"`
 	Limit    *int64  `json:"limit,omitempty"`
 	Offset   *int64  `json:"offset,omitempty"`
+
+	// NotInvolvesMe Only include issues that do not involve the authenticated viewer. With involves_me, neither filter applies.
+	NotInvolvesMe *bool `json:"not_involves_me,omitempty"`
+
+	// Assigned Drop issues with no assignees. With unassigned, neither filter applies.
+	Assigned *bool `json:"assigned,omitempty"`
+
+	// NotReferencedByPr Only include issues no pull request references. With referenced_by_pr, neither filter applies.
+	NotReferencedByPr *bool `json:"not_referenced_by_pr,omitempty"`
 }
 
 type SyncIssueQuery struct {
@@ -61030,7 +61066,7 @@ type ListPullsQuery struct {
 	// Numbers Item numbers in every repo unless repo is set; before pagination.
 	Numbers []int64 `json:"numbers,omitempty"`
 
-	// Attributes Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Mutually exclusive filters match either: draft or ready, and failed_ci or passed_ci. Every other selected filter, including involves_me and unassigned, must also match before pagination.
+	// Attributes Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, and merge_conflicts or no_merge_conflicts. Every other selected filter, including involves_me and unassigned, must also match before pagination.
 	Attributes *string `json:"attributes,omitempty"`
 
 	// Label Exact case-sensitive label name; applied before pagination.
@@ -61054,6 +61090,12 @@ type ListPullsQuery struct {
 	Semantic *bool  `json:"semantic,omitempty"`
 	Limit    *int64 `json:"limit,omitempty"`
 	Offset   *int64 `json:"offset,omitempty"`
+
+	// NotInvolvesMe Only include pull requests that do not involve the authenticated viewer. With involves_me, neither filter applies.
+	NotInvolvesMe *bool `json:"not_involves_me,omitempty"`
+
+	// Assigned Drop pull requests with no assignees; a pull request whose assignees never synchronized stays. With unassigned, neither filter applies.
+	Assigned *bool `json:"assigned,omitempty"`
 }
 
 type GetPullDiffQuery struct {

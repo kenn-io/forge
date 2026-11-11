@@ -1,3 +1,5 @@
+import { readTriFilter, writeTriFilter, type TriFilter } from "../utils/tri-filter.js";
+
 export type InvolvesMeSurface = "pulls" | "issues" | "activity";
 
 const STORAGE_KEYS: Record<InvolvesMeSurface, string> = {
@@ -6,21 +8,12 @@ const STORAGE_KEYS: Record<InvolvesMeSurface, string> = {
   activity: "kenn-forge:filters:activity:involves-me",
 };
 
-export function readInvolvesMeFilter(surface: InvolvesMeSurface): boolean {
-  try {
-    return globalThis.localStorage?.getItem(STORAGE_KEYS[surface]) === "1";
-  } catch {
-    return false;
-  }
+export function readInvolvesMeFilter(surface: InvolvesMeSurface): TriFilter {
+  return readTriFilter(STORAGE_KEYS[surface]);
 }
 
-export function writeInvolvesMeFilter(surface: InvolvesMeSurface, enabled: boolean): void {
-  try {
-    if (enabled) globalThis.localStorage?.setItem(STORAGE_KEYS[surface], "1");
-    else globalThis.localStorage?.removeItem(STORAGE_KEYS[surface]);
-  } catch {
-    // localStorage can be unavailable in restricted browser contexts.
-  }
+export function writeInvolvesMeFilter(surface: InvolvesMeSurface, value: TriFilter): void {
+  writeTriFilter(STORAGE_KEYS[surface], value);
 }
 
 export function involvesMeFilterStorageKey(surface: InvolvesMeSurface): string {

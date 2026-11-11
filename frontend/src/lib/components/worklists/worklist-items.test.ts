@@ -168,6 +168,22 @@ describe("worklistItemMatchesFilters", () => {
     expect(matching(items, ["ready", "no_merge_conflicts"])).toEqual([2]);
   });
 
+  it("matches the opposite of involvement, approval, and workspace", () => {
+    const items = [
+      pull(1, { ReviewDecision: "approved", workspace }, { involves_viewer: true }),
+      pull(2, { ReviewDecision: "" }),
+      issue(3, { workspace }, { involves_viewer: true }),
+      issue(4, {}),
+    ];
+
+    expect(matching(items, ["not_involves_me"])).toEqual([2, 4]);
+    expect(matching(items, ["no_workspace"])).toEqual([2, 4]);
+    // Approval is a pull request attribute, so neither direction matches an issue.
+    expect(matching(items, ["not_approved"])).toEqual([2]);
+    expect(matching(items, ["not_involves_me", "no_workspace", "not_approved"])).toEqual([2]);
+    expect(matching(items, ["involves_me", "no_workspace"])).toEqual([]);
+  });
+
   it("matches issues by involvement and workspace but never by pull request attributes", () => {
     const items = [
       issue(1, {}, { involves_viewer: true }),

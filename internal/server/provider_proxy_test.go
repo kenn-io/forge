@@ -307,25 +307,50 @@ func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T)
 	require.NoError(database.UpdateMergeRequestAssignees(t.Context(), repo.ID, unassignedID, nil))
 	require.NoError(database.UpdateMergeRequestAssignees(t.Context(), repo.ID, assignedID, []string{"reviewer"}))
 
-	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
-		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
-		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
-	}
-	for number, workspaceID := range map[int]string{1: "ws-unassigned", 2: "ws-assigned"} {
-		key := db.WorkspaceSubjectKey{
-			RepoID: repo.ID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
+	// Filtering removes subjects from the snapshot it is given, so each read gets its own.
+	newSnapshot := func() workspaceapi.WorkspaceSubjectSnapshot {
+		snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+			OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+			Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
 		}
-		snapshot.Subjects[key] = workspaceapi.SubjectActivity{
-			Subject: db.WorkspaceSubjectMetadata{
-				Key: key, Platform: repo.Platform, PlatformHost: repo.PlatformHost,
-				RepoKey: repo.Key, RepoOwner: repo.Owner, RepoName: repo.Name,
-				RepoPath: repo.RepoPath, Title: "Local workspace", State: "open",
-				URL: "https://github.com/acme/widget/pull/1", Author: "author",
-			},
-			Workspace:  workspaceapi.WorkspaceRef{ID: workspaceID, Status: "ready"},
-			ActivityAt: &now,
+		for number, workspaceID := range map[int]string{1: "ws-unassigned", 2: "ws-assigned"} {
+			key := db.WorkspaceSubjectKey{
+				RepoID: repo.ID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
+			}
+			snapshot.Subjects[key] = workspaceapi.SubjectActivity{
+				Subject: db.WorkspaceSubjectMetadata{
+					Key: key, Platform: repo.Platform, PlatformHost: repo.PlatformHost,
+					RepoKey: repo.Key, RepoOwner: repo.Owner, RepoName: repo.Name,
+					RepoPath: repo.RepoPath, Title: "Local workspace", State: "open",
+					URL: "https://github.com/acme/widget/pull/1", Author: "author",
+				},
+				Workspace:  workspaceapi.WorkspaceRef{ID: workspaceID, Status: "ready"},
+				ActivityAt: &now,
+			}
 		}
+		return snapshot
 	}
+	snapshot := newSnapshot()
+
+	assigned, err := srv.activityapi.OverlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&itemapi.ListActivityInput{Assigned: true},
+		itemapi.ActivityResponse{UseWorkspaceActivityForRecency: true},
+		newSnapshot(),
+	)
+	require.NoError(err)
+	require.Len(assigned.WorkspaceActivity, 1)
+	assert.Equal("ws-assigned", assigned.WorkspaceActivity[0].Workspace.ID)
+
+	uninvolved, err := srv.activityapi.OverlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&itemapi.ListActivityInput{NotInvolvesMe: true},
+		itemapi.ActivityResponse{UseWorkspaceActivityForRecency: true},
+		newSnapshot(),
+	)
+	require.NoError(err)
+	// Only the hub can tell whether a standalone local subject involves the viewer.
+	assert.Empty(uninvolved.WorkspaceActivity)
 
 	combined, err := srv.activityapi.OverlayLocalActivityWorkspaceSnapshot(
 		t.Context(),

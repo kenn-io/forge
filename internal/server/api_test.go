@@ -9268,6 +9268,15 @@ func TestAPIPullFiltersCombineSectionsBeforePagination(t *testing.T) {
 		{"state=all&involves_me=true&attributes=failed_ci,passed_ci&limit=1&offset=1", []int{1}},
 		{"state=all&attributes=merge_conflicts&limit=1&offset=1", []int{3}},
 		{"state=all&involves_me=true&attributes=merge_conflicts", []int{3}},
+		{"not_involves_me=true", []int{4, 2}},
+		{"assigned=true", []int{4, 3, 1}},
+		{"not_involves_me=true&assigned=true", []int{4}},
+		{"not_involves_me=true&unassigned=true", []int{2}},
+		{"involves_me=true&not_involves_me=true", []int{4, 3, 2, 1}},
+		{"unassigned=true&assigned=true", []int{4, 3, 2, 1}},
+		{"attributes=no_merge_conflicts", []int{2, 1}},
+		{"involves_me=true&attributes=no_merge_conflicts", []int{1}},
+		{"attributes=merge_conflicts,no_merge_conflicts", []int{4, 3, 2, 1}},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?"+tc.query, nil)

@@ -141,8 +141,8 @@ const itemActivityCapped = vi.hoisted(() => ({ value: false }));
 const canLoadMore = vi.hoisted(() => ({ value: false }));
 const loadingMore = vi.hoisted(() => ({ value: false }));
 const loadMoreActivity = vi.hoisted(() => vi.fn());
-const involvesMe = vi.hoisted(() => ({ value: false }));
-const unassigned = vi.hoisted(() => ({ value: false }));
+const involvesMe = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
+const unassigned = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
 const loadActivity = vi.hoisted(() => vi.fn(async () => undefined));
 const threadLoadError = vi.hoisted(() => ({ value: null as string | null }));
@@ -218,10 +218,10 @@ vi.mock("../context.js", () => ({
       setShowNotifications: vi.fn((value: boolean) => {
         showNotifications.value = value;
       }),
-      setInvolvesMe: vi.fn((value: boolean) => {
+      setInvolvesMe: vi.fn((value: "require" | "exclude" | undefined) => {
         involvesMe.value = value;
       }),
-      setUnassigned: vi.fn((value: boolean) => {
+      setUnassigned: vi.fn((value: "require" | "exclude" | undefined) => {
         unassigned.value = value;
       }),
       markNotificationSeen,
@@ -270,8 +270,8 @@ describe("ActivityFeed compact mode", () => {
     enabledItemTypes.value = new Set(["pr", "issue"]);
     enabledEvents.value = new Set(["comment", "review", "commit", "force_push"]);
     showNotifications.value = true;
-    involvesMe.value = false;
-    unassigned.value = false;
+    involvesMe.value = undefined;
+    unassigned.value = undefined;
     activityCapped.value = false;
     itemActivityCapped.value = false;
     canLoadMore.value = false;
@@ -617,6 +617,42 @@ describe("ActivityFeed compact mode", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Hide queued for merge" }));
     expect(hideMergeQueued.value).toBe(true);
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 5);
+  });
+
+  it("cycles Involves me and Unassigned through required, excluded, and off", async () => {
+    render(ActivityFeed, { props: { compact: false } });
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+
+    for (const [label, state] of [
+      ["Involves me", involvesMe],
+      ["Unassigned", unassigned],
+    ] as const) {
+      loadActivity.mockClear();
+      const row = screen.getByRole("button", { name: label });
+      await fireEvent.click(row);
+      expect(state.value).toBe("require");
+
+      await fireEvent.click(row);
+      expect(state.value).toBe("exclude");
+
+      await fireEvent.click(row);
+      expect(state.value).toBeUndefined();
+      // Each step changes a server filter, so each one reloads.
+      expect(loadActivity).toHaveBeenCalledTimes(3);
+    }
+  });
+
+  it("counts an excluded filter in the badge and clears it on reset", async () => {
+    unassigned.value = "exclude";
+    render(ActivityFeed, { props: { compact: false } });
+
+    const trigger = screen.getByRole("button", { name: /^Filters/ });
+    expect(trigger.textContent).toContain("1");
+    await fireEvent.click(trigger);
+    expect(screen.getByRole("button", { name: "Unassigned , excluded" }).getAttribute("aria-pressed")).toBe("true");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+    expect(unassigned.value).toBeUndefined();
   });
 
   it("shows which threaded grouping is chosen", async () => {

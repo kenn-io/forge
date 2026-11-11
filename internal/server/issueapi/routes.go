@@ -19,6 +19,7 @@ func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*list
 		Numbers: input.Numbers,
 		Repo:    input.Repo, State: input.State, Starred: input.Starred,
 		InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, ReferencedByPR: input.ReferencedByPR,
+		NotInvolvesMe: input.NotInvolvesMe, Assigned: input.Assigned, NotReferencedByPR: input.NotReferencedByPR,
 		Text: input.Q, Semantic: input.Semantic, Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
 	}
 	var rows []IssueResponse
@@ -80,13 +81,16 @@ func (s *Handler) listIssuesRouteCore(
 		Numbers:        input.Numbers,
 		AllowedRepoIDs: allowedRepoIDs,
 		State:          input.State, Search: input.Q, Starred: input.Starred,
-		Unassigned: input.Unassigned, Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
+		Unassigned: input.Unassigned && !input.Assigned, Assigned: input.Assigned && !input.Unassigned,
+		Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
 		RepoFilters:       parseRepoFilters(input.Repo),
 		WorkspaceActivity: overrides,
-		ReferencedByPR:    input.ReferencedByPR,
+		ReferencedByPR:    input.ReferencedByPR && !input.NotReferencedByPR,
+		NotReferencedByPR: input.NotReferencedByPR && !input.ReferencedByPR,
 		Items:             items,
 	}
-	if input.InvolvesMe {
+	if input.InvolvesMe != input.NotInvolvesMe {
+		opts.ViewerUninvolved = input.NotInvolvesMe
 		if s.viewerLogins == nil {
 			return nil, httpapi.Internal("authenticated viewer lookup unavailable")
 		}

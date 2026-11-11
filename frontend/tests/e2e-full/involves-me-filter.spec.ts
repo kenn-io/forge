@@ -133,6 +133,67 @@ test.describe("Involves me standard filters", () => {
     expect((await activityResponse).ok()).toBe(true);
   });
 
+  test("a second click asks the server for the opposite filter and persists it", async ({ page }) => {
+    const baseURL = server!.info.base_url;
+    const waitForQuery = (path: string, param: string) =>
+      page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return url.pathname === path && url.searchParams.get(param) === "true";
+      });
+
+    for (const surface of [
+      {
+        route: `${baseURL}/pulls`,
+        row: ".pull-item",
+        trigger: ".compact-filter-menu .kit-filter-dropdown__btn",
+        path: "/api/v1/pulls",
+        key: "pulls",
+      },
+      {
+        route: `${baseURL}/issues`,
+        row: ".issue-item",
+        trigger: ".compact-filter-menu .kit-filter-dropdown__btn",
+        path: "/api/v1/issues",
+        key: "issues",
+      },
+      {
+        route: baseURL,
+        row: ".activity-row",
+        trigger: ".activity-feed .kit-filter-dropdown__btn",
+        path: "/api/v1/activity",
+        key: "activity",
+      },
+    ] as const) {
+      await page.goto(surface.route);
+      await expect(page.locator(surface.row).first()).toBeVisible();
+      await page.locator(surface.trigger).click();
+
+      for (const filter of [
+        { label: "Involves me", on: "involves_me", off: "not_involves_me", storage: "involves-me" },
+        { label: "Unassigned", on: "unassigned", off: "assigned", storage: "unassigned" },
+      ]) {
+        const item = page.locator(".kit-filter-dropdown__item", { hasText: filter.label });
+        const required = waitForQuery(surface.path, filter.on);
+        await item.click();
+        expect((await required).ok()).toBe(true);
+
+        const excluded = waitForQuery(surface.path, filter.off);
+        await item.click();
+        const response = await excluded;
+        expect(response.ok(), await response.text()).toBe(true);
+        expect(new URL(response.url()).searchParams.get(filter.on)).toBeNull();
+        await expect(item).toHaveAccessibleName(/, excluded$/);
+        const storageKey = `kenn-forge:filters:${surface.key}:${filter.storage}`;
+        await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), storageKey)).toBe("0");
+
+        // The third click turns the filter off again.
+        await item.click();
+        await expect(item).toHaveAttribute("aria-pressed", "false");
+        await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), storageKey)).toBeNull();
+      }
+    }
+  });
+
   test("collapses pull and issue controls into the filter menu on compact canonical routes", async ({ page }) => {
     const baseURL = server!.info.base_url;
     await page.setViewportSize({ width: 390, height: 844 });

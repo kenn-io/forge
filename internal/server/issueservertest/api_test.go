@@ -164,6 +164,26 @@ func TestAPIInvolvesMeFiltersPullsIssuesAndActivity(t *testing.T) {
 	for _, item := range activity.Items {
 		assert.Contains([]int{1, 3}, item.ItemNumber)
 	}
+	// The opposite filter lists exactly the rows Involves me drops.
+	uninvolvedRR := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?state=all&not_involves_me=true", nil)
+	require.Equal(http.StatusOK, uninvolvedRR.Code, uninvolvedRR.Body.String())
+	require.NoError(json.Unmarshal(uninvolvedRR.Body.Bytes(), &pulls))
+	require.Len(pulls, 1)
+	assert.Equal(2, pulls[0].Number)
+	uninvolvedRR = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/issues?state=all&not_involves_me=true", nil)
+	require.Equal(http.StatusOK, uninvolvedRR.Code, uninvolvedRR.Body.String())
+	require.NoError(json.Unmarshal(uninvolvedRR.Body.Bytes(), &issues))
+	require.Len(issues, 1)
+	assert.Equal(4, issues[0].Number)
+	uninvolvedRR = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?not_involves_me=true", nil)
+	require.Equal(http.StatusOK, uninvolvedRR.Code, uninvolvedRR.Body.String())
+	var uninvolved itemapi.ActivityResponse
+	require.NoError(json.Unmarshal(uninvolvedRR.Body.Bytes(), &uninvolved))
+	require.Len(uninvolved.Items, 2)
+	for _, item := range uninvolved.Items {
+		assert.Contains([]int{2, 4}, item.ItemNumber)
+	}
+
 	_, err = database.WriteDB().ExecContext(ctx, `UPDATE forge_merge_requests SET assignees_json = CASE WHEN number IN (1, 2) THEN '[]' ELSE '["other"]' END`)
 	require.NoError(err)
 	_, err = database.WriteDB().ExecContext(ctx, `UPDATE forge_issues SET assignees_json = CASE WHEN number IN (3, 4) THEN '[]' ELSE '["other"]' END`)
@@ -189,6 +209,23 @@ func TestAPIInvolvesMeFiltersPullsIssuesAndActivity(t *testing.T) {
 			assert.Len(rows, 1)
 		}
 	}
+	// Workspace subjects follow the opposite filter too: only the uninvolved subjects remain.
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?projection=collapsed&not_involves_me=true", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var collapsed itemapi.ActivityResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &collapsed))
+	require.Len(collapsed.ItemActivity, 2)
+	for _, item := range collapsed.ItemActivity {
+		assert.Contains([]int{2, 4}, item.ItemNumber)
+		assert.NotNil(item.Workspace)
+	}
+	workspaceNumbers := make([]int, 0, len(collapsed.WorkspaceActivity))
+	for _, item := range collapsed.WorkspaceActivity {
+		workspaceNumbers = append(workspaceNumbers, item.ItemNumber)
+	}
+	assert.NotContains(workspaceNumbers, 1)
+	assert.NotContains(workspaceNumbers, 3)
+
 	assert.Equal(1, mock.AuthenticatedViewerCalls,
 		"viewer identity should be shared by concurrent view requests during the cache TTL")
 }
@@ -240,6 +277,30 @@ func TestAPIUnassignedFiltersPullsIssuesAndActivity(t *testing.T) {
 		activity.ItemActivity[0].ItemNumber,
 		activity.ItemActivity[1].ItemNumber,
 	})
+
+	// The opposite filter lists exactly the rows Unassigned drops.
+	pullsRR = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?state=all&assigned=true", nil)
+	require.Equal(http.StatusOK, pullsRR.Code, pullsRR.Body.String())
+	require.NoError(json.Unmarshal(pullsRR.Body.Bytes(), &pulls))
+	// PR 5 never had its assignees synchronized, so Unassigned does not match it.
+	require.Len(pulls, 2)
+	assert.ElementsMatch([]int{2, 5}, []int{pulls[0].Number, pulls[1].Number})
+
+	issuesRR = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/issues?state=all&assigned=true", nil)
+	require.Equal(http.StatusOK, issuesRR.Code, issuesRR.Body.String())
+	require.NoError(json.Unmarshal(issuesRR.Body.Bytes(), &issues))
+	require.Len(issues, 1)
+	assert.Equal(4, issues[0].Number)
+
+	activityRR = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?assigned=true", nil)
+	require.Equal(http.StatusOK, activityRR.Code, activityRR.Body.String())
+	var assigned itemapi.ActivityResponse
+	require.NoError(json.Unmarshal(activityRR.Body.Bytes(), &assigned))
+	assignedNumbers := make([]int, 0, len(assigned.ItemActivity))
+	for _, item := range assigned.ItemActivity {
+		assignedNumbers = append(assignedNumbers, item.ItemNumber)
+	}
+	assert.ElementsMatch([]int{2, 4, 5}, assignedNumbers)
 }
 
 func TestAPIRepositorySyncRecoversDisabledIssueScopeThroughSQLite(t *testing.T) {

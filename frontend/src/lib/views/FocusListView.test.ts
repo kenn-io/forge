@@ -21,6 +21,7 @@ import {
   setPullUnassigned,
 } from "../../test/focusListViewState.svelte.js";
 import { getGlobalRepo, setGlobalRepo } from "../stores/filter.svelte.js";
+import type { TriFilter } from "../utils/tri-filter.js";
 
 const pullSearch = vi.hoisted(() => vi.fn());
 const issueSearch = vi.hoisted(() => vi.fn());
@@ -62,15 +63,15 @@ vi.mock("../context.js", () => ({
       loadMoreIssues,
       searchTextChanged: vi.fn(),
       setHideBots: vi.fn(),
-      setInvolvesMe: (value: boolean) => {
+      setInvolvesMe: (value: TriFilter) => {
         setIssuesInvolvesMe(value);
         setIssueInvolvesMe(value);
       },
-      setUnassigned: (value: boolean) => {
+      setUnassigned: (value: TriFilter) => {
         setIssuesUnassigned(value);
         setIssueUnassigned(value);
       },
-      setReferencedByPR: (value: boolean) => {
+      setReferencedByPR: (value: TriFilter) => {
         setIssuesReferencedByPR(value);
         setIssueReferencedByPR(value);
       },
@@ -93,11 +94,11 @@ vi.mock("../context.js", () => ({
       loadMorePulls,
       searchTextChanged: vi.fn(),
       setFilterState: vi.fn(),
-      setInvolvesMe: (value: boolean) => {
+      setInvolvesMe: (value: TriFilter) => {
         setPullsInvolvesMe(value);
         setPullInvolvesMe(value);
       },
-      setUnassigned: (value: boolean) => {
+      setUnassigned: (value: TriFilter) => {
         setPullsUnassigned(value);
         setPullUnassigned(value);
       },
@@ -399,9 +400,20 @@ describe("FocusListView search", () => {
     expect(control.getAttribute("aria-pressed")).toBe("false");
     await fireEvent.click(control);
 
-    expect(setInvolvesMe).toHaveBeenCalledWith(true);
+    expect(setInvolvesMe).toHaveBeenLastCalledWith("require");
     expect(loadList).toHaveBeenCalledTimes(1);
     expect(control.getAttribute("aria-pressed")).toBe("true");
+
+    // A second click asks for the opposite, and a third turns the filter off.
+    await fireEvent.click(control);
+    expect(setInvolvesMe).toHaveBeenLastCalledWith("exclude");
+    expect(loadList).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Involves me, excluded" })).toBe(control);
+    expect(control.getAttribute("aria-pressed")).toBe("true");
+
+    await fireEvent.click(control);
+    expect(setInvolvesMe).toHaveBeenLastCalledWith(undefined);
+    expect(screen.getByRole("button", { name: "Involves me" }).getAttribute("aria-pressed")).toBe("false");
   });
 
   it.each([
@@ -415,9 +427,20 @@ describe("FocusListView search", () => {
     expect(control.getAttribute("aria-pressed")).toBe("false");
     await fireEvent.click(control);
 
-    expect(setUnassigned).toHaveBeenCalledWith(true);
+    expect(setUnassigned).toHaveBeenLastCalledWith("require");
     expect(loadList).toHaveBeenCalledTimes(1);
     expect(control.getAttribute("aria-pressed")).toBe("true");
+
+    // A second click asks for the opposite, and a third turns the filter off.
+    await fireEvent.click(control);
+    expect(setUnassigned).toHaveBeenLastCalledWith("exclude");
+    expect(loadList).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Unassigned, excluded" })).toBe(control);
+    expect(control.getAttribute("aria-pressed")).toBe("true");
+
+    await fireEvent.click(control);
+    expect(setUnassigned).toHaveBeenLastCalledWith(undefined);
+    expect(screen.getByRole("button", { name: "Unassigned" }).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("filters issues by pull request references", async () => {
@@ -428,8 +451,12 @@ describe("FocusListView search", () => {
     expect(control.getAttribute("aria-pressed")).toBe("false");
     await fireEvent.click(control);
 
-    expect(setIssuesReferencedByPR).toHaveBeenCalledWith(true);
+    expect(setIssuesReferencedByPR).toHaveBeenLastCalledWith("require");
     expect(loadIssues).toHaveBeenCalledTimes(1);
     expect(control.getAttribute("aria-pressed")).toBe("true");
+
+    await fireEvent.click(control);
+    expect(setIssuesReferencedByPR).toHaveBeenLastCalledWith("exclude");
+    expect(loadIssues).toHaveBeenCalledTimes(2);
   });
 });

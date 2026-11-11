@@ -823,8 +823,8 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 	input *itemapi.ListActivityInput,
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
 ) (func(itemapi.ActivityResponse) itemapi.ActivityResponse, error) {
-	if input.Unassigned {
-		if err := s.retainUnassignedWorkspaceSubjects(ctx, &snapshot); err != nil {
+	if input.Unassigned != input.Assigned {
+		if err := s.filterWorkspaceSubjectsByAssignment(ctx, &snapshot, input.Unassigned); err != nil {
 			slog.Error("list unassigned workspace subjects failed", "err", err)
 			return nil, httpapi.Internal("list workspace activity failed")
 		}
@@ -835,7 +835,7 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 	}
 	overlays := activityWorkspaceOverlays(snapshot, repositories)
 	// Only the hub can tell whether a standalone local subject involves the viewer.
-	listWorkspaceActivity := input.Projection != "events" && !input.InvolvesMe
+	listWorkspaceActivity := input.Projection != "events" && input.InvolvesMe == input.NotInvolvesMe
 	var opts db.ListActivityOpts
 	if listWorkspaceActivity {
 		if (*s.ProviderSource) != nil {
@@ -882,7 +882,8 @@ func localWorkspaceActivityOptions(input *itemapi.ListActivityInput, now time.Ti
 		ItemTypes:       input.ItemTypes,
 		Search:          strings.TrimSpace(input.Search),
 		Author:          strings.TrimSpace(input.Author),
-		Unassigned:      input.Unassigned,
+		Unassigned:      input.Unassigned && !input.Assigned,
+		Assigned:        input.Assigned && !input.Unassigned,
 		HideDrafts:      input.HideDrafts,
 		HideMergeQueued: input.HideMergeQueued,
 	}
@@ -969,7 +970,8 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		ItemTypes:   input.ItemTypes,
 		Search:      strings.TrimSpace(input.Search),
 		Author:      strings.TrimSpace(input.Author),
-		Unassigned:  input.Unassigned,
+		Unassigned:  input.Unassigned && !input.Assigned,
+		Assigned:    input.Assigned && !input.Unassigned,
 		// Notifications are always on; this only drops notification rows in
 		// SQL when no config is loaded (the nil-config safety guard), so the
 		// safety-cap window is filled by real activity, not stale notifications.
@@ -993,12 +995,13 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 	opts.Limit = pageLimit + 1
-	if input.InvolvesMe {
+	if input.InvolvesMe != input.NotInvolvesMe {
 		viewerLogins, err := s.ResolveAuthenticatedViewerLogins(ctx, opts.RepoFilters)
 		if err != nil {
 			return nil, err
 		}
 		opts.ViewerLogins = viewerLogins
+		opts.ViewerUninvolved = input.NotInvolvesMe
 	}
 
 	if input.Since != "" {
@@ -1138,7 +1141,9 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			SearchMatchedSubjectKeys: searchMatchedSubjectKeys,
 			Author:                   opts.Author,
 			Unassigned:               opts.Unassigned,
+			Assigned:                 opts.Assigned,
 			ViewerLogins:             opts.ViewerLogins,
+			ViewerUninvolved:         opts.ViewerUninvolved,
 			HideClosedMerged:         opts.HideClosedMerged,
 			HideBots:                 opts.HideBots,
 			HideDrafts:               opts.HideDrafts,
@@ -1156,8 +1161,8 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		slog.Error("list workspace activity failed", "err", err)
 		return nil, httpapi.Internal("list workspace activity failed")
 	}
-	if opts.Unassigned {
-		if err := s.retainUnassignedWorkspaceSubjects(ctx, &workspaceSnapshot); err != nil {
+	if opts.Unassigned || opts.Assigned {
+		if err := s.filterWorkspaceSubjectsByAssignment(ctx, &workspaceSnapshot, opts.Unassigned); err != nil {
 			slog.Error("list unassigned workspace subjects failed", "err", err)
 			return nil, httpapi.Internal("list workspace activity failed")
 		}
@@ -1172,12 +1177,12 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			return nil, httpapi.Internal("list workspace activity failed")
 		}
 		for key := range workspaceSnapshot.Subjects {
-			if _, ok := involvedSubjects[key]; !ok {
+			if _, ok := involvedSubjects[key]; ok == opts.ViewerUninvolved {
 				delete(workspaceSnapshot.Subjects, key)
 			}
 		}
 		for key := range workspaceSnapshot.OwnReferences {
-			if _, ok := involvedSubjects[key]; !ok {
+			if _, ok := involvedSubjects[key]; ok == opts.ViewerUninvolved {
 				delete(workspaceSnapshot.OwnReferences, key)
 			}
 		}
@@ -1357,8 +1362,10 @@ func workspaceSnapshotSubjectKeys(
 	return keys
 }
 
-func (s *Handlers) retainUnassignedWorkspaceSubjects(
-	ctx context.Context, snapshot *workspaceapi.WorkspaceSubjectSnapshot,
+// filterWorkspaceSubjectsByAssignment keeps the subjects with no assignees when
+// unassigned is true, and every other subject when it is false.
+func (s *Handlers) filterWorkspaceSubjectsByAssignment(
+	ctx context.Context, snapshot *workspaceapi.WorkspaceSubjectSnapshot, unassigned bool,
 ) error {
 	if (*s.ProviderSource) != nil {
 		repositories, err := s.WorkspaceActivityRepositoryIdentities(ctx, *snapshot)
@@ -1366,11 +1373,11 @@ func (s *Handlers) retainUnassignedWorkspaceSubjects(
 			return err
 		}
 		identitiesByKey, candidates := spokeapi.WorkspaceActivitySubjectIdentities(*snapshot, repositories)
-		unassigned, err := (*s.ProviderSource).FilterUnassignedActivitySubjects(ctx, candidates)
+		unassignedSubjects, err := (*s.ProviderSource).FilterUnassignedActivitySubjects(ctx, candidates)
 		if err != nil {
 			return err
 		}
-		spokeapi.RetainActivitySubjectsByIdentity(snapshot, identitiesByKey, unassigned)
+		spokeapi.FilterActivitySubjectsByIdentity(snapshot, identitiesByKey, unassignedSubjects, unassigned)
 		return nil
 	}
 	unassignedSubjects, err := s.Db.ListUnassignedWorkspaceSubjectKeys(
@@ -1380,12 +1387,12 @@ func (s *Handlers) retainUnassignedWorkspaceSubjects(
 		return err
 	}
 	for key := range snapshot.Subjects {
-		if _, ok := unassignedSubjects[key]; !ok {
+		if _, ok := unassignedSubjects[key]; ok != unassigned {
 			delete(snapshot.Subjects, key)
 		}
 	}
 	for key := range snapshot.OwnReferences {
-		if _, ok := unassignedSubjects[key]; !ok {
+		if _, ok := unassignedSubjects[key]; ok != unassigned {
 			delete(snapshot.OwnReferences, key)
 		}
 	}

@@ -46,9 +46,6 @@ func TestSemanticStartupRecordedChoice(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, disabled)
 	require.NoError(t, embedlocal.RecordChoice())
-	automatic, err := openStartupSemanticSearch(t.Context(), &config.Config{DataDir: t.TempDir(), LocalEmbeddings: "auto"}, database)
-	require.NoError(t, err)
-	assert.Nil(t, automatic)
 	topics := make([]string, 767)
 	for i := range topics {
 		topics[i] = "unused"

@@ -30,7 +30,7 @@ func recordSavedBuiltinChoice(cfg *config.Config) {
 func openStartupSemanticSearch(ctx context.Context, cfg *config.Config, database *db.DB) (*semantic.Indexer, error) {
 	recordSavedBuiltinChoice(cfg)
 	effective := *cfg
-	if cfg.LocalEmbeddings == "" && !cfg.Embeddings.Enabled() {
+	if !cfg.Embeddings.Enabled() {
 		recorded, err := embedlocal.ChoiceRecorded()
 		if err != nil {
 			slog.Warn("could not read search by meaning choice", "err", err)

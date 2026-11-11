@@ -131,7 +131,7 @@ func newEmbeddingsCommand(stdin io.Reader, stdout, stderr io.Writer, deps localE
 		}
 		if builtin {
 			if err := embedlocal.RecordChoice(); err != nil {
-				fmt.Fprintf(stderr, "Warning: could not record search by meaning choice: %v\n", err)
+				fmt.Fprintf(stderr, "Warning: search by meaning choice write reported an error: %v\n", err)
 			}
 		}
 		_, err = fmt.Fprintln(stdout, "Local embeddings configured. Restart Forge to apply.")

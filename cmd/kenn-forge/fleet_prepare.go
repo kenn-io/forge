@@ -24,19 +24,38 @@ func newFleetPrepareSpokeCommand(options fleetCLIOptions) *cobra.Command {
 			if report.ReadyToActivate {
 				_, err = fmt.Fprintf(
 					options.Stdout,
-					"Spoke preparation is complete (%d launch specifications ready); restart kenn-forge to activate the spoke role.\n",
-					report.ReadyLaunchSpecs,
+					"Spoke preparation is complete (%d launch specifications ready). Activate the spoke role with:\n  %s\n",
+					report.ReadyLaunchSpecs, commandHint(cmd, []string{"kenn-forge", "daemon", "restart"}, "config"),
 				)
 				return err
 			}
-			_, writeErr := fmt.Fprintf(
-				options.Stdout,
+			var output strings.Builder
+			fmt.Fprintf(
+				&output,
 				"Spoke preparation is blocked: %d unprepared workspace(s), %d handoff conflict(s), %d handoff error(s), %d provider write(s), %d deferred merge(s), and %d notification acknowledgement(s) remain.\n",
 				len(report.Unprepared), len(report.HandoffConflicts), len(report.HandoffErrors),
 				report.InFlightProviderWrites, report.ActiveDeferredMerges, report.UndrainedAcks,
 			)
-			if writeErr != nil {
-				return writeErr
+			for _, unprepared := range report.Unprepared {
+				workspace := unprepared.Workspace
+				item := workspace.ItemKey
+				if workspace.ItemNumber != 0 {
+					item = fmt.Sprint(workspace.ItemNumber)
+				}
+				fmt.Fprintf(&output, "  Workspace %s: %s/%s %s %s: %s\n", workspace.ID, workspace.RepoOwner, workspace.RepoName, workspace.ItemType, item, unprepared.Reason)
+			}
+			for _, conflict := range report.HandoffConflicts {
+				fmt.Fprintf(&output, "  Inspect handoff conflict %s: %s\n", conflict.Kind, conflict.SourceKey)
+			}
+			for _, handoffErr := range report.HandoffErrors {
+				fmt.Fprintf(&output, "  Handoff error: %s\n", handoffErr)
+			}
+			if report.InFlightProviderWrites+report.ActiveDeferredMerges+report.UndrainedAcks > 0 {
+				output.WriteString("Pending writes, merges, and acknowledgements can finish draining.\n")
+			}
+			fmt.Fprintf(&output, "Rerun:\n  %s\n", commandHint(cmd, []string{"kenn-forge", "fleet", "prepare-spoke"}, "config", "timeout"))
+			if _, err := fmt.Fprint(options.Stdout, output.String()); err != nil {
+				return err
 			}
 			return errors.New("spoke preparation is not ready to activate")
 		},

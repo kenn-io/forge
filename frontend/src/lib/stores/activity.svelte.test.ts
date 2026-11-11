@@ -774,6 +774,25 @@ describe("activity store workspace activity", () => {
     }
   });
 
+  it("lets a restored Merge queued exclusion win over an earlier requirement", async () => {
+    const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.setMergeQueued("require");
+
+    // History restores an Activity URL from before the requirement.
+    window.history.replaceState(null, "", "/?hide_merge_queued=1");
+    store.syncFromURL();
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(store.getMergeQueued()).toBe("exclude");
+    const query = (get.mock.lastCall as unknown as [string, { params: { query: Record<string, unknown> } }])[1].params
+      .query;
+    expect(query.hide_merge_queued).toBe(true);
+    expect(query.merge_queued).toBeUndefined();
+    window.history.replaceState(null, "", "/");
+  });
+
   it("sends the Hide queued for merge filter", async () => {
     const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });

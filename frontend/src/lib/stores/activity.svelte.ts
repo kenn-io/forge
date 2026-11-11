@@ -285,7 +285,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let hideMergeQueued = $state(false);
   let hideMergeQueuedOverride: boolean | undefined;
   // Keeping only queued merges is a passing view, so unlike hiding them it is not saved.
-  let onlyMergeQueued = $state(false);
+  let onlyMergeQueuedChoice = $state(false);
+  // A restored URL or saved default can turn hiding on after the choice; hiding then wins.
+  const onlyMergeQueued = $derived(onlyMergeQueuedChoice && !hideMergeQueued);
   let useWorkspaceActivityForRecency = $state(false);
   let hideDefaultBranchActivity = $state(false);
   let enabledItemTypes = $state<Set<ActivityItemType>>(new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
@@ -505,7 +507,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     invalidatePagedActivityRequests();
   }
   function setMergeQueued(value: TriFilter): void {
-    onlyMergeQueued = value === "require";
+    onlyMergeQueuedChoice = value === "require";
     setHideMergeQueued(value === "exclude");
   }
   function setHideDrafts(v: boolean): void {

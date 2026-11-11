@@ -253,10 +253,9 @@ func TestSpokePreparationReportsDraftHandoffProblems(t *testing.T) {
 		})
 		var report spokeapi.SpokePreparationReport
 		server.spokeapi.HandoffSpokeProviderState(t.Context(), client, &report)
-		encoded, err := json.Marshal(report.HandoffConflicts)
-		require.NoError(t, err)
-		assert.Contains(t, string(encoded), "review draft for team/project #42 on github.com (github)")
-		assert.Contains(t, string(encoded), `\u0000pr\u000042`)
+		require.Len(t, report.HandoffConflicts, 1)
+		assert.Equal(t, "review draft for team/project #42 on github.com (github)", report.HandoffConflicts[0].Description)
+		assert.Equal(t, records[0].SourceKey, report.HandoffConflicts[0].SourceKey)
 	})
 	t.Run("import error", func(t *testing.T) {
 		client := providerPlaneClientFunc(func(context.Context, federationauth.Scope, *http.Request) (*http.Response, error) {

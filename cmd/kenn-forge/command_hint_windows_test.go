@@ -31,7 +31,7 @@ func TestWindowsCommandHint(t *testing.T) {
 
 func TestWindowsCommandRecorder(t *testing.T) {
 	if os.Getenv("FORGE_COMMAND_RECORDER") != "1" {
-		return
+		t.Skip("argument recorder")
 	}
 	for i, arg := range os.Args {
 		if arg == "--" {

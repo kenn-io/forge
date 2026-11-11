@@ -194,7 +194,7 @@ func (s *Handlers) HandoffSpokeProviderState(
 			receipt.ContentDigest == record.ContentDigest {
 			continue
 		}
-		description := record.Kind + " " + strings.ReplaceAll(record.SourceKey, "\x00", " / ")
+		description := record.Kind + " " + record.SourceKey
 		if draft := record.ReviewDraft; draft != nil {
 			repo := draft.Repository
 			description = fmt.Sprintf("review draft for %s/%s #%d on %s (%s)", repo.Owner, repo.Name, draft.PullNumber, repo.PlatformHost, repo.Provider)

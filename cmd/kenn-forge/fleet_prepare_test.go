@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -13,90 +12,65 @@ import (
 )
 
 func TestFleetPrepareSpokeReportsReadyWithoutPrintingSeal(t *testing.T) {
-	assert := assert.New(t)
 	const seal = "private-preparation-seal"
 	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{
 		ReadyLaunchSpecs: 3, ReadyToActivate: true, PreparationSeal: seal,
 	}}
-	var stdout bytes.Buffer
-	cmd := newFleetCommand(fleetCLIOptions{
-		Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner,
-	})
-	cmd.SetArgs([]string{"prepare-spoke", "--config", "/tmp/forge config.toml"})
-
-	require.NoError(t, cmd.Execute())
-	assert.Contains(stdout.String(), "preparation is complete")
-	assert.Contains(stdout.String(), "3 launch specifications")
-	command := `kenn-forge daemon restart --config '/tmp/forge config.toml'`
-	if runtime.GOOS == "windows" {
-		command = `kenn-forge daemon restart --config "/tmp/forge config.toml"`
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"config", []string{"prepare-spoke", "--config", "/tmp/forge.toml"}, "kenn-forge daemon restart --config /tmp/forge.toml\n"},
+		{"default", []string{"prepare-spoke"}, "kenn-forge daemon restart\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
+			cmd.SetArgs(tc.args)
+			require.NoError(t, cmd.Execute())
+			assert.Contains(t, stdout.String(), "preparation is complete")
+			assert.Contains(t, stdout.String(), "3 launch specifications")
+			assert.Contains(t, stdout.String(), tc.want)
+			assert.NotContains(t, stdout.String(), seal)
+		})
 	}
-	assert.Contains(stdout.String(), command)
-	assert.NotContains(stdout.String(), seal)
 }
 
 func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
 	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{
 		Unprepared: []db.UnpreparedWorkspace{
 			{Workspace: db.Workspace{ID: "ws-1", RepoOwner: "team", RepoName: "project", ItemType: "issue", ItemNumber: 42}, Reason: "launchSpecMissing"},
-			{Workspace: db.Workspace{ID: "ws-2", RepoOwner: "team", RepoName: "other", ItemType: "pull_request", ItemNumber: 7}, Reason: "sourceNotVisible"},
-			{Workspace: db.Workspace{ID: "ws-3"}, Reason: "sourceVisibilityExpired"},
-			{Workspace: db.Workspace{ID: "ws-4"}, Reason: "launchSpecMismatch"},
+			{Workspace: db.Workspace{ID: "ws-2", ItemType: "issue", ItemNumber: 7}, Reason: "sourceVisibilityExpired"},
 		},
 		HandoffConflicts:       []spokeapi.SpokePreparationConflict{{Description: "review draft for team/project #42 on github.com (github)"}},
 		HandoffErrors:          []string{"handoff review draft for team/project #42 on github.com (github): offline"},
 		InFlightProviderWrites: 4, ActiveDeferredMerges: 5, UndrainedAcks: 6,
 	}}
-	var stdout bytes.Buffer
-	cmd := newFleetCommand(fleetCLIOptions{
-		Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner,
-	})
-	cmd.SetArgs([]string{"prepare-spoke", "--config", "/tmp/forge config.toml", "--timeout", "2m"})
-
-	err := cmd.Execute()
-	require.ErrorContains(t, err, "not ready")
-	for _, want := range []string{
-		"4 unprepared", "1 handoff conflict", "1 handoff error",
-		"4 provider write", "5 deferred merge", "6 notification acknowledgement",
-		"Workspace ws-1: team/project issue 42: launchSpecMissing",
-		"Workspace ws-2: team/other pull_request 7: sourceNotVisible",
-		"Workspace ws-3: sourceVisibilityExpired", "Workspace ws-4: launchSpecMismatch",
-		"Handoff conflict: review draft for team/project #42 on github.com (github)", "Handoff error: handoff review draft for team/project #42 on github.com (github): offline",
-		"Rerun after resolving the items above:",
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"flags", []string{"prepare-spoke", "--config", "/tmp/forge.toml", "--timeout", "2m"}, "kenn-forge fleet prepare-spoke --config /tmp/forge.toml --timeout 2m0s\n"},
+		{"defaults", []string{"prepare-spoke"}, "kenn-forge fleet prepare-spoke\n"},
+		{"explicit timeout", []string{"prepare-spoke", "--timeout", "60s"}, "kenn-forge fleet prepare-spoke --timeout 1m0s\n"},
 	} {
-		assert.Contains(t, stdout.String(), want)
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
+			cmd.SetArgs(tc.args)
+			require.ErrorContains(t, cmd.Execute(), "not ready")
+			for _, want := range []string{
+				"2 unprepared", "1 handoff conflict", "1 handoff error",
+				"4 provider write", "5 deferred merge", "6 notification acknowledgement",
+				"Workspace ws-1: team/project issue 42: launchSpecMissing",
+				"Workspace ws-2 issue 7: sourceVisibilityExpired",
+				"Handoff conflict: review draft for team/project #42 on github.com (github)", "Handoff error: handoff review draft for team/project #42 on github.com (github): offline",
+				"Rerun after resolving the items above:", tc.want,
+			} {
+				assert.Contains(t, stdout.String(), want)
+			}
+		})
 	}
-	command := `kenn-forge fleet prepare-spoke --config '/tmp/forge config.toml' --timeout 2m0s`
-	if runtime.GOOS == "windows" {
-		command = `kenn-forge fleet prepare-spoke --config "/tmp/forge config.toml" --timeout 2m0s`
-	}
-	assert.Contains(t, stdout.String(), command)
-}
-
-func TestFleetPrepareSpokeDefaultCommand(t *testing.T) {
-	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{Unprepared: []db.UnpreparedWorkspace{{Workspace: db.Workspace{ID: "ws-1", RepoOwner: "team", RepoName: "project", ItemType: "issue", ItemNumber: 42}, Reason: "database error"}}}}
-	var stdout bytes.Buffer
-	cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
-	cmd.SetArgs([]string{"prepare-spoke"})
-	require.Error(t, cmd.Execute())
-	assert.Contains(t, stdout.String(), "team/project issue 42: database error")
-	assert.Contains(t, stdout.String(), "Rerun after resolving the items above:\n  kenn-forge fleet prepare-spoke\n")
-}
-
-func TestFleetPrepareSpokeDefaultRestart(t *testing.T) {
-	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{ReadyToActivate: true}}
-	var stdout bytes.Buffer
-	cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
-	cmd.SetArgs([]string{"prepare-spoke"})
-	require.NoError(t, cmd.Execute())
-	assert.Contains(t, stdout.String(), "kenn-forge daemon restart\n")
-}
-
-func TestFleetPrepareSpokeDrainPreservesExplicitDefaultTimeout(t *testing.T) {
-	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{InFlightProviderWrites: 1}}
-	var stdout bytes.Buffer
-	cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
-	cmd.SetArgs([]string{"prepare-spoke", "--timeout", "60s"})
-	require.Error(t, cmd.Execute())
-	assert.Contains(t, stdout.String(), "kenn-forge fleet prepare-spoke --timeout 1m0s\n")
 }

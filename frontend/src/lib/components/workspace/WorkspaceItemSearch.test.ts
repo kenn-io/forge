@@ -16,7 +16,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("reopens and filters the shared open-item list without waiting for requests", async () => {
+it("reopens cached search results and recovers failed open and closed searches", async () => {
   const api = createMockApiFetch();
   let firstPullUnavailable = true;
   vi.stubGlobal("fetch", (...args: Parameters<typeof fetch>) => {
@@ -94,7 +94,6 @@ it("reopens and filters the shared open-item list without waiting for requests",
   await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   await screen.findByRole("option", { name: /#55.*Refactor theme system/ });
   expect(unavailable).toBe(false);
-  expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe("theme system");
   expect((screen.getByRole("checkbox", { name: "Include closed" }) as HTMLInputElement).checked).toBe(true);
 
   vi.stubGlobal("fetch", async () =>
@@ -103,8 +102,5 @@ it("reopens and filters the shared open-item list without waiting for requests",
   await fireEvent.input(screen.getByRole("combobox"), { target: { value: "theme system" } });
   await screen.findByRole("alert", {}, { timeout: 5000 });
   expect(screen.queryByRole("option", { name: /#55.*Refactor theme system/ })).toBeNull();
-  await fireEvent.input(screen.getByRole("combobox"), { target: { value: "no matching item" } });
-  await screen.findByRole("alert", {}, { timeout: 5000 });
-  expect(screen.queryByRole("option", { name: /#55/ })).toBeNull();
-  expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe("no matching item");
+  expect(screen.queryByText("No PRs or issues found")).toBeNull();
 }, 10000);

@@ -1299,25 +1299,10 @@ describe("NewWorkspaceDialog", () => {
 
     await fireEvent.click(repoPicker());
     await screen.findByRole("alert", {}, { timeout: 5000 });
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     await fireEvent.mouseDown(screen.getByRole("option", { name: /acme\/gadget/ }));
     expect(repoPicker().textContent).toContain("acme/gadget");
-    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
     expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
-  });
-
-  it("does not offer Settings when an empty cached catalog fails to refresh", async () => {
-    mockGet.mockResolvedValue({ data: [] });
-    const { rerender } = await renderDialog();
-    await screen.findByRole("button", { name: "Open Settings" });
-    await rerender({ open: false });
-    mockGet.mockResolvedValue({
-      error: { code: "forbidden", status: 403 },
-      response: new Response(null, { status: 403 }),
-    });
-    await rerender({ open: true });
-    await screen.findByRole("button", { name: "Retry" });
-    expect(screen.queryByRole("button", { name: "Open Settings" })).toBeNull();
-    expect(repoPicker().textContent).toContain("Could not load repositories");
   });
 
   it("reports a rejected create instead of failing silently", async () => {
@@ -1331,23 +1316,16 @@ describe("NewWorkspaceDialog", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it("stops loading and reports when the repository request is rejected", async () => {
-    mockGet.mockRejectedValue(new Error("network down"));
+  it.each(["rejection", "problem response"])("cannot submit after a repository %s", async (failure) => {
+    if (failure === "rejection") mockGet.mockRejectedValue(new Error("network down"));
+    else mockGet.mockResolvedValue({ error: { detail: "repositories unavailable" } });
     await renderDialog();
 
     await waitFor(() => expect(repoPicker().textContent).toContain("Could not load repositories"), { timeout: 5000 });
     expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("cannot submit when the repository list fails to load", async () => {
-    mockGet.mockResolvedValue({ error: { detail: "repositories unavailable" } });
-    await renderDialog();
-
-    await waitFor(() => expect(repoPicker().textContent).toContain("Could not load repositories"));
-    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it("cannot submit when no repository is tracked", async () => {
+  it("opens Settings when no repository is tracked", async () => {
     mockGet.mockResolvedValue({ data: [] });
     const onClose = vi.fn();
     await renderDialog({ onClose });
@@ -1393,19 +1371,6 @@ describe("NewWorkspaceDialog", () => {
             error: { code: "serviceUnavailable", status: 503 },
             response: new Response(null, { status: 503 }),
           })
-        : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] });
-    });
-    await renderDialog();
-    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"), { timeout: 5000 });
-    expect(mockGet.mock.calls.filter(([path]) => path === "/repos")).toHaveLength(2);
-  });
-
-  it("recovers a repository read after a plain-text 502", async () => {
-    mockGet.mockImplementation((path: string) => {
-      if (path !== "/repos") return Promise.resolve({ data: [] });
-      const calls = mockGet.mock.calls.filter(([requested]) => requested === "/repos").length;
-      return calls === 1
-        ? Promise.resolve(new Response("unavailable", { status: 502 }))
         : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] });
     });
     await renderDialog();

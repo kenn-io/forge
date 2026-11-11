@@ -19,7 +19,6 @@ import (
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/kit/embedconfig"
 	"go.kenn.io/kit/embedlocal"
-	"go.kenn.io/kit/stacktest"
 )
 
 func TestSemanticStartupChoice(t *testing.T) {
@@ -47,37 +46,31 @@ func TestSemanticStartupChoice(t *testing.T) {
 	repoID, err := reposeed.Seed(t.Context(), database, identity)
 	require.NoError(t, err)
 	now := time.Now().UTC()
-	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 300, Number: 1, URL: "https://gitlab.com/acme/widget/-/merge_requests/1", Title: "Earlier document", Author: "user-a", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 301, Number: 2, URL: "https://gitlab.com/acme/widget/-/merge_requests/2", Title: "Cache is slow", Author: "user-a", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
 	require.NoError(t, err)
 	indexer, err = openSemanticSearch(t.Context(), cfg, database, deps)
 	require.NoError(t, err)
 	require.NotNil(t, indexer)
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	go func() { defer close(done); indexer.Run(ctx) }()
-	defer func() { cancel(); <-done; assert.NoError(t, indexer.Close()) }()
-	initial := db.RepoItemNumber{RepoID: repoID, Number: 1}
-	result := func(item db.RepoItemNumber) ([]semantic.Ranked[db.RepoItemNumber], error) {
-		return semantic.Rank(t.Context(), indexer, "cache", "pr", []db.RepoItemNumber{item}, func(row db.RepoItemNumber) db.RepoItemNumber { return row }, 0, 0)
-	}
-	if !assert.Eventually(t, func() bool { rows, err := result(initial); return err == nil && len(rows) == 1 }, 10*time.Second, 50*time.Millisecond) {
-		stacktest.Dump(t)
-		return
-	}
-	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 301, Number: 2, URL: "https://gitlab.com/acme/widget/-/merge_requests/2", Title: "Cache is slow", Author: "user-a", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
-	require.NoError(t, err)
+	defer func() { assert.NoError(t, indexer.Close()) }()
 	want := []ghclient.RepoSyncResult{{Owner: "acme", Name: "widget"}}
 	var results []ghclient.RepoSyncResult
-	semanticSyncCompleted(indexer, func(got []ghclient.RepoSyncResult) { results = got })(want)
+	woken := false
+	semanticSyncCompleted(func() { woken = true }, func(got []ghclient.RepoSyncResult) {
+		assert.False(t, woken)
+		results = got
+	})(want)
 	assert.Equal(t, want, results)
+	assert.True(t, woken)
+	require.NoError(t, indexer.Refresh(t.Context()))
 	item := db.RepoItemNumber{RepoID: repoID, Number: 2}
-	if !assert.Eventually(t, func() bool { rows, err := result(item); return err == nil && len(rows) == 1 }, 90*time.Second, 250*time.Millisecond) {
-		stacktest.Dump(t)
-		return
-	}
+	rows, err := semantic.Rank(t.Context(), indexer, "cache", "pr", []db.RepoItemNumber{item}, func(row db.RepoItemNumber) db.RepoItemNumber { return row }, 0, 0)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
 	assert.Contains(t, endpoint.Inputs(), "search_document: Cache is slow")
 	assert.Equal(t, "nomic-embed-text", endpoint.LastModel())
 	assert.Contains(t, endpoint.Inputs(), "search_query: cache")
+	assert.False(t, cfg.Embeddings.Enabled())
+	assert.Empty(t, cfg.LocalEmbeddings)
 }
 
 func TestSemanticStartupConfigured(t *testing.T) {
@@ -110,5 +103,8 @@ func TestSemanticStartupConfigured(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, indexer)
 		require.NoError(t, indexer.Close())
+		recorded, err := embedlocal.ChoiceRecorded()
+		require.NoError(t, err)
+		assert.False(t, recorded)
 	})
 }

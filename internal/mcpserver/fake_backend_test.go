@@ -38,6 +38,7 @@ type fakeBackend struct {
 	createPullWorkspaceFn        func(context.Context, ItemIdentity, bool) (Workspace, error)
 	createIssueWorkspaceFn       func(context.Context, ItemIdentity, bool) (Workspace, error)
 	createAdHocWorkspaceFn       func(context.Context, RepositoryIdentity, string) (Workspace, error)
+	createKataWorkspaceFn        func(context.Context, WorkspaceKataTarget) (Workspace, error)
 	launchWorkspaceRuntimeFn     func(context.Context, string, string, string) (RuntimeSession, error)
 	getWorkspaceRuntimeFn        func(context.Context, string) (WorkspaceRuntime, error)
 	submitAgentMessageFn         func(context.Context, AgentMessageRequest) (AgentMessageResult, error)
@@ -212,6 +213,13 @@ func (b *fakeBackend) CreateIssueWorkspace(ctx context.Context, item ItemIdentit
 func (b *fakeBackend) CreateAdHocWorkspace(ctx context.Context, repo RepositoryIdentity, branch string) (Workspace, error) {
 	if b.createAdHocWorkspaceFn != nil {
 		return b.createAdHocWorkspaceFn(ctx, repo, branch)
+	}
+	return Workspace{}, nil
+}
+
+func (b *fakeBackend) CreateKataWorkspace(ctx context.Context, target WorkspaceKataTarget) (Workspace, error) {
+	if b.createKataWorkspaceFn != nil {
+		return b.createKataWorkspaceFn(ctx, target)
 	}
 	return Workspace{}, nil
 }

@@ -535,6 +535,18 @@ func (b mcpBackend) CreateAdHocWorkspace(
 	return mcpapi.McpWorkspace(result), nil
 }
 
+func (b mcpBackend) CreateKataWorkspace(
+	ctx context.Context, target mcpserver.WorkspaceKataTarget,
+) (mcpserver.Workspace, error) {
+	result, err := b.server.workspaceAPI.CreateKataWorkspaceService(ctx, workspaceapi.WorkspaceKataTarget{
+		DaemonID: target.DaemonID, ProjectUID: target.ProjectUID, IssueUID: target.IssueUID,
+	})
+	if err != nil {
+		return mcpserver.Workspace{}, mcpapi.McpBackendMutationError(err)
+	}
+	return mcpapi.McpWorkspace(result), nil
+}
+
 func (b mcpBackend) LaunchWorkspaceRuntime(
 	ctx context.Context, workspaceID, targetKey, initialMessage string,
 ) (mcpserver.RuntimeSession, error) {

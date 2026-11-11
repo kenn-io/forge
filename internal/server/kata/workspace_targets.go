@@ -72,6 +72,16 @@ func (h *Handler) AddWorkspaceKataTarget(ctx context.Context, id string, target 
 	return workspaceapi.WorkspaceTarget{}, httpapi.Internal("added Kata target is missing from workspace links")
 }
 
+func (h *Handler) CreateKataWorkspace(ctx context.Context, target workspaceapi.WorkspaceKataTarget) (workspaceapi.WorkspaceResult, error) {
+	output, err := h.createKataWorkspace(ctx, &kataWorkspaceTaskInput{Body: kataWorkspaceTaskRequest{
+		DaemonID: target.DaemonID, ProjectUID: target.ProjectUID, IssueUID: target.IssueUID,
+	}})
+	if err != nil {
+		return workspaceapi.WorkspaceResult{}, err
+	}
+	return workspaceapi.WorkspaceResult{Workspace: output.Body}, nil
+}
+
 func (h *Handler) RemoveWorkspaceKataTarget(ctx context.Context, id string, targetID int64) error {
 	if !h.WorkspaceKataTargetsAvailable() {
 		return httpapi.ServiceUnavailable("Kata target linking is unavailable")

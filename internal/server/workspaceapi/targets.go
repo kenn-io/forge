@@ -378,11 +378,20 @@ type WorkspaceKataTargets interface {
 	WorkspaceKataTargetsAvailable() bool
 	ListWorkspaceKataTargets(context.Context, string) ([]WorkspaceTarget, error)
 	AddWorkspaceKataTarget(context.Context, string, WorkspaceKataTarget) (WorkspaceTarget, error)
+	CreateKataWorkspace(context.Context, WorkspaceKataTarget) (WorkspaceResult, error)
 	RemoveWorkspaceKataTarget(context.Context, string, int64) error
 }
 
 // SetKataTargets connects the separate Kata domain during server composition.
 func (s *Handler) SetKataTargets(source WorkspaceKataTargets) { s.kataTargets = source }
+
+// CreateKataWorkspaceService creates or reuses the Kata-task workspace the UI would create.
+func (s *Handler) CreateKataWorkspaceService(ctx context.Context, target WorkspaceKataTarget) (WorkspaceResult, error) {
+	if s.kataTargets == nil || !s.kataTargets.WorkspaceKataTargetsAvailable() {
+		return WorkspaceResult{}, httpapi.ServiceUnavailable("Kata workspaces are unavailable")
+	}
+	return s.kataTargets.CreateKataWorkspace(ctx, target)
+}
 
 func (s *Handler) KataTargetsAvailable() bool {
 	return s.kataTargets != nil && s.kataTargets.WorkspaceKataTargetsAvailable()

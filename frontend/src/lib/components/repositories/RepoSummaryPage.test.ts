@@ -979,10 +979,10 @@ describe("RepoSummaryPage", () => {
     render(RepoSummaryPage);
     expect(await screen.findByDisplayValue("Fence an unknown outcome")).toBeTruthy();
     await waitFor(() => {
-      expect(flash.getFlash()).toMatchObject({
-        message: expect.stringMatching(/outcome is unknown.*check the issue list before retrying/i),
-        tone: "danger",
-      });
+      expect(
+        screen.getByText(/couldn't confirm whether it created the issue.*check the issue list before trying again/i),
+      ).toBeTruthy();
+      expect(flash.getFlash()).toBeNull();
       expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", true);
     });
 
@@ -1021,12 +1021,12 @@ describe("RepoSummaryPage", () => {
     await fireEvent.submit(createButton);
 
     await waitFor(() => {
-      expect(flash.getFlash()).toMatchObject({
-        message: expect.stringMatching(
-          /issue transport unavailable.*outcome is unknown.*check the issue list before retrying/i,
+      expect(
+        screen.getByText(
+          /couldn't confirm whether it created the issue.*check the issue list before trying again.*issue transport unavailable/i,
         ),
-        tone: "danger",
-      });
+      ).toBeTruthy();
+      expect(flash.getFlash()).toBeNull();
       expect((screen.getByRole("button", { name: "Create issue" }) as HTMLButtonElement).disabled).toBe(true);
     });
 
@@ -1088,12 +1088,12 @@ describe("RepoSummaryPage", () => {
     await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
 
     await waitFor(() => {
-      expect(flash.getFlash()).toMatchObject({
-        message: expect.stringMatching(
-          /provider response unavailable.*outcome is unknown.*check the issue list before retrying/i,
+      expect(
+        screen.getByText(
+          /couldn't confirm whether it created the issue.*check the issue list before trying again.*provider response unavailable/i,
         ),
-        tone: "danger",
-      });
+      ).toBeTruthy();
+      expect(flash.getFlash()).toBeNull();
       expect((screen.getByRole("button", { name: "Create issue" }) as HTMLButtonElement).disabled).toBe(true);
     });
 

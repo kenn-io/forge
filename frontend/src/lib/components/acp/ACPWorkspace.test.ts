@@ -1947,6 +1947,38 @@ describe("ACPWorkspace tool details on request", () => {
     expect(detailRequests()).toHaveLength(2);
   });
 
+  it("keeps a generated app running when the details arrive", async () => {
+    let widgetStarts = 0;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (String(input instanceof Request ? input.url : input).endsWith("/mcp-apps/resource")) widgetStarts += 1;
+      return new Promise<Response>(() => {});
+    });
+    const app = {
+      type: "content",
+      content: {
+        type: "text",
+        text: JSON.stringify({ kind: "kenn-forge://apps/generated", title: "Chart", html: "<p>chart</p>" }),
+      },
+    };
+    await openChat({
+      messages: [
+        { role: "user", text: "Check" },
+        { ...summary, toolContent: [app] },
+      ],
+    });
+    await waitFor(() => expect(widgetStarts).toBe(1));
+    await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    socket.options!.onMessage(
+      JSON.stringify({ toolDetails: { ...details, toolContent: [...details.toolContent, structuredClone(app)] } }),
+    );
+    await tick();
+    expect(screen.getByLabelText("Command output").textContent).toBe("ok 12 passed");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(widgetStarts).toBe(1);
+    vi.unstubAllGlobals();
+  });
+
   it("keeps inline media mounted when the details arrive", async () => {
     const image = { type: "content", content: { type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" } };
     await openChat({

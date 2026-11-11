@@ -10,8 +10,13 @@
   let height = $state(320);
   let requestedLink = $state<string>();
 
+  // Read by value: a later copy of the same descriptor, such as one that
+  // arrives with a tool call's details, keeps the running widget.
+  const title = $derived(app.title);
+  const html = $derived(app.html);
+
   function attach(frame: HTMLIFrameElement) {
-    const descriptor = app;
+    const descriptor = { title, html };
     return untrack(() => {
       const execution = runtime.runCommand(Effect.scoped(hostApp(frame, descriptor, runtime, (nextStatus, nextHeight) => {
         status = nextStatus;

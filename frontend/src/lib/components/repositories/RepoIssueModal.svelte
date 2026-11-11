@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Checkbox, TextInput } from "@kenn-io/kit-ui";
   import { Button, Chip } from "@kenn-io/kit-ui";
+  import { ExternalLinkIcon } from "../../icons.js";
   import CommentEditor from "../detail/CommentEditor.svelte";
   import Modal from "../shared/Modal.svelte";
   import { buildProviderIssueListURL } from "../../utils/item-reference.js";
@@ -140,17 +141,26 @@
           />
         </div>
 
-        {#if error}
-          <p class="issue-modal__error">{error}</p>
+        {#if error || outcomeUnknown}
+          <div class="issue-modal__notice">
+            {#if error}
+              <p class="issue-modal__error">{error}</p>
+            {/if}
+            {#if outcomeUnknown}
+              {#if issueListURL}
+                <a class="issue-modal__issue-list" href={issueListURL} target="_blank" rel="noopener noreferrer">
+                  Open issue list
+                  <ExternalLinkIcon size="12" strokeWidth="2" aria-hidden="true" />
+                </a>
+              {:else if webURLLoading}
+                <span>Loading issue list...</span>
+              {:else if webURLError}
+                <div>Could not load the issue list. <Button size="sm" type="button" onclick={() => retry++}>Retry</Button></div>
+              {/if}
+            {/if}
+          </div>
         {/if}
         {#if outcomeUnknown}
-          {#if issueListURL}
-            <a href={issueListURL} target="_blank" rel="noopener noreferrer">Open issue list</a>
-          {:else if webURLLoading}
-            <span>Loading issue list...</span>
-          {:else if webURLError}
-            <div>Could not load the issue list. <Button size="sm" type="button" onclick={() => retry++}>Retry</Button></div>
-          {/if}
           <Checkbox
             class="issue-modal__acknowledgement"
             label="I checked the provider's issue list and want to retry."
@@ -255,6 +265,22 @@
   .issue-modal__error {
     color: var(--accent-red);
     font-size: var(--font-size-sm);
+  }
+
+  .issue-modal__notice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    font-size: var(--font-size-sm);
+  }
+
+  .issue-modal__issue-list {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--accent-blue);
+    text-decoration: underline;
   }
 
   :global(.comment-editor-menu) {

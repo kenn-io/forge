@@ -29,7 +29,10 @@ export interface OrvalRequestOptions extends RequestInit {
 }
 
 export class InvalidGeneratedErrorResponse extends Error {
-  constructor(readonly body: unknown) {
+  constructor(
+    readonly body: unknown,
+    readonly status: number,
+  ) {
     super("Generated API returned an invalid problem response");
     this.name = "InvalidGeneratedErrorResponse";
   }
@@ -67,7 +70,7 @@ export async function orvalFetch<A>(url: string, options: OrvalRequestOptions = 
       : body
     : undefined;
   if (response.ok) return value as A;
-  if (!isProblem(value)) throw new InvalidGeneratedErrorResponse(value);
+  if (!isProblem(value)) throw new InvalidGeneratedErrorResponse(value, response.status);
   throw new GeneratedProblemResponse(value, response);
 }
 

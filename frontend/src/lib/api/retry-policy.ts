@@ -19,7 +19,8 @@ export function isTransientFailure(failure: unknown): failure is TransientTransp
 
 export function isTransientPickerReadFailure(failure: unknown): boolean {
   if (isTransientFailure(failure)) {
-    return !(failure.cause instanceof InvalidGeneratedErrorResponse || failure.cause instanceof SyntaxError);
+    if (failure.cause instanceof InvalidGeneratedErrorResponse) return failure.cause.status === 503;
+    return !(failure.cause instanceof SyntaxError);
   }
   return (
     failure instanceof ApiProblemError &&

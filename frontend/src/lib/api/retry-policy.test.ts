@@ -50,6 +50,16 @@ it.effect("classifies generated repository responses before retrying", () =>
   Effect.gen(function* () {
     const cases: Array<{ responses: Array<Response | Error>; attempts: number; succeeds: boolean }> = [
       { responses: [new Response("forbidden", { status: 403 })], attempts: 1, succeeds: false },
+      { responses: [new Response("unavailable", { status: 503 }), Response.json([])], attempts: 2, succeeds: true },
+      {
+        responses: [
+          new Response("unavailable", { status: 503 }),
+          new Response("unavailable", { status: 503 }),
+          new Response("unavailable", { status: 503 }),
+        ],
+        attempts: 3,
+        succeeds: false,
+      },
       { responses: [Response.json({ code: "forbidden", status: 403 }, { status: 403 })], attempts: 1, succeeds: false },
       {
         responses: [Response.json({ code: "validationError", status: 400 }, { status: 400 })],

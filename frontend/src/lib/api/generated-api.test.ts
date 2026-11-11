@@ -43,7 +43,7 @@ it.effect("rejects an untyped generated error body at the API boundary", () =>
   Effect.gen(function* () {
     const failure = yield* Effect.flip(
       executeOpaqueGeneratedApiRequest("load fleet workspaces", () =>
-        Promise.reject(new InvalidGeneratedErrorResponse({ message: "not a problem envelope" })),
+        Promise.reject(new InvalidGeneratedErrorResponse({ message: "not a problem envelope" }, 502)),
       ).pipe(Effect.provide(makeGeneratedApiLayer(makeGeneratedClient()))),
     );
 

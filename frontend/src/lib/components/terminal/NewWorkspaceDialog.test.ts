@@ -1399,4 +1399,17 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"), { timeout: 5000 });
     expect(mockGet.mock.calls.filter(([path]) => path === "/repos")).toHaveLength(2);
   });
+
+  it("recovers a repository read after a plain-text 503", async () => {
+    mockGet.mockImplementation((path: string) => {
+      if (path !== "/repos") return Promise.resolve({ data: [] });
+      const calls = mockGet.mock.calls.filter(([requested]) => requested === "/repos").length;
+      return calls === 1
+        ? Promise.resolve(new Response("unavailable", { status: 503 }))
+        : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] });
+    });
+    await renderDialog();
+    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"), { timeout: 5000 });
+    expect(mockGet.mock.calls.filter(([path]) => path === "/repos")).toHaveLength(2);
+  });
 });

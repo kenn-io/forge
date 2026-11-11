@@ -1,11 +1,12 @@
 <script lang="ts">
 import * as roborevAPI from "../../api/roborev/generated/client.js";
 
-  import { SearchInput } from "@kenn-io/kit-ui";
+  import { Button, SearchInput } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import { onDestroy } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { executeRoborevRequest } from "../../api/roborev/client.js";
+  import { retryIdempotentRead } from "../../api/retry-policy.js";
   import { getStores, getRoborevClient } from "../../context.js";
   import type * as RoborevModels from "../../api/roborev/generated/models/index.js";
   import {
@@ -30,6 +31,7 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
   let expandedRepo = $state<string | undefined>(undefined);
   let branches = $state.raw<BranchWithCount[]>([]);
   let loadingBranches = $state(false);
+  let branchError = $state(false);
   let pickerRef = $state<HTMLDivElement>();
 
   const selectedRepo = $derived(
@@ -102,7 +104,13 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
       return;
     }
     expandedRepo = rootPath;
+    loadBranches(rootPath);
+  }
+
+  function loadBranches(rootPath: string): void {
     loadingBranches = true;
+    branchError = false;
+    branches = [];
     if (!client) {
       loadingBranches = false;
       return;
@@ -115,6 +123,7 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
           executeRoborevRequest("list Roborev branches", (signal) =>
             roborevAPI.listBranches({ repo: [rootPath] }, { signal }, client),
           ).pipe(
+            retryIdempotentRead,
             Effect.flatMap((result) =>
               result.status !== 200
                 ? Effect.fail(
@@ -128,10 +137,10 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
                     branches = result.data?.branches ?? [];
                   }),
             ),
-            Effect.catch(() => Effect.void),
+            Effect.catch(() => Effect.sync(() => { if (expandedRepo === rootPath) branchError = true; })),
             Effect.ensuring(
               Effect.sync(() => {
-                loadingBranches = false;
+                if (expandedRepo === rootPath) loadingBranches = false;
               }),
             ),
           ),
@@ -297,6 +306,8 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
               <div class="branches">
                 {#if loadingBranches}
                   <span class="branch-loading">Loading...</span>
+                {:else if branchError}
+                  <span class="branch-loading" role="alert">Could not load branches. <Button size="sm" onclick={() => loadBranches(repo.root_path)}>Retry</Button></span>
                 {:else}
                   {#each branches as branch (branch.name)}
                     <button

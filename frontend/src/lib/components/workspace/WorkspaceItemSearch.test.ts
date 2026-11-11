@@ -55,7 +55,7 @@ it("reopens and filters the shared open-item list without waiting for requests",
   stores.workspaceItemSearch.markStale();
   expect(api.requests).toHaveLength(requestCount);
   await fireEvent.input(screen.getByRole("combobox"), { target: { value: "theme system" } });
-  await screen.findByRole("alert");
+  await screen.findByRole("alert", {}, { timeout: 5000 });
   expect(screen.getByRole("option", { name: /#55.*Refactor theme system/ })).toBeTruthy();
   expect(screen.queryByRole("status")).toBeNull();
   expect(screen.getByRole("alert")).toBeTruthy();
@@ -65,7 +65,16 @@ it("reopens and filters the shared open-item list without waiting for requests",
     createMockApiFetch([({ url }) => (url.pathname === "/api/v1/pulls" ? Response.json([updatedPull]) : undefined)])
       .fetch,
   );
-  await fireEvent.input(screen.getByRole("combobox"), { target: { value: "theme system" } });
+  await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   await screen.findByRole("option", { name: /#55.*Updated theme system/ });
   expect(screen.queryByRole("alert")).toBeNull();
+
+  vi.stubGlobal("fetch", async () => Response.json({ detail: "denied" }, { status: 403 }));
+  await fireEvent.click(screen.getByRole("checkbox", { name: "Include closed" }));
+  await screen.findByRole("alert", {}, { timeout: 5000 });
+  vi.stubGlobal("fetch", createMockApiFetch().fetch);
+  await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByRole("option", { name: /#55.*Refactor theme system/ });
+  expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe("theme system");
+  expect((screen.getByRole("checkbox", { name: "Include closed" }) as HTMLInputElement).checked).toBe(true);
 });

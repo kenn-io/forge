@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { autoReposition, Checkbox, dismissable, floatingPopoverStyle, SearchInput } from "@kenn-io/kit-ui";
+  import { autoReposition, Button, Checkbox, dismissable, floatingPopoverStyle, SearchInput } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import { onDestroy, untrack } from "svelte";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
+  import { retryIdempotentRead } from "../../api/retry-policy.js";
   import { canonicalProvider, resolvedPlatformHost } from "../../api/provider-routes.js";
   import type { Issue, PullRequest } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -103,17 +104,16 @@
     }
     remoteLoading = true;
     remoteError = "";
-    remoteOptions = [];
     const params = { state: "all", q: query.trim(), limit: 30 };
     searchExecution = runtime.runCommand(
       Effect.sleep("150 millis").pipe(
         Effect.andThen(Effect.all({
           pulls: executeGeneratedApiRequest("search workspace pull requests", (client, signal) =>
             client.PullRequestsService.listPulls(params, { signal }),
-          ),
+          ).pipe(retryIdempotentRead),
           issues: executeGeneratedApiRequest("search workspace issues", (client, signal) =>
             client.IssuesService.listIssues(params, { signal }),
-          ),
+          ).pipe(retryIdempotentRead),
         }, { concurrency: "unbounded" })),
         Effect.tap(({ pulls, issues }) => Effect.sync(() => {
           remoteOptions = [
@@ -126,7 +126,7 @@
       {
         operation: "search workspace PRs and issues",
         safeContext: { workspaceID },
-        onFailure: () => { remoteError = "Could not load PRs and issues. Type to retry."; },
+        onFailure: () => { remoteError = "Could not load PRs and issues."; },
       },
     );
   }
@@ -206,7 +206,7 @@
         onchange={(checked) => { includeClosed = checked; searchItems(query); }}
       />
     </div>
-    {#if error}<div class="item-search-message" role="alert">{error}</div>{/if}
+    {#if error}<div class="item-search-message" role="alert">{error} <Button size="sm" onclick={() => searchItems(query)}>Retry</Button></div>{/if}
     {#if loading}<div class="item-search-message" role="status">Loading PRs and issues…</div>{/if}
     <!-- kit-ui-check-ignore: same toolbar popover exception as the combobox above -->
     <div id={listID} class="item-search-results" role="listbox" aria-label="PRs and issues" aria-busy={loading}>
@@ -229,7 +229,7 @@
             {#if option.state}<small>{option.state}</small>{/if}
           </button>
         {:else}
-          <div class="item-search-message">No PRs or issues found</div>
+          {#if !error}<div class="item-search-message">No PRs or issues found</div>{/if}
         {/each}
       {/if}
     </div>

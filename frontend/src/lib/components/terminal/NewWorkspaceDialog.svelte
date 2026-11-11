@@ -240,14 +240,15 @@
 
   function loadRepositories(session: object): void {
     reposLoading = true;
+    reposError = null;
     repoLoadExecution = untrack(() => runtime.runCommand(
       Effect.gen(function* () {
         const reads = yield* RepositoryReads;
         yield* Effect.sync(() => {
-          if (activeSession !== session || reads.snapshot === undefined) return;
+          if (activeSession !== session || reads.snapshot === undefined || repos.length > 0) return;
           repos = reads.snapshot.map(repoOption);
           selectedKey = defaultRepoSelection();
-          reposLoading = false;
+          if (repos.length > 0) reposLoading = false;
         });
         const loaded = yield* reads.refresh;
         yield* Effect.sync(() => {
@@ -324,12 +325,11 @@
     }
     loadWorkspaceHosts(session);
     loadRepositories(session);
-    const execution = repoLoadExecution;
     const fleetExecution = fleetLoadExecution;
     return () => {
-      execution?.interrupt();
+      repoLoadExecution?.interrupt();
+      repoLoadExecution = null;
       fleetExecution?.interrupt();
-      if (repoLoadExecution === execution) repoLoadExecution = null;
       if (activeSession === session) activeSession = null;
     };
   });
@@ -748,9 +748,13 @@
           onselect={(value) => {
             clearPendingLaunch();
             selectedKey = value;
-            reposError = null;
           }}
         />
+        {#if reposError}
+          <Button size="sm" onclick={() => { if (activeSession) loadRepositories(activeSession); }}>Retry</Button>
+        {:else if !reposLoading && repos.length === 0}
+          <Button size="sm" onclick={() => { onClose(); navigate("/settings"); }}>Open Settings</Button>
+        {/if}
       </div>
 
       <label class="field">

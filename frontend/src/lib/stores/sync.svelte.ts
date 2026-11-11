@@ -2,7 +2,7 @@ import { Deferred, Duration, Effect, Option } from "effect";
 import { pollWhileVisible } from "../effect/poll-while-visible.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
-import { retryIdempotentRead } from "../api/retry-policy.js";
+import { isTransientFailure, retryIdempotentRead, transientRetrySchedule } from "../api/retry-policy.js";
 import type { RateLimitsResponse, SyncStatus } from "../api/types.js";
 import { SyncWorkflow, type SyncReadError } from "./sync-workflow.js";
 
@@ -11,7 +11,7 @@ export interface SyncStoreOptions {
   getPriorityRepos?: (() => string | undefined) | undefined;
 }
 
-function readErrorMessage(error: SyncReadError, fallback: string): string {
+export function readSyncErrorMessage(error: SyncReadError, fallback: string): string {
   if (error._tag === "ApiProblemError") {
     return error.problem.detail ?? error.problem.title ?? fallback;
   }
@@ -186,13 +186,20 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return Date.parse(next) > Date.parse(previous);
   }
 
-  function triggeredSyncProgram(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>) {
+  function triggeredSyncProgram(
+    request: Effect.Effect<unknown, SyncReadError, GeneratedApi>,
+    baseline?: Option.Option<SyncStatus>,
+  ) {
     const previous = status;
     refreshGeneration += 1;
     let baselineLastRunAt = previous?.last_run_at ?? null;
 
     return Effect.gen(function* () {
-      if (previous === null) {
+      if (baseline !== undefined) {
+        baselineLastRunAt = Option.isSome(baseline)
+          ? (baseline.value.last_run_at ?? "")
+          : (previous?.last_run_at ?? null);
+      } else if (previous === null) {
         const baseline = yield* Effect.option(syncStatusRead());
         baselineLastRunAt = Option.isSome(baseline) ? (baseline.value.last_run_at ?? null) : null;
       }
@@ -219,7 +226,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
             ...(previous?.repo_errors && { repo_errors: previous.repo_errors }),
             running: false,
             last_run_at: previous?.last_run_at ?? baselineLastRunAt ?? "",
-            last_error: readErrorMessage(failure, "failed to trigger sync"),
+            last_error: readSyncErrorMessage(failure, "failed to trigger sync"),
           };
           wasRunning = false;
           adjustPollingSpeed(false);
@@ -237,13 +244,54 @@ export function createSyncStore(opts: SyncStoreOptions) {
     });
   }
 
-  function triggerSyncEffect() {
+  function fullSyncRequest() {
     const priorityRepos = parsePriorityRepos(getPriorityRepos());
-    return triggeredSyncProgram(
-      executeGeneratedApiRequest("POST /sync", (client) =>
-        client.SyncService.triggerSync(priorityRepos.length > 0 ? { priority_repo: priorityRepos } : undefined),
-      ),
+    return executeGeneratedApiRequest("POST /sync", (client) =>
+      client.SyncService.triggerSync(priorityRepos.length > 0 ? { priority_repo: priorityRepos } : undefined),
     );
+  }
+
+  function triggerSyncEffect() {
+    return triggeredSyncProgram(fullSyncRequest());
+  }
+
+  function triggerOnboardingSyncEffect() {
+    return Effect.gen(function* () {
+      const baseline = yield* Effect.option(syncStatusRead());
+      const request = fullSyncRequest();
+      let needsAcknowledgement = false;
+      const recoverableRequest = request.pipe(
+        Effect.catch((failure) => {
+          const stopping =
+            failure._tag === "ApiProblemError" &&
+            failure.problem.status === 503 &&
+            failure.problem.detail === "syncer is stopping";
+          if (!stopping && !isTransientFailure(failure)) return Effect.fail({ failure, retry: false });
+          if (stopping) needsAcknowledgement = true;
+          return syncStatusRead().pipe(
+            Effect.matchEffect({
+              onFailure: (statusFailure) => Effect.fail({ failure: statusFailure, retry: false }),
+              onSuccess: (next) =>
+                !needsAcknowledgement &&
+                Option.isSome(baseline) &&
+                !baseline.value.running &&
+                (next.running || lastRunAdvanced(baseline.value.last_run_at ?? "", next.last_run_at ?? ""))
+                  ? Effect.void
+                  : Effect.fail({ failure, retry: true }),
+            }),
+          );
+        }),
+        Effect.retry({ schedule: transientRetrySchedule, while: (error) => error.retry }),
+        Effect.mapError((error) => error.failure),
+      );
+      yield* triggeredSyncProgram(recoverableRequest, baseline);
+      const generation = refreshGeneration;
+      const next = yield* syncStatusRead();
+      if (generation === refreshGeneration) yield* Effect.sync(() => applySyncStatus(next));
+      // An idle snapshot at the baseline predates the acknowledged trigger.
+      // Keep waiting until a status observes that trigger or a later run.
+      return triggeredSyncLastRunAt !== undefined && !next.running ? { ...next, running: true } : next;
+    });
   }
 
   function triggerSync(): void {
@@ -321,6 +369,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     reconcileSyncStatusEffect,
     setSyncStatus,
     triggerSyncEffect,
+    triggerOnboardingSyncEffect,
     triggerSync,
     triggerRepoSync,
     pollingEffect,

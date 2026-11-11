@@ -2,8 +2,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../../api/types.js";
+import { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
+import { createSyncStore } from "../../stores/sync.svelte.js";
+import type { SyncReadError } from "../../stores/sync-workflow.js";
 import {
   createdWorkspaceRef,
   resetWorkspaceCreatePendingForTest,
@@ -86,7 +89,7 @@ function storeFixture(
     configured?: boolean;
     pulls?: PullRequest[];
     pullsError?: string | null;
-    syncTrigger?: Effect.Effect<void, Error>;
+    syncTrigger?: Effect.Effect<void, SyncReadError>;
   } = {},
 ) {
   const pulls = options.pulls ?? [pullRequest()];
@@ -95,7 +98,10 @@ function storeFixture(
   if (options.configured) settings.setConfiguredRepos([configuredRepo()]);
   const triggerSync = vi.fn();
   const triggerSyncEffect = vi.fn(() =>
-    Effect.sync(triggerSync).pipe(Effect.andThen(options.syncTrigger ?? Effect.void)),
+    Effect.sync(triggerSync).pipe(
+      Effect.andThen(options.syncTrigger ?? Effect.void),
+      Effect.as({ running: false, last_run_at: "2026-08-02T12:01:00Z", last_error: "" }),
+    ),
   );
   const loadPulls = vi.fn();
   const stores = {
@@ -109,6 +115,7 @@ function storeFixture(
       }),
       triggerSync,
       triggerSyncEffect,
+      triggerOnboardingSyncEffect: triggerSyncEffect,
       subscribeSyncComplete: () => () => {},
     },
     pulls: {
@@ -418,7 +425,22 @@ describe("OnboardingFlow", () => {
     renderFlow(
       storeFixture({
         configured: true,
-        syncTrigger: Effect.yieldNow.pipe(Effect.andThen(Effect.fail(new Error("sync endpoint unavailable")))),
+        syncTrigger: Effect.yieldNow.pipe(
+          Effect.andThen(
+            Effect.fail(
+              new ApiProblemError({
+                operation: "POST /sync",
+                problem: {
+                  code: "unavailable",
+                  detail: "sync endpoint unavailable",
+                  status: 503,
+                  title: "Unavailable",
+                  type: "about:blank",
+                },
+              }),
+            ),
+          ),
+        ),
       }).stores,
     );
 
@@ -426,6 +448,165 @@ describe("OnboardingFlow", () => {
       expect(screen.getByRole("alert").textContent).toContain("sync endpoint unavailable");
     });
     expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy();
+  });
+
+  it("shows the trigger failure when a later status refresh clears the store error", async () => {
+    renderFlow(
+      storeFixture({
+        configured: true,
+        syncTrigger: Effect.fail(
+          TransientTransportError.make({ operation: "POST /sync", cause: new Error("connection lost") }),
+        ),
+      }).stores,
+    );
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Could not reach Kenn Forge"));
+    expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy();
+  });
+
+  it("advances automatically when the first sync recovers during setup", async () => {
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/sync/status")
+        return Promise.resolve(
+          Response.json({ running: false, last_run_at: attempts > 1 ? "2026-08-02T12:01:00Z" : "", last_error: "" }),
+        );
+      if (path === "/api/v1/rate-limits")
+        return Promise.resolve(Response.json({ provider_pools: {}, local_ceilings: {} }));
+      if (path === "/api/v1/sync" && request.method === "POST") {
+        attempts++;
+        return attempts === 1 ? Promise.reject(new Error("connection lost")) : Promise.resolve(Response.json({}));
+      }
+      return originalFetch(input, init);
+    });
+    const fixture = storeFixture();
+    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+    fixture.stores.sync = createSyncStore({ runtime: runtimeCapture.current });
+    renderFlow(fixture.stores);
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
+    await waitFor(() => expect(screen.getByText("acme/forge")).toBeTruthy());
+    await fireEvent.click(screen.getByText("acme/forge"));
+    await fireEvent.click(screen.getByRole("button", { name: "Configure 1 repository" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy(), {
+      timeout: 8000,
+    });
+    expect(attempts).toBe(2);
+  });
+
+  it("waits for the admitted sync when an older run finishes during recovery", async () => {
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    let acknowledge!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      acknowledge = resolve;
+    });
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/sync/status")
+        return Promise.resolve(Response.json({ running: true, last_run_at: "", last_error: "" }));
+      if (path === "/api/v1/rate-limits")
+        return Promise.resolve(Response.json({ provider_pools: {}, local_ceilings: {} }));
+      if (path === "/api/v1/sync" && request.method === "POST") {
+        attempts++;
+        return attempts === 1 ? Promise.reject(new Error("connection lost")) : pending;
+      }
+      return originalFetch(input, init);
+    });
+    const fixture = storeFixture({ configured: true });
+    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+    const sync = createSyncStore({ runtime: runtimeCapture.current });
+    fixture.stores.sync = sync;
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(attempts).toBe(2), { timeout: 8000 });
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:01:00Z", last_error: "" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fixture.loadPulls).not.toHaveBeenCalled();
+    acknowledge(Response.json({}));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fixture.loadPulls).not.toHaveBeenCalled();
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:02:00Z", last_error: "" });
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+  });
+
+  it("waits when status still shows the pre-trigger completion after acknowledgement", async () => {
+    const originalFetch = globalThis.fetch;
+    const previous = { running: false, last_run_at: "2026-08-02T12:01:00Z", last_error: "" };
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/sync/status") return Promise.resolve(Response.json(previous));
+      if (path === "/api/v1/rate-limits")
+        return Promise.resolve(Response.json({ provider_pools: {}, local_ceilings: {} }));
+      if (path === "/api/v1/sync" && request.method === "POST") return Promise.resolve(Response.json({}));
+      return originalFetch(input, init);
+    });
+    const fixture = storeFixture({ configured: true });
+    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+    const sync = createSyncStore({ runtime: runtimeCapture.current });
+    fixture.stores.sync = sync;
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(sync.getSyncState()?.running).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fixture.loadPulls).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["HTML rejection", () => new Response("denied", { status: 403 })],
+    ["malformed response", () => new Response("{", { status: 200, headers: { "Content-Type": "application/json" } })],
+  ])("stops after a %s and ignores later completion", async (_name, response) => {
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/sync/status")
+        return Promise.resolve(Response.json({ running: false, last_run_at: "", last_error: "" }));
+      if (path === "/api/v1/sync" && request.method === "POST") {
+        attempts++;
+        return Promise.resolve(response());
+      }
+      return originalFetch(input, init);
+    });
+    const fixture = storeFixture({ configured: true });
+    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+    const sync = createSyncStore({ runtime: runtimeCapture.current });
+    fixture.stores.sync = sync;
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy());
+    sync.setSyncStatus({ running: true, last_run_at: "", last_error: "" });
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:01:00Z", last_error: "" });
+    expect(attempts).toBe(1);
+    expect(fixture.loadPulls).not.toHaveBeenCalled();
+  });
+
+  it("offers retry after first sync fails while configuring repositories", async () => {
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/sync/status")
+        return Promise.resolve(Response.json({ running: false, last_run_at: "", last_error: "" }));
+      if (path === "/api/v1/rate-limits")
+        return Promise.resolve(Response.json({ provider_pools: {}, local_ceilings: {} }));
+      if (path === "/api/v1/sync" && request.method === "POST") return Promise.reject(new Error("connection lost"));
+      return originalFetch(input, init);
+    });
+    const fixture = storeFixture();
+    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+    fixture.stores.sync = createSyncStore({ runtime: runtimeCapture.current });
+    renderFlow(fixture.stores);
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
+    await waitFor(() => expect(screen.getByText("acme/forge")).toBeTruthy());
+    await fireEvent.click(screen.getByText("acme/forge"));
+    await fireEvent.click(screen.getByRole("button", { name: "Configure 1 repository" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Could not reach Kenn Forge"), {
+      timeout: 8000,
+    });
+    expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy();
+    expect(fixture.stores.settings.getConfiguredRepos()).toEqual([{ repo_path: "acme/forge" }]);
   });
 
   it("starts sync when repositories become configured while onboarding remains mounted", async () => {

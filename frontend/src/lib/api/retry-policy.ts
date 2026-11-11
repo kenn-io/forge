@@ -13,15 +13,16 @@ export const reconnectSchedule = Schedule.exponential("500 millis").pipe(
 
 export function isTransientFailure(failure: unknown): failure is TransientTransportError {
   return (
-    typeof failure === "object" && failure !== null && "_tag" in failure && failure._tag === "TransientTransportError"
+    failure instanceof TransientTransportError &&
+    !(failure.cause instanceof InvalidGeneratedErrorResponse) &&
+    !(failure.cause instanceof SyntaxError)
   );
 }
 
 export function isTransientPickerReadFailure(failure: unknown): boolean {
-  if (isTransientFailure(failure)) {
-    if (failure.cause instanceof InvalidGeneratedErrorResponse) return [502, 503, 504].includes(failure.cause.status);
-    return !(failure.cause instanceof SyntaxError);
-  }
+  if (failure instanceof TransientTransportError && failure.cause instanceof InvalidGeneratedErrorResponse)
+    return [502, 503, 504].includes(failure.cause.status);
+  if (isTransientFailure(failure)) return true;
   return (
     failure instanceof ApiProblemError &&
     (failure.problem.code === "serviceUnavailable" ||

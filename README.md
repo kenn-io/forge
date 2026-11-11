@@ -84,7 +84,7 @@ cd kenn-forge
 make install
 ```
 
-Source builds require Go 1.27+ and [Bun](https://bun.sh/).
+Source builds require Go 1.27.4+ and [Bun](https://bun.sh/).
 
 ## Start
 

@@ -15,7 +15,13 @@ func TestAcquireWaitsForBriefLockHolder(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = holder.Release() })
 
-	timer := time.AfterFunc(50*time.Millisecond, func() { _ = holder.Release() })
+	// Prove a held lock is retried before allowing the holder to release it.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+	defer cancel()
+	_, err = Acquire(ctx, dir)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+
+	timer := time.AfterFunc(20*time.Millisecond, func() { _ = holder.Release() })
 	t.Cleanup(func() { timer.Stop() })
 
 	h, err := Acquire(t.Context(), dir)

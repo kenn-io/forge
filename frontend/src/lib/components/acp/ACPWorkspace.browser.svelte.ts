@@ -648,6 +648,57 @@ describe("ACPWorkspace grouped activity (browser)", () => {
   });
 });
 
+describe("ACPWorkspace tool rows (browser)", () => {
+  afterEach(() => {
+    // kit-ui-check-ignore: shiki dual-theme test drives the dark class directly
+    document.documentElement.classList.remove("dark");
+  });
+
+  it("highlights shell commands in code font for both themes and wraps long ones", async () => {
+    await page.viewport(420, 720);
+    const { host } = await renderChat(420);
+    const longCommand = `git log --oneline --decorate ${"refs/heads/feature-branch ".repeat(6)}| head -n 5`;
+    socket.options!.onMessage(
+      encodeFixture({
+        messages: [
+          { role: "tool", text: longCommand, status: "completed", toolCallId: "run", kind: "execute" },
+          { role: "tool", text: "Read options", status: "completed", toolCallId: "read", kind: "read" },
+        ],
+        messageCursor: 1,
+        messageOffset: 0,
+        messageCount: 2,
+        configOptions: [],
+        configuring: false,
+        permissions: [],
+        busy: false,
+        connected: true,
+        error: "",
+      }),
+    );
+    await page.getByRole("button", { name: "2 tools" }).click();
+    const code = host.querySelector<HTMLElement>(".list code")!;
+    await expect.poll(() => code.querySelectorAll("span").length).toBeGreaterThan(1);
+    expect(code.textContent).toBe(longCommand);
+
+    const readTitle = page.getByText("Read options").element();
+    expect(getComputedStyle(code).fontFamily).not.toBe(getComputedStyle(readTitle).fontFamily);
+    expect(getComputedStyle(code).fontFamily).toMatch(/mono/i);
+
+    const token = code.querySelector("span")!;
+    // kit-ui-check-ignore: shiki dual-theme test drives the dark class directly
+    document.documentElement.classList.remove("dark");
+    const lightColor = getComputedStyle(token).color;
+    // kit-ui-check-ignore: shiki dual-theme test drives the dark class directly
+    document.documentElement.classList.add("dark");
+    const darkColor = getComputedStyle(token).color;
+    expect(lightColor).not.toBe(darkColor);
+
+    expect(code.getBoundingClientRect().height).toBeGreaterThan(2 * parseFloat(getComputedStyle(code).fontSize));
+    const conversation = host.querySelector<HTMLElement>(".conversation")!;
+    expect(conversation.scrollWidth).toBeLessThanOrEqual(conversation.clientWidth);
+  });
+});
+
 describe("ACPWorkspace transcript paging (browser)", () => {
   const message = (index: number) => ({
     id: `entry-${index}`,

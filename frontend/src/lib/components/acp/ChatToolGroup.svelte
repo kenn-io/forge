@@ -5,6 +5,7 @@
   import ChatMessageView from "./ChatMessageView.svelte"
   import ChatToolDetails from "./ChatToolDetails.svelte"
   import ChatContentBlock from "./ChatContentBlock.svelte"
+  import ChatShellCommand from "./ChatShellCommand.svelte"
   import { isInlineMediaContent } from "./chat-content.js"
   import { decodeAppDescriptor } from "./mcp-app.js"
   import type { ContentScrollPositions } from "./chat-content-scroll.js"
@@ -111,15 +112,23 @@
         {@const expandable = hasDetails(message)}
         <li class={`status-${status}`} data-message-id={message.id}>
           {#snippet row()}
-          <span class="icon" aria-hidden="true">
-            {#if status === "failed"}<X size={12} />
-            {:else if status === "in_progress"}<Spinner
-                size={12}
-                label=""
-              />
-            {:else if status === "pending"}<Clock size={12} />
-            {:else if status === "cancelled"}<Ban size={12} />
-            {:else}<Check size={12} />{/if}
+          <span
+            class="icon"
+            title={message.createdAt
+              ? new Date(message.createdAt).toLocaleString()
+              : undefined}
+          >
+            <span class="glyph" aria-hidden="true">
+              {#if status === "failed"}<X size={12} />
+              {:else if status === "in_progress"}<Spinner
+                  size={12}
+                  label=""
+                />
+              {:else if status === "pending"}<Clock size={12} />
+              {:else if status === "cancelled"}<Ban size={12} />
+              {:else}<Check size={12} />{/if}
+            </span>
+            <span class="kit-sr-only">{status.replaceAll("_", " ")}</span>
           </span>
           <span class="tool-name">
             {#if message.subagent}
@@ -130,15 +139,8 @@
                   : "Sub-agent"}</span
               >
             {/if}
-            {message.text}
+            {#if message.kind === "execute"}<ChatShellCommand command={message.text} />{:else}{message.text}{/if}
           </span>
-          <span
-            class="state"
-            title={message.createdAt
-              ? new Date(message.createdAt).toLocaleString()
-              : undefined}
-            >{status.replaceAll("_", " ")}</span
-          >
           {/snippet}
           {#if expandable}
             <button
@@ -238,7 +240,7 @@
   }
   .row {
     display: grid;
-    grid-template-columns: 14px minmax(0, 1fr) auto;
+    grid-template-columns: 14px minmax(0, 1fr);
     align-items: baseline;
     gap: var(--space-4);
     padding: var(--space-3) var(--space-5);
@@ -259,13 +261,15 @@
     outline: var(--focus-ring);
     outline-offset: -2px;
   }
-  .icon {
+  .icon,
+  .glyph {
     display: inline-flex;
+  }
+  .icon {
     align-self: center;
     color: var(--accent-green);
   }
-  .status-failed .icon,
-  .status-failed .state {
+  .status-failed .icon {
     color: var(--accent-red);
   }
   .status-pending .icon,
@@ -287,10 +291,6 @@
     border: 1px solid color-mix(in srgb, var(--accent-purple) 35%, var(--border-default));
     border-radius: var(--radius-sm);
     color: var(--accent-purple);
-    white-space: nowrap;
-  }
-  .state {
-    color: var(--text-secondary);
     white-space: nowrap;
   }
 

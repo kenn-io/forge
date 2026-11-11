@@ -880,6 +880,7 @@
       eventType === "base_ref_changed" ||
       eventType === "assigned" ||
       eventType === "unassigned" ||
+      eventType === "added_to_merge_queue" ||
       eventType === "merged" ||
       eventType === "closed" ||
       eventType === "reopened"
@@ -887,7 +888,12 @@
   }
 
   function isLifecycleTransitionEvent(eventType: string): boolean {
-    return eventType === "merged" || eventType === "closed" || eventType === "reopened";
+    return (
+      eventType === "added_to_merge_queue" ||
+      eventType === "merged" ||
+      eventType === "closed" ||
+      eventType === "reopened"
+    );
   }
 
   function shortCommit(summary: string): string {
@@ -916,6 +922,8 @@
         return "Assigned";
       case "unassigned":
         return "Unassigned";
+      case "added_to_merge_queue":
+        return "Added to merge queue";
       case "merged":
         return "Merged";
       case "closed":

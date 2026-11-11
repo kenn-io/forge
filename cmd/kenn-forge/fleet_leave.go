@@ -48,7 +48,7 @@ func leaveFleet(ctx context.Context, configPath string) (err error) {
 		return err
 	}
 	defer joinLifecycleLockRelease("fleet leave", configLock, &err)
-	lock, err := runtimelock.Acquire(cfg.DataDir)
+	lock, err := runtimelock.Acquire(ctx, cfg.DataDir)
 	if err != nil {
 		return fmt.Errorf("stop the Forge daemon before leaving its fleet: %w", err)
 	}

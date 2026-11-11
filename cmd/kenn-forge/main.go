@@ -408,7 +408,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		)
 	}
 
-	lockHandle, err := runtimelock.Acquire(cfg.DataDir)
+	lockHandle, err := runtimelock.Acquire(parent, cfg.DataDir)
 	if err != nil {
 		if cerr, ok := errors.AsType[*runtimelock.CollisionError](err); ok {
 			runtimelock.FormatCollisionBanner(

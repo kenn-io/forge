@@ -40,7 +40,7 @@ func TestMCPStatusReportsActiveListenerFromDaemon(t *testing.T) {
 				_, _ = w.Write([]byte(tc.settings))
 			}))
 			t.Cleanup(server.Close)
-			lock, err := runtimelock.Acquire(root)
+			lock, err := runtimelock.Acquire(t.Context(), root)
 			require.NoError(err)
 			t.Cleanup(func() { require.NoError(lock.Release()) })
 			require.NoError(lock.WriteMetadata(runtimelock.Metadata{

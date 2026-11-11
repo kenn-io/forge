@@ -356,10 +356,10 @@ func (s *Handlers) TriggerSync(
 
 func (s *Handlers) RequireSync() error {
 	if (*s.Syncer) == nil {
-		return httpapi.ServiceUnavailable("syncer not configured")
+		return httpapi.NewProblem(http.StatusServiceUnavailable, httpapi.CodeServiceUnavailable, "syncer not configured", map[string]any{"retryable": false})
 	}
 	if !(*s.Syncer).SyncEnabled() {
-		return httpapi.ServiceUnavailable(platform.ErrSyncDisabled.Error())
+		return httpapi.NewProblem(http.StatusServiceUnavailable, httpapi.CodeServiceUnavailable, platform.ErrSyncDisabled.Error(), map[string]any{"retryable": false})
 	}
 	return nil
 }

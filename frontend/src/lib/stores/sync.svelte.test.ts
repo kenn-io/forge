@@ -47,7 +47,7 @@ afterEach(async () => {
 });
 
 describe("sync store", () => {
-  it("does not repeat an acknowledged POST when the final status read fails", async () => {
+  it("accepts a POST even when its best-effort refresh fails", async () => {
     const idle = { running: false, last_run_at: "", last_error: "" };
     const problem = {
       code: "forbidden",
@@ -59,14 +59,13 @@ describe("sync store", () => {
     const getStatus = vi
       .fn()
       .mockResolvedValueOnce(idle)
-      .mockResolvedValueOnce(idle)
       .mockRejectedValue(new GeneratedProblemResponse(problem, Response.json(problem, { status: 403 })));
     const post = vi.fn().mockResolvedValue(undefined);
     const onFailure = vi.fn();
     const { execution } = startOnboarding(getStatus, post, onFailure);
     await Effect.runPromise(execution.await);
     expect(post).toHaveBeenCalledOnce();
-    expect(onFailure).toHaveBeenCalledOnce();
+    expect(onFailure).not.toHaveBeenCalled();
   });
   it("retries when an unrelated sync was already running before the trigger failed", async () => {
     const running = { running: true, last_run_at: "2026-08-05T12:00:00Z", last_error: "" };
@@ -87,47 +86,19 @@ describe("sync store", () => {
     expect(post).toHaveBeenCalledTimes(2);
   });
 
-  it("recognizes a completed first sync using the cached baseline when the fresh baseline fails", async () => {
-    const cached = { running: false, last_run_at: "2026-08-05T12:00:00Z", last_error: "" };
-    const completed = { running: false, last_run_at: "2026-08-05T12:01:00Z", last_error: "" };
-    const getStatus = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("connection lost"))
-      .mockRejectedValueOnce(new Error("connection lost"))
-      .mockRejectedValueOnce(new Error("connection lost"))
-      .mockResolvedValue(completed);
-    const post = vi.fn().mockResolvedValue(undefined);
-    const store = createSyncStore(
-      makeGeneratedClient({
-        SyncService: {
-          getSyncStatus: getStatus,
-          getRateLimits: async () => ({ provider_pools: {}, local_ceilings: {} }),
-          triggerSync: post,
-        },
-      }),
-    );
-    store.setSyncStatus(cached);
-    if (!runtime) throw new Error("test runtime was not initialized");
-    const execution = runtime.runCommand(store.triggerOnboardingSyncEffect(), {
-      operation: "start first sync",
-      safeContext: {},
-      onFailure: () => {},
-    });
-    await Effect.runPromise(execution.await);
-    expect(post).toHaveBeenCalledOnce();
-    expect(store.getSyncState()).toMatchObject(completed);
-  }, 10000);
-
-  it("still starts a sync when the baseline cannot be read", async () => {
+  it("does not send the trigger when a fresh baseline fails, even with cached status", async () => {
     const getStatus = vi.fn().mockRejectedValue(new Error("connection lost"));
     const post = vi.fn().mockResolvedValue(undefined);
-    const { execution } = startOnboarding(getStatus, post);
-    await vi.waitFor(() => expect(post).toHaveBeenCalledOnce(), { timeout: 8000 });
-    execution.interrupt();
+    const onFailure = vi.fn();
+    const { store, execution } = startOnboarding(getStatus, post, onFailure);
+    store.setSyncStatus({ running: false, last_run_at: "2026-08-05T12:00:00Z", last_error: "" });
     await Effect.runPromise(execution.await);
+    expect(getStatus).toHaveBeenCalledTimes(3);
+    expect(post).not.toHaveBeenCalled();
+    expect(onFailure).toHaveBeenCalledOnce();
   }, 10000);
 
-  it("retries when a missing baseline cannot attribute a running sync", async () => {
+  it("recovers a temporary structured baseline failure", async () => {
     const problem = {
       code: "serviceUnavailable",
       detail: "status unavailable",
@@ -140,10 +111,40 @@ describe("sync store", () => {
       .fn()
       .mockRejectedValueOnce(new GeneratedProblemResponse(problem, Response.json(problem, { status: 503 })))
       .mockResolvedValue(running);
-    const post = vi.fn().mockRejectedValueOnce(new Error("connection lost")).mockResolvedValue(undefined);
+    const post = vi.fn().mockResolvedValue(undefined);
     const { execution } = startOnboarding(getStatus, post);
     await Effect.runPromise(execution.await);
-    expect(post).toHaveBeenCalledTimes(2);
+    expect(post).toHaveBeenCalledOnce();
+    expect(getStatus.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps ordinary status refresh from retrying a structured service failure", async () => {
+    const problem = {
+      code: "serviceUnavailable",
+      detail: "status unavailable",
+      status: 503,
+      title: "Unavailable",
+      type: "about:blank",
+    };
+    const getStatus = vi
+      .fn()
+      .mockRejectedValue(new GeneratedProblemResponse(problem, Response.json(problem, { status: 503 })));
+    const store = createSyncStore(
+      makeGeneratedClient({
+        SyncService: {
+          getSyncStatus: getStatus,
+          getRateLimits: async () => ({ provider_pools: {}, local_ceilings: {} }),
+        },
+      }),
+    );
+    if (!runtime) throw new Error("test runtime was not initialized");
+    const execution = runtime.runCommand(store.refreshSyncStatusEffect, {
+      operation: "refresh sync",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await Effect.runPromise(execution.await);
+    expect(getStatus).toHaveBeenCalledOnce();
   });
 
   it("retries a stopping syncer even if another sync is running", async () => {
@@ -191,6 +192,7 @@ describe("sync store", () => {
       const problem = {
         code: "serviceUnavailable",
         detail,
+        details: { retryable: false },
         status: 503,
         title: "Service Unavailable",
         type: "about:blank",
@@ -290,9 +292,12 @@ describe("sync store", () => {
   });
 
   it("stops after exhausting first-sync retries", async () => {
+    vi.useFakeTimers();
     const getStatus = vi.fn().mockResolvedValue({ running: false, last_run_at: "", last_error: "" });
     const post = vi.fn().mockRejectedValue(new Error("connection lost"));
     const { store, execution } = startOnboarding(getStatus, post);
+    await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(10000);
     await Effect.runPromise(execution.await);
     expect(post).toHaveBeenCalledTimes(3);
     expect(store.getSyncState()).toMatchObject({ running: false, last_error: "Could not reach Kenn Forge" });

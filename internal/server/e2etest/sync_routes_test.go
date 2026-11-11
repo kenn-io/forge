@@ -66,8 +66,46 @@ func TestSyncRoutesWithoutProviderSyncerE2E(t *testing.T) {
 	require.Equal(http.StatusServiceUnavailable, trigger.StatusCode, string(trigger.Body))
 	require.NotNil(trigger.Error)
 	assert.Equal(generated.ProblemErrorCodeServiceUnavailable, trigger.Error.Code)
+	assert.Equal(false, trigger.Error.Details["retryable"])
 	require.NotNil(trigger.Error.Detail)
 	assert.Equal("syncer not configured", *trigger.Error.Detail)
+}
+
+func TestSyncTriggerUnavailableRetryabilityE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, tc := range []struct {
+		name      string
+		configure func(*ghclient.Syncer)
+		permanent bool
+	}{
+		{name: "disabled", configure: (*ghclient.Syncer).DisableSync, permanent: true},
+		{name: "stopping", configure: (*ghclient.Syncer).Stop},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			database := dbtest.Open(t)
+			syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+			t.Cleanup(syncer.Stop)
+			tc.configure(syncer)
+			srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{HostCheckAllowLoopbackAnyPort: true})
+			ts := httptest.NewServer(srv)
+			t.Cleanup(ts.Close)
+			client, err := apiclient.NewWithHTTPClient(ts.URL, ts.Client())
+			require.NoError(t, err)
+			response, err := client.HTTP.TriggerSyncWithResponse(t.Context(), &generated.TriggerSyncRequestOptions{}, func(_ context.Context, req *http.Request) error {
+				req.Header.Set("Content-Type", "application/json")
+				return nil
+			})
+			require.Error(t, err)
+			require.Equal(t, http.StatusServiceUnavailable, response.StatusCode)
+			require.NotNil(t, response.Error)
+			require.Equal(t, generated.ProblemErrorCodeServiceUnavailable, response.Error.Code)
+			if tc.permanent {
+				require.Equal(t, false, response.Error.Details["retryable"])
+			} else {
+				require.NotEqual(t, false, response.Error.Details["retryable"])
+			}
+		})
+	}
 }
 
 // If an accepted queued sync reports completion before its provider pass,

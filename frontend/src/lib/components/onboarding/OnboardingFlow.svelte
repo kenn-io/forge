@@ -296,26 +296,28 @@
         syncStartState = "pending";
         syncError = null;
       });
-      const state = yield* stores.sync.triggerOnboardingSyncEffect().pipe(
+      let failed = false;
+      yield* stores.sync.triggerOnboardingSyncEffect().pipe(
         Effect.matchEffect({ onFailure: (failure) =>
           Effect.sync(() => {
             syncStartState = "failed";
             syncError = readSyncErrorMessage(failure, "failed to trigger sync");
-            return null;
+            failed = true;
           }),
-          onSuccess: (result) => Effect.succeed(result),
+          onSuccess: () => Effect.void,
         }),
       );
-      if (!state) return;
+      if (failed) return;
       yield* Effect.sync(() => { syncStartState = "admitted"; });
-      if (!state.running) {
-        const lastError = state.last_error;
+      const state = stores.sync.getSyncState();
+      if (!state?.running) {
+        const lastError = state?.last_error;
         if (lastError) {
           yield* Effect.sync(() => {
             syncStartState = "failed";
             syncError = lastError;
           });
-        } else if (state.last_run_at) {
+        } else if (state?.last_run_at) {
           yield* finishSyncProgram();
         }
       }

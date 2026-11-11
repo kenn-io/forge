@@ -26,6 +26,17 @@ func TestSemanticStartup(t *testing.T) {
 	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 301, Number: 2, URL: "https://github.com/acme/widget/pull/2", Title: "Cache is slow", Author: "user-a", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
 	require.NoError(t, err)
 
+	topics := make([]string, 767)
+	for i := range topics {
+		topics[i] = "unused"
+	}
+	topics[0] = "cache"
+	endpoint := embedfake.New(t, topics...)
+	deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
+		assert.True(t, opts.SkipOllama)
+		return endpoint.Embedder("nomic-embed-text").BaseURL, nil
+	}}
+
 	t.Run("no choice", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
@@ -39,16 +50,6 @@ func TestSemanticStartup(t *testing.T) {
 		t.Setenv("HOME", home)
 		t.Setenv("USERPROFILE", home)
 		require.NoError(t, embedlocal.RecordChoice())
-		topics := make([]string, 767)
-		for i := range topics {
-			topics[i] = "unused"
-		}
-		topics[0] = "cache"
-		endpoint := embedfake.New(t, topics...)
-		deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
-			assert.True(t, opts.SkipOllama)
-			return endpoint.Embedder("nomic-embed-text").BaseURL, nil
-		}}
 		indexer, err := openSemanticSearch(t.Context(), &config.Config{DataDir: t.TempDir(), SyncInterval: "1h"}, database, deps)
 		require.NoError(t, err)
 		require.NotNil(t, indexer)
@@ -75,16 +76,6 @@ func TestSemanticStartup(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
 		t.Setenv("USERPROFILE", home)
-		topics := make([]string, 767)
-		for i := range topics {
-			topics[i] = "unused"
-		}
-		topics[0] = "cache"
-		endpoint := embedfake.New(t, topics...)
-		deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
-			assert.True(t, opts.SkipOllama)
-			return endpoint.Embedder("nomic-embed-text").BaseURL, nil
-		}}
 		cfg := &config.Config{DataDir: t.TempDir(), LocalEmbeddings: "builtin", Embeddings: embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768}}
 		indexer, err := openSemanticSearch(t.Context(), cfg, database, deps)
 		require.NoError(t, err)

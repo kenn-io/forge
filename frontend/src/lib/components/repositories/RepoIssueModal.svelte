@@ -43,8 +43,6 @@
   const issueListURL = $derived(buildProviderIssueListURL({
     provider: summary.repo.provider,
     platformHost: summary.repo.platform_host,
-    owner: summary.repo.owner,
-    name: summary.repo.name,
     repoPath: summary.repo.repo_path,
   }));
 </script>

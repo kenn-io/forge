@@ -15,9 +15,7 @@ describe("provider issue lists", () => {
     ["bitbucket", undefined, "team/widgets", "https://bitbucket.org/team/widgets/issues"],
     ["bitbucket", "bitbucket.example.com", "team/widgets", undefined],
   ])("builds the %s issue list", (provider, platformHost, repoPath, expected) => {
-    expect(buildProviderIssueListURL({ provider, platformHost, owner: "team", name: "widgets", repoPath })).toBe(
-      expected,
-    );
+    expect(buildProviderIssueListURL({ provider, platformHost, repoPath })).toBe(expected);
   });
 });
 

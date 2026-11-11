@@ -415,14 +415,14 @@ func (o *Owner) Cleanup() error {
 				cleanupErrors = append(cleanupErrors, err)
 			}
 		}
-		// The closed admission lets another binary's reapStale treat this run as
-		// stale, so remove it under the root lock reapStale holds; otherwise that
-		// reaper can find the run directory with owner.json already deleted.
+		// Retire the run under the root lock before deleting its contents. An
+		// interrupted deletion then leaves only an admission directory to reap,
+		// rather than a published run whose owner marker has already gone.
 		lockErr := withRootLock(o.root, func() error {
 			if err := killRunProcesses(o.runDir); err != nil {
 				return err
 			}
-			if err := os.RemoveAll(o.runDir); err != nil {
+			if err := retireRun(o.runDir, o.admissionDir); err != nil {
 				return err
 			}
 			return os.RemoveAll(o.admissionDir)
@@ -433,6 +433,16 @@ func (o *Owner) Cleanup() error {
 		o.cleanupErr = errors.Join(cleanupErrors...)
 	})
 	return o.cleanupErr
+}
+
+func retireRun(runDir, admissionDir string) error {
+	if err := os.Rename(runDir, filepath.Join(admissionDir, "run")); err != nil { //nolint:forbidigo // directory move
+		// A previous cleanup may already have removed the run.
+		if _, statErr := os.Lstat(runDir); !errors.Is(statErr, fs.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 func closeAdmission(ctx context.Context, admissionDir string) (err error) {
@@ -751,7 +761,7 @@ func reapStaleWithLookup(
 			cleanupErrors = append(cleanupErrors, err)
 			continue
 		}
-		if err := os.RemoveAll(runDir); err != nil {
+		if err := retireRun(runDir, filepath.Join(root, admissionPrefix+entry.Name())); err != nil {
 			cleanupErrors = append(cleanupErrors, err)
 			continue
 		}

@@ -3059,6 +3059,12 @@ describe("EventTimeline", () => {
               assignee: "wesm",
             }),
           }),
+          makeEvent({
+            ID: 6,
+            EventType: "added_to_merge_queue",
+            Author: "queuer",
+            Summary: "added this to the merge queue",
+          }),
         ],
       },
     });
@@ -3077,7 +3083,10 @@ describe("EventTimeline", () => {
     expect(screen.getByText("Related bug other/repo#77")).toBeTruthy();
     expect(screen.queryByText("Assigned")).toBeNull();
     expect(screen.getByText("self-assigned this")).toBeTruthy();
-    expect(document.querySelectorAll(".event--compact").length).toBe(5);
+    const queuedCard = screen.getByText("added this to the merge queue").closest(".kit-comment-card");
+    expect(queuedCard?.querySelector(".kit-card__eyebrow")).toBeNull();
+    expect(queuedCard?.querySelector(".kit-card__title")?.textContent).toBe("queuer");
+    expect(document.querySelectorAll(".event--compact").length).toBe(6);
   });
 
   it("renders cross-repository events as internal item references when metadata identifies the source item", () => {

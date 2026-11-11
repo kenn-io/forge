@@ -880,6 +880,7 @@
       eventType === "base_ref_changed" ||
       eventType === "assigned" ||
       eventType === "unassigned" ||
+      eventType === "added_to_merge_queue" ||
       eventType === "merged" ||
       eventType === "closed" ||
       eventType === "reopened"
@@ -916,6 +917,8 @@
         return "Assigned";
       case "unassigned":
         return "Unassigned";
+      case "added_to_merge_queue":
+        return "Added to merge queue";
       case "merged":
         return "Merged";
       case "closed":
@@ -2215,7 +2218,10 @@
             <CommentCard
               class="event-card--compact"
               layout="inline"
-              typeLabel={event.EventType === "comment_deleted" || event.EventType === "assigned" || event.EventType === "unassigned"
+              typeLabel={event.EventType === "comment_deleted" ||
+                event.EventType === "assigned" ||
+                event.EventType === "unassigned" ||
+                event.EventType === "added_to_merge_queue"
                 ? undefined
                 : systemEventLabel(event.EventType)}
               tone={eventTimelineTone(event.EventType)}

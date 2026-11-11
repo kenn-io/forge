@@ -470,6 +470,7 @@ func TestNormalizeTimelineEventLifecycle(t *testing.T) {
 		{name: "merged", eventType: "merged", nodeID: "ME_1", summary: "merged this"},
 		{name: "closed", eventType: "closed", nodeID: "CE_1", summary: "closed this"},
 		{name: "reopened", eventType: "reopened", nodeID: "RE_1", summary: "reopened this"},
+		{name: "added to merge queue", eventType: "added_to_merge_queue", nodeID: "AMQE_1", summary: "added this to the merge queue"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

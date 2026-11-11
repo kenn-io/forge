@@ -209,6 +209,11 @@
           // A refused prompt keeps its text in the conversation, marked as
           // not sent, rather than raising a chat-wide error.
           if (failed?.command === "unqueue") editing = editing.filter((prompt) => prompt.id !== failed.id);
+          // Close the tool call so it does not show as loading; opening it again retries.
+          if (failed?.command === "toolDetails") {
+            expandedTools[failed.id] = false;
+            detailsRequested.delete(failed.id);
+          }
           if (failed?.command === "prompt" && outbox.some((prompt) => prompt.id === failed.id)) {
             outbox = outbox.map((prompt) => prompt.id === failed.id ? { ...prompt, refused: message } : prompt);
             return;
@@ -283,17 +288,16 @@
     });
   }
   // Tool details stay on the host until a person expands the tool call. Ask
-  // once per expansion and version; collapsing and expanding again retries a
-  // failure.
+  // once per version; a new state that leaves loaded details out asks again.
   const detailsRequested = new Map<string, number>();
-  function toggleTool(id: string) {
-    expandedTools[id] = !expandedTools[id];
-    if (!expandedTools[id]) detailsRequested.delete(id);
-  }
   $effect(() => {
     if (!connected || !chatState) return;
     for (const message of chatState.messages) {
-      if (!message.detailsOmitted || !expandedTools[message.id] || detailsRequested.get(message.id) === message.version) continue;
+      if (!message.detailsOmitted) {
+        detailsRequested.delete(message.id);
+        continue;
+      }
+      if (!expandedTools[message.id] || detailsRequested.get(message.id) === message.version) continue;
       if (connection?.loadToolDetails(message.id)) detailsRequested.set(message.id, message.version);
     }
   });
@@ -550,7 +554,7 @@
       {/if}
       {#if chatState && rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
       {#each rows as row (row.key)}
-        {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} anchorId={row.key} openEntries={activityOpen} expanded={expandedTools} {expandedThoughts} {rawOpen} {contentScroll} onToggleThought={(id) => { expandedThoughts[id] = !expandedThoughts[id]; }} onRawToggle={setRawOpen} onToggleGroup={setActivityOpen} onToggleTool={toggleTool} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
+        {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} anchorId={row.key} openEntries={activityOpen} expanded={expandedTools} {expandedThoughts} {rawOpen} {contentScroll} onToggleThought={(id) => { expandedThoughts[id] = !expandedThoughts[id]; }} onRawToggle={setRawOpen} onToggleGroup={setActivityOpen} onToggleTool={(id) => { expandedTools[id] = !expandedTools[id]; }} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
         {:else}<ChatMessageView message={row.message} thoughtOpen={!!expandedThoughts[row.message.id]} onThoughtToggle={() => { expandedThoughts[row.message.id] = !expandedThoughts[row.message.id]; }} streaming={!!chatState?.busy && row.id === lastIndex} />{/if}
       {/each}
       <!-- Prompts the agent has not received yet follow the transcript. -->

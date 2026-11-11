@@ -1923,12 +1923,48 @@ describe("ACPWorkspace tool details on request", () => {
     );
     await tick();
     expect(screen.getByRole("alert").textContent).toContain("The chat changed. Try again.");
+    // A failed request closes the tool call instead of loading forever.
+    expect(screen.getByRole("button", { name: /Run tests/ }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Loading details…")).toBeNull();
     expect(detailRequests()).toHaveLength(1);
 
     await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
-    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
     await tick();
     expect(detailRequests()).toHaveLength(2);
+  });
+
+  it("asks again when a new state on the same socket leaves the details out", async () => {
+    // A dormant chat whose agent starts sends a full state without reconnecting.
+    await openChat({ messages: [{ role: "user", text: "Check" }, summary] });
+    await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await tick();
+    socket.options!.onMessage(JSON.stringify({ toolDetails: details }));
+    await tick();
+
+    await push({ messages: [{ role: "user", text: "Check" }, summary] });
+    await tick();
+    expect(detailRequests()).toHaveLength(2);
+  });
+
+  it("keeps inline media mounted when the details arrive", async () => {
+    const image = { type: "content", content: { type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" } };
+    await openChat({
+      messages: [
+        { role: "user", text: "Check" },
+        { ...summary, toolContent: [image] },
+      ],
+    });
+    const shown = screen.getByRole("img");
+    await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await tick();
+    socket.options!.onMessage(
+      JSON.stringify({ toolDetails: { ...details, toolContent: [...details.toolContent, image] } }),
+    );
+    await tick();
+    expect(screen.getByLabelText("Command output").textContent).toBe("ok 12 passed");
+    expect(screen.getByRole("img")).toBe(shown);
   });
 
   it("asks again for an expanded tool call after reconnecting", async () => {

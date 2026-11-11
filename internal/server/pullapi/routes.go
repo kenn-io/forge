@@ -42,7 +42,7 @@ const (
 
 type listPullsInput struct {
 	Numbers    []int64 `query:"numbers" doc:"Item numbers in every repo unless repo is set; before pagination."`
-	Attributes string  `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, and merge_conflicts or no_merge_conflicts. Every other selected filter, including involves_me and unassigned, must also match before pagination."`
+	Attributes string  `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination."`
 	Label      string  `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
 	Repo       string  `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
 	State      string  `query:"state" doc:"open (default), closed (including merged), merged, closed_unmerged, or all."`
@@ -411,7 +411,7 @@ func (s *Handler) listPullsRouteCore(
 		for attribute := range strings.SplitSeq(input.Attributes, ",") {
 			switch attribute {
 			case "approved", "not_approved", "draft", "ready", "merge_conflicts", "no_merge_conflicts",
-				"failed_ci", "passed_ci", "merge_queue":
+				"failed_ci", "passed_ci", "merge_queue", "merge_queued", "not_merge_queued":
 			default:
 				return nil, httpapi.Validation("query.attributes", "unknown PR inclusion filter")
 			}
@@ -466,6 +466,9 @@ func (s *Handler) listPullsRouteCore(
 		RepoFilters:       parseRepoFilters(input.Repo),
 		WorkspaceActivity: overrides,
 		Items:             items,
+	}
+	if slices.Contains(attributes, "merge_queued") || slices.Contains(attributes, "not_merge_queued") {
+		opts.DeferredMergeItems = s.DeferredMergeItems()
 	}
 	if input.InvolvesMe != input.NotInvolvesMe {
 		opts.ViewerUninvolved = input.NotInvolvesMe
@@ -547,6 +550,7 @@ func (s *Handler) listPullsRouteCore(
 			resp.Stack = &StackPlacementResponse{StackID: placement.StackID, Position: placement.Position, Size: placement.Size}
 		}
 		resp.MergeQueue, resp.MergeQueueRemoval = queueEntry, queueRemoval
+		resp.DeferredMergePending = s.DeferredMergeInFlight(rp, mr.Number) || providerAutoMergePending(&mr)
 		out = append(out, resp)
 	}
 

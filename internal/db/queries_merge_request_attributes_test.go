@@ -126,6 +126,61 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 		require.Len(t, rows, 2)
 		assert.Equal(t, []int{2, 1}, []int{rows[0].Number, rows[1].Number})
 	})
+	t.Run("merge queued", func(t *testing.T) {
+		d := openTestDB(t)
+		repo := insertTestRepo(t, d, "acme", "merging")
+		now := baseTime()
+		// 1 queued, 2 auto-merge, 3 held by this server's worker, 4 removed from the queue,
+		// 5 neither, 6 closed with auto-merge, 7 merged while still marked queued.
+		for n := 1; n <= 7; n++ {
+			mr := testMR(repo, n)
+			mr.AutoMergeEnabled = n == 2 || n == 6
+			if n == 6 {
+				mr.State = "closed"
+			}
+			if n == 7 {
+				mr.State = "merged"
+			}
+			if n == 1 || n == 3 {
+				mr.Author = "viewer"
+			}
+			_, err := d.UpsertMergeRequest(t.Context(), mr)
+			require.NoError(t, err)
+			if n == 1 || n == 4 || n == 7 {
+				state := MergeQueueState{Number: n, Queued: n != 4, ObservedAt: now}
+				if n == 4 {
+					state.RemovalReason = "failed_checks"
+					state.RemovedAt = &now
+				}
+				_, err = d.UpsertMergeQueueState(t.Context(), repo, state)
+				require.NoError(t, err)
+			}
+		}
+		held := []RepoItemNumber{{RepoID: repo, Number: 3}}
+		for _, tc := range []struct {
+			name      string
+			attribute string
+			deferred  []RepoItemNumber
+			viewer    []RepoViewerLogin
+			want      []int
+		}{
+			{"queued, auto-merge, or held", "merge_queued", held, nil, []int{3, 2, 1}},
+			{"nothing held", "merge_queued", nil, nil, []int{2, 1}},
+			{"opposite", "not_merge_queued", held, nil, []int{7, 6, 5, 4}},
+			// Involvement binds its own arguments before the held items.
+			{"with involvement", "merge_queued", held, []RepoViewerLogin{{RepoID: repo, Login: "viewer"}}, []int{3, 1}},
+		} {
+			rows, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{
+				State: "all", Attributes: []string{tc.attribute}, DeferredMergeItems: tc.deferred, ViewerLogins: tc.viewer,
+			})
+			require.NoError(t, err, tc.name)
+			numbers := []int{}
+			for _, row := range rows {
+				numbers = append(numbers, row.Number)
+			}
+			assert.Equal(t, tc.want, numbers, tc.name)
+		}
+	})
 	t.Run("narrowing with inclusion", func(t *testing.T) {
 		d := openTestDB(t)
 		repo := insertTestRepo(t, d, "acme", "filters")

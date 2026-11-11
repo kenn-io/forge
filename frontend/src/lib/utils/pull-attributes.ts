@@ -13,7 +13,9 @@ export type PullAttributeFilter =
   | "failed_ci"
   | "passed_ci"
   | "has_workspace"
-  | "no_workspace";
+  | "no_workspace"
+  | "merge_queued"
+  | "not_merge_queued";
 
 /**
  * Whether the selection matches. Each section holds mutually exclusive options and
@@ -66,6 +68,7 @@ export const PULL_ATTRIBUTE_SECTIONS: readonly (readonly PullAttributeFilter[])[
   ["approved", "not_approved"],
   ["passed_ci", "failed_ci"],
   ["merge_conflicts", "no_merge_conflicts"],
+  ["merge_queued", "not_merge_queued"],
   ["has_workspace", "no_workspace"],
 ];
 
@@ -80,6 +83,11 @@ export function pullMatchesAttribute(pr: PullRequest, filter: PullAttributeFilte
   if (filter === "not_approved") return !pullMatchesAttribute(pr, "approved");
   if (filter === "no_merge_conflicts") return !pullMatchesAttribute(pr, "merge_conflicts");
   if (filter === "no_workspace") return !pullMatchesAttribute(pr, "has_workspace");
+  if (filter === "not_merge_queued") return !pullMatchesAttribute(pr, "merge_queued");
+  if (filter === "merge_queued") {
+    // In the provider merge queue, or set to merge once CI passes.
+    return pr.State === "open" && (pr.merge_queue !== undefined || pr.deferred_merge_pending === true);
+  }
   if (filter === "approved") {
     return pr.ReviewDecision.trim().toUpperCase() === "APPROVED";
   }

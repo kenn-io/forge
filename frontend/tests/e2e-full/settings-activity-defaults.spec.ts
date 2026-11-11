@@ -72,7 +72,6 @@ test("Activity filter defaults save to TOML and apply in a new browser session",
       ["Notifications", false],
       ["Hide closed/merged", true],
       ["Hide drafts", true],
-      ["Hide queued for merge", true],
       ["Hide default-branch activity", true],
       ["Roll up commits", true],
     ] as const) {
@@ -81,6 +80,11 @@ test("Activity filter defaults save to TOML and apply in a new browser session",
         String(pressed),
       );
     }
+    // The saved Hide queued for merge default shows as an excluded Merge queued row.
+    await expect(freshPage.getByRole("button", { name: /^Merge queued\b.*excluded$/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   } finally {
     await context.close();
     // Keep the shared server's defaults independent for the remaining tests.

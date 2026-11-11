@@ -154,8 +154,11 @@ func (s *HubProviderSource) ApplyHubActivitySubjectState(
 		if keys[index].ItemType == db.WorkspaceItemTypePullRequest && workspace.MRIsDraft != nil {
 			activity.Subject.IsDraft = *workspace.MRIsDraft
 		}
-		if keys[index].ItemType == db.WorkspaceItemTypePullRequest && workspace.MRMergeQueued != nil {
-			activity.Subject.IsMergeQueued = *workspace.MRMergeQueued
+		if keys[index].ItemType == db.WorkspaceItemTypePullRequest &&
+			(workspace.MRMergeQueued != nil || workspace.MRDeferredMergePending != nil) {
+			// The hub's view: in its merge queue, or waiting to merge after CI.
+			activity.Subject.IsMergeQueued = workspace.MRMergeQueued != nil && *workspace.MRMergeQueued ||
+				workspace.MRDeferredMergePending != nil && *workspace.MRDeferredMergePending
 		}
 		snapshot.Subjects[keys[index]] = activity
 	}

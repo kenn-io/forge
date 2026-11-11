@@ -36,6 +36,10 @@ type MergeRequestResponse struct {
 	// MergeQueueRemoval is present while the open pull request is out of the
 	// merge queue because the queue removed it without merging.
 	MergeQueueRemoval *MergeQueueRemovalResponse `json:"merge_queue_removal,omitempty"`
+	// DeferredMergePending reports whether this server's "merge after CI"
+	// worker, or the provider's own auto-merge, is waiting on the open pull
+	// request, as on the detail response. Omitted while nothing waits.
+	DeferredMergePending bool `json:"deferred_merge_pending,omitempty"`
 	// WorkflowApproval is the synced workflow-approval snapshot for the
 	// current head, omitted while it is unchecked, so list rows can offer
 	// approving pending workflow runs.

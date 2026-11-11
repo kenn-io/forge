@@ -284,6 +284,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let hideDraftsOverride: boolean | undefined;
   let hideMergeQueued = $state(false);
   let hideMergeQueuedOverride: boolean | undefined;
+  // Keeping only queued merges is a passing view, so unlike hiding them it is not saved.
+  let onlyMergeQueuedChoice = $state(false);
+  // A restored URL or saved default can turn hiding on after the choice; hiding then wins.
+  const onlyMergeQueued = $derived(onlyMergeQueuedChoice && !hideMergeQueued);
   let useWorkspaceActivityForRecency = $state(false);
   let hideDefaultBranchActivity = $state(false);
   let enabledItemTypes = $state<Set<ActivityItemType>>(new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
@@ -401,6 +405,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function getHideMergeQueued(): boolean {
     return hideMergeQueued;
   }
+  /** Required keeps only pull requests queued or set to merge after CI; excluded hides them. */
+  function getMergeQueued(): TriFilter {
+    if (onlyMergeQueued) return "require";
+    return hideMergeQueued ? "exclude" : undefined;
+  }
   function getUseWorkspaceActivityForRecency(): boolean {
     return useWorkspaceActivityForRecency;
   }
@@ -496,6 +505,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     hideMergeQueuedOverride = v;
     syncToURL();
     invalidatePagedActivityRequests();
+  }
+  function setMergeQueued(value: TriFilter): void {
+    onlyMergeQueuedChoice = value === "require";
+    setHideMergeQueued(value === "exclude");
   }
   function setHideDrafts(v: boolean): void {
     hideDrafts = v;
@@ -613,6 +626,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (hideBots) p.hide_bots = true;
     if (hideDrafts) p.hide_drafts = true;
     if (hideMergeQueued) p.hide_merge_queued = true;
+    if (onlyMergeQueued) p.merge_queued = true;
     if (hideDefaultBranchActivity) p.hide_default_branch = true;
     if (activityPageLimit === undefined && viewMode === "flat") {
       return { ...flatPaging.withLimit(activityPageQuery(p)), since };
@@ -641,6 +655,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       params.hide_bots ?? false,
       params.hide_drafts ?? false,
       params.hide_merge_queued ?? false,
+      params.merge_queued ?? false,
       params.hide_default_branch ?? false,
       params.limit ?? 0,
     ]);
@@ -947,6 +962,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       hideBots ||
       hideDrafts ||
       hideMergeQueued ||
+      onlyMergeQueued ||
       enabledItemTypes.size !== DEFAULT_ACTIVITY_ITEM_TYPES.length;
     const absentThreadKeys = new Set<string>();
     if (reconcileCollapsedThreads && (!result.response.item_activity_capped || parentFilterActive)) {
@@ -1152,6 +1168,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       ...(hideBots ? { hide_bots: true } : {}),
       ...(hideDrafts ? { hide_drafts: true } : {}),
       ...(hideMergeQueued ? { hide_merge_queued: true } : {}),
+      ...(onlyMergeQueued ? { merge_queued: true } : {}),
       ...(hideDefaultBranchActivity ? { hide_default_branch: true } : {}),
     };
     const isCurrentRequest = () =>
@@ -1655,6 +1672,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     clearLabelFilters,
     getHideDrafts,
     getHideMergeQueued,
+    getMergeQueued,
     getUseWorkspaceActivityForRecency,
     getHideDefaultBranchActivity,
     getEnabledItemTypes,
@@ -1680,6 +1698,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     setHideBots,
     setHideDrafts,
     setHideMergeQueued,
+    setMergeQueued,
     setHideDefaultBranchActivity,
     setEnabledItemTypes,
     setEnabledEvents,

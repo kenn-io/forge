@@ -83,6 +83,12 @@ export function activityFilterOptions(activity: ActivityStore, grouping: Groupin
       get: activity.getUnassigned,
       set: activity.setUnassigned,
     },
+    {
+      id: "merge-queued",
+      label: "Merge queued",
+      get: activity.getMergeQueued,
+      set: activity.setMergeQueued,
+    },
   ].map(({ id, label, get, set }): ActivityVisibilityFilter => {
     const value = get();
     const choose = (next: TriFilter) => {
@@ -127,13 +133,6 @@ export function activityFilterOptions(activity: ActivityStore, grouping: Groupin
       label: "Hide bots",
       active: activity.getHideBots(),
       setActive: activity.setHideBots,
-      refresh: activity.loadActivity,
-    },
-    {
-      id: "hide-merge-queued",
-      label: "Hide queued for merge",
-      active: activity.getHideMergeQueued(),
-      setActive: activity.setHideMergeQueued,
       refresh: activity.loadActivity,
     },
     {

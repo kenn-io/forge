@@ -527,6 +527,8 @@ func TestSpokeHideMergeQueuedUsesHubStateForLocalWorkspaceSubjects(t *testing.T)
 	})
 	require.NoError(err)
 	serverfake.SeedPR(t, hubDatabase, "acme", "widget", 10)
+	// The hub has provider auto-merge on for 11, so it waits to merge after CI.
+	serverfake.SeedPR(t, hubDatabase, "acme", "widget", 11, func(pr *db.MergeRequest) { pr.AutoMergeEnabled = true })
 
 	spoke, spokeDatabase, _ := setupTestServer(t)
 	spokeRepoID, err := reposeed.Seed(t.Context(), spokeDatabase, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
@@ -548,7 +550,7 @@ func TestSpokeHideMergeQueuedUsesHubStateForLocalWorkspaceSubjects(t *testing.T)
 		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
 		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
 	}
-	for _, number := range []int{9, 10} {
+	for _, number := range []int{9, 10, 11} {
 		key := db.WorkspaceSubjectKey{
 			RepoID: spokeRepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
 		}
@@ -570,7 +572,7 @@ func TestSpokeHideMergeQueuedUsesHubStateForLocalWorkspaceSubjects(t *testing.T)
 		snapshot,
 	)
 	require.NoError(err)
-	assert.Len(unfiltered.WorkspaceActivity, 2)
+	assert.Len(unfiltered.WorkspaceActivity, 3)
 
 	response, err := spoke.activityapi.OverlayLocalActivityWorkspaceSnapshot(
 		t.Context(),
@@ -581,6 +583,19 @@ func TestSpokeHideMergeQueuedUsesHubStateForLocalWorkspaceSubjects(t *testing.T)
 	require.NoError(err)
 	require.Len(response.WorkspaceActivity, 1)
 	assert.Equal(10, response.WorkspaceActivity[0].ItemNumber)
+
+	only, err := spoke.activityapi.OverlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&itemapi.ListActivityInput{MergeQueued: true},
+		itemapi.ActivityResponse{UseWorkspaceActivityForRecency: true},
+		snapshot,
+	)
+	require.NoError(err)
+	numbers := []int{}
+	for _, subject := range only.WorkspaceActivity {
+		numbers = append(numbers, subject.ItemNumber)
+	}
+	assert.ElementsMatch([]int{9, 11}, numbers)
 }
 
 func TestSpokeActivityUsesHubPrivacyForLocalWorkspaceSubjects(t *testing.T) {

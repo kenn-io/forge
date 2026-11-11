@@ -13825,6 +13825,7 @@ func (c *Client) ListActivityWithResponse(ctx context.Context, options *ListActi
 		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
+		"merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
 		"not_involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
 		"projection":          {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
@@ -13987,6 +13988,7 @@ func (c *Client) ListActivityThreadEventsWithResponse(ctx context.Context, optio
 		"item_number":               {Style: "form", Explode: &[]bool{false}[0]},
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"merge_queued":              {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_host":             {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
 		"provider":                  {Style: "form", Explode: &[]bool{false}[0]},
@@ -42476,6 +42478,7 @@ func (c *Client) ListActivityRaw(ctx context.Context, httpClient *http.Client, o
 		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
+		"merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
 		"not_involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
 		"projection":          {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
@@ -42532,6 +42535,7 @@ func (c *Client) ListActivityThreadEventsRaw(ctx context.Context, httpClient *ht
 		"item_number":               {Style: "form", Explode: &[]bool{false}[0]},
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"merge_queued":              {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_host":             {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
 		"provider":                  {Style: "form", Explode: &[]bool{false}[0]},
@@ -49777,6 +49781,7 @@ func NewListActivityRequest(ctx context.Context, baseURL string, options *ListAc
 		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
+		"merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
 		"not_involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
 		"projection":          {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
@@ -49835,6 +49840,7 @@ func NewListActivityThreadEventsRequest(ctx context.Context, baseURL string, opt
 		"item_number":               {Style: "form", Explode: &[]bool{false}[0]},
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"merge_queued":              {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_host":             {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
 		"provider":                  {Style: "form", Explode: &[]bool{false}[0]},
@@ -60577,8 +60583,11 @@ type ListActivityQuery struct {
 	// HideDrafts Exclude activity for draft pull requests.
 	HideDrafts *bool `json:"hide_drafts,omitempty"`
 
-	// HideMergeQueued Exclude activity for pull requests currently queued for merge.
-	HideMergeQueued   *bool `json:"hide_merge_queued,omitempty"`
+	// HideMergeQueued Exclude activity for open pull requests in a merge queue or set to merge after CI.
+	HideMergeQueued *bool `json:"hide_merge_queued,omitempty"`
+
+	// MergeQueued Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
+	MergeQueued       *bool `json:"merge_queued,omitempty"`
 	HideDefaultBranch *bool `json:"hide_default_branch,omitempty"`
 }
 
@@ -60610,8 +60619,11 @@ type ListActivityThreadEventsQuery struct {
 	// HideDrafts Exclude activity for draft pull requests.
 	HideDrafts *bool `json:"hide_drafts,omitempty"`
 
-	// HideMergeQueued Exclude activity for pull requests currently queued for merge.
-	HideMergeQueued   *bool `json:"hide_merge_queued,omitempty"`
+	// HideMergeQueued Exclude activity for open pull requests in a merge queue or set to merge after CI.
+	HideMergeQueued *bool `json:"hide_merge_queued,omitempty"`
+
+	// MergeQueued Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
+	MergeQueued       *bool `json:"merge_queued,omitempty"`
 	HideDefaultBranch *bool `json:"hide_default_branch,omitempty"`
 }
 
@@ -61066,7 +61078,7 @@ type ListPullsQuery struct {
 	// Numbers Item numbers in every repo unless repo is set; before pagination.
 	Numbers []int64 `json:"numbers,omitempty"`
 
-	// Attributes Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, and merge_conflicts or no_merge_conflicts. Every other selected filter, including involves_me and unassigned, must also match before pagination.
+	// Attributes Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination.
 	Attributes *string `json:"attributes,omitempty"`
 
 	// Label Exact case-sensitive label name; applied before pagination.
@@ -69317,6 +69329,7 @@ type MergeRequestResponse struct {
 	UpdatedAt                time.Time                  `json:"UpdatedAt"`
 	Assignees                []string                   `json:"assignees,omitempty"`
 	CiObservedAt             *time.Time                 `json:"ci_observed_at,omitempty"`
+	DeferredMergePending     *bool                      `json:"deferred_merge_pending,omitempty"`
 	DetailFetchedAt          *string                    `json:"detail_fetched_at,omitempty"`
 	DetailLoaded             bool                       `json:"detail_loaded"`
 	DiffSizeHistory          []PRDiffSizePoint          `json:"diff_size_history,omitempty"`

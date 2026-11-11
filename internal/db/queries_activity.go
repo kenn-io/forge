@@ -11,11 +11,25 @@ import (
 	"time"
 )
 
-const activityNotMergeQueuedCondition = `(item_type != 'pr' OR (repo_id, item_number) NOT IN (
-    SELECT q.repo_id, q.number FROM forge_merge_queue_states q
-    JOIN forge_merge_requests p ON p.repo_id = q.repo_id AND p.number = q.number
-    WHERE q.queued = 1 AND p.state = 'open'
+// activityMergeQueuedCondition matches activity on a pull request that
+// mergeQueuedCondition matches.
+func activityMergeQueuedCondition(held []RepoItemNumber, args *[]any) string {
+	return `(item_type = 'pr' AND (repo_id, item_number) IN (
+    SELECT p.repo_id, p.number FROM forge_merge_requests p
+    WHERE ` + mergeQueuedCondition("p", held, args) + `
 ))`
+}
+
+// activityMergeQueuedClause applies the merge-queued filter, if one is set.
+func activityMergeQueuedClause(hide, only bool, held []RepoItemNumber, args *[]any) string {
+	switch {
+	case only:
+		return activityMergeQueuedCondition(held, args)
+	case hide:
+		return notCondition(activityMergeQueuedCondition(held, args))
+	}
+	return ""
+}
 
 // prActivityAtExpr is a pull request's provider-event recency: opening, the
 // newest ledger event the feed can render, reopen, merge, or close, whichever
@@ -205,8 +219,8 @@ func activityEventsQuery(opts ListActivityOpts) (string, []any) {
 	if opts.HideBots {
 		whereClauses = append(whereClauses, activityNotBotCondition("author"))
 	}
-	if opts.HideMergeQueued {
-		whereClauses = append(whereClauses, activityNotMergeQueuedCondition)
+	if cond := activityMergeQueuedClause(opts.HideMergeQueued, opts.OnlyMergeQueued, opts.DeferredMergeItems, &args); cond != "" {
+		whereClauses = append(whereClauses, cond)
 	}
 	if opts.HideDrafts {
 		whereClauses = append(whereClauses,
@@ -825,8 +839,8 @@ func listActivitySubjectsWithQueryer(
 	if opts.HideBots {
 		whereClauses = append(whereClauses, activityNotBotCondition("item_author"))
 	}
-	if opts.HideMergeQueued {
-		whereClauses = append(whereClauses, activityNotMergeQueuedCondition)
+	if cond := activityMergeQueuedClause(opts.HideMergeQueued, opts.OnlyMergeQueued, opts.DeferredMergeItems, &args); cond != "" {
+		whereClauses = append(whereClauses, cond)
 	}
 	if opts.HideDrafts {
 		whereClauses = append(whereClauses, "item_is_draft = 0")

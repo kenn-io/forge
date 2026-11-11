@@ -175,20 +175,34 @@ test.describe("activity feed filters", () => {
     await expect(draftRows.first()).toBeVisible();
   });
 
-  test("hide queued for merge survives reload and navigation and resets", async ({ page }) => {
+  test("merge queued requires, then excludes, and the exclusion survives reload and navigation", async ({ page }) => {
+    const row = page.locator(".kit-filter-dropdown__item", { hasText: "Merge queued" });
+    const required = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/activity" && url.searchParams.get("merge_queued") === "true";
+    });
+    await selectActivityFilterItem(page, "Merge queued");
+    expect((await required).status()).toBe(200);
+    await expect(row).toHaveAccessibleName("Merge queued");
+    await expect(row).toHaveAttribute("aria-pressed", "true");
+
     const filtered = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return url.pathname === "/api/v1/activity" && url.searchParams.get("hide_merge_queued") === "true";
+      return (
+        url.pathname === "/api/v1/activity" &&
+        url.searchParams.get("hide_merge_queued") === "true" &&
+        !url.searchParams.has("merge_queued")
+      );
     });
-    await selectActivityFilterItem(page, "Hide queued for merge");
+    await row.click();
     expect((await filtered).status()).toBe(200);
     await expect(page).toHaveURL(/hide_merge_queued=1/);
-    await expect(page.getByRole("button", { name: "Hide queued for merge" })).toHaveAttribute("aria-pressed", "true");
+    await expect(row).toHaveAccessibleName(/, excluded$/);
 
     await page.reload();
     await waitForTable(page);
     await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
-    await expect(page.getByRole("button", { name: "Hide queued for merge" })).toHaveAttribute("aria-pressed", "true");
+    await expect(row).toHaveAccessibleName(/, excluded$/);
     await page.keyboard.press("Escape");
     await page.getByTitle("Settings", { exact: true }).click();
     await page.getByRole("button", { name: "Back to app" }).click();
@@ -197,9 +211,9 @@ test.describe("activity feed filters", () => {
     await page.goto("/?view=flat");
     await waitForTable(page);
     await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
-    await expect(page.getByRole("button", { name: "Hide queued for merge" })).toHaveAttribute("aria-pressed", "true");
+    await expect(row).toHaveAccessibleName(/, excluded$/);
     await page.getByRole("button", { name: "Reset filters" }).click();
-    await expect(page.getByRole("button", { name: "Hide queued for merge" })).toHaveAttribute("aria-pressed", "false");
+    await expect(row).toHaveAttribute("aria-pressed", "false");
     await expect(page).toHaveURL(/hide_merge_queued=0/);
   });
 

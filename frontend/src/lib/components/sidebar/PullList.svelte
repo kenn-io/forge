@@ -80,6 +80,7 @@
   const conditionFilterOptions: { value: PullAttributeFilter; opposite: PullAttributeFilter; label: string }[] = [
     { value: "approved", opposite: "not_approved", label: "Approved" },
     { value: "merge_conflicts", opposite: "no_merge_conflicts", label: "Merge conflicts" },
+    { value: "merge_queued", opposite: "not_merge_queued", label: "Merge queued" },
     { value: "has_workspace", opposite: "no_workspace", label: "Has workspace" },
   ];
   const groupingOptions: {

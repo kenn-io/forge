@@ -463,8 +463,28 @@ kenn-forge fleet prepare-spoke
 Preparation stops new provider writes, waits for admitted writes and deferred
 merges, drains notification acknowledgements, refreshes workspace launch
 information, hands review drafts and user-authored workflows to the hub, and
-seals local provider writes. If it reports concrete remaining work, resolve
-that work and run the command again.
+seals local provider writes. Run it again after the reported blockers clear:
+
+- **Provider writes or deferred merges:** wait for the operations to finish.
+- **Notification acknowledgements:** keep the spoke running and check its
+  provider connection and credentials. Acknowledgements retry with backoff;
+  those that exhaust their retries or refer to an inactive repository need
+  further investigation and do not clear just by waiting.
+- **Unprepared workspaces or handoff errors:** read the reported reason or
+  error. Make sure the hub tracks the workspace repository and pull request or
+  issue, and that the spoke can use the repository's Git credentials. Retry
+  after correcting the reported problem.
+- **Handoff conflicts:** open the named pull request on the hub and save the
+  hub's review draft, including its inline comments, elsewhere. Discard that
+  draft on the hub, then retry preparation on the spoke. The retry imports the
+  spoke's draft; add the saved hub comments to it afterward. Previously imported
+  drafts remain on the hub. If the conflict shows only a source key, restart
+  the spoke daemon with the updated binary and run preparation again to get
+  the repository name and pull request number.
+
+Preparation keeps provider writes closed while blocked. To resume standalone
+operation, use `fleet abort-preparation`; this revokes the pending enrollment,
+so join again before preparing the spoke.
 
 This handoff does not copy the entire provider database or move repositories,
 worktrees, or agent sessions. The hub must already track the repositories needed

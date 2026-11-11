@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/server/spokeapi"
 )
 
 func newFleetPrepareSpokeCommand(options fleetCLIOptions) *cobra.Command {
@@ -47,12 +48,11 @@ func newFleetPrepareSpokeCommand(options fleetCLIOptions) *cobra.Command {
 				}
 				fmt.Fprintf(&output, ": %s\n", unprepared.Reason)
 			}
-			for _, conflict := range report.HandoffConflicts {
-				fmt.Fprintf(&output, "  Handoff conflict: %s\n", conflict.Description)
-			}
+			writeHandoffConflicts(&output, report.HandoffConflicts)
 			for _, handoffErr := range report.HandoffErrors {
 				fmt.Fprintf(&output, "  Handoff error: %s\n", handoffErr)
 			}
+			writePrepareSpokeGuidance(&output, report)
 			fmt.Fprintf(&output, "Rerun:\n  %s\n", commandHint(cmd, []string{"kenn-forge", "fleet", "prepare-spoke"}, "config", "timeout"))
 			if _, err := fmt.Fprint(options.Stdout, output.String()); err != nil {
 				return err
@@ -63,6 +63,24 @@ func newFleetPrepareSpokeCommand(options fleetCLIOptions) *cobra.Command {
 	cmd.Flags().StringVar(&flags.ConfigPath, "config", config.DefaultConfigPath(), "path to config file")
 	cmd.Flags().DurationVar(&flags.Timeout, "timeout", 60*time.Second, "spoke preparation request timeout")
 	return cmd
+}
+
+func writeHandoffConflicts(output *strings.Builder, conflicts []spokeapi.SpokePreparationConflict) {
+	for _, conflict := range conflicts {
+		fmt.Fprintf(output, "  Handoff conflict: %s (%s %q)\n", conflict.Description, conflict.Kind, conflict.SourceKey)
+	}
+}
+
+func writePrepareSpokeGuidance(output *strings.Builder, report spokeapi.SpokePreparationReport) {
+	if report.InFlightProviderWrites != 0 || report.ActiveDeferredMerges != 0 {
+		output.WriteString("Wait for provider writes and deferred merges to finish.\n")
+	}
+	if len(report.HandoffConflicts) != 0 {
+		output.WriteString("Save the hub draft, discard it on the hub, then retry to import the spoke draft.\n")
+	}
+	if len(report.Unprepared) != 0 || len(report.HandoffErrors) != 0 || report.UndrainedAcks != 0 {
+		output.WriteString("For other blockers, see https://forge.kenn.io/docs/federated-fleet/\n")
+	}
 }
 
 func newFleetAbortPreparationCommand(options fleetCLIOptions) *cobra.Command {

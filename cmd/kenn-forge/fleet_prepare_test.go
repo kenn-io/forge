@@ -86,5 +86,19 @@ func TestFleetPrepareSpokeRerunWithOnlyInFlightCounts(t *testing.T) {
 	cmd.SetArgs([]string{"prepare-spoke"})
 	require.ErrorContains(t, cmd.Execute(), "not ready")
 	assert.Contains(t, stdout.String(), "1 provider write")
+	assert.Contains(t, stdout.String(), "Wait for provider writes and deferred merges to finish")
 	assert.Contains(t, stdout.String(), "Rerun:\n  kenn-forge fleet prepare-spoke\n")
+}
+
+func TestFleetPrepareSpokeConflictFromOlderDaemon(t *testing.T) {
+	conflict := db.ProviderStateConflict{Kind: "review_draft", SourceKey: "github\x00example.com\x00123\x0042"}
+	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{
+		HandoffConflicts: []spokeapi.SpokePreparationConflict{{ProviderStateConflict: conflict}},
+	}}
+	var stdout bytes.Buffer
+	cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
+	cmd.SetArgs([]string{"prepare-spoke"})
+	require.ErrorContains(t, cmd.Execute(), "not ready")
+	assert.Contains(t, stdout.String(), `review_draft "github\x00example.com\x00123\x0042"`)
+	assert.Contains(t, stdout.String(), "Save the hub draft")
 }

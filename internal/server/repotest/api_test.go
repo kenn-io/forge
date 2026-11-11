@@ -2630,7 +2630,7 @@ func TestRepositoryWebURLUsesStableIdentity(t *testing.T) {
 	require.Equal("http://git.example.test:3000/prefix/team/service", body.WebURL)
 	require.Equal(ref.Key, provider.seen.Key)
 	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/host/git.example.test:3000/repo/gitlab/team/service/web-url?platform_repo_id=5151", nil)
-	require.NotEqual(http.StatusOK, rr.Code)
+	require.Equal(http.StatusNotFound, rr.Code)
 	provider.Ref.Key = platform.RepositoryIDKey(5151)
 	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/host/git.example.test:3000/repo/gitlab/team/service/web-url?platform_repo_id=5150", nil)
 	require.Equal(http.StatusBadGateway, rr.Code)

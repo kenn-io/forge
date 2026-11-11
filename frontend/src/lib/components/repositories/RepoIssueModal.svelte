@@ -49,11 +49,12 @@
   let webURLError = $state(false);
   let webURLLoading = $state(false);
   let retry = $state(0);
-  const issueListURL = $derived((summary.web_url || resolvedWebURL) && buildProviderIssueListURL({
+  const webURL = $derived(summary.web_url || resolvedWebURL);
+  const issueListURL = $derived(webURL && buildProviderIssueListURL({
     provider: summary.repo.provider,
     platformHost: summary.repo.platform_host,
     repoPath: summary.repo.repo_path,
-    webURL: summary.web_url || resolvedWebURL,
+    webURL,
   }));
   const appRuntime = getAppRuntime();
   $effect(() => {
@@ -62,16 +63,15 @@
   });
   function loadWebURL(_attempt: number) {
     const ref = { provider: summary.repo.provider, platformHost: summary.repo.platform_host, owner: summary.repo.owner, name: summary.repo.name, repoPath: summary.repo.repo_path };
-    const repositoryKey = repositoryKeyFromWire(summary.repo);
+    const repositoryKey = repositoryKeyToWire(repositoryKeyFromWire(summary.repo));
     resolvedWebURL = undefined;
     webURLError = false;
-    if (!repositoryKey) { webURLError = true; return; }
     webURLLoading = true;
     const execution = appRuntime.runCommand(
       executeGeneratedApiRequest("load repository web address", (client, signal) =>
         providerUsesHostRoute(ref)
-          ? client.RepositoriesService.getRepoWebUrlOnHost(providerHostRouteParams(ref), repositoryKeyToWire(repositoryKey), { signal })
-          : client.RepositoriesService.getRepoWebUrl(providerRouteParams(ref), repositoryKeyToWire(repositoryKey), { signal }),
+          ? client.RepositoriesService.getRepoWebUrlOnHost(providerHostRouteParams(ref), repositoryKey, { signal })
+          : client.RepositoriesService.getRepoWebUrl(providerRouteParams(ref), repositoryKey, { signal }),
       ).pipe(
         Effect.tap((result) => Effect.sync(() => { resolvedWebURL = result.web_url; webURLLoading = false; })),
         Effect.catch(() => Effect.sync(() => { webURLError = true; webURLLoading = false; })),

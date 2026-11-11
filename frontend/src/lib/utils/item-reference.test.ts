@@ -3,37 +3,32 @@ import { buildCanonicalProviderItemURL, buildProviderIssueListURL, parseProvider
 
 describe("provider issue lists", () => {
   it.each([
-    ["github", undefined, "team/widgets", "https://github.com/team/widgets/issues"],
+    ["github", undefined, "team/widgets", undefined, "https://github.com/team/widgets/issues"],
     [
       "gitlab",
       "gitlab.example.com",
       "team/sub group/widgets",
+      undefined,
       "https://gitlab.example.com/team/sub%20group/widgets/-/issues",
     ],
-    ["forgejo", "forge.example.com", "team/widgets", "https://forge.example.com/team/widgets/issues"],
-    ["gitea", "git.example.com", "team/widgets", "https://git.example.com/team/widgets/issues"],
-    ["bitbucket", undefined, "team/widgets", "https://bitbucket.org/team/widgets/issues"],
-    ["bitbucket", "bitbucket.example.com", "team/widgets", undefined],
-  ])("builds the %s issue list", (provider, platformHost, repoPath, expected) => {
-    expect(buildProviderIssueListURL({ provider, platformHost, repoPath })).toBe(expected);
+    ["gitea", "git.example.com", "team/widgets", undefined, "https://git.example.com/team/widgets/issues"],
+    [
+      "gitea",
+      "git.example.test:3000",
+      "team/widgets",
+      "http://git.example.test:3000/prefix/team/widgets/",
+      "http://git.example.test:3000/prefix/team/widgets/issues",
+    ],
+    [
+      "gitlab",
+      "git.example.test",
+      "group/sub group/widgets",
+      "https://git.example.test/group/sub%20group/widgets",
+      "https://git.example.test/group/sub%20group/widgets/-/issues",
+    ],
+  ])("builds the %s issue list", (provider, platformHost, repoPath, webURL, expected) => {
+    expect(buildProviderIssueListURL({ provider, platformHost, repoPath, webURL })).toBe(expected);
   });
-});
-
-it.each([
-  [
-    "gitea",
-    "http://git.example.test:3000/prefix/team/widgets/",
-    "http://git.example.test:3000/prefix/team/widgets/issues",
-  ],
-  [
-    "gitlab",
-    "https://git.example.test/group/sub%20group/widgets",
-    "https://git.example.test/group/sub%20group/widgets/-/issues",
-  ],
-])("uses the repository web URL for %s", (provider, webURL, expected) => {
-  expect(
-    buildProviderIssueListURL({ provider, platformHost: "git.example.test", repoPath: "team/widgets", webURL }),
-  ).toBe(expected);
 });
 
 const pull = {

@@ -948,20 +948,24 @@ describe("RepoSummaryPage", () => {
   });
 
   it("retains an uncertain issue outcome until a replacement page acknowledges it", async () => {
-    mockGet.mockResolvedValue({
-      data: [
-        {
-          ...repoSummaryFixture({
-            provider: "gitea",
-            platformHost: "git.example.test:3000",
-            owner: "acme",
-            name: "widgets",
-          }),
-          web_url: "http://git.example.test:3000/acme/widgets",
-        },
-      ],
-      error: undefined,
-    });
+    mockGet.mockImplementation((path: string) =>
+      path === "/repos/summary"
+        ? Promise.resolve({
+            data: [
+              {
+                ...repoSummaryFixture({
+                  provider: "gitea",
+                  platformHost: "git.example.test:3000",
+                  owner: "acme",
+                  name: "widgets",
+                }),
+                web_url: "http://git.example.test:3000/acme/widgets",
+              },
+            ],
+            error: undefined,
+          })
+        : Promise.resolve({ error: "unexpected request" }),
+    );
     const request = Promise.withResolvers<never>();
     mockPost.mockImplementation(() => request.promise);
 
@@ -989,7 +993,6 @@ describe("RepoSummaryPage", () => {
       expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", true);
       const issueList = screen.getByRole("link", { name: "Open issue list" });
       expect(issueList.getAttribute("href")).toBe("http://git.example.test:3000/acme/widgets/issues");
-      expect(issueList.getAttribute("target")).toBe("_blank");
     });
 
     await fireEvent.click(

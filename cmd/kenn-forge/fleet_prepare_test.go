@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -13,6 +14,10 @@ import (
 
 func TestFleetPrepareSpokeReportsReadyWithoutPrintingSeal(t *testing.T) {
 	const seal = "private-preparation-seal"
+	run := "Otherwise run:"
+	if runtime.GOOS == "windows" {
+		run = "Otherwise run in Command Prompt:"
+	}
 	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{
 		ReadyLaunchSpecs: 3, ReadyToActivate: true, PreparationSeal: seal,
 	}}
@@ -31,6 +36,7 @@ func TestFleetPrepareSpokeReportsReadyWithoutPrintingSeal(t *testing.T) {
 			require.NoError(t, cmd.Execute())
 			assert.Contains(t, stdout.String(), "preparation is complete")
 			assert.Contains(t, stdout.String(), "3 launch specifications")
+			assert.Contains(t, stdout.String(), run+"\n  ")
 			assert.Contains(t, stdout.String(), tc.want)
 			assert.NotContains(t, stdout.String(), seal)
 		})
@@ -38,6 +44,10 @@ func TestFleetPrepareSpokeReportsReadyWithoutPrintingSeal(t *testing.T) {
 }
 
 func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
+	rerun := "Rerun:"
+	if runtime.GOOS == "windows" {
+		rerun = "Rerun in Command Prompt:"
+	}
 	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{
 		Unprepared: []db.UnpreparedWorkspace{
 			{Workspace: db.Workspace{ID: "ws-1", RepoOwner: "team", RepoName: "project", ItemType: "issue", ItemNumber: 42}, Reason: "launchSpecMissing"},
@@ -74,7 +84,7 @@ func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
 			cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
 			cmd.SetArgs(tc.args)
 			require.ErrorContains(t, cmd.Execute(), "not ready")
-			assert.Contains(t, stdout.String(), "Rerun:\n  "+tc.want)
+			assert.Contains(t, stdout.String(), rerun+"\n  "+tc.want)
 		})
 	}
 }
@@ -87,7 +97,7 @@ func TestFleetPrepareSpokeRerunWithOnlyInFlightCounts(t *testing.T) {
 	require.ErrorContains(t, cmd.Execute(), "not ready")
 	assert.Contains(t, stdout.String(), "1 provider write")
 	assert.Contains(t, stdout.String(), "Wait for provider writes and deferred merges to finish")
-	assert.Contains(t, stdout.String(), "Rerun:\n  kenn-forge fleet prepare-spoke\n")
+	assert.Contains(t, stdout.String(), "kenn-forge fleet prepare-spoke\n")
 }
 
 func TestFleetPrepareSpokeConflictFromOlderDaemon(t *testing.T) {

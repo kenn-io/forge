@@ -16,7 +16,7 @@ import (
 func TestWindowsCommandHint(t *testing.T) {
 	exe, err := os.Executable()
 	require.NoError(t, err)
-	for _, path := range []string{`C:\Program Files\forge.toml`, `C:\team&tools\forge.toml`, `C:\normal\forge.toml`, `C:\%FORGE_COMMAND_RECORDER%\forge.toml`, `C:\program files\%FORGE_COMMAND_RECORDER%\forge.toml`} {
+	for _, path := range []string{`C:\Program Files\forge.toml`, `C:\team $HOME\forge.toml`, `C:\team&tools\forge.toml`, `C:\normal\forge.toml`, `C:\%FORGE_COMMAND_RECORDER%\forge.toml`, `C:\program files\%FORGE_COMMAND_RECORDER%\forge.toml`} {
 		t.Run(path, func(t *testing.T) {
 			command := quoteCommand([]string{exe, "-test.run=^TestWindowsCommandRecorder$", "--", "--config", path, "--timeout", "1m0s"})
 			cmd := procutil.CommandContext(t.Context(), "cmd.exe", "/d", "/c", command)

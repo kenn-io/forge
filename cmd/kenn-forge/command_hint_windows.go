@@ -5,6 +5,8 @@ import (
 	"syscall"
 )
 
+const commandHintShell = " in Command Prompt"
+
 func quoteCommand(args []string) string {
 	quoted := make([]string, len(args))
 	for i, arg := range args {

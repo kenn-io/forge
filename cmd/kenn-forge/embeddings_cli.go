@@ -130,7 +130,7 @@ func newEmbeddingsCommand(stdin io.Reader, stdout, stderr io.Writer, deps localE
 				fmt.Fprintf(stderr, "Warning: search by meaning choice write reported an error: %v\n", err)
 			}
 		}
-		_, err = fmt.Fprintf(stdout, "Local embeddings configured. If Forge runs as a service, restart it through your service manager. Otherwise run:\n  %s\n", commandHint(cmd, []string{"kenn-forge", "daemon", "restart"}, "config"))
+		_, err = fmt.Fprintf(stdout, "Local embeddings configured. If Forge runs as a service, restart it through your service manager. Otherwise run%s:\n  %s\n", commandHintShell, commandHint(cmd, []string{"kenn-forge", "daemon", "restart"}, "config"))
 		return err
 	}}
 	local.Flags().StringVar(&path, "config", config.DefaultConfigPath(), "path to config file")

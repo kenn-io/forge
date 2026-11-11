@@ -25,8 +25,8 @@ func newFleetPrepareSpokeCommand(options fleetCLIOptions) *cobra.Command {
 			if report.ReadyToActivate {
 				_, err = fmt.Fprintf(
 					options.Stdout,
-					"Spoke preparation is complete (%d launch specifications ready).\nIf Forge runs as a service, restart it through your service manager. Otherwise run:\n  %s\n",
-					report.ReadyLaunchSpecs, commandHint(cmd, []string{"kenn-forge", "daemon", "restart"}, "config"),
+					"Spoke preparation is complete (%d launch specifications ready).\nIf Forge runs as a service, restart it through your service manager. Otherwise run%s:\n  %s\n",
+					report.ReadyLaunchSpecs, commandHintShell, commandHint(cmd, []string{"kenn-forge", "daemon", "restart"}, "config"),
 				)
 				return err
 			}
@@ -53,7 +53,7 @@ func newFleetPrepareSpokeCommand(options fleetCLIOptions) *cobra.Command {
 				fmt.Fprintf(&output, "  Handoff error: %s\n", handoffErr)
 			}
 			writePrepareSpokeGuidance(&output, report)
-			fmt.Fprintf(&output, "Rerun:\n  %s\n", commandHint(cmd, []string{"kenn-forge", "fleet", "prepare-spoke"}, "config", "timeout"))
+			fmt.Fprintf(&output, "Rerun%s:\n  %s\n", commandHintShell, commandHint(cmd, []string{"kenn-forge", "fleet", "prepare-spoke"}, "config", "timeout"))
 			if _, err := fmt.Fprint(options.Stdout, output.String()); err != nil {
 				return err
 			}

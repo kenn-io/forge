@@ -104,8 +104,8 @@ describe("RepoTreePicker", () => {
     }
     const retry = await screen.findByRole("button", { name: "Retry" });
     expect(client.GET).toHaveBeenCalledTimes(failure === "interrupted" ? 3 : 2);
+    expect(screen.queryByText("No branches")).toBeNull();
     await fireEvent.click(retry);
     expect(await screen.findByText("main")).toBeTruthy();
-    expect(screen.queryByText("No branches")).toBeNull();
   });
 });

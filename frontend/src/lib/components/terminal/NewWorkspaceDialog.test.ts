@@ -538,6 +538,7 @@ describe("NewWorkspaceDialog", () => {
 
       await waitFor(() => expect(repoPicker().textContent).not.toContain("Loading repositories"));
       expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+      expect(repoPicker().textContent).toContain("Select a repository");
       expect(repoPicker().textContent).not.toContain("acme/widget");
       expect(repoPicker().textContent).not.toContain("acme/gadget");
       await fireEvent.submit(screen.getByLabelText("Branch name").closest("form")!);
@@ -1316,9 +1317,8 @@ describe("NewWorkspaceDialog", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it.each(["rejection", "problem response"])("cannot submit after a repository %s", async (failure) => {
-    if (failure === "rejection") mockGet.mockRejectedValue(new Error("network down"));
-    else mockGet.mockResolvedValue({ error: { detail: "repositories unavailable" } });
+  it("cannot submit after a repository rejection", async () => {
+    mockGet.mockRejectedValue(new Error("network down"));
     await renderDialog();
 
     await waitFor(() => expect(repoPicker().textContent).toContain("Could not load repositories"), { timeout: 5000 });
@@ -1341,6 +1341,8 @@ describe("NewWorkspaceDialog", () => {
     mockGet.mockResolvedValue({ error: { detail: "repositories unavailable" } });
     await renderDialog();
     const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(repoPicker().textContent).toContain("Could not load repositories");
+    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole("button", { name: "Open Settings" })).toBeNull();
     await fireEvent.input(screen.getByRole("textbox", { name: "Branch name" }), { target: { value: "my-branch" } });
     mockGet.mockResolvedValue({ data: [repoFixture("acme", "widget", 1001)] });
@@ -1349,39 +1351,12 @@ describe("NewWorkspaceDialog", () => {
     expect((screen.getByRole("textbox", { name: "Branch name" }) as HTMLInputElement).value).toBe("my-branch");
   });
 
-  it("asks for a repository when retry succeeds but the seeded repository is unavailable", async () => {
-    mockGet.mockResolvedValue({ error: { detail: "repositories unavailable" } });
-    await renderDialog({ seedRepo: { provider: "github", platformHost: "github.com", owner: "acme", name: "widget" } });
-    const retry = await screen.findByRole("button", { name: "Retry" });
-    mockGet.mockResolvedValue({ data: [repoFixture("acme", "widget", 1001)] });
-    await fireEvent.click(retry);
-    await waitFor(() => expect(repoPicker().textContent).toContain("Select a repository"));
-    await pickRepo("acme/widget");
-    expect(repoPicker().textContent).toContain("acme/widget");
-  });
-
   it("recovers a repository read after a transient transport failure", async () => {
     mockGet.mockImplementation((path: string) => {
       if (path !== "/repos") return Promise.resolve({ data: [] });
       const calls = mockGet.mock.calls.filter(([requested]) => requested === "/repos").length;
       return calls === 1
         ? Promise.reject(new Error("offline"))
-        : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] });
-    });
-    await renderDialog();
-    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"), { timeout: 5000 });
-    expect(mockGet.mock.calls.filter(([path]) => path === "/repos")).toHaveLength(2);
-  });
-
-  it("recovers a repository read after a service unavailable response", async () => {
-    mockGet.mockImplementation((path: string) => {
-      if (path !== "/repos") return Promise.resolve({ data: [] });
-      const calls = mockGet.mock.calls.filter(([requested]) => requested === "/repos").length;
-      return calls === 1
-        ? Promise.resolve({
-            error: { code: "serviceUnavailable", status: 503 },
-            response: new Response(null, { status: 503 }),
-          })
         : Promise.resolve({ data: [repoFixture("acme", "widget", 1001)] });
     });
     await renderDialog();

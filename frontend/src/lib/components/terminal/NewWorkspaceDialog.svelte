@@ -249,7 +249,7 @@
           if (activeSession !== session || reads.snapshot === undefined || repos.length > 0) return;
           repos = reads.snapshot.map(repoOption);
           selectedKey = defaultRepoSelection();
-          if (repos.length > 0) reposLoading = false;
+          reposLoading = false;
         });
         const loaded = yield* retryIdempotentRead(reads.refresh, isTransientPickerReadFailure);
         yield* Effect.sync(() => {
@@ -326,11 +326,12 @@
     }
     loadWorkspaceHosts(session);
     loadRepositories(session);
+    const execution = repoLoadExecution;
     const fleetExecution = fleetLoadExecution;
     return () => {
-      repoLoadExecution?.interrupt();
-      repoLoadExecution = null;
+      execution?.interrupt();
       fleetExecution?.interrupt();
+      if (repoLoadExecution === execution) repoLoadExecution = null;
       if (activeSession === session) activeSession = null;
     };
   });

@@ -81,7 +81,7 @@ it("reopens cached search results and recovers failed open and closed searches",
     Response.json({ type: "about:blank", code: "forbidden", status: 403, detail: "denied" }, { status: 403 }),
   );
   await fireEvent.click(screen.getByRole("checkbox", { name: "Include closed" }));
-  await screen.findByRole("alert", {}, { timeout: 5000 });
+  await screen.findByRole("alert");
   const closedApi = createMockApiFetch();
   let unavailable = true;
   vi.stubGlobal("fetch", (...args: Parameters<typeof fetch>) => {
@@ -100,7 +100,7 @@ it("reopens cached search results and recovers failed open and closed searches",
     Response.json({ type: "about:blank", code: "forbidden", status: 403, detail: "denied" }, { status: 403 }),
   );
   await fireEvent.input(screen.getByRole("combobox"), { target: { value: "theme system" } });
-  await screen.findByRole("alert", {}, { timeout: 5000 });
+  await screen.findByRole("alert");
   expect(screen.queryByRole("option", { name: /#55.*Refactor theme system/ })).toBeNull();
   expect(screen.queryByText("No PRs or issues found")).toBeNull();
 }, 10000);

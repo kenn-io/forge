@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { getListActivityUrl } from "./generated/activity/activity.js";
-import { getGetRepoBrowserLastChangedUrl } from "./generated/repositories/repositories.js";
+import { getGetRepoBrowserLastChangedUrl, listRepos } from "./generated/repositories/repositories.js";
 import { readDocsBlob } from "./generated/docs/docs.js";
 import { GeneratedProblemResponse, InvalidGeneratedErrorResponse, orvalFetch } from "./runtime.js";
 
@@ -45,12 +45,24 @@ describe("runtime", () => {
     expect(result).toBe("plain text");
   });
 
-  it("preserves the status and body of a malformed error response", async () => {
-    const result = orvalFetch("/repos", {
-      fetch: async () => new Response("{", { status: 502, headers: { "Content-Type": "application/json" } }),
-    });
+  it.each([
+    [
+      "malformed JSON",
+      () => new Response("{", { status: 502, headers: { "Content-Type": "application/json" } }),
+      502,
+      "{",
+    ],
+    ["text", () => new Response("unavailable", { status: 503 }), 503, "unavailable"],
+    [
+      "non-problem JSON",
+      () => Response.json({ message: "unavailable" }, { status: 504 }),
+      504,
+      { message: "unavailable" },
+    ],
+  ])("preserves status and body for %s error responses", async (_name, response, status, body) => {
+    const result = listRepos({ fetch: async () => response() });
     await expect(result).rejects.toBeInstanceOf(InvalidGeneratedErrorResponse);
-    await expect(result).rejects.toMatchObject({ status: 502, body: "{" });
+    await expect(result).rejects.toMatchObject({ status, body });
   });
 
   it("rethrows malformed successful JSON", async () => {

@@ -24,9 +24,7 @@ export function isTransientPickerReadFailure(failure: unknown): boolean {
   }
   return (
     failure instanceof ApiProblemError &&
-    (failure.problem.code === "serviceUnavailable" ||
-      failure.problem.code === "hubUnavailable" ||
-      failure.problem.code === "upstreamError")
+    ["serviceUnavailable", "hubUnavailable", "upstreamError"].includes(failure.problem.code)
   );
 }
 

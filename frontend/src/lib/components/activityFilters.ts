@@ -13,7 +13,6 @@ interface ActivityVisibilityFilter {
   id: string;
   label: string;
   mobileLabel?: string;
-  color: string;
   active: boolean;
   /** The filter drops its matches; only a filter with `tri` can be excluded. */
   excluded: boolean;
@@ -93,7 +92,6 @@ export function activityFilterOptions(activity: ActivityStore, grouping: Groupin
     return {
       id,
       label,
-      color: "var(--accent-blue)",
       ...triFilterRow(value),
       tri: { value, set: choose },
       reset: () => set(undefined),
@@ -105,7 +103,6 @@ export function activityFilterOptions(activity: ActivityStore, grouping: Groupin
     id: string;
     label: string;
     mobileLabel?: string;
-    color: string;
     active: boolean;
     setActive: (active: boolean) => void;
     refresh?: () => void;
@@ -114,7 +111,6 @@ export function activityFilterOptions(activity: ActivityStore, grouping: Groupin
       id: "hide-default-branch",
       label: "Hide default-branch activity",
       mobileLabel: "Hide branch",
-      color: "var(--accent-teal)",
       active: activity.getHideDefaultBranchActivity(),
       setActive: activity.setHideDefaultBranchActivity,
       refresh: applyFilters,
@@ -122,7 +118,6 @@ export function activityFilterOptions(activity: ActivityStore, grouping: Groupin
     {
       id: "hide-closed-merged",
       label: "Hide closed/merged",
-      color: "var(--accent-red)",
       active: activity.getHideClosedMerged(),
       setActive: activity.setHideClosedMerged,
       refresh: activity.loadActivity,
@@ -130,7 +125,6 @@ export function activityFilterOptions(activity: ActivityStore, grouping: Groupin
     {
       id: "hide-bots",
       label: "Hide bots",
-      color: "var(--accent-purple)",
       active: activity.getHideBots(),
       setActive: activity.setHideBots,
       refresh: activity.loadActivity,
@@ -138,7 +132,6 @@ export function activityFilterOptions(activity: ActivityStore, grouping: Groupin
     {
       id: "hide-merge-queued",
       label: "Hide queued for merge",
-      color: "var(--accent-green)",
       active: activity.getHideMergeQueued(),
       setActive: activity.setHideMergeQueued,
       refresh: activity.loadActivity,
@@ -146,7 +139,6 @@ export function activityFilterOptions(activity: ActivityStore, grouping: Groupin
     {
       id: "hide-drafts",
       label: "Hide drafts",
-      color: "var(--accent-amber)",
       active: activity.getHideDrafts(),
       setActive: activity.setHideDrafts,
       refresh: activity.loadActivity,
@@ -155,7 +147,6 @@ export function activityFilterOptions(activity: ActivityStore, grouping: Groupin
       id: "hide-org-name",
       label: "Hide org name",
       mobileLabel: "Hide org",
-      color: "var(--accent-blue)",
       active: grouping.getHideOrgName(),
       setActive: grouping.setHideOrgName,
     },

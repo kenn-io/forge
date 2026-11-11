@@ -240,10 +240,13 @@ describe("workspace create split button in the New workspace dialog", () => {
     const accent = resolvedColor(rootStyle.getPropertyValue("--accent-blue").trim());
     const foreground = resolvedColor(rootStyle.getPropertyValue("--bg-surface").trim());
 
-    expect(resolvedColor(primaryStyle.backgroundColor)).toBe(accent);
-    expect(resolvedColor(optionsStyle.backgroundColor)).toBe(accent);
-    expect(resolvedColor(primaryStyle.color)).toBe(foreground);
-    expect(resolvedColor(optionsStyle.color)).toBe(foreground);
+    // A disabled solid button has its own faint fill, so the colors fade in once the dialog enables it.
+    await vi.waitFor(() => {
+      expect(resolvedColor(primaryStyle.backgroundColor)).toBe(accent);
+      expect(resolvedColor(optionsStyle.backgroundColor)).toBe(accent);
+      expect(resolvedColor(primaryStyle.color)).toBe(foreground);
+      expect(resolvedColor(optionsStyle.color)).toBe(foreground);
+    });
   });
 
   it("keeps the launch split button usable for the Kata issue source", async () => {

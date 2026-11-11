@@ -9,13 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAcquireWaitsForBriefLockHolder(t *testing.T) {
+func TestAcquireWaitsForLockOrContext(t *testing.T) {
 	dir := t.TempDir()
 	holder, err := Acquire(t.Context(), dir)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = holder.Release() })
 
-	// Prove a held lock is retried before allowing the holder to release it.
+	// A caller's deadline interrupts the wait while the lock remains held.
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
 	defer cancel()
 	_, err = Acquire(ctx, dir)
@@ -62,39 +62,17 @@ func TestAcquireSecondCallReturnsCollision(t *testing.T) {
 	require.ErrorAs(err, &cerr)
 	require.Equal(dir, cerr.DataDir)
 	require.Equal(LockPath(dir), cerr.LockPath)
-}
-
-func TestAcquireCollisionWithMetadata(t *testing.T) {
-	require := require.New(t)
-	dir := t.TempDir()
-
-	h1, err := Acquire(t.Context(), dir)
-	require.NoError(err)
-	t.Cleanup(func() { _ = h1.Release() })
+	require.Nil(cerr.Metadata)
+	require.Equal(ReasonMetadataMissing, cerr.MetadataUnavailable)
 
 	meta := Metadata{PID: 1234, ListenAddr: "127.0.0.1:8091"}
 	require.NoError(h1.WriteMetadata(meta))
 
 	_, err = Acquire(t.Context(), dir)
-	var cerr *CollisionError
+	cerr = nil
 	require.ErrorAs(err, &cerr)
 	require.NotNil(cerr.Metadata)
 	require.Equal(meta, *cerr.Metadata)
-}
-
-func TestAcquireCollisionWithoutMetadata(t *testing.T) {
-	require := require.New(t)
-	dir := t.TempDir()
-
-	h1, err := Acquire(t.Context(), dir)
-	require.NoError(err)
-	t.Cleanup(func() { _ = h1.Release() })
-
-	_, err = Acquire(t.Context(), dir)
-	var cerr *CollisionError
-	require.ErrorAs(err, &cerr)
-	require.Nil(cerr.Metadata)
-	require.Equal(ReasonMetadataMissing, cerr.MetadataUnavailable)
 }
 
 func TestAcquireRemovesStaleMetadata(t *testing.T) {

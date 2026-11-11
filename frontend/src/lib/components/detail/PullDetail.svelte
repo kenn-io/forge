@@ -3639,7 +3639,7 @@
               </span>
             {:else if headActionsBlocked}
               <span class="action-error action-error--state" role="status">
-                The head commit has not been synced yet. After the next sync records it, refresh the reviewed state before approving or merging.
+                Forge hasn't loaded the latest commit yet. After the next sync, refresh the reviewed state and review the changes before approving or merging.
               </span>
             {/if}
             {#if stateConflict}

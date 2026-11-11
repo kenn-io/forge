@@ -17,7 +17,7 @@ describe("PR size history", () => {
   });
   it("plots total diff size over observed revisions, including shrinkage and zero", () => {
     const summary = prSizeSummary([point("a", 100, 20), point("b", 200, 40), point("c", 0)], "c")!;
-    expect(summary.label).toBe("PR size: 0 lines · −120 since first observation");
+    expect(summary.label).toBe("PR size: 0 lines · −120 since Forge first recorded it");
     expect(summary.delta).toBe(-120);
     expect(summary.tooltip).toBe("−120 lines over 3 revisions");
     expect(summary.points.map((p) => p.total)).toEqual([120, 240, 0]);

@@ -302,7 +302,7 @@ test.describe("repository summaries", () => {
 
       await expect(page.locator(".kit-flash-stack").getByRole("status")).not.toHaveText("");
       await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText(
-        "The request outcome is unknown; check the issue list before retrying.",
+        "Forge couldn't confirm whether it created the issue. Check the issue list before trying again.",
       );
       await expect(dialog).toBeVisible();
       await expect(title).toHaveValue("Retry interrupted issue creation");

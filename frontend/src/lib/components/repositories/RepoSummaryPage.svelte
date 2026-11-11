@@ -260,7 +260,7 @@
     issueSubmittingByRepo[key] = false;
     const message = repoSummaryFailureMessage(state.error, "failed to create issue");
     if (state.kind === "uncertain") {
-      const warning = `${message} The request outcome is unknown; check the issue list before retrying.`;
+      const warning = `${message} Forge couldn't confirm whether it created the issue. Check the issue list before trying again.`;
       issueOutcomeUnknownByRepo[key] = true;
       issueErrorByRepo[key] = warning;
       showFlash(warning, { tone: "danger" });

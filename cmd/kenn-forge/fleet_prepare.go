@@ -14,7 +14,7 @@ func newFleetPrepareSpokeCommand(options fleetCLIOptions) *cobra.Command {
 	flags := fleetPrepareOptions{}
 	cmd := &cobra.Command{
 		Use:   "prepare-spoke",
-		Short: "Quiesce provider state and prepare this daemon as a fleet spoke",
+		Short: "Block new provider changes on this Forge and prepare it as a fleet spoke",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			report, err := options.Runner.PrepareSpoke(cmd.Context(), flags)

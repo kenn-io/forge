@@ -980,7 +980,9 @@ describe("RepoSummaryPage", () => {
     expect(await screen.findByDisplayValue("Fence an unknown outcome")).toBeTruthy();
     await waitFor(() => {
       expect(flash.getFlash()).toMatchObject({
-        message: expect.stringMatching(/outcome is unknown.*check the issue list before retrying/i),
+        message: expect.stringMatching(
+          /couldn't confirm whether it created the issue.*check the issue list before trying again/i,
+        ),
         tone: "danger",
       });
       expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", true);
@@ -1023,7 +1025,7 @@ describe("RepoSummaryPage", () => {
     await waitFor(() => {
       expect(flash.getFlash()).toMatchObject({
         message: expect.stringMatching(
-          /issue transport unavailable.*outcome is unknown.*check the issue list before retrying/i,
+          /issue transport unavailable.*couldn't confirm whether it created the issue.*check the issue list before trying again/i,
         ),
         tone: "danger",
       });
@@ -1090,7 +1092,7 @@ describe("RepoSummaryPage", () => {
     await waitFor(() => {
       expect(flash.getFlash()).toMatchObject({
         message: expect.stringMatching(
-          /provider response unavailable.*outcome is unknown.*check the issue list before retrying/i,
+          /provider response unavailable.*couldn't confirm whether it created the issue.*check the issue list before trying again/i,
         ),
         tone: "danger",
       });

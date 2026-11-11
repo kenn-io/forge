@@ -2181,7 +2181,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       },
       onFailure: (failure) => {
         if (update.state.settled) {
-          showFlash("Pull request content was updated, but the latest detail could not be reconciled.", {
+          showFlash("The pull request was updated, but Forge couldn't update the view. Refresh the pull request.", {
             tone: "danger",
           });
           return;

@@ -117,7 +117,7 @@
   function ceilingValueText(ceiling: LocalSyncCeilingStatus): string {
     const usage = `${ceiling.spent} requests used of ${ceiling.limit}`;
     if (ceiling.spent >= ceiling.limit) {
-      return `${usage}; app sync paused; discovery reserve exhausted`;
+      return `${usage}; app sync paused; request limit reached`;
     }
     return `${usage}; background refresh pauses at ${ceiling.background_limit}; ${Math.max(ceiling.limit - ceiling.spent, 0)} requests available for essential discovery`;
   }
@@ -182,7 +182,7 @@
             </span>
           {:else}
             <span class="row-bar-cell"></span>
-            <span class="row-unknown">not yet observed</span>
+            <span class="row-unknown">quota unavailable</span>
           {/if}
         </div>
       {/each}
@@ -243,9 +243,9 @@
           </span>
           <span class="row-note">
             {#if ceiling.spent >= ceiling.limit}
-              app sync paused · discovery reserve exhausted{#if resetText(ceiling.reset_at)} · {resetText(ceiling.reset_at)}{/if}
+              app sync paused · request limit reached{#if resetText(ceiling.reset_at)} · {resetText(ceiling.reset_at)}{/if}
             {:else if backgroundRefreshPaused(ceiling)}
-              background refresh paused · {formatCompact(Math.max(ceiling.limit - ceiling.spent, 0))} discovery requests before app sync pauses{#if resetText(ceiling.reset_at)} · {resetText(ceiling.reset_at)}{/if}
+              background refresh paused · {formatCompact(Math.max(ceiling.limit - ceiling.spent, 0))} requests left before app sync pauses{#if resetText(ceiling.reset_at)} · {resetText(ceiling.reset_at)}{/if}
             {:else}
               Local guard for background refresh; provider quota above is separate.
             {/if}

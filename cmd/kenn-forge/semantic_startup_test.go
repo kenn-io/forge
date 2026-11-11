@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/embedfake"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/kit/embedconfig"
 	"go.kenn.io/kit/embedlocal"
 )
 
@@ -69,5 +70,30 @@ func TestSemanticStartup(t *testing.T) {
 		defer func() { assert.NoError(t, indexer.Close()) }()
 		require.NoError(t, indexer.Refresh(t.Context()))
 		assert.Equal(t, "custom-model", endpoint.LastModel())
+	})
+	t.Run("saved built-in", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+		topics := make([]string, 767)
+		for i := range topics {
+			topics[i] = "unused"
+		}
+		topics[0] = "cache"
+		endpoint := embedfake.New(t, topics...)
+		deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
+			assert.True(t, opts.SkipOllama)
+			return endpoint.Embedder("nomic-embed-text").BaseURL, nil
+		}}
+		cfg := &config.Config{DataDir: t.TempDir(), LocalEmbeddings: "builtin", Embeddings: embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768}}
+		indexer, err := openSemanticSearch(t.Context(), cfg, database, deps)
+		require.NoError(t, err)
+		require.NotNil(t, indexer)
+		defer func() { assert.NoError(t, indexer.Close()) }()
+		require.NoError(t, indexer.Refresh(t.Context()))
+		assert.Contains(t, endpoint.Inputs(), "Cache is slow")
+		recorded, err := embedlocal.ChoiceRecorded()
+		require.NoError(t, err)
+		assert.False(t, recorded)
 	})
 }

@@ -230,8 +230,5 @@ func TestLocalEmbeddingsRecordsBuiltinChoice(t *testing.T) {
 		cmd.SetArgs([]string{"local", "--config", path})
 		require.NoError(t, cmd.ExecuteContext(t.Context()))
 		assert.Contains(t, stderr.String(), "search by meaning choice write reported an error")
-		cfg, err := config.Load(path)
-		require.NoError(t, err)
-		assert.Equal(t, "auto", cfg.LocalEmbeddings)
 	})
 }

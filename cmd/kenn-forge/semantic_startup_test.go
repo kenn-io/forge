@@ -1,6 +1,7 @@
 package main
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,7 +16,13 @@ func TestRecordSavedBuiltinChoice(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	cfg := &config.Config{LocalEmbeddings: "builtin", Embeddings: embedconfig.Embedder{BaseURL: "http://127.0.0.1:1234/v1", Model: "other", Dims: 12}}
+	path := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(t, config.EnsureDefault(path))
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	cfg.LocalEmbeddings = "builtin"
+	cfg.Embeddings = embedconfig.Embedder{BaseURL: "http://127.0.0.1:1234/v1", Model: "other", Dims: 12}
+	require.NoError(t, cfg.Validate())
 	recordSavedBuiltinChoice(cfg)
 	recorded, err := embedlocal.ChoiceRecorded()
 	require.NoError(t, err)

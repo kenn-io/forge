@@ -442,3 +442,26 @@ url = "`+upstream.URL+`"
 	problem := decodeProblem(t, rr)
 	assert.Equal(t, httpapi.CodeUpstreamError, problem.Code)
 }
+
+func TestKataUnknownDaemonErrorListsConfiguredIDs(t *testing.T) {
+	assert := assert.New(t)
+	home := t.TempDir()
+	t.Setenv("KATA_HOME", home)
+	writeKataServerCatalog(t, home, `
+[[daemon]]
+name = "primary"
+url = "http://127.0.0.1:1"
+
+[[daemon]]
+name = "other"
+url = "http://127.0.0.1:2"
+`)
+	srv, _ := setupTestServer(t)
+
+	rr := doJSON(t, srv, http.MethodGet, "/api/v1/kata/daemons/bogus/issues/issue-a", nil)
+	require.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
+	problem := decodeProblem(t, rr)
+	assert.Contains(problem.Detail, "primary, other")
+	assert.Contains(problem.Detail, "default primary")
+	assert.Equal("bogus", problem.Details["daemon"])
+}

@@ -68,7 +68,7 @@ func (s *Server) syncKataTargetTool() {
 		return
 	}
 	if available {
-		addTool(s.mcp, &mcp.Tool{Name: "kenn_forge_add_workspace_kata_target", OutputSchema: map[string]any{"type": "object"}, Description: "Track a Kata task. daemon_id is Forge's Kata daemon ID from the workspace context or a listed Kata target; never guess it."}, wrapTool(s.addWorkspaceKataTarget))
+		addTool(s.mcp, &mcp.Tool{Name: "kenn_forge_add_workspace_kata_target", OutputSchema: map[string]any{"type": "object"}, Description: "Track a Kata task. daemon_id is Forge's Kata daemon ID (not kata's instance_uid or storage_id) from the workspace context or a listed Kata target; a wrong ID is rejected with an error listing the configured IDs."}, wrapTool(s.addWorkspaceKataTarget))
 	} else {
 		s.mcp.RemoveTools("kenn_forge_add_workspace_kata_target")
 	}

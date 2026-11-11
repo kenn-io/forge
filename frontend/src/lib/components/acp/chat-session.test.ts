@@ -356,6 +356,24 @@ describe("makeChatSession ID upserts", () => {
     expect(states.at(-1)!.connected).toBe(false);
   });
 
+  it("adds requested tool details without letting an older reply replace an update", () => {
+    const first = message("first", "");
+    const tool = message("tool", "first", { role: "tool", detailsOmitted: true });
+    const initial = state([first, tool]);
+    const { session, states, send, commands } = open(initial);
+    expect(session.loadToolDetails("tool")).toBe(true);
+    expect(session.loadToolDetails("tool")).toBe(false);
+    expect(commands()).toEqual([{ type: "toolDetails", id: "tool", beforeId: "" }]);
+    const full = { ...tool, detailsOmitted: undefined, rawOutput: "Full output" };
+    send({ toolDetails: full });
+    expect(states.at(-1)!.messages).toEqual([first, full]);
+
+    const newer = { ...full, version: 2, rawOutput: "Newer output" };
+    send({ updates: { ...initial, messages: [newer], messageCursor: 2, more: false } });
+    send({ toolDetails: full });
+    expect(states.at(-1)!.messages).toEqual([first, newer]);
+  });
+
   it("finishes a multi-page history request before publishing a final exit", () => {
     const output = message("output", "middle");
     const initial = state([output], { messageOffset: 2, messageCount: 3 });

@@ -1875,6 +1875,78 @@ describe("ACPWorkspace terminal output", () => {
   });
 });
 
+describe("ACPWorkspace tool details on request", () => {
+  const summary = { role: "tool", text: "Run tests", toolCallId: "t1", status: "completed", detailsOmitted: true };
+  const details = {
+    id: "entry-1",
+    previousId: "entry-0",
+    version: 1,
+    role: "tool",
+    text: "Run tests",
+    toolCallId: "t1",
+    status: "completed",
+    toolContent: [{ type: "terminal", terminalId: "term-1", output: "ok 12 passed", exitCode: 0 }],
+  };
+  const detailRequests = () =>
+    (sentCommands() as Array<{ type: string }>).filter((command) => command.type === "toolDetails");
+
+  it("asks for a tool call's details when it is expanded and shows them", async () => {
+    await openChat({ messages: [{ role: "user", text: "Check" }, summary, { role: "assistant", text: "Done" }] });
+    await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
+    expect(detailRequests()).toEqual([]);
+
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await tick();
+    expect(detailRequests()).toEqual([{ type: "toolDetails", id: "entry-1", beforeId: "entry-2" }]);
+    expect(screen.getByText("Loading details…")).toBeDefined();
+
+    socket.options!.onMessage(JSON.stringify({ toolDetails: details }));
+    await tick();
+    expect(screen.queryByText("Loading details…")).toBeNull();
+    expect(screen.getByLabelText("Command output").textContent).toBe("ok 12 passed");
+
+    // Loaded details stay; expanding again does not ask again.
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    expect(detailRequests()).toHaveLength(1);
+  });
+
+  it("asks again after a failure only when the tool call is expanded again", async () => {
+    await openChat({ messages: [{ role: "user", text: "Check" }, summary] });
+    await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await tick();
+    expect(detailRequests()).toEqual([{ type: "toolDetails", id: "entry-1", beforeId: "" }]);
+
+    socket.options!.onMessage(
+      JSON.stringify({ commandError: "The chat changed. Try again.", command: "toolDetails", id: "entry-1" }),
+    );
+    await tick();
+    expect(screen.getByRole("alert").textContent).toContain("The chat changed. Try again.");
+    expect(detailRequests()).toHaveLength(1);
+
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await tick();
+    expect(detailRequests()).toHaveLength(2);
+  });
+
+  it("asks again for an expanded tool call after reconnecting", async () => {
+    await openChat({ messages: [{ role: "user", text: "Check" }, summary] });
+    await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await tick();
+    socket.options!.onMessage(JSON.stringify({ toolDetails: details }));
+    await tick();
+
+    socket.options!.onOpen?.();
+    await push({ messages: [{ role: "user", text: "Check" }, summary] });
+    await tick();
+    expect(detailRequests()).toHaveLength(2);
+    expect(screen.getByText("Loading details…")).toBeDefined();
+  });
+});
+
 describe("ACPWorkspace transcript paging", () => {
   const user = (index: number) => ({
     id: `entry-${index}`,

@@ -67,6 +67,9 @@ export const ChatMessageSchema = Schema.Struct({
   // Pretty-printed JSON of the tool call's raw input and output.
   rawInput: optionalText,
   rawOutput: optionalText,
+  // The host left out this tool call's input, output, and non-inline content;
+  // a toolDetails command returns them.
+  detailsOmitted: Schema.optional(Schema.NullOr(Schema.Boolean)),
 });
 export type ChatMessage = typeof ChatMessageSchema.Type;
 // ACP tool calls without a reported status have not started yet.
@@ -181,6 +184,8 @@ export type ChatCommand =
   | { type: "resume" }
   | { type: "dismiss_error" }
   | { type: "history"; beforeId: string; limit: number }
+  // beforeId names the entry after the tool call, or none for the last entry.
+  | { type: "toolDetails"; id: string; beforeId: string }
   | { type: "cancel" }
   | { type: "takeover" }
   | { type: "config"; id: string; value: string }

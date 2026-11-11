@@ -12432,6 +12432,9 @@ components:
           $ref: "#/components/schemas/ACPContent"
         createdAt:
           type: string
+        detailsOmitted:
+          description: The chat socket left out this tool call's input, output, and non-inline content; a toolDetails command returns them.
+          type: boolean
         id:
           type: string
         images:

@@ -49,7 +49,8 @@
       message.locations?.length ||
       message.toolContent?.length ||
       message.rawInput ||
-      message.rawOutput
+      message.rawOutput ||
+      message.detailsOmitted
     )
   }
 

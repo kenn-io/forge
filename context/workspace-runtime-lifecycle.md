@@ -160,7 +160,13 @@ Processes on the execution host:
 - Transcript boundaries and outcomes follow `ACPMessage.Turn`
   (`internal/workspace/localruntime/acp.go`).
 - Connect with a recent window, then send changed entries in byte-bounded batches. History loads
-  only at the reader's request; updates never invalidate loaded history.
+  only at the reader's request; updates never invalidate loaded history. One request keeps paging
+  until the reader has a screenful of new older rows, not one byte-bounded page.
+- The chat socket leaves tool call details (raw input and output, diffs, terminal and text
+  results) out of the opening window and history pages, keeping only inline media and apps; a
+  browser asks for one tool call's details when it is expanded. Live updates keep details, and the
+  HTTP transcript page stays complete (maintainer decision;
+  `internal/server/workspaceapi/acp_tool_details.go`).
 - Encode elicitation property maps deterministically; the form uses wire property order, so
   unchanged metadata must not reshuffle fields.
 - Batches bound bytes and count but retain every message; one oversized message goes intact so

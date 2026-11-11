@@ -216,7 +216,15 @@
           error = message;
           if (failed?.command === "config") settingPending = false;
         },
-        onConnection: (value) => { connected = value; if (value) resyncPending = true; onConnectionChange?.(value); },
+        onConnection: (value) => {
+          connected = value;
+          if (value) {
+            resyncPending = true;
+            // A new socket starts without details; open tool calls ask again.
+            detailsRequested.clear();
+          }
+          onConnectionChange?.(value);
+        },
         onStopped: () => {
           stopped = true;
           outbox = outbox.map((prompt) => prompt.refused ? prompt : { ...prompt, refused: "The chat connection stopped before the agent got this." });
@@ -274,6 +282,21 @@
       });
     });
   }
+  // Tool details stay on the host until a person expands the tool call. Ask
+  // once per expansion and version; collapsing and expanding again retries a
+  // failure.
+  const detailsRequested = new Map<string, number>();
+  function toggleTool(id: string) {
+    expandedTools[id] = !expandedTools[id];
+    if (!expandedTools[id]) detailsRequested.delete(id);
+  }
+  $effect(() => {
+    if (!connected || !chatState) return;
+    for (const message of chatState.messages) {
+      if (!message.detailsOmitted || !expandedTools[message.id] || detailsRequested.get(message.id) === message.version) continue;
+      if (connection?.loadToolDetails(message.id)) detailsRequested.set(message.id, message.version);
+    }
+  });
   // A page of messages can collapse into a single activity row, so keep
   // paging until the reader gets this many more rows or the transcript start.
   const EARLIER_ROWS = 30;
@@ -527,7 +550,7 @@
       {/if}
       {#if chatState && rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
       {#each rows as row (row.key)}
-        {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} anchorId={row.key} openEntries={activityOpen} expanded={expandedTools} {expandedThoughts} {rawOpen} {contentScroll} onToggleThought={(id) => { expandedThoughts[id] = !expandedThoughts[id]; }} onRawToggle={setRawOpen} onToggleGroup={setActivityOpen} onToggleTool={(id) => { expandedTools[id] = !expandedTools[id]; }} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
+        {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} anchorId={row.key} openEntries={activityOpen} expanded={expandedTools} {expandedThoughts} {rawOpen} {contentScroll} onToggleThought={(id) => { expandedThoughts[id] = !expandedThoughts[id]; }} onRawToggle={setRawOpen} onToggleGroup={setActivityOpen} onToggleTool={toggleTool} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
         {:else}<ChatMessageView message={row.message} thoughtOpen={!!expandedThoughts[row.message.id]} onThoughtToggle={() => { expandedThoughts[row.message.id] = !expandedThoughts[row.message.id]; }} streaming={!!chatState?.busy && row.id === lastIndex} />{/if}
       {/each}
       <!-- Prompts the agent has not received yet follow the transcript. -->

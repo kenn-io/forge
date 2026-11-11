@@ -196,6 +196,13 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await expect(screenshot).toBeVisible();
     await expect.poll(() => screenshot.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(640);
     await page.screenshot({ path: testInfo.outputPath("acp-view-image-reloaded.png") });
+    // A reloaded chat leaves tool details on the host until the tool call is expanded.
+    const imageTools = chat.locator(".tool-group").filter({ has: page.getByRole("img", { name: "Panel screenshot" }) });
+    await imageTools.locator(".chip").click();
+    await imageTools.getByRole("button", { name: /View Image/ }).click();
+    await expect(imageTools.getByText("Raw input")).toBeVisible();
+    await expect(imageTools.getByText("Loading details…")).toHaveCount(0);
+    await expect(screenshot).toBeVisible();
     await chat.getByRole("textbox", { name: "Message agent" }).fill("Inspect the workspace");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     await expect(

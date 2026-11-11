@@ -99,7 +99,8 @@ back to TOML.
   0-720; zero keeps runtimes running (`internal/config/config.go::Workspaces`).
 - `roborev.init_managed_clones` is a hot-reloaded, false-by-default setup policy; only the
   effective Roborev endpoint and HTTP credential stay bound together until restart
-  (`internal/server/handler_wiring.go::Server.wireHandlers`).
+  (`internal/server/handler_wiring.go::Server.wireHandlers`). Managed-clone setup uses the
+  native CLI's global authentication independently of Forge's HTTP key.
 - Quick-action agent keys are validated at use time, not config load, so a missing binary never
   rejects the file; `acp_options` need only non-blank IDs and values, since only the running agent
   knows what it offers (`internal/config/config.go::Config.validateQuickActions`).

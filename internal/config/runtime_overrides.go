@@ -124,10 +124,25 @@ func (c *Config) applyRuntimeOverrides(meta toml.MetaData, flags Overrides) erro
 		if _, err := hex.DecodeString(c.roborevAuthKey); err != nil || len(c.roborevAuthKey) != 64 || strings.ToLower(c.roborevAuthKey) != c.roborevAuthKey {
 			return fmt.Errorf("KENN_FORGE_ROBOREV_AUTH_KEY must contain exactly 64 lowercase hexadecimal characters")
 		}
-		endpoint, err := url.Parse(c.Roborev.Endpoint)
-		if err != nil || endpoint.Hostname() == "" || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.User != nil {
-			return fmt.Errorf("KENN_FORGE_ROBOREV_AUTH_KEY requires an explicit absolute HTTP or HTTPS Roborev endpoint without userinfo")
+	}
+	return c.validateRuntimeRoborevEndpoint()
+}
+
+func (c *Config) validateRuntimeRoborevEndpoint() error {
+	fromEnv := c.runtime.sources["roborev.endpoint"] == "env"
+	keyed := c.roborevAuthKey != ""
+	if !fromEnv && !keyed {
+		return nil
+	}
+	endpoint, err := url.Parse(c.Roborev.Endpoint)
+	if err != nil || endpoint.Hostname() == "" || (endpoint.Scheme != "http" && endpoint.Scheme != "https") {
+		if fromEnv {
+			return fmt.Errorf("KENN_FORGE_ROBOREV_ENDPOINT must be an absolute HTTP or HTTPS URL")
 		}
+		return fmt.Errorf("KENN_FORGE_ROBOREV_AUTH_KEY requires an explicit absolute HTTP or HTTPS Roborev endpoint")
+	}
+	if keyed && (endpoint.User != nil || endpoint.ForceQuery || endpoint.RawQuery != "" || strings.Contains(c.Roborev.Endpoint, "#")) {
+		return fmt.Errorf("a Roborev endpoint used with KENN_FORGE_ROBOREV_AUTH_KEY must not contain userinfo, a query, or a fragment")
 	}
 	return nil
 }
@@ -169,10 +184,6 @@ func (c *Config) applyRuntimeEnv(name, value string) error {
 			c.TrustReverseProxy = enabled
 		}
 	case "KENN_FORGE_ROBOREV_ENDPOINT":
-		endpoint, err := url.Parse(value)
-		if err != nil || endpoint.Hostname() == "" || (endpoint.Scheme != "http" && endpoint.Scheme != "https") {
-			return fmt.Errorf("%s must be an absolute HTTP or HTTPS URL", name)
-		}
 		c.Roborev.Endpoint = value
 	}
 	return nil

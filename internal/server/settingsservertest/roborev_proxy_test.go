@@ -71,6 +71,12 @@ func TestRoborevHealthProbeUnavailable(t *testing.T) {
 }
 
 func TestRoborevAuthenticatedRequests(t *testing.T) {
+	tailscaleHeaders := map[string]string{
+		"Tailscale-User-Login":       "user@example.com",
+		"Tailscale-User-Name":        "Example User",
+		"Tailscale-User-Profile-Pic": "https://example.com/profile.png",
+		"Tailscale-App-Capabilities": "{}",
+	}
 	for _, key := range []string{"", strings.Repeat("ab", 32)} {
 		t.Run(key, func(t *testing.T) {
 			assert := assert.New(t)
@@ -84,33 +90,53 @@ func TestRoborevAuthenticatedRequests(t *testing.T) {
 				}
 				assert.Equal(want, r.Header.Get("Authorization"))
 				assert.Empty(r.Header.Get("Cookie"))
+				for name := range tailscaleHeaders {
+					assert.Empty(r.Header.Get(name), name)
+				}
 				switch r.URL.Path {
-				case "/api/status":
+				case "/reviews/api/status":
 					_, _ = io.WriteString(w, `{"version":"1.2.3"}`)
-				case "/api/repos":
+				case "/reviews/api/repos":
 					_, _ = io.WriteString(w, `{"repos":[],"total_count":0}`)
-				default:
+				case "/reviews/api/job/rerun":
+					assert.Equal(http.MethodPost, r.Method)
+					var body struct {
+						JobID int64 `json:"job_id"`
+					}
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						http.Error(w, "invalid rerun payload", http.StatusBadRequest)
+						return
+					}
+					assert.Equal(int64(1), body.JobID)
+				case "/reviews/api/stream/events", "/reviews/api/job/output", "/reviews/api/sync/now":
 					w.Header().Set("Content-Type", "application/x-ndjson")
 					_, _ = io.WriteString(w, "{\"ok\":true}\n")
+				default:
+					http.NotFound(w, r)
 				}
 			}))
 			defer daemon.Close()
-			srv := servertest.SetupTestServerWithRoborev(t, daemon.URL)
-			for _, tc := range []struct{ method, path string }{
-				{http.MethodGet, "/api/v1/roborev/status"},
-				{http.MethodGet, "/api/v1/roborev/configured-repositories"},
-				{http.MethodPost, "/api/roborev/api/jobs/1/retry"},
-				{http.MethodGet, "/api/roborev/api/stream/events"},
-				{http.MethodGet, "/api/roborev/api/job/output?job_id=1&stream=1"},
-				{http.MethodPost, "/api/roborev/api/sync/now?stream=1"},
+			srv := servertest.SetupTestServerWithRoborev(t, daemon.URL+"/reviews")
+			for _, tc := range []struct{ method, path, body string }{
+				{method: http.MethodGet, path: "/api/v1/roborev/status"},
+				{method: http.MethodGet, path: "/api/v1/roborev/configured-repositories"},
+				{method: http.MethodPost, path: "/api/roborev/api/job/rerun", body: `{"job_id":1}`},
+				{method: http.MethodGet, path: "/api/roborev/api/stream/events"},
+				{method: http.MethodGet, path: "/api/roborev/api/job/output?job_id=1&stream=1"},
+				{method: http.MethodPost, path: "/api/roborev/api/sync/now?stream=1"},
 			} {
-				req := httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, nil)
+				req := httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, strings.NewReader(tc.body))
 				req.Host = "127.0.0.1:8091"
 				req.RemoteAddr = "127.0.0.1:12345"
 				req.Header.Set("Authorization", "Bearer forge-caller-secret")
 				req.Header.Set("Cookie", "forge_session=caller-cookie")
 				req.Header.Set("Accept", "application/json")
-				if strings.HasPrefix(tc.path, "/api/roborev/") {
+				for name, value := range tailscaleHeaders {
+					req.Header.Set(name, value)
+				}
+				if tc.body != "" {
+					req.Header.Set("Content-Type", "application/json")
+				} else if strings.HasPrefix(tc.path, "/api/roborev/") {
 					req.Header.Set("Accept", "application/x-ndjson")
 				}
 				rr := httptest.NewRecorder()

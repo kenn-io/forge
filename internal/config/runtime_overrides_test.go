@@ -152,9 +152,13 @@ func TestRoborevAuthKeyValidation(t *testing.T) {
 	for _, tc := range []struct {
 		name, key, endpoint string
 		invalid             bool
+		fromEnv             bool
 	}{
 		{name: "disabled"},
-		{name: "valid", key: strings.Repeat("ab", 32), endpoint: "https://review.example"},
+		{name: "base path", key: strings.Repeat("ab", 32), endpoint: "https://review.example/base"},
+		{name: "query", key: strings.Repeat("ab", 32), endpoint: "https://review.example/base?tenant=one", invalid: true},
+		{name: "fragment from env", key: strings.Repeat("ab", 32), endpoint: "https://review.example/base#section", invalid: true, fromEnv: true},
+		{name: "keyless query and fragment from env", endpoint: "https://review.example/base?tenant=one#section", fromEnv: true},
 		{name: "default endpoint", key: strings.Repeat("ab", 32), invalid: true},
 		{name: "relative endpoint", key: strings.Repeat("ab", 32), endpoint: "/review", invalid: true},
 		{name: "userinfo", key: strings.Repeat("ab", 32), endpoint: "https://user:password@review.example", invalid: true},
@@ -165,6 +169,9 @@ func TestRoborevAuthKeyValidation(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("KENN_FORGE_ROBOREV_AUTH_KEY", tc.key)
+			if tc.fromEnv {
+				t.Setenv("KENN_FORGE_ROBOREV_ENDPOINT", tc.endpoint)
+			}
 			cfg, err := Load(runtimeConfigFile(t, fmt.Sprintf("[roborev]\nendpoint=%q\n", tc.endpoint)))
 			if tc.invalid {
 				require.Error(t, err)
@@ -173,6 +180,7 @@ func TestRoborevAuthKeyValidation(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tc.key, cfg.RoborevAuthKey())
+			assert.Equal(t, tc.endpoint, cfg.Roborev.Endpoint)
 		})
 	}
 }

@@ -29,7 +29,12 @@ func roborevProxy(target string, transport http.RoundTripper) http.Handler {
 		Transport:     transport,
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(targetURL)
+			r.Out.Header.Del("Authorization")
 			r.Out.Header.Del("Cookie")
+			r.Out.Header.Del("Tailscale-User-Login")
+			r.Out.Header.Del("Tailscale-User-Name")
+			r.Out.Header.Del("Tailscale-User-Profile-Pic")
+			r.Out.Header.Del("Tailscale-App-Capabilities")
 		},
 		ErrorHandler: func(
 			w http.ResponseWriter, _ *http.Request, _ error,

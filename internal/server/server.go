@@ -236,8 +236,6 @@ type Server struct {
 	providerDescriptorBeforeSnapshotForTest func()
 	markdownImages                          *providerapi.MarkdownImageCache
 	roborevRepositories                     *roborevapi.RoborevRepositoryProbe
-	roborevEndpoint                         string
-	roborevClient                           *http.Client
 
 	// toolingStatus caches the assembled CLI tooling probe;
 	// toolingRun overrides the probe subprocess runner in tests.
@@ -653,8 +651,8 @@ func newServer(
 	}
 	s.roborevRepositories = roborevapi.NewRoborevRepositoryProbe(
 		s.bgCtx,
-		s.roborevEndpoint,
-		s.roborevClient,
+		s.roborevapi.Endpoint,
+		s.roborevapi.Client,
 		streamapi.WorkspaceConfigSnapshot(cfg, nil).KnownPlatformHosts,
 	)
 	if syncer != nil {
@@ -854,7 +852,7 @@ func newServer(
 		s.workspaces.SetIssueBranchSlugEnabled(
 			cfg.IssueWorkspaceBranchSlugEnabled(),
 		)
-		s.workspaces.SetRoborevEndpoint(s.roborevEndpoint, s.roborevClient)
+		s.workspaces.SetRoborevEndpoint(s.roborevapi.Endpoint, s.roborevapi.Client)
 		s.workspaces.SetRoborevRepositoryInvalidator(s.roborevRepositories.Invalidate)
 		s.workspaces.SetWorktreeBasePathResolver(s.settingsapi.WorktreeBasePathForRepo)
 		ptyOwnerDir := options.PtyOwnerDir

@@ -33,13 +33,13 @@ func TestRoborevBindingSurvivesConfigReload(t *testing.T) {
 	defer daemon.Close()
 	srv, _, _, _ := setupTestServerWithConfigContent(t,
 		validReloadConfig+fmt.Sprintf("\n[roborev]\nendpoint=%q\n", daemon.URL), &serverfake.MockGH{})
-	client := srv.roborevClient
+	client := srv.roborevapi.Client
 	t.Setenv("KENN_FORGE_ROBOREV_AUTH_KEY", strings.Repeat("cd", 32))
 	srv.cfgPath = filepath.Join(t.TempDir(), "reload.toml")
 	writeConfigToml(t, srv.cfgPath, validReloadConfig+"\n[roborev]\nendpoint=\"http://127.0.0.1:1\"\n")
 	event := srv.configreload.ApplyConfigChange(t.Context())
 	require.True(t, event.Valid, event.Error)
-	assert.Same(client, srv.roborevClient)
+	assert.Same(client, srv.roborevapi.Client)
 	for _, path := range []string{
 		"/api/v1/roborev/status", "/api/v1/roborev/configured-repositories", "/api/roborev/api/jobs",
 	} {

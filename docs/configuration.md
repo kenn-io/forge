@@ -444,10 +444,15 @@ enabled, the endpoint must use loopback HTTP (`127.0.0.1`, `localhost`, or
 For a daemon using native shared-key authentication, set
 `KENN_FORGE_ROBOREV_AUTH_KEY` in Forge's service environment to its exact
 64-character lowercase hexadecimal key. Also explicitly set `[roborev].endpoint`
-or `KENN_FORGE_ROBOREV_ENDPOINT` to an absolute HTTP(S) URL without userinfo.
-Use HTTPS for remote bearer transport. An unset or empty key keeps authentication
-disabled. The key is environment-only; it is excluded from saved configuration,
-settings responses, workspace session environments, and generated context.
+or `KENN_FORGE_ROBOREV_ENDPOINT` to an absolute HTTP(S) URL without userinfo, a
+query, or a fragment. A base path is supported. Forge refuses redirects on
+authenticated requests and connects directly to cleartext HTTP endpoints,
+bypassing forward proxies. Use HTTPS for remote bearer transport. An incorrect
+key makes the Reviews status show the daemon as unavailable.
+
+An unset or empty key keeps authentication disabled. The key is environment-only
+and stays out of saved configuration, settings responses, workspace session
+environments, and generated context.
 
 The endpoint and key are bound at startup. Restart Forge through its supervisor
 after changing either. To rotate, stop Roborev using its old credentials, update

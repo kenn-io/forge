@@ -135,11 +135,10 @@ func (s *Server) wireHandlers() {
 	if roborevConfig == nil {
 		roborevConfig = &config.Config{}
 	}
-	s.roborevEndpoint = roborevConfig.RoborevEndpoint()
-	s.roborevClient = roborevclient.NewHTTPClient(s.roborevEndpoint, roborevConfig.RoborevAuthKey())
+	roborevEndpoint := roborevConfig.RoborevEndpoint()
 	s.roborevapi = &roborevapi.Handlers{
-		Endpoint:            s.roborevEndpoint,
-		Client:              s.roborevClient,
+		Endpoint:            roborevEndpoint,
+		Client:              roborevclient.NewHTTPClient(roborevEndpoint, roborevConfig.RoborevAuthKey()),
 		RoborevRepositories: &s.roborevRepositories,
 	}
 	s.routepolicy = &routepolicy.Handlers{

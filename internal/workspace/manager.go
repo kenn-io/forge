@@ -6048,7 +6048,11 @@ func workspaceGitCommand(
 	// kit's automation defaults: no inherited GIT_* hook state, no global or
 	// system config, and no terminal prompts. Callers remain responsible for
 	// wrapping commands in procutil when they need the shared capacity guard.
-	return gitcmd.New().Command(ctx, dir, args...)
+	runner := gitcmd.New()
+	runner.Env = slices.DeleteFunc(runner.Env, func(entry string) bool {
+		return strings.HasPrefix(entry, "KENN_FORGE_ROBOREV_AUTH_KEY=")
+	})
+	return runner.Command(ctx, dir, args...)
 }
 
 func (m *Manager) nextAvailableBranchName(ctx context.Context, dir, branch string) (string, error) {

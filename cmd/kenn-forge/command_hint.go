@@ -1,7 +1,6 @@
 package main
 
 import (
-	shellquote "github.com/kballard/go-shellquote"
 	"github.com/spf13/cobra"
 )
 
@@ -11,5 +10,5 @@ func commandHint(cmd *cobra.Command, args []string, flags ...string) string {
 			args = append(args, "--"+name, flag.Value.String())
 		}
 	}
-	return shellquote.Join(args...)
+	return quoteCommand(args)
 }

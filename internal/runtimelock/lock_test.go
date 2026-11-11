@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -15,18 +16,20 @@ func TestAcquireWaitsForLockOrContext(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = holder.Release() })
 
-	// A caller's deadline interrupts the wait while the lock remains held.
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
-	defer cancel()
-	_, err = Acquire(ctx, dir)
-	require.ErrorIs(t, err, context.DeadlineExceeded)
+	synctest.Test(t, func(t *testing.T) {
+		// A caller's deadline interrupts the wait while the lock remains held.
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+		defer cancel()
+		_, err = Acquire(ctx, dir)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
 
-	timer := time.AfterFunc(20*time.Millisecond, func() { _ = holder.Release() })
-	t.Cleanup(func() { timer.Stop() })
+		timer := time.AfterFunc(20*time.Millisecond, func() { _ = holder.Release() })
+		defer timer.Stop()
 
-	h, err := Acquire(t.Context(), dir)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = h.Release() })
+		h, err := Acquire(t.Context(), dir)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = h.Release() })
+	})
 }
 
 func TestAcquireSucceedsOnEmptyDataDir(t *testing.T) {

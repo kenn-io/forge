@@ -2599,6 +2599,8 @@ type webURLProvider struct {
 	err  error
 }
 
+var _ platform.RepositoryReader = (*webURLProvider)(nil)
+
 func (p *webURLProvider) GetRepository(_ context.Context, ref platform.RepoRef) (platform.Repository, error) {
 	p.seen = ref
 	if p.err != nil {
@@ -2612,7 +2614,8 @@ func TestRepositoryWebURLUsesStableIdentity(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "git.example.test:3000", Owner: "team", Name: "service", RepoPath: "team/service", Key: platform.RepositoryIDKey(5150), WebURL: "http://git.example.test:3000/prefix/team/service"}
-	provider := &webURLProvider{ApiTestGitLabProvider: serverfake.ApiTestGitLabProvider{Ref: ref}}
+	provider := &webURLProvider{}
+	provider.Ref = ref
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
 	_, err = reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))

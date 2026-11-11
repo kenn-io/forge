@@ -754,11 +754,11 @@
           }}
         />
         {#if reposError}
-          <div class="field-action">
+          <div class="field-hint">
             <Button size="sm" onclick={() => { if (activeSession) loadRepositories(activeSession); }}>Retry</Button>
           </div>
         {:else if !reposLoading && repos.length === 0}
-          <div class="field-action">
+          <div class="field-hint">
             <Button size="sm" onclick={() => { onClose(); navigate("/settings"); }}>Open Settings</Button>
           </div>
         {/if}
@@ -944,13 +944,6 @@
   .repo-field {
     --typeahead-min-width: 0;
     --typeahead-max-width: 100%;
-  }
-
-  /* Keep recovery actions compact like the inline Retry pills elsewhere,
-     instead of stretching to the picker's width. */
-  .field-action {
-    display: flex;
-    align-items: center;
   }
 
   .field-label {

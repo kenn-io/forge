@@ -1256,19 +1256,6 @@ describe("NewWorkspaceDialog", () => {
     );
   });
 
-  it("shows loading while refreshing an empty repository cache", async () => {
-    mockGet.mockResolvedValue({ data: [] });
-    const { rerender } = await renderDialog();
-    await screen.findByRole("button", { name: "Open Settings" });
-    await rerender({ open: false });
-    mockGet.mockImplementation((path: string) =>
-      path === "/repos" ? new Promise(() => {}) : Promise.resolve({ data: { hosts: [] } }),
-    );
-    await rerender({ open: true });
-    await waitFor(() => expect(repoPicker().textContent).toContain("Loading repositories"));
-    expect(screen.queryByRole("button", { name: "Open Settings" })).toBeNull();
-  });
-
   it("submits the cached repository ID while catalog refresh is pending", async () => {
     const { rerender } = await renderDialog();
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
@@ -1330,39 +1317,42 @@ describe("NewWorkspaceDialog", () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it("cannot submit after a repository rejection", async () => {
-    mockGet.mockRejectedValue(new Error("network down"));
-    await renderDialog();
-
-    await waitFor(() => expect(repoPicker().textContent).toContain("Could not load repositories"), { timeout: 5000 });
-    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
   it("opens Settings when no repository is tracked", async () => {
     mockGet.mockResolvedValue({ data: [] });
     const onClose = vi.fn();
-    await renderDialog({ onClose });
+    const { rerender } = await renderDialog({ onClose });
 
     await waitFor(() => expect(repoPicker().textContent).toContain("No tracked repositories yet"));
     expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
     await fireEvent.click(await screen.findByRole("button", { name: "Open Settings" }));
     expect(onClose).toHaveBeenCalledOnce();
     expect(mockNavigate).toHaveBeenCalledWith("/settings");
+    await rerender({ open: false });
+    mockGet.mockImplementation((path: string) =>
+      path === "/repos" ? new Promise(() => {}) : Promise.resolve({ data: { hosts: [] } }),
+    );
+    await rerender({ open: true });
+    await waitFor(() => expect(repoPicker().textContent).toContain("Loading repositories"));
+    expect(screen.queryByRole("button", { name: "Open Settings" })).toBeNull();
   });
 
-  it("retries a failed repository read without clearing the branch", async () => {
-    mockGet.mockResolvedValue({ error: { detail: "repositories unavailable" } });
-    await renderDialog();
-    const retry = await screen.findByRole("button", { name: "Retry" });
-    expect(repoPicker().textContent).toContain("Could not load repositories");
-    expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.queryByRole("button", { name: "Open Settings" })).toBeNull();
-    await fireEvent.input(screen.getByRole("textbox", { name: "Branch name" }), { target: { value: "my-branch" } });
-    mockGet.mockResolvedValue({ data: [repoFixture("acme", "widget", 1001)] });
-    await fireEvent.click(retry);
-    await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
-    expect((screen.getByRole("textbox", { name: "Branch name" }) as HTMLInputElement).value).toBe("my-branch");
-  });
+  it.each(["problem", "rejection"])(
+    "retries a failed repository read without clearing the branch: %s",
+    async (failure) => {
+      if (failure === "problem") mockGet.mockResolvedValue({ error: { detail: "repositories unavailable" } });
+      else mockGet.mockRejectedValue(new Error("network down"));
+      await renderDialog();
+      const retry = await screen.findByRole("button", { name: "Retry" }, { timeout: 5000 });
+      expect(repoPicker().textContent).toContain("Could not load repositories");
+      expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.queryByRole("button", { name: "Open Settings" })).toBeNull();
+      await fireEvent.input(screen.getByRole("textbox", { name: "Branch name" }), { target: { value: "my-branch" } });
+      mockGet.mockResolvedValue({ data: [repoFixture("acme", "widget", 1001)] });
+      await fireEvent.click(retry);
+      await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+      expect((screen.getByRole("textbox", { name: "Branch name" }) as HTMLInputElement).value).toBe("my-branch");
+    },
+  );
 
   it("recovers a repository read after a transient transport failure", async () => {
     mockGet.mockImplementation((path: string) => {

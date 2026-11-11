@@ -16,7 +16,7 @@ export function prSizeSummary(
   const signed = delta < 0 ? `−${Math.abs(delta)}` : `+${delta}`;
   const label = past
     ? `PR size: ${latest} lines · past revision`
-    : `PR size: ${latest} lines · ${signed} since Forge first recorded it`;
+    : `PR size: ${latest} lines · ${signed} since the earliest revision shown`;
   const max = Math.max(1, ...totals);
   let tone = "neutral";
   if (!past && first !== latest) {

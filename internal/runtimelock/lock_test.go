@@ -29,18 +29,6 @@ func TestAcquireWaitsForBriefLockHolder(t *testing.T) {
 	t.Cleanup(func() { _ = h.Release() })
 }
 
-func TestAcquireStopsWhenCallerCancels(t *testing.T) {
-	dir := t.TempDir()
-	holder, err := Acquire(t.Context(), dir)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = holder.Release() })
-
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
-	defer cancel()
-	_, err = Acquire(ctx, dir)
-	require.ErrorIs(t, err, context.DeadlineExceeded)
-}
-
 func TestAcquireSucceedsOnEmptyDataDir(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()

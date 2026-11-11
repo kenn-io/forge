@@ -32,6 +32,7 @@ type Handle struct {
 //
 // On a collision with another running daemon, Acquire returns a
 // *CollisionError describing the holder; use errors.As to detect it.
+// It waits up to 250 ms for a briefly held lock, or until ctx ends.
 // Stale metadata left behind by an unclean shutdown is removed under
 // the held lock before Acquire returns; a slog.Warn announces the
 // cleanup so operators see it in the logs.

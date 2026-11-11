@@ -86,17 +86,22 @@ describe("sync store", () => {
     expect(post).toHaveBeenCalledTimes(2);
   });
 
-  it("does not send the trigger when a fresh baseline fails, even with cached status", async () => {
-    const getStatus = vi.fn().mockRejectedValue(new Error("connection lost"));
+  it("sends the trigger when its optional baseline read fails", async () => {
+    const problem = {
+      code: "forbidden",
+      detail: "status denied",
+      status: 403,
+      title: "Forbidden",
+      type: "about:blank",
+    };
+    const getStatus = vi
+      .fn()
+      .mockRejectedValue(new GeneratedProblemResponse(problem, Response.json(problem, { status: 403 })));
     const post = vi.fn().mockResolvedValue(undefined);
-    const onFailure = vi.fn();
-    const { store, execution } = startOnboarding(getStatus, post, onFailure);
-    store.setSyncStatus({ running: false, last_run_at: "2026-08-05T12:00:00Z", last_error: "" });
+    const { execution } = startOnboarding(getStatus, post);
     await Effect.runPromise(execution.await);
-    expect(getStatus).toHaveBeenCalledTimes(3);
-    expect(post).not.toHaveBeenCalled();
-    expect(onFailure).toHaveBeenCalledOnce();
-  }, 10000);
+    expect(post).toHaveBeenCalledOnce();
+  });
 
   it("recovers a temporary structured baseline failure", async () => {
     const problem = {
@@ -210,80 +215,18 @@ describe("sync store", () => {
     },
   );
 
-  it("stops when transient status reads cannot confirm whether the trigger started", async () => {
-    const idle = { running: false, last_run_at: "", last_error: "" };
-    const getStatus = vi
-      .fn()
-      .mockResolvedValueOnce(idle)
-      .mockRejectedValueOnce(new Error("connection lost"))
-      .mockRejectedValueOnce(new Error("connection lost"))
-      .mockRejectedValueOnce(new Error("connection lost"))
-      .mockResolvedValue(idle);
-    const post = vi.fn().mockRejectedValueOnce(new Error("connection lost")).mockResolvedValue(undefined);
-    const { store, execution } = startOnboarding(getStatus, post);
-    await Effect.runPromise(execution.await);
-    expect(post).toHaveBeenCalledOnce();
-    expect(store.getSyncState()).toMatchObject({ running: false, last_error: "Could not reach Kenn Forge" });
-  }, 10000);
-
-  it("retries the first sync after a fresh idle status confirms no run started", async () => {
-    const baseline = { running: false, last_run_at: "2026-08-05T12:00:00Z", last_error: "" };
-    const getStatus = vi.fn(async () => baseline);
-    const post = vi.fn().mockRejectedValueOnce(new Error("connection lost")).mockResolvedValue(undefined);
-    const { store, execution } = startOnboarding(getStatus, post);
-    await Effect.runPromise(execution.await);
-    expect(post).toHaveBeenCalledTimes(2);
-    expect(getStatus.mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(store.getSyncState()?.running).toBe(true);
-  });
-
-  it.each([
-    { running: true, last_run_at: "2026-08-05T12:00:00Z", last_error: "" },
-    { running: false, last_run_at: "2026-08-05T12:01:00Z", last_error: "" },
-  ])("does not repeat a first sync when fresh status proves admission: $running", async (admitted) => {
-    const baseline = { running: false, last_run_at: "2026-08-05T12:00:00Z", last_error: "" };
-    const getStatus = vi.fn().mockResolvedValueOnce(baseline).mockResolvedValue(admitted);
-    const post = vi.fn().mockRejectedValue(new Error("response lost"));
-    const { store, execution } = startOnboarding(getStatus, post);
-    await Effect.runPromise(execution.await);
-    expect(post).toHaveBeenCalledOnce();
-    expect(store.getSyncState()).toMatchObject(admitted);
-  });
-
-  it("stops first-sync recovery when status reconciliation fails", async () => {
-    const baseline = { running: false, last_run_at: "", last_error: "" };
-    const problem = {
-      code: "unavailable",
-      detail: "status unavailable",
-      status: 503,
-      title: "Unavailable",
-      type: "about:blank",
-    };
-    const getStatus = vi
-      .fn()
-      .mockResolvedValueOnce(baseline)
-      .mockRejectedValue(new GeneratedProblemResponse(problem, Response.json(problem, { status: 503 })));
-    const post = vi.fn().mockRejectedValue(new Error("response lost"));
-    const onFailure = vi.fn();
-    const { store, execution } = startOnboarding(getStatus, post, onFailure);
-    await Effect.runPromise(execution.await);
-    expect(post).toHaveBeenCalledOnce();
-    expect(onFailure).toHaveBeenCalledOnce();
-    expect(store.getSyncState()).toMatchObject({ running: false, last_error: "status unavailable" });
-  });
-
-  it("does not retry a rejected first sync", async () => {
+  it.each([401, 403, 422])("does not retry a rejected first sync: %s", async (status) => {
     const problem = {
       code: "forbidden",
       detail: "Access denied",
-      status: 403,
+      status,
       title: "Forbidden",
       type: "about:blank",
     };
     const getStatus = vi.fn().mockResolvedValue({ running: false, last_run_at: "", last_error: "" });
     const post = vi
       .fn()
-      .mockRejectedValue(new GeneratedProblemResponse(problem, Response.json(problem, { status: 403 })));
+      .mockRejectedValue(new GeneratedProblemResponse(problem, Response.json(problem, { status })));
     const { store, execution } = startOnboarding(getStatus, post);
     await Effect.runPromise(execution.await);
     expect(post).toHaveBeenCalledOnce();
@@ -309,7 +252,7 @@ describe("sync store", () => {
     const getStatus = vi.fn().mockResolvedValue(idle);
     const post = vi.fn().mockRejectedValue(new Error("connection lost"));
     const { execution } = startOnboarding(getStatus, post);
-    await vi.waitFor(() => expect(getStatus).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
     execution.interrupt();
     await Effect.runPromise(execution.await);
     await vi.advanceTimersByTimeAsync(5000);
@@ -484,6 +427,39 @@ describe("sync store", () => {
 
     accepted.resolve();
     await vi.waitFor(() => expect(statusReads).toBe(2));
+  });
+
+  it("discards an idle refresh started while the trigger is awaiting acceptance", async () => {
+    const baseline = "2026-08-05T12:00:00Z";
+    const stale = Promise.withResolvers<{ running: boolean; last_run_at: string; last_error: string }>();
+    const accepted = Promise.withResolvers<void>();
+    const getStatus = vi
+      .fn()
+      .mockReturnValueOnce(stale.promise)
+      .mockResolvedValue({ running: true, last_run_at: baseline, last_error: "" });
+    const post = vi.fn(() => accepted.promise);
+    const store = createSyncStore(
+      makeGeneratedClient({ SyncService: { getSyncStatus: getStatus, triggerSync: post } }),
+    );
+    store.setSyncStatus({ running: false, last_run_at: baseline, last_error: "" });
+    const completed = vi.fn();
+    store.subscribeSyncComplete(completed);
+    if (runtime === undefined) throw new Error("test runtime was not initialized");
+    store.triggerSync();
+    await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+    const refresh = runtime.runCommand(store.refreshSyncStatusEffect, {
+      operation: "test pending sync refresh",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await vi.waitFor(() => expect(getStatus).toHaveBeenCalledOnce());
+    accepted.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    stale.resolve({ running: false, last_run_at: "2026-08-05T12:01:00Z", last_error: "" });
+    await Effect.runPromise(refresh.await);
+    await vi.waitFor(() => expect(getStatus).toHaveBeenCalledTimes(2));
+    expect(completed).not.toHaveBeenCalled();
+    expect(store.getSyncState()?.running).toBe(true);
   });
 
   it("publishes refreshed rate limits even when a sync status event lands mid-read", async () => {

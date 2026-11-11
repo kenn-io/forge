@@ -3,12 +3,7 @@ import { pollWhileVisible } from "../effect/poll-while-visible.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
 import { ApiProblemError } from "../api/effect-errors.js";
-import {
-  isTransientFailure,
-  isTransientPickerReadFailure,
-  retryIdempotentRead,
-  transientRetrySchedule,
-} from "../api/retry-policy.js";
+import { isTransientPickerReadFailure, retryIdempotentRead, transientRetrySchedule } from "../api/retry-policy.js";
 import type { RateLimitsResponse, SyncStatus } from "../api/types.js";
 import { SyncWorkflow, type SyncReadError } from "./sync-workflow.js";
 
@@ -108,9 +103,9 @@ export function createSyncStore(opts: SyncStoreOptions) {
     adjustPollingSpeed(isRunning);
   }
 
-  function syncStatusRead(isRetryable: (failure: unknown) => boolean = isTransientFailure) {
-    return executeGeneratedApiRequest("GET /sync/status", (client) => client.SyncService.getSyncStatus()).pipe((read) =>
-      retryIdempotentRead(read, isRetryable),
+  function syncStatusRead() {
+    return executeGeneratedApiRequest("GET /sync/status", (client) => client.SyncService.getSyncStatus()).pipe(
+      retryIdempotentRead,
     );
   }
 
@@ -192,15 +187,13 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return Date.parse(next) > Date.parse(previous);
   }
 
-  function triggeredSyncProgram(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>, baseline?: SyncStatus) {
+  function triggeredSyncProgram(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>) {
     const previous = status;
     refreshGeneration += 1;
     let baselineLastRunAt = previous?.last_run_at ?? null;
 
     return Effect.gen(function* () {
-      if (baseline !== undefined) {
-        baselineLastRunAt = baseline.last_run_at ?? "";
-      } else if (previous === null) {
+      if (previous === null) {
         const baseline = yield* Effect.option(syncStatusRead());
         baselineLastRunAt = Option.isSome(baseline) ? (baseline.value.last_run_at ?? null) : null;
       }
@@ -217,6 +210,9 @@ export function createSyncStore(opts: SyncStoreOptions) {
         adjustPollingSpeed(true);
       });
       yield* request;
+      yield* Effect.sync(() => {
+        refreshGeneration += 1;
+      });
       yield* Effect.suspend(refreshSyncStatusProgram);
     }).pipe(
       Effect.tapError((failure) =>
@@ -257,36 +253,12 @@ export function createSyncStore(opts: SyncStoreOptions) {
   }
 
   function triggerOnboardingSyncEffect() {
-    return Effect.gen(function* () {
-      const isRetryable = (failure: unknown) => {
-        if (failure instanceof ApiProblemError && failure.problem.details?.retryable === false) return false;
-        return isTransientPickerReadFailure(failure);
-      };
-      const baseline = yield* syncStatusRead(isRetryable);
-      const request = fullSyncRequest();
-      let needsAcknowledgement = false;
-      const recoverableRequest = request.pipe(
-        Effect.catch((failure) => {
-          if (!isRetryable(failure)) return Effect.fail({ failure, retry: false });
-          if (failure._tag === "ApiProblemError" && failure.problem.code === "serviceUnavailable")
-            needsAcknowledgement = true;
-          return syncStatusRead(isRetryable).pipe(
-            Effect.matchEffect({
-              onFailure: (statusFailure) => Effect.fail({ failure: statusFailure, retry: false }),
-              onSuccess: (next) =>
-                !needsAcknowledgement &&
-                !baseline.running &&
-                (next.running || lastRunAdvanced(baseline.last_run_at ?? "", next.last_run_at ?? ""))
-                  ? Effect.void
-                  : Effect.fail({ failure, retry: true }),
-            }),
-          );
-        }),
-        Effect.retry({ schedule: transientRetrySchedule, while: (error) => error.retry }),
-        Effect.mapError((error) => error.failure),
-      );
-      yield* triggeredSyncProgram(recoverableRequest, baseline);
-    });
+    const isRetryable = (failure: unknown) =>
+      !(failure instanceof ApiProblemError && failure.problem.details?.retryable === false) &&
+      isTransientPickerReadFailure(failure);
+    return triggeredSyncProgram(
+      fullSyncRequest().pipe(Effect.retry({ schedule: transientRetrySchedule, while: isRetryable })),
+    );
   }
 
   function triggerSync(): void {

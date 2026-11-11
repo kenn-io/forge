@@ -38,6 +38,7 @@
   import ItemStateChip from "../components/shared/ItemStateChip.svelte";
   import RepoTypeahead from "../components/RepoTypeahead.svelte";
   import MobileTriageSearchBar from "../components/mobile/MobileTriageSearchBar.svelte";
+  import ListLoadMore from "../components/sidebar/ListLoadMore.svelte";
   import { SelectDropdown } from "@kenn-io/kit-ui";
   import WorkspaceIndicator from "../components/shared/WorkspaceIndicator.svelte";
   import AgentStatusIndicator from "../components/shared/AgentStatusIndicator.svelte";
@@ -333,7 +334,7 @@
     return result;
   });
 
-  const visibleGroups = $derived(groups.slice(0, activityPageLimit));
+  const visibleGroups = $derived(activityPageLimit < 500 ? groups.slice(0, activityPageLimit) : groups);
 
   const authorOptions = $derived.by<TypeaheadOption[]>(() =>
     activity.getActivityAuthors().map((author) => ({
@@ -905,6 +906,10 @@
       >
         {#if activity.isActivityLoading()}Loading more…{/if}
       </div>
+    {:else if activityPageLimit >= 500 && activity.canLoadOlderItems()}
+      <div class="mobile-activity-older">
+        <ListLoadMore loading={activity.isLoadingOlderItems()} onclick={activity.loadOlderItems} label="Load older items" size="md" />
+      </div>
     {/if}
   </div>
   </ScrollBox>
@@ -1354,5 +1359,9 @@
     overflow-anchor: none;
     color: var(--text-muted);
     font-size: var(--font-size-xs);
+  }
+
+  .mobile-activity-older :global(button) {
+    min-height: var(--mobile-hit-target);
   }
 </style>

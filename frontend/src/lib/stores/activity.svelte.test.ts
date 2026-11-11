@@ -202,7 +202,7 @@ afterEach(async () => {
 });
 
 describe("activity subject paging", () => {
-  it("keeps expanded comments if a concurrent reconciliation's thread reload fails", async () => {
+  it.each([true, false])("preserves an in-flight thread when an older page succeeds: %s", async (succeeds) => {
     const repo = {
       provider: "github",
       platform_host: "github.com",
@@ -211,38 +211,25 @@ describe("activity subject paging", () => {
       owner: "acme",
       name: "widgets",
     };
-    const comment = { ...notificationItem("ntf:visible", "read"), item_number: 7, repo } as ActivityItem;
-    let subjectReads = 0;
-    let pageReads = 0;
-    let threadReads = 0;
+    const comment = { ...notificationItem("ntf:pending", "read"), item_number: 7, repo } as ActivityItem;
     let release: ((value: unknown) => void) | undefined;
     const pending = new Promise((resolve) => {
       release = resolve;
     });
-    const emptyPage = { data: { items: [], item_activity: [], capped: false }, error: null };
     const client = {
       GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
         if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-        if (path === "/activity/thread-events") {
-          threadReads++;
-          if (threadReads === 1) return { data: { items: [comment], capped: false }, error: null };
-          return { error: { detail: "thread unavailable" }, response: new Response(null, { status: 422 }) };
-        }
-        if (options?.params?.query?.subject_before) {
-          pageReads++;
-          return pageReads === 1 ? pending : emptyPage;
-        }
-        subjectReads++;
+        if (path === "/activity/thread-events") return pending;
+        if (options?.params?.query?.subject_before)
+          return succeeds
+            ? { data: { items: [], item_activity: [{ ...itemActivity(8), repo }], capped: false }, error: null }
+            : { error: { detail: "page unavailable" }, response: new Response(null, { status: 422 }) };
         return {
           data: {
             items: [],
-            item_activity: [
-              { ...itemActivity(7), repo, event_ledger_revision: subjectReads === 1 ? "before" : "after" },
-            ],
-            item_activity_capped: true,
+            item_activity: [{ ...itemActivity(7), repo }],
             next_subject_cursor: "older",
             capped: false,
-            event_cursor: "snapshot",
           },
           error: null,
         };
@@ -253,18 +240,13 @@ describe("activity subject paging", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
     store.toggleThreadItem("github|github.com|id|1007:pr:7");
-    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id));
+    await vi.waitFor(() =>
+      expect(vi.mocked(client.GET).mock.calls.some(([path]) => path === "/activity/thread-events")).toBe(true),
+    );
     store.loadOlderItems();
-    await vi.waitFor(() => expect(pageReads).toBe(1));
-    if (runtime === undefined) throw new Error("test runtime was not created");
-    await runtime.runCommand(store.reconcileActivityEffect(), {
-      operation: "reconcile activity",
-      safeContext: {},
-      onFailure: () => {},
-    }).exit;
-    await vi.waitFor(() => expect(store.getThreadLoadError()).toBe("thread unavailable"));
-    expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id);
-    release?.(emptyPage);
+    await vi.waitFor(() => expect(store.isLoadingOlderItems()).toBe(false));
+    release?.({ data: { items: [comment], capped: false }, error: null });
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id));
   });
   it("keeps an expanded comment when loading older items and its thread reload fails", async () => {
     const repo = {
@@ -307,10 +289,9 @@ describe("activity subject paging", () => {
     store.toggleThreadItem("github|github.com|id|1007:pr:7");
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id));
     store.loadOlderItems();
-    await vi.waitFor(() => expect(store.getThreadLoadError()).toBe("thread unavailable"));
+    await vi.waitFor(() => expect(store.isLoadingOlderItems()).toBe(false));
     expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id);
-    store.retryFailedThreadLoads();
-    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:replacement"]));
+    expect(threadReads).toBe(1);
   });
   it("preserves the server's incomplete subject count without a continuation cursor", async () => {
     const client = {
@@ -553,6 +534,7 @@ describe("activity subject paging", () => {
       repo_path: "acme/widgets",
     };
     const calls: Array<{ since?: string; search?: string; subject_before?: string }> = [];
+    const refreshCalls: typeof calls = [];
     let refreshed = false;
     const client = {
       GET: vi.fn(
@@ -567,12 +549,14 @@ describe("activity subject paging", () => {
           const query = options?.params?.query ?? {};
           if (query.projection === "events") return { data: { items: [], capped: false }, error: null };
           calls.push(query);
+          if (refreshed) refreshCalls.push(query);
           const number = query.subject_before ? (refreshed ? 3 : 2) : 1;
           return {
             data: {
               items: [],
               capped: false,
               item_activity: [{ ...itemActivity(number), repo }],
+              workspace_activity: [{ ...workspaceActivity(number), repo }],
               item_activity_capped: !query.subject_before,
               next_subject_cursor: query.subject_before ? "" : "page-2",
             },
@@ -588,6 +572,8 @@ describe("activity subject paging", () => {
     await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
     store.loadOlderItems();
     await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 2]));
+    expect(store.getWorkspaceActivity().map((subject) => subject.item_number)).toEqual([1, 2]);
+    expect(calls).toHaveLength(2);
     refreshed = true;
     if (runtime === undefined) throw new Error("test runtime was not created");
     await runtime.runCommand(store.reconcileActivityEffect(), {
@@ -596,10 +582,9 @@ describe("activity subject paging", () => {
       onFailure: () => {},
     }).exit;
     expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 3]);
+    expect(store.getWorkspaceActivity().map((subject) => subject.item_number)).toEqual([1, 3]);
     expect(calls.filter((query) => query.subject_before === "page-2")).toHaveLength(2);
-    for (let index = 0; index < calls.length; index++) {
-      if (calls[index]?.subject_before) expect(calls[index]?.since).toBe(calls[index - 1]?.since);
-    }
+    expect(refreshCalls.find((query) => query.subject_before)?.since).toBe(refreshCalls[0]?.since);
     expect(calls.every((query) => query.search === "cache")).toBe(true);
   });
 });

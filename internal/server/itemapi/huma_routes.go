@@ -384,6 +384,7 @@ func (s *Handlers) WorkspaceActivityResponse(
 	providerItems []db.ActivityItem,
 	labels map[db.WorkspaceSubjectKey][]db.Label,
 	useWorkspaceActivityForRecency bool,
+	providerSubjects []db.ActivitySubject,
 ) []WorkspaceActivitySubjectResponse {
 	if !useWorkspaceActivityForRecency {
 		return []WorkspaceActivitySubjectResponse{}
@@ -399,6 +400,11 @@ func (s *Handlers) WorkspaceActivityResponse(
 	searchQuery := db.ParseSearchQuery(opts.Search)
 	matchedSubjects := make(map[db.WorkspaceSubjectKey]struct{})
 	if len(searchQuery.Include) > 0 {
+		for _, activity := range providerSubjects {
+			key := activity.Subject.Key
+			key.ItemType = WorkspaceItemTypeFromActivity(key.ItemType)
+			matchedSubjects[key] = struct{}{}
+		}
 		for _, item := range providerItems {
 			itemType := WorkspaceItemTypeFromActivity(item.ItemType)
 			if itemType == "" {

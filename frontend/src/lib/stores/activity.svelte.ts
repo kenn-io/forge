@@ -337,7 +337,59 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function loadOlderItems(): void {
     if (!subjectCursor || isLoadingOlderItems()) return;
     requestedSubjectDepth += 1;
-    loadActivity();
+    const depth = requestedSubjectDepth;
+    const params = buildParams();
+    const scope = activityProjectionScope(params);
+    const epoch = childProjectionInvalidationGeneration;
+    const cursor = subjectCursor;
+    const current = () =>
+      epoch === childProjectionInvalidationGeneration && scope === activityProjectionScope(buildParams());
+    const settle = Effect.sync(() => {
+      if (current() && requestedSubjectDepth === depth) requestedSubjectDepth = displayedSubjectDepth;
+    });
+    storeError = null;
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* ActivityWorkflow;
+        yield* workflow.load(
+          scope,
+          activityRead({ ...params, subject_before: cursor }),
+          (result) =>
+            Effect.sync(() => {
+              if (!current()) return;
+              const existing = new Set(itemActivity.map(stableParentKey));
+              const added = (result.response.item_activity ?? []).filter(
+                (subject) => !existing.has(stableParentKey(subject)),
+              );
+              itemActivity = [...itemActivity, ...added];
+              const workspaces = new Set(workspaceActivity.map(stableParentKey));
+              workspaceActivity = [
+                ...workspaceActivity,
+                ...(result.response.workspace_activity ?? []).filter(
+                  (subject) => !workspaces.has(stableParentKey(subject)),
+                ),
+              ];
+              itemActivityCapped = result.response.item_activity_capped ?? false;
+              subjectCursor = result.response.next_subject_cursor ?? "";
+              displayedSubjectDepth = depth;
+              if (viewMode === "threaded" && activityPageLimit === undefined) {
+                for (const subject of added) {
+                  const key = stableParentKey(subject);
+                  if (key && isThreadItemExpanded(key)) loadThreadEvents(key);
+                }
+              }
+            }),
+          settle,
+        );
+      }).pipe(
+        Effect.tapError((failure) =>
+          Effect.sync(() => {
+            if (current()) storeError = readErrorMessage(failure);
+          }),
+        ),
+      ),
+      { operation: "load older activity items", safeContext: {}, onFailure: () => {} },
+    );
   }
   function canLoadMoreActivity(): boolean {
     return (
@@ -839,6 +891,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const first = yield* activityRead(params);
       const subjects = [...(first.response.item_activity ?? [])];
       const seen = new Set(subjects.map(stableParentKey));
+      const workspaces = [...(first.response.workspace_activity ?? [])];
+      const seenWorkspaces = new Set(workspaces.map(stableParentKey));
       let cursor = first.response.next_subject_cursor ?? "";
       let subjectsCapped = first.response.item_activity_capped ?? false;
       for (let page = 1; page < depth && cursor; page++) {
@@ -849,6 +903,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           seen.add(key);
           subjects.push(subject);
         }
+        for (const workspace of next.response.workspace_activity ?? []) {
+          const key = stableParentKey(workspace);
+          if (seenWorkspaces.has(key)) continue;
+          seenWorkspaces.add(key);
+          workspaces.push(workspace);
+        }
         cursor = next.response.next_subject_cursor ?? "";
         subjectsCapped = next.response.item_activity_capped ?? false;
       }
@@ -858,6 +918,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         response: {
           ...first.response,
           item_activity: subjects,
+          workspace_activity: workspaces,
           next_subject_cursor: cursor,
           item_activity_capped: subjectsCapped,
         },
@@ -895,7 +956,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return projected;
   }
 
-  function stableParentKey(item: ActivityItem | ActivitySubject): string | undefined {
+  function stableParentKey(item: ActivityItem | ActivitySubject | WorkspaceActivitySubject): string | undefined {
     const repo = item.repo;
     if (!repo) return undefined;
     const repositoryKey = repositoryKeyFromWire(repo);
@@ -955,24 +1016,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   function projectActivitySnapshot(result: ActivityReadResponse, params: ActivityParams): void {
-    const isPaging = (result.subjectDepth ?? 1) > displayedSubjectDepth && result.scope === snapshotScope;
-    const retained = isPaging ? items : [];
     snapshotScope = result.scope;
     snapshotFilterScope = result.filterScope;
     displayedRepo = result.repo;
     items = projectOwnedNotificationStates(result);
     projectActivitySubjects(result.response, params, result.subjectDepth ?? 1);
-    if (isPaging) {
-      const subjectKeys = new Set(itemActivity.map(stableParentKey));
-      const receivedIDs = new Set(items.map((item) => item.id));
-      items = [
-        ...items,
-        ...retained.filter((item) => {
-          const key = stableParentKey(item);
-          return key !== undefined && subjectKeys.has(key) && !receivedIDs.has(item.id);
-        }),
-      ];
-    }
     capped = result.response.capped;
     activityEventCursor = result.response.event_cursor ?? "";
     loadedThreadKeys = new Set();
@@ -1005,16 +1053,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       activityEventCursor = eventCursor;
       return;
     }
-    const isPaging = (result.subjectDepth ?? 1) > displayedSubjectDepth && result.scope === snapshotScope;
     snapshotScope = result.scope;
     snapshotFilterScope = result.filterScope;
     displayedRepo = result.repo;
     const reconcileCollapsedThreads = shouldUseCollapsedAuthoritativeProjection();
     const autoLoadExpandedThreadEvents = activityPageLimit === undefined;
     const childProjectionStale =
-      reconcileCollapsedThreads &&
-      !isPaging &&
-      projectedChildInvalidationGeneration !== childProjectionInvalidationGeneration;
+      reconcileCollapsedThreads && projectedChildInvalidationGeneration !== childProjectionInvalidationGeneration;
     const received = projectOwnedNotificationStates(result);
     const receivedIDs = new Set(received.map((item) => item.id));
     const receivedSubjectKeys = new Set(
@@ -1081,14 +1126,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
             key !== undefined &&
             receivedSubjectKeys.has(key) &&
             !receivedIDs.has(item.id) &&
-            (isPaging || !changedThreadKeys.has(key))
+            !changedThreadKeys.has(key)
           );
         });
     items = [...received, ...retainedThreadItems];
     projectActivitySubjects(result.response, params, result.subjectDepth ?? 1);
     capped = result.response.capped;
     activityEventCursor = result.response.event_cursor ?? activityEventCursor;
-    if (isPaging) projectedChildInvalidationGeneration = childProjectionInvalidationGeneration;
     if (childProjectionStale) {
       projectedChildInvalidationGeneration = childProjectionInvalidationGeneration;
       loadedThreadKeys = new Set();

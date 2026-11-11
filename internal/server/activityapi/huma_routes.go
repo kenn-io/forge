@@ -870,7 +870,7 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 			// can be left over from before it joined. The browser takes each
 			// subject's labels from the hub's rows for the same item.
 			response.WorkspaceActivity = s.WorkspaceActivityResponse(
-				input, opts, snapshot, nil, nil, response.UseWorkspaceActivityForRecency,
+				input, opts, snapshot, nil, nil, response.UseWorkspaceActivityForRecency, nil,
 			)
 		}
 		return response
@@ -1314,7 +1314,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 	useWorkspaceActivityForRecency := s.useWorkspaceActivityForRecency()
 	workspaceActivity := s.WorkspaceActivityResponse(
 		input, opts, workspaceSnapshot, workspaceEventItems, labels,
-		useWorkspaceActivityForRecency,
+		useWorkspaceActivityForRecency, itemActivity,
 	)
 	if projection == "events" {
 		workspaceActivity = []itemapi.WorkspaceActivitySubjectResponse{}

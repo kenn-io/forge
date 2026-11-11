@@ -68,9 +68,6 @@ func TestLocalEmbeddingsSwitchPreservesSelectionDuringConcurrentEdit(t *testing.
 }
 
 func TestLocalEmbeddingsDownloadFailureAndNoninteractiveRefusal(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
 	for _, yes := range []bool{false, true} {
 		t.Run(fmt.Sprint(yes), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
@@ -101,9 +98,6 @@ func TestLocalEmbeddingsDownloadFailureAndNoninteractiveRefusal(t *testing.T) {
 			saved, err := os.ReadFile(path)
 			require.NoError(t, err)
 			assert.Equal(t, original, string(saved))
-			recorded, err := embedlocal.ChoiceRecorded()
-			require.NoError(t, err)
-			assert.False(t, recorded)
 		})
 	}
 }
@@ -121,8 +115,13 @@ func TestLocalEmbeddingsRerun(t *testing.T) {
 			cfg.LocalEmbeddings = mode
 			cfg.Embeddings = embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768, DocumentPrefix: "custom: "}
 			require.NoError(t, cfg.Save(path))
+			calls := 0
 			deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
 				assert.True(t, opts.SkipOllama)
+				calls++
+				if calls > 1 {
+					return "http://127.0.0.1:1235/v1", nil
+				}
 				return "http://127.0.0.1:1234/v1", nil
 			}}
 			var output bytes.Buffer

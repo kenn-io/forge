@@ -888,7 +888,12 @@
   }
 
   function isLifecycleTransitionEvent(eventType: string): boolean {
-    return eventType === "merged" || eventType === "closed" || eventType === "reopened";
+    return (
+      eventType === "added_to_merge_queue" ||
+      eventType === "merged" ||
+      eventType === "closed" ||
+      eventType === "reopened"
+    );
   }
 
   function shortCommit(summary: string): string {
@@ -2218,10 +2223,7 @@
             <CommentCard
               class="event-card--compact"
               layout="inline"
-              typeLabel={event.EventType === "comment_deleted" ||
-                event.EventType === "assigned" ||
-                event.EventType === "unassigned" ||
-                event.EventType === "added_to_merge_queue"
+              typeLabel={event.EventType === "comment_deleted" || event.EventType === "assigned" || event.EventType === "unassigned"
                 ? undefined
                 : systemEventLabel(event.EventType)}
               tone={eventTimelineTone(event.EventType)}

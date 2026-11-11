@@ -503,6 +503,13 @@ describe("EventTimeline", () => {
             Summary: "reopened this",
             CreatedAt: "2024-06-01T12:01:00Z",
           }),
+          makeEvent({
+            ID: 4,
+            EventType: "added_to_merge_queue",
+            Author: "queuer",
+            Summary: "added this to the merge queue",
+            CreatedAt: "2024-06-01T12:00:00Z",
+          }),
         ],
       },
     });
@@ -510,16 +517,19 @@ describe("EventTimeline", () => {
     expect(screen.getByText("Merged")).toBeTruthy();
     expect(screen.getByText("Closed")).toBeTruthy();
     expect(screen.getByText("Reopened")).toBeTruthy();
+    expect(screen.getByText("Added to merge queue")).toBeTruthy();
     const authors = Array.from(document.querySelectorAll(".kit-card__title")).map((element) =>
       element.textContent?.replace(/\s+/g, " ").trim(),
     );
     expect(authors).toContain("by merge-admin");
     expect(authors).toContain("by reviewer");
     expect(authors).toContain("by maintainer");
+    expect(authors).toContain("by queuer");
     expect(screen.queryByText("merged this")).toBeNull();
     expect(screen.queryByText("closed this")).toBeNull();
     expect(screen.queryByText("reopened this")).toBeNull();
-    expect(document.querySelectorAll(".event--compact")).toHaveLength(3);
+    expect(screen.queryByText("added this to the merge queue")).toBeNull();
+    expect(document.querySelectorAll(".event--compact")).toHaveLength(4);
   });
 
   it("uses merged status styling for merged lifecycle events", () => {
@@ -545,20 +555,34 @@ describe("EventTimeline", () => {
         activityViewMode: "compact",
         events: [
           makeEvent({
+            ID: 2,
             EventType: "merged",
             Author: "alice",
             Summary: "merged this",
+            CreatedAt: "2024-06-01T12:01:00Z",
+          }),
+          makeEvent({
+            ID: 1,
+            EventType: "added_to_merge_queue",
+            Author: "bob",
+            Summary: "added this to the merge queue",
+            CreatedAt: "2024-06-01T12:00:00Z",
           }),
         ],
       },
     });
 
-    const row = container.querySelector<HTMLElement>(".event-card--compact-row");
-    const rowText = row?.textContent?.replace(/\s+/g, " ").trim() ?? "";
-    expect(rowText).toContain("Merged by alice");
-    expect(rowText).not.toContain("merged this");
-    expect(row?.querySelector(".event-author-prefix")?.textContent).toBe("by");
-    expect(row?.querySelector(".compact-event-summary")?.textContent?.trim()).toBe("");
+    const rows = Array.from(container.querySelectorAll<HTMLElement>(".event-card--compact-row"));
+    const rowTexts = rows.map((row) => row.textContent?.replace(/\s+/g, " ").trim() ?? "");
+    expect(rowTexts).toHaveLength(2);
+    expect(rowTexts[0]).toContain("Merged by alice");
+    expect(rowTexts[0]).not.toContain("merged this");
+    expect(rowTexts[1]).toContain("Added to merge queue by bob");
+    expect(rowTexts[1]).not.toContain("added this to the merge queue");
+    for (const row of rows) {
+      expect(row.querySelector(".event-author-prefix")?.textContent).toBe("by");
+      expect(row.querySelector(".compact-event-summary")?.textContent?.trim()).toBe("");
+    }
   });
 
   it("collapses duplicate merge lifecycle rows into the single authored transition", () => {
@@ -3059,12 +3083,6 @@ describe("EventTimeline", () => {
               assignee: "wesm",
             }),
           }),
-          makeEvent({
-            ID: 6,
-            EventType: "added_to_merge_queue",
-            Author: "queuer",
-            Summary: "added this to the merge queue",
-          }),
         ],
       },
     });
@@ -3083,10 +3101,7 @@ describe("EventTimeline", () => {
     expect(screen.getByText("Related bug other/repo#77")).toBeTruthy();
     expect(screen.queryByText("Assigned")).toBeNull();
     expect(screen.getByText("self-assigned this")).toBeTruthy();
-    const queuedCard = screen.getByText("added this to the merge queue").closest(".kit-comment-card");
-    expect(queuedCard?.querySelector(".kit-card__eyebrow")).toBeNull();
-    expect(queuedCard?.querySelector(".kit-card__title")?.textContent).toBe("queuer");
-    expect(document.querySelectorAll(".event--compact").length).toBe(6);
+    expect(document.querySelectorAll(".event--compact").length).toBe(5);
   });
 
   it("renders cross-repository events as internal item references when metadata identifies the source item", () => {

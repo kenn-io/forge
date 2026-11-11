@@ -840,6 +840,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const subjects = [...(first.response.item_activity ?? [])];
       const seen = new Set(subjects.map(stableParentKey));
       let cursor = first.response.next_subject_cursor ?? "";
+      let subjectsCapped = first.response.item_activity_capped ?? false;
       for (let page = 1; page < depth && cursor; page++) {
         const next = yield* activityRead({ ...params, subject_before: cursor });
         for (const subject of next.response.item_activity ?? []) {
@@ -849,6 +850,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           subjects.push(subject);
         }
         cursor = next.response.next_subject_cursor ?? "";
+        subjectsCapped = next.response.item_activity_capped ?? false;
       }
       return {
         ...first,
@@ -857,7 +859,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           ...first.response,
           item_activity: subjects,
           next_subject_cursor: cursor,
-          item_activity_capped: cursor !== "",
+          item_activity_capped: subjectsCapped,
         },
       };
     });
@@ -953,11 +955,24 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   function projectActivitySnapshot(result: ActivityReadResponse, params: ActivityParams): void {
+    const isPaging = (result.subjectDepth ?? 1) > displayedSubjectDepth && result.scope === snapshotScope;
+    const retained = isPaging ? items : [];
     snapshotScope = result.scope;
     snapshotFilterScope = result.filterScope;
     displayedRepo = result.repo;
     items = projectOwnedNotificationStates(result);
     projectActivitySubjects(result.response, params, result.subjectDepth ?? 1);
+    if (isPaging) {
+      const subjectKeys = new Set(itemActivity.map(stableParentKey));
+      const receivedIDs = new Set(items.map((item) => item.id));
+      items = [
+        ...items,
+        ...retained.filter((item) => {
+          const key = stableParentKey(item);
+          return key !== undefined && subjectKeys.has(key) && !receivedIDs.has(item.id);
+        }),
+      ];
+    }
     capped = result.response.capped;
     activityEventCursor = result.response.event_cursor ?? "";
     loadedThreadKeys = new Set();
@@ -990,13 +1005,16 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       activityEventCursor = eventCursor;
       return;
     }
+    const isPaging = (result.subjectDepth ?? 1) > displayedSubjectDepth && result.scope === snapshotScope;
     snapshotScope = result.scope;
     snapshotFilterScope = result.filterScope;
     displayedRepo = result.repo;
     const reconcileCollapsedThreads = shouldUseCollapsedAuthoritativeProjection();
     const autoLoadExpandedThreadEvents = activityPageLimit === undefined;
     const childProjectionStale =
-      reconcileCollapsedThreads && projectedChildInvalidationGeneration !== childProjectionInvalidationGeneration;
+      reconcileCollapsedThreads &&
+      !isPaging &&
+      projectedChildInvalidationGeneration !== childProjectionInvalidationGeneration;
     const received = projectOwnedNotificationStates(result);
     const receivedIDs = new Set(received.map((item) => item.id));
     const receivedSubjectKeys = new Set(
@@ -1063,13 +1081,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
             key !== undefined &&
             receivedSubjectKeys.has(key) &&
             !receivedIDs.has(item.id) &&
-            !changedThreadKeys.has(key)
+            (isPaging || !changedThreadKeys.has(key))
           );
         });
     items = [...received, ...retainedThreadItems];
     projectActivitySubjects(result.response, params, result.subjectDepth ?? 1);
     capped = result.response.capped;
     activityEventCursor = result.response.event_cursor ?? activityEventCursor;
+    if (isPaging) projectedChildInvalidationGeneration = childProjectionInvalidationGeneration;
     if (childProjectionStale) {
       projectedChildInvalidationGeneration = childProjectionInvalidationGeneration;
       loadedThreadKeys = new Set();

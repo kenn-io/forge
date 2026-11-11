@@ -202,6 +202,130 @@ afterEach(async () => {
 });
 
 describe("activity subject paging", () => {
+  it("keeps expanded comments if a concurrent reconciliation's thread reload fails", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: 1007,
+      repo_path: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+    };
+    const comment = { ...notificationItem("ntf:visible", "read"), item_number: 7, repo } as ActivityItem;
+    let subjectReads = 0;
+    let pageReads = 0;
+    let threadReads = 0;
+    let release: ((value: unknown) => void) | undefined;
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    const emptyPage = { data: { items: [], item_activity: [], capped: false }, error: null };
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (path === "/activity/thread-events") {
+          threadReads++;
+          if (threadReads === 1) return { data: { items: [comment], capped: false }, error: null };
+          return { error: { detail: "thread unavailable" }, response: new Response(null, { status: 422 }) };
+        }
+        if (options?.params?.query?.subject_before) {
+          pageReads++;
+          return pageReads === 1 ? pending : emptyPage;
+        }
+        subjectReads++;
+        return {
+          data: {
+            items: [],
+            item_activity: [
+              { ...itemActivity(7), repo, event_ledger_revision: subjectReads === 1 ? "before" : "after" },
+            ],
+            item_activity_capped: true,
+            next_subject_cursor: "older",
+            capped: false,
+            event_cursor: "snapshot",
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.toggleThreadItem("github|github.com|id|1007:pr:7");
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(pageReads).toBe(1));
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile activity",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    await vi.waitFor(() => expect(store.getThreadLoadError()).toBe("thread unavailable"));
+    expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id);
+    release?.(emptyPage);
+  });
+  it("keeps an expanded comment when loading older items and its thread reload fails", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: 1007,
+      repo_path: "acme/widgets",
+      owner: "acme",
+      name: "widgets",
+    };
+    const subject = { ...itemActivity(7), repo } satisfies ActivitySubject;
+    const comment = { ...notificationItem("ntf:visible", "read"), item_number: 7, repo } as ActivityItem;
+    let threadReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (path === "/activity/thread-events") {
+          threadReads++;
+          if (threadReads === 1) return { data: { items: [comment], capped: false }, error: null };
+          if (threadReads === 2)
+            return { error: { detail: "thread unavailable" }, response: new Response(null, { status: 422 }) };
+          return { data: { items: [{ ...comment, id: "ntf:replacement" }], capped: false }, error: null };
+        }
+        return {
+          data: {
+            items: [],
+            item_activity: options?.params?.query?.subject_before ? [] : [subject],
+            next_subject_cursor: options?.params?.query?.subject_before ? "" : "older",
+            capped: false,
+            event_cursor: "snapshot",
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.toggleThreadItem("github|github.com|id|1007:pr:7");
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getThreadLoadError()).toBe("thread unavailable"));
+    expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id);
+    store.retryFailedThreadLoads();
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:replacement"]));
+  });
+  it("preserves the server's incomplete subject count without a continuation cursor", async () => {
+    const client = {
+      GET: vi.fn(async (path: string) =>
+        path === "/activity/authors"
+          ? { data: { authors: [] }, error: null }
+          : { data: { items: [], item_activity: [], item_activity_capped: true, capped: false }, error: null },
+      ),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.isItemActivityCapped()).toBe(true);
+    expect(store.canLoadOlderItems()).toBe(false);
+  });
   it("keeps an older-page request when an earlier reconciliation finishes later", async () => {
     const repo = {
       provider: "github",

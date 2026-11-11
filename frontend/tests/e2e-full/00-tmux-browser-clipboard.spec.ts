@@ -806,6 +806,7 @@ async function renderScrollMarkers(
 async function dragTerminalPastTop(
   page: Page,
   container: Locator,
+  output: ReturnType<typeof observeTerminalOutput>,
   dimensions: TerminalDimensions,
   server: IsolatedE2EServer,
   tmuxSession: string,
@@ -833,6 +834,7 @@ async function dragTerminalPastTop(
     };
   }, dimensions);
 
+  const firstMarkerCount = output.count("edge-scroll-001");
   await page.mouse.move(points.start.x, points.start.y);
   await page.mouse.down();
   await page.mouse.move(points.start.x, (points.start.y + points.end.y) / 2, { steps: 5 });
@@ -854,6 +856,11 @@ async function dragTerminalPastTop(
       timeout: TERMINAL_OUTPUT_TIMEOUT_MS,
     })
     .toContain("edge-scroll-001");
+  // The cursor can reach the marker while tmux still has a redraw pending.
+  // Wait for that marker on the socket before releasing, or tmux can drop OSC52.
+  await expect
+    .poll(() => output.count("edge-scroll-001"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS })
+    .toBeGreaterThan(firstMarkerCount);
   await page.mouse.up();
 }
 
@@ -1507,7 +1514,7 @@ test("tmux drag-copy autoscrolls beyond the terminal edge", async ({ page, brows
     if (browserName === "chromium") {
       await setBrowserClipboard(page, "");
     }
-    await dragTerminalPastTop(page, terminal, dimensions, isolatedServer, tmuxSession);
+    await dragTerminalPastTop(page, terminal, output, dimensions, isolatedServer, tmuxSession);
     await expect.poll(() => output.inputIncludes("\x1b[<64;")).toBe(true);
     await expect.poll(() => output.inputIncludes("\x1b[<0;1;1m")).toBe(true);
     await expect.poll(() => output.includes("\x1b]52;"), { timeout: 10_000 }).toBe(true);

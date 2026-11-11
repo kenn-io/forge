@@ -138,6 +138,10 @@
     type ReviewThread,
   } from "../diff/review-thread-context.js";
   import CIStatus from "./CIStatus.svelte";
+  import PRReviewTimeline from "../roborev/PRReviewTimeline.svelte";
+  import PRReviewTimelineDrawer from "../roborev/PRReviewTimelineDrawer.svelte";
+  import { hasProviderReviews } from "../roborev/pr-review-timeline.js";
+  import { createPRRoborevTimeline } from "../../stores/roborev/pr-timeline.svelte.js";
   import StackStatus from "./StackStatus.svelte";
   import MergeWarningsChip, { type MergeWarningEntry } from "./MergeWarningsChip.svelte";
   import { providerDisplayLabel } from "../../api/provider-labels.js";
@@ -197,6 +201,12 @@
     events,
   } = getStores();
   const runtime = getAppRuntime();
+  const roborevTimeline = createPRRoborevTimeline({
+    runtime,
+    baseStores: getStores(),
+    owner: "pull-detail-reviews",
+    onError: (message) => showFlash(message, { tone: "danger" }),
+  });
   const navigate = getNavigate();
   let manualRefreshPending = $state(false);
   let manualRefreshGeneration = 0;
@@ -368,7 +378,7 @@
     { id: "conversation", label: "Conversation" },
     { id: "files", label: "Files changed" },
   ];
-  let expandedPanel = $state<"ci" | "stack" | "merge" | null>(null);
+  let expandedPanel = $state<"ci" | "stack" | "merge" | "roborev" | null>(null);
   let pullDetailScroller: HTMLDivElement | undefined = $state();
   let pullDetailScrollRestoreExecution: AppExecution<void, never> | undefined;
   let keepStackExpandedOnRouteChange = false;
@@ -737,6 +747,7 @@
     branchCopyExecution?.interrupt();
     bodyCopyExecution?.interrupt();
     flushBodySave();
+    roborevTimeline.dispose();
     componentDestroyed = true;
   });
 
@@ -789,6 +800,7 @@
     conflictReviewedHead = null;
     conflictRefreshError = null;
     expandedPanel = keepStackExpanded ? "stack" : null;
+    untrack(() => roborevTimeline.reset());
     editingTitle = false;
     editingBody = false;
     savingTitle = false;
@@ -2714,6 +2726,26 @@
           ontoggle={(next) => { expandedPanel = next ? "ci" : null; }}
           showPanel={false}
         />
+        {#if detail.workspace || hasProviderReviews(detail.events)}
+          <Chip size="sm"
+            interactive={true}
+            tone="neutral"
+            dataTestid="roborev-chip"
+            onclick={() => { expandedPanel = expandedPanel === "roborev" ? null : "roborev"; }}
+            title={expandedPanel === "roborev" ? "Hide Roborev reviews" : "Show Roborev reviews"}
+            expanded={expandedPanel === "roborev"}
+          >
+            Roborev
+            {#snippet trailing()}
+              <ChevronDownIcon
+                class={["chip-chevron", expandedPanel === "roborev" && "chip-chevron--open"].filter(Boolean).join(" ")}
+                size={12}
+                strokeWidth={2.4}
+                aria-hidden="true"
+              />
+            {/snippet}
+          </Chip>
+        {/if}
         <MergeWarningsChip
           warnings={mergeWarningEntries(pr, mergeState, detail.warnings, stalePR)}
           pullURL={pr.URL}
@@ -2857,6 +2889,14 @@
             headSha: pr.platform_head_sha ?? "",
           }}
         />
+        {#if expandedPanel === "roborev"}
+          <PRReviewTimeline
+            timeline={roborevTimeline}
+            events={detail.events}
+            headSha={detail.platform_head_sha}
+            workspaceId={detail.workspace?.status === "ready" ? detail.workspace.id : null}
+          />
+        {/if}
       </div>
 
       {#snippet updateBranchAction(compactLabels = false)}
@@ -3921,6 +3961,7 @@
           </div>
         </div>
         </ScrollBox>
+        <PRReviewTimelineDrawer timeline={roborevTimeline} />
       {/if}
     </div>
   {/if}

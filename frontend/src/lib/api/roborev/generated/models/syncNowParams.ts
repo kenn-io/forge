@@ -3,8 +3,6 @@
  */
 
 export type SyncNowParams = {
-  /**
-   * Stream sync progress as NDJSON when set to 1
-   */
+  /** Stream sync progress as NDJSON when set to 1 */
   stream?: string;
 };

@@ -758,6 +758,27 @@ components:
         - retries
         - errors
       type: object
+    FindingCounts:
+      additionalProperties: false
+      properties:
+        critical:
+          format: int64
+          type: integer
+        high:
+          format: int64
+          type: integer
+        low:
+          format: int64
+          type: integer
+        medium:
+          format: int64
+          type: integer
+      required:
+        - critical
+        - high
+        - medium
+        - low
+      type: object
     FixJobRequest:
       additionalProperties: false
       properties:
@@ -1428,6 +1449,8 @@ components:
           type: string
         error:
           type: string
+        finding_counts:
+          $ref: "#/components/schemas/FindingCounts"
         finished_at:
           format: date-time
           type: string
@@ -2457,6 +2480,17 @@ paths:
           name: hide_classify_jobs
           schema:
             description: Hide auto-design-router rows (job_type=classify and status=skipped)
+            enum:
+              - "true"
+              - "false"
+              - ""
+            type: string
+        - description: Include nullable finding severity counts for eligible completed reviews
+          explode: false
+          in: query
+          name: include_findings
+          schema:
+            description: Include nullable finding severity counts for eligible completed reviews
             enum:
               - "true"
               - "false"

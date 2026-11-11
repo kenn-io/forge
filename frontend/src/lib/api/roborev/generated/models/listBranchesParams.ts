@@ -3,8 +3,6 @@
  */
 
 export type ListBranchesParams = {
-  /**
-   * Filter to branches in these repo paths
-   */
+  /** Filter to branches in these repo paths */
   repo?: string[];
 };

@@ -4,20 +4,12 @@
 import type { GetSummaryAll } from "./getSummaryAll.ts";
 
 export type GetSummaryParams = {
-  /**
-   * Time window (e.g. 7d, 24h). Default: 7d
-   */
+  /** Time window (e.g. 7d, 24h). Default: 7d */
   since?: string;
-  /**
-   * Filter by repo root path
-   */
+  /** Filter by repo root path */
   repo?: string;
-  /**
-   * Filter by branch name
-   */
+  /** Filter by branch name */
   branch?: string;
-  /**
-   * Include per-repo breakdown
-   */
+  /** Include per-repo breakdown */
   all?: GetSummaryAll;
 };

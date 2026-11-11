@@ -3,8 +3,6 @@
  */
 
 export type ResolveRepoParams = {
-  /**
-   * Absolute path or path inside a repository
-   */
+  /** Absolute path or path inside a repository */
   path?: string;
 };

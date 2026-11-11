@@ -3,16 +3,10 @@
  */
 
 export type ListCommentsParams = {
-  /**
-   * List comments by job ID
-   */
+  /** List comments by job ID */
   job_id?: number;
-  /**
-   * List comments by commit ID
-   */
+  /** List comments by commit ID */
   commit_id?: number;
-  /**
-   * List comments by commit SHA
-   */
+  /** List comments by commit SHA */
   sha?: string;
 };

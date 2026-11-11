@@ -3,10 +3,15 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
   import { renderMarkdownEffect, renderMarkdownSync } from "../../utils/markdown.js";
+  interface Props {
+    /** Review markdown to render instead of the selected local review. */
+    output?: string;
+  }
+  let { output: givenOutput }: Props = $props();
   const stores = getStores();
   const runtime = getAppRuntime();
 
-  const output = $derived(stores.roborevReview?.getOutput() ?? "");
+  const output = $derived(givenOutput ?? stores.roborevReview?.getOutput() ?? "");
   const fallbackHTML = $derived(renderMarkdownSync(output));
   let highlighted = $state.raw<{ source: string; html: string } | null>(null);
   const renderedHTML = $derived(highlighted?.source === output ? highlighted.html : fallbackHTML);
@@ -33,9 +38,9 @@
   });
 </script>
 
-{#if stores.roborevReview?.isLoading()}
+{#if givenOutput === undefined && stores.roborevReview?.isLoading()}
   <div class="review-loading">Loading review...</div>
-{:else if stores.roborevReview?.isReviewNotFound()}
+{:else if givenOutput === undefined && stores.roborevReview?.isReviewNotFound()}
   <div class="review-pending">
     Review in progress...
   </div>

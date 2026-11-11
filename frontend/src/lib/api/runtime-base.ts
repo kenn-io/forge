@@ -4,11 +4,19 @@ function runtimeBasePath(): string {
   return typeof window === "undefined" ? "/" : ((window as RuntimeWindow).__BASE_PATH__ ?? "/");
 }
 
-export function configuredAPIBasePath(basePath = runtimeBasePath()): string {
+function basePathPrefix(basePath: string): string {
   let end = basePath.length;
   while (end > 0 && basePath[end - 1] === "/") end -= 1;
-  const prefix = basePath.slice(0, end);
-  return `${prefix}/api/v1`;
+  return basePath.slice(0, end);
+}
+
+export function configuredAPIBasePath(basePath = runtimeBasePath()): string {
+  return `${basePathPrefix(basePath)}/api/v1`;
+}
+
+/** The server's reverse proxy to the local roborev daemon. */
+export function configuredRoborevBasePath(basePath = runtimeBasePath()): string {
+  return `${basePathPrefix(basePath)}/api/roborev`;
 }
 
 export function configuredAPIBaseURL(basePath = runtimeBasePath()): string {

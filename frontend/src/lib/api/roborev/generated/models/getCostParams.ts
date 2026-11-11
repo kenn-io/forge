@@ -4,20 +4,12 @@
 import type { GetCostBranchEmpty } from "./getCostBranchEmpty.ts";
 
 export type GetCostParams = {
-  /**
-   * Repo root paths (repeatable)
-   */
+  /** Repo root paths (repeatable) */
   repo?: string[];
-  /**
-   * Filter by branch name
-   */
+  /** Filter by branch name */
   branch?: string;
-  /**
-   * Only jobs with empty/unset branch
-   */
+  /** Only jobs with empty/unset branch */
   branch_empty?: GetCostBranchEmpty;
-  /**
-   * Time window (e.g. 7d); default all-time
-   */
+  /** Time window (e.g. 7d); default all-time */
   since?: string;
 };

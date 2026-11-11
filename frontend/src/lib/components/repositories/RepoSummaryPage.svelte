@@ -263,7 +263,6 @@
       const warning = `Forge couldn't confirm whether it created the issue. Check the issue list before trying again. Details: ${message}`;
       issueOutcomeUnknownByRepo[key] = true;
       issueErrorByRepo[key] = warning;
-      showFlash(warning, { tone: "danger" });
       return false;
     }
 

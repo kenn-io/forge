@@ -355,4 +355,20 @@ describe("makeChatSession ID upserts", () => {
     expect(states.at(-1)!.messages).toEqual([tool, output]);
     expect(states.at(-1)!.connected).toBe(false);
   });
+
+  it("finishes a multi-page history request before publishing a final exit", () => {
+    const output = message("output", "middle");
+    const initial = state([output], { messageOffset: 2, messageCount: 3 });
+    const { session, states, send, commands } = open(initial);
+    session.loadEarlier(100, () => true);
+    send({ updates: { ...initial, messages: [], messageCursor: 2, connected: false, more: false } });
+    expect(send({ history: { beforeId: "output", offset: 1, messages: [message("middle", "first")] } })).toBe(
+      "continue",
+    );
+    expect(states.every((published) => published.connected)).toBe(true);
+    expect(commands().at(-1)).toEqual({ type: "history", beforeId: "middle", limit: 100 });
+    expect(send({ history: { beforeId: "middle", offset: 0, messages: [message("first", "")] } })).toBe("stop");
+    expect(states.at(-1)!.messages.map((entry) => entry.id)).toEqual(["first", "middle", "output"]);
+    expect(states.at(-1)!.connected).toBe(false);
+  });
 });

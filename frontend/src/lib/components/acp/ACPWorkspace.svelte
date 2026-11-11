@@ -279,8 +279,9 @@
   const EARLIER_ROWS = 30;
   function loadEarlier() {
     if (firstLoaded <= 0) return;
-    const goal = rows.length + EARLIER_ROWS;
-    connection?.loadEarlier(100, () => rows.length < goal);
+    // Count only rows above the loaded range; live replies arrive below it.
+    const start = firstLoaded;
+    connection?.loadEarlier(100, () => rows.filter((row) => row.id < start).length < EARLIER_ROWS);
   }
   function onConversationScroll() {
     if (!scroll) return;

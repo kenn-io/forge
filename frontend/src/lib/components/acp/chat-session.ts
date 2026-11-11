@@ -223,11 +223,11 @@ export function makeChatSession(options: {
             boundary = messages.get(first.id)!.previousId;
             displayedOffset = frame.history.offset;
           }
-          historyBefore = undefined;
+          // Publish as still loading, so an exit waits for the last page.
           publish();
           if (!first || !historyWanted?.() || !requestHistory()) {
-            historyWanted = undefined;
-            options.onHistoryLoading?.(false);
+            setHistoryLoading(undefined);
+            publish();
           }
         }
       } else if ("updates" in frame) {

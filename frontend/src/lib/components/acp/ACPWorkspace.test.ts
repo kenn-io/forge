@@ -1945,6 +1945,30 @@ describe("ACPWorkspace transcript paging", () => {
     expect(texts()).toHaveLength(16);
   });
 
+  it("does not count live replies toward the earlier rows a click loads", async () => {
+    await openChat({ messages: range(1000, 1001), messageOffset: 1000, messageCount: 1001 });
+    await fireEvent.click(screen.getByRole("button", { name: "Load earlier messages" }));
+    // The agent appends 40 replies while the first page is in flight.
+    socket.options!.onMessage(
+      JSON.stringify({
+        updates: {
+          ...baseState,
+          messages: range(1001, 1041),
+          messageOffset: 1001,
+          messageCount: 1041,
+          lastMessageId: "entry-1040",
+          messageCursor: 2,
+          more: false,
+        },
+      }),
+    );
+    socket.options!.onMessage(
+      JSON.stringify({ history: { beforeId: "entry-1000", offset: 990, messages: range(990, 1000) } }),
+    );
+    await tick();
+    expect(historyRequests().at(-1)).toEqual({ type: "history", beforeId: "entry-990", limit: 100 });
+  });
+
   it("asks for earlier history when the conversation scrolls near the top", async () => {
     await openChat({ messages: range(50, 52), messageOffset: 50, messageCount: 52 });
     await fireEvent.scroll(conversation());

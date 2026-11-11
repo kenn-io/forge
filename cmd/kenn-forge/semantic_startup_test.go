@@ -37,6 +37,10 @@ func TestSemanticStartupRecordedChoice(t *testing.T) {
 	assert.Nil(t, disabled)
 	require.NoError(t, embedlocal.RecordChoice())
 	cfg := &config.Config{DataDir: t.TempDir()}
+	effective := semanticStartupConfig(cfg, true)
+	assert.Equal(t, "builtin", effective.LocalEmbeddings)
+	assert.Equal(t, embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768, DocumentPrefix: "search_document: ", QueryPrefix: "search_query: "}, effective.Embeddings)
+	assert.False(t, cfg.Embeddings.Enabled())
 	indexer, err := openStartupSemanticSearch(t.Context(), cfg, database)
 	require.NoError(t, err)
 	require.NotNil(t, indexer)

@@ -27,19 +27,26 @@ func recordSavedBuiltinChoice(cfg *config.Config) {
 	}
 }
 
+func semanticStartupConfig(cfg *config.Config, recorded bool) config.Config {
+	effective := *cfg
+	if !cfg.Embeddings.Enabled() && recorded {
+		effective.Embeddings = config.DefaultLocalEmbeddingRecipe()
+		effective.LocalEmbeddings = "builtin"
+	}
+	return effective
+}
+
 func openStartupSemanticSearch(ctx context.Context, cfg *config.Config, database *db.DB) (*semantic.Indexer, error) {
 	recordSavedBuiltinChoice(cfg)
-	effective := *cfg
+	recorded := false
 	if !cfg.Embeddings.Enabled() {
-		recorded, err := embedlocal.ChoiceRecorded()
+		var err error
+		recorded, err = embedlocal.ChoiceRecorded()
 		if err != nil {
 			slog.Warn("could not read search by meaning choice", "err", err)
 		}
-		if recorded {
-			effective.Embeddings = config.DefaultLocalEmbeddingRecipe()
-			effective.LocalEmbeddings = "builtin"
-		}
 	}
+	effective := semanticStartupConfig(cfg, recorded)
 	if !effective.Embeddings.Enabled() {
 		return nil, nil
 	}

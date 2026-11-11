@@ -1025,7 +1025,7 @@ describe("RepoSummaryPage", () => {
     await waitFor(() => {
       expect(flash.getFlash()).toMatchObject({
         message: expect.stringMatching(
-          /issue transport unavailable.*couldn't confirm whether it created the issue.*check the issue list before trying again/i,
+          /couldn't confirm whether it created the issue.*check the issue list before trying again.*issue transport unavailable/i,
         ),
         tone: "danger",
       });
@@ -1092,7 +1092,7 @@ describe("RepoSummaryPage", () => {
     await waitFor(() => {
       expect(flash.getFlash()).toMatchObject({
         message: expect.stringMatching(
-          /provider response unavailable.*couldn't confirm whether it created the issue.*check the issue list before trying again/i,
+          /couldn't confirm whether it created the issue.*check the issue list before trying again.*provider response unavailable/i,
         ),
         tone: "danger",
       });

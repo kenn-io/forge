@@ -30,7 +30,7 @@ it("describes whether a fenced Roborev action was sent", () => {
         reconciliationCause: new Error("authority unavailable"),
       }),
     ),
-    "Could not confirm whether the add Roborev comment succeeded. Forge will check before sending it again.",
+    "Forge couldn't confirm the outcome. It will check when you retry. Action: add Roborev comment.",
   );
 });
 

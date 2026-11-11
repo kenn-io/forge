@@ -756,11 +756,67 @@ describe("createDetailStore", () => {
     const newerTick = store.getDetailEnvelopeTick();
 
     syncPost.resolve({ data: pullDetail("head") });
-    await syncing;
+    await expect(syncing).resolves.toBe(true);
 
     expect(store.getDetail()?.workspace?.id).toBe("ws-1");
     expect(store.getDetailEnvelopeTick()).toBe(newerTick);
   });
+
+  it("reports a successful sync when a newer read has the same action context and older timestamps", async () => {
+    const syncPost = deferred<{ data: PullDetail }>();
+    const post = vi.fn().mockReturnValueOnce(syncPost.promise);
+    const routeRef = {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    };
+    const refreshed = pullDetail("fresh-head");
+    refreshed.merge_request.DetailFetchedAt = "2026-01-01T00:00:01Z";
+    refreshed.merge_request.ci_observed_at = "2026-01-01T00:00:01Z";
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: pullDetail("cached-head") })
+      .mockResolvedValueOnce({ data: refreshed });
+    const store = createDetailStore({
+      client: mockClient({ GET: get, POST: post }),
+    });
+    await loadDetail(store, "acme", "widget", 7, { ...routeRef, sync: false });
+
+    const syncing = syncDetail(store, "acme", "widget", 7, routeRef);
+    await refreshDetail(store, "acme", "widget", 7, routeRef);
+    const synced = pullDetail("fresh-head");
+    synced.merge_request.DetailFetchedAt = "2026-01-01T00:00:02Z";
+    synced.merge_request.ci_observed_at = "2026-01-01T00:00:02Z";
+    syncPost.resolve({ data: synced });
+
+    await expect(syncing).resolves.toBe(true);
+    expect(store.getDetail()?.platform_head_sha).toBe("fresh-head");
+  });
+
+  it.each(["state", "reviewed head", "platform head", "head repository"])(
+    "keeps sync recovery blocked when a newer read disagrees on %s",
+    async (mismatch) => {
+      const syncPost = deferred<{ data: PullDetail }>();
+      const routeRef = { provider: "github", platformHost: "github.com", repoPath: "acme/widget" };
+      const store = createDetailStore({
+        client: mockClient({
+          GET: vi.fn().mockResolvedValue({ data: pullDetail("head") }),
+          POST: vi.fn().mockReturnValueOnce(syncPost.promise),
+        }),
+      });
+      await loadDetail(store, "acme", "widget", 7, { ...routeRef, sync: false });
+      const syncing = syncDetail(store, "acme", "widget", 7, routeRef);
+      await refreshDetail(store, "acme", "widget", 7, routeRef);
+      const synced = pullDetail("head");
+      if (mismatch === "state") synced.merge_request.State = "closed";
+      if (mismatch === "reviewed head") synced.reviewed_head_sha = "other-head";
+      if (mismatch === "platform head") synced.platform_head_sha = "other-head";
+      if (mismatch === "head repository") synced.merge_request.HeadRepoCloneURL = "https://github.com/acme/fork.git";
+      syncPost.resolve({ data: synced });
+
+      await expect(syncing).resolves.toBe(false);
+    },
+  );
 
   it("applies a pending initial load when a newer refresh fails for the same selection", async () => {
     const initialLoad = deferred<{ data?: PullDetail; error?: ProblemBody }>();

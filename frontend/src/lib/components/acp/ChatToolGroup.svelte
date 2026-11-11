@@ -10,6 +10,7 @@
   import { decodeAppDescriptor } from "./mcp-app.js"
   import type { ContentScrollPositions } from "./chat-content-scroll.js"
   import { toolStatus, type ChatMessage } from "./chat-types.js"
+  import { parseToolTitle } from "./chat-tool-title.js"
 
   let {
     messages,
@@ -110,6 +111,7 @@
         {:else}
         {@const status = toolStatus(message)}
         {@const expandable = hasDetails(message)}
+        {@const title = parseToolTitle(message.kind, message.text)}
         <li class={`status-${status}`} data-message-id={message.id}>
           {#snippet row()}
           <span
@@ -139,7 +141,7 @@
                   : "Sub-agent"}</span
               >
             {/if}
-            {#if message.kind === "execute"}<ChatShellCommand command={message.text} />{:else}{message.text}{/if}
+            {#if title.shell}<ChatShellCommand command={message.text} />{:else}{#each title.parts as part, partIndex (partIndex)}{#if part.role === "target"}<code class="target">{part.text}</code>{:else if part.role === "range"}<span class="range">{part.text}</span>{:else}{part.text}{/if}{/each}{/if}
           </span>
           {/snippet}
           {#if expandable}
@@ -281,6 +283,17 @@
     min-width: 0;
     overflow-wrap: anywhere;
     color: var(--text-primary);
+  }
+  .target {
+    padding: 1px 4px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    font-family: var(--font-mono);
+    box-decoration-break: clone;
+  }
+  .range {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
   }
   .subagent {
     display: inline-flex;

@@ -1312,7 +1312,7 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(command.querySelector("code")?.textContent).toBe("git status --short");
     expect(command.querySelector("[title]")?.getAttribute("title")).toMatch(/2026/);
     const read = screen.getByRole("button", { name: /^completed Read parser\.go$/ });
-    expect(read.querySelector("code")).toBeNull();
+    expect(read.querySelector("code")?.textContent).toBe("parser.go");
   });
 
   it("reads Stopping and disables Stop until the turn ends", async () => {

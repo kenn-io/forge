@@ -10,8 +10,8 @@ import (
 )
 
 func TestPOSIXCommandHintRoundTrip(t *testing.T) {
-	command := quoteCommand([]string{"--config", "#forge.toml", "--timeout", "1m0s", "/tmp/forge's config.toml"})
+	command := quoteCommand([]string{"kenn-forge", "--config", "#forge.toml", "--timeout", "1m0s", "/tmp/forge's config.toml", "", "$HOME; echo wrong"})
 	output, err := procutil.CommandContext(t.Context(), "sh", "-c", "set -- "+command+`; printf '%s\n' "$@"`).Output()
 	require.NoError(t, err)
-	require.Equal(t, "--config\n#forge.toml\n--timeout\n1m0s\n/tmp/forge's config.toml\n", string(output))
+	require.Equal(t, "kenn-forge\n--config\n#forge.toml\n--timeout\n1m0s\n/tmp/forge's config.toml\n\n$HOME; echo wrong\n", string(output))
 }

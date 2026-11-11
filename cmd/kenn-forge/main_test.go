@@ -30,6 +30,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/hostapi"
@@ -44,6 +45,20 @@ import (
 func TestMain(m *testing.M) {
 	if code, ok := testtmux.CommandWrapperExitCode(); ok {
 		os.Exit(code)
+	}
+	// Resolve Go's configured paths before isolating HOME for Forge.
+	output, err := procutil.CommandContext(context.Background(), "go", "env", "-json", "GOPATH", "GOMODCACHE", "GOCACHE").Output()
+	if err != nil {
+		panic(err)
+	}
+	var goEnv map[string]string
+	if err := json.Unmarshal(output, &goEnv); err != nil {
+		panic(err)
+	}
+	for name, value := range goEnv {
+		if err := os.Setenv(name, value); err != nil {
+			panic(err)
+		}
 	}
 	runtimeDir, err := os.MkdirTemp("", "kenn-forge-test-home-")
 	if err != nil {

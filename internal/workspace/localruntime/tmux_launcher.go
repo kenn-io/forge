@@ -635,7 +635,22 @@ func (l tmuxLauncher) sixelCommand() []string {
 
 // Applications need "on": tmux's default "external" drops their OSC 52 writes.
 func (l tmuxLauncher) clipboardCommand() []string {
-	return append(slices.Clone(l.TmuxCommand), "set-option", "-s", "set-clipboard", "on")
+	return append(slices.Clone(l.TmuxCommand), TmuxClipboardArgs()...)
+}
+
+// TmuxClipboardArgs configures clipboard delivery on a Forge-owned server.
+func TmuxClipboardArgs() []string {
+	args := []string{"set-option", "-s", "set-clipboard", "on"}
+	for _, table := range []string{"copy-mode", "copy-mode-vi"} {
+		// Native copy output can be discarded while tmux redraws the pane.
+		// load-buffer -w writes directly to the client that made the selection.
+		args = append(args,
+			";", "bind-key", "-T", table, "MouseDragEnd1Pane",
+			"send-keys", "-X", "pipe-and-cancel",
+			"tmux -S #{q:socket_path} load-buffer -w -t #{q:client_name} -",
+		)
+	}
+	return args
 }
 
 func (l tmuxLauncher) tmuxMouseCommand() []string {

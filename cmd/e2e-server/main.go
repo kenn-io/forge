@@ -30,6 +30,7 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v93/github"
+	shellquote "github.com/kballard/go-shellquote"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
@@ -1470,8 +1471,11 @@ if [ -e "$gate/killing" ]; then
   echo "e2e tmux shutdown has started" >&2
   exit 75
 fi
-"$@"
+"$@" || exit $?
 `
+	// The private fixture server owns its clipboard policy, just as the
+	// dedicated production server does. Reuse that policy after creation.
+	content += shellquote.Join(append(slices.Clone(tmuxCmd), localruntime.TmuxClipboardArgs()...)...) + "\n"
 	if err := os.WriteFile(script, []byte(content), 0o700); err != nil {
 		return nil, nil, fmt.Errorf("write e2e tmux gate: %w", err)
 	}

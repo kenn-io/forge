@@ -5145,7 +5145,7 @@ func (m *Manager) ApplyTmuxClipboard(ctx context.Context) error {
 	if len(sessions) == 0 {
 		return nil
 	}
-	if err := runBuiltCmd(ctx, m.tmuxExec(ctx, "set-option", "-s", "set-clipboard", "on")); err != nil {
+	if err := runBuiltCmd(ctx, m.tmuxExec(ctx, localruntime.TmuxClipboardArgs()...)); err != nil {
 		return fmt.Errorf("configure tmux clipboard: %w", err)
 	}
 	return nil

@@ -1,6 +1,7 @@
 package localruntime
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
@@ -820,6 +821,87 @@ func TestTmuxLauncherAcceptsApplicationClipboard(t *testing.T) {
 				out, err := launcher.output(t.Context(), append(slices.Clone(launcher.TmuxCommand), "show-buffer"))
 				return err == nil && string(out) == "clipboard-proof"
 			}, 5*time.Second, 20*time.Millisecond)
+		})
+	}
+}
+
+func TestTmuxLauncherDeliversDragClipboardDuringRedraw(t *testing.T) {
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux servers are unavailable")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux unavailable")
+	}
+	for _, tc := range []struct {
+		table string
+		reuse bool
+	}{
+		{table: "copy-mode"},
+		{table: "copy-mode-vi", reuse: true},
+	} {
+		t.Run(tc.table, func(t *testing.T) {
+			require := require.New(t)
+			launcher := tmuxLauncher{
+				TmuxCommand: privateTmuxOwner.Command(t, tmuxPath),
+				Session:     "clipboard-redraw",
+				OwnerMarker: "clipboard-owner",
+				Pane: tmuxAgentEnvPolicy.paneEnvironment(os.Environ(), []string{
+					"/bin/sh", "-c", "printf 'line-one\\nline-two\\n'; exec /bin/sh",
+				}, nil),
+			}
+			if tc.reuse {
+				_, err := launcher.prepare(t.Context())
+				require.NoError(err)
+			}
+			launcher.ConfigureServer = true
+			prepared, err := launcher.prepare(t.Context())
+			require.NoError(err)
+			s, err := startTmuxAttachSession(SessionInfo{TmuxSession: launcher.Session}, prepared.AttachCommand, t.TempDir(), nil)
+			require.NoError(err)
+			go s.watch()
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+				defer cancel()
+				require.NoError(s.stop(ctx))
+				waitSessionDone(s)
+			})
+			output, unsubscribe := s.subscribe()
+			defer unsubscribe()
+			run := func(args ...string) string {
+				t.Helper()
+				out, err := launcher.output(t.Context(), append(slices.Clone(launcher.TmuxCommand), args...))
+				require.NoError(err, string(out))
+				return strings.TrimSpace(string(out))
+			}
+			require.Eventually(func() bool {
+				return run("list-clients", "-t", launcher.Session, "-F", "#{client_tty}") != "" &&
+					strings.Contains(run("capture-pane", "-p", "-t", launcher.Session), "line-two")
+			}, 5*time.Second, 20*time.Millisecond)
+			run("copy-mode", "-t", launcher.Session, ";", "send-keys", "-t", launcher.Session, "-X", "history-top",
+				";", "send-keys", "-t", launcher.Session, "-X", "begin-selection",
+				";", "send-keys", "-t", launcher.Session, "-X", "cursor-down")
+			binding := run("list-keys", "-T", tc.table, "MouseDragEnd1Pane")
+			args, err := shellquote.Split(binding)
+			require.NoError(err)
+			key := slices.Index(args, "MouseDragEnd1Pane")
+			require.GreaterOrEqual(key, 0)
+			// Execute the installed copy command in the same batch as a redraw.
+			// Native tmux copy loses OSC 52 at this boundary.
+			run(append([]string{"refresh-client", ";"}, args[key+1:]...)...)
+			var received []byte
+			timeout := time.NewTimer(5 * time.Second)
+			defer timeout.Stop()
+			for !bytes.Contains(received, []byte("\x1b]52;;bGluZS1vbmUK\a")) {
+				select {
+				case chunk, ok := <-output:
+					require.True(ok, "terminal closed before delivering clipboard data")
+					received = append(received, chunk...)
+				case <-timeout.C:
+					require.FailNow("terminal never delivered the selected line through OSC 52")
+				}
+			}
+			require.Equal("line-one", run("show-buffer"))
 		})
 	}
 }

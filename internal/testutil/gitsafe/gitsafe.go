@@ -45,7 +45,7 @@ func RunIsolatedMain(m *testing.M) int {
 
 func configureGitForTests(root string) error {
 	unsetInheritedGitEnv()
-	if err := pinGoDirectories(); err != nil {
+	if err := PinGoDirectories(); err != nil {
 		return err
 	}
 
@@ -74,11 +74,11 @@ func configureGitForTests(root string) error {
 	return nil
 }
 
-// pinGoDirectories keeps go commands that tests run on the developer's go env
+// PinGoDirectories keeps go commands that tests run on the developer's go env
 // file, module cache, and build cache. Go derives those from HOME and
 // XDG_CONFIG_HOME, which the isolation replaces; module cache files are
 // read-only, so a cache downloaded under the isolated HOME outlives its cleanup.
-func pinGoDirectories() error {
+func PinGoDirectories() error {
 	out, err := procutil.Command("go", "env", "-json", "GOENV", "GOPATH", "GOMODCACHE", "GOCACHE").Output()
 	if errors.Is(err, exec.ErrNotFound) {
 		return nil

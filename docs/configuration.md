@@ -454,6 +454,11 @@ Forge prefers a running Ollama with Nomic, then the shared built-in server.
 Setup downloads missing shared assets with your consent. Run setup again to
 switch from automatic discovery or a configured endpoint to the built-in server. A configured endpoint
 takes precedence over `local_embeddings = "builtin"`. Restart Forge after setup.
+Turning on the built-in server records a shared choice. When another Kenn app
+records that choice, the Forge that syncs providers enables the built-in server
+at its next launch if it has no embeddings configuration. Ollama setup stays
+local to Forge. A saved built-in configuration enables Forge without recording
+shared consent. Forge has no setting or command to clear the shared choice.
 To configure an endpoint yourself, for example Ollama:
 
 ```toml

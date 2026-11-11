@@ -13,7 +13,7 @@ import (
 
 func semanticStartupConfig(cfg *config.Config, recorded bool) *config.Config {
 	result := *cfg
-	if strings.TrimSpace(cfg.Embeddings.BaseURL) == "" && cfg.LocalEmbeddings == "" && !cfg.Embeddings.Enabled() && recorded {
+	if cfg.LocalEmbeddings == "" && !cfg.Embeddings.Enabled() && recorded {
 		result.Embeddings = config.DefaultLocalEmbeddingRecipe()
 		result.LocalEmbeddings = "builtin"
 	}
@@ -39,7 +39,7 @@ func recordSavedBuiltinChoice(cfg *config.Config) {
 func openStartupSemanticSearch(ctx context.Context, cfg *config.Config, database *db.DB) (*semantic.Indexer, error) {
 	recordSavedBuiltinChoice(cfg)
 	recorded := false
-	if strings.TrimSpace(cfg.Embeddings.BaseURL) == "" && cfg.LocalEmbeddings == "" && !cfg.Embeddings.Enabled() {
+	if cfg.LocalEmbeddings == "" && !cfg.Embeddings.Enabled() {
 		var err error
 		recorded, err = embedlocal.ChoiceRecorded()
 		if err != nil {

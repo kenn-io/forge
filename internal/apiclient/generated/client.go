@@ -61066,7 +61066,7 @@ type ListPullsQuery struct {
 	// Numbers Item numbers in every repo unless repo is set; before pagination.
 	Numbers []int64 `json:"numbers,omitempty"`
 
-	// Attributes Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, and merge_conflicts or no_merge_conflicts. Every other selected filter, including involves_me and unassigned, must also match before pagination.
+	// Attributes Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination.
 	Attributes *string `json:"attributes,omitempty"`
 
 	// Label Exact case-sensitive label name; applied before pagination.
@@ -69317,6 +69317,7 @@ type MergeRequestResponse struct {
 	UpdatedAt                time.Time                  `json:"UpdatedAt"`
 	Assignees                []string                   `json:"assignees,omitempty"`
 	CiObservedAt             *time.Time                 `json:"ci_observed_at,omitempty"`
+	DeferredMergePending     *bool                      `json:"deferred_merge_pending,omitempty"`
 	DetailFetchedAt          *string                    `json:"detail_fetched_at,omitempty"`
 	DetailLoaded             bool                       `json:"detail_loaded"`
 	DiffSizeHistory          []PRDiffSizePoint          `json:"diff_size_history,omitempty"`

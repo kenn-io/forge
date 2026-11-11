@@ -693,6 +693,26 @@ describe("pulls store display order", () => {
     }
   });
 
+  it("matches merge queued for a merge queue entry or a pending merge after CI", async () => {
+    const enqueuedAt = "2026-05-20T13:00:00Z";
+    const store = createPullsStore({
+      client: clientWithPulls([
+        pull(1, "api", "2026-05-20T15:00:00Z", {
+          merge_queue: { position: 1, state: "queued", enqueued_at: enqueuedAt, observed_at: enqueuedAt },
+        }),
+        pull(2, "api", "2026-05-20T14:00:00Z", { deferred_merge_pending: true }),
+        pull(3, "web", "2026-05-20T13:00:00Z"),
+      ]),
+    });
+    await loadPulls(store);
+    const shown = () => store.getDisplayOrderPRs().map((pr) => pr.ID);
+
+    store.cycleAttributeFilter("merge_queued", "not_merge_queued");
+    expect(shown()).toEqual([1, 2]);
+    store.cycleAttributeFilter("merge_queued", "not_merge_queued");
+    expect(shown()).toEqual([3]);
+  });
+
   it("sends an opposite condition to the server but keeps workspace filters in the browser", async () => {
     const get = vi.fn().mockResolvedValue([]);
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });

@@ -6217,6 +6217,8 @@ components:
           type:
             - string
             - "null"
+        deferred_merge_pending:
+          type: boolean
         detail_fetched_at:
           type: string
         detail_loaded:
@@ -25016,12 +25018,12 @@ paths:
               format: int64
               type: integer
             type: array
-        - description: "Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, and merge_conflicts or no_merge_conflicts. Every other selected filter, including involves_me and unassigned, must also match before pagination."
+        - description: "Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination."
           explode: false
           in: query
           name: attributes
           schema:
-            description: "Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, and merge_conflicts or no_merge_conflicts. Every other selected filter, including involves_me and unassigned, must also match before pagination."
+            description: "Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination."
             type: string
         - description: Exact case-sensitive label name; applied before pagination.
           explode: false

@@ -1984,9 +1984,24 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 			WHEN 'null' THEN '[]' WHEN 'array' THEN p.ci_checks_json END
 		END`
 	const pending = `COALESCE(json_extract(c.value, '$.status'), '') IN ('in_progress', 'queued', 'pending', 'waiting')`
-	var review, approval, ci, conflicts, mergeQueue []string
+	var review, approval, ci, conflicts, mergeQueue, merging []string
+	// Open and in a provider merge queue, or set to merge once CI passes.
+	mergingCondition := func() string {
+		cond := `p.auto_merge_enabled OR EXISTS (
+			SELECT 1 FROM forge_merge_queue_states q
+			WHERE q.repo_id = p.repo_id AND q.number = p.number AND q.queued
+		)`
+		if len(opts.DeferredMergeItems) > 0 {
+			cond += " OR " + repoItemCondition("p", opts.DeferredMergeItems, &inclusionArgs)
+		}
+		return "(p.state = 'open' AND (" + cond + "))"
+	}
 	for _, attribute := range opts.Attributes {
 		switch attribute {
+		case "merge_queued":
+			merging = append(merging, mergingCondition())
+		case "not_merge_queued":
+			merging = append(merging, notCondition(mergingCondition()))
 		case "approved":
 			approval = append(approval, "upper(trim(p.review_decision)) = 'APPROVED'")
 		case "not_approved":
@@ -2023,7 +2038,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 				))`)
 		}
 	}
-	if inclusion := filterSectionsCondition(involved, unassigned, review, approval, ci, conflicts, mergeQueue); inclusion != "" {
+	if inclusion := filterSectionsCondition(involved, unassigned, review, approval, ci, conflicts, mergeQueue, merging); inclusion != "" {
 		if len(narrowing) > 0 {
 			// SQLite can reorder WHERE terms; evaluate narrowing filters before inclusion subqueries.
 			inclusion = "CASE WHEN " + strings.Join(narrowing, " AND ") + " THEN " + inclusion + " ELSE 0 END"

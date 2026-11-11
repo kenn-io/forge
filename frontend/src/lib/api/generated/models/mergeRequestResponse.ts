@@ -51,6 +51,7 @@ export interface MergeRequestResponse {
   assignees?: string[];
   /** @nullable */
   ci_observed_at?: string | null;
+  deferred_merge_pending?: boolean;
   detail_fetched_at?: string;
   detail_loaded: boolean;
   diff_size_history?: PRDiffSizePoint[];

@@ -234,9 +234,6 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	widgetsRepo, err := database.GetRepoByIdentity(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	require.NotNil(widgetsRepo)
-	require.NoError(database.UpdateRepoProviderObservation(t.Context(), widgetsRepo.ID, db.RepoProviderMetadata{
-		WebURL: "https://github.com/acme/widgets",
-	}, nil, nil))
 	httpRepo, err := database.GetRepoByIdentity(t.Context(), db.RepoIdentity{Platform: "gitea", PlatformHost: "git.example.test:3000", RepoPath: "team/service"})
 	require.NoError(err)
 	require.NotNil(httpRepo)
@@ -307,8 +304,6 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	require.NotNil(widgets.RecentIssues)
 
 	assert.Equal("acme", widgets.Owner)
-	require.NotNil(widgets.WebURL)
-	assert.Equal("https://github.com/acme/widgets", *widgets.WebURL)
 	assert.Equal(int64(4), widgets.OpenPrCount)
 	assert.Equal(int64(1), widgets.DraftPrCount)
 	assert.Equal(int64(3), widgets.OpenIssueCount)

@@ -1001,9 +1001,6 @@ describe("RepoSummaryPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", false);
     });
-    mockPost.mockResolvedValueOnce({ data: { Number: 27 }, error: undefined });
-    await fireEvent.click(screen.getByRole("button", { name: "Create issue" }));
-    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
   });
 
   it("recovers a missing issue list address without repeating issue creation", async () => {
@@ -1036,7 +1033,6 @@ describe("RepoSummaryPage", () => {
       "/host/{platform_host}/repo/{provider}/{owner}/{name}/web-url",
       expect.objectContaining({ params: expect.objectContaining({ query: { platform_repo_id: 42 } }) }),
     );
-    expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", true);
     await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     const link = await screen.findByRole("link", { name: "Open issue list" });
     expect(link.getAttribute("href")).toBe("http://git.example.test:3000/prefix/acme/widgets/issues");

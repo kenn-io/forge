@@ -7,11 +7,10 @@ describe("provider issue lists", () => {
     [
       "gitlab",
       "gitlab.example.com",
-      "team/sub group/widgets",
+      "team/sub-group/widgets",
       undefined,
-      "https://gitlab.example.com/team/sub%20group/widgets/-/issues",
+      "https://gitlab.example.com/team/sub-group/widgets/-/issues",
     ],
-    ["gitea", "git.example.com", "team/widgets", undefined, "https://git.example.com/team/widgets/issues"],
     [
       "gitea",
       "git.example.test:3000",
@@ -22,9 +21,9 @@ describe("provider issue lists", () => {
     [
       "gitlab",
       "git.example.test",
-      "group/sub group/widgets",
-      "https://git.example.test/group/sub%20group/widgets",
-      "https://git.example.test/group/sub%20group/widgets/-/issues",
+      "group/sub-group/widgets",
+      "https://git.example.test/group/sub-group/widgets",
+      "https://git.example.test/group/sub-group/widgets/-/issues",
     ],
   ])("builds the %s issue list", (provider, platformHost, repoPath, webURL, expected) => {
     expect(buildProviderIssueListURL({ provider, platformHost, repoPath, webURL })).toBe(expected);

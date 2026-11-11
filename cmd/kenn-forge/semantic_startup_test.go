@@ -1,42 +1,56 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/semantic"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/kit/embedconfig"
 	"go.kenn.io/kit/embedlocal"
 )
 
 func TestSemanticStartupChoice(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
 	cfg := &config.Config{}
-	got := semanticStartupConfig(cfg)
+	got := semanticStartupConfig(cfg, false)
 	assert.False(t, got.Embeddings.Enabled())
-	require.NoError(t, embedlocal.RecordChoice())
-	got = semanticStartupConfig(cfg)
+	got = semanticStartupConfig(cfg, true)
 	assert.Equal(t, "builtin", got.LocalEmbeddings)
 	assert.Equal(t, "nomic-embed-text", got.Embeddings.Model)
 	assert.Equal(t, 768, got.Embeddings.Dims)
 	assert.Empty(t, cfg.LocalEmbeddings)
 	assert.False(t, cfg.Embeddings.Enabled())
 	configured := &config.Config{Embeddings: embedconfig.Embedder{BaseURL: "http://127.0.0.1:1234/v1", Model: "other", Dims: 12}}
-	assert.Equal(t, configured.Embeddings, semanticStartupConfig(configured).Embeddings)
+	assert.Equal(t, configured.Embeddings, semanticStartupConfig(configured, true).Embeddings)
 	auto := &config.Config{LocalEmbeddings: "auto", Embeddings: embedconfig.Embedder{Model: "other", Dims: 12}}
-	assert.Equal(t, auto, semanticStartupConfig(auto))
+	assert.Equal(t, auto, semanticStartupConfig(auto, true))
+	t.Run("saved built-in", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+		cfg := &config.Config{LocalEmbeddings: "builtin", Embeddings: embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768}}
+		recordSavedBuiltinChoice(cfg)
+		recorded, err := embedlocal.ChoiceRecorded()
+		require.NoError(t, err)
+		assert.True(t, recorded)
+	})
 }
 
-func TestSemanticStartupPromotesBuiltin(t *testing.T) {
+func TestSemanticStartupOpensRecordedChoice(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	cfg := &config.Config{LocalEmbeddings: "builtin", Embeddings: embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768}}
-	semanticStartupConfig(cfg)
-	recorded, err := embedlocal.ChoiceRecorded()
+	require.NoError(t, embedlocal.RecordChoice())
+	cfg := &config.Config{DataDir: t.TempDir()}
+	indexer, err := openStartupSemanticSearch(t.Context(), cfg, dbtest.Open(t))
 	require.NoError(t, err)
-	assert.True(t, recorded)
+	require.NotNil(t, indexer)
+	require.NoError(t, indexer.Close())
+	_, err = os.Stat(filepath.Join(cfg.DataDir, semantic.SidecarFile))
+	require.NoError(t, err)
+	assert.False(t, cfg.Embeddings.Enabled())
 }

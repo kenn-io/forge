@@ -22,7 +22,12 @@ func TestLocalEmbeddingsSetup(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	path := filepath.Join(t.TempDir(), "config.toml")
+	calls := 0
 	deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
+		if calls == 0 {
+			assert.False(t, opts.SkipOllama)
+		}
+		calls++
 		return "http://127.0.0.1:1234/v1", nil
 	}}
 	cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, deps)
@@ -162,9 +167,6 @@ func TestLocalEmbeddingsRerun(t *testing.T) {
 }
 
 func TestLocalEmbeddingsCachedResolution(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
 	calls := 0
 	deps := localEmbeddingDeps{
 		endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
@@ -187,8 +189,12 @@ func TestLocalEmbeddingsCachedResolution(t *testing.T) {
 }
 
 func TestLocalEmbeddingsRecordsBuiltinChoice(t *testing.T) {
-	for _, builtin := range []bool{true, false} {
-		t.Run(fmt.Sprint(builtin), func(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		builtin bool
+	}{{"built-in", true}, {"Ollama", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			builtin := tc.builtin
 			home := t.TempDir()
 			t.Setenv("HOME", home)
 			t.Setenv("USERPROFILE", home)
@@ -207,21 +213,20 @@ func TestLocalEmbeddingsRecordsBuiltinChoice(t *testing.T) {
 			assert.Equal(t, builtin, recorded)
 		})
 	}
-}
-
-func TestLocalEmbeddingsChoiceWriteFailureWarns(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-	require.NoError(t, os.WriteFile(filepath.Join(home, ".kenn"), []byte("block"), 0o600))
-	path := filepath.Join(t.TempDir(), "config.toml")
-	deps := localEmbeddingDeps{endpoint: func(context.Context, embedlocal.Options) (string, error) { return "http://127.0.0.1:1234/v1", nil }}
-	var stderr bytes.Buffer
-	cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &stderr, deps)
-	cmd.SetArgs([]string{"local", "--config", path})
-	require.NoError(t, cmd.ExecuteContext(t.Context()))
-	assert.Contains(t, stderr.String(), "could not record search by meaning choice")
-	cfg, err := config.Load(path)
-	require.NoError(t, err)
-	assert.Equal(t, "auto", cfg.LocalEmbeddings)
+	t.Run("write failure", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+		require.NoError(t, os.WriteFile(filepath.Join(home, ".kenn"), []byte("block"), 0o600))
+		path := filepath.Join(t.TempDir(), "config.toml")
+		deps := localEmbeddingDeps{endpoint: func(context.Context, embedlocal.Options) (string, error) { return "http://127.0.0.1:1234/v1", nil }}
+		var stderr bytes.Buffer
+		cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &stderr, deps)
+		cmd.SetArgs([]string{"local", "--config", path})
+		require.NoError(t, cmd.ExecuteContext(t.Context()))
+		assert.Contains(t, stderr.String(), "could not record search by meaning choice")
+		cfg, err := config.Load(path)
+		require.NoError(t, err)
+		assert.Equal(t, "auto", cfg.LocalEmbeddings)
+	})
 }

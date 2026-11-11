@@ -979,7 +979,9 @@ describe("RepoSummaryPage", () => {
     render(RepoSummaryPage);
     expect(await screen.findByDisplayValue("Fence an unknown outcome")).toBeTruthy();
     await waitFor(() => {
-      expect(screen.getByText(/couldn't confirm whether it created the issue.*check the issue list before trying again/i)).toBeTruthy();
+      expect(
+        screen.getByText(/couldn't confirm whether it created the issue.*check the issue list before trying again/i),
+      ).toBeTruthy();
       expect(flash.getFlash()).toBeNull();
       expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", true);
     });
@@ -1019,7 +1021,11 @@ describe("RepoSummaryPage", () => {
     await fireEvent.submit(createButton);
 
     await waitFor(() => {
-      expect(screen.getByText(/couldn't confirm whether it created the issue.*check the issue list before trying again.*issue transport unavailable/i)).toBeTruthy();
+      expect(
+        screen.getByText(
+          /couldn't confirm whether it created the issue.*check the issue list before trying again.*issue transport unavailable/i,
+        ),
+      ).toBeTruthy();
       expect(flash.getFlash()).toBeNull();
       expect((screen.getByRole("button", { name: "Create issue" }) as HTMLButtonElement).disabled).toBe(true);
     });
@@ -1082,7 +1088,11 @@ describe("RepoSummaryPage", () => {
     await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
 
     await waitFor(() => {
-      expect(screen.getByText(/couldn't confirm whether it created the issue.*check the issue list before trying again.*provider response unavailable/i)).toBeTruthy();
+      expect(
+        screen.getByText(
+          /couldn't confirm whether it created the issue.*check the issue list before trying again.*provider response unavailable/i,
+        ),
+      ).toBeTruthy();
       expect(flash.getFlash()).toBeNull();
       expect((screen.getByRole("button", { name: "Create issue" }) as HTMLButtonElement).disabled).toBe(true);
     });

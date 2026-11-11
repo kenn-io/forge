@@ -2592,3 +2592,50 @@ var (
 	_ platform.IssueReader        = (*movedLookupGitLabProvider)(nil)
 	_ platform.MergeRequestReader = (*movedLookupGitLabProvider)(nil)
 )
+
+type webURLProvider struct {
+	serverfake.ApiTestGitLabProvider
+	seen platform.RepoRef
+	err  error
+}
+
+func (p *webURLProvider) GetRepository(_ context.Context, ref platform.RepoRef) (platform.Repository, error) {
+	p.seen = ref
+	if p.err != nil {
+		return platform.Repository{}, p.err
+	}
+	return platform.Repository{Ref: p.Ref, WebURL: p.Ref.WebURL}, nil
+}
+
+func TestRepositoryWebURLUsesStableIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "git.example.test:3000", Owner: "team", Name: "service", RepoPath: "team/service", Key: platform.RepositoryIDKey(5150), WebURL: "http://git.example.test:3000/prefix/team/service"}
+	provider := &webURLProvider{ApiTestGitLabProvider: serverfake.ApiTestGitLabProvider{Ref: ref}}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	_, err = reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
+	require.NoError(err)
+	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/host/git.example.test:3000/repo/gitlab/team/service/web-url?platform_repo_id=5150", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var body struct {
+		WebURL string `json:"web_url"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	require.Equal("http://git.example.test:3000/prefix/team/service", body.WebURL)
+	require.Equal(ref.Key, provider.seen.Key)
+	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/host/git.example.test:3000/repo/gitlab/team/service/web-url?platform_repo_id=5151", nil)
+	require.NotEqual(http.StatusOK, rr.Code)
+	provider.Ref.Key = platform.RepositoryIDKey(5151)
+	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/host/git.example.test:3000/repo/gitlab/team/service/web-url?platform_repo_id=5150", nil)
+	require.Equal(http.StatusBadGateway, rr.Code)
+	provider.Ref.Key = ref.Key
+	provider.err = errors.New("provider unavailable")
+	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/host/git.example.test:3000/repo/gitlab/team/service/web-url?platform_repo_id=5150", nil)
+	require.Equal(http.StatusBadGateway, rr.Code)
+}

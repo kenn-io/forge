@@ -9363,6 +9363,21 @@ components:
         - owner
         - name
       type: object
+    RepositoryWebURLResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RepositoryWebURLResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        web_url:
+          type: string
+      required:
+        - web_url
+      type: object
     RequestChangesPRHostInputBody:
       additionalProperties: false
       properties:
@@ -22946,6 +22961,57 @@ paths:
       summary: Update repository UI visibility
       tags:
         - Settings
+  /host/{platform_host}/repo/{provider}/{owner}/{name}/web-url:
+    get:
+      operationId: get-repo-web-url-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: platform_repo_id
+          schema:
+            format: int64
+            type: integer
+        - explode: false
+          in: query
+          name: bitbucket_repository_uuid
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryWebURLResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get repository web URL
+      tags:
+        - Repositories
   /host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces:
     post:
       operationId: create-repo-workspace-on-host
@@ -28263,6 +28329,52 @@ paths:
       summary: Update repository UI visibility
       tags:
         - Settings
+  /repo/{provider}/{owner}/{name}/web-url:
+    get:
+      operationId: get-repo-web-url
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: platform_repo_id
+          schema:
+            format: int64
+            type: integer
+        - explode: false
+          in: query
+          name: bitbucket_repository_uuid
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryWebURLResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get repository web URL
+      tags:
+        - Repositories
   /repo/{provider}/{owner}/{name}/workspaces:
     post:
       operationId: create-repo-workspace

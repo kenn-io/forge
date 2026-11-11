@@ -4,6 +4,11 @@
   import CommentEditor from "../detail/CommentEditor.svelte";
   import Modal from "../shared/Modal.svelte";
   import { buildProviderIssueListURL } from "../../utils/item-reference.js";
+  import { Effect } from "effect";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { executeGeneratedApiRequest } from "../../api/generated-api.js";
+  import { providerHostRouteParams, providerRouteParams, providerUsesHostRoute } from "../../api/provider-routes.js";
+  import { repositoryKeyFromWire, repositoryKeyToWire } from "../../api/repository-key.js";
   import {
     repoKey,
     shouldShowPlatformHost,
@@ -40,12 +45,41 @@
 
   const key = $derived(repoKey(summary));
   const showPlatformHost = $derived(shouldShowPlatformHost(summary));
-  const issueListURL = $derived(buildProviderIssueListURL({
+  let resolvedWebURL = $state<string | undefined>();
+  let webURLError = $state(false);
+  let webURLLoading = $state(false);
+  let retry = $state(0);
+  const issueListURL = $derived((summary.web_url || resolvedWebURL) && buildProviderIssueListURL({
     provider: summary.repo.provider,
     platformHost: summary.repo.platform_host,
     repoPath: summary.repo.repo_path,
-    webURL: summary.web_url,
+    webURL: summary.web_url || resolvedWebURL,
   }));
+  const appRuntime = getAppRuntime();
+  $effect(() => {
+    if (!outcomeUnknown || summary.web_url) return;
+    return loadWebURL(retry);
+  });
+  function loadWebURL(_attempt: number) {
+    const ref = { provider: summary.repo.provider, platformHost: summary.repo.platform_host, owner: summary.repo.owner, name: summary.repo.name, repoPath: summary.repo.repo_path };
+    const repositoryKey = repositoryKeyFromWire(summary.repo);
+    resolvedWebURL = undefined;
+    webURLError = false;
+    if (!repositoryKey) { webURLError = true; return; }
+    webURLLoading = true;
+    const execution = appRuntime.runCommand(
+      executeGeneratedApiRequest("load repository web address", (client, signal) =>
+        providerUsesHostRoute(ref)
+          ? client.RepositoriesService.getRepoWebUrlOnHost(providerHostRouteParams(ref), repositoryKeyToWire(repositoryKey), { signal })
+          : client.RepositoriesService.getRepoWebUrl(providerRouteParams(ref), repositoryKeyToWire(repositoryKey), { signal }),
+      ).pipe(
+        Effect.tap((result) => Effect.sync(() => { resolvedWebURL = result.web_url; webURLLoading = false; })),
+        Effect.catch(() => Effect.sync(() => { webURLError = true; webURLLoading = false; })),
+      ),
+      { operation: "repositories.web-url.read", safeContext: { surface: "repositories" }, onFailure: () => undefined },
+    );
+    return () => execution.interrupt();
+  }
 </script>
 
 <Modal
@@ -112,6 +146,10 @@
         {#if outcomeUnknown}
           {#if issueListURL}
             <a href={issueListURL} target="_blank" rel="noopener noreferrer">Open issue list</a>
+          {:else if webURLLoading}
+            <span>Loading issue list...</span>
+          {:else if webURLError}
+            <div>Could not load the issue list. <Button size="sm" type="button" onclick={() => retry++}>Retry</Button></div>
           {/if}
           <Checkbox
             class="issue-modal__acknowledgement"

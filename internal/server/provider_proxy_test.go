@@ -1374,3 +1374,25 @@ func TestSpokeMCPGetPullsBatchesHubReads(t *testing.T) {
 	require.ErrorAs(err, &backendErr)
 	assert.Equal("not_found", backendErr.Kind)
 }
+
+func TestRepositoryWebURLRoutesToHub(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/host/git.example.test/repo/gitea/team/service/web-url", r.URL.Path)
+		assert.Equal(t, "42", r.URL.Query().Get("platform_repo_id"))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"web_url":"http://git.example.test/team/service"}`)
+	}))
+	t.Cleanup(hub.Close)
+	spoke := newProviderProxyTestServer(t, hub, hub.Client(), nil)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, spoke.URL+"/api/v1/host/git.example.test/repo/gitea/team/service/web-url?platform_repo_id=42", nil)
+	require.NoError(err)
+	response, err := spoke.Client().Do(request)
+	require.NoError(err)
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	require.NoError(err)
+	require.Equal(http.StatusOK, response.StatusCode)
+	require.JSONEq(`{"web_url":"http://git.example.test/team/service"}`, string(body))
+}

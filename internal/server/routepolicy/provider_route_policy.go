@@ -252,6 +252,8 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "get-pull-stack-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "get-rate-limits", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "get-repo", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
+	{OperationID: "get-repo-web-url", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
+	{OperationID: "get-repo-web-url-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "get-repo-browser-asset", Owner: NodeLocal},
 	{OperationID: "get-repo-browser-asset-on-host", Owner: NodeLocal},
 	{OperationID: "get-repo-browser-blob", Owner: NodeLocal},

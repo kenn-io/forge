@@ -1003,6 +1003,45 @@ describe("RepoSummaryPage", () => {
     await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
   });
 
+  it("recovers a missing issue list address without repeating issue creation", async () => {
+    const summary = repoSummaryFixture({
+      provider: "gitea",
+      platformHost: "git.example.test:3000",
+      owner: "acme",
+      name: "widgets",
+    });
+    let reads = 0;
+    mockGet.mockImplementation((path: string) => {
+      if (path.includes("web-url")) {
+        reads++;
+        return reads === 1
+          ? Promise.resolve({ error: "provider unavailable" })
+          : Promise.resolve({ data: { web_url: "http://git.example.test:3000/prefix/acme/widgets" } });
+      }
+      return Promise.resolve({ data: [{ ...summary, repo: { ...summary.repo, platform_repo_id: 42 } }] });
+    });
+    mockPost.mockRejectedValue(new Error("connection lost"));
+
+    render(RepoSummaryPage);
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), { target: { value: "Keep this draft" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Create issue" }));
+    await screen.findByText("Could not load the issue list.", { exact: false });
+    expect(screen.queryByRole("link", { name: "Open issue list" })).toBeNull();
+    expect(mockGet).toHaveBeenCalledWith(
+      "/host/{platform_host}/repo/{provider}/{owner}/{name}/web-url",
+      expect.objectContaining({ params: expect.objectContaining({ query: { platform_repo_id: 42 } }) }),
+    );
+    expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", true);
+    await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    const link = await screen.findByRole("link", { name: "Open issue list" });
+    expect(link.getAttribute("href")).toBe("http://git.example.test:3000/prefix/acme/widgets/issues");
+    expect(screen.getByDisplayValue("Keep this draft")).toBeTruthy();
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(reads).toBe(2);
+  });
+
   it("allows issue creation to retry after a rejected request", async () => {
     mockGet.mockResolvedValue({
       data: [

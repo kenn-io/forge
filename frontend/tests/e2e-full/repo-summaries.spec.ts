@@ -278,6 +278,21 @@ test.describe("repository summaries", () => {
     try {
       let interruptNextCreate = true;
       let createRequests = 0;
+      let webURLRequests = 0;
+      await page.route("**/api/v1/repos/summary", async (route) => {
+        const response = await route.fetch();
+        const summaries = await response.json();
+        for (const summary of summaries) {
+          if (summary.owner === "acme" && summary.name === "widgets") delete summary.web_url;
+        }
+        await route.fulfill({ response, json: summaries });
+      });
+      await page.route("**/api/v1/repo/github/acme/widgets/web-url?*", async (route) => {
+        webURLRequests++;
+        if (webURLRequests === 1)
+          await route.fulfill({ status: 503, json: { code: "unavailable", title: "Unavailable", status: 503 } });
+        else await route.fulfill({ json: { web_url: "https://github.com/acme/widgets" } });
+      });
       await page.route("**/api/v1/issues/github/acme/widgets", async (route) => {
         if (route.request().method() === "POST") createRequests++;
         if (interruptNextCreate && route.request().method() === "POST") {
@@ -308,6 +323,8 @@ test.describe("repository summaries", () => {
       await expect(page.locator(".kit-flash-stack").getByRole("status")).toHaveCount(0);
       await expect(title).toHaveValue("Retry interrupted issue creation");
       await expect(create).toBeDisabled();
+      await expect(dialog.getByText("Could not load the issue list.")).toBeVisible();
+      await dialog.getByRole("button", { name: "Retry" }).click();
       const issueList = dialog.getByRole("link", { name: "Open issue list" });
       await expect(issueList).toBeVisible();
       await expect(issueList).toHaveAttribute("href", "https://github.com/acme/widgets/issues");
@@ -323,6 +340,7 @@ test.describe("repository summaries", () => {
       await popup.close();
       await expect(create).toBeDisabled();
       expect(createRequests).toBe(1);
+      expect(webURLRequests).toBe(2);
       await expect(title).toHaveValue("Retry interrupted issue creation");
 
       await dialog.getByRole("checkbox", { name: "I checked the provider's issue list and want to retry." }).click();

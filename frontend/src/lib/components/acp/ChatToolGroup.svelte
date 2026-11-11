@@ -141,7 +141,7 @@
                   : "Sub-agent"}</span
               >
             {/if}
-            {#if title.shell}<ChatShellCommand command={message.text} />{:else}{#each title.parts as part, partIndex (partIndex)}{#if part.role === "target"}<code class="target">{part.text}</code>{:else if part.role === "range"}<span class="range">{part.text}</span>{:else}{part.text}{/if}{/each}{/if}
+            {#if title.shell}<ChatShellCommand command={message.text} />{:else}{#each title.parts as part, partIndex (partIndex)}{#if part.role === "verb"}<span class={["verb", `kind-${message.kind}`]}>{part.text}</span>{:else if part.role === "target"}<code class="target">{part.text}</code>{:else if part.role === "range"}<span class="range">{part.text}</span>{:else}{part.text}{/if}{/each}{/if}
           </span>
           {/snippet}
           {#if expandable}
@@ -290,6 +290,19 @@
     background: var(--bg-surface);
     font-family: var(--font-mono);
     box-decoration-break: clone;
+  }
+  /* The verb carries the tool kind; green and red stay with the status icon. */
+  .kind-read,
+  .kind-search {
+    color: var(--accent-blue);
+  }
+  .kind-edit,
+  .kind-delete,
+  .kind-move {
+    color: var(--accent-amber);
+  }
+  .kind-fetch {
+    color: var(--accent-teal);
   }
   .range {
     color: var(--text-secondary);

@@ -697,6 +697,40 @@ describe("ACPWorkspace tool rows (browser)", () => {
     const conversation = host.querySelector<HTMLElement>(".conversation")!;
     expect(conversation.scrollWidth).toBeLessThanOrEqual(conversation.clientWidth);
   });
+
+  it("colors each tool verb by its kind and leaves other titles in the text color", async () => {
+    const { host } = await renderChat(720);
+    socket.options!.onMessage(
+      encodeFixture({
+        messages: [
+          { role: "tool", text: "Read src/app.ts", status: "completed", toolCallId: "read", kind: "read" },
+          { role: "tool", text: "Edit src/app.ts", status: "completed", toolCallId: "edit", kind: "edit" },
+          { role: "tool", text: "Fetch https://example.com", status: "completed", toolCallId: "fetch", kind: "fetch" },
+          { role: "tool", text: "Create task: tidy", status: "completed", toolCallId: "task", kind: "think" },
+        ],
+        messageCursor: 1,
+        messageOffset: 0,
+        messageCount: 4,
+        configOptions: [],
+        configuring: false,
+        permissions: [],
+        busy: false,
+        connected: true,
+        error: "",
+      }),
+    );
+    await page.getByRole("button", { name: "4 tools" }).click();
+    const color = (text: string) => {
+      const element = [...host.querySelectorAll<HTMLElement>(".list .tool-name *, .list .tool-name")].find(
+        (candidate) => candidate.childNodes.length === 1 && candidate.textContent === text,
+      );
+      if (!element) throw new Error(`No element holds only "${text}"`);
+      return getComputedStyle(element).color;
+    };
+    const plain = getComputedStyle(page.getByText("Create task: tidy").element()).color;
+    const verbs = [color("Read"), color("Edit"), color("Fetch")];
+    expect(new Set([plain, ...verbs]).size).toBe(4);
+  });
 });
 
 describe("ACPWorkspace transcript paging (browser)", () => {

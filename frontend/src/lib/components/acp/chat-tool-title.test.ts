@@ -11,13 +11,14 @@ describe("parseToolTitle", () => {
     expect(parseToolTitle("read", "Read src/app.ts (1 - 50)")).toEqual({
       shell: false,
       parts: [
-        { text: "Read ", role: "plain" },
+        { text: "Read", role: "verb" },
+        { text: " ", role: "plain" },
         { text: "src/app.ts", role: "target" },
         { text: " (1 - 50)", role: "range" },
       ],
     });
     expect(parseToolTitle("read", "Read src/app.ts (from line 12)")).toMatchObject({
-      parts: [{}, { text: "src/app.ts", role: "target" }, { text: " (from line 12)", role: "range" }],
+      parts: [{}, {}, { text: "src/app.ts", role: "target" }, { text: " (from line 12)", role: "range" }],
     });
   });
 
@@ -25,7 +26,8 @@ describe("parseToolTitle", () => {
     expect(parseToolTitle("search", "Find `src` `**/*.ts`")).toEqual({
       shell: false,
       parts: [
-        { text: "Find ", role: "plain" },
+        { text: "Find", role: "verb" },
+        { text: " ", role: "plain" },
         { text: "src", role: "target" },
         { text: " ", role: "plain" },
         { text: "**/*.ts", role: "target" },
@@ -37,7 +39,8 @@ describe("parseToolTitle", () => {
     expect(parseToolTitle("search", "Search sign in flow in src/auth")).toEqual({
       shell: false,
       parts: [
-        { text: "Search ", role: "plain" },
+        { text: "Search", role: "verb" },
+        { text: " ", role: "plain" },
         { text: "sign in flow", role: "target" },
         { text: " in ", role: "plain" },
         { text: "src/auth", role: "target" },
@@ -49,15 +52,16 @@ describe("parseToolTitle", () => {
     expect(parseToolTitle("edit", "Edit src/server/routes.ts")).toEqual({
       shell: false,
       parts: [
-        { text: "Edit ", role: "plain" },
+        { text: "Edit", role: "verb" },
+        { text: " ", role: "plain" },
         { text: "src/server/routes.ts", role: "target" },
       ],
     });
     expect(parseToolTitle("fetch", "Fetch https://example.com/docs")).toMatchObject({
-      parts: [{ text: "Fetch " }, { text: "https://example.com/docs", role: "target" }],
+      parts: [{ text: "Fetch", role: "verb" }, {}, { text: "https://example.com/docs", role: "target" }],
     });
     expect(parseToolTitle("fetch", 'Search "release notes"')).toMatchObject({
-      parts: [{ text: "Search " }, { text: '"release notes"', role: "target" }],
+      parts: [{ text: "Search", role: "verb" }, {}, { text: '"release notes"', role: "target" }],
     });
   });
 

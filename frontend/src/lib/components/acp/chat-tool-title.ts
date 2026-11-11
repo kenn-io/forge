@@ -1,10 +1,10 @@
-// Splits an ACP tool call title into its verb and its target so a row can show
-// the target (a path, URL, or pattern) in code font. The shapes come from the
+// Splits an ACP tool call title into its verb and its target so a row can color
+// the verb by tool kind and show the target (a path, URL, or pattern) in code font. The shapes come from the
 // titles claude-agent-acp 0.100.0 and the upstream Codex ACP source build:
 // "Read src/app.ts (1 - 50)", "Find `src` `*.ts`", "Search foo in src",
 // "Fetch https://example.com". Titles of any other shape stay plain text.
 
-export type ToolTitlePart = { text: string; role: "target" | "plain" | "range" };
+export type ToolTitlePart = { text: string; role: "verb" | "target" | "plain" | "range" };
 export type ToolTitle = { shell: true } | { shell: false; parts: ToolTitlePart[] };
 
 // Each verb with the tool kinds the adapters send it under.
@@ -31,7 +31,7 @@ export function parseToolTitle(kind: string | null | undefined, title: string): 
   if (!verb || !target) return { shell: false, parts: [{ text: title, role: "plain" }] };
   return {
     shell: false,
-    parts: [{ text: `${verb} `, role: "plain" }, ...targetParts(kind, target)],
+    parts: [{ text: verb, role: "verb" }, { text: " ", role: "plain" }, ...targetParts(kind, target)],
   };
 }
 

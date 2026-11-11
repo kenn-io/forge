@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -65,6 +66,13 @@ func newACPMCPProxy(binding ACPMCPBinding, workspaceID string, disabled bool) (*
 			request.Out.Header.Set("X-Kenn-Forge-Workspace-ID", workspaceID)
 			// The authenticated proxy hop has a different loopback origin.
 			request.Out.Header.Del("Origin")
+		}, ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			// MCP clients show only the response body, so the default empty
+			// 502 reaches the agent as an error with no explanation. The daemon
+			// may have run the call before the connection failed, so a retry of
+			// a call that changes state must check its outcome first.
+			slog.Warn("ACP Forge MCP proxy lost the daemon connection", "workspace_id", workspaceID, "err", err)
+			http.Error(w, "Forge MCP proxy lost its connection to the Forge daemon ("+err.Error()+"). The daemon may be restarting; wait a few seconds and retry. If the call changes state, check whether it already took effect before you repeat it.", http.StatusBadGateway)
 		}}
 		proxy.ServeHTTP(w, r)
 	})}

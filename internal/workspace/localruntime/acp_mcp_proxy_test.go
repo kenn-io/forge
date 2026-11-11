@@ -131,3 +131,23 @@ func TestACPWithoutForgeToolsDoesNotReceiveCredentials(t *testing.T) {
 	require.NoError(err)
 	require.Equal("session/new\nsession/load\n", string(log))
 }
+
+func TestACPMCPProxyExplainsUnreachableDaemon(t *testing.T) {
+	// Keep the listener and abort the response; a closed port can be reused.
+	aborting := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) }))
+	t.Cleanup(aborting.Close)
+	proxy, err := newACPMCPProxy(ACPMCPBinding{URL: aborting.URL + "/mcp", Token: "daemon-token"}, "workspace", false)
+	require.NoError(t, err)
+	t.Cleanup(proxy.Close)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, proxy.URL(), strings.NewReader(`{"jsonrpc":"2.0","method":"tools/list","id":1}`))
+	require.NoError(t, err)
+	request.Header.Set("Authorization", "Bearer "+proxy.token)
+	response, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	body, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	require.NoError(t, response.Body.Close())
+	assert.Equal(t, http.StatusBadGateway, response.StatusCode)
+	assert.Contains(t, string(body), "lost its connection to the Forge daemon (EOF)")
+	assert.Contains(t, string(body), "check whether it already took effect")
+}

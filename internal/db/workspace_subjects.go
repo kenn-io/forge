@@ -33,6 +33,8 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 	if err != nil {
 		return nil, fmt.Errorf("encode workspace subject metadata request: %w", err)
 	}
+	// No held pull requests, so the condition binds no arguments.
+	var noArgs []any
 	query := `WITH requested(repo_id, item_type, item_number) AS (
 			SELECT CAST(json_extract(value, '$.repo_id') AS INTEGER),
 			       json_extract(value, '$.item_type'),
@@ -42,7 +44,7 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 		SELECT q.repo_id, q.item_type, q.item_number,
 		       r.platform, r.platform_host, r.platform_repo_id, r.bitbucket_repository_uuid, r.owner, r.name, r.repo_path, r.is_private,
 		       p.title, p.state, p.url, p.author, p.is_draft,
-		       ` + mergeQueuedCondition("p", nil, nil) + `
+		       ` + mergeQueuedCondition("p", nil, &noArgs) + `
 		FROM requested q
 		JOIN forge_repos r ON r.id = q.repo_id AND r.lifecycle_state = 'active'
 		JOIN forge_merge_requests p

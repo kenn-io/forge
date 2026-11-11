@@ -39,7 +39,7 @@ func TestWindowsCommandRecorder(t *testing.T) {
 			return
 		}
 	}
-	t.Fatal("missing argument separator")
+	require.FailNow(t, "missing argument separator")
 }
 
 func mustJSON(t *testing.T, value []string) string {

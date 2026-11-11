@@ -62,7 +62,7 @@ func TestMain(m *testing.M) {
 	if err := os.Mkdir(forgeBuildDir, 0o700); err != nil {
 		panic(err)
 	}
-	code := m.Run()
+	code := gitsafe.RunIsolatedMain(m)
 	// Windows can briefly keep daemon executables locked after process exit,
 	// failing with either an access denied or a sharing violation.
 	_, err = backoff.Retry(context.Background(), func() (struct{}, error) {

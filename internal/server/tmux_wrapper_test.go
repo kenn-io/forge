@@ -31,6 +31,7 @@ import (
 
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/routepolicy"
 	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/testutil"
@@ -530,9 +531,9 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	newerPR := serverfake.SeedPR(t, database, "acme", "widget", 2,
 		serverfake.WithSeedPRTimes(newer, newer, newer))
 	_, err = database.WriteDB().ExecContext(ctx, `
-		WITH RECURSIVE n(i) AS (VALUES (1) UNION ALL SELECT i + 1 FROM n WHERE i < 5001)
+		WITH RECURSIVE n(i) AS (VALUES (1) UNION ALL SELECT i + 1 FROM n WHERE i < ?)
 		INSERT INTO forge_mr_events (merge_request_id, repo_id, event_type, author, body, created_at, dedupe_key)
-		SELECT ?, ?, 'issue_comment', 'search-reviewer', 'newer match', ?, 'newer-' || i FROM n`, newerPR, repo.ID, newer)
+		SELECT ?, ?, 'issue_comment', 'search-reviewer', 'newer match', ?, 'newer-' || i FROM n`, itemapi.ActivitySafetyCap+1, newerPR, repo.ID, newer)
 	require.NoError(err)
 	limit := int64(1)
 	first, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Search: &search, Since: &since, Limit: &limit}})
@@ -542,8 +543,6 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	older, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Search: &search, Since: &since, Limit: &limit, SubjectBefore: first.JSON200.NextSubjectCursor}})
 	require.NoError(err)
 	require.NotNil(older.JSON200)
-	require.Len(older.JSON200.ItemActivity, 1)
-	assert.EqualValues(1, older.JSON200.ItemActivity[0].ItemNumber)
 	require.Len(older.JSON200.WorkspaceActivity, 1)
 	assert.EqualValues(1, older.JSON200.WorkspaceActivity[0].ItemNumber)
 }

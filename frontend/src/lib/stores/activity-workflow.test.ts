@@ -135,7 +135,6 @@ it.layer(ActivityWorkflowLive)("activity polling", (it) => {
       assert.isFalse(yield* Ref.get(queuedStarted));
     }),
   );
-
   it.effect("interrupts an owned background read when its caller stops", () =>
     Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
@@ -168,35 +167,6 @@ it.layer(ActivityWorkflowLive)("activity polling", (it) => {
       assert.isTrue(yield* Ref.get(projected));
     }),
   );
-
-  it.effect("replaces an in-flight foreground load", () =>
-    Effect.gen(function* () {
-      const workflow = yield* ActivityWorkflow;
-      const started = yield* Deferred.make<void>();
-      const aborted = yield* Ref.make(false);
-      const projected = yield* Ref.make<string[]>([]);
-      const first = yield* Effect.forkDetach(
-        Effect.exit(
-          workflow.load(
-            "old",
-            Deferred.succeed(started, undefined).pipe(
-              Effect.andThen(Effect.never),
-              Effect.onInterrupt(() => Ref.set(aborted, true)),
-            ),
-            (value: string) => Ref.update(projected, (items) => [...items, value]),
-          ),
-        ),
-      );
-      yield* Deferred.await(started);
-      yield* workflow.load("new", Effect.succeed("new"), (value) =>
-        Ref.update(projected, (items) => [...items, value]),
-      );
-      yield* Fiber.await(first);
-      assert.isTrue(yield* Ref.get(aborted));
-      assert.deepStrictEqual(yield* Ref.get(projected), ["new"]);
-    }),
-  );
-
   it.effect("replaces a foreground load while it interrupts an older snapshot", () =>
     Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;

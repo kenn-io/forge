@@ -141,6 +141,7 @@ const itemActivityCapped = vi.hoisted(() => ({ value: false }));
 const canLoadMore = vi.hoisted(() => ({ value: false }));
 const loadingMore = vi.hoisted(() => ({ value: false }));
 const loadMoreActivity = vi.hoisted(() => vi.fn());
+const loadOlderItems = vi.hoisted(() => vi.fn());
 const involvesMe = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const unassigned = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
@@ -197,7 +198,7 @@ vi.mock("../context.js", () => ({
       isItemActivityCapped: () => itemActivityCapped.value,
       canLoadOlderItems: () => itemActivityCapped.value,
       isLoadingOlderItems: () => false,
-      loadOlderItems: vi.fn(),
+      loadOlderItems,
       canLoadMoreActivity: () => canLoadMore.value,
       isLoadingMoreActivity: () => loadingMore.value,
       loadMoreActivity,
@@ -280,6 +281,7 @@ describe("ActivityFeed compact mode", () => {
     canLoadMore.value = false;
     loadingMore.value = false;
     loadMoreActivity.mockClear();
+    loadOlderItems.mockClear();
     selectedAuthor.value = undefined;
     setActivityAuthor.mockClear();
     setActivityFilterTypes.mockClear();
@@ -350,11 +352,10 @@ describe("ActivityFeed compact mode", () => {
       view: "threaded" as const,
       visible: true,
       notice: /most recent 5,000 events/,
-      otherNotice: /5,000 most recently active pull requests and issues/,
     },
     {
       kind: "parents",
-      rule: "shows the parent ceiling notice in threaded view",
+      rule: "shows older item control in threaded view",
       view: "threaded" as const,
       visible: true,
       notice: /Load older items/,
@@ -362,19 +363,23 @@ describe("ActivityFeed compact mode", () => {
     },
     {
       kind: "parents",
-      rule: "hides the parent ceiling notice in flat view",
+      rule: "hides older item control in flat view",
       view: "flat" as const,
       visible: false,
       notice: /Load older items/,
       otherNotice: /most recent 5,000 events/,
     },
-  ])("$rule", ({ kind, view, visible, notice, otherNotice }) => {
+  ])("$rule", async ({ kind, view, visible, notice, otherNotice }) => {
     activityCapped.value = kind === "events";
     itemActivityCapped.value = kind === "parents";
     viewMode.value = view;
     render(ActivityFeed);
     expect(screen.queryByText(notice) !== null).toBe(visible);
-    expect(screen.queryByText(otherNotice)).toBeNull();
+    if (otherNotice) expect(screen.queryByText(otherNotice)).toBeNull();
+    if (kind === "parents" && visible) {
+      await fireEvent.click(screen.getByRole("button", { name: "Load older items" }));
+      expect(loadOlderItems).toHaveBeenCalledOnce();
+    }
   });
 
   it("offers to retry a failed thread history load", async () => {

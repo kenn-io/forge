@@ -207,7 +207,7 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
               ),
             ),
           );
-          if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) yield* Effect.failCause(exit.cause);
+          if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) return yield* Effect.failCause(exit.cause);
         }
       });
     }

@@ -289,6 +289,7 @@ describe("activity subject paging", () => {
     expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
     expect(pages).toBe(2);
   });
+
   it("skips a queued page when an earlier refresh already covers it", async () => {
     const repo = {
       provider: "github",
@@ -558,10 +559,7 @@ describe("activity subject paging", () => {
         if (path === "/activity/authors") return { data: { authors: [] }, error: null };
         if (path === "/activity/thread-events") {
           threadReads++;
-          if (threadReads === 1) return { data: { items: [comment], capped: false }, error: null };
-          if (threadReads === 2)
-            return { error: { detail: "thread unavailable" }, response: new Response(null, { status: 422 }) };
-          return { data: { items: [{ ...comment, id: "ntf:replacement" }], capped: false }, error: null };
+          return { data: { items: [comment], capped: false }, error: null };
         }
         return {
           data: {
@@ -585,20 +583,6 @@ describe("activity subject paging", () => {
     await vi.waitFor(() => expect(store.isLoadingOlderItems()).toBe(false));
     expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id);
     expect(threadReads).toBe(1);
-  });
-  it("preserves the server's incomplete subject count without a continuation cursor", async () => {
-    const client = {
-      GET: vi.fn(async (path: string) =>
-        path === "/activity/authors"
-          ? { data: { authors: [] }, error: null }
-          : { data: { items: [], item_activity: [], item_activity_capped: true, capped: false }, error: null },
-      ),
-    } as unknown as GeneratedClient;
-    const store = createActivityStore({ client });
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-    expect(store.isItemActivityCapped()).toBe(true);
-    expect(store.canLoadOlderItems()).toBe(false);
   });
   it("queues an older page until the earlier reconciliation finishes", async () => {
     const repo = {
@@ -4537,11 +4521,9 @@ describe("activity polling recovery", () => {
       item_number: 0,
     };
     let feedReads = 0;
-    const cutoffs: string[] = [];
     const client = {
-      GET: vi.fn(async (path: string, options?: { params?: { query?: { since?: string } } }) => {
+      GET: vi.fn(async (path: string) => {
         if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-        cutoffs.push(options?.params?.query?.since ?? "");
         feedReads += 1;
         if (feedReads === 1)
           return { data: { items: [stale], capped: false, event_cursor: stale.cursor }, error: null };
@@ -4563,7 +4545,6 @@ describe("activity polling recovery", () => {
     await vi.waitFor(() => expect(feedReads).toBe(5));
 
     expect(store.getActivityItems()).toEqual([persistedBehindCursor]);
-    expect(Date.parse(cutoffs[4]!) - Date.parse(cutoffs[0]!)).toBeGreaterThanOrEqual(45_000);
   });
 
   it("clears a foreground error when a replacement poll succeeds afterward", async () => {

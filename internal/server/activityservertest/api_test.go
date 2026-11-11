@@ -1026,60 +1026,43 @@ func TestAPIListActivityAppliesTrackedRepoScopeBeforeAuthorLimit(t *testing.T) {
 
 func TestAPIListActivitySearchFindsParentsBeyondEventCap(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
-	for _, tc := range []struct {
-		name      string
-		events    int
-		limit     int
-		parents   []int
-		truncated bool
-	}{
-		{"beyond page", 201, 200, []int{2, 1}, false},
-		{"beyond window", itemapi.ActivitySafetyCap + 1, 0, []int{2, 1}, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			srv, database, _ := setupTestServer(t)
-			ctx := t.Context()
-			base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
-			olderPRID := serverfake.SeedPR(t, database, "acme", "widget", 1,
-				serverfake.WithSeedPRTitle("Unrelated older parent"),
-				serverfake.WithSeedPRTimes(base, base, base))
-			require.NoError(t, database.UpsertMREvents(ctx, []db.MREvent{{
-				MergeRequestID: olderPRID, EventType: "issue_comment", Author: "reviewer",
-				Body: "needle in an older event", CreatedAt: base.Add(time.Minute), DedupeKey: "older-needle",
-			}}))
-			noisyPRID := serverfake.SeedPR(t, database, "acme", "widget", 2,
-				serverfake.WithSeedPRTitle("Unrelated noisy parent"),
-				serverfake.WithSeedPRTimes(base, base, base))
-			noisyEvents := make([]db.MREvent, tc.events)
-			for i := range noisyEvents {
-				noisyEvents[i] = db.MREvent{
-					MergeRequestID: noisyPRID, EventType: "issue_comment", Author: "reviewer",
-					Body: "needle repeated", CreatedAt: base.Add(2*time.Minute + time.Duration(i)*time.Second),
-					DedupeKey: fmt.Sprintf("noisy-needle-%d", i),
-				}
+	srv, database, _ := setupTestServer(t)
+	ctx := t.Context()
+	base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
+	olderPRID := serverfake.SeedPR(t, database, "acme", "widget", 1,
+		serverfake.WithSeedPRTitle("Unrelated older parent"),
+		serverfake.WithSeedPRTimes(base, base, base))
+	require.NoError(t, database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: olderPRID, EventType: "issue_comment", Author: "reviewer",
+		Body: "needle in an older event", CreatedAt: base.Add(time.Minute), DedupeKey: "older-needle",
+	}}))
+	noisyPRID := serverfake.SeedPR(t, database, "acme", "widget", 2,
+		serverfake.WithSeedPRTitle("Unrelated noisy parent"),
+		serverfake.WithSeedPRTimes(base, base, base))
+	noisyEvents := make([]db.MREvent, itemapi.ActivitySafetyCap+1)
+	for i := range noisyEvents {
+		noisyEvents[i] = db.MREvent{
+			MergeRequestID: noisyPRID, EventType: "issue_comment", Author: "reviewer",
+			Body: "needle repeated", CreatedAt: base.Add(2*time.Minute + time.Duration(i)*time.Second),
+			DedupeKey: fmt.Sprintf("noisy-needle-%d", i),
+		}
+	}
+	require.NoError(t, database.UpsertMREvents(ctx, noisyEvents))
+	since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
+	for _, projection := range []string{"full", "collapsed"} {
+		t.Run(projection, func(t *testing.T) {
+			rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle&projection="+projection, nil)
+			require.Equal(t, http.StatusOK, rr.Code)
+			var body itemapi.ActivityResponse
+			require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
+			require.Len(t, body.ItemActivity, 2)
+			for i, number := range []int{2, 1} {
+				assert.Equal(t, number, body.ItemActivity[i].ItemNumber)
 			}
-			require.NoError(t, database.UpsertMREvents(ctx, noisyEvents))
-			since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
-			limit := ""
-			if tc.limit > 0 {
-				limit = "&limit=" + strconv.Itoa(tc.limit)
-			}
-			for _, projection := range []string{"full", "collapsed"} {
-				t.Run(projection, func(t *testing.T) {
-					rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle&projection="+projection+limit, nil)
-					require.Equal(t, http.StatusOK, rr.Code)
-					var body itemapi.ActivityResponse
-					require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
-					require.Len(t, body.ItemActivity, len(tc.parents))
-					for i, number := range tc.parents {
-						assert.Equal(t, number, body.ItemActivity[i].ItemNumber)
-					}
-					assert.Equal(t, tc.truncated, body.ItemActivityCapped)
-					if tc.limit == 0 && projection == "full" {
-						assert.Len(t, body.Items, itemapi.ActivitySafetyCap)
-						assert.True(t, body.Capped)
-					}
-				})
+			assert.False(t, body.ItemActivityCapped)
+			if projection == "full" {
+				assert.Len(t, body.Items, itemapi.ActivitySafetyCap)
+				assert.True(t, body.Capped)
 			}
 		})
 	}

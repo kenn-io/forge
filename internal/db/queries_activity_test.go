@@ -1867,39 +1867,23 @@ func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T)
 		withMRTitle("Needle in the parent title"),
 		withMRActivity(now.Add(-2*time.Hour)),
 	))
-	insertTestMRWithOptions(t, d, testMR(repoID, 3,
-		withMRTitle("Unrelated parent without a matching event"),
+	olderID := insertTestMRWithOptions(t, d, testMR(repoID, 3,
+		withMRTitle("Unrelated parent with an older matching event"),
 		withMRActivity(now.Add(-3*time.Hour)),
 	))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{MergeRequestID: olderID, EventType: "issue_comment", Author: "reviewer", Body: "needle", CreatedAt: now.Add(-time.Hour), DedupeKey: "older-match"}}))
+	insertTestMRWithOptions(t, d, testMR(repoID, 4, withMRTitle("Unrelated parent without a matching event"), withMRActivity(now.Add(-4*time.Hour))))
 
 	subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{
-		Search: "needle", SearchEventOpts: &ListActivityOpts{Search: "needle"}, Limit: 50,
+		Search: "needle", SearchEventOpts: &ListActivityOpts{Search: "needle", Limit: 1}, Limit: 50,
 	})
 	require.NoError(err)
-	require.Len(subjects, 2)
-	assert.ElementsMatch([]int{1, 2}, []int{
+	require.Len(subjects, 3)
+	assert.ElementsMatch([]int{1, 2, 3}, []int{
 		subjects[0].Subject.Key.ItemNumber,
 		subjects[1].Subject.Key.ItemNumber,
+		subjects[2].Subject.Key.ItemNumber,
 	})
-}
-
-func TestListActivitySubjectsSearchFindsOlderEventMatches(t *testing.T) {
-	t.Parallel()
-	d := openTestDB(t)
-	repoID := insertTestRepo(t, d, "alice", "alpha")
-	now := baseTime()
-	old := insertTestMRWithOptions(t, d, testMR(repoID, 1, withMRActivity(now.Add(-2*time.Hour))))
-	newer := insertTestMRWithOptions(t, d, testMR(repoID, 2, withMRActivity(now.Add(-time.Hour))))
-	require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{
-		{MergeRequestID: old, EventType: "issue_comment", Author: "reviewer", Body: "needle", CreatedAt: now.Add(-2 * time.Hour), DedupeKey: "old"},
-		{MergeRequestID: newer, EventType: "issue_comment", Author: "reviewer", Body: "needle", CreatedAt: now.Add(-time.Hour), DedupeKey: "new"},
-	}))
-	events := ListActivityOpts{Search: "needle", Limit: 1}
-	subjects, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Search: "needle", SearchEventOpts: &events, Limit: 10})
-	require.NoError(t, err)
-	require.Len(t, subjects, 2)
-	assert.Equal(t, 2, subjects[0].Subject.Key.ItemNumber)
-	assert.Equal(t, 1, subjects[1].Subject.Key.ItemNumber)
 }
 
 func TestListActivitySearchExcludesNegatedItemAuthor(t *testing.T) {

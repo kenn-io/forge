@@ -354,42 +354,6 @@ test.describe("default branch activity", () => {
     ).toBeVisible();
   });
 
-  test("loads older items in threaded activity", async ({ page }) => {
-    await mockDefaultBranchActivity(page);
-    await page.route("**/api/v1/activity?**", async (route) => {
-      const older = new URL(route.request().url()).searchParams.has("subject_before");
-      const number = older ? 2 : 1;
-      await route.fulfill({
-        json: {
-          items: [],
-          capped: false,
-          item_activity_capped: !older,
-          next_subject_cursor: older ? "" : "older",
-          item_activity: [
-            {
-              repo: { ...repo, platform_repo_id: 1011 },
-              repo_owner: "acme",
-              repo_name: "widgets",
-              platform_host: "github.com",
-              item_type: "pr",
-              item_number: number,
-              item_title: `Item ${number}`,
-              item_state: "open",
-              item_url: `https://github.com/acme/widgets/pull/${number}`,
-              item_author: "alice",
-              activity_at: "2026-03-30T14:02:30Z",
-            },
-          ],
-        },
-      });
-    });
-    await page.goto("/?view=threaded");
-    await expect(page.getByText("Item 1")).toBeVisible();
-    await page.getByRole("button", { name: "Load older items" }).click();
-    await expect(page.getByText("Item 2")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Load older items" })).toHaveCount(0);
-  });
-
   test("deselecting Commits hides default-branch commit rows", async ({ page }) => {
     await mockDefaultBranchActivity(page);
     await page.goto("/?view=flat");

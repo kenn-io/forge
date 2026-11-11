@@ -971,7 +971,10 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 			stacks.SyncCompletedHook(ctx, database, nil),
 		)
 		if semanticIndexer != nil {
-			syncer.SetOnSyncCompleted(semanticSyncCompleted(semanticIndexer.Wake, syncCompleted))
+			syncer.SetOnSyncCompleted(func(results []ghclient.RepoSyncResult) {
+				syncCompleted(results)
+				semanticIndexer.Wake()
+			})
 			backgroundLoops.start(semanticIndexer.Run)
 		} else {
 			syncer.SetOnSyncCompleted(syncCompleted)

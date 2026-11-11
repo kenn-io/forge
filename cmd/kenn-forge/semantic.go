@@ -8,7 +8,6 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
-	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/semantic"
 	"go.kenn.io/kit/embedlocal"
 )
@@ -45,11 +44,4 @@ func openSemanticSearch(ctx context.Context, cfg *config.Config, database *db.DB
 		return nil, err
 	}
 	return semantic.Open(ctx, filepath.Join(cfg.DataDir, semantic.SidecarFile), encoder, database, cfg.SyncDuration())
-}
-
-func semanticSyncCompleted(wake func(), next func([]ghclient.RepoSyncResult)) func([]ghclient.RepoSyncResult) {
-	return func(results []ghclient.RepoSyncResult) {
-		next(results)
-		wake()
-	}
 }

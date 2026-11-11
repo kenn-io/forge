@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
-	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/semantic"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/embedfake"
@@ -52,15 +51,6 @@ func TestSemanticStartupChoice(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, indexer)
 	defer func() { assert.NoError(t, indexer.Close()) }()
-	want := []ghclient.RepoSyncResult{{Owner: "acme", Name: "widget"}}
-	var results []ghclient.RepoSyncResult
-	woken := false
-	semanticSyncCompleted(func() { woken = true }, func(got []ghclient.RepoSyncResult) {
-		assert.False(t, woken)
-		results = got
-	})(want)
-	assert.Equal(t, want, results)
-	assert.True(t, woken)
 	require.NoError(t, indexer.Refresh(t.Context()))
 	item := db.RepoItemNumber{RepoID: repoID, Number: 2}
 	rows, err := semantic.Rank(t.Context(), indexer, "cache", "pr", []db.RepoItemNumber{item}, func(row db.RepoItemNumber) db.RepoItemNumber { return row }, 0, 0)

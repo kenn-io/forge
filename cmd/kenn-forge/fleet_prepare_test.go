@@ -47,6 +47,19 @@ func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
 		HandoffErrors:          []string{"handoff review draft for team/project #42 on github.com (github): offline"},
 		InFlightProviderWrites: 4, ActiveDeferredMerges: 5, UndrainedAcks: 6,
 	}}
+	var stdout bytes.Buffer
+	cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
+	cmd.SetArgs([]string{"prepare-spoke"})
+	require.ErrorContains(t, cmd.Execute(), "not ready")
+	for _, want := range []string{
+		"2 unprepared", "1 handoff conflict", "1 handoff error",
+		"4 provider write", "5 deferred merge", "6 notification acknowledgement",
+		"Workspace ws-1: team/project issue 42: launchSpecMissing",
+		"Workspace ws-2 issue 7: sourceVisibilityExpired",
+		"Handoff conflict: review draft for team/project #42 on github.com (github)", "Handoff error: handoff review draft for team/project #42 on github.com (github): offline",
+	} {
+		assert.Contains(t, stdout.String(), want)
+	}
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -61,16 +74,7 @@ func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
 			cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
 			cmd.SetArgs(tc.args)
 			require.ErrorContains(t, cmd.Execute(), "not ready")
-			for _, want := range []string{
-				"2 unprepared", "1 handoff conflict", "1 handoff error",
-				"4 provider write", "5 deferred merge", "6 notification acknowledgement",
-				"Workspace ws-1: team/project issue 42: launchSpecMissing",
-				"Workspace ws-2 issue 7: sourceVisibilityExpired",
-				"Handoff conflict: review draft for team/project #42 on github.com (github)", "Handoff error: handoff review draft for team/project #42 on github.com (github): offline",
-				"Rerun:", tc.want,
-			} {
-				assert.Contains(t, stdout.String(), want)
-			}
+			assert.Contains(t, stdout.String(), "Rerun:\n  "+tc.want)
 		})
 	}
 }

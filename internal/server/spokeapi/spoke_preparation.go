@@ -194,11 +194,8 @@ func (s *Handlers) HandoffSpokeProviderState(
 			receipt.ContentDigest == record.ContentDigest {
 			continue
 		}
-		description := record.Kind + " " + record.SourceKey
-		if draft := record.ReviewDraft; draft != nil {
-			repo := draft.Repository
-			description = fmt.Sprintf("review draft for %s/%s #%d on %s (%s)", repo.Owner, repo.Name, draft.PullNumber, repo.PlatformHost, repo.Provider)
-		}
+		repo := record.ReviewDraft.Repository
+		description := fmt.Sprintf("review draft for %s/%s #%d on %s (%s)", repo.Owner, repo.Name, record.ReviewDraft.PullNumber, repo.PlatformHost, repo.Provider)
 		httpRequest, requestErr := providerStateImportRequest(ctx, record)
 		var result db.ProviderStateImportResult
 		if err := spokePreparationProviderJSON(ctx, client, federationauth.ScopeProviderHandoff, httpRequest, requestErr, &result); err != nil {

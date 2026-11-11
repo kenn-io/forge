@@ -73,6 +73,7 @@ func TestHubCarriesRequestsThroughSpokeTunnelUntilRevocation(t *testing.T) {
 	assert.Equal(t, "spoke answered /api/v1/snapshot/raw", string(body))
 
 	// Revoking a spoke cancels its federation streams, which include the tunnel.
+	require.NoError(t, hub.options.FederationCredentials.RevokeInbound(spokeToken))
 	hub.syncevents.CancelFederationEventStreams(serverfake.FederationEventTestNodeID)
 	require.Eventually(t, func() bool {
 		return !hub.tunnels.Connected(serverfake.FederationEventTestNodeID)

@@ -7,7 +7,7 @@ import { canonicalProvider, resolvedPlatformHost } from "./provider-routes.js";
 import { repositoryKeyFromCatalog, repositoryKeyString } from "./repository-key.js";
 import type { RepositoryRouteRef } from "../routes.js";
 import { createRecentDetails } from "../stores/recent-details.js";
-import { retryIdempotentRead } from "./retry-policy.js";
+import { isTransientPickerReadFailure, retryIdempotentRead } from "./retry-policy.js";
 
 function detailSnapshotKey(ref: RepositoryRouteRef): string | undefined {
   if (!ref.repositoryKey) return undefined;
@@ -41,7 +41,7 @@ export const RepositoryReadsLive = Layer.effect(RepositoryReads)(
         executeGeneratedApiRequest("load repositories", (client, signal) =>
           client.RepositoriesService.listRepos({ signal }),
         ).pipe(
-          retryIdempotentRead,
+          (read) => retryIdempotentRead(read, isTransientPickerReadFailure),
           Effect.tap((repos) =>
             Effect.sync(() => {
               snapshot = repos;

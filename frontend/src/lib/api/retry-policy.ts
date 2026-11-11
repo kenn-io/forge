@@ -1,5 +1,5 @@
 import { Duration, Effect, Schedule } from "effect";
-import { TransientTransportError } from "./effect-errors.js";
+import { ApiProblemError, TransientTransportError } from "./effect-errors.js";
 
 export const transientRetrySchedule = Schedule.exponential("500 millis").pipe(
   Schedule.jittered,
@@ -16,10 +16,17 @@ export function isTransientFailure(failure: unknown): failure is TransientTransp
   );
 }
 
-export const retryIdempotentRead = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+export function isTransientPickerReadFailure(failure: unknown): boolean {
+  return isTransientFailure(failure) || (failure instanceof ApiProblemError && failure.problem.status === 503);
+}
+
+export const retryIdempotentRead = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  isRetryable: (failure: unknown) => boolean = isTransientFailure,
+) =>
   effect.pipe(
     Effect.retry({
       schedule: transientRetrySchedule,
-      while: isTransientFailure,
+      while: isRetryable,
     }),
   );

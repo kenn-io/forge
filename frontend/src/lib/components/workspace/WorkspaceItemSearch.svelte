@@ -3,7 +3,7 @@
   import { Effect } from "effect";
   import { onDestroy, untrack } from "svelte";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
-  import { retryIdempotentRead } from "../../api/retry-policy.js";
+  import { isTransientPickerReadFailure, retryIdempotentRead } from "../../api/retry-policy.js";
   import { canonicalProvider, resolvedPlatformHost } from "../../api/provider-routes.js";
   import type { Issue, PullRequest } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -112,10 +112,10 @@
         Effect.andThen(Effect.all({
           pulls: executeGeneratedApiRequest("search workspace pull requests", (client, signal) =>
             client.PullRequestsService.listPulls(params, { signal }),
-          ).pipe(retryIdempotentRead),
+          ).pipe((read) => retryIdempotentRead(read, isTransientPickerReadFailure)),
           issues: executeGeneratedApiRequest("search workspace issues", (client, signal) =>
             client.IssuesService.listIssues(params, { signal }),
-          ).pipe(retryIdempotentRead),
+          ).pipe((read) => retryIdempotentRead(read, isTransientPickerReadFailure)),
         }, { concurrency: "unbounded" })),
         Effect.tap(({ pulls, issues }) => Effect.sync(() => {
           remoteOptionsQuery = params.q;

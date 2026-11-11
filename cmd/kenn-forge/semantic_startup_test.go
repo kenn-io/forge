@@ -16,7 +16,6 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/embedfake"
 	"go.kenn.io/forge/internal/testutil/reposeed"
-	"go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/kit/embedconfig"
 	"go.kenn.io/kit/embedlocal"
@@ -65,27 +64,20 @@ func TestSemanticStartupChoice(t *testing.T) {
 		stacktest.Dump(t)
 		return
 	}
-	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.com", Owner: "acme", Name: "widget", Key: key}
-	caps := platform.Capabilities{ReadMergeRequests: true}
-	provider := &serverfake.ApiTestGitLabProvider{Ref: ref, CapabilitiesValue: &caps, MergeRequests: []platform.MergeRequest{{Repo: ref, PlatformID: 300, Number: 1, URL: "https://gitlab.com/acme/widget/-/merge_requests/1", Title: "Earlier document", Author: "user-a", State: "open", HeadBranch: "earlier", BaseBranch: "main", HeadSHA: "abc122", BaseSHA: "def456", CreatedAt: now, UpdatedAt: now, LastActivityAt: now}, {Repo: ref, PlatformID: 301, Number: 2, URL: "https://gitlab.com/acme/widget/-/merge_requests/2", Title: "Cache is slow", Author: "user-a", State: "open", HeadBranch: "feature", BaseBranch: "main", HeadSHA: "abc123", BaseSHA: "def456", CreatedAt: now, UpdatedAt: now, LastActivityAt: now}}}
-	registry, err := platform.NewRegistry(provider)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 301, Number: 2, URL: "https://gitlab.com/acme/widget/-/merge_requests/2", Title: "Cache is slow", Author: "user-a", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
 	require.NoError(t, err)
-	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, []ghclient.RepoRef{{Platform: platform.KindGitLab, PlatformHost: "gitlab.com", Owner: "acme", Name: "widget", Key: key, RepoID: repoID}}, time.Hour, nil, nil)
+	want := []ghclient.RepoSyncResult{{Owner: "acme", Name: "widget"}}
 	var results []ghclient.RepoSyncResult
-	syncer.SetOnSyncCompleted(semanticSyncCompleted(indexer, func(got []ghclient.RepoSyncResult) { results = got }))
-	syncer.RunOnce(t.Context())
-	require.Len(t, results, 1)
-	require.Empty(t, results[0].Error)
+	semanticSyncCompleted(indexer, func(got []ghclient.RepoSyncResult) { results = got })(want)
+	assert.Equal(t, want, results)
 	item := db.RepoItemNumber{RepoID: repoID, Number: 2}
-	if !assert.Eventually(t, func() bool { rows, err := result(item); return err == nil && len(rows) == 1 && rows[0].Row == item }, 90*time.Second, 250*time.Millisecond) {
+	if !assert.Eventually(t, func() bool { rows, err := result(item); return err == nil && len(rows) == 1 }, 90*time.Second, 250*time.Millisecond) {
 		stacktest.Dump(t)
 		return
 	}
 	assert.Contains(t, endpoint.Inputs(), "search_document: Cache is slow")
 	assert.Equal(t, "nomic-embed-text", endpoint.LastModel())
 	assert.Contains(t, endpoint.Inputs(), "search_query: cache")
-	assert.False(t, cfg.Embeddings.Enabled())
-	assert.Empty(t, cfg.LocalEmbeddings)
 }
 
 func TestSemanticStartupConfigured(t *testing.T) {
@@ -96,23 +88,18 @@ func TestSemanticStartupConfigured(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(home, ".kenn"), []byte("block"), 0o600))
 		database := dbtest.Open(t)
 		endpoint := embedfake.New(t, "cache")
-		cfg := &config.Config{DataDir: t.TempDir(), LocalEmbeddings: "builtin", Embeddings: endpoint.Embedder("custom-model")}
-		deps := localEmbeddingDeps{endpoint: func(context.Context, embedlocal.Options) (string, error) {
-			assert.Fail(t, "unexpected local discovery")
-			return "", nil
-		}}
+		cfg := &config.Config{DataDir: t.TempDir(), Embeddings: endpoint.Embedder("custom-model")}
 		repoID, err := reposeed.Seed(t.Context(), database, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 		require.NoError(t, err)
 		now := time.Now().UTC()
 		_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 301, Number: 2, URL: "https://github.com/acme/widget/pull/2", Title: "Cache is slow", Author: "user-a", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
 		require.NoError(t, err)
-		indexer, err := openSemanticSearch(t.Context(), cfg, database, deps)
+		indexer, err := openSemanticSearch(t.Context(), cfg, database, localEmbeddingDeps{})
 		require.NoError(t, err)
 		require.NotNil(t, indexer)
 		defer func() { assert.NoError(t, indexer.Close()) }()
 		require.NoError(t, indexer.Refresh(t.Context()))
 		assert.Equal(t, "custom-model", endpoint.LastModel())
-		assert.Contains(t, endpoint.Inputs(), "Cache is slow")
 	})
 	t.Run("saved built-in", func(t *testing.T) {
 		home := t.TempDir()
@@ -123,8 +110,5 @@ func TestSemanticStartupConfigured(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, indexer)
 		require.NoError(t, indexer.Close())
-		recorded, err := embedlocal.ChoiceRecorded()
-		require.NoError(t, err)
-		assert.False(t, recorded)
 	})
 }

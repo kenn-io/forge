@@ -137,9 +137,6 @@ func TestLocalEmbeddingsRerun(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, "builtin", cfg.LocalEmbeddings)
 			assert.Equal(t, "custom: ", cfg.Embeddings.DocumentPrefix)
-			recorded, err := embedlocal.ChoiceRecorded()
-			require.NoError(t, err)
-			assert.True(t, recorded)
 			if mode == "auto" {
 				assert.Contains(t, output.String(), "keeps the semantic index")
 			}
@@ -170,7 +167,7 @@ func TestLocalEmbeddingsCachedResolution(t *testing.T) {
 }
 
 func TestLocalEmbeddingsRecordsBuiltinChoice(t *testing.T) {
-	t.Run("built-in", func(t *testing.T) {
+	t.Run("auto selects built-in", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
 		t.Setenv("USERPROFILE", home)
@@ -200,6 +197,28 @@ func TestLocalEmbeddingsRecordsBuiltinChoice(t *testing.T) {
 		assert.True(t, recorded)
 		assert.Equal(t, "auto", cfg.LocalEmbeddings)
 		assert.Equal(t, embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768, DocumentPrefix: "search_document: ", QueryPrefix: "search_query: "}, cfg.Embeddings)
+	})
+	t.Run("saved built-in", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+		path := filepath.Join(t.TempDir(), "config.toml")
+		require.NoError(t, config.EnsureDefault(path))
+		cfg, err := config.Load(path)
+		require.NoError(t, err)
+		cfg.LocalEmbeddings = "builtin"
+		cfg.Embeddings = embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768}
+		require.NoError(t, cfg.Save(path))
+		deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
+			assert.True(t, opts.SkipOllama)
+			return "http://127.0.0.1:1234/v1", nil
+		}}
+		cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, deps)
+		cmd.SetArgs([]string{"local", "--config", path})
+		require.NoError(t, cmd.ExecuteContext(t.Context()))
+		recorded, err := embedlocal.ChoiceRecorded()
+		require.NoError(t, err)
+		assert.True(t, recorded)
 	})
 	t.Run("Ollama", func(t *testing.T) {
 		home := t.TempDir()

@@ -108,7 +108,7 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
 
   function loadBranches(rootPath: string): void {
     loadingBranches = true;
-    branchError = false;
+    branchError = true;
     branches = [];
     if (!client) {
       loadingBranches = false;
@@ -132,7 +132,7 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
                     }),
                   )
                 : Effect.sync(() => {
-                    branches = result.data?.branches ?? [];
+                    [branchError, branches] = [false, result.data?.branches ?? []];
                   }),
             ),
             Effect.catch(() => Effect.sync(() => { if (expandedRepo === rootPath) branchError = true; })),

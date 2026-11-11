@@ -96,4 +96,20 @@ describe("RepoTreePicker", () => {
     expect(await screen.findByText("main")).toBeTruthy();
     expect(screen.queryByText("No branches")).toBeNull();
   });
+
+  it("offers a retry when reopening interrupts a branch read", async () => {
+    client.GET.mockResolvedValueOnce({ data: { repos: [{ root_path: "/work/example", name: "example", count: 4 }] } });
+    client.GET.mockImplementationOnce(() => new Promise(() => {}));
+    client.GET.mockResolvedValueOnce({ data: { repos: [{ root_path: "/work/example", name: "example", count: 4 }] } });
+    client.GET.mockResolvedValueOnce({ data: { branches: [{ name: "main", count: 2 }] } });
+    render(RepoTreePicker);
+    await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
+    await screen.findByText("example");
+    await fireEvent.click(screen.getByTitle("Show branches"));
+    await screen.findByText("Loading...");
+    await fireEvent.click(screen.getByTitle("Filter by repository"));
+    await fireEvent.click(screen.getByTitle("Filter by repository"));
+    await fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("main")).toBeTruthy();
+  });
 });

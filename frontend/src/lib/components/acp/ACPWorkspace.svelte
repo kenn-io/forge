@@ -274,8 +274,13 @@
       });
     });
   }
+  // A page of messages can collapse into a single activity row, so keep
+  // paging until the reader gets this many more rows or the transcript start.
+  const EARLIER_ROWS = 30;
   function loadEarlier() {
-    if (firstLoaded > 0) connection?.loadEarlier(100);
+    if (firstLoaded <= 0) return;
+    const goal = rows.length + EARLIER_ROWS;
+    connection?.loadEarlier(100, () => rows.length < goal);
   }
   function onConversationScroll() {
     if (!scroll) return;

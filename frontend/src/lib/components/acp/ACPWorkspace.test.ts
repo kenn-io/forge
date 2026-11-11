@@ -1914,6 +1914,37 @@ describe("ACPWorkspace transcript paging", () => {
     expect(historyRequests().at(-1)).toEqual({ type: "history", beforeId: "entry-100", limit: 100 });
   });
 
+  it("keeps paging while earlier pages add only a few rows", async () => {
+    // Ten tool calls, then a reply: one page adds two rows.
+    const turn = (from: number) => [
+      ...Array.from({ length: 10 }, (_, offset) => ({
+        ...user(from + offset),
+        role: "tool",
+        toolCallId: `call-${from + offset}`,
+        title: `Read file ${from + offset}`,
+      })),
+      user(from + 10),
+    ];
+    const page = (from: number) => ({
+      history: { beforeId: `entry-${from + 11}`, offset: from, messages: turn(from) },
+    });
+    await openChat({ messages: range(1100, 1101), messageOffset: 1100, messageCount: 1101 });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Load earlier messages" }));
+    for (let request = 0; request < 15; request += 1) {
+      expect(historyRequests()).toHaveLength(request + 1);
+      socket.options!.onMessage(JSON.stringify(page(1100 - 11 * (request + 1))));
+    }
+    await tick();
+
+    // Thirty more rows arrived, so loading stops and the button returns.
+    expect(historyRequests()).toHaveLength(15);
+    expect(historyRequests().at(-1)).toEqual({ type: "history", beforeId: "entry-946", limit: 100 });
+    expect(screen.getByRole("button", { name: "Load earlier messages" })).toBeDefined();
+    expect(document.querySelectorAll("[data-activity-group]")).toHaveLength(15);
+    expect(texts()).toHaveLength(16);
+  });
+
   it("asks for earlier history when the conversation scrolls near the top", async () => {
     await openChat({ messages: range(50, 52), messageOffset: 50, messageCount: 52 });
     await fireEvent.scroll(conversation());

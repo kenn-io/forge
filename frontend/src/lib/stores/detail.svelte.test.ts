@@ -798,9 +798,11 @@ describe("createDetailStore", () => {
     async (mismatch) => {
       const syncPost = deferred<{ data: PullDetail }>();
       const routeRef = { provider: "github", platformHost: "github.com", repoPath: "acme/widget" };
+      const displayed = pullDetail("head");
+      if (mismatch === "platform head") displayed.reviewed_head_sha = "";
       const store = createDetailStore({
         client: mockClient({
-          GET: vi.fn().mockResolvedValue({ data: pullDetail("head") }),
+          GET: vi.fn().mockResolvedValue({ data: displayed }),
           POST: vi.fn().mockReturnValueOnce(syncPost.promise),
         }),
       });
@@ -809,8 +811,12 @@ describe("createDetailStore", () => {
       await refreshDetail(store, "acme", "widget", 7, routeRef);
       const synced = pullDetail("head");
       if (mismatch === "state") synced.merge_request.State = "closed";
-      if (mismatch === "reviewed head") synced.reviewed_head_sha = "other-head";
-      if (mismatch === "platform head") synced.platform_head_sha = "other-head";
+      if (mismatch === "reviewed head") synced.reviewed_head_sha = "";
+      if (mismatch === "platform head") {
+        synced.reviewed_head_sha = "";
+        synced.platform_head_sha = "other-head";
+        synced.merge_request.platform_head_sha = "other-head";
+      }
       if (mismatch === "head repository") synced.merge_request.HeadRepoCloneURL = "https://github.com/acme/fork.git";
       syncPost.resolve({ data: synced });
 

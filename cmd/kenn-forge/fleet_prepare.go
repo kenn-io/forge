@@ -76,10 +76,17 @@ func writePrepareSpokeGuidance(output *strings.Builder, report spokeapi.SpokePre
 		output.WriteString("Wait for provider writes and deferred merges to finish.\n")
 	}
 	if len(report.HandoffConflicts) != 0 {
+		output.WriteString("Copy unsent spoke review summaries and inline comments elsewhere.\n")
+		for _, conflict := range report.HandoffConflicts {
+			if conflict.Description == "" {
+				output.WriteString("Restart the spoke daemon with the updated binary, then retry to identify the conflicting draft.\n")
+				break
+			}
+		}
 		output.WriteString("Save the hub draft, discard it on the hub, then retry to import the spoke draft.\n")
 	}
-	if len(report.Unprepared) != 0 || len(report.HandoffErrors) != 0 || report.UndrainedAcks != 0 {
-		output.WriteString("For other blockers, see https://forge.kenn.io/docs/federated-fleet/\n")
+	if len(report.HandoffConflicts) != 0 || len(report.Unprepared) != 0 || len(report.HandoffErrors) != 0 || report.UndrainedAcks != 0 {
+		output.WriteString("For recovery steps, see https://forge.kenn.io/docs/federated-fleet/\n")
 	}
 }
 

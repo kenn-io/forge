@@ -478,6 +478,7 @@ async function mockInlineReviewAPI(
   options: MockInlineReviewOptions = {},
 ): Promise<void> {
   let draftComments: Array<Record<string, unknown>> = [...(options.initialDraftComments ?? [])];
+  let hasDraft = draftComments.length > 0;
   let detailRequestCount = 0;
   let reviewThreadResolved = false;
   const path = `/api/v1/pulls/${provider}/acme/widgets/42`;
@@ -519,11 +520,12 @@ async function mockInlineReviewAPI(
   await page.route(`**${path}/review-draft`, async (route) => {
     if (route.request().method() === "DELETE") {
       draftComments = [];
+      hasDraft = false;
       await fulfillJson(route, { status: "ok" });
       return;
     }
     await fulfillJson(route, {
-      draft_id: draftComments.length > 0 ? "1" : undefined,
+      draft_id: hasDraft ? "1" : undefined,
       comments: draftComments,
       supported_actions: capabilities.supported_review_actions,
       native_multiline_ranges: capabilities.native_multiline_ranges,
@@ -535,6 +537,7 @@ async function mockInlineReviewAPI(
       range: Record<string, unknown>;
     };
     onCreateDraft?.(body);
+    hasDraft = true;
     draftComments = [
       {
         id: "1",
@@ -590,6 +593,7 @@ async function mockInlineReviewAPI(
   });
   await page.route(`**${path}/review-draft/publish`, async (route) => {
     draftComments = options.remainingDraftComments ?? [];
+    hasDraft = draftComments.length > 0;
     await fulfillJson(route, {
       status: options.publishStatus ?? "published",
     });
@@ -791,6 +795,20 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Show full comment" })).toHaveCount(0);
   await page.getByRole("button", { name: "Publish review" }).click();
   await expect(page.getByText("1 draft comment")).toBeHidden();
+});
+
+test("discards a draft after deleting its last comment", async ({ page }) => {
+  await mockInlineReviewAPI(page);
+  await page.goto("/pulls/github/acme/widgets/42/files");
+  await openReviewComposer(page, 2);
+  await fillReviewComposer(page, "Please cover this line.");
+  await page.getByRole("button", { name: "Add comment", exact: true }).click();
+  const tray = page.getByLabel("Draft review comments");
+  await tray.getByRole("button", { name: "Delete draft comment" }).click();
+  await expect(tray.getByText("0 draft comments")).toBeVisible();
+  await expect(tray.getByRole("button", { name: "Publish review" })).toBeDisabled();
+  await tray.getByRole("button", { name: "Discard review draft" }).click();
+  await expect(tray).toBeHidden();
 });
 
 test("edits an existing inline draft review comment before publishing", async ({ page }) => {

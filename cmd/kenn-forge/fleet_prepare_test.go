@@ -110,5 +110,7 @@ func TestFleetPrepareSpokeConflictFromOlderDaemon(t *testing.T) {
 	cmd.SetArgs([]string{"prepare-spoke"})
 	require.ErrorContains(t, cmd.Execute(), "not ready")
 	assert.Contains(t, stdout.String(), `review_draft "github\x00example.com\x00123\x0042"`)
+	assert.Contains(t, stdout.String(), "Copy unsent spoke review summaries and inline comments elsewhere.")
+	assert.Contains(t, stdout.String(), "Restart the spoke daemon with the updated binary, then retry to identify the conflicting draft.")
 	assert.Contains(t, stdout.String(), "Save the hub draft")
 }

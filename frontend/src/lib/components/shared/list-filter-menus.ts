@@ -205,8 +205,8 @@ function commonSection(target: ListFilterTarget): FilterSection {
   };
 }
 
-// Every selected filter must match. CI is a pick-one pair; a condition row cycles
-// through off, required, and its opposite.
+// Every selected filter must match. CI and Roborev are pick-one pairs; a condition row
+// cycles through off, required, and its opposite.
 const PULL_CONDITIONS: { value: PullAttributeFilter; opposite: PullAttributeFilter; label: string }[] = [
   { value: "draft", opposite: "not_draft", label: "Draft" },
   { value: "approved", opposite: "not_approved", label: "Approved" },
@@ -222,6 +222,13 @@ const PULL_PICK_ONE: { title: string; options: { value: PullAttributeFilter; lab
     options: [
       { value: "passed_ci", label: "Passing CI" },
       { value: "failed_ci", label: "Failed CI" },
+    ],
+  },
+  {
+    title: "Roborev",
+    options: [
+      { value: "roborev_findings", label: "Roborev findings" },
+      { value: "roborev_clean", label: "No roborev findings" },
     ],
   },
 ];

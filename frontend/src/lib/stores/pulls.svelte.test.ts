@@ -618,6 +618,24 @@ describe("pulls store display order", () => {
     expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([]);
   });
 
+  it("filters pull requests by the roborev verdict of the current head, picking one verdict", async () => {
+    const store = createPullsStore({
+      client: clientWithPulls([
+        pull(1, "api", "2026-05-20T15:00:00Z", { roborev_verdict: "findings" }),
+        pull(2, "api", "2026-05-20T14:00:00Z", { roborev_verdict: "clean" }),
+        pull(3, "api", "2026-05-20T13:00:00Z"),
+      ]),
+    });
+    await loadPulls(store);
+
+    store.toggleAttributeFilter("roborev_findings");
+    expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([1]);
+
+    store.toggleAttributeFilter("roborev_clean");
+    expect(store.getAttributeFilters()).toEqual(["roborev_clean"]);
+    expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([2]);
+  });
+
   it("refetches attribute matches from the server when it applies them with involvement", async () => {
     const get = vi
       .fn()

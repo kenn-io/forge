@@ -5,6 +5,7 @@ import type { Label } from "./label.ts";
 import type { MergeQueueEntryResponse } from "./mergeQueueEntryResponse.ts";
 import type { MergeQueueRemovalResponse } from "./mergeQueueRemovalResponse.ts";
 import type { MergeRequestResponseHeadRepoKind } from "./mergeRequestResponseHeadRepoKind.ts";
+import type { MergeRequestResponseRoborevVerdict } from "./mergeRequestResponseRoborevVerdict.ts";
 import type { MergeRequestResponseState } from "./mergeRequestResponseState.ts";
 import type { PRDiffSizePoint } from "./pRDiffSizePoint.ts";
 import type { RepoRefResponse } from "./repoRefResponse.ts";
@@ -73,6 +74,8 @@ export interface MergeRequestResponse {
   requested_reviewers?: string[];
   /** @nullable */
   review_decision_observed_at?: string | null;
+  /** Verdict of the newest roborev comment that reviews the current head: findings or clean. Omitted when no comment reviews the current head (no review yet, the head's review still pending or running, or a review of a commit sync has not stored as the head) and when that review has no verdict line (failed, skipped, or unstructured). */
+  roborev_verdict?: MergeRequestResponseRoborevVerdict;
   /** Similarity to q when semantic is set; compare only within one response. */
   search_score?: number;
   stack?: StackPlacementResponse;

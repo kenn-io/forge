@@ -1956,7 +1956,7 @@ func pullAttributeSections(attributes []string, held, workspaces []RepoItemNumbe
 			WHEN 'null' THEN '[]' WHEN 'array' THEN p.ci_checks_json END
 		END`
 	const pending = `COALESCE(json_extract(c.value, '$.status'), '') IN ('in_progress', 'queued', 'pending', 'waiting')`
-	var review, approval, ci, conflicts, mergeQueue, merging, workspace, fork []string
+	var review, approval, ci, conflicts, mergeQueue, merging, workspace, fork, roborev []string
 	// Sections are emitted in a fixed order, so their arguments must follow that order too.
 	var mergingArgs, workspaceArgs []any
 	hasWorkspace := func() string {
@@ -2006,6 +2006,10 @@ func pullAttributeSections(attributes []string, held, workspaces []RepoItemNumbe
 					NOT (`+pending+`) AND json_extract(c.value, '$.conclusion') IN ('failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure')
 					ELSE 0 END)
 			))`)
+		case "roborev_findings":
+			roborev = append(roborev, roborevHeadVerdictSQL("p")+" = '"+RoborevVerdictFindings+"'")
+		case "roborev_clean":
+			roborev = append(roborev, roborevHeadVerdictSQL("p")+" = '"+RoborevVerdictClean+"'")
 		case "passed_ci":
 			ci = append(ci, `(lower(trim(p.ci_status)) IN ('', 'success')
 				AND (`+checks+`) IS NOT NULL
@@ -2018,7 +2022,7 @@ func pullAttributeSections(attributes []string, held, workspaces []RepoItemNumbe
 		}
 	}
 	*args = append(append(*args, mergingArgs...), workspaceArgs...)
-	return [][]string{review, approval, ci, conflicts, mergeQueue, merging, workspace, fork}
+	return [][]string{review, approval, ci, conflicts, mergeQueue, merging, workspace, fork, roborev}
 }
 
 func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeRequestsOpts) ([]MergeRequest, error) {

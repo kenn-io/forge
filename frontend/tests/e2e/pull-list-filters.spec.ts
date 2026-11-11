@@ -72,6 +72,7 @@ async function mockPulls(page: Page) {
           enqueued_at: "2026-03-30T14:00:00Z",
           observed_at: "2026-03-30T14:00:00Z",
         },
+        roborev_verdict: "clean",
       }),
       pull(11, "Draft parser cleanup", {
         labels: [
@@ -88,6 +89,7 @@ async function mockPulls(page: Page) {
         CIStatus: "failure",
         workspace: { id: "ws-12", status: "ready" },
         deferred_merge_pending: true,
+        roborev_verdict: "findings",
       }),
       pull(13, "Ready conflict resolver", {
         MergeableState: "dirty",
@@ -160,6 +162,23 @@ test("PR filters all apply and each pair of opposites is pick-one", async ({ pag
   await draft.click();
   await filterPanel.getByRole("button", { name: "Approved", exact: true }).click();
   await expect(rows).toHaveText([/Approved review queue/]);
+});
+
+test("roborev filters pick PRs whose head review has findings or none", async ({ page }) => {
+  await mockPulls(page);
+  await page.goto("/pulls");
+
+  const rows = page.locator(".pr-list-row");
+  await expect(rows).toHaveCount(4);
+  await openPrFilters(page);
+  const filterPanel = page.locator(".kit-filter-dropdown__panel");
+
+  await filterPanel.getByRole("button", { name: "Roborev findings", exact: true }).click();
+  await expect(rows).toHaveText([/Ready failed workflow/]);
+  await filterPanel.getByRole("button", { name: "No roborev findings" }).click();
+  await expect(rows).toHaveText([/Approved review queue/]);
+  await filterPanel.getByRole("button", { name: "No roborev findings" }).click();
+  await expect(rows).toHaveCount(4);
 });
 
 test("a condition row cycles through required, excluded, and off", async ({ page }) => {

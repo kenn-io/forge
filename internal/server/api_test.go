@@ -9280,6 +9280,72 @@ func TestAPIPullMergeQueueFilterKeepsQueuedAndRemovedPulls(t *testing.T) {
 	}
 }
 
+func TestAPIPullRoborevFilterAndVerdictFollowHeadReview(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	srv, database, _ := setupTestServerWithMock(t, &serverfake.MockGH{})
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	verdicts := map[int]string{
+		1: "**Verdict:** Changes require fixes for 2 findings.",
+		2: "**Verdict:** No findings at or above medium severity.",
+		3: "**Verdict:** Changes require fixes for 1 finding.",
+	}
+	for number := 1; number <= 4; number++ {
+		id := serverfake.SeedPR(t, database, "acme", "widget", number, serverfake.WithSeedPRTimes(now, now, now.Add(time.Duration(number)*time.Minute)))
+		head := fmt.Sprintf("%07d", number) + "0123456789abcdef0123456789abcdef0"
+		_, err := database.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET platform_head_sha = ? WHERE id = ?", head, id)
+		require.NoError(t, err)
+		verdict, ok := verdicts[number]
+		if !ok {
+			continue
+		}
+		reviewed := head[:7]
+		if number == 3 {
+			// PR 3's only review covers an earlier head.
+			reviewed = "fedcba9"
+		}
+		platformID := int64(number)
+		require.NoError(t, database.UpsertMREvents(ctx, []db.MREvent{{
+			MergeRequestID: id, PlatformID: &platformID, EventType: "issue_comment", Author: "roborev-ci",
+			Body:      "<!-- roborev-pr-comment -->\n## roborev: Combined Review (`" + reviewed + "`)\n\n" + verdict + "\n",
+			CreatedAt: now, DedupeKey: fmt.Sprintf("roborev-%d", number),
+		}}))
+	}
+
+	for _, tc := range []struct {
+		query string
+		want  []int
+	}{
+		{"attributes=roborev_findings", []int{1}},
+		{"attributes=roborev_clean", []int{2}},
+		{"attributes=roborev_findings,roborev_clean", []int{2, 1}},
+		{"attributes=roborev_findings,roborev_clean&limit=1&offset=1", []int{1}},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?"+tc.query, nil)
+			require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+			var rows []pullapi.MergeRequestResponse
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &rows))
+			numbers := make([]int, 0, len(rows))
+			for _, row := range rows {
+				numbers = append(numbers, row.Number)
+			}
+			assert.Equal(t, tc.want, numbers)
+		})
+	}
+	t.Run("rows carry the head verdict", func(t *testing.T) {
+		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+		var rows []pullapi.MergeRequestResponse
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &rows))
+		got := map[int]string{}
+		for _, row := range rows {
+			got[row.Number] = row.RoborevVerdict
+		}
+		assert.Equal(t, map[int]string{1: "findings", 2: "clean", 3: "", 4: ""}, got)
+	})
+}
+
 func TestAPIPullFiltersCombineSectionsBeforePagination(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	srv, database, _ := setupTestServerWithMock(t, &serverfake.MockGH{AuthenticatedViewerLoginFn: func(context.Context) (string, error) { return "viewer", nil }})

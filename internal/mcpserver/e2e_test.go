@@ -406,7 +406,7 @@ func seedIssue(t *testing.T, database *db.DB, number int, title string) int64 {
 	return issueID
 }
 
-func TestMCPPullContextsReportMergeQueues(t *testing.T) {
+func TestMCPPullContextsReportMergeQueuesAndFilterRoborev(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -534,6 +534,43 @@ func TestMCPPullContextsReportMergeQueues(t *testing.T) {
 		"item": map[string]any{"type": "pr", "provider": "github", "owner": "acme", "name": "widgets", "number": 3},
 	})
 	assert.Equal(pullStatus{MergeQueueTarget: &mcpserver.MergeQueueTarget{Branch: "main", MergeMethod: "squash"}}, unqueued.PullStatus)
+
+	// roborev filters on the verdict of the review comment for each PR's head.
+	for number, verdict := range map[int]string{
+		1: "**Verdict:** Changes require fixes for 1 finding.",
+		2: "**Verdict:** No findings at or above medium severity.",
+		3: "**Verdict:** Changes require fixes for 3 findings.",
+	} {
+		head := fmt.Sprintf("%07d", number) + "0123456789abcdef0123456789abcdef0"
+		var pullID int64
+		require.NoError(database.WriteDB().QueryRowContext(ctx,
+			"UPDATE forge_merge_requests SET platform_head_sha = ? WHERE repo_id = ? AND number = ? RETURNING id",
+			head, repoID, number).Scan(&pullID))
+		platformID := int64(number)
+		require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+			MergeRequestID: pullID, PlatformID: &platformID, EventType: "issue_comment", Author: "roborev-ci",
+			Body:      "<!-- roborev-pr-comment -->\n## roborev: Combined Review (`" + head[:7] + "`)\n\n" + verdict + "\n",
+			CreatedAt: now, DedupeKey: fmt.Sprintf("roborev-%d", number),
+		}}))
+	}
+	numbers := func(items []pullContext) []int {
+		out := make([]int, 0, len(items))
+		for _, item := range items {
+			out = append(out, item.Item.Number)
+		}
+		return out
+	}
+	findings := callTool[struct {
+		Items []pullContext `json:"items"`
+	}](t, session, "kenn_forge_list_pull_contexts", map[string]any{
+		"repo":    map[string]any{"provider": "github", "owner": "acme", "name": "widgets"},
+		"roborev": "findings",
+	})
+	assert.ElementsMatch([]int{1, 3}, numbers(findings.Items))
+	queuedClean := callTool[struct {
+		Items []pullContext `json:"items"`
+	}](t, session, "kenn_forge_list_pull_contexts", map[string]any{"merge_queue": true, "roborev": "clean"})
+	assert.Equal([]int{2}, numbers(queuedClean.Items))
 }
 
 type staticTokenSource string

@@ -58100,6 +58100,14 @@ const (
 	MergeRequestResponseHeadRepoKindUnknown  MergeRequestResponseHeadRepoKind = "unknown"
 )
 
+// MergeRequestResponseRoborevVerdict Verdict of the newest roborev comment that reviews the current head: findings or clean. Omitted when no comment reviews the current head (no review yet, the head's review still pending or running, or a review of a commit sync has not stored as the head) and when that review has no verdict line (failed, skipped, or unstructured).
+type MergeRequestResponseRoborevVerdict string
+
+const (
+	MergeRequestResponseRoborevVerdictClean    MergeRequestResponseRoborevVerdict = "clean"
+	MergeRequestResponseRoborevVerdictFindings MergeRequestResponseRoborevVerdict = "findings"
+)
+
 // ProblemErrorCode Machine-readable error code. Stable across occurrences.
 type ProblemErrorCode string
 
@@ -61572,7 +61580,7 @@ type ListPullsQuery struct {
 	// Numbers Item numbers in every repo unless repo is set; before pagination.
 	Numbers []int64 `json:"numbers,omitempty"`
 
-	// Attributes Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not), has_workspace and no_workspace (with a workspace on this server, or not), fork and not_fork (the head branch lives in a fork, or not; an unknown head repository is not a fork). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, merge_queued or not_merge_queued, has_workspace or no_workspace, and fork or not_fork. Every other selected filter, including involves_me and unassigned, must also match before pagination.
+	// Attributes Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not), has_workspace and no_workspace (with a workspace on this server, or not), fork and not_fork (the head branch lives in a fork, or not; an unknown head repository is not a fork), roborev_findings and roborev_clean (the newest roborev comment reviewing the current head reports findings, or none; see roborev_verdict). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, merge_queued or not_merge_queued, has_workspace or no_workspace, fork or not_fork, and roborev_findings or roborev_clean. Every other selected filter, including involves_me and unassigned, must also match before pagination.
 	Attributes *string `json:"attributes,omitempty"`
 
 	// Label Exact case-sensitive label name; applied before pagination.
@@ -69897,6 +69905,9 @@ type MergeRequestResponse struct {
 	RepoOwner                string                           `json:"repo_owner"`
 	RequestedReviewers       []string                         `json:"requested_reviewers,omitempty"`
 	ReviewDecisionObservedAt *time.Time                       `json:"review_decision_observed_at,omitempty"`
+
+	// RoborevVerdict Verdict of the newest roborev comment that reviews the current head: findings or clean. Omitted when no comment reviews the current head (no review yet, the head's review still pending or running, or a review of a commit sync has not stored as the head) and when that review has no verdict line (failed, skipped, or unstructured).
+	RoborevVerdict *MergeRequestResponseRoborevVerdict `json:"roborev_verdict,omitempty"`
 
 	// SearchScore Similarity to q when semantic is set; compare only within one response.
 	SearchScore      *float32                  `json:"search_score,omitempty"`

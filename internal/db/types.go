@@ -828,7 +828,8 @@ type MRReviewThread struct {
 
 type ListMergeRequestsOpts struct {
 	// Attributes are PR inclusion filters. Mutually exclusive ones (draft and ready, failed_ci and
-	// passed_ci, approved and not_approved, merge_conflicts and no_merge_conflicts) match either;
+	// passed_ci, approved and not_approved, merge_conflicts and no_merge_conflicts, roborev_findings
+	// and roborev_clean) match either;
 	// every other filter, including Unassigned and ViewerLogins, must also match before pagination.
 	// merge_queued matches an open pull request in its provider merge queue, with provider
 	// auto-merge on, or named in DeferredMergeItems; not_merge_queued matches every other one.

@@ -41,7 +41,7 @@ const (
 
 type listPullsInput struct {
 	Numbers       []int64  `query:"numbers" doc:"Item numbers in every repo unless repo is set; before pagination."`
-	Attributes    string   `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not), has_workspace and no_workspace (with a workspace on this server, or not), fork and not_fork (the head branch lives in a fork, or not; an unknown head repository is not a fork). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, merge_queued or not_merge_queued, has_workspace or no_workspace, and fork or not_fork. Every other selected filter, including involves_me and unassigned, must also match before pagination."`
+	Attributes    string   `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not), has_workspace and no_workspace (with a workspace on this server, or not), fork and not_fork (the head branch lives in a fork, or not; an unknown head repository is not a fork), roborev_findings and roborev_clean (the newest roborev comment reviewing the current head reports findings, or none; see roborev_verdict). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, merge_queued or not_merge_queued, has_workspace or no_workspace, fork or not_fork, and roborev_findings or roborev_clean. Every other selected filter, including involves_me and unassigned, must also match before pagination."`
 	Label         string   `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
 	Labels        []string `query:"labels,explode" doc:"Only include pull requests carrying every named label. Names match without case across repositories; applied before pagination."`
 	ExcludeLabels []string `query:"exclude_labels,explode" doc:"Drop pull requests carrying any named label. Names match without case across repositories; applied before pagination."`
@@ -414,7 +414,7 @@ func (s *Handler) listPullsRouteCore(
 			switch attribute {
 			case "approved", "not_approved", "draft", "not_draft", "ready", "merge_conflicts", "no_merge_conflicts",
 				"failed_ci", "passed_ci", "merge_queue", "merge_queued", "not_merge_queued",
-				"has_workspace", "no_workspace", "fork", "not_fork":
+				"has_workspace", "no_workspace", "fork", "not_fork", "roborev_findings", "roborev_clean":
 			default:
 				return nil, httpapi.Validation("query.attributes", "unknown PR inclusion filter")
 			}
@@ -510,6 +510,10 @@ func (s *Handler) listPullsRouteCore(
 	if err != nil {
 		return nil, httpapi.Internal("load merge queue states failed")
 	}
+	roborevVerdicts, err := s.db.ListRoborevVerdictsForMRs(ctx, mrIDs)
+	if err != nil {
+		return nil, httpapi.Internal("load roborev verdicts failed")
+	}
 	links, err := s.db.GetWorktreeLinksForMRs(ctx, mrIDs)
 	if err != nil {
 		return nil, httpapi.Internal("load worktree links failed")
@@ -548,6 +552,7 @@ func (s *Handler) listPullsRouteCore(
 			Workspace:     workspaceRef,
 			DetailLoaded:  mr.DetailFetchedAt != nil,
 		}
+		resp.RoborevVerdict = roborevVerdicts[mr.ID]
 		resp.WorkflowApproval = s.workflowApprovalState(ctx, rp.Owner, rp.Name, &mr)
 		if activity, ok := snapshot.Subjects[key]; ok && activity.ActivityAt != nil {
 			resp.LastWorkspaceActivityAt = formatUTCRFC3339(*activity.ActivityAt)

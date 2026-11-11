@@ -217,6 +217,13 @@
       ],
     },
     {
+      title: "Roborev",
+      options: [
+        { value: "roborev_findings", label: "Roborev findings" },
+        { value: "roborev_clean", label: "No roborev findings" },
+      ],
+    },
+    {
       title: "Conflicts",
       options: [
         { value: "merge_conflicts", label: "Merge conflicts" },

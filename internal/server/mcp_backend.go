@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -183,10 +184,14 @@ func (b mcpBackend) ListPulls(
 // pullListAttributes returns the pull list inclusion filters a query asks
 // for.
 func pullListAttributes(query mcpserver.ItemListQuery) string {
+	var attributes []string
 	if query.MergeQueue {
-		return "merge_queue"
+		attributes = append(attributes, "merge_queue")
 	}
-	return ""
+	if query.Roborev != "" {
+		attributes = append(attributes, "roborev_"+query.Roborev)
+	}
+	return strings.Join(attributes, ",")
 }
 
 func (b mcpBackend) ListIssues(

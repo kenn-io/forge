@@ -11,6 +11,7 @@ type listPullContextsInput struct {
 	Label         string          `json:"label,omitempty" jsonschema:"exact label"`
 	Repo          repoFilterInput `json:"repo,omitzero" jsonschema:"required unless merge_queue"`
 	MergeQueue    bool            `json:"merge_queue,omitempty" jsonschema:"only PRs in, or removed from, a merge queue"`
+	Roborev       string          `json:"roborev,omitempty" jsonschema:"findings or clean: only PRs whose newest roborev comment on the current head reports findings, or reports none"`
 	Limit         int             `json:"limit,omitempty" jsonschema:"default 25, max 100"`
 	Offset        int             `json:"offset,omitempty" jsonschema:"next_offset from the previous page"`
 	IncludeEvents bool            `json:"include_events,omitempty" jsonschema:"review excerpts and stack health"`
@@ -33,12 +34,15 @@ func (s *Server) listPullContexts(ctx context.Context, in listPullContextsInput)
 	if repo.Provider == "" && !in.MergeQueue {
 		return listPullContextsOutput{}, FieldError("repo", "repo is required unless merge_queue is true")
 	}
+	if in.Roborev != "" && in.Roborev != "findings" && in.Roborev != "clean" {
+		return listPullContextsOutput{}, FieldError("roborev", "roborev must be findings or clean")
+	}
 	if in.Offset < 0 {
 		return listPullContextsOutput{}, errors.New("offset must not be negative")
 	}
 	limit, hints := clampLimitHint("limit", in.Limit, 25, 100)
 	pulls, err := s.backend.ListPulls(ctx, ItemListQuery{
-		Repository: repo, State: "open", Label: in.Label, MergeQueue: in.MergeQueue, Limit: limit + 1, Offset: in.Offset,
+		Repository: repo, State: "open", Label: in.Label, MergeQueue: in.MergeQueue, Roborev: in.Roborev, Limit: limit + 1, Offset: in.Offset,
 	})
 	if err != nil {
 		return listPullContextsOutput{}, err

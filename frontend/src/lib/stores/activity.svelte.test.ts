@@ -202,6 +202,177 @@ afterEach(async () => {
 });
 
 describe("activity subject paging", () => {
+  it("keeps an older-page request when an earlier reconciliation finishes later", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: 1011,
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    };
+    let release: ((value: unknown) => void) | undefined;
+    const deferred = new Promise((resolve) => {
+      release = resolve;
+    });
+    let firstPageReads = 0;
+    const first = {
+      data: { items: [], capped: false, item_activity: [{ ...itemActivity(1), repo }], next_subject_cursor: "older" },
+      error: null,
+    };
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (path !== "/activity") return { data: { items: [], capped: false }, error: null };
+        if (options?.params?.query?.subject_before)
+          return { data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] }, error: null };
+        firstPageReads++;
+        if (firstPageReads === 2) return deferred;
+        return first;
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.setViewMode("threaded");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    const reconciliation = runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile activity",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await vi.waitFor(() => expect(firstPageReads).toBe(2));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 2]));
+    release?.(first);
+    await reconciliation.exit;
+    expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 2]);
+  });
+  it("keeps the current page and permits retry when the next page fails", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: 1011,
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    };
+    let fail = true;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (path !== "/activity") return { data: { items: [], capped: false }, error: null };
+        if (options?.params?.query?.subject_before && fail)
+          return { error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) };
+        const number = options?.params?.query?.subject_before ? 2 : 1;
+        return {
+          data: {
+            items: [],
+            capped: false,
+            item_activity: [{ ...itemActivity(number), repo }],
+            next_subject_cursor: number === 1 ? "older" : "",
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.setViewMode("threaded");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getActivityError()).toBe("unavailable"));
+    expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1]);
+    expect(store.isLoadingOlderItems()).toBe(false);
+    fail = false;
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 2]));
+  });
+  it("keeps a requested older page when reconciliation overlaps it", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: 1011,
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    };
+    let release: ((value: unknown) => void) | undefined;
+    const deferred = new Promise((resolve) => {
+      release = resolve;
+    });
+    let pageReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (path !== "/activity") return { data: { items: [], capped: false }, error: null };
+        if (options?.params?.query?.subject_before) {
+          pageReads++;
+          if (pageReads === 1) return deferred;
+          return { data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] }, error: null };
+        }
+        return {
+          data: {
+            items: [],
+            capped: false,
+            item_activity: [{ ...itemActivity(1), repo }],
+            next_subject_cursor: "older",
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.setViewMode("threaded");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(pageReads).toBe(1));
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile activity",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    release?.({ data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] }, error: null });
+    await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 2]));
+  });
+  it("advances the time window on a same-scope reload", async () => {
+    const since: string[] = [];
+    const now = Date.now();
+    const expiration = now - 7 * 24 * 60 * 60 * 1000 + 30_000;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { since?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (path === "/activity") since.push(options?.params?.query?.since ?? "");
+        return {
+          data: {
+            items: [],
+            item_activity: Date.parse(options?.params?.query?.since ?? "") < expiration ? [itemActivity(1)] : [],
+            capped: false,
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(1));
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now + 60_000);
+    store.loadActivity();
+    await vi.waitFor(() => expect(since).toHaveLength(2));
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(0));
+    expect(Date.parse(since[1]!) - Date.parse(since[0]!)).toBeGreaterThan(59_000);
+    clock.mockReturnValue(now + 120_000);
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile activity",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(Date.parse(since[2]!) - Date.parse(since[1]!)).toBe(60_000);
+    clock.mockRestore();
+  });
   it("does not append a page after the search changes", async () => {
     const repo = {
       provider: "github",
@@ -302,7 +473,9 @@ describe("activity subject paging", () => {
     }).exit;
     expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 3]);
     expect(calls.filter((query) => query.subject_before === "page-2")).toHaveLength(2);
-    expect(new Set(calls.map((query) => query.since)).size).toBe(1);
+    for (let index = 0; index < calls.length; index++) {
+      if (calls[index]?.subject_before) expect(calls[index]?.since).toBe(calls[index - 1]?.since);
+    }
     expect(calls.every((query) => query.search === "cache")).toBe(true);
   });
 });
@@ -3952,9 +4125,11 @@ describe("activity polling recovery", () => {
       item_number: 0,
     };
     let feedReads = 0;
+    const cutoffs: string[] = [];
     const client = {
-      GET: vi.fn(async (path: string) => {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { since?: string } } }) => {
         if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        cutoffs.push(options?.params?.query?.since ?? "");
         feedReads += 1;
         if (feedReads === 1)
           return { data: { items: [stale], capped: false, event_cursor: stale.cursor }, error: null };
@@ -3976,6 +4151,7 @@ describe("activity polling recovery", () => {
     await vi.waitFor(() => expect(feedReads).toBe(5));
 
     expect(store.getActivityItems()).toEqual([persistedBehindCursor]);
+    expect(Date.parse(cutoffs[4]!) - Date.parse(cutoffs[0]!)).toBeGreaterThanOrEqual(45_000);
   });
 
   it("clears a foreground error when a replacement poll succeeds afterward", async () => {

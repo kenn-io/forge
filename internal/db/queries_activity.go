@@ -129,11 +129,8 @@ func (d *DB) ListActivity(
 	return listActivityWithQueryer(ctx, d.roStmts, opts)
 }
 
-// activityEventsQuery builds the filtered event union shared by feed and
-// cursor reads: a FROM clause through ORDER BY and LIMIT, plus its arguments.
-func activityEventsQuery(opts ListActivityOpts) (string, []any) {
-	limit := activityLimit(opts.Limit)
-
+// activityEventsFrom builds the filtered event union shared by feed and subject reads.
+func activityEventsFrom(opts ListActivityOpts) (string, []any) {
 	var whereClauses []string
 	var args []any
 
@@ -529,17 +526,19 @@ func activityEventsQuery(opts ListActivityOpts) (string, []any) {
 			JOIN forge_repos r ON bfp.repo_id = r.id AND r.lifecycle_state = 'active'
 			%[3]s
 		) unified
-		%[2]s
-		ORDER BY created_at DESC, source DESC, source_id DESC
-		LIMIT ?`,
+		%[2]s`,
 		branchCommitIdentityMaxBytes, where, notificationUnion,
 		searchNamedColumn, searchEmptyColumn, searchPRColumn, searchBranchColumn, parentJoin)
 
-	queryArgs := make([]any, 0, len(notificationArgs)+len(args)+1)
+	queryArgs := make([]any, 0, len(notificationArgs)+len(args))
 	queryArgs = append(queryArgs, notificationArgs...)
 	queryArgs = append(queryArgs, args...)
-	queryArgs = append(queryArgs, limit)
 	return fromSQL, queryArgs
+}
+
+func activityEventsQuery(opts ListActivityOpts) (string, []any) {
+	from, args := activityEventsFrom(opts)
+	return from + " ORDER BY created_at DESC, source DESC, source_id DESC LIMIT ?", append(args, activityLimit(opts.Limit))
 }
 
 // activityEventCursorWithQueryer returns the cursor of the newest event the
@@ -792,7 +791,7 @@ func listActivitySubjectsWithQueryer(
 		}
 	}
 	// Included terms match the subject's own fields or any of its events
-	// (SearchMatchedSubjectKeys); excluded terms reject the subject by its own
+	// in the filtered event union; excluded terms reject the subject by its own
 	// fields so one unrelated comment cannot resurface an excluded item.
 	searchQuery := ParseSearchQuery(opts.Search)
 	const subjectSearchTerm = "LOWER('#' || item_number || ' ' || item_title) LIKE ? OR " +
@@ -803,29 +802,9 @@ func listActivitySubjectsWithQueryer(
 		searchClauses := []string{includeCond}
 		args = append(args, includeArgs...)
 		if opts.SearchEventOpts != nil {
-			from, eventArgs := activityEventsQuery(*opts.SearchEventOpts)
-			from = from[:strings.LastIndex(from, "ORDER BY created_at DESC")]
+			from, eventArgs := activityEventsFrom(*opts.SearchEventOpts)
 			searchClauses = append(searchClauses, "(repo_id, item_type, item_number) IN (SELECT repo_id, item_type, item_number "+from+")")
-			args = append(args, eventArgs[:len(eventArgs)-1]...)
-		}
-
-		matchedSubjectPlaceholders := make([]string, 0, len(opts.SearchMatchedSubjectKeys))
-		seenMatchedSubjects := make(map[WorkspaceSubjectKey]struct{}, len(opts.SearchMatchedSubjectKeys))
-		for _, key := range opts.SearchMatchedSubjectKeys {
-			if key.ItemType != "pr" && key.ItemType != "issue" {
-				continue
-			}
-			if _, seen := seenMatchedSubjects[key]; seen {
-				continue
-			}
-			seenMatchedSubjects[key] = struct{}{}
-			matchedSubjectPlaceholders = append(matchedSubjectPlaceholders, "(?, ?, ?)")
-			args = append(args, key.RepoID, key.ItemType, key.ItemNumber)
-		}
-		if len(matchedSubjectPlaceholders) > 0 {
-			searchClauses = append(searchClauses,
-				"(repo_id, item_type, item_number) IN ("+
-					strings.Join(matchedSubjectPlaceholders, ", ")+")")
+			args = append(args, eventArgs...)
 		}
 		whereClauses = append(whereClauses, "("+strings.Join(searchClauses, " OR ")+")")
 	}

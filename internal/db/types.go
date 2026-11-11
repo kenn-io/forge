@@ -1720,7 +1720,7 @@ type ListActivityOpts struct {
 }
 
 // ListActivitySubjectsOpts holds parent-level filters for the Activity feed.
-// Event-type filters and cursors do not apply to this authoritative snapshot.
+// Event cursors do not apply to this authoritative snapshot.
 type ListActivitySubjectsOpts struct {
 	Repo           string
 	RepoFilters    []RepoFilter
@@ -1730,22 +1730,19 @@ type ListActivitySubjectsOpts struct {
 	// admitting or reordering otherwise-old parents.
 	ExcludeNotificationRecency bool
 	Search                     string
-	// SearchMatchedSubjectKeys identifies parents whose provider events matched
-	// Search. The parent title and author do not necessarily contain that term.
-	SearchMatchedSubjectKeys []WorkspaceSubjectKey
-	SearchEventOpts          *ListActivityOpts
-	Author                   string
-	Unassigned               bool
-	ViewerLogins             []RepoViewerLogin
-	HideClosedMerged         bool
-	HideBots                 bool
-	HideDrafts               bool
-	HideMergeQueued          bool
-	OnlyMergeQueued          bool
-	DeferredMergeItems       []RepoItemNumber
-	Limit                    int
-	Since                    *time.Time
-	Before                   *ActivitySubjectCursor
+	SearchEventOpts            *ListActivityOpts
+	Author                     string
+	Unassigned                 bool
+	ViewerLogins               []RepoViewerLogin
+	HideClosedMerged           bool
+	HideBots                   bool
+	HideDrafts                 bool
+	HideMergeQueued            bool
+	OnlyMergeQueued            bool
+	DeferredMergeItems         []RepoItemNumber
+	Limit                      int
+	Since                      *time.Time
+	Before                     *ActivitySubjectCursor
 	// Assigned and ViewerUninvolved invert Unassigned and ViewerLogins, as in ListActivityOpts.
 	Assigned         bool
 	ViewerUninvolved bool

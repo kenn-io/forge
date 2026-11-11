@@ -1806,10 +1806,11 @@ func TestListActivitySubjectsPagesEqualTimestamps(t *testing.T) {
 	d := openTestDB(t)
 	firstRepo := insertTestRepo(t, d, "alice", "alpha")
 	secondRepo := insertTestRepo(t, d, "alice", "beta")
-	now := baseTime()
+	now := baseTime().Add(123456789 * time.Nanosecond)
 	insertTestMRWithOptions(t, d, testMR(firstRepo, 1, withMRActivity(now)))
 	insertTestMRWithOptions(t, d, testMR(secondRepo, 2, withMRActivity(now)))
 	insertTestMRWithOptions(t, d, testMR(secondRepo, 3, withMRActivity(now)))
+	insertTestIssue(t, d, secondRepo, 4, "Issue", now)
 	first, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 2})
 	require.NoError(t, err)
 	require.Len(t, first, 2)
@@ -1820,8 +1821,31 @@ func TestListActivitySubjectsPagesEqualTimestamps(t *testing.T) {
 		ActivityAt: last.ActivityAt, RepoID: last.Subject.Key.RepoID, ItemType: last.Subject.Key.ItemType, ItemNumber: last.Subject.Key.ItemNumber,
 	}})
 	require.NoError(t, err)
-	require.Len(t, second, 1)
-	assert.Equal(t, 1, second[0].Subject.Key.ItemNumber)
+	require.Len(t, second, 2)
+	assert.Equal(t, "issue", second[0].Subject.Key.ItemType)
+	assert.Equal(t, 4, second[0].Subject.Key.ItemNumber)
+	assert.Equal(t, 1, second[1].Subject.Key.ItemNumber)
+	last = second[1]
+	third, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 2, Before: &ActivitySubjectCursor{
+		ActivityAt: last.ActivityAt, RepoID: last.Subject.Key.RepoID, ItemType: last.Subject.Key.ItemType, ItemNumber: last.Subject.Key.ItemNumber,
+	}})
+	require.NoError(t, err)
+	assert.Empty(t, third)
+}
+
+func TestActivitySubjectCursorValidation(t *testing.T) {
+	stamp := time.Date(2400, 1, 2, 3, 4, 5, 123456789, time.UTC)
+	subject := ActivitySubject{ActivityAt: stamp, Subject: WorkspaceSubjectMetadata{Key: WorkspaceSubjectKey{RepoID: 7, ItemType: "issue", ItemNumber: 9}}}
+	cursor, err := DecodeActivitySubjectCursor(EncodeActivitySubjectCursor(subject))
+	require.NoError(t, err)
+	assert.Equal(t, stamp, cursor.ActivityAt)
+	assert.Equal(t, int64(7), cursor.RepoID)
+	assert.Equal(t, "issue", cursor.ItemType)
+	assert.Equal(t, 9, cursor.ItemNumber)
+	for _, raw := range []string{"invalid", "MTowOjA6cHI6MQ", "MToxMDAwMDAwMDAwOjE6cHI6MQ", "MTowOjE6b3RoZXI6MQ", "MTowOjE6cHI6MA"} {
+		_, err := DecodeActivitySubjectCursor(raw)
+		assert.Error(t, err, raw)
+	}
 }
 
 func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T) {
@@ -1834,10 +1858,11 @@ func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T)
 	now := baseTime()
 	repoID := insertTestRepo(t, d, "alice", "alpha")
 
-	insertTestMRWithOptions(t, d, testMR(repoID, 1,
+	firstID := insertTestMRWithOptions(t, d, testMR(repoID, 1,
 		withMRTitle("Unrelated parent matched through an event"),
 		withMRActivity(now.Add(-time.Hour)),
 	))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{MergeRequestID: firstID, EventType: "issue_comment", Author: "reviewer", Body: "needle", CreatedAt: now, DedupeKey: "match"}}))
 	insertTestMRWithOptions(t, d, testMR(repoID, 2,
 		withMRTitle("Needle in the parent title"),
 		withMRActivity(now.Add(-2*time.Hour)),
@@ -1848,11 +1873,7 @@ func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T)
 	))
 
 	subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{
-		Search: "needle",
-		SearchMatchedSubjectKeys: []WorkspaceSubjectKey{
-			{RepoID: repoID, ItemType: "pr", ItemNumber: 1},
-		},
-		Limit: 50,
+		Search: "needle", SearchEventOpts: &ListActivityOpts{Search: "needle"}, Limit: 50,
 	})
 	require.NoError(err)
 	require.Len(subjects, 2)
@@ -1922,17 +1943,14 @@ func TestListActivitySubjectsExcludedTermOverridesMatchedEvents(t *testing.T) {
 	d := openTestDB(t)
 	now := baseTime()
 	repoID := insertTestRepo(t, d, "alice", "alpha")
-	insertTestMRWithOptions(t, d, testMR(repoID, 1,
+	firstID := insertTestMRWithOptions(t, d, testMR(repoID, 1,
 		withMRTitle("Needle work"), withMRAuthor("excluded-author"), withMRActivity(now.Add(-time.Hour))))
+	require.NoError(d.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: firstID, EventType: "issue_comment", Author: "reviewer", Body: "needle", CreatedAt: now, DedupeKey: "excluded"}}))
 	insertTestMRWithOptions(t, d, testMR(repoID, 2,
 		withMRTitle("Needle work"), withMRAuthor("kept-author"), withMRActivity(now.Add(-2*time.Hour))))
 
 	subjects, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{
-		Search: "needle NOT excluded-author",
-		SearchMatchedSubjectKeys: []WorkspaceSubjectKey{
-			{RepoID: repoID, ItemType: "pr", ItemNumber: 1},
-		},
-		Limit: 50,
+		Search: "needle NOT excluded-author", SearchEventOpts: &ListActivityOpts{Search: "needle NOT excluded-author"}, Limit: 50,
 	})
 	require.NoError(err)
 	require.Len(subjects, 1)

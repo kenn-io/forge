@@ -1733,6 +1733,7 @@ type ListActivitySubjectsOpts struct {
 	// SearchMatchedSubjectKeys identifies parents whose provider events matched
 	// Search. The parent title and author do not necessarily contain that term.
 	SearchMatchedSubjectKeys []WorkspaceSubjectKey
+	SearchEventOpts          *ListActivityOpts
 	Author                   string
 	Unassigned               bool
 	ViewerLogins             []RepoViewerLogin
@@ -1744,9 +1745,17 @@ type ListActivitySubjectsOpts struct {
 	DeferredMergeItems       []RepoItemNumber
 	Limit                    int
 	Since                    *time.Time
+	Before                   *ActivitySubjectCursor
 	// Assigned and ViewerUninvolved invert Unassigned and ViewerLogins, as in ListActivityOpts.
 	Assigned         bool
 	ViewerUninvolved bool
+}
+
+type ActivitySubjectCursor struct {
+	ActivityAt time.Time
+	RepoID     int64
+	ItemType   string
+	ItemNumber int
 }
 
 type ActivityProjection struct {
@@ -1757,8 +1766,8 @@ type ActivityProjection struct {
 
 type ListActivityProjectionOpts struct {
 	ListActivityOpts
-	SubjectLimit     int
-	SearchEventLimit int
+	SubjectLimit  int
+	SubjectBefore *ActivitySubjectCursor
 }
 
 // ListActivityAuthorsOpts holds the repository and time scopes used to build

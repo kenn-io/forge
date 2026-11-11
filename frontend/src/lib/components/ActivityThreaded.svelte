@@ -3,6 +3,7 @@
   import { EmptyState } from "@kenn-io/kit-ui";
   import { ScrollBox } from "@kenn-io/kit-ui";
   import { onDestroy, untrack } from "svelte";
+  import type { Snippet } from "svelte";
   import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
@@ -43,6 +44,7 @@
   import { repositoryKeyFromWire, type RepositoryKey } from "../api/repository-key.js";
 
   interface Props {
+    children?: Snippet;
     items: ActivityItem[];
     itemActivity?: ActivitySubject[];
     workspaceActivity?: WorkspaceActivitySubject[];
@@ -73,6 +75,7 @@
   };
 
   let {
+    children,
     items,
     itemActivity = [],
     workspaceActivity = [],
@@ -989,6 +992,7 @@
     <EmptyState title="No activity found" />
   {/if}
 </div>
+{@render children?.()}
 </ScrollBox>
 
 <style>

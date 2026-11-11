@@ -1046,6 +1046,14 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		opts.BeforeSource = source
 		opts.BeforeSourceID = sourceID
 	}
+	var subjectBefore *db.ActivitySubjectCursor
+	if input.SubjectBefore != "" {
+		cursor, err := db.DecodeActivitySubjectCursor(input.SubjectBefore)
+		if err != nil {
+			return nil, httpapi.Validation("query.subject_before", "invalid subject cursor: "+err.Error())
+		}
+		subjectBefore = &cursor
+	}
 	if input.AtOrBefore != "" {
 		t, source, sourceID, err := db.DecodeCursor(input.AtOrBefore)
 		if err != nil {
@@ -1094,7 +1102,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		collapsed, projectionErr := s.Db.ListCollapsedActivityProjection(ctx, db.ListActivityProjectionOpts{
 			ListActivityOpts: opts,
 			SubjectLimit:     pageLimit + 1,
-			SearchEventLimit: itemapi.ActivitySafetyCap + 1,
+			SubjectBefore:    subjectBefore,
 		})
 		if projectionErr != nil {
 			slog.Error("list collapsed activity failed", "err", projectionErr)
@@ -1126,22 +1134,8 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			return nil, httpapi.Internal("list activity failed")
 		}
 	}
-	// Search-matched parents are derived from the bounded event read, so an
-	// event page that overflowed can hide parents whose only matches fell off
-	// it; report that as parent truncation rather than a complete snapshot.
-	searchMatchesTruncated := searchHasIncludes && len(workspaceEventItems) > itemapi.ActivitySafetyCap
-	var searchMatchedSubjectKeys []db.WorkspaceSubjectKey
-	if searchHasIncludes {
-		searchMatchedSubjectKeys = make([]db.WorkspaceSubjectKey, 0, len(workspaceEventItems))
-		for _, item := range workspaceEventItems {
-			if item.ItemType != "pr" && item.ItemType != "issue" {
-				continue
-			}
-			searchMatchedSubjectKeys = append(searchMatchedSubjectKeys, db.WorkspaceSubjectKey{
-				RepoID: item.RepoID, ItemType: item.ItemType, ItemNumber: item.ItemNumber,
-			})
-		}
-	}
+	searchOpts := opts
+	searchOpts.AfterTime, searchOpts.BeforeTime, searchOpts.AtOrBeforeTime = nil, nil, nil
 	if projection == "full" {
 		itemActivity, err = s.Db.ListActivitySubjects(ctx, db.ListActivitySubjectsOpts{
 			Repo:           opts.Repo,
@@ -1150,21 +1144,22 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			ItemTypes:      opts.ItemTypes,
 			ExcludeNotificationRecency: opts.ExcludeNotifications ||
 				(len(opts.Types) > 0 && !slices.Contains(opts.Types, "notification")),
-			Search:                   opts.Search,
-			SearchMatchedSubjectKeys: searchMatchedSubjectKeys,
-			Author:                   opts.Author,
-			Unassigned:               opts.Unassigned,
-			Assigned:                 opts.Assigned,
-			ViewerLogins:             opts.ViewerLogins,
-			ViewerUninvolved:         opts.ViewerUninvolved,
-			HideClosedMerged:         opts.HideClosedMerged,
-			HideBots:                 opts.HideBots,
-			HideDrafts:               opts.HideDrafts,
-			HideMergeQueued:          opts.HideMergeQueued,
-			OnlyMergeQueued:          opts.OnlyMergeQueued,
-			DeferredMergeItems:       opts.DeferredMergeItems,
-			Limit:                    pageLimit + 1,
-			Since:                    opts.Since,
+			Search:             opts.Search,
+			SearchEventOpts:    &searchOpts,
+			Author:             opts.Author,
+			Unassigned:         opts.Unassigned,
+			Assigned:           opts.Assigned,
+			ViewerLogins:       opts.ViewerLogins,
+			ViewerUninvolved:   opts.ViewerUninvolved,
+			HideClosedMerged:   opts.HideClosedMerged,
+			HideBots:           opts.HideBots,
+			HideDrafts:         opts.HideDrafts,
+			HideMergeQueued:    opts.HideMergeQueued,
+			OnlyMergeQueued:    opts.OnlyMergeQueued,
+			DeferredMergeItems: opts.DeferredMergeItems,
+			Limit:              pageLimit + 1,
+			Since:              opts.Since,
+			Before:             subjectBefore,
 		})
 		if err != nil {
 			slog.Error("list activity subjects failed", "err", err)
@@ -1204,7 +1199,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 	}
 
 	eventsCapped := len(items) > pageLimit
-	itemActivityCapped := len(itemActivity) > pageLimit || searchMatchesTruncated
+	itemActivityCapped := len(itemActivity) > pageLimit
 	if len(items) > pageLimit {
 		items = items[:pageLimit]
 	}
@@ -1213,8 +1208,10 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		last := items[len(items)-1]
 		nextCursor = db.EncodeCursor(last.CreatedAt, last.Source, last.SourceID)
 	}
+	nextSubjectCursor := ""
 	if len(itemActivity) > pageLimit {
 		itemActivity = itemActivity[:pageLimit]
+		nextSubjectCursor = db.EncodeActivitySubjectCursor(itemActivity[len(itemActivity)-1])
 	}
 	if hasFullWorkspaceEventItems {
 		if len(workspaceEventItems) > itemapi.ActivitySafetyCap {
@@ -1332,6 +1329,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			ItemActivityCapped:             itemActivityCapped,
 			EventCursor:                    eventCursor,
 			NextCursor:                     nextCursor,
+			NextSubjectCursor:              nextSubjectCursor,
 		},
 	}, nil
 }

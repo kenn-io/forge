@@ -195,6 +195,9 @@ vi.mock("../context.js", () => ({
       isActivityLoading: () => false,
       isActivityCapped: () => activityCapped.value,
       isItemActivityCapped: () => itemActivityCapped.value,
+      canLoadOlderItems: () => itemActivityCapped.value,
+      isLoadingOlderItems: () => false,
+      loadOlderItems: vi.fn(),
       canLoadMoreActivity: () => canLoadMore.value,
       isLoadingMoreActivity: () => loadingMore.value,
       loadMoreActivity,
@@ -354,7 +357,7 @@ describe("ActivityFeed compact mode", () => {
       rule: "shows the parent ceiling notice in threaded view",
       view: "threaded" as const,
       visible: true,
-      notice: /5,000 most recently active pull requests and issues/,
+      notice: /Load older items/,
       otherNotice: /most recent 5,000 events/,
     },
     {
@@ -362,7 +365,7 @@ describe("ActivityFeed compact mode", () => {
       rule: "hides the parent ceiling notice in flat view",
       view: "flat" as const,
       visible: false,
-      notice: /5,000 most recently active pull requests and issues/,
+      notice: /Load older items/,
       otherNotice: /most recent 5,000 events/,
     },
   ])("$rule", ({ kind, view, visible, notice, otherNotice }) => {

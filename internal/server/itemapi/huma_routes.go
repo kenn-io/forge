@@ -107,6 +107,7 @@ type ListActivityInput struct {
 	Assigned           bool     `query:"assigned" doc:"Drop activity for pull requests and issues with no assignees. With unassigned, neither filter applies."`
 	After              string   `query:"after"`
 	Before             string   `query:"before"`
+	SubjectBefore      string   `query:"subject_before"`
 	AtOrBefore         string   `query:"at_or_before"`
 	Since              string   `query:"since"`
 	Projection         string   `query:"projection" enum:"full,collapsed,events" default:"full"`

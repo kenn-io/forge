@@ -201,6 +201,112 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
+describe("activity subject paging", () => {
+  it("does not append a page after the search changes", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: 1011,
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    };
+    let release: ((value: unknown) => void) | undefined;
+    const older = new Promise((resolve) => {
+      release = resolve;
+    });
+    const client = {
+      GET: vi.fn(
+        async (path: string, options?: { params?: { query?: { subject_before?: string; search?: string } } }) => {
+          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+          if (path !== "/activity") return { data: { items: [], capped: false }, error: null };
+          const query = options?.params?.query;
+          if (query?.subject_before) return older;
+          const number = query?.search ? 3 : 1;
+          return {
+            data: {
+              items: [],
+              capped: false,
+              item_activity: [{ ...itemActivity(number), repo }],
+              next_subject_cursor: query?.search ? "" : "older",
+            },
+            error: null,
+          };
+        },
+      ),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.setViewMode("threaded");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    store.setActivitySearch("new search");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([3]));
+    release?.({ data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] }, error: null });
+    await Promise.resolve();
+    expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([3]);
+    expect(store.canLoadOlderItems()).toBe(false);
+  });
+  it("loads older subjects and refreshes the loaded pages with the same filters", async () => {
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: 1011,
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    };
+    const calls: Array<{ since?: string; search?: string; subject_before?: string }> = [];
+    let refreshed = false;
+    const client = {
+      GET: vi.fn(
+        async (
+          path: string,
+          options?: {
+            params?: { query?: { since?: string; search?: string; subject_before?: string; projection?: string } };
+          },
+        ) => {
+          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+          if (path !== "/activity") return { data: { items: [], capped: false }, error: null };
+          const query = options?.params?.query ?? {};
+          if (query.projection === "events") return { data: { items: [], capped: false }, error: null };
+          calls.push(query);
+          const number = query.subject_before ? (refreshed ? 3 : 2) : 1;
+          return {
+            data: {
+              items: [],
+              capped: false,
+              item_activity: [{ ...itemActivity(number), repo }],
+              item_activity_capped: !query.subject_before,
+              next_subject_cursor: query.subject_before ? "" : "page-2",
+            },
+            error: null,
+          };
+        },
+      ),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.setViewMode("threaded");
+    store.setActivitySearch("cache");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 2]));
+    refreshed = true;
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "refresh activity",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 3]);
+    expect(calls.filter((query) => query.subject_before === "page-2")).toHaveLength(2);
+    expect(new Set(calls.map((query) => query.since)).size).toBe(1);
+    expect(calls.every((query) => query.search === "cache")).toBe(true);
+  });
+});
+
 describe("flat activity paging", () => {
   const pageItem: ActivityItem = {
     ...itemActivity(7),
@@ -850,7 +956,13 @@ describe("activity store workspace activity", () => {
     const get = vi.fn(async (path: string) => {
       if (path === "/activity/authors") return { data: { authors: [] }, error: null };
       return {
-        data: { items: [], capped: false, item_activity: [itemActivity(7)], item_activity_capped: true },
+        data: {
+          items: [],
+          capped: false,
+          item_activity: [itemActivity(7)],
+          item_activity_capped: true,
+          next_subject_cursor: "next",
+        },
         error: null,
       };
     });
@@ -4138,6 +4250,7 @@ describe("activity polling recovery", () => {
               capped: false,
               item_activity: [itemActivity(7)],
               item_activity_capped: true,
+              next_subject_cursor: "next",
               event_cursor: initial.cursor,
             },
             error: null,
@@ -4201,6 +4314,7 @@ describe("activity polling recovery", () => {
             items: [],
             item_activity: [],
             item_activity_capped: true,
+            next_subject_cursor: "next",
             capped: false,
             event_cursor: initial.cursor,
           },

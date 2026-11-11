@@ -405,8 +405,22 @@ func TestAPIListActivityHonorsLimit(t *testing.T) {
 			require.Len(resp.JSON200.ItemActivity, int(limit))
 			assert.True(resp.JSON200.ItemActivityCapped)
 			assert.Equal(int64(1), resp.JSON200.ItemActivity[0].ItemNumber)
+			require.NotNil(resp.JSON200.NextSubjectCursor)
+			next, err := client.HTTP.ListActivityWithResponse(t.Context(), &generated.ListActivityRequestOptions{
+				Query: &generated.ListActivityQuery{Since: &since, Limit: &limit, Projection: tc.projection, SubjectBefore: resp.JSON200.NextSubjectCursor},
+			})
+			require.NoError(err)
+			require.Len(next.JSON200.ItemActivity, 1)
+			assert.Equal(int64(2), next.JSON200.ItemActivity[0].ItemNumber)
 		})
 	}
+}
+
+func TestAPIListActivityRejectsInvalidSubjectCursor(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	srv, _, _ := setupTestServer(t)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?subject_before=invalid", nil)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testing.T) {
@@ -1010,7 +1024,7 @@ func TestAPIListActivityAppliesTrackedRepoScopeBeforeAuthorLimit(t *testing.T) {
 	assert.False(feedBody.Capped)
 }
 
-func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap(t *testing.T) {
+func TestAPIListActivitySearchFindsParentsBeyondEventCap(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	for _, tc := range []struct {
 		name      string
@@ -1020,7 +1034,7 @@ func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap
 		truncated bool
 	}{
 		{"beyond page", 201, 200, []int{2, 1}, false},
-		{"beyond window", itemapi.ActivitySafetyCap + 1, 0, []int{2}, true},
+		{"beyond window", itemapi.ActivitySafetyCap + 1, 0, []int{2, 1}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, database, _ := setupTestServer(t)

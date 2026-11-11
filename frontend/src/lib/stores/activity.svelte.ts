@@ -225,6 +225,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let storeError = $state<string | null>(null);
   let capped = $state(false);
   let itemActivityCapped = $state(false);
+  let subjectCursor = $state("");
+  let subjectLoading = $state(false);
+  let subjectPageDepth = 1;
+  let subjectPageSince = "";
+  let subjectPageScope: string | undefined;
   let activityEventCursor = $state("");
   let loadedThreadKeys = $state.raw<ReadonlySet<string>>(new Set());
   let loadingThreadKeys = $state.raw<ReadonlySet<string>>(new Set());
@@ -322,6 +327,55 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function isItemActivityCapped(): boolean {
     return itemActivityCapped;
+  }
+  function canLoadOlderItems(): boolean {
+    return subjectCursor !== "";
+  }
+  function isLoadingOlderItems(): boolean {
+    return subjectLoading;
+  }
+  function loadOlderItems(): void {
+    if (!subjectCursor || subjectLoading) return;
+    const params = { ...buildParams(), since: subjectPageSince, subject_before: subjectCursor };
+    const scope = activityProjectionScope(params);
+    const generation = pagedActivityGeneration;
+    subjectLoading = true;
+    const program = Effect.gen(function* () {
+      const workflow = yield* ActivityWorkflow;
+      yield* workflow.load(scope, activityRead(params), (result) =>
+        Effect.sync(() => {
+          if (!ownsForegroundSnapshot(generation, scope)) return;
+          const existing = new Set(itemActivity.map(stableParentKey));
+          itemActivity = [
+            ...itemActivity,
+            ...(result.response.item_activity ?? []).filter((subject) => !existing.has(stableParentKey(subject))),
+          ];
+          for (const subject of result.response.item_activity ?? []) {
+            const key = stableParentKey(subject);
+            if (key && isThreadItemExpanded(key)) loadThreadEvents(key);
+          }
+          subjectCursor = result.response.next_subject_cursor ?? "";
+          itemActivityCapped = subjectCursor !== "";
+          subjectPageDepth += 1;
+          subjectLoading = false;
+        }),
+      );
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (ownsForegroundSnapshot(generation, scope)) subjectLoading = false;
+        }),
+      ),
+    );
+    runtime.runCommand(program, {
+      operation: "load older activity items",
+      safeContext: {},
+      onFailure: (failure) => {
+        if (!ownsForegroundSnapshot(generation, scope)) return;
+        subjectLoading = false;
+        storeError = readErrorMessage(failure);
+      },
+    });
   }
   function canLoadMoreActivity(): boolean {
     return (
@@ -726,7 +780,16 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function invalidatePagedActivityRequests(): void {
     pagedActivityGeneration += 1;
     childProjectionInvalidationGeneration += 1;
+    const params = buildParams();
+    const scope = activityProjectionScope(params);
+    if (subjectPageScope !== scope) {
+      subjectPageDepth = 1;
+      subjectCursor = "";
+      subjectPageSince = params.since ?? computeSince();
+      subjectPageScope = scope;
+    }
     loading = false;
+    subjectLoading = false;
     threadRequestTokens.clear();
     loadingThreadKeys = new Set();
     failedThreadKeys = new Set();
@@ -808,6 +871,34 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         ),
       ),
     );
+  }
+
+  function activityReadPages(params: ActivityParams) {
+    return Effect.gen(function* () {
+      const first = yield* activityRead({ ...params, since: subjectPageSince });
+      const subjects = [...(first.response.item_activity ?? [])];
+      const seen = new Set(subjects.map(stableParentKey));
+      let cursor = first.response.next_subject_cursor ?? "";
+      for (let page = 1; page < subjectPageDepth && cursor; page++) {
+        const next = yield* activityRead({ ...params, since: subjectPageSince, subject_before: cursor });
+        for (const subject of next.response.item_activity ?? []) {
+          const key = stableParentKey(subject);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          subjects.push(subject);
+        }
+        cursor = next.response.next_subject_cursor ?? "";
+      }
+      return {
+        ...first,
+        response: {
+          ...first.response,
+          item_activity: subjects,
+          next_subject_cursor: cursor,
+          item_activity_capped: cursor !== "",
+        },
+      };
+    });
   }
 
   function projectOwnedNotificationStates(result: OwnedActivityResponse, completeSnapshot = true): ActivityItem[] {
@@ -895,6 +986,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     itemActivity = subjects;
     workspaceActivity = response.workspace_activity ?? [];
     itemActivityCapped = response.item_activity_capped ?? false;
+    subjectCursor = response.next_subject_cursor ?? "";
   }
 
   function projectActivitySnapshot(result: ActivityReadResponse, params: ActivityParams): void {
@@ -965,7 +1057,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       onlyMergeQueued ||
       enabledItemTypes.size !== DEFAULT_ACTIVITY_ITEM_TYPES.length;
     const absentThreadKeys = new Set<string>();
-    if (reconcileCollapsedThreads && (!result.response.item_activity_capped || parentFilterActive)) {
+    if (
+      reconcileCollapsedThreads &&
+      (!result.response.item_activity_capped || parentFilterActive || subjectPageDepth > 1)
+    ) {
       for (const key of previousSubjects.keys()) {
         if (key !== undefined && !receivedSubjectKeys.has(key)) absentThreadKeys.add(key);
       }
@@ -994,7 +1089,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       ? []
       : items.filter((item) => {
           const key = stableParentKey(item);
-          if (result.response.item_activity_capped && !parentFilterActive) {
+          if (result.response.item_activity_capped && !parentFilterActive && subjectPageDepth === 1) {
             return (
               (item.item_type === "pr" || item.item_type === "issue") &&
               !receivedIDs.has(item.id) &&
@@ -1059,7 +1154,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
       const scope = activityProjectionScope(params);
-      const read = activityRead(params);
+      const read = activityReadPages(params);
       const project = (result: ActivityReadResponse) =>
         Effect.sync(() => {
           if (acceptsProjection()) projectActivitySnapshot(result, params);
@@ -1099,7 +1194,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const params = buildParams();
       if (shouldUseCollapsedAuthoritativeProjection()) params.projection = "collapsed";
       const scope = activityProjectionScope(params);
-      const read = activityRead(params);
+      const read = activityReadPages(params);
       const project = (result: ActivityReadResponse) =>
         Effect.sync(() => projectAuthoritativeActivitySnapshot(result, params));
       return Effect.gen(function* () {
@@ -1342,6 +1437,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     invalidatePagedActivityRequests();
     const generation = pagedActivityGeneration;
     const params = buildParams();
+    params.since = subjectPageSince;
     restoreRepositoryActivity(params);
     const scope = activityProjectionScope(params);
     loadActivityAuthors(forceAuthors || authorsLoading);
@@ -1362,7 +1458,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const workflow = yield* ActivityWorkflow;
       yield* workflow.pollSnapshotRead(
         activityProjectionScope(params),
-        activityRead(params),
+        activityReadPages(params),
         (result) => Effect.sync(() => projectAuthoritativeActivitySnapshot(result, params)),
         Effect.sync(() => {
           loading = false;
@@ -1482,7 +1578,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           if (shouldUseCollapsedAuthoritativeProjection()) replacementParams.projection = "collapsed";
           return workflow.pollSnapshotRead(
             activityProjectionScope(replacementParams),
-            activityRead(replacementParams),
+            activityReadPages(replacementParams),
             (replacement) => projectPoll({ mode: "replace", result: replacement }),
           );
         },
@@ -1650,6 +1746,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getThreadLoadError,
     isActivityCapped,
     isItemActivityCapped,
+    canLoadOlderItems,
+    isLoadingOlderItems,
+    loadOlderItems,
     canLoadMoreActivity,
     isLoadingMoreActivity,
     loadMoreActivity,

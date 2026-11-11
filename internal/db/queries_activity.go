@@ -802,6 +802,12 @@ func listActivitySubjectsWithQueryer(
 			subjectSearchTerm, 3, lowerLikePattern)
 		searchClauses := []string{includeCond}
 		args = append(args, includeArgs...)
+		if opts.SearchEventOpts != nil {
+			from, eventArgs := activityEventsQuery(*opts.SearchEventOpts)
+			from = from[:strings.LastIndex(from, "ORDER BY created_at DESC")]
+			searchClauses = append(searchClauses, "(repo_id, item_type, item_number) IN (SELECT repo_id, item_type, item_number "+from+")")
+			args = append(args, eventArgs[:len(eventArgs)-1]...)
+		}
 
 		matchedSubjectPlaceholders := make([]string, 0, len(opts.SearchMatchedSubjectKeys))
 		seenMatchedSubjects := make(map[WorkspaceSubjectKey]struct{}, len(opts.SearchMatchedSubjectKeys))
@@ -861,6 +867,10 @@ func listActivitySubjectsWithQueryer(
 	if opts.Since != nil {
 		whereClauses = append(whereClauses, "activity_at >= ?")
 		args = append(args, *opts.Since)
+	}
+	if opts.Before != nil {
+		whereClauses = append(whereClauses, "(activity_at, repo_id, item_type, item_number) < (?, ?, ?, ?)")
+		args = append(args, opts.Before.ActivityAt, opts.Before.RepoID, opts.Before.ItemType, opts.Before.ItemNumber)
 	}
 
 	where := ""
@@ -1268,6 +1278,41 @@ func EncodeCursor(
 	raw := fmt.Sprintf("%d:%d:%s:%d",
 		createdAt.Unix(), createdAt.Nanosecond(), source, sourceID)
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+// EncodeActivitySubjectCursor identifies the last subject in a page.
+func EncodeActivitySubjectCursor(subject ActivitySubject) string {
+	key := subject.Subject.Key
+	raw := fmt.Sprintf("%d:%d:%d:%s:%d", subject.ActivityAt.Unix(), subject.ActivityAt.Nanosecond(), key.RepoID, key.ItemType, key.ItemNumber)
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+func DecodeActivitySubjectCursor(cursor string) (ActivitySubjectCursor, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return ActivitySubjectCursor{}, fmt.Errorf("decode subject cursor: %w", err)
+	}
+	parts := strings.Split(string(raw), ":")
+	if len(parts) != 5 {
+		return ActivitySubjectCursor{}, errors.New("invalid subject cursor")
+	}
+	seconds, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return ActivitySubjectCursor{}, errors.New("invalid subject cursor timestamp")
+	}
+	nanos, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || nanos < 0 || nanos >= int64(time.Second) {
+		return ActivitySubjectCursor{}, errors.New("invalid subject cursor nanoseconds")
+	}
+	repoID, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil || repoID <= 0 || (parts[3] != "pr" && parts[3] != "issue") {
+		return ActivitySubjectCursor{}, errors.New("invalid subject cursor identity")
+	}
+	number, err := strconv.Atoi(parts[4])
+	if err != nil || number <= 0 {
+		return ActivitySubjectCursor{}, errors.New("invalid subject cursor item number")
+	}
+	return ActivitySubjectCursor{ActivityAt: time.Unix(seconds, nanos).UTC(), RepoID: repoID, ItemType: parts[3], ItemNumber: number}, nil
 }
 
 // DecodeCursor parses an opaque cursor string into its components.

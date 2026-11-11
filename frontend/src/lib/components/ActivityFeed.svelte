@@ -746,7 +746,11 @@
         {compact}
         {selectedItem}
         {selectedBranchCommit}
-      />
+      >
+        {#if activity.canLoadOlderItems()}
+          <ListLoadMore loading={activity.isLoadingOlderItems()} onclick={activity.loadOlderItems} label="Load older items" />
+        {/if}
+      </ActivityThreaded>
     {/if}
   {:else}
     <ScrollBox label="Activity feed">
@@ -1034,13 +1038,6 @@
   {#if activity.isActivityCapped() && !activity.canLoadMoreActivity()}
     <div class="capped-notice event-capped-notice">
       Showing most recent 5,000 events. Narrow the time range or use filters to see more.
-    </div>
-  {/if}
-
-  {#if activity.getViewMode() === "threaded" && activity.isItemActivityCapped()}
-    <div class="capped-notice item-activity-capped-notice">
-      Showing the 5,000 most recently active pull requests and issues. Item totals may be incomplete; narrow the time
-      range or item filters to see fewer results.
     </div>
   {/if}
 

@@ -458,7 +458,7 @@ Turning on the built-in server records a shared choice. When another Kenn app
 records that choice, the Forge that syncs providers enables the built-in server
 at its next launch if it has no embeddings configuration. Ollama setup stays
 local to Forge. A saved built-in configuration enables Forge without recording
-shared consent.
+shared consent. Forge has no setting or command to clear the shared choice.
 To configure an endpoint yourself, for example Ollama:
 
 ```toml

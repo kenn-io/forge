@@ -249,7 +249,7 @@
           if (activeSession !== session || reads.snapshot === undefined || repos.length > 0) return;
           repos = reads.snapshot.map(repoOption);
           selectedKey = defaultRepoSelection();
-          reposLoading = false;
+          if (repos.length > 0) reposLoading = false;
         });
         const loaded = yield* retryIdempotentRead(reads.refresh, isTransientPickerReadFailure);
         yield* Effect.sync(() => {

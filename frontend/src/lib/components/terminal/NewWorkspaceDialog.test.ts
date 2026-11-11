@@ -1256,6 +1256,19 @@ describe("NewWorkspaceDialog", () => {
     );
   });
 
+  it("shows loading while refreshing an empty repository cache", async () => {
+    mockGet.mockResolvedValue({ data: [] });
+    const { rerender } = await renderDialog();
+    await screen.findByRole("button", { name: "Open Settings" });
+    await rerender({ open: false });
+    mockGet.mockImplementation((path: string) =>
+      path === "/repos" ? new Promise(() => {}) : Promise.resolve({ data: { hosts: [] } }),
+    );
+    await rerender({ open: true });
+    await waitFor(() => expect(repoPicker().textContent).toContain("Loading repositories"));
+    expect(screen.queryByRole("button", { name: "Open Settings" })).toBeNull();
+  });
+
   it("submits the cached repository ID while catalog refresh is pending", async () => {
     const { rerender } = await renderDialog();
     await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));

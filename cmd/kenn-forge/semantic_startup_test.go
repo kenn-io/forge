@@ -35,6 +35,25 @@ func TestRecordSavedBuiltinChoice(t *testing.T) {
 }
 
 func TestSemanticStartupRecordedChoice(t *testing.T) {
+	t.Run("saved built-in", func(t *testing.T) {
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+		path := filepath.Join(t.TempDir(), "config.toml")
+		require.NoError(t, config.EnsureDefault(path))
+		cfg, err := config.Load(path)
+		require.NoError(t, err)
+		cfg.DataDir = t.TempDir()
+		cfg.LocalEmbeddings = "builtin"
+		cfg.Embeddings = embedconfig.Embedder{Model: "nomic-embed-text", Dims: 768}
+		indexer, err := openStartupSemanticSearch(t.Context(), cfg, dbtest.Open(t))
+		require.NoError(t, err)
+		require.NotNil(t, indexer)
+		require.NoError(t, indexer.Close())
+		recorded, err := embedlocal.ChoiceRecorded()
+		require.NoError(t, err)
+		assert.True(t, recorded)
+	})
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)

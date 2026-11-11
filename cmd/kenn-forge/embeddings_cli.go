@@ -124,12 +124,8 @@ func newEmbeddingsCommand(stdin io.Reader, stdout, stderr io.Writer, deps localE
 		if err := cfg.Save(path); err != nil {
 			return err
 		}
-		builtin := local == "builtin"
-		if !builtin {
-			builtinEndpoint, lookupErr := deps.endpoint(cmd.Context(), embedlocal.Options{SkipOllama: true})
-			builtin = lookupErr == nil && endpoint == builtinEndpoint
-		}
-		if builtin {
+		// Kit discovers Ollama at this fixed URL; its built-in server uses a dynamic port.
+		if local == "builtin" || endpoint != "http://127.0.0.1:11434/v1" {
 			if err := embedlocal.RecordChoice(); err != nil {
 				fmt.Fprintf(stderr, "Warning: search by meaning choice write reported an error: %v\n", err)
 			}

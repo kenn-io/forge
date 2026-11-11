@@ -906,7 +906,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	// Only the provider owner syncs pull requests and issues, so only it
 	// embeds them; spokes forward semantic list requests to their hub.
 	if syncer != nil {
-		semanticIndexer, err = openStartupSemanticSearch(ctx, cfg, database)
+		semanticIndexer, err = openSemanticSearch(ctx, cfg, database, defaultLocalEmbeddingDeps())
 		if err != nil {
 			slog.Warn("semantic search disabled", "err", err)
 		}

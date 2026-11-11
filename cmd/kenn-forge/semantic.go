@@ -9,18 +9,30 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/semantic"
+	"go.kenn.io/kit/embedlocal"
 )
 
 // openSemanticSearch opens the embedding index for the configured endpoint.
 // The caller closes it after the indexer and every search have stopped.
-func openSemanticSearch(ctx context.Context, cfg *config.Config, database *db.DB) (*semantic.Indexer, error) {
+func openSemanticSearch(ctx context.Context, cfg *config.Config, database *db.DB, deps localEmbeddingDeps) (*semantic.Indexer, error) {
 	recipe := cfg.Embeddings
+	builtin := cfg.LocalEmbeddings == "builtin"
+	if !recipe.Enabled() {
+		recorded, err := embedlocal.ChoiceRecorded()
+		if err != nil {
+			return nil, fmt.Errorf("read search by meaning choice: %w", err)
+		}
+		if !recorded {
+			return nil, nil
+		}
+		recipe = config.DefaultLocalEmbeddingRecipe()
+		builtin = true
+	}
 	var resolve func(context.Context) (string, error)
 	if strings.TrimSpace(recipe.BaseURL) == "" {
 		recipe = config.LocalEmbeddingRecipe(recipe)
-		builtin := cfg.LocalEmbeddings == "builtin"
 		resolve = func(ctx context.Context) (string, error) {
-			endpoint, err := defaultLocalEmbeddingDeps().resolve(ctx, builtin, nil)
+			endpoint, err := deps.resolve(ctx, builtin, nil)
 			if err != nil {
 				return "", fmt.Errorf("local embeddings: run kenn-forge embeddings local: %w", err)
 			}

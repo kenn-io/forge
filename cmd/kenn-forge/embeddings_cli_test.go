@@ -22,13 +22,9 @@ func TestLocalEmbeddingsSetup(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	path := filepath.Join(t.TempDir(), "config.toml")
-	calls := 0
 	deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
-		if calls == 0 {
-			assert.False(t, opts.SkipOllama)
-		}
-		calls++
-		// Matching URLs model auto discovery selecting the built-in server.
+		assert.False(t, opts.SkipOllama)
+		// Auto discovery selected the built-in server.
 		return "http://127.0.0.1:1234/v1", nil
 	}}
 	cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, deps)
@@ -201,10 +197,8 @@ func TestLocalEmbeddingsRecordsBuiltinChoice(t *testing.T) {
 		t.Setenv("USERPROFILE", home)
 		path := filepath.Join(t.TempDir(), "config.toml")
 		deps := localEmbeddingDeps{endpoint: func(_ context.Context, opts embedlocal.Options) (string, error) {
-			if opts.SkipOllama {
-				return "http://127.0.0.1:1235/v1", nil
-			}
-			return "http://127.0.0.1:1234/v1", nil
+			assert.False(t, opts.SkipOllama)
+			return "http://127.0.0.1:11434/v1", nil
 		}}
 		cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, deps)
 		cmd.SetArgs([]string{"local", "--config", path})

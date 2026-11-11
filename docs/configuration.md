@@ -457,7 +457,8 @@ takes precedence over `local_embeddings = "builtin"`. Restart Forge after setup.
 Turning on the built-in server records a shared choice. When another Kenn app
 records that choice, the Forge that syncs providers enables the built-in server
 at its next launch if it has no embeddings configuration. Ollama setup stays
-local to Forge.
+local to Forge. A saved built-in configuration enables Forge without recording
+shared consent.
 To configure an endpoint yourself, for example Ollama:
 
 ```toml

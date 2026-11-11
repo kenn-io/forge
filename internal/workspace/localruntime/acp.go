@@ -195,6 +195,9 @@ type ACPMessage struct {
 	Locations   []ACPToolLocation `json:"locations,omitempty"`
 	RawInput    string            `json:"rawInput,omitempty"`
 	RawOutput   string            `json:"rawOutput,omitempty"`
+	// DetailsOmitted marks a tool call whose details the chat socket left out
+	// of an opening state or history page. The owner never sets it.
+	DetailsOmitted bool `json:"detailsOmitted,omitempty" doc:"The chat socket left out this tool call's input, output, and non-inline content; a toolDetails command returns them."`
 }
 type ACPPermissionOption struct {
 	OptionID string `json:"optionId"`

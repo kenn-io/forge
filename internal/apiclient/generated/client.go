@@ -71616,10 +71616,13 @@ type WorkspaceChatCommand struct {
 }
 
 type WorkspaceChatMessage struct {
-	Content   *ACPContent  `json:"content,omitempty"`
-	CreatedAt string       `json:"createdAt"`
-	ID        string       `json:"id"`
-	Images    []ACPContent `json:"images,omitempty"`
+	Content   *ACPContent `json:"content,omitempty"`
+	CreatedAt string      `json:"createdAt"`
+
+	// DetailsOmitted The chat socket left out this tool call's input, output, and non-inline content; a toolDetails command returns them.
+	DetailsOmitted *bool        `json:"detailsOmitted,omitempty"`
+	ID             string       `json:"id"`
+	Images         []ACPContent `json:"images,omitempty"`
 
 	// Index Position of the message in the whole transcript. A sent or steered user message is inserted before output that arrived while it was being sent, so later messages can move up by one; the inserted message carries its submissionId.
 	Index            int64             `json:"index"`

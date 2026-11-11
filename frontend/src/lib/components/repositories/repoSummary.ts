@@ -122,6 +122,11 @@ export function isStaleRelease(summary: RepoSummaryCard): boolean {
   return summary.latest_release !== undefined && (summary.commits_since_release ?? 0) >= staleReleaseCommitThreshold;
 }
 
+export function staleReleaseReason(summary: RepoSummaryCard): string | undefined {
+  if (!isStaleRelease(summary)) return undefined;
+  return `${summary.commits_since_release} commits since ${displayReleaseName(summary.latest_release)}. Marked stale at ${staleReleaseCommitThreshold} or more.`;
+}
+
 export function normalizeSummaries(data: RepoSummary[] | null | undefined): RepoSummaryCard[] {
   return (data ?? []).map((summary) => {
     if (!summary.repo) {

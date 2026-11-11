@@ -44,6 +44,7 @@
     provider: summary.repo.provider,
     platformHost: summary.repo.platform_host,
     repoPath: summary.repo.repo_path,
+    webURL: summary.web_url,
   }));
 </script>
 

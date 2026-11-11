@@ -19,6 +19,23 @@ describe("provider issue lists", () => {
   });
 });
 
+it.each([
+  [
+    "gitea",
+    "http://git.example.test:3000/prefix/team/widgets/",
+    "http://git.example.test:3000/prefix/team/widgets/issues",
+  ],
+  [
+    "gitlab",
+    "https://git.example.test/group/sub%20group/widgets",
+    "https://git.example.test/group/sub%20group/widgets/-/issues",
+  ],
+])("uses the repository web URL for %s", (provider, webURL, expected) => {
+  expect(
+    buildProviderIssueListURL({ provider, platformHost: "git.example.test", repoPath: "team/widgets", webURL }),
+  ).toBe(expected);
+});
+
 const pull = {
   provider: "bitbucket",
   owner: "EX",

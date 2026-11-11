@@ -70427,6 +70427,7 @@ type RepoSummaryResponse struct {
 	Releases             []RepoSummaryReleaseResponse     `json:"releases"`
 	Repo                 RepoRefResponse                  `json:"repo"`
 	TimelineUpdatedAt    *string                          `json:"timeline_updated_at,omitempty"`
+	WebURL               *string                          `json:"web_url,omitempty"`
 }
 
 type RepoSyncProblem struct {

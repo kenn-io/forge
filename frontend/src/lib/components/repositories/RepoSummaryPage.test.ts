@@ -950,12 +950,15 @@ describe("RepoSummaryPage", () => {
   it("retains an uncertain issue outcome until a replacement page acknowledges it", async () => {
     mockGet.mockResolvedValue({
       data: [
-        repoSummaryFixture({
-          provider: "github",
-          platformHost: "github.com",
-          owner: "acme",
-          name: "widgets",
-        }),
+        {
+          ...repoSummaryFixture({
+            provider: "gitea",
+            platformHost: "git.example.test:3000",
+            owner: "acme",
+            name: "widgets",
+          }),
+          web_url: "http://git.example.test:3000/acme/widgets",
+        },
       ],
       error: undefined,
     });
@@ -985,7 +988,7 @@ describe("RepoSummaryPage", () => {
       expect(flash.getFlash()).toBeNull();
       expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", true);
       const issueList = screen.getByRole("link", { name: "Open issue list" });
-      expect(issueList.getAttribute("href")).toBe("https://github.com/acme/widgets/issues");
+      expect(issueList.getAttribute("href")).toBe("http://git.example.test:3000/acme/widgets/issues");
       expect(issueList.getAttribute("target")).toBe("_blank");
     });
 
@@ -995,6 +998,9 @@ describe("RepoSummaryPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", false);
     });
+    mockPost.mockResolvedValueOnce({ data: { Number: 27 }, error: undefined });
+    await fireEvent.click(screen.getByRole("button", { name: "Create issue" }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
   });
 
   it("allows issue creation to retry after a rejected request", async () => {

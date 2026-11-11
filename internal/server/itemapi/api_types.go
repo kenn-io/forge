@@ -92,6 +92,7 @@ type RoborevConfiguredRepositoriesResponse struct {
 type RepoSummaryResponse struct {
 	Repo                 httpapi.RepoRefResponse          `json:"repo"`
 	PlatformHost         string                           `json:"platform_host"`
+	WebURL               string                           `json:"web_url,omitempty"`
 	DefaultPlatformHost  string                           `json:"default_platform_host"`
 	Owner                string                           `json:"owner"`
 	Name                 string                           `json:"name"`

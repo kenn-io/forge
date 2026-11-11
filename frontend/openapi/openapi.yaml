@@ -9161,6 +9161,8 @@ components:
           $ref: "#/components/schemas/RepoRefResponse"
         timeline_updated_at:
           type: string
+        web_url:
+          type: string
       required:
         - repo
         - platform_host

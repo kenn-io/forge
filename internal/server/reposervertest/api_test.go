@@ -233,6 +233,9 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	widgetsRepo, err := database.GetRepoByIdentity(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	require.NotNil(widgetsRepo)
+	require.NoError(database.UpdateRepoProviderObservation(t.Context(), widgetsRepo.ID, db.RepoProviderMetadata{
+		WebURL: "http://git.example.test:3000/prefix/acme/widgets",
+	}, nil, nil))
 	publishedAt := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
 	previousPublishedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	commitsSince := 42
@@ -291,6 +294,8 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	require.NotNil(widgets.RecentIssues)
 
 	assert.Equal("acme", widgets.Owner)
+	require.NotNil(widgets.WebURL)
+	assert.Equal("http://git.example.test:3000/prefix/acme/widgets", *widgets.WebURL)
 	assert.Equal(int64(4), widgets.OpenPrCount)
 	assert.Equal(int64(1), widgets.DraftPrCount)
 	assert.Equal(int64(3), widgets.OpenIssueCount)

@@ -28,6 +28,20 @@ describe("provider issue lists", () => {
   ])("builds the %s issue list", (provider, platformHost, repoPath, webURL, expected) => {
     expect(buildProviderIssueListURL({ provider, platformHost, repoPath, webURL })).toBe(expected);
   });
+
+  it.each(["javascript:alert(1)//", "https://user:password@git.example.test/team/widgets"])(
+    "rejects an invalid repository web URL: %s",
+    (webURL) => {
+      expect(
+        buildProviderIssueListURL({
+          provider: "gitea",
+          platformHost: "git.example.test",
+          repoPath: "team/widgets",
+          webURL,
+        }),
+      ).toBeUndefined();
+    },
+  );
 });
 
 const pull = {

@@ -2601,12 +2601,12 @@ type webURLProvider struct {
 
 var _ platform.RepositoryReader = (*webURLProvider)(nil)
 
-func (p *webURLProvider) GetRepository(_ context.Context, ref platform.RepoRef) (platform.Repository, error) {
+func (p *webURLProvider) GetRepository(ctx context.Context, ref platform.RepoRef) (platform.Repository, error) {
 	p.seen = ref
 	if p.err != nil {
 		return platform.Repository{}, p.err
 	}
-	return platform.Repository{Ref: p.Ref, WebURL: p.Ref.WebURL}, nil
+	return p.ApiTestGitLabProvider.GetRepository(ctx, ref)
 }
 
 func TestRepositoryWebURLUsesStableIdentity(t *testing.T) {

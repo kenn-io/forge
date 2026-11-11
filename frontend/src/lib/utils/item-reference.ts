@@ -1,6 +1,7 @@
 import { canonicalProvider } from "../api/provider-routes.js";
 import { buildIssueRoute, buildRoutedItemRoute, type RepositoryRouteRef } from "../routes.js";
 import { withBasePath } from "../stores/router.svelte.js";
+import { isSafeExternalHTTPURL } from "./safe-external-url.js";
 
 export type ItemReferenceType = "pr" | "issue";
 
@@ -52,7 +53,8 @@ export function buildProviderIssueListURL(
   const repoPath = encodeRepoPath(ref.repoPath);
   if (!host || !repoPath || (provider === "bitbucket" && host.toLowerCase() !== "bitbucket.org")) return undefined;
   const repoURL = ref.webURL?.replace(/\/+$/, "") || `https://${host}/${repoPath}`;
-  return `${repoURL}${provider === "gitlab" ? "/-/issues" : "/issues"}`;
+  const issueListURL = `${repoURL}${provider === "gitlab" ? "/-/issues" : "/issues"}`;
+  return isSafeExternalHTTPURL(issueListURL) ? issueListURL : undefined;
 }
 
 export function buildCanonicalProviderItemURL(ref: ResolvableItemReference): string | undefined {

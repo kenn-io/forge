@@ -6,7 +6,6 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
   import { onDestroy } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { executeRoborevRequest } from "../../api/roborev/client.js";
-  import { retryIdempotentRead } from "../../api/retry-policy.js";
   import { getStores, getRoborevClient } from "../../context.js";
   import type * as RoborevModels from "../../api/roborev/generated/models/index.js";
   import {
@@ -123,7 +122,6 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
           executeRoborevRequest("list Roborev branches", (signal) =>
             roborevAPI.listBranches({ repo: [rootPath] }, { signal }, client),
           ).pipe(
-            retryIdempotentRead,
             Effect.flatMap((result) =>
               result.status !== 200
                 ? Effect.fail(

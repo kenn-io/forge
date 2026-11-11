@@ -1,5 +1,6 @@
 import { Duration, Effect, Schedule } from "effect";
 import { ApiProblemError, TransientTransportError } from "./effect-errors.js";
+import { InvalidGeneratedErrorResponse } from "./runtime.js";
 
 export const transientRetrySchedule = Schedule.exponential("500 millis").pipe(
   Schedule.jittered,
@@ -17,7 +18,13 @@ export function isTransientFailure(failure: unknown): failure is TransientTransp
 }
 
 export function isTransientPickerReadFailure(failure: unknown): boolean {
-  return isTransientFailure(failure) || (failure instanceof ApiProblemError && failure.problem.status === 503);
+  if (isTransientFailure(failure)) {
+    return !(failure.cause instanceof InvalidGeneratedErrorResponse || failure.cause instanceof SyntaxError);
+  }
+  return (
+    failure instanceof ApiProblemError &&
+    (failure.problem.code === "serviceUnavailable" || failure.problem.code === "hubUnavailable")
+  );
 }
 
 export const retryIdempotentRead = <A, E, R>(

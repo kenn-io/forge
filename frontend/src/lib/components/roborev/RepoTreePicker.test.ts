@@ -84,16 +84,15 @@ describe("RepoTreePicker", () => {
 
   it("offers a retry when branches fail and keeps the repository expanded", async () => {
     client.GET.mockResolvedValueOnce({ data: { repos: [{ root_path: "/work/example", name: "example", count: 4 }] } });
-    client.GET.mockResolvedValueOnce({
-      error: { detail: "unavailable" },
-      response: new Response(null, { status: 500 }),
-    });
+    client.GET.mockRejectedValueOnce(new Error("offline"));
     client.GET.mockResolvedValueOnce({ data: { branches: [{ name: "main", count: 2 }] } });
     render(RepoTreePicker);
     await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
     await screen.findByText("example");
     await fireEvent.click(screen.getByTitle("Show branches"));
-    await fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+    const retry = await screen.findByRole("button", { name: "Retry" });
+    expect(client.GET).toHaveBeenCalledTimes(2);
+    await fireEvent.click(retry);
     expect(await screen.findByText("main")).toBeTruthy();
     expect(screen.queryByText("No branches")).toBeNull();
   });

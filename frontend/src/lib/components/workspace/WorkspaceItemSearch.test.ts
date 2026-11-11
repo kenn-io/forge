@@ -102,7 +102,7 @@ it("reopens and filters the shared open-item list without waiting for requests",
   );
   await fireEvent.input(screen.getByRole("combobox"), { target: { value: "theme system" } });
   await screen.findByRole("alert", {}, { timeout: 5000 });
-  expect(screen.getByRole("option", { name: /#55.*Refactor theme system/ })).toBeTruthy();
+  expect(screen.queryByRole("option", { name: /#55.*Refactor theme system/ })).toBeNull();
   await fireEvent.input(screen.getByRole("combobox"), { target: { value: "no matching item" } });
   await screen.findByRole("alert", {}, { timeout: 5000 });
   expect(screen.queryByRole("option", { name: /#55/ })).toBeNull();

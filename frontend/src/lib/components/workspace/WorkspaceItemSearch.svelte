@@ -38,7 +38,6 @@
   const runtime = getAppRuntime();
   const searchStore = getStores().workspaceItemSearch;
   let remoteOptions = $state.raw<SearchOption[]>([]);
-  let remoteOptionsQuery = "";
   let remoteLoading = $state(false);
   let remoteError = $state("");
   let query = $state("");
@@ -105,7 +104,7 @@
     }
     remoteLoading = true;
     remoteError = "";
-    if (query.trim() !== remoteOptionsQuery) remoteOptions = [];
+    remoteOptions = [];
     const params = { state: "all", q: query.trim(), limit: 30 };
     searchExecution = runtime.runCommand(
       Effect.sleep("150 millis").pipe(
@@ -118,7 +117,6 @@
           ).pipe((read) => retryIdempotentRead(read, isTransientPickerReadFailure)),
         }, { concurrency: "unbounded" })),
         Effect.tap(({ pulls, issues }) => Effect.sync(() => {
-          remoteOptionsQuery = params.q;
           remoteOptions = [
             ...pulls.map((pull) => searchOption("pr", pull)),
             ...issues.map((issue) => searchOption("issue", issue)),

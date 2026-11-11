@@ -1301,7 +1301,23 @@ describe("NewWorkspaceDialog", () => {
     await screen.findByRole("alert", {}, { timeout: 5000 });
     await fireEvent.mouseDown(screen.getByRole("option", { name: /acme\/gadget/ }));
     expect(repoPicker().textContent).toContain("acme/gadget");
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
     expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("does not offer Settings when an empty cached catalog fails to refresh", async () => {
+    mockGet.mockResolvedValue({ data: [] });
+    const { rerender } = await renderDialog();
+    await screen.findByRole("button", { name: "Open Settings" });
+    await rerender({ open: false });
+    mockGet.mockResolvedValue({
+      error: { code: "forbidden", status: 403 },
+      response: new Response(null, { status: 403 }),
+    });
+    await rerender({ open: true });
+    await screen.findByRole("button", { name: "Retry" });
+    expect(screen.queryByRole("button", { name: "Open Settings" })).toBeNull();
+    expect(repoPicker().textContent).toContain("Could not load repositories");
   });
 
   it("reports a rejected create instead of failing silently", async () => {

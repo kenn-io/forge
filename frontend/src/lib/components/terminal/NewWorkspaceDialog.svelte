@@ -23,6 +23,7 @@
   } from "../../api/effect-errors.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
   import { RepositoryReads } from "../../api/repository-reads.js";
+  import { isTransientPickerReadFailure, retryIdempotentRead } from "../../api/retry-policy.js";
   import { repositoryKeyFromCatalog, repositoryKeyToWire, type RepositoryKey } from "../../api/repository-key.js";
   import { executeOpaqueGeneratedApiRequest } from "../../api/generated-api.js";
   import { FleetSnapshotReads, type HostSummary } from "../../api/fleet-snapshot.js";
@@ -250,7 +251,7 @@
           selectedKey = defaultRepoSelection();
           if (repos.length > 0) reposLoading = false;
         });
-        const loaded = yield* reads.refresh;
+        const loaded = yield* retryIdempotentRead(reads.refresh, isTransientPickerReadFailure);
         yield* Effect.sync(() => {
           if (activeSession !== session) return;
           reposLoading = false;
@@ -748,6 +749,7 @@
           onselect={(value) => {
             clearPendingLaunch();
             selectedKey = value;
+            reposError = null;
           }}
         />
         {#if reposError}

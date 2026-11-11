@@ -53,7 +53,7 @@ func newFleetPrepareSpokeCommand(options fleetCLIOptions) *cobra.Command {
 			for _, handoffErr := range report.HandoffErrors {
 				fmt.Fprintf(&output, "  Handoff error: %s\n", handoffErr)
 			}
-			fmt.Fprintf(&output, "Rerun after resolving the items above:\n  %s\n", commandHint(cmd, []string{"kenn-forge", "fleet", "prepare-spoke"}, "config", "timeout"))
+			fmt.Fprintf(&output, "Rerun:\n  %s\n", commandHint(cmd, []string{"kenn-forge", "fleet", "prepare-spoke"}, "config", "timeout"))
 			if _, err := fmt.Fprint(options.Stdout, output.String()); err != nil {
 				return err
 			}

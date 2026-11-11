@@ -67,10 +67,20 @@ func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
 				"Workspace ws-1: team/project issue 42: launchSpecMissing",
 				"Workspace ws-2 issue 7: sourceVisibilityExpired",
 				"Handoff conflict: review draft for team/project #42 on github.com (github)", "Handoff error: handoff review draft for team/project #42 on github.com (github): offline",
-				"Rerun after resolving the items above:", tc.want,
+				"Rerun:", tc.want,
 			} {
 				assert.Contains(t, stdout.String(), want)
 			}
 		})
 	}
+}
+
+func TestFleetPrepareSpokeRerunWithOnlyInFlightCounts(t *testing.T) {
+	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{InFlightProviderWrites: 1}}
+	var stdout bytes.Buffer
+	cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
+	cmd.SetArgs([]string{"prepare-spoke"})
+	require.ErrorContains(t, cmd.Execute(), "not ready")
+	assert.Contains(t, stdout.String(), "1 provider write")
+	assert.Contains(t, stdout.String(), "Rerun:\n  kenn-forge fleet prepare-spoke\n")
 }

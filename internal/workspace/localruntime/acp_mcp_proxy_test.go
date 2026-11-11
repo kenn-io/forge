@@ -133,9 +133,10 @@ func TestACPWithoutForgeToolsDoesNotReceiveCredentials(t *testing.T) {
 }
 
 func TestACPMCPProxyExplainsUnreachableDaemon(t *testing.T) {
-	stopped := httptest.NewServer(http.NotFoundHandler())
-	stopped.Close()
-	proxy, err := newACPMCPProxy(ACPMCPBinding{URL: stopped.URL + "/mcp", Token: "daemon-token"}, "workspace", false)
+	// Keep the listener and abort the response; a closed port can be reused.
+	aborting := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) }))
+	t.Cleanup(aborting.Close)
+	proxy, err := newACPMCPProxy(ACPMCPBinding{URL: aborting.URL + "/mcp", Token: "daemon-token"}, "workspace", false)
 	require.NoError(t, err)
 	t.Cleanup(proxy.Close)
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, proxy.URL(), strings.NewReader(`{"jsonrpc":"2.0","method":"tools/list","id":1}`))
@@ -147,6 +148,6 @@ func TestACPMCPProxyExplainsUnreachableDaemon(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, response.Body.Close())
 	assert.Equal(t, http.StatusBadGateway, response.StatusCode)
-	assert.Contains(t, string(body), "could not reach the Forge daemon")
-	assert.Contains(t, string(body), "connection refused")
+	assert.Contains(t, string(body), "lost its connection to the Forge daemon (EOF)")
+	assert.Contains(t, string(body), "check whether it already took effect")
 }

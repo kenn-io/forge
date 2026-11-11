@@ -14,6 +14,7 @@
     repoKey,
     repoStateKey,
     shouldShowPlatformHost,
+    staleReleaseReason,
     type RepoMetric,
     type RepoSummaryCard,
   } from "./repoSummary.js";
@@ -278,6 +279,7 @@
         size="xs"
         tone={releaseStatusTone}
         uppercase={false}
+        title={staleReleaseReason(summary)}
       >
         {releaseStatus}
       </Chip>

@@ -613,6 +613,11 @@ describe("RepoSummaryPage", () => {
 
     expect(await screen.findByRole("button", { name: /acme\s*\/\s*fresh/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /acme\s*\/\s*stale/ })).toBeTruthy();
+    expect(
+      screen
+        .getAllByTitle("72 commits since v0.9.0. Marked stale at 50 or more.")
+        .map((chip) => chip.textContent?.trim()),
+    ).toEqual(["Stale"]);
 
     await fireEvent.click(screen.getByRole("button", { name: "Stale" }));
     expect(screen.queryByRole("button", { name: /acme\s*\/\s*fresh/ })).toBeNull();

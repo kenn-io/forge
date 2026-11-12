@@ -112,7 +112,6 @@ function storeFixture(
       }),
       triggerSync,
       triggerOnboardingSyncEffect: triggerSyncEffect,
-      refreshSyncStatusEffect: Effect.void,
       getRateLimits: () => ({ provider_pools: {}, local_ceilings: {} }),
       subscribeSyncComplete: () => () => {},
     },
@@ -598,6 +597,35 @@ describe("OnboardingFlow", () => {
     expect(screen.getByRole("alert").textContent).toContain("missing/repo on github.com");
     expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy();
     expect(posts).toBe(1);
+  });
+
+  it("opens pull requests when the post-completion quota refresh stalls", async () => {
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/sync" && request.method === "POST") {
+        return Promise.resolve(Response.json({ instance_id: "instance", generation: 1 }));
+      }
+      if (path === "/api/v1/sync/status") {
+        return Promise.resolve(
+          Response.json({
+            running: false,
+            full_sync: { instance_id: "instance", settled_generation: 1, successful_generation: 1 },
+          }),
+        );
+      }
+      if (path === "/api/v1/rate-limits") {
+        return new Promise<Response>(() => {});
+      }
+      return originalFetch(input, init);
+    });
+    const fixture = storeFixture({ configured: true });
+    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+    fixture.stores.sync = createSyncStore({ runtime: runtimeCapture.current });
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+    expect(fixture.loadPulls).toHaveBeenCalledOnce();
   });
 
   it("does not report a quota wait for a different host", async () => {

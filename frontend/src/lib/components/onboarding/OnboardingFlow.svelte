@@ -375,7 +375,6 @@
     return Effect.sync(() => {
       syncFinishing = true;
     }).pipe(
-      Effect.andThen(stores.sync.refreshSyncStatusEffect),
       Effect.andThen(loadAvailablePullsProgram()),
       Effect.andThen(
         Effect.sync(() => {

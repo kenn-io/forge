@@ -9,6 +9,10 @@ import type { SyncStatusLastErrorCode } from "./syncStatusLastErrorCode.ts";
 export interface SyncStatus {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /** @minimum 0 */
+  accepted_full_syncs?: number;
+  /** @minimum 0 */
+  completed_full_syncs?: number;
   current_repo?: string;
   detail_refresh_overdue?: number;
   git_access?: GitAccessProblem[];

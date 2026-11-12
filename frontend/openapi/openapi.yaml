@@ -10781,6 +10781,14 @@ components:
           format: uri
           readOnly: true
           type: string
+        accepted_full_syncs:
+          format: int64
+          minimum: 0
+          type: integer
+        completed_full_syncs:
+          format: int64
+          minimum: 0
+          type: integer
         current_repo:
           type: string
         detail_refresh_overdue:

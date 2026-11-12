@@ -90,6 +90,9 @@ type Syncer struct {
 	running                  atomic.Bool
 	exclusiveRun             bool                 // guarded by runMu
 	pendingRun               *pendingSyncRun      // guarded by runMu
+	acceptedFullSyncs        atomic.Uint64        // counted under runMu, read without it
+	completedFullSyncs       atomic.Uint64        // stored under runMu, read without it
+	runCoversFullSyncs       uint64               // accepted count the active run began with, guarded by runMu
 	startupRepoSyncTimes     map[string]time.Time // one-shot credential completions, guarded by runMu
 	providerWorkMu           sync.Mutex
 	providerWork             map[string]map[archive.WorkPriority]int
@@ -299,6 +302,7 @@ func (s *Syncer) publishStatusLocked(status *SyncStatus) {
 	}
 	status.GitAccess = s.gitAccessProblems()
 	status.RepoErrors = s.repoSyncProblems()
+	s.stampFullSyncCounts(status)
 	s.status.Store(status)
 	if s.onStatusChange != nil {
 		s.onStatusChange(status)
@@ -562,5 +566,14 @@ func (s *Syncer) Stop() {
 
 // Status returns a snapshot of the current sync state.
 func (s *Syncer) Status() *SyncStatus {
-	return s.status.Load().(*SyncStatus)
+	status := *s.status.Load().(*SyncStatus)
+	s.stampFullSyncCounts(&status)
+	return &status
+}
+
+// stampFullSyncCounts gives every status, snapshot or event, the counters as
+// of its own publication so a client can order it against others.
+func (s *Syncer) stampFullSyncCounts(status *SyncStatus) {
+	status.AcceptedFullSyncs = s.acceptedFullSyncs.Load()
+	status.CompletedFullSyncs = s.completedFullSyncs.Load()
 }

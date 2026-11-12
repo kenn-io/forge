@@ -77,6 +77,7 @@ func (s *Syncer) triggerRunWithCadence(
 			s.coalescePendingRunLocked(
 				bypassNextSyncAfter, priorityRepos, onlyRepos,
 			)
+			s.countAcceptedFullSyncLocked(bypassNextSyncAfter, onlyRepos)
 		}
 		s.runMu.Unlock()
 		s.lifecycleMu.Unlock()
@@ -84,6 +85,8 @@ func (s *Syncer) triggerRunWithCadence(
 	}
 	s.running.Store(true)
 	s.exclusiveRun = onlyRepos != nil
+	s.countAcceptedFullSyncLocked(bypassNextSyncAfter, onlyRepos)
+	s.runCoversFullSyncs = s.acceptedFullSyncs.Load()
 	s.runMu.Unlock()
 
 	s.startClaimedRunLocked(
@@ -91,6 +94,16 @@ func (s *Syncer) triggerRunWithCadence(
 	)
 	s.lifecycleMu.Unlock()
 	return true
+}
+
+// countAcceptedFullSyncLocked records a retained request that covers every
+// configured repository. Scoped and cadence-respecting passes do not.
+func (s *Syncer) countAcceptedFullSyncLocked(
+	bypassNextSyncAfter bool, onlyRepos []RepoRef,
+) {
+	if bypassNextSyncAfter && onlyRepos == nil {
+		s.acceptedFullSyncs.Add(1)
+	}
 }
 
 // startClaimedRunLocked registers and starts work whose single-flight slot is
@@ -440,7 +453,7 @@ func (s *Syncer) runOnceWithSlot(
 ) {
 	if !s.SyncEnabled() {
 		if slotClaimed {
-			s.releaseRunSlot()
+			s.releaseRunSlotWithStatus(&SyncStatus{LastError: "sync disabled"})
 		}
 		return
 	}
@@ -460,7 +473,9 @@ func (s *Syncer) runOnceWithSlot(
 		}
 		s.running.Store(true)
 		s.exclusiveRun = onlyRepos != nil
+		s.runCoversFullSyncs = s.acceptedFullSyncs.Load()
 	}
+	covers := s.runCoversFullSyncs
 	for key, last := range s.startupRepoSyncTimes {
 		if _, exists := s.nextSyncAfter[key]; !exists && s.hosts().rateTrackers[key] != nil {
 			s.nextSyncAfter[key] = last.Add(s.interval)
@@ -480,6 +495,9 @@ func (s *Syncer) runOnceWithSlot(
 			terminalStatus.DetailRefreshOverdue = s.Status().DetailRefreshOverdue
 		}
 		s.runMu.Lock()
+		if bypassNextSyncAfter && onlyRepos == nil {
+			s.completedFullSyncs.Store(covers)
+		}
 		pending := s.pendingRun
 		s.pendingRun = nil
 		if pending != nil && !s.AutomaticSyncEnabled() && !pending.bypassNextSyncAfter {
@@ -498,6 +516,7 @@ func (s *Syncer) runOnceWithSlot(
 			// Keep ownership of the single-flight slot while the accepted
 			// follow-up is registered. New arrivals coalesce behind it.
 			s.exclusiveRun = !pending.full
+			s.runCoversFullSyncs = s.acceptedFullSyncs.Load()
 		}
 		s.runMu.Unlock()
 		if pending == nil {
@@ -526,6 +545,9 @@ func (s *Syncer) runOnceWithSlot(
 			appendUniqueRepoRefs(pending.bypassRepos, pending.startupRetryRepos),
 		)
 		if !launched {
+			if s.acceptedFullSyncs.Load() > s.completedFullSyncs.Load() {
+				terminalStatus = &SyncStatus{LastError: "sync stopped before accepted work ran"}
+			}
 			s.releaseRunSlotWithStatus(terminalStatus)
 		}
 	}()
@@ -782,6 +804,7 @@ func (s *Syncer) releaseRunSlot() {
 	s.running.Store(false)
 	s.exclusiveRun = false
 	s.pendingRun = nil
+	s.completedFullSyncs.Store(s.acceptedFullSyncs.Load())
 	s.runMu.Unlock()
 }
 

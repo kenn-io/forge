@@ -80,6 +80,16 @@ cadence loops are intentionally separate.
   triggers return after admission while provider execution stays asynchronous.
 - Public sync status stays running across follow-up handoffs, and a stale idle
   snapshot must never overwrite a later run (`internal/github/sync_run.go::runOnceWithSlot`).
+- Sync status carries `accepted_full_syncs`, the count of retained full triggers, and
+  `completed_full_syncs`, the accepted count the latest finished full run began with. Both are
+  stamped on every snapshot and event when it is published. A client that lost a trigger response compares the accepted
+  count with one read beforehand instead of inferring acceptance from `running` or
+  `last_run_at`, which cannot tell a full sync from a scoped one. It then treats the sync as
+  complete only when `completed_full_syncs` reaches the count it awaits
+  (`frontend/src/lib/stores/sync.svelte.ts::triggerOnboardingSyncEffect`,
+  `internal/github/sync_run.go::runOnceWithSlot`).
+- A gateway timeout before admission or a daemon restart between count reads can
+  cause one extra coalesced sync.
 
 ## Repository-disabled feature cooldown
 
@@ -152,3 +162,5 @@ cadence loops are intentionally separate.
 
 - Test policy decisions, not the backoff library: classifiers, permanent-error
   wrapping, budgets, dedup keys, and reset conditions.
+
+- Sync admission returns `retryable: false` for permanent service-unavailable errors.

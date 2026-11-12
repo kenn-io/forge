@@ -19,12 +19,20 @@ function startOnboarding(
   post: GeneratedClient["SyncService"]["triggerSync"],
   onFailure = vi.fn(),
 ) {
+  let accepted = 0;
   const store = createSyncStore(
     makeGeneratedClient({
       SyncService: {
-        getSyncStatus: getStatus,
+        getSyncStatus: async () => {
+          const status = await getStatus();
+          return { accepted_full_syncs: accepted, ...status };
+        },
         getRateLimits: async () => ({ provider_pools: {}, local_ceilings: {} }),
-        triggerSync: post,
+        triggerSync: async (args) => {
+          const result = await post(args);
+          accepted++;
+          return result;
+        },
       },
     }),
   );
@@ -47,6 +55,143 @@ afterEach(async () => {
 });
 
 describe("sync store", () => {
+  // The server counts every full sync it retains, so a lost response can be
+  // reconciled against the count read before the trigger was sent.
+  describe("reconciling a lost first-sync response", () => {
+    const status = (accepted: number, rest: Record<string, unknown> = {}) => ({
+      running: false,
+      last_run_at: "",
+      last_error: "",
+      accepted_full_syncs: accepted,
+      ...rest,
+    });
+
+    it("does not repeat a first sync the server already accepted", async () => {
+      const calls: string[] = [];
+      let accepted = 4;
+      const getStatus = vi.fn(async () => {
+        calls.push("status");
+        return status(accepted, { running: true });
+      });
+      const post = vi.fn(async () => {
+        calls.push("post");
+        accepted++;
+        throw new Error("response lost");
+      });
+      const onFailure = vi.fn();
+      const { store, execution } = startOnboarding(getStatus, post, onFailure);
+      await Effect.runPromise(execution.await);
+      expect(post).toHaveBeenCalledOnce();
+      expect(calls.slice(calls.indexOf("post"))).toEqual(["post", "status", "status"]);
+      expect(onFailure).not.toHaveBeenCalled();
+      expect(store.getSyncState()?.running).toBe(true);
+    });
+
+    it("recognizes an accepted first sync that finished while responses were lost", async () => {
+      const done = "2026-08-05T12:01:00Z";
+      let accepted = 0;
+      const getStatus = vi.fn(async () =>
+        status(accepted, accepted > 0 ? { last_run_at: done, completed_full_syncs: accepted } : {}),
+      );
+      const post = vi.fn(async () => {
+        accepted = 1;
+        throw new Error("response lost");
+      });
+      const onFailure = vi.fn();
+      const { store, execution } = startOnboarding(getStatus, post, onFailure);
+      await Effect.runPromise(execution.await);
+      expect(post).toHaveBeenCalledOnce();
+      expect(onFailure).not.toHaveBeenCalled();
+      expect(store.getSyncState()).toMatchObject({ running: false, last_run_at: done, last_error: "" });
+    });
+
+    it("repeats the trigger when only a repository-scoped sync was accepted", async () => {
+      let accepted = 2;
+      const getStatus = vi.fn(async () => status(accepted, { running: true }));
+      const post = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("connection lost"))
+        .mockImplementation(async () => {
+          accepted++;
+        });
+      const { execution } = startOnboarding(getStatus, post);
+      await Effect.runPromise(execution.await);
+      expect(post).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not repeat the trigger when the reconciling status read fails", async () => {
+      const denied = {
+        code: "forbidden",
+        detail: "status denied",
+        status: 403,
+        title: "Forbidden",
+        type: "about:blank",
+      };
+      const getStatus = vi
+        .fn()
+        .mockResolvedValueOnce(status(0))
+        .mockRejectedValue(new GeneratedProblemResponse(denied, Response.json(denied, { status: 403 })));
+      const post = vi.fn().mockRejectedValueOnce(new Error("connection lost")).mockResolvedValue(undefined);
+      const { execution } = startOnboarding(getStatus, post);
+      await Effect.runPromise(execution.await);
+      expect(post).toHaveBeenCalledOnce();
+    });
+
+    it("retries a lost status response without repeating the trigger", async () => {
+      vi.useFakeTimers();
+      let posted = false;
+      let lostReads = 0;
+      const getStatus = vi.fn(async () => {
+        if (posted && lostReads++ < 2) throw new Error("status response lost");
+        return status(posted ? 1 : 0, { running: posted });
+      });
+      const post = vi.fn(async () => {
+        posted = true;
+        throw new Error("trigger response lost");
+      });
+      const { execution } = startOnboarding(getStatus, post);
+      await vi.advanceTimersByTimeAsync(120000);
+      await Effect.runPromise(execution.await);
+      expect(post).toHaveBeenCalledOnce();
+      expect(lostReads).toBeGreaterThan(2);
+      vi.useRealTimers();
+    });
+
+    it("keeps waiting when a different run completes before the accepted full sync", async () => {
+      let accepted = 0;
+      const getStatus = vi.fn(async () => status(accepted, accepted > 0 ? { running: true } : {}));
+      const post = vi.fn(async () => {
+        accepted = 1;
+      });
+      const { store, execution } = startOnboarding(getStatus, post);
+      await Effect.runPromise(execution.await);
+      expect(store.getSyncState()?.running).toBe(true);
+
+      store.setSyncStatus(status(1, { last_run_at: "2026-08-05T12:00:30Z" }));
+      expect(store.getSyncState()?.running).toBe(true);
+
+      const done = "2026-08-05T12:01:00Z";
+      store.setSyncStatus(status(1, { last_run_at: done, completed_full_syncs: 1 }));
+      expect(store.getSyncState()).toMatchObject({ running: false, last_run_at: done });
+    });
+
+    it("restarts the first sync after the daemon loses its accepted work", async () => {
+      let accepted = 2;
+      const getStatus = vi.fn(async () => status(accepted, { running: accepted > 0 }));
+      const post = vi.fn(async () => {
+        accepted++;
+      });
+      const { store, execution } = startOnboarding(getStatus, post);
+      const complete = vi.fn();
+      store.subscribeSyncComplete(complete);
+      await Effect.runPromise(execution.await);
+      accepted = 0;
+      store.setSyncStatus(status(0));
+      await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+      expect(complete).not.toHaveBeenCalled();
+    });
+  });
+
   it("accepts a POST even when its best-effort refresh fails", async () => {
     const idle = { running: false, last_run_at: "", last_error: "" };
     const problem = {
@@ -224,13 +369,11 @@ describe("sync store", () => {
       type: "about:blank",
     };
     const getStatus = vi.fn().mockResolvedValue({ running: false, last_run_at: "", last_error: "" });
-    const post = vi
-      .fn()
-      .mockRejectedValue(new GeneratedProblemResponse(problem, Response.json(problem, { status })));
+    const post = vi.fn().mockRejectedValue(new GeneratedProblemResponse(problem, Response.json(problem, { status })));
     const { store, execution } = startOnboarding(getStatus, post);
     await Effect.runPromise(execution.await);
     expect(post).toHaveBeenCalledOnce();
-    expect(getStatus).toHaveBeenCalledOnce();
+    expect(getStatus).toHaveBeenCalledTimes(2);
     expect(store.getSyncState()).toMatchObject({ running: false, last_error: "Access denied" });
   });
 
@@ -240,9 +383,9 @@ describe("sync store", () => {
     const post = vi.fn().mockRejectedValue(new Error("connection lost"));
     const { store, execution } = startOnboarding(getStatus, post);
     await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
-    await vi.advanceTimersByTimeAsync(10000);
+    await vi.advanceTimersByTimeAsync(120000);
     await Effect.runPromise(execution.await);
-    expect(post).toHaveBeenCalledTimes(3);
+    expect(post).toHaveBeenCalledTimes(6);
     expect(store.getSyncState()).toMatchObject({ running: false, last_error: "Could not reach Kenn Forge" });
   });
 

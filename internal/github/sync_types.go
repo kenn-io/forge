@@ -38,6 +38,16 @@ type SyncStatus struct {
 	// DetailRefreshOverdue counts open items whose last successful detail
 	// check is at least a day old (including items never checked).
 	DetailRefreshOverdue int `json:"detail_refresh_overdue,omitempty"`
+	// AcceptedFullSyncs counts full syncs the daemon has retained, whether
+	// started or queued behind an active run, since it started. A client that
+	// lost a trigger response compares it with a count read beforehand to learn
+	// whether a full sync was accepted without repeating the request.
+	AcceptedFullSyncs uint64 `json:"accepted_full_syncs,omitempty"`
+	// CompletedFullSyncs is the AcceptedFullSyncs value that the latest
+	// finished full sync had retained when it began. A client that holds its
+	// own accepted count treats a status as its completion only once this
+	// reaches that count, so another run finishing cannot stand in for it.
+	CompletedFullSyncs uint64 `json:"completed_full_syncs,omitempty"`
 }
 
 func formatRateLimitWait(wait time.Duration) string {

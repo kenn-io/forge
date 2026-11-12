@@ -7,6 +7,11 @@ export const transientRetrySchedule = Schedule.exponential("500 millis").pipe(
   Schedule.upTo({ times: 2 }),
 );
 
+export const onboardingRetrySchedule = Schedule.exponential("500 millis").pipe(
+  Schedule.jittered,
+  Schedule.upTo({ times: 5 }),
+);
+
 export const reconnectSchedule = Schedule.exponential("500 millis").pipe(
   Schedule.modifyDelay(({ duration }) => Effect.succeed(Duration.min(duration, Duration.seconds(30)))),
 );

@@ -3,7 +3,7 @@ import { pollWhileVisible } from "../effect/poll-while-visible.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
 import { ApiProblemError } from "../api/effect-errors.js";
-import { isTransientPickerReadFailure, retryIdempotentRead, transientRetrySchedule } from "../api/retry-policy.js";
+import { isTransientPickerReadFailure, retryIdempotentRead, onboardingRetrySchedule } from "../api/retry-policy.js";
 import type { RateLimitsResponse, SyncStatus } from "../api/types.js";
 import { SyncWorkflow, type SyncReadError } from "./sync-workflow.js";
 
@@ -36,6 +36,10 @@ export function createSyncStore(opts: SyncStoreOptions) {
   // Retain the optimistic state until status reports running or advances past
   // the authoritative pre-trigger completion time.
   let triggeredSyncLastRunAt: string | null | undefined;
+  // A first sync is complete only when the server reports it finished the full
+  // sync this client accepted, not whichever run happens to end first. null
+  // while the accepted count is unknown, undefined when no count is awaited.
+  let triggeredFullSyncTarget: number | null | undefined;
   let pollWakeSignal: Deferred.Deferred<void> | null = null;
 
   function getSyncState(): SyncStatus | null {
@@ -81,7 +85,25 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
   function applySyncStatus(next: SyncStatus | null): void {
     const isRunning = next?.running ?? false;
-    if (triggeredSyncLastRunAt !== undefined) {
+    if (triggeredFullSyncTarget !== undefined) {
+      if (next && triggeredFullSyncTarget !== null && (next.accepted_full_syncs ?? 0) < triggeredFullSyncTarget) {
+        triggeredFullSyncTarget = null;
+        runtime.runCommand(triggerOnboardingSyncEffect(), {
+          operation: "restart first sync",
+          safeContext: {},
+          onFailure: () => {
+            for (const listener of syncCompleteListeners) listener();
+          },
+        });
+        return;
+      }
+      if (triggeredFullSyncTarget !== null && (next?.completed_full_syncs ?? 0) >= triggeredFullSyncTarget) {
+        triggeredFullSyncTarget = undefined;
+        triggeredSyncLastRunAt = undefined;
+      } else if (!isRunning) {
+        return;
+      }
+    } else if (triggeredSyncLastRunAt !== undefined) {
       const nextLastRunAt = next?.last_run_at ?? "";
       if (isRunning || (triggeredSyncLastRunAt !== null && lastRunAdvanced(triggeredSyncLastRunAt, nextLastRunAt))) {
         triggeredSyncLastRunAt = undefined;
@@ -187,7 +209,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return Date.parse(next) > Date.parse(previous);
   }
 
-  function triggeredSyncProgram(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>) {
+  function triggeredSyncProgram(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>, awaitFullSync = false) {
     const previous = status;
     refreshGeneration += 1;
     let baselineLastRunAt = previous?.last_run_at ?? null;
@@ -199,6 +221,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
       }
       yield* Effect.sync(() => {
         triggeredSyncLastRunAt = baselineLastRunAt;
+        triggeredFullSyncTarget = awaitFullSync ? null : undefined;
         status = {
           ...(previous?.relay && { relay: previous.relay }),
           ...(previous?.repo_errors && { repo_errors: previous.repo_errors }),
@@ -218,6 +241,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
       Effect.tapError((failure) =>
         Effect.sync(() => {
           triggeredSyncLastRunAt = undefined;
+          triggeredFullSyncTarget = undefined;
           status = {
             ...(previous?.relay && { relay: previous.relay }),
             ...(previous?.repo_errors && { repo_errors: previous.repo_errors }),
@@ -252,13 +276,40 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return triggeredSyncProgram(fullSyncRequest());
   }
 
+  // A lost response may hide an accepted trigger. Retry the POST only after
+  // a successful status read shows that no full sync was accepted.
   function triggerOnboardingSyncEffect() {
     const isRetryable = (failure: unknown) =>
       !(failure instanceof ApiProblemError && failure.problem.details?.retryable === false) &&
       isTransientPickerReadFailure(failure);
-    return triggeredSyncProgram(
-      fullSyncRequest().pipe(Effect.retry({ schedule: transientRetrySchedule, while: isRetryable })),
-    );
+    const readWithBackoff = () =>
+      syncStatusRead().pipe(Effect.retry({ schedule: onboardingRetrySchedule, while: isRetryable }));
+    const request = Effect.gen(function* () {
+      const baseline = yield* Effect.option(readWithBackoff());
+      const before = Option.isSome(baseline) ? (baseline.value.accepted_full_syncs ?? 0) : undefined;
+      yield* fullSyncRequest().pipe(
+        Effect.catchIf(isRetryable, (failure) =>
+          readWithBackoff().pipe(
+            Effect.mapError(() => ({ _tag: "UnreadableStatus" as const, failure })),
+            Effect.flatMap((after) =>
+              before === undefined || (after.accepted_full_syncs ?? 0) > before ? Effect.void : Effect.fail(failure),
+            ),
+          ),
+        ),
+        Effect.retry({ schedule: onboardingRetrySchedule, while: isRetryable }),
+        Effect.mapError((failure) =>
+          "_tag" in failure && failure._tag === "UnreadableStatus" ? failure.failure : failure,
+        ),
+      );
+      if (before !== undefined) {
+        triggeredFullSyncTarget = before + 1;
+      } else {
+        const read = yield* Effect.option(readWithBackoff());
+        triggeredFullSyncTarget = Option.isSome(read) ? read.value.accepted_full_syncs || undefined : undefined;
+        if (Option.isSome(read)) applySyncStatus(read.value);
+      }
+    });
+    return triggeredSyncProgram(request, true);
   }
 
   function triggerSync(): void {

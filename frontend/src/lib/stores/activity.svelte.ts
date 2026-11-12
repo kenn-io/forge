@@ -1031,6 +1031,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const autoLoadExpandedThreadEvents = activityPageLimit === undefined;
     const childProjectionStale =
       reconcileCollapsedThreads && projectedChildInvalidationGeneration !== childProjectionInvalidationGeneration;
+    const noMatchingEvents = !result.partialFailure && result.response.event_cursor === "";
     const received = projectOwnedNotificationStates(result);
     const receivedIDs = new Set(received.map((item) => item.id));
     const receivedSubjectKeys = new Set(
@@ -1097,29 +1098,30 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       previousSubjectKeys.length === receivedSubjectKeys.size &&
       previousSubjectKeys.every((key) => receivedSubjectKeys.has(key));
     restartBulkActivity = refreshFilteredBulk && !unchangedBulk;
-    const retainedThreadItems = childProjectionStale
-      ? []
-      : items.filter((item) => {
-          const key = stableParentKey(item);
-          if (
-            result.response.item_activity_capped &&
-            (!collapseThreads || (!parentFilterActive && (result.subjectDepth ?? 1) === 1))
-          ) {
+    const retainedThreadItems =
+      childProjectionStale || noMatchingEvents
+        ? []
+        : items.filter((item) => {
+            const key = stableParentKey(item);
+            if (
+              result.response.item_activity_capped &&
+              (!collapseThreads || (!parentFilterActive && (result.subjectDepth ?? 1) === 1))
+            ) {
+              return (
+                (item.item_type === "pr" || item.item_type === "issue") &&
+                !receivedIDs.has(item.id) &&
+                (key === undefined ||
+                  (!changedThreadKeys.has(key) &&
+                    !(parentFilterActive && !refreshFilteredBulk && absentThreadKeys.has(key))))
+              );
+            }
             return (
-              (item.item_type === "pr" || item.item_type === "issue") &&
+              key !== undefined &&
+              receivedSubjectKeys.has(key) &&
               !receivedIDs.has(item.id) &&
-              (key === undefined ||
-                (!changedThreadKeys.has(key) &&
-                  !(parentFilterActive && !refreshFilteredBulk && absentThreadKeys.has(key))))
+              !changedThreadKeys.has(key)
             );
-          }
-          return (
-            key !== undefined &&
-            receivedSubjectKeys.has(key) &&
-            !receivedIDs.has(item.id) &&
-            !changedThreadKeys.has(key)
-          );
-        });
+          });
     items = [...received, ...retainedThreadItems];
     projectActivitySubjects(result.response, params, result.subjectDepth ?? 1);
     capped = result.response.capped;
@@ -1157,6 +1159,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           }
         }
       }
+    }
+    if (noMatchingEvents) {
+      bulkRequestToken = undefined;
+      restartBulkActivity = false;
     }
     loading = bulkRequestToken !== undefined;
     storeError = null;

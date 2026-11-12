@@ -210,6 +210,64 @@ describe("activity subject paging", () => {
     owner: "acme",
     name: "widgets",
   };
+  it("clears off-page discussion when a filtered refresh has no events", async () => {
+    const pending = Promise.withResolvers<unknown>();
+    const commit = {
+      ...notificationItem("commit:2", "read"),
+      activity_type: "commit",
+      item_number: 2,
+      repo,
+    } as ActivityItem;
+    let bulkReads = 0;
+    let snapshotReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (options?.params?.query?.projection === "events") {
+          bulkReads++;
+          return pending.promise;
+        }
+        snapshotReads++;
+        return {
+          data: {
+            items: snapshotReads === 1 ? [commit] : [],
+            capped: false,
+            event_cursor: snapshotReads === 1 ? "old" : "",
+            item_activity: [
+              {
+                ...itemActivity(1),
+                repo,
+                activity_at: snapshotReads === 1 ? "2026-08-09T12:00:01Z" : "2026-08-09T12:01:01Z",
+              },
+            ],
+            item_activity_capped: true,
+            next_subject_cursor: "older",
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
+    store.setUnassigned("require");
+    store.setEnabledEvents(new Set(["commit"]));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([commit.id]));
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(bulkReads).toBe(1));
+    await runtime!.runCommand(store.reconcileActivityEffect(), {
+      operation: "refresh without matching commits",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    const afterRefresh = store.getActivityItems().map((item) => item.id);
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1]);
+    pending.resolve({ data: { items: [commit], capped: false }, error: null });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(afterRefresh).toEqual([]);
+    expect(store.getActivityItems()).toEqual([]);
+    expect(snapshotReads).toBe(2);
+  });
   it("keeps an unchanged filtered discussion load through refreshes", async () => {
     const pending = Promise.withResolvers<unknown>();
     const event = {

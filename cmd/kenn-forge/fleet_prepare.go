@@ -24,19 +24,50 @@ func newFleetPrepareSpokeCommand(options fleetCLIOptions) *cobra.Command {
 			if report.ReadyToActivate {
 				_, err = fmt.Fprintf(
 					options.Stdout,
-					"Spoke preparation is complete (%d launch specifications ready); restart kenn-forge to activate the spoke role.\n",
-					report.ReadyLaunchSpecs,
+					"Spoke preparation is complete (%d launch specifications ready).\nIf Forge runs as a service, restart it through your service manager. Otherwise run%s:\n  %s\n",
+					report.ReadyLaunchSpecs, commandHintShell, commandHint(cmd, []string{"kenn-forge", "daemon", "restart"}, "config"),
 				)
 				return err
 			}
-			_, writeErr := fmt.Fprintf(
-				options.Stdout,
+			var output strings.Builder
+			fmt.Fprintf(
+				&output,
 				"Spoke preparation is blocked: %d unprepared workspace(s), %d handoff conflict(s), %d handoff error(s), %d provider write(s), %d deferred merge(s), and %d notification acknowledgement(s) remain.\n",
 				len(report.Unprepared), len(report.HandoffConflicts), len(report.HandoffErrors),
 				report.InFlightProviderWrites, report.ActiveDeferredMerges, report.UndrainedAcks,
 			)
-			if writeErr != nil {
-				return writeErr
+			for _, unprepared := range report.Unprepared {
+				workspace := unprepared.Workspace
+				fmt.Fprintf(&output, "  Workspace %s", workspace.ID)
+				if workspace.RepoOwner != "" && workspace.RepoName != "" {
+					fmt.Fprintf(&output, ": %s/%s", workspace.RepoOwner, workspace.RepoName)
+				}
+				if workspace.ItemType != "" && workspace.ItemNumber != 0 {
+					fmt.Fprintf(&output, " %s %d", workspace.ItemType, workspace.ItemNumber)
+				}
+				fmt.Fprintf(&output, ": %s\n", workspacePreparationReason(unprepared.Reason))
+			}
+			needsRestart := false
+			for _, conflict := range report.HandoffConflicts {
+				if conflict.Description == "" {
+					needsRestart = true
+					fmt.Fprintf(&output, "  Handoff conflict: %s %q\n", conflict.Kind, conflict.SourceKey)
+				} else {
+					fmt.Fprintf(&output, "  Handoff conflict: %s (%s %q)\n", conflict.Description, conflict.Kind, conflict.SourceKey)
+				}
+			}
+			for _, handoffErr := range report.HandoffErrors {
+				fmt.Fprintf(&output, "  Handoff error: %s\n", handoffErr)
+			}
+			if report.InFlightProviderWrites != 0 || report.ActiveDeferredMerges != 0 || report.UndrainedAcks != 0 {
+				output.WriteString("Wait for pending work to finish.\n")
+			}
+			if needsRestart {
+				fmt.Fprintf(&output, "Restart the daemon to identify the blocked review draft. If Forge runs as a service, restart it through your service manager. Otherwise run%s:\n  %s\n", commandHintShell, commandHint(cmd, []string{"kenn-forge", "daemon", "restart"}, "config"))
+			}
+			fmt.Fprintf(&output, "Rerun%s:\n  %s\n", commandHintShell, commandHint(cmd, []string{"kenn-forge", "fleet", "prepare-spoke"}, "config", "timeout"))
+			if _, err := fmt.Fprint(options.Stdout, output.String()); err != nil {
+				return err
 			}
 			return errors.New("spoke preparation is not ready to activate")
 		},
@@ -44,6 +75,21 @@ func newFleetPrepareSpokeCommand(options fleetCLIOptions) *cobra.Command {
 	cmd.Flags().StringVar(&flags.ConfigPath, "config", config.DefaultConfigPath(), "path to config file")
 	cmd.Flags().DurationVar(&flags.Timeout, "timeout", 60*time.Second, "spoke preparation request timeout")
 	return cmd
+}
+
+func workspacePreparationReason(reason string) string {
+	switch reason {
+	case "launchSpecMissing":
+		return "launch specification is missing"
+	case "sourceNotVisible":
+		return "source is not visible"
+	case "sourceVisibilityExpired":
+		return "source visibility has expired"
+	case "launchSpecMismatch":
+		return "launch specification does not match"
+	default:
+		return reason
+	}
 }
 
 func newFleetAbortPreparationCommand(options fleetCLIOptions) *cobra.Command {

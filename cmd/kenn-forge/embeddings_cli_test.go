@@ -26,9 +26,12 @@ func TestLocalEmbeddingsSetup(t *testing.T) {
 		assert.False(t, opts.SkipOllama)
 		return "http://127.0.0.1:1234/v1", nil
 	}}
-	cmd := newEmbeddingsCommand(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, deps)
+	var stdout bytes.Buffer
+	cmd := newEmbeddingsCommand(strings.NewReader(""), &stdout, &bytes.Buffer{}, deps)
 	cmd.SetArgs([]string{"local", "--config", path})
 	require.NoError(t, cmd.ExecuteContext(t.Context()))
+	assert.Contains(t, stdout.String(), "kenn-forge daemon restart --config ")
+	assert.Contains(t, stdout.String(), path)
 	cfg, err := config.Load(path)
 	require.NoError(t, err)
 	recorded, err := embedlocal.ChoiceRecorded()

@@ -10472,6 +10472,26 @@ components:
         - provider_writes_open
         - restart_required
       type: object
+    SpokePreparationConflict:
+      additionalProperties: false
+      properties:
+        description:
+          type: string
+        kind:
+          type: string
+        source_digest:
+          type: string
+        source_key:
+          type: string
+        target_digest:
+          type: string
+      required:
+        - description
+        - kind
+        - source_key
+        - source_digest
+        - target_digest
+      type: object
     SpokePreparationReport:
       additionalProperties: false
       properties:
@@ -10487,7 +10507,7 @@ components:
           type: integer
         handoff_conflicts:
           items:
-            $ref: "#/components/schemas/ProviderStateConflict"
+            $ref: "#/components/schemas/SpokePreparationConflict"
           type: array
         handoff_errors:
           items:

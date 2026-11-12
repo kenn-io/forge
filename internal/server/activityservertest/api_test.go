@@ -1066,6 +1066,10 @@ func TestAPIListActivitySearchFindsParentsBeyondEventCap(t *testing.T) {
 						assert.Equal(t, number, body.ItemActivity[i].ItemNumber)
 					}
 					assert.False(t, body.ItemActivityCapped)
+					if tc.name == "safety cap" && projection == "full" {
+						assert.True(t, body.Capped)
+						assert.Len(t, body.Items, itemapi.ActivitySafetyCap)
+					}
 				})
 			}
 		})

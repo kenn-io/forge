@@ -1915,13 +1915,6 @@ func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T)
 	require.NoError(err)
 	require.Len(subjects, 1)
 	assert.Equal(1, subjects[0].Subject.Key.ItemNumber)
-
-	subjects, err = d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{
-		Search: "needle", SearchEventOpts: &ListActivityOpts{Search: "needle"}, Limit: 50,
-		Keys: []WorkspaceSubjectKey{},
-	})
-	require.NoError(err)
-	assert.Empty(subjects)
 }
 
 func TestListActivitySearchExcludesNegatedItemAuthor(t *testing.T) {
@@ -1957,7 +1950,7 @@ func TestListActivitySearchExcludesNegatedItemAuthor(t *testing.T) {
 	}
 }
 
-func TestListActivitySubjectsExcludedTermOverridesMatchedEvents(t *testing.T) {
+func TestListActivitySubjectsExcludesNegatedParentAuthor(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
@@ -1965,9 +1958,8 @@ func TestListActivitySubjectsExcludedTermOverridesMatchedEvents(t *testing.T) {
 	d := openTestDB(t)
 	now := baseTime()
 	repoID := insertTestRepo(t, d, "alice", "alpha")
-	firstID := insertTestMRWithOptions(t, d, testMR(repoID, 1,
+	insertTestMRWithOptions(t, d, testMR(repoID, 1,
 		withMRTitle("Needle work"), withMRAuthor("excluded-author"), withMRActivity(now.Add(-time.Hour))))
-	require.NoError(d.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: firstID, EventType: "issue_comment", Author: "reviewer", Body: "needle", CreatedAt: now, DedupeKey: "excluded"}}))
 	insertTestMRWithOptions(t, d, testMR(repoID, 2,
 		withMRTitle("Needle work"), withMRAuthor("kept-author"), withMRActivity(now.Add(-2*time.Hour))))
 

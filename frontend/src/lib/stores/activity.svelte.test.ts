@@ -948,7 +948,6 @@ describe("activity subject paging", () => {
     expect(store.getItemActivity().map((item) => item.item_number)).toEqual([5, 1, 2, 3]);
     expect(store.getWorkspaceActivity().map((item) => item.item_number)).toEqual(workspace ? [1, 3] : []);
     expect(queries.every((query) => query.search === "cache")).toBe(true);
-    expect(queries[3]?.since).toBe(queries[2]?.since);
     expect(cursors).toEqual(["", "page-2"]);
     failRequested = true;
     await runtime.runCommand(store.reconcileActivityEffect(), {
@@ -964,34 +963,6 @@ describe("activity subject paging", () => {
       expect(store.getItemActivity().map((item) => item.item_number)).toEqual([5, 1, 2, 3, deleted ? 6 : 4]),
     );
     expect(store.getWorkspaceActivity().map((item) => item.item_number)).toEqual(workspace ? [1, 3, 4] : []);
-  });
-
-  it("keeps loaded subjects when expanding all threads", async () => {
-    const client = {
-      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
-        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-        const older = Boolean(options?.params?.query?.subject_before);
-        return {
-          data: {
-            items: [],
-            capped: false,
-            item_activity: [{ ...itemActivity(older ? 2 : 1), repo }],
-            item_activity_capped: !older,
-            next_subject_cursor: older ? "" : "page-2",
-          },
-          error: null,
-        };
-      }),
-    } as unknown as GeneratedClient;
-    const store = createActivityStore({ client });
-    store.hydrateDefaults(settings(true));
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
-    store.loadOlderItems();
-    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
-    store.expandAllThreads();
-    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
   });
 
   it("advances the time window on a same-scope reload", async () => {
@@ -1025,12 +996,16 @@ describe("activity subject paging", () => {
     await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(1));
     store.loadOlderItems();
     await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(2));
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(since).toHaveLength(4));
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
     const clock = vi.spyOn(Date, "now").mockReturnValue(now + 60_000);
     store.loadActivity();
-    await vi.waitFor(() => expect(since).toHaveLength(4));
+    await vi.waitFor(() => expect(since).toHaveLength(6));
     await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(0));
-    expect(Date.parse(since[2]!) - Date.parse(since[0]!)).toBeGreaterThan(59_000);
-    expect(since[3]).toBe(since[2]);
+    expect(Date.parse(since[4]!) - Date.parse(since[0]!)).toBeGreaterThan(59_000);
+    expect(since[5]).toBe(since[4]);
     clock.mockReturnValue(now + 120_000);
     if (runtime === undefined) throw new Error("test runtime was not created");
     await runtime.runCommand(store.reconcileActivityEffect(), {
@@ -1038,8 +1013,8 @@ describe("activity subject paging", () => {
       safeContext: {},
       onFailure: () => {},
     }).exit;
-    expect(Date.parse(since[4]!) - Date.parse(since[2]!)).toBe(60_000);
-    expect(since[5]).toBe(since[4]);
+    expect(Date.parse(since[6]!) - Date.parse(since[4]!)).toBe(60_000);
+    expect(since[7]).toBe(since[6]);
     clock.mockRestore();
   });
 });

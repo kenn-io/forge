@@ -381,8 +381,9 @@ Resolution is deliberately exact (`internal/server/kata/workspace.go::Handler.re
 - Reuse Codex approvals only for identical hook hashes in sibling worktrees, including through
   `sh -c`/`bash -c` launchers; preserve disabled hooks and existing decisions (`internal/codexhooks/trust.go::ReuseApprovals`).
 - Named Codex profiles keep native hook review because the app-server cannot select profiles.
-- Live reports rank approval, input, working, done, then idle. Row activation keeps completion and
-  sort position; outside that sort it acknowledges a completion, and a new timestamp resurfaces it.
+- Live reports rank approval, input, working, done, then idle. Row activation acknowledges a
+  completion in every sort, and a new timestamp resurfaces it; the `Agent status` sort keeps the
+  acknowledged row in its done position and drops only the badge.
 - Hook installs require absolute data roots and preserve config symlinks; report matching uses
   canonical paths.
 - The active sidebar polls every five seconds, and hook receipt fails open.

@@ -1,8 +1,15 @@
 <script lang="ts">
   import { Checkbox, TextInput } from "@kenn-io/kit-ui";
   import { Button, Chip } from "@kenn-io/kit-ui";
+  import { ExternalLinkIcon } from "../../icons.js";
   import CommentEditor from "../detail/CommentEditor.svelte";
   import Modal from "../shared/Modal.svelte";
+  import { buildProviderIssueListURL } from "../../utils/item-reference.js";
+  import { Effect } from "effect";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { executeGeneratedApiRequest } from "../../api/generated-api.js";
+  import { providerDefaultHost, providerHostRouteParams, providerRouteParams, providerUsesHostRoute, resolvedPlatformHost } from "../../api/provider-routes.js";
+  import { repositoryKeyFromWire, repositoryKeyToWire } from "../../api/repository-key.js";
   import {
     repoKey,
     shouldShowPlatformHost,
@@ -39,6 +46,54 @@
 
   const key = $derived(repoKey(summary));
   const showPlatformHost = $derived(shouldShowPlatformHost(summary));
+  let resolvedWebURL = $state<string | undefined>();
+  let webURLError = $state(false);
+  let webURLLoading = $state(false);
+  let retry = $state(0);
+  function issueListFor(webURL: string | undefined) {
+    const provider = summary.repo.provider;
+    const host = resolvedPlatformHost(provider, summary.repo.platform_host).toLowerCase();
+    const ref = {
+      provider: summary.repo.provider,
+      platformHost: host,
+      repoPath: summary.repo.repo_path,
+      webURL,
+    };
+    const supplied = webURL && buildProviderIssueListURL(ref);
+    if (supplied) return supplied;
+    if (!host || host !== providerDefaultHost(provider)) return undefined;
+    return buildProviderIssueListURL({ ...ref, webURL: undefined });
+  }
+  const cachedIssueListURL = $derived(issueListFor(summary.web_url));
+  const issueListURL = $derived(cachedIssueListURL || issueListFor(resolvedWebURL));
+  const appRuntime = getAppRuntime();
+  $effect(() => {
+    if (!outcomeUnknown || cachedIssueListURL) return;
+    return loadWebURL(retry);
+  });
+  function loadWebURL(_attempt: number) {
+    const ref = { provider: summary.repo.provider, platformHost: summary.repo.platform_host, owner: summary.repo.owner, name: summary.repo.name, repoPath: summary.repo.repo_path };
+    const repositoryKey = repositoryKeyToWire(repositoryKeyFromWire(summary.repo));
+    resolvedWebURL = undefined;
+    webURLError = false;
+    webURLLoading = true;
+    const execution = appRuntime.runCommand(
+      executeGeneratedApiRequest("load repository web address", (client, signal) =>
+        providerUsesHostRoute(ref)
+          ? client.RepositoriesService.getRepoWebUrlOnHost(providerHostRouteParams(ref), repositoryKey, { signal })
+          : client.RepositoriesService.getRepoWebUrl(providerRouteParams(ref), repositoryKey, { signal }),
+      ).pipe(
+        Effect.tap((result) => Effect.sync(() => {
+          resolvedWebURL = result.web_url;
+          webURLError = !issueListFor(result.web_url);
+          webURLLoading = false;
+        })),
+        Effect.catch(() => Effect.sync(() => { webURLError = true; webURLLoading = false; })),
+      ),
+      { operation: "repositories.web-url.read", safeContext: { surface: "repositories" }, onFailure: () => undefined },
+    );
+    return () => execution.interrupt();
+  }
 </script>
 
 <Modal
@@ -99,8 +154,24 @@
           />
         </div>
 
-        {#if error}
-          <p class="issue-modal__error">{error}</p>
+        {#if error || outcomeUnknown}
+          <div class="issue-modal__notice">
+            {#if error}
+              <p class="issue-modal__error">{error}</p>
+            {/if}
+            {#if outcomeUnknown}
+              {#if issueListURL}
+                <a class="issue-modal__issue-list" href={issueListURL} target="_blank" rel="noopener noreferrer">
+                  Open issue list
+                  <ExternalLinkIcon size="12" strokeWidth="2" aria-hidden="true" />
+                </a>
+              {:else if webURLLoading}
+                <span>Loading issue list...</span>
+              {:else if webURLError}
+                <div>Could not load the issue list. <Button size="sm" type="button" onclick={() => retry++}>Retry</Button></div>
+              {/if}
+            {/if}
+          </div>
         {/if}
         {#if outcomeUnknown}
           <Checkbox
@@ -207,6 +278,22 @@
   .issue-modal__error {
     color: var(--accent-red);
     font-size: var(--font-size-sm);
+  }
+
+  .issue-modal__notice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    font-size: var(--font-size-sm);
+  }
+
+  .issue-modal__issue-list {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--accent-blue);
+    text-decoration: underline;
   }
 
   :global(.comment-editor-menu) {

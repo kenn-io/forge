@@ -276,6 +276,23 @@ test.describe("repository summaries", () => {
   test("keeps an issue draft retryable after the first request is interrupted", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
+      let removedWebURL = false;
+      await page.route("**/api/v1/repos/summary", async (route) => {
+        const response = await route.fetch();
+        const summaries = await response.json();
+        for (const summary of summaries) {
+          if (summary.repo?.provider === "github" && summary.repo?.repo_path === "acme/widgets") {
+            delete summary.web_url;
+            removedWebURL = true;
+          }
+        }
+        await route.fulfill({ response, json: summaries });
+      });
+      let webURLReads = 0;
+      await page.route("**/api/v1/**/web-url**", (route) => {
+        webURLReads++;
+        return route.abort("connectionfailed");
+      });
       let interruptNextCreate = true;
       await page.route("**/api/v1/issues/github/acme/widgets", async (route) => {
         if (interruptNextCreate && route.request().method() === "POST") {
@@ -306,7 +323,11 @@ test.describe("repository summaries", () => {
       await expect(page.locator(".kit-flash-stack").getByRole("status")).toHaveCount(0);
       await expect(title).toHaveValue("Retry interrupted issue creation");
       await expect(create).toBeDisabled();
-
+      const issueList = dialog.getByRole("link", { name: "Open issue list" });
+      await expect(issueList).toBeVisible();
+      await expect(issueList).toHaveAttribute("href", "https://github.com/acme/widgets/issues");
+      expect(removedWebURL).toBe(true);
+      expect(webURLReads).toBe(0);
       await dialog.getByRole("checkbox", { name: "I checked the provider's issue list and want to retry." }).click();
       await expect(create).toBeEnabled();
       await create.click();

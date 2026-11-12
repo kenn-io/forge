@@ -7095,6 +7095,39 @@ func (o *UpdateRepoUIVisibilityOnHostRequestOptions) GetHeader() (map[string]str
 	return nil, nil
 }
 
+// GetRepoWebURLOnHostRequestOptions is the options needed to make a request to GetRepoWebURLOnHost.
+type GetRepoWebURLOnHostRequestOptions struct {
+	PathParams *GetRepoWebURLOnHostPath
+	Query      *GetRepoWebURLOnHostQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetRepoWebURLOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetRepoWebURLOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return paramcodec.Map(o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetRepoWebURLOnHostRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetRepoWebURLOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // CreateRepoWorkspaceOnHostRequestOptions is the options needed to make a request to CreateRepoWorkspaceOnHost.
 type CreateRepoWorkspaceOnHostRequestOptions struct {
 	PathParams *CreateRepoWorkspaceOnHostPath
@@ -10842,6 +10875,39 @@ func (o *UpdateRepoUIVisibilityRequestOptions) GetHeader() (map[string]string, e
 	return nil, nil
 }
 
+// GetRepoWebURLRequestOptions is the options needed to make a request to GetRepoWebURL.
+type GetRepoWebURLRequestOptions struct {
+	PathParams *GetRepoWebURLPath
+	Query      *GetRepoWebURLQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetRepoWebURLRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetRepoWebURLRequestOptions) GetQuery() (map[string]any, error) {
+	return paramcodec.Map(o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetRepoWebURLRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetRepoWebURLRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // CreateRepoWorkspaceRequestOptions is the options needed to make a request to CreateRepoWorkspace.
 type CreateRepoWorkspaceRequestOptions struct {
 	PathParams *CreateRepoWorkspacePath
@@ -13315,6 +13381,7 @@ type ClientInterface interface {
 	RefreshRepoOnHostWithResponse(ctx context.Context, options *RefreshRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshRepoOnHostResp, error)
 	ResolveRepoItemOnHostWithResponse(ctx context.Context, options *ResolveRepoItemOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolveRepoItemOnHostResp, error)
 	UpdateRepoUIVisibilityOnHostWithResponse(ctx context.Context, options *UpdateRepoUIVisibilityOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoUIVisibilityOnHostResp, error)
+	GetRepoWebURLOnHostWithResponse(ctx context.Context, options *GetRepoWebURLOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoWebURLOnHostResp, error)
 	CreateRepoWorkspaceOnHostWithResponse(ctx context.Context, options *CreateRepoWorkspaceOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateRepoWorkspaceOnHostResp, error)
 	UpdateRepoWorktreeBaseOnHostWithResponse(ctx context.Context, options *UpdateRepoWorktreeBaseOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoWorktreeBaseOnHostResp, error)
 	ListIssuesWithResponse(ctx context.Context, options *ListIssuesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListIssuesResp, error)
@@ -13438,6 +13505,7 @@ type ClientInterface interface {
 	RefreshRepoWithResponse(ctx context.Context, options *RefreshRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshRepoResp, error)
 	ResolveRepoItemWithResponse(ctx context.Context, options *ResolveRepoItemRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolveRepoItemResp, error)
 	UpdateRepoUIVisibilityWithResponse(ctx context.Context, options *UpdateRepoUIVisibilityRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoUIVisibilityResp, error)
+	GetRepoWebURLWithResponse(ctx context.Context, options *GetRepoWebURLRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoWebURLResp, error)
 	CreateRepoWorkspaceWithResponse(ctx context.Context, options *CreateRepoWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateRepoWorkspaceResp, error)
 	UpdateRepoWorktreeBaseWithResponse(ctx context.Context, options *UpdateRepoWorktreeBaseRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoWorktreeBaseResp, error)
 	ListReposWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListReposResp, error)
@@ -28367,6 +28435,79 @@ func (c *Client) UpdateRepoUIVisibilityOnHostWithResponse(ctx context.Context, o
 	}
 }
 
+// GetRepoWebURLOnHost Get repository web URL
+func (c *Client) GetRepoWebURLOnHostWithResponse(ctx context.Context, options *GetRepoWebURLOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoWebURLOnHostResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/web-url",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/repo/{provider}/{owner}/{name}/web-url")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetRepoWebURLOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetRepoWebURLOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetRepoWebURLOnHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoWebURLOnHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoWebURLOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoWebURLOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // CreateRepoWorkspaceOnHost Create workspace for new work
 func (c *Client) CreateRepoWorkspaceOnHostWithResponse(ctx context.Context, options *CreateRepoWorkspaceOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateRepoWorkspaceOnHostResp, error) {
 	var err error
@@ -36634,6 +36775,79 @@ func (c *Client) UpdateRepoUIVisibilityWithResponse(ctx context.Context, options
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "UpdateRepoUIVisibilityErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetRepoWebURL Get repository web URL
+func (c *Client) GetRepoWebURLWithResponse(ctx context.Context, options *GetRepoWebURLRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoWebURLResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/web-url",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/repo/{provider}/{owner}/{name}/web-url")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetRepoWebURLResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetRepoWebURLErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetRepoWebURLResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoWebURLResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoWebURLErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoWebURLErrorResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -46247,6 +46461,26 @@ func (c *Client) UpdateRepoUIVisibilityOnHostRaw(ctx context.Context, httpClient
 	return httpClient.Do(req)
 }
 
+// GetRepoWebURLOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) GetRepoWebURLOnHostRaw(ctx context.Context, httpClient *http.Client, options *GetRepoWebURLOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/web-url",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // CreateRepoWorkspaceOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) CreateRepoWorkspaceOnHostRaw(ctx context.Context, httpClient *http.Client, options *CreateRepoWorkspaceOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -48293,6 +48527,26 @@ func (c *Client) UpdateRepoUIVisibilityRaw(ctx context.Context, httpClient *http
 		Method:      "PUT",
 		Options:     options,
 		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetRepoWebURLRaw returns an unread response. The caller must close its body.
+func (c *Client) GetRepoWebURLRaw(ctx context.Context, httpClient *http.Client, options *GetRepoWebURLRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/web-url",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -53775,6 +54029,27 @@ func NewUpdateRepoUIVisibilityOnHostRequest(ctx context.Context, baseURL string,
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewGetRepoWebURLOnHostRequest constructs a typed request for a caller-owned transport.
+func NewGetRepoWebURLOnHostRequest(ctx context.Context, baseURL string, options *GetRepoWebURLOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/web-url",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewCreateRepoWorkspaceOnHostRequest constructs a typed request for a caller-owned transport.
 func NewCreateRepoWorkspaceOnHostRequest(ctx context.Context, baseURL string, options *CreateRepoWorkspaceOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -55948,6 +56223,27 @@ func NewUpdateRepoUIVisibilityRequest(ctx context.Context, baseURL string, optio
 		Method:      "PUT",
 		Options:     options,
 		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetRepoWebURLRequest constructs a typed request for a caller-owned transport.
+func NewGetRepoWebURLRequest(ctx context.Context, baseURL string, options *GetRepoWebURLRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/web-url",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -59317,6 +59613,13 @@ type UpdateRepoUIVisibilityOnHostPath struct {
 	Name         string `json:"name"`
 }
 
+type GetRepoWebURLOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+}
+
 type CreateRepoWorkspaceOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -59993,6 +60296,12 @@ type ResolveRepoItemPath struct {
 }
 
 type UpdateRepoUIVisibilityPath struct {
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+}
+
+type GetRepoWebURLPath struct {
 	Provider string `json:"provider"`
 	Owner    string `json:"owner"`
 	Name     string `json:"name"`
@@ -61009,6 +61318,11 @@ type ResolveRepoItemOnHostQuery struct {
 	ItemType *ResolveRepoItemOnHostQueryItemType `json:"item_type,omitempty"`
 }
 
+type GetRepoWebURLOnHostQuery struct {
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+}
+
 type ListIssuesQuery struct {
 	// Numbers Item numbers in every repo unless repo is set; before pagination.
 	Numbers []int64 `json:"numbers,omitempty"`
@@ -61229,6 +61543,11 @@ type GetMarkdownMediaQuery struct {
 type ResolveRepoItemQuery struct {
 	// ItemType Optional item type hint for providers whose issues and merge requests have separate number spaces.
 	ItemType *ResolveRepoItemQueryItemType `json:"item_type,omitempty"`
+}
+
+type GetRepoWebURLQuery struct {
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
 }
 
 type GetSnapshotQuery struct {
@@ -62166,6 +62485,10 @@ type UpdateRepoUIVisibilityOnHostResponse = SettingsResponse
 
 type UpdateRepoUIVisibilityOnHostErrorResponse = ProblemError
 
+type GetRepoWebURLOnHostResponse = RepositoryWebURLResponse
+
+type GetRepoWebURLOnHostErrorResponse = ProblemError
+
 type CreateRepoWorkspaceOnHostResponse = WorkspaceResponse
 
 type CreateRepoWorkspaceOnHostErrorResponse = ProblemError
@@ -62621,6 +62944,10 @@ type ResolveRepoItemErrorResponse = ProblemError
 type UpdateRepoUIVisibilityResponse = SettingsResponse
 
 type UpdateRepoUIVisibilityErrorResponse = ProblemError
+
+type GetRepoWebURLResponse = RepositoryWebURLResponse
+
+type GetRepoWebURLErrorResponse = ProblemError
 
 type CreateRepoWorkspaceResponse = WorkspaceResponse
 
@@ -64935,6 +65262,15 @@ type UpdateRepoUIVisibilityOnHostResp struct {
 	ApplicationProblemPlusJSONDefault *UpdateRepoUIVisibilityOnHostErrorResponse
 }
 
+type GetRepoWebURLOnHostResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoWebURLOnHostErrorResponse
+	JSON200                           *GetRepoWebURLOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetRepoWebURLOnHostErrorResponse
+}
+
 type CreateRepoWorkspaceOnHostResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -66039,6 +66375,15 @@ type UpdateRepoUIVisibilityResp struct {
 	Error                             *UpdateRepoUIVisibilityErrorResponse
 	JSON200                           *UpdateRepoUIVisibilityResponse
 	ApplicationProblemPlusJSONDefault *UpdateRepoUIVisibilityErrorResponse
+}
+
+type GetRepoWebURLResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoWebURLErrorResponse
+	JSON200                           *GetRepoWebURLResponse
+	ApplicationProblemPlusJSONDefault *GetRepoWebURLErrorResponse
 }
 
 type CreateRepoWorkspaceResp struct {
@@ -70432,6 +70777,7 @@ type RepoSummaryResponse struct {
 	Releases             []RepoSummaryReleaseResponse     `json:"releases"`
 	Repo                 RepoRefResponse                  `json:"repo"`
 	TimelineUpdatedAt    *string                          `json:"timeline_updated_at,omitempty"`
+	WebURL               *string                          `json:"web_url,omitempty"`
 }
 
 type RepoSyncProblem struct {
@@ -70502,6 +70848,12 @@ type RepositoryRoute struct {
 	Owner        string `json:"owner"`
 	PlatformHost string `json:"platform_host"`
 	Provider     string `json:"provider"`
+}
+
+type RepositoryWebURLResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	WebURL string  `json:"web_url"`
 }
 
 type RequestChangesPRHostInputBody struct {

@@ -472,15 +472,21 @@ describe("OnboardingFlow", () => {
     },
   );
 
-  it("waits for a retry when a delayed sync completion arrives after configuring repositories", async () => {
+  it.each(["setup", "configuration reload"])("waits for a retry after %s", async (source) => {
     const originalFetch = globalThis.fetch;
+    const accepted = Promise.withResolvers<Response>();
     let attempts = 0;
+    let statusReads = 0;
     vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init);
       const path = new URL(request.url).pathname;
       if (path === "/api/v1/sync" && request.method === "POST") {
         attempts++;
-        return attempts === 1 ? Promise.reject(new Error("response lost")) : new Promise<Response>(() => {});
+        return attempts === 1 ? Promise.reject(new Error("response lost")) : accepted.promise;
+      }
+      if (path === "/api/v1/sync/status") {
+        statusReads++;
+        return Promise.resolve(Response.json({ running: true, last_run_at: "2026-08-02T12:00:30Z", last_error: "" }));
       }
       return originalFetch(input, init);
     });
@@ -492,15 +498,23 @@ describe("OnboardingFlow", () => {
     renderFlow(fixture.stores);
     await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
     await waitFor(() => expect(screen.getByText("acme/forge")).toBeTruthy());
-    await fireEvent.click(screen.getByText("acme/forge"));
-    await fireEvent.click(screen.getByRole("button", { name: "Configure 1 repository" }));
+    if (source === "setup") {
+      await fireEvent.click(screen.getByText("acme/forge"));
+      await fireEvent.click(screen.getByRole("button", { name: "Configure 1 repository" }));
+    } else {
+      fixture.configureExternally();
+    }
     await waitFor(() => expect(attempts).toBe(1));
-    expect(observedBulkAddBodies).toHaveLength(1);
+    if (source === "setup") expect(observedBulkAddBodies).toHaveLength(1);
     // Model delayed delivery of a completion published before the repository update.
     sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:00:30Z", last_error: "" });
     await tick();
     expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
     await waitFor(() => expect(attempts).toBe(2));
+    accepted.resolve(Response.json({}));
+    await waitFor(() => expect(statusReads).toBe(1));
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:01:00Z", last_error: "" });
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
   });
 
   it("shows a retry when status clears the transport error", async () => {

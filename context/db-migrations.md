@@ -78,6 +78,8 @@ schema migrations.
   and a blank one breaks `Scan` for every arm
   (`internal/db/queries_archive_snapshot.go::LoadArchiveSnapshotItems`).
 
+Migration `000096` reopens eligible completed GitHub pull request lookups once; author account types remain absent until hydration supplies them.
+
 ## Federation Spoke Preparation
 
 Migration `000054_federated_spoke_preparation` is the atomic standalone-to-spoke

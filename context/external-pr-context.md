@@ -50,6 +50,8 @@ For the same resolved repository, `pull_request` and the archive snapshot's
 never `node_id`) as a JSON integer, and Bitbucket Cloud sets
 `bitbucket_repository_uuid` instead (`platform/repository_key.go::RepositoryKey`).
 
+Archive snapshot consumers opt in to recent terminal pull requests and same-repository one-hop context with `pull_request_scope=recently_closed`; terminal pull requests without a close or merge time are excluded.
+
 Responses contain `card`, with null meaning not applicable. A card has
 `status` (`neutral`, `pending`, `success`, `warning`, `error`) and `summary`.
 Optional fields are `markdown`, `result_head_sha`, `actions`,

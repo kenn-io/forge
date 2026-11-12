@@ -168,8 +168,8 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		pull := snapshot.SnapshotPullRequest{SnapshotItem: item, Draft: row.Draft, HeadSHA: row.HeadSHA, HeadBranch: row.HeadBranch, BaseBranch: row.BaseBranch, ChangedFiles: row.FilesChanged, ReviewState: row.ReviewDecision, CheckState: row.CIStatus, MergeableState: row.MergeableState, RequestedReviewers: db.ParseUserNamesJSON(row.ReviewersJSON), MergeStatusObservedAt: mergeStatusObservedAt, Checks: []snapshot.SnapshotCheck{}, Reviews: []snapshot.SnapshotReview{}, Gaps: []string{}}
 		if opts.PullRequestScope == "recently_closed" {
 			pull.AuthorAccountType = row.AuthorAccountType
-			if pull.AuthorAccountType == nil {
-				pull.AuthorAccountType = new("unknown")
+			if row.CommentAuthorAssociationUnknown {
+				pull.Gaps = append(pull.Gaps, "comment_author_association_unknown")
 			}
 		}
 		if mergeStatusObservedAt == nil {
@@ -234,13 +234,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		for _, ref := range refs {
 			target := &result.PullRequests[pullPositions[ref.TargetID]]
-			if ref.SourceID == nil {
-				if !slices.Contains(target.Gaps, "unresolved_pull_request_reference") {
-					target.Gaps = append(target.Gaps, "unresolved_pull_request_reference")
-				}
-				continue
-			}
-			source := result.PullRequests[pullPositions[*ref.SourceID]]
+			source := result.PullRequests[pullPositions[ref.SourceID]]
 			result.Relations = append(result.Relations, snapshot.SnapshotRelation{SourceID: source.ID, TargetID: target.ID, Kind: "pull_request_reference", EvidenceID: target.ID + "/reference/" + url.QueryEscape(ref.Key), URL: ref.URL, ObservedAt: ref.ObservedAt.UTC()})
 		}
 	}

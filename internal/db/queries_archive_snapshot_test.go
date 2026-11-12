@@ -57,7 +57,7 @@ func TestMergeRequestAuthorAccountTypeRefresh(t *testing.T) {
 	mr := &MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", AuthorAccountType: new("bot"), State: MergeRequestStateOpen, CreatedAt: now, UpdatedAt: now}
 	_, err := database.UpsertMergeRequest(t.Context(), mr)
 	require.NoError(t, err)
-	mr.AuthorAccountType = new("unknown")
+	mr.AuthorAccountType = nil
 	_, err = database.UpsertMergeRequest(t.Context(), mr)
 	require.NoError(t, err)
 	var got *string
@@ -67,7 +67,7 @@ func TestMergeRequestAuthorAccountTypeRefresh(t *testing.T) {
 	_, err = database.UpsertMergeRequest(t.Context(), mr)
 	require.NoError(t, err)
 	require.NoError(t, database.ReadDB().QueryRowContext(t.Context(), `SELECT author_account_type FROM forge_merge_requests WHERE repo_id=? AND number=1`, repoID).Scan(&got))
-	assert.Equal(t, new("unknown"), got)
+	assert.Nil(t, got)
 }
 
 func TestSnapshotMeasurementCountsAuthorTypeOnlyForExpandedScope(t *testing.T) {
@@ -87,21 +87,5 @@ func TestSnapshotMeasurementCountsAuthorTypeOnlyForExpandedScope(t *testing.T) {
 	_, err := database.WriteDB().ExecContext(t.Context(), `UPDATE forge_merge_requests SET author_account_type=? WHERE id=?`, strings.Repeat("a", 100), mrID)
 	require.NoError(t, err)
 	assert.Equal(t, beforeDefault, measure(false))
-	assert.Equal(t, int64(93), measure(true).TextBytes-beforeExpanded.TextBytes)
-}
-
-func TestMergeRepositoryKeepsPullReferenceSource(t *testing.T) {
-	database := openTestDB(t)
-	now := time.Now().UTC()
-	original := insertArchiveReportRepo(t, database, RepoIdentity{Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: "original"})
-	duplicate := insertArchiveReportRepo(t, database, RepoIdentity{Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: "old"})
-	survivor := insertArchiveReportRepo(t, database, RepoIdentity{Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: "new"})
-	targetID := insertArchiveReportMR(t, database, original, 1, "target", "Target", "author", now)
-	_ = insertArchiveReportMR(t, database, duplicate, 2, "source", "Source", "author", now)
-	event := MREvent{MergeRequestID: targetID, EventType: "cross_referenced", DedupeKey: "reference", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_owner":"acme","source_repo":"old","source_number":2,"source_url":"https://example.com/2","is_cross_repository":true}`}
-	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{event}))
-	require.NoError(t, database.Tx(t.Context(), func(tx *sql.Tx) error { return mergeDuplicateRepositoryTx(t.Context(), tx, duplicate, survivor) }))
-	var got int64
-	require.NoError(t, database.ReadDB().QueryRowContext(t.Context(), `SELECT source_repo_id FROM forge_mr_events WHERE merge_request_id=? AND dedupe_key='reference'`, targetID).Scan(&got))
-	assert.Equal(t, survivor, got)
+	assert.Equal(t, int64(98), measure(true).TextBytes-beforeExpanded.TextBytes)
 }

@@ -1,30 +1,17 @@
 ALTER TABLE forge_merge_requests ADD COLUMN author_account_type TEXT;
-ALTER TABLE forge_mr_events ADD COLUMN source_repo_id INTEGER REFERENCES forge_repos(id) ON DELETE SET NULL;
 
-UPDATE forge_mr_events AS e
-SET source_repo_id = CASE
-    WHEN json_extract(e.metadata_json, '$.is_cross_repository') = 0 THEN e.repo_id
-    ELSE (
-        SELECT MIN(source.id)
-        FROM forge_repos target
-        JOIN forge_repos source ON source.platform = target.platform
-            AND source.platform_host = target.platform_host
-            AND source.repo_path_key = lower(json_extract(e.metadata_json, '$.source_owner') || '/' || json_extract(e.metadata_json, '$.source_repo'))
-        WHERE target.id = e.repo_id
-          AND (SELECT COUNT(DISTINCT candidate.id) FROM forge_repos candidate
-               WHERE candidate.platform=target.platform AND candidate.platform_host=target.platform_host
-                 AND candidate.repo_path_key=source.repo_path_key) = 1
-          AND EXISTS (
-              SELECT 1 FROM forge_merge_requests p
-              WHERE p.repo_id = source.id
-                AND p.number = json_extract(e.metadata_json, '$.source_number')
-                AND p.url = json_extract(e.metadata_json, '$.source_url')
-                AND p.created_at <= e.created_at AND e.created_at <= p.updated_at
-          )
-    ) END
-WHERE e.event_type = 'cross_referenced' AND json_valid(e.metadata_json)
-  AND json_extract(e.metadata_json, '$.source_type') = 'PullRequest'
-  AND json_extract(e.metadata_json, '$.source_number') > 0
-  AND trim(COALESCE(json_extract(e.metadata_json, '$.source_url'), '')) != ''
-  AND trim(COALESCE(json_extract(e.metadata_json, '$.source_owner'), '')) != ''
-  AND trim(COALESCE(json_extract(e.metadata_json, '$.source_repo'), '')) != '';
+UPDATE forge_archive_dataset_progress AS progress
+SET scan_generation = scan_generation + 2 - (scan_generation % 2),
+    next_cursor = NULL, last_input_cursor = NULL, page_count = 0, observed_count = 0,
+    status = 'pending', attempt_count = 0, next_retry_at = NULL,
+    last_error_code = NULL, last_error_detail = NULL, started_at = NULL, completed_at = NULL,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE dataset = 'lookup' AND item_type = 'merge_request' AND status = 'complete'
+  AND EXISTS (SELECT 1 FROM forge_archive_items a
+      JOIN forge_repos r ON r.id = a.repo_id
+      JOIN forge_merge_requests p ON p.repo_id = a.repo_id AND p.number = a.item_number
+      WHERE a.repo_id = progress.repo_id AND a.item_type = progress.item_type
+        AND a.item_number = progress.item_number AND a.lifecycle_state = 'active'
+        AND r.platform = 'github' AND p.author_account_type IS NULL
+        AND (p.state = 'open' OR (p.state IN ('closed','merged')
+          AND julianday(COALESCE(p.merged_at,p.closed_at)) BETWEEN julianday('now','-30 days') AND julianday('now'))));

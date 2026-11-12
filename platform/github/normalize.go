@@ -15,6 +15,14 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
+func pullAuthorAccountType(value string) *string {
+	account := accountType(value)
+	if account == platform.AccountTypeUnknown {
+		return nil
+	}
+	return new(string(account))
+}
+
 func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform.MergeRequest, error) {
 	if ghPR == nil {
 		return platform.MergeRequest{}, ErrNilPullRequest
@@ -27,7 +35,7 @@ func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform
 		URL:                ghPR.GetHTMLURL(),
 		Title:              ghPR.GetTitle(),
 		Author:             loginOrEmpty(ghPR.GetUser()),
-		AuthorAccountType:  new(string(accountType(ghPR.GetUser().GetType()))),
+		AuthorAccountType:  pullAuthorAccountType(ghPR.GetUser().GetType()),
 		AuthorAssociation:  ghPR.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		AuthorDisplayName:  nameOrEmpty(ghPR.GetUser()),
 		State:              ghPR.GetState(),

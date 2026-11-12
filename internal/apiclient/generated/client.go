@@ -58344,7 +58344,7 @@ const (
 	ListActivityThreadEventsQueryItemTypePr    ListActivityThreadEventsQueryItemType = "pr"
 )
 
-// GetArchiveSnapshotQueryPullRequestScope Include pull requests closed or merged in the last 30 days.
+// GetArchiveSnapshotQueryPullRequestScope Include pull requests closed or merged in the last 30 days and their same-repository one-hop references.
 type GetArchiveSnapshotQueryPullRequestScope string
 
 const (
@@ -61054,7 +61054,7 @@ type GetArchiveReportQuery struct {
 }
 
 type GetArchiveSnapshotQuery struct {
-	// PullRequestScope Include pull requests closed or merged in the last 30 days.
+	// PullRequestScope Include pull requests closed or merged in the last 30 days and their same-repository one-hop references.
 	PullRequestScope *GetArchiveSnapshotQueryPullRequestScope `json:"pull_request_scope,omitempty"`
 
 	// IssueScope Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window.

@@ -14283,12 +14283,12 @@ paths:
     get:
       operationId: get-archive-snapshot
       parameters:
-        - description: Include pull requests closed or merged in the last 30 days.
+        - description: Include pull requests closed or merged in the last 30 days and their same-repository one-hop references.
           explode: false
           in: query
           name: pull_request_scope
           schema:
-            description: Include pull requests closed or merged in the last 30 days.
+            description: Include pull requests closed or merged in the last 30 days and their same-repository one-hop references.
             enum:
               - recently_closed
             type: string

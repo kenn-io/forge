@@ -20,6 +20,7 @@ type ArchiveSnapshotItem struct {
 	LabelsJSON                                           string
 	Draft                                                bool
 	HeadRepoIdentityStale                                bool
+	CommentAuthorAssociationUnknown                      bool
 	HeadSHA, HeadBranch, BaseBranch, HeadRepoCloneURL    string
 	Additions, Deletions                                 int
 	FilesChanged                                         *int
@@ -92,21 +93,34 @@ const archiveSnapshotLinks = `link_candidates AS (
  ) WHERE reference_rank=1
 )`
 
-// Pull reference candidates include unresolved endpoints so the exporter can report gaps.
 const archiveSnapshotPullLinks = `pull_links AS (
  SELECT e.merge_request_id AS target_id, source.id AS source_id, e.dedupe_key,
  COALESCE(json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END, '$.source_url'), '') AS source_url, e.created_at
  FROM forge_mr_events e JOIN pulls target ON target.id=e.merge_request_id
- LEFT JOIN pulls source ON source.repo_id=e.source_repo_id AND source.number=json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number')
+ JOIN pulls source ON source.repo_id=e.repo_id AND source.number=json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number')
  WHERE e.event_type='cross_referenced' AND json_valid(e.metadata_json)
  AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_type')='PullRequest'
+ AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.is_cross_repository')=0
 )`
+
+const (
+	archiveSnapshotCommentBody   = `COALESCE(CAST(substr(CAST(COALESCE(e.body,'') AS BLOB),1,2049) AS TEXT),'')`
+	archiveSnapshotCommentFilter = `(e.author=p.author OR upper(e.author_association) IN ('MEMBER','OWNER'))`
+)
 
 // Reuse exactly the same candidate set for preflight and materialization.
 const archiveSnapshotScope = `WITH scoped_repos AS (SELECT value AS id FROM json_each(?)),
- pulls AS (
+ roots AS (
  SELECT p.id,p.repo_id,p.number FROM forge_merge_requests p JOIN scoped_repos r ON r.id=p.repo_id
  WHERE (p.state='open' OR (? AND p.state IN ('closed','merged') AND COALESCE(p.merged_at,p.closed_at)>=? AND COALESCE(p.merged_at,p.closed_at)<=?)) AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=p.repo_id AND a.item_type='merge_request' AND a.item_number=p.number AND a.lifecycle_state='removed_upstream')
+ ), pulls AS (
+ SELECT * FROM roots
+ UNION
+ SELECT source.id,source.repo_id,source.number FROM roots target
+ JOIN forge_mr_events e ON e.merge_request_id=target.id AND e.event_type='cross_referenced' AND json_valid(e.metadata_json)
+ JOIN forge_merge_requests source ON source.repo_id=e.repo_id AND source.number=json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number')
+ WHERE ? AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_type')='PullRequest' AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.is_cross_repository')=0
+ AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=source.repo_id AND a.item_type='merge_request' AND a.item_number=source.number AND a.lifecycle_state='removed_upstream')
  ), ` + archiveSnapshotLinks + `, ` + archiveSnapshotPullLinks + `,
  issues AS (
  SELECT i.id FROM forge_issues i JOIN scoped_repos r ON r.id=i.repo_id
@@ -126,7 +140,7 @@ func MeasureArchiveSnapshot(ctx context.Context, tx *sql.Tx, repoIDs []int64, st
  SELECT length(CAST(json_array(p.url,p.title,p.author,p.author_association,p.state,
  COALESCE(CAST(substr(CAST(COALESCE(p.body,'') AS BLOB),1,8193) AS TEXT),''),p.platform_head_sha,p.head_branch,p.base_branch,p.head_repo_clone_url,
  p.review_decision,p.ci_status,p.ci_checks_json,p.mergeable_state,p.assignees_json,p.reviewers_json,
- (SELECT json_group_array(l.name) FROM forge_merge_request_labels ml JOIN forge_labels l ON l.id=ml.label_id WHERE ml.merge_request_id=p.id)) AS BLOB)) + CASE WHEN ? THEN length(CAST(json_array(COALESCE(p.author_account_type,'unknown')) AS BLOB))-1 ELSE 0 END AS bytes
+ (SELECT json_group_array(l.name) FROM forge_merge_request_labels ml JOIN forge_labels l ON l.id=ml.label_id WHERE ml.merge_request_id=p.id)) AS BLOB)) + CASE WHEN ? THEN length(CAST(json_array(p.author_account_type) AS BLOB))-1 ELSE 0 END AS bytes
  FROM forge_merge_requests p JOIN pulls selected ON selected.id=p.id
  UNION ALL
  SELECT length(CAST(json_array(i.url,i.title,i.author,i.author_association,i.state,COALESCE(CAST(substr(CAST(COALESCE(i.body,'') AS BLOB),1,8193) AS TEXT),''),i.assignees_json,
@@ -138,12 +152,12 @@ func MeasureArchiveSnapshot(ctx context.Context, tx *sql.Tx, repoIDs []int64, st
  UNION ALL
  SELECT length(CAST(json_array(source_url,observed_event_key) AS BLOB)) FROM links
  UNION ALL
- SELECT length(CAST(json_array(e.author,e.author_association,substr(COALESCE(e.body,''),1,2049),e.direct_url,e.dedupe_key) AS BLOB))
+ SELECT length(CAST(json_array(e.author,e.author_association,`+archiveSnapshotCommentBody+`,e.direct_url,e.dedupe_key) AS BLOB))
  FROM forge_mr_events e JOIN pulls selected ON selected.id=e.merge_request_id JOIN forge_merge_requests p ON p.id=selected.id
- WHERE ? AND p.state IN ('closed','merged') AND e.event_type='issue_comment' AND (e.author=p.author OR upper(e.author_association) IN ('MEMBER','OWNER'))
+ WHERE ? AND p.state IN ('closed','merged') AND e.event_type='issue_comment' AND `+archiveSnapshotCommentFilter+`
  UNION ALL
- SELECT length(CAST(json_array(source_url,dedupe_key) AS BLOB)) FROM pull_links WHERE ? AND source_id IS NOT NULL
- ) SELECT count(*),COALESCE(sum(bytes),0) FROM texts`, string(ids), recentPulls, observedAt.Add(-30*24*time.Hour).UTC(), observedAt.UTC(), openIssuesOnly, start.UTC(), end.UTC(), recentPulls, recentPulls, recentPulls).Scan(&result.Records, &result.TextBytes)
+ SELECT length(CAST(json_array(source_url,dedupe_key) AS BLOB)) FROM pull_links WHERE ?
+ ) SELECT count(*),COALESCE(sum(bytes),0) FROM texts`, string(ids), recentPulls, observedAt.Add(-30*24*time.Hour).UTC(), observedAt.UTC(), recentPulls, openIssuesOnly, start.UTC(), end.UTC(), recentPulls, recentPulls, recentPulls).Scan(&result.Records, &result.TextBytes)
 	if err != nil {
 		return result, fmt.Errorf("measure archive snapshot: %w", err)
 	}
@@ -159,15 +173,16 @@ func LoadArchiveSnapshotItems(ctx context.Context, tx *sql.Tx, repoIDs []int64, 
  SELECT p.id,p.repo_id,'pull_request',p.number,COALESCE(p.url,''),p.title,p.author,p.state,COALESCE(CAST(substr(CAST(COALESCE(p.body,'') AS BLOB),1,8193) AS TEXT),''),p.author_account_type,p.author_association,p.created_at,p.updated_at,p.detail_fetched_at,
  (SELECT json_group_array(l.name) FROM forge_merge_request_labels ml JOIN forge_labels l ON l.id=ml.label_id WHERE ml.merge_request_id=p.id),
  p.is_draft,COALESCE(p.platform_head_sha,''),COALESCE(p.head_branch,''),COALESCE(p.base_branch,''),COALESCE(p.head_repo_clone_url,''),p.head_repo_identity_stale,p.additions,p.deletions,p.files_changed,COALESCE(p.review_decision,''),COALESCE(p.ci_status,''),COALESCE(p.ci_checks_json,''),COALESCE(p.mergeable_state,''),
- p.assignees_json,p.reviewers_json,p.last_activity_at,p.closed_at,p.merged_at,p.ci_observed_at,p.review_decision_observed_at,p.mergeable_state_observed_at
+ p.assignees_json,p.reviewers_json,p.last_activity_at,p.closed_at,p.merged_at,p.ci_observed_at,p.review_decision_observed_at,p.mergeable_state_observed_at,
+ EXISTS (SELECT 1 FROM forge_mr_events e WHERE e.merge_request_id=p.id AND p.state IN ('closed','merged') AND e.event_type='issue_comment' AND e.author != p.author AND e.author_association IS NULL)
  FROM forge_merge_requests p JOIN pulls selected ON selected.id=p.id
  UNION ALL
  SELECT i.id,i.repo_id,'issue',i.number,COALESCE(i.url,''),i.title,i.author,i.state,COALESCE(CAST(substr(CAST(COALESCE(i.body,'') AS BLOB),1,8193) AS TEXT),''),NULL,i.author_association,i.created_at,i.updated_at,i.detail_fetched_at,
  (SELECT json_group_array(l.name) FROM forge_issue_labels il JOIN forge_labels l ON l.id=il.label_id WHERE il.issue_id=i.id),
  0,'','','','',0,0,0,NULL,'','','','',
- i.assignees_json,'',i.last_activity_at,i.closed_at,NULL,NULL,NULL,NULL
+ i.assignees_json,'',i.last_activity_at,i.closed_at,NULL,NULL,NULL,NULL,0
  FROM forge_issues i JOIN issues selected ON selected.id=i.id
- ORDER BY 2,3,4`, string(ids), recentPulls, observedAt.Add(-30*24*time.Hour).UTC(), observedAt.UTC(), openIssuesOnly, start.UTC(), end.UTC())
+ ORDER BY 2,3,4`, string(ids), recentPulls, observedAt.Add(-30*24*time.Hour).UTC(), observedAt.UTC(), recentPulls, openIssuesOnly, start.UTC(), end.UTC())
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot items: %w", err)
 	}
@@ -175,7 +190,7 @@ func LoadArchiveSnapshotItems(ctx context.Context, tx *sql.Tx, repoIDs []int64, 
 	result := []ArchiveSnapshotItem{}
 	for rows.Next() {
 		var item ArchiveSnapshotItem
-		if err := rows.Scan(&item.ID, &item.RepoID, &item.Kind, &item.Number, &item.URL, &item.Title, &item.Author, &item.State, &item.Body, &item.AuthorAccountType, &item.AuthorAssociation, &item.CreatedAt, &item.UpdatedAt, &item.DetailFetchedAt, &item.LabelsJSON, &item.Draft, &item.HeadSHA, &item.HeadBranch, &item.BaseBranch, &item.HeadRepoCloneURL, &item.HeadRepoIdentityStale, &item.Additions, &item.Deletions, &item.FilesChanged, &item.ReviewDecision, &item.CIStatus, &item.ChecksJSON, &item.MergeableState, &item.AssigneesJSON, &item.ReviewersJSON, &item.LastActivityAt, &item.ClosedAt, &item.MergedAt, &item.CIObservedAt, &item.ReviewDecisionObservedAt, &item.MergeableStateObservedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.RepoID, &item.Kind, &item.Number, &item.URL, &item.Title, &item.Author, &item.State, &item.Body, &item.AuthorAccountType, &item.AuthorAssociation, &item.CreatedAt, &item.UpdatedAt, &item.DetailFetchedAt, &item.LabelsJSON, &item.Draft, &item.HeadSHA, &item.HeadBranch, &item.BaseBranch, &item.HeadRepoCloneURL, &item.HeadRepoIdentityStale, &item.Additions, &item.Deletions, &item.FilesChanged, &item.ReviewDecision, &item.CIStatus, &item.ChecksJSON, &item.MergeableState, &item.AssigneesJSON, &item.ReviewersJSON, &item.LastActivityAt, &item.ClosedAt, &item.MergedAt, &item.CIObservedAt, &item.ReviewDecisionObservedAt, &item.MergeableStateObservedAt, &item.CommentAuthorAssociationUnknown); err != nil {
 			return nil, fmt.Errorf("scan snapshot item: %w", err)
 		}
 		result = append(result, item)
@@ -237,7 +252,7 @@ func LoadArchiveSnapshotPullEvidence(ctx context.Context, tx *sql.Tx, mrIDs []in
 	if err != nil {
 		return nil, nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT e.id,e.merge_request_id,e.author,COALESCE(CAST(substr(CAST(COALESCE(e.body,'') AS BLOB),1,2049) AS TEXT),''),COALESCE(e.direct_url,''),e.dedupe_key,e.author_association,e.created_at FROM forge_mr_events e JOIN forge_merge_requests p ON p.id=e.merge_request_id WHERE p.id IN (SELECT value FROM json_each(?)) AND p.state IN ('closed','merged') AND e.event_type='issue_comment' AND (e.author=p.author OR upper(e.author_association) IN ('MEMBER','OWNER')) ORDER BY e.merge_request_id,e.created_at,e.id`, string(ids))
+	rows, err := tx.QueryContext(ctx, `SELECT e.id,e.merge_request_id,e.author,`+archiveSnapshotCommentBody+`,COALESCE(e.direct_url,''),e.dedupe_key,e.author_association,e.created_at FROM forge_mr_events e JOIN forge_merge_requests p ON p.id=e.merge_request_id WHERE p.id IN (SELECT value FROM json_each(?)) AND p.state IN ('closed','merged') AND e.event_type='issue_comment' AND `+archiveSnapshotCommentFilter+` ORDER BY e.merge_request_id,e.created_at,e.id`, string(ids))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -270,7 +285,7 @@ func LoadArchiveSnapshotPullEvidence(ctx context.Context, tx *sql.Tx, mrIDs []in
 }
 
 type ArchiveSnapshotPullReference struct {
-	SourceID   *int64
+	SourceID   int64
 	TargetID   int64
 	URL, Key   string
 	ObservedAt time.Time

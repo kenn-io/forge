@@ -1,7 +1,7 @@
 import { Effect, Result } from "effect";
 import type { AppRuntime } from "../app/runtime.js";
 import type { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
-import { executeGeneratedApiRequest } from "../api/generated-api.js";
+import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
 import { retryIdempotentRead } from "../api/retry-policy.js";
 import type {
   ActivityItem,
@@ -859,6 +859,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   function activityReadPages(params: ActivityParams, depth: number) {
     return Effect.gen(function* () {
+      const scope = activityProjectionScope({ ...params, projection: "full" });
       const first = yield* activityRead(params);
       const subjects = [...(first.response.item_activity ?? [])];
       const seen = new Set(subjects.map(stableParentKey));
@@ -867,7 +868,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       let cursor = first.response.next_subject_cursor ?? "";
       let subjectsCapped = first.response.item_activity_capped ?? false;
       let partialFailure: ApiProblemError | TransientTransportError | undefined;
-      for (let page = 1; cursor && page < depth; page++) {
+      let page = 1;
+      for (; cursor && page < Math.max(depth, scope === subjectPageScope ? displayedSubjectDepth : 1); page++) {
         const nextResult = yield* Effect.result(activityRead({ ...params, subject_before: cursor }));
         if (Result.isFailure(nextResult)) {
           partialFailure = nextResult.failure;
@@ -881,7 +883,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       }
       return {
         ...first,
-        subjectDepth: depth,
+        subjectDepth: page,
         ...(partialFailure ? { partialFailure } : {}),
         response: {
           ...first.response,
@@ -981,7 +983,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     itemActivityCapped = response.item_activity_capped ?? false;
     subjectCursor = response.next_subject_cursor ?? "";
     displayedSubjectDepth = depth;
-    requestedSubjectDepth = Math.max(requestedSubjectDepth, depth);
+    requestedSubjectDepth = subjectCursor ? Math.max(requestedSubjectDepth, depth) : depth;
   }
 
   function projectActivitySnapshot(result: ActivityReadResponse, params: ActivityParams): void {
@@ -1051,6 +1053,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       hideMergeQueued ||
       onlyMergeQueued ||
       enabledItemTypes.size !== DEFAULT_ACTIVITY_ITEM_TYPES.length;
+    const refreshFilteredBulk =
+      !result.partialFailure &&
+      autoLoadExpandedThreadEvents &&
+      !collapseThreads &&
+      parentFilterActive &&
+      !!result.response.item_activity_capped &&
+      (result.response.event_cursor ?? activityEventCursor) !== "";
+    restartBulkActivity = refreshFilteredBulk;
     const absentThreadKeys = new Set<string>();
     if (
       reconcileCollapsedThreads &&
@@ -1091,7 +1101,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
             return (
               (item.item_type === "pr" || item.item_type === "issue") &&
               !receivedIDs.has(item.id) &&
-              (key === undefined || (!changedThreadKeys.has(key) && !(parentFilterActive && absentThreadKeys.has(key))))
+              (key === undefined ||
+                (!changedThreadKeys.has(key) &&
+                  !(parentFilterActive && !refreshFilteredBulk && absentThreadKeys.has(key))))
             );
           }
           return (
@@ -1121,7 +1133,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         }
       }
     } else if (reconcileCollapsedThreads && (changedThreadKeys.size > 0 || newExpandedThreadKeys.size > 0)) {
-      restartBulkActivity =
+      restartBulkActivity ||=
         autoLoadExpandedThreadEvents &&
         ((changedThreadKeys.size > 0 && bulkRequestToken !== undefined) ||
           (!collapseThreads && newExpandedThreadKeys.size > 0));
@@ -1144,11 +1156,25 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (restartBulkActivity) loadBulkActivity();
   }
 
-  function projectReadSnapshot(result: ActivityReadResponse, params: ActivityParams, authoritative: boolean) {
+  function projectReadSnapshot(
+    result: ActivityReadResponse,
+    params: ActivityParams,
+    authoritative: boolean,
+  ): Effect.Effect<void, ApiProblemError | TransientTransportError, GeneratedApi> {
     return Effect.gen(function* () {
       const failure = result.partialFailure;
       let projected = result;
       const sameScope = result.scope === snapshotScope;
+      if (
+        !failure &&
+        sameScope &&
+        result.response.next_subject_cursor &&
+        (result.subjectDepth ?? 1) < displayedSubjectDepth
+      ) {
+        const refreshed = yield* activityReadPages({ ...params, since: computeSince() }, displayedSubjectDepth);
+        if (result.scope !== snapshotScope) return;
+        return yield* projectReadSnapshot(refreshed, params, authoritative);
+      }
       if (failure && sameScope) {
         const subjects = [...(result.response.item_activity ?? [])];
         const workspaces = [...(result.response.workspace_activity ?? [])];
@@ -1197,7 +1223,6 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     itemActivityCapped = result.response.item_activity_capped ?? false;
     subjectCursor = result.response.next_subject_cursor ?? "";
     displayedSubjectDepth = depth;
-    loading = false;
     storeError = null;
     if (params.projection === "collapsed" && activityPageLimit === undefined) {
       for (const subject of added) {
@@ -1228,11 +1253,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           return projectReadSnapshot(result, params, false);
         });
       const clearLoading = Effect.sync(() => {
-        if (acceptsProjection()) loading = false;
+        if (!page && acceptsProjection()) loading = false;
       });
-      yield* owner === "foreground"
-        ? workflow.load(scope, read, project, clearLoading)
-        : workflow.pollSnapshotRead(scope, read, project, clearLoading);
+      yield* page
+        ? workflow.pageRead(scope, read, project, clearLoading)
+        : owner === "foreground"
+          ? workflow.load(scope, read, project, clearLoading)
+          : workflow.pollSnapshotRead(scope, read, project, clearLoading);
     });
   }
 
@@ -1250,7 +1277,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return Effect.sync(() => ownsProjection()).pipe(
       Effect.flatMap((current) => {
         if (!current) return Effect.void;
-        loading = true;
+        if (!page) loading = true;
         storeError = null;
         return loadActivityProgram(params, "foreground", ownsProjection, page);
       }),
@@ -1258,7 +1285,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         Effect.sync(() => {
           if (!ownsProjection()) return;
           storeError = readErrorMessage(failure);
-          loading = false;
+          if (!page) loading = false;
           if (requestedSubjectDepth === depth) requestedSubjectDepth = displayedSubjectDepth;
           flatPaging.rollback(activityPageQuery(params));
         }),
@@ -1267,13 +1294,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         Effect.sync(() => {
           if (
             page &&
-            ownsProjection() &&
+            generation === childProjectionInvalidationGeneration &&
             olderItemsPage === page &&
             requestedSubjectDepth === depth &&
             displayedSubjectDepth < depth
           ) {
             requestedSubjectDepth = displayedSubjectDepth;
-            loading = false;
           }
         }),
       ),

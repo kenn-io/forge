@@ -570,6 +570,9 @@ func TestWorkspaceActivitySearchFindsOlderSubjectsPastSafetyCap(t *testing.T) {
 			})
 
 			setTmuxRecorderPaneOutput(t, record, "changed output")
+			waitForWorkspaceActivity(t, client, ctx, createResp.JSON202.ID, func(activity workspaceActivityResponse) bool {
+				return activity.TmuxLastOutputAt != nil
+			})
 
 			// More newer matching subjects, each with a newer matching event,
 			// than the safety cap reads, so only the SQL search reaches PR 1.
@@ -593,10 +596,6 @@ func TestWorkspaceActivitySearchFindsOlderSubjectsPastSafetyCap(t *testing.T) {
 			search := "search-reviewer"
 			since := now.Add(-time.Hour).Format(time.RFC3339)
 			limit := int64(1)
-			require.Eventually(func() bool {
-				response, requestErr := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Search: &search, Since: &since, Limit: &limit, Projection: &projection}})
-				return requestErr == nil && response.JSON200 != nil && len(response.JSON200.WorkspaceActivity) == 1
-			}, 8*time.Second, 100*time.Millisecond)
 			var cursor *string
 			for page := range 2 {
 				response, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{

@@ -511,6 +511,7 @@ describe("OnboardingFlow", () => {
     await tick();
     expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
     await waitFor(() => expect(attempts).toBe(2));
+    expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
     accepted.resolve(Response.json({}));
     await waitFor(() => expect(statusReads).toBe(1));
     sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:01:00Z", last_error: "" });

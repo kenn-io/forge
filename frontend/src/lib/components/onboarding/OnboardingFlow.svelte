@@ -290,35 +290,14 @@
     );
   }
 
-  function beginSyncStart(): Effect.Effect<void> {
-    return Effect.sync(() => {
-      syncStartIssued = true;
-      syncAccepted = false;
-      syncError = null;
-    });
-  }
-
-  // Check current status after acceptance; a completion may arrive while the request is in flight.
-  function settleAcceptedSyncProgram(): Effect.Effect<void, never, AppServices> {
-    return Effect.gen(function* () {
-      syncAccepted = true;
-      const state = stores.sync.getSyncState();
-      if (state?.running) return;
-      if (state?.last_error) {
-        const lastError = state.last_error;
-        yield* Effect.sync(() => {
-          syncError = lastError;
-        });
-      } else if (state?.last_run_at) {
-        yield* finishSyncProgram();
-      }
-    });
-  }
-
   function startSyncProgram(): Effect.Effect<void, never, AppServices> {
     return Effect.gen(function* () {
       if (syncStartIssued) return;
-      yield* beginSyncStart();
+      yield* Effect.sync(() => {
+        syncStartIssued = true;
+        syncAccepted = false;
+        syncError = null;
+      });
       let triggerFailed = false;
       yield* stores.sync.triggerOnboardingSyncEffect().pipe(
         Effect.catch((failure) =>
@@ -328,7 +307,19 @@
           }),
         ),
       );
-      if (!triggerFailed) yield* settleAcceptedSyncProgram();
+      if (triggerFailed) return;
+      syncAccepted = true;
+      const state = stores.sync.getSyncState();
+      if (!state?.running) {
+        const lastError = state?.last_error;
+        if (lastError) {
+          yield* Effect.sync(() => {
+            syncError = lastError;
+          });
+        } else if (state?.last_run_at) {
+          yield* finishSyncProgram();
+        }
+      }
     });
   }
 
@@ -566,16 +557,14 @@
     );
   });
 
-  function handleSyncComplete(): void {
-    if (phase !== "sync" || !syncAccepted) return;
-    const state = stores.sync.getSyncState();
-    if (state?.last_error) syncError = state.last_error;
-    else finishSync();
-  }
-
   onMount(() => {
     onStart();
-    const unsubscribe = stores.sync.subscribeSyncComplete(handleSyncComplete);
+    const unsubscribe = stores.sync.subscribeSyncComplete(() => {
+      if (phase !== "sync" || !syncAccepted) return;
+      const state = stores.sync.getSyncState();
+      if (state?.last_error) syncError = state.last_error;
+      else finishSync();
+    });
     if (phase === "sync") startSync();
     return unsubscribe;
   });

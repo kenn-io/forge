@@ -192,7 +192,6 @@ export function createSyncStore(opts: SyncStoreOptions) {
     const previous = status;
     refreshGeneration += 1;
     let baselineLastRunAt = previous ? (previous.last_run_at ?? "") : null;
-    let optimistic = false;
 
     return Effect.gen(function* () {
       if (previous === null) {
@@ -201,7 +200,6 @@ export function createSyncStore(opts: SyncStoreOptions) {
       }
       yield* Effect.sync(() => {
         triggeredSyncLastRunAt = baselineLastRunAt;
-        optimistic = true;
         status = {
           ...(previous?.relay && { relay: previous.relay }),
           ...(previous?.repo_errors && { repo_errors: previous.repo_errors }),
@@ -231,7 +229,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
       ),
       Effect.onInterrupt(() =>
         Effect.sync(() => {
-          if (!optimistic || triggeredSyncLastRunAt === undefined) return;
+          if (triggeredSyncLastRunAt === undefined) return;
           triggeredSyncLastRunAt = undefined;
           status = previous;
           wasRunning = previous?.running ?? false;

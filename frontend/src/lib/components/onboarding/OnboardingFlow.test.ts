@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
+import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
@@ -470,6 +471,37 @@ describe("OnboardingFlow", () => {
       expect(recoveryReads).toBe(0);
     },
   );
+
+  it("waits for a retry when a delayed sync completion arrives after configuring repositories", async () => {
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/sync" && request.method === "POST") {
+        attempts++;
+        return attempts === 1 ? Promise.reject(new Error("response lost")) : new Promise<Response>(() => {});
+      }
+      return originalFetch(input, init);
+    });
+    const fixture = storeFixture();
+    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+    const sync = createSyncStore({ runtime: runtimeCapture.current });
+    sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:00:00Z", last_error: "" });
+    fixture.stores.sync = sync;
+    renderFlow(fixture.stores);
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
+    await waitFor(() => expect(screen.getByText("acme/forge")).toBeTruthy());
+    await fireEvent.click(screen.getByText("acme/forge"));
+    await fireEvent.click(screen.getByRole("button", { name: "Configure 1 repository" }));
+    await waitFor(() => expect(attempts).toBe(1));
+    expect(observedBulkAddBodies).toHaveLength(1);
+    // Model delayed delivery of a completion published before the repository update.
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:00:30Z", last_error: "" });
+    await tick();
+    expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
+    await waitFor(() => expect(attempts).toBe(2));
+  });
 
   it("shows a retry when status clears the transport error", async () => {
     const originalFetch = globalThis.fetch;

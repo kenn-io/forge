@@ -68,7 +68,10 @@ describe("sync store", () => {
     it("waits for its own sync when another finishes during retry", async () => {
       const accepted = Promise.withResolvers<void>();
       const unrelated = { ...idle, last_run_at: "2026-08-05T12:00:30Z" };
-      const post = vi.fn().mockRejectedValueOnce(new Error("response lost")).mockImplementation(() => accepted.promise);
+      const post = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("response lost"))
+        .mockImplementation(() => accepted.promise);
       const getStatus = vi.fn().mockResolvedValue(unrelated);
       const store = createSyncStore(
         makeGeneratedClient({ SyncService: { triggerSync: post, getSyncStatus: getStatus } }),

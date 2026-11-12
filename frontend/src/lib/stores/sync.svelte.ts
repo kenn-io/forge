@@ -35,8 +35,11 @@ export function createSyncStore(opts: SyncStoreOptions) {
   let refreshGeneration = 0;
   // The trigger endpoint can acknowledge before status observes the new run.
   // Retain the optimistic state until status reports running or advances past
-  // the authoritative pre-trigger completion time.
-  let pendingTrigger: { acknowledged: boolean; lastRunAt: string | null } | undefined;
+  // the authoritative pre-trigger completion time. A retried request moves that
+  // time to the latest completion seen before the retry was sent.
+  let pendingTrigger:
+    | { acknowledged: boolean; lastRunAt: string | null; observedRunAt?: string | undefined }
+    | undefined;
   let pollWakeSignal: Deferred.Deferred<void> | null = null;
 
   function getSyncState(): SyncStatus | null {
@@ -83,10 +86,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
   function applySyncStatus(next: SyncStatus | null): void {
     const isRunning = next?.running ?? false;
     if (pendingTrigger !== undefined) {
-      if (!pendingTrigger.acknowledged) {
-        if (!isRunning && next?.last_run_at) pendingTrigger.lastRunAt = next.last_run_at;
-        return;
-      }
+      if (!pendingTrigger.acknowledged) return recordObservedRun(pendingTrigger, next);
       if (
         isRunning ||
         (pendingTrigger.lastRunAt !== null && lastRunAdvanced(pendingTrigger.lastRunAt, next?.last_run_at ?? ""))
@@ -188,6 +188,18 @@ export function createSyncStore(opts: SyncStoreOptions) {
     applySyncStatus(next);
   }
 
+  function recordObservedRun(pending: { observedRunAt?: string | undefined }, next: SyncStatus | null): void {
+    if (!next?.running && next?.last_run_at) pending.observedRunAt = next.last_run_at;
+  }
+
+  function retriedFromObservedRun<A, R>(request: Effect.Effect<A, SyncReadError, R>) {
+    const attempt = Effect.suspend(() => {
+      if (pendingTrigger?.observedRunAt) pendingTrigger.lastRunAt = pendingTrigger.observedRunAt;
+      return request;
+    });
+    return attempt.pipe(Effect.retry({ schedule: transientRetrySchedule, while: isRetryable }));
+  }
+
   function lastRunAdvanced(previous: string, next: string): boolean {
     if (next === "") return false;
     if (previous === "") return true;
@@ -272,12 +284,15 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return triggeredSyncProgram(fullSyncRequest());
   }
 
-  function triggerOnboardingSyncEffect() {
-    const isRetryable = (failure: unknown) =>
+  function isRetryable(failure: unknown): boolean {
+    return (
       isTransientPickerReadFailure(failure) &&
-      !(failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.serviceUnavailable);
-    const request = fullSyncRequest().pipe(Effect.retry({ schedule: transientRetrySchedule, while: isRetryable }));
-    return triggeredSyncProgram(request);
+      !(failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.serviceUnavailable)
+    );
+  }
+
+  function triggerOnboardingSyncEffect() {
+    return triggeredSyncProgram(retriedFromObservedRun(fullSyncRequest()));
   }
 
   function triggerSync(): void {

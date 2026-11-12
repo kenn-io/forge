@@ -470,6 +470,10 @@ func TestHostRouterReturnsSafeMissingRouteError(t *testing.T) {
 	require.Error(err)
 	require.ErrorContains(err, "ghe.example.com")
 	require.ErrorContains(err, "private-org")
+	_, err = router.ReadIdentityForRepo("private-org", "repo")
+	require.ErrorContains(err, "private-org/repo")
+	require.ErrorContains(err, "ghe.example.com")
+	require.ErrorContains(err, "config.toml and restart Forge")
 }
 
 // routedNativeStackClient is a route client that also serves the preview stack

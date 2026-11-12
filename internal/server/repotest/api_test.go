@@ -784,14 +784,21 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 
-	syncReachedGitHub := make(chan struct{})
-	var syncReachedGitHubOnce sync.Once
+	syncReachedGitHub := make(chan error, 1)
+	releaseSync := make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(releaseSync) })
 	mock := &serverfake.MockGH{
 		ListOpenPullRequestsFn: func(
-			_ context.Context, _, _ string,
+			ctx context.Context, _, _ string,
 		) ([]*gh.PullRequest, error) {
-			syncReachedGitHubOnce.Do(func() { close(syncReachedGitHub) })
-			return nil, nil
+			syncReachedGitHub <- ctx.Err()
+			select {
+			case <-releaseSync:
+				return nil, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		},
 	}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, []ghclient.RepoRef{{
@@ -815,13 +822,19 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+	var receipt ghclient.FullSyncReceipt
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &receipt))
+	require.Equal(syncer.Status().FullSync.InstanceID, receipt.InstanceID)
+	require.Positive(receipt.Generation)
 
 	select {
-	case <-syncReachedGitHub:
+	case err := <-syncReachedGitHub:
+		require.NoError(err)
 	case <-time.After(2 * time.Second):
 		require.Fail("expected sync to reach GitHub despite request context cancellation")
 	}
 
+	releaseOnce.Do(func() { close(releaseSync) })
 	repos, err := database.ListRepos(t.Context())
 	require.NoError(err)
 	require.Len(repos, 1)
@@ -895,6 +908,11 @@ func TestAPITriggerSyncOnlyRepoRestrictsRun(t *testing.T) {
 		nil)
 
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+	var body map[string]any
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	require.NotNil(body)
+	require.NotContains(body, "instance_id")
+	require.NotContains(body, "generation")
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):

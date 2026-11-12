@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/db"
@@ -321,10 +322,20 @@ func (s *Handlers) listRepoSummariesRouteCore(
 	return &listRepoSummariesOutput{Body: out}, nil
 }
 
+type triggerSyncResponse struct {
+	InstanceID *uuid.UUID `json:"instance_id,omitempty"`
+	Generation *uint64    `json:"generation,omitempty"`
+}
+
+type triggerSyncOutput struct {
+	Status int
+	Body   triggerSyncResponse
+}
+
 func (s *Handlers) TriggerSync(
 	ctx context.Context,
 	input *triggerSyncInput,
-) (*itemapi.AcceptedOutput, error) {
+) (*triggerSyncOutput, error) {
 	if err := s.RequireSync(); err != nil {
 		return nil, err
 	}
@@ -336,12 +347,13 @@ func (s *Handlers) TriggerSync(
 		if !(*s.Syncer).TriggerRunForRepos(context.WithoutCancel(ctx), repos) {
 			return nil, httpapi.ServiceUnavailable("syncer is stopping")
 		}
-		return &itemapi.AcceptedOutput{Status: http.StatusAccepted}, nil
+		return &triggerSyncOutput{Status: http.StatusAccepted}, nil
 	}
-	if !(*s.Syncer).TriggerRunWithPriority(
+	receipt, accepted := (*s.Syncer).TriggerRunWithPriority(
 		context.WithoutCancel(ctx),
 		s.priorityReposFromFilter(input.PriorityRepos),
-	) {
+	)
+	if !accepted {
 		return nil, httpapi.ServiceUnavailable("syncer is stopping")
 	}
 	if s.NotificationsEnabled() {
@@ -351,7 +363,10 @@ func (s *Handlers) TriggerSync(
 			}
 		})
 	}
-	return &itemapi.AcceptedOutput{Status: http.StatusAccepted}, nil
+	return &triggerSyncOutput{Status: http.StatusAccepted, Body: triggerSyncResponse{
+		InstanceID: &receipt.InstanceID,
+		Generation: &receipt.Generation,
+	}}, nil
 }
 
 func (s *Handlers) RequireSync() error {

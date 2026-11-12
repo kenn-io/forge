@@ -43,6 +43,10 @@ export const schemaConstraints = {
   FederationDiffDescriptorRequest: {
     pull_number: { minimum: 1 },
   },
+  FullSyncStatus: {
+    settled_generation: { minimum: 0 },
+    successful_generation: { minimum: 0 },
+  },
   ItemIdentity: {
     number: { minimum: 1 },
   },
@@ -66,6 +70,9 @@ export const schemaConstraints = {
   },
   Terminal: {
     retained_sessions: { minimum: 0, maximum: 100 },
+  },
+  TriggerSyncResponse: {
+    generation: { minimum: 0 },
   },
   VisiblePullRef: {
     number: { minimum: 1 },

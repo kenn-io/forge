@@ -535,7 +535,8 @@ func TestForgectlCommandsUseRealAPIAndSQLite(t *testing.T) {
 	assert.Contains(apiListOut, `"path":"/pulls"`)
 
 	syncOut := runForge(t, ts.URL, "sync")
-	assert.Empty(syncOut)
+	assert.Contains(syncOut, `"instance_id"`)
+	assert.Contains(syncOut, `"generation"`)
 }
 
 func setupForgectlE2E(t *testing.T) *httptest.Server {

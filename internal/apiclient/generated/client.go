@@ -38703,7 +38703,7 @@ func (c *Client) TriggerSyncWithResponse(ctx context.Context, options *TriggerSy
 	}
 	switch resp.StatusCode {
 	case 202:
-		out.JSON202 = new(TriggerSyncResponse)
+		out.JSON202 = new(TriggerSyncResponseJSON)
 		bodyBytes := resp.Content
 		if len(bodyBytes) > 0 {
 			if err := json.Unmarshal(bodyBytes, out.JSON202); err != nil {
@@ -38711,7 +38711,7 @@ func (c *Client) TriggerSyncWithResponse(ctx context.Context, options *TriggerSy
 					StatusCode:    resp.StatusCode,
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
-					TargetType:    "TriggerSyncResponse",
+					TargetType:    "TriggerSyncResponseJSON",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -62746,7 +62746,7 @@ type UnsetStarredErrorResponse = ProblemError
 
 type SetStarredErrorResponse = ProblemError
 
-type TriggerSyncResponse = FullSyncReceipt
+type TriggerSyncResponseJSON = TriggerSyncResponse
 
 type TriggerSyncErrorResponse = ProblemError
 
@@ -66325,7 +66325,7 @@ type TriggerSyncResp struct {
 	Body                              []byte
 	StatusCode                        int
 	Error                             *TriggerSyncErrorResponse
-	JSON202                           *TriggerSyncResponse
+	JSON202                           *TriggerSyncResponseJSON
 	ApplicationProblemPlusJSONDefault *TriggerSyncErrorResponse
 }
 
@@ -68289,13 +68289,6 @@ type FleetSettingsResponse struct {
 	RestartRequired bool          `json:"restart_required"`
 	Role            string        `json:"role"`
 	Sessions        FleetSessions `json:"sessions"`
-}
-
-type FullSyncReceipt struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema     *string   `json:"$schema,omitempty"`
-	Generation int64     `json:"generation"`
-	InstanceID uuid.UUID `json:"instance_id"`
 }
 
 type FullSyncStatus struct {
@@ -71144,6 +71137,13 @@ type ToolingTokenStatus struct {
 	Env    *string `json:"env,omitempty"`
 	Ready  bool    `json:"ready"`
 	Source *string `json:"source,omitempty"`
+}
+
+type TriggerSyncResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string    `json:"$schema,omitempty"`
+	Generation *int64     `json:"generation,omitempty"`
+	InstanceID *uuid.UUID `json:"instance_id,omitempty"`
 }
 
 type UnpreparedWorkspace struct {

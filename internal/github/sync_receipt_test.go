@@ -134,3 +134,21 @@ func TestFullSyncReceiptsPromoteQueuedScopedWork(t *testing.T) {
 	release <- struct{}{}
 	require.Eventually(t, func() bool { return syncer.Status().FullSync.SuccessfulGeneration == receipt.Generation }, 5*time.Second, time.Millisecond)
 }
+
+func TestFullSyncReceiptsReportThrottledRepositories(t *testing.T) {
+	database := openTestDB(t)
+	host := "github.example.com"
+	tracker := NewRateTracker(database, host, "host", "rest")
+	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 100, Reset: time.Now().Add(time.Hour)})
+	client := &mockClient{}
+	syncer := NewSyncer(map[string]Client{host: client}, database, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: host}}, time.Hour,
+		map[string]*RateTracker{host: tracker}, nil)
+	t.Cleanup(syncer.Stop)
+	receipt, ok := syncer.TriggerRunWithPriority(t.Context(), nil)
+	require.True(t, ok)
+	require.Eventually(t, func() bool { return syncer.Status().FullSync.SettledGeneration == receipt.Generation }, 5*time.Second, time.Millisecond)
+	status := syncer.Status().FullSync
+	require.Less(t, status.SuccessfulGeneration, receipt.Generation)
+	require.Contains(t, status.LastError, "rate limit throttled")
+}

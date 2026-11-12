@@ -905,6 +905,38 @@ func TestAPITriggerSyncOnlyRepoRestrictsRun(t *testing.T) {
 		nil)
 
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+	var body map[string]any
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	require.NotNil(body)
+	require.NotContains(body, "instance_id")
+	require.NotContains(body, "generation")
+	spec := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/openapi.json", nil)
+	var document struct {
+		Paths map[string]struct {
+			Post struct {
+				Responses map[string]struct {
+					Content map[string]struct {
+						Schema struct {
+							Ref string `json:"$ref"`
+						} `json:"schema"`
+					} `json:"content"`
+				} `json:"responses"`
+			} `json:"post"`
+		} `json:"paths"`
+		Components struct {
+			Schemas map[string]struct {
+				Required []string `json:"required"`
+			} `json:"schemas"`
+		} `json:"components"`
+	}
+	require.NoError(json.Unmarshal(spec.Body.Bytes(), &document))
+	ref := document.Paths["/sync"].Post.Responses["202"].Content["application/json"].Schema.Ref
+	require.NotEmpty(ref)
+	schema, ok := document.Components.Schemas[strings.TrimPrefix(ref, "#/components/schemas/")]
+	require.True(ok)
+	for _, field := range schema.Required {
+		require.Contains(body, field)
+	}
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):

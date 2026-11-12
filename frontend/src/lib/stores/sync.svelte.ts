@@ -5,7 +5,7 @@ import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-
 import { isTransientPickerReadFailure, retryIdempotentRead } from "../api/retry-policy.js";
 import { ApiProblemError } from "../api/effect-errors.js";
 import { ProblemCodes } from "../api/problems.js";
-import type { FullSyncReceipt, FullSyncStatus } from "../api/generated/models/index.js";
+import type { FullSyncStatus, TriggerSyncResponse } from "../api/generated/models/index.js";
 import type { RateLimitsResponse, SyncStatus } from "../api/types.js";
 import { SyncWorkflow, type SyncReadError } from "./sync-workflow.js";
 
@@ -288,7 +288,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
   function triggerOnboardingSyncEffect() {
     return Effect.gen(function* () {
       const previous = status;
-      let receipt: FullSyncReceipt | undefined;
+      let receipt: Required<Pick<TriggerSyncResponse, "instance_id" | "generation">> | undefined;
       let lastObserved: SyncStatus | undefined;
       const observed = new Map<string, FullSyncStatus>();
       let outcome: Effect.Effect<void, SyncReadError> | undefined;
@@ -324,12 +324,13 @@ export function createSyncStore(opts: SyncStoreOptions) {
         if (
           !accepted ||
           !accepted.instance_id ||
+          typeof accepted.generation !== "number" ||
           !Number.isSafeInteger(accepted.generation) ||
           accepted.generation < 1
         ) {
           return yield* fail("Sync was accepted without a receipt. Retry sync.");
         }
-        receipt = accepted;
+        receipt = { instance_id: accepted.instance_id, generation: accepted.generation };
         receiptEpoch += 1;
         const latest = observed.get(receipt.instance_id);
         if (latest) {

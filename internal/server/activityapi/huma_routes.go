@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/db"
@@ -321,9 +322,14 @@ func (s *Handlers) listRepoSummariesRouteCore(
 	return &listRepoSummariesOutput{Body: out}, nil
 }
 
+type triggerSyncResponse struct {
+	InstanceID *uuid.UUID `json:"instance_id,omitempty"`
+	Generation *uint64    `json:"generation,omitempty"`
+}
+
 type triggerSyncOutput struct {
 	Status int
-	Body   *ghclient.FullSyncReceipt
+	Body   triggerSyncResponse
 }
 
 func (s *Handlers) TriggerSync(
@@ -357,7 +363,10 @@ func (s *Handlers) TriggerSync(
 			}
 		})
 	}
-	return &triggerSyncOutput{Status: http.StatusAccepted, Body: &receipt}, nil
+	return &triggerSyncOutput{Status: http.StatusAccepted, Body: triggerSyncResponse{
+		InstanceID: &receipt.InstanceID,
+		Generation: &receipt.Generation,
+	}}, nil
 }
 
 func (s *Handlers) RequireSync() error {

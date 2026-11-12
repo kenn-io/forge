@@ -2,7 +2,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../../api/types.js";
-import { TransientTransportError } from "../../api/effect-errors.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
 import { createSyncStore } from "../../stores/sync.svelte.js";
@@ -430,49 +429,80 @@ describe("OnboardingFlow", () => {
     expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy();
   });
 
-  it("recovers a transient first sync failure without a click", async () => {
+  it.each(["network failure", "unknown gateway problem"])(
+    "recovers a transient %s without a click",
+    async (failure) => {
+      const originalFetch = globalThis.fetch;
+      let attempts = 0;
+      let recoveryReads = 0;
+      vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path === "/api/v1/sync" && request.method === "POST") {
+          attempts++;
+          if (attempts !== 1) return Promise.resolve(Response.json({}));
+          if (failure === "network failure") return Promise.reject(new Error("response lost"));
+          return Promise.resolve(
+            Response.json(
+              { code: "futureGatewayError", status: 503, title: "Gateway", detail: "Unavailable", type: "about:blank" },
+              { status: 503 },
+            ),
+          );
+        }
+        if (path === "/api/v1/sync/status") {
+          if (attempts === 1) recoveryReads++;
+          return Promise.resolve(
+            Response.json({ running: false, last_run_at: attempts > 1 ? "2026-08-02T12:01:00Z" : "", last_error: "" }),
+          );
+        }
+        if (path === "/api/v1/rate-limits")
+          return Promise.resolve(Response.json({ provider_pools: {}, local_ceilings: {} }));
+        return originalFetch(input, init);
+      });
+      const fixture = storeFixture({ configured: true });
+      if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+      fixture.stores.sync = createSyncStore({ runtime: runtimeCapture.current });
+      renderFlow(fixture.stores);
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy(), {
+        timeout: 5000,
+      });
+      expect(attempts).toBe(2);
+      expect(recoveryReads).toBe(0);
+    },
+  );
+
+  it("shows a retry when status clears the transport error", async () => {
     const originalFetch = globalThis.fetch;
     let attempts = 0;
-    let recoveryReads = 0;
     vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init);
       const path = new URL(request.url).pathname;
       if (path === "/api/v1/sync" && request.method === "POST") {
         attempts++;
-        return attempts === 1 ? Promise.reject(new Error("response lost")) : Promise.resolve(Response.json({}));
+        return Promise.reject(new Error(""));
       }
-      if (path === "/api/v1/sync/status") {
-        if (attempts === 1) recoveryReads++;
-        return Promise.resolve(
-          Response.json({ running: false, last_run_at: attempts > 1 ? "2026-08-02T12:01:00Z" : "", last_error: "" }),
-        );
-      }
-      if (path === "/api/v1/rate-limits")
-        return Promise.resolve(Response.json({ provider_pools: {}, local_ceilings: {} }));
+      if (path === "/api/v1/sync/status")
+        return Promise.resolve(Response.json({ running: false, last_run_at: "", last_error: "" }));
       return originalFetch(input, init);
     });
     const fixture = storeFixture({ configured: true });
     if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
-    fixture.stores.sync = createSyncStore({ runtime: runtimeCapture.current });
+    const sync = createSyncStore({ runtime: runtimeCapture.current });
+    const trigger = sync.triggerOnboardingSyncEffect;
+    sync.triggerOnboardingSyncEffect = () =>
+      trigger().pipe(
+        Effect.tapError(() =>
+          Effect.sync(() => {
+            sync.setSyncStatus({ running: false, last_run_at: "", last_error: "" });
+          }),
+        ),
+      );
+    fixture.stores.sync = sync;
     renderFlow(fixture.stores);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy(), {
-      timeout: 5000,
-    });
-    expect(attempts).toBe(2);
-    expect(recoveryReads).toBe(0);
-  });
-
-  it("shows a retry for a transport error with no message", async () => {
-    const fixture = storeFixture({
-      configured: true,
-      syncTrigger: Effect.fail(
-        TransientTransportError.make({ operation: "POST /sync", cause: new Error("connection lost") }),
-      ),
-    });
-    renderFlow(fixture.stores);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy(), { timeout: 5000 });
+    expect(attempts).toBe(3);
     expect(screen.getByRole("alert").textContent).toContain("Could not reach Kenn Forge");
-  });
+  }, 7000);
 
   it("starts sync when repositories become configured while onboarding remains mounted", async () => {
     const fixture = storeFixture();

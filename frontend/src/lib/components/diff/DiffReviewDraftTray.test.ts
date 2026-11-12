@@ -38,7 +38,7 @@ function draftComment() {
   };
 }
 
-async function renderTray(publishResult: boolean, empty = false) {
+async function renderTray(publishResult: boolean) {
   const publish = vi.fn(() => Promise.resolve(publishResult));
   const discard = vi.fn(() => Promise.resolve(true));
   const editComment = vi.fn(() => Promise.resolve(true));
@@ -47,8 +47,7 @@ async function renderTray(publishResult: boolean, empty = false) {
     GET: vi.fn(() =>
       Promise.resolve({
         data: {
-          draft_id: "1",
-          comments: empty ? [] : [comment],
+          comments: [comment],
           supported_actions: ["comment"],
           native_multiline_ranges: true,
         },
@@ -88,7 +87,7 @@ async function renderTray(publishResult: boolean, empty = false) {
   const diffReviewDraft = createDiffReviewDraftStore({ runtime });
   diffReviewDraft.setContext(providerRef(), 12, true, "head-sha");
   await waitFor(() => {
-    expect(diffReviewDraft.getDraft()?.draft_id).toBe("1");
+    expect(diffReviewDraft.getComments()).toHaveLength(1);
   });
   const context = new Map([[STORES_KEY, { diffReviewDraft }]]);
   const rendered = render(DiffReviewDraftTray, {
@@ -104,13 +103,6 @@ describe("DiffReviewDraftTray", () => {
     vi.unstubAllGlobals();
     await Promise.all(Array.from(runtimes, (runtime) => Effect.runPromise(runtime.disposeEffect)));
     runtimes.clear();
-  });
-
-  it("allows an empty saved draft to be discarded", async () => {
-    const { discard } = await renderTray(true, true);
-    expect((screen.getByRole("button", { name: "Publish review" }) as HTMLButtonElement).disabled).toBe(true);
-    await fireEvent.click(screen.getByRole("button", { name: "Discard review draft" }));
-    await waitFor(() => expect(discard).toHaveBeenCalled());
   });
 
   it("keeps review summary text when publishing fails", async () => {

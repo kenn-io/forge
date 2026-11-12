@@ -463,31 +463,8 @@ kenn-forge fleet prepare-spoke
 Preparation stops new provider writes, waits for admitted writes and deferred
 merges, drains notification acknowledgements, refreshes workspace launch
 information, hands review drafts and user-authored workflows to the hub, and
-seals local provider writes. Run it again after the reported blockers clear:
-
-- **Provider writes or deferred merges:** wait for the operations to finish.
-- **Notification acknowledgements:** keep the spoke running and check its
-  provider connection and credentials. Acknowledgements retry with backoff;
-  those that exhaust their retries or refer to an inactive repository need
-  further investigation and do not clear just by waiting.
-- **Unprepared workspaces or handoff errors:** read the reported reason or
-  error. Make sure the hub tracks the workspace repository and pull request or
-  issue, and that the spoke can use the repository's Git credentials. Retry
-  after correcting the reported problem.
-- **Handoff conflicts:** copy any unsent review summary and inline comments or
-  edits open on the spoke elsewhere, including their locations. If the
-  conflict shows only a source key, restart the spoke daemon with the updated
-  binary and run preparation again to get the repository name and pull request
-  number. Open that pull request on the hub and save its review summary and
-  inline comments, including unsaved edits and locations, elsewhere. Discard
-  the hub draft, then retry preparation on the spoke. The retry imports the
-  spoke's saved draft. Reload the hub page, add the saved hub comments and any
-  unsent spoke comments or edits, and enter the combined summaries in the review summary box.
-  Previously imported drafts remain on the hub.
-
-Preparation keeps provider writes closed while blocked. To resume standalone
-operation, use `fleet abort-preparation`; this revokes the pending enrollment,
-so join again before preparing the spoke.
+seals local provider writes. If it reports concrete remaining work, resolve
+that work and run the command again.
 
 This handoff does not copy the entire provider database or move repositories,
 worktrees, or agent sessions. The hub must already track the repositories needed

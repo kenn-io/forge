@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.kenn.io/forge/internal/config"
-	"go.kenn.io/forge/internal/server/spokeapi"
 )
 
 func newFleetPrepareSpokeCommand(options fleetCLIOptions) *cobra.Command {
@@ -46,13 +45,17 @@ func newFleetPrepareSpokeCommand(options fleetCLIOptions) *cobra.Command {
 				if workspace.ItemType != "" && workspace.ItemNumber != 0 {
 					fmt.Fprintf(&output, " %s %d", workspace.ItemType, workspace.ItemNumber)
 				}
-				fmt.Fprintf(&output, ": %s\n", unprepared.Reason)
+				fmt.Fprintf(&output, ": %s\n", workspacePreparationReason(unprepared.Reason))
 			}
-			writeHandoffConflicts(&output, report.HandoffConflicts)
+			for _, conflict := range report.HandoffConflicts {
+				fmt.Fprintf(&output, "  Handoff conflict: %s (%s %q)\n", conflict.Description, conflict.Kind, conflict.SourceKey)
+			}
 			for _, handoffErr := range report.HandoffErrors {
 				fmt.Fprintf(&output, "  Handoff error: %s\n", handoffErr)
 			}
-			writePrepareSpokeGuidance(&output, report)
+			if report.InFlightProviderWrites != 0 || report.ActiveDeferredMerges != 0 || report.UndrainedAcks != 0 {
+				output.WriteString("Wait for pending work to finish.\n")
+			}
 			fmt.Fprintf(&output, "Rerun%s:\n  %s\n", commandHintShell, commandHint(cmd, []string{"kenn-forge", "fleet", "prepare-spoke"}, "config", "timeout"))
 			if _, err := fmt.Fprint(options.Stdout, output.String()); err != nil {
 				return err
@@ -65,28 +68,18 @@ func newFleetPrepareSpokeCommand(options fleetCLIOptions) *cobra.Command {
 	return cmd
 }
 
-func writeHandoffConflicts(output *strings.Builder, conflicts []spokeapi.SpokePreparationConflict) {
-	for _, conflict := range conflicts {
-		fmt.Fprintf(output, "  Handoff conflict: %s (%s %q)\n", conflict.Description, conflict.Kind, conflict.SourceKey)
-	}
-}
-
-func writePrepareSpokeGuidance(output *strings.Builder, report spokeapi.SpokePreparationReport) {
-	if report.InFlightProviderWrites != 0 || report.ActiveDeferredMerges != 0 {
-		output.WriteString("Wait for provider writes and deferred merges to finish.\n")
-	}
-	if len(report.HandoffConflicts) != 0 {
-		output.WriteString("Copy unsent spoke review summaries and inline comments elsewhere.\n")
-		for _, conflict := range report.HandoffConflicts {
-			if conflict.Description == "" {
-				output.WriteString("Restart the spoke daemon with the updated binary, then retry to identify the conflicting draft.\n")
-				break
-			}
-		}
-		output.WriteString("Save the hub draft, discard it on the hub, then retry to import the spoke draft.\n")
-	}
-	if len(report.HandoffConflicts) != 0 || len(report.Unprepared) != 0 || len(report.HandoffErrors) != 0 || report.UndrainedAcks != 0 {
-		output.WriteString("For recovery steps, see https://forge.kenn.io/docs/federated-fleet/\n")
+func workspacePreparationReason(reason string) string {
+	switch reason {
+	case "launchSpecMissing":
+		return "launch specification is missing"
+	case "sourceNotVisible":
+		return "source is not visible"
+	case "sourceVisibilityExpired":
+		return "source visibility has expired"
+	case "launchSpecMismatch":
+		return "launch specification does not match"
+	default:
+		return reason
 	}
 }
 

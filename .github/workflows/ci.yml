@@ -693,7 +693,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Run case-insensitive daemon lifecycle tests
-        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-daemon-case.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-daemon-case-reruns.txt --packages "./cmd/kenn-forge" -- -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E' -shuffle=on
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-daemon-case.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-daemon-case-reruns.txt --packages "./cmd/kenn-forge" -- -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E|TestWindowsCommandHint' -shuffle=on
 
       - name: Upload gotestsum results
         if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/pty-windows-daemon-case-reruns.txt') != ''

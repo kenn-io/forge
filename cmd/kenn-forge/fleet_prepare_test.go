@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/spokeapi"
 )
@@ -53,7 +54,7 @@ func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
 			{Workspace: db.Workspace{ID: "ws-1", RepoOwner: "team", RepoName: "project", ItemType: "issue", ItemNumber: 42}, Reason: "launchSpecMissing"},
 			{Workspace: db.Workspace{ID: "ws-2", ItemType: "issue", ItemNumber: 7}, Reason: "sourceVisibilityExpired"},
 		},
-		HandoffConflicts:       []spokeapi.SpokePreparationConflict{{Description: "review draft for team/project #42 on github.com (github)"}},
+		HandoffConflicts:       []spokeapi.SpokePreparationConflict{{Kind: "review_draft", SourceKey: "github\x00example.com\x00123\x0042", Description: "review draft for team/project #42 on github.com (github)"}},
 		HandoffErrors:          []string{"handoff review draft for team/project #42 on github.com (github): offline"},
 		InFlightProviderWrites: 4, ActiveDeferredMerges: 5, UndrainedAcks: 6,
 	}}
@@ -64,9 +65,9 @@ func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
 	for _, want := range []string{
 		"2 unprepared", "1 handoff conflict", "1 handoff error",
 		"4 provider write", "5 deferred merge", "6 notification acknowledgement",
-		"Workspace ws-1: team/project issue 42: launchSpecMissing",
-		"Workspace ws-2 issue 7: sourceVisibilityExpired",
-		"Handoff conflict: review draft for team/project #42 on github.com (github)", "Handoff error: handoff review draft for team/project #42 on github.com (github): offline",
+		"Workspace ws-1: team/project issue 42: launch specification is missing",
+		"Workspace ws-2 issue 7: source visibility has expired",
+		`Handoff conflict: review draft for team/project #42 on github.com (github) (review_draft "github\x00example.com\x00123\x0042")`, "Handoff error: handoff review draft for team/project #42 on github.com (github): offline",
 	} {
 		assert.Contains(t, stdout.String(), want)
 	}
@@ -78,6 +79,7 @@ func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
 		{"flags", []string{"prepare-spoke", "--config", "/tmp/forge.toml", "--timeout", "2m"}, "kenn-forge fleet prepare-spoke --config /tmp/forge.toml --timeout 2m0s\n"},
 		{"defaults", []string{"prepare-spoke"}, "kenn-forge fleet prepare-spoke\n"},
 		{"explicit timeout", []string{"prepare-spoke", "--timeout", "60s"}, "kenn-forge fleet prepare-spoke --timeout 1m0s\n"},
+		{"explicit config", []string{"prepare-spoke", "--config", config.DefaultConfigPath()}, "kenn-forge fleet prepare-spoke --config " + quoteCommand([]string{config.DefaultConfigPath()}) + "\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout bytes.Buffer
@@ -96,21 +98,23 @@ func TestFleetPrepareSpokeRerunWithOnlyInFlightCounts(t *testing.T) {
 	cmd.SetArgs([]string{"prepare-spoke"})
 	require.ErrorContains(t, cmd.Execute(), "not ready")
 	assert.Contains(t, stdout.String(), "1 provider write")
-	assert.Contains(t, stdout.String(), "Wait for provider writes and deferred merges to finish")
+	assert.Contains(t, stdout.String(), "Wait for pending work to finish")
 	assert.Contains(t, stdout.String(), "kenn-forge fleet prepare-spoke\n")
 }
 
-func TestFleetPrepareSpokeConflictFromOlderDaemon(t *testing.T) {
-	conflict := db.ProviderStateConflict{Kind: "review_draft", SourceKey: "github\x00example.com\x00123\x0042"}
-	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{
-		HandoffConflicts: []spokeapi.SpokePreparationConflict{{ProviderStateConflict: conflict}},
-	}}
+func TestFleetPrepareSpokeWorkspaceReasons(t *testing.T) {
+	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{Unprepared: []db.UnpreparedWorkspace{
+		{Workspace: db.Workspace{ID: "one"}, Reason: "launchSpecMissing"},
+		{Workspace: db.Workspace{ID: "two"}, Reason: "sourceNotVisible"},
+		{Workspace: db.Workspace{ID: "three"}, Reason: "sourceVisibilityExpired"},
+		{Workspace: db.Workspace{ID: "four"}, Reason: "launchSpecMismatch"},
+		{Workspace: db.Workspace{ID: "five"}, Reason: "diagnostic detail"},
+	}}}
 	var stdout bytes.Buffer
 	cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
 	cmd.SetArgs([]string{"prepare-spoke"})
 	require.ErrorContains(t, cmd.Execute(), "not ready")
-	assert.Contains(t, stdout.String(), `review_draft "github\x00example.com\x00123\x0042"`)
-	assert.Contains(t, stdout.String(), "Copy unsent spoke review summaries and inline comments elsewhere.")
-	assert.Contains(t, stdout.String(), "Restart the spoke daemon with the updated binary, then retry to identify the conflicting draft.")
-	assert.Contains(t, stdout.String(), "Save the hub draft")
+	for _, want := range []string{"one: launch specification is missing", "two: source is not visible", "three: source visibility has expired", "four: launch specification does not match", "five: diagnostic detail"} {
+		assert.Contains(t, stdout.String(), want)
+	}
 }

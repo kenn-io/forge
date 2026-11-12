@@ -58,7 +58,7 @@
   }
 </script>
 
-{#if draft?.draft_id}
+{#if comments.length > 0}
   <section class="draft-tray" aria-label="Draft review comments">
     <div class="tray-header">
       <strong>{comments.length} draft {comments.length === 1 ? "comment" : "comments"}</strong>
@@ -111,7 +111,7 @@
         size="sm"
         title={pendingCommentEdits ? "Save or cancel draft comment edits before publishing" : undefined}
         onclick={publish}
-        disabled={draftActionDisabled || supportedActions.length === 0 || comments.length === 0}
+        disabled={draftActionDisabled || supportedActions.length === 0}
       >
         <SendIcon size={14} />
         {submitting ? "Publishing..." : "Publish review"}

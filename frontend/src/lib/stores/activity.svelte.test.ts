@@ -240,109 +240,85 @@ describe("activity subject paging", () => {
     if (collapsed) await vi.waitFor(() => expect(threadReads).toBe(1));
     else expect(threadReads).toBe(0);
   });
-  it("reloads expanded discussion when loading a third subject page", async () => {
-    const events = [1, 2, 3].map((number) => ({
-      ...notificationItem(`comment:${number}`, "read"),
-      activity_type: "comment",
-      item_number: number,
-      repo,
-    })) as ActivityItem[];
-    const client = {
-      GET: vi.fn(
-        async (path: string, options?: { params?: { query?: { subject_before?: string; projection?: string } } }) => {
-          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-          const query = options?.params?.query;
-          if (query?.projection === "events") return { data: { items: events, capped: false }, error: null };
-          const number = query?.subject_before === "page-2" ? 2 : query?.subject_before === "page-3" ? 3 : 1;
-          return {
-            data: {
-              items: query?.projection === "collapsed" ? [] : events,
-              capped: false,
-              event_cursor: "snapshot",
-              item_activity: [{ ...itemActivity(number), repo }],
-              item_activity_capped: number < 3,
-              next_subject_cursor: number < 3 ? `page-${number + 1}` : "",
-            },
-            error: null,
-          };
-        },
-      ),
-    } as unknown as GeneratedClient;
-    const store = createActivityStore({ client });
-    store.hydrateDefaults(settings(false));
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
-    store.loadOlderItems();
-    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(2));
-    if (runtime === undefined) throw new Error("test runtime was not created");
-    await runtime.runCommand(store.reconcileActivityEffect(), {
-      operation: "refresh activity",
-      safeContext: {},
-      onFailure: () => {},
-    }).exit;
-    expect(store.getActivityItems().map((item) => item.id)).toEqual(["comment:1", "comment:2"]);
-    store.loadOlderItems();
-    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(3));
-    await vi.waitFor(() =>
-      expect(store.getActivityItems().map((item) => item.id)).toEqual(["comment:1", "comment:2", "comment:3"]),
-    );
-    await runtime.runCommand(store.reconcileActivityEffect(), {
-      operation: "refresh activity",
-      safeContext: {},
-      onFailure: () => {},
-    }).exit;
-    expect(store.getActivityItems().map((item) => item.id)).toEqual(["comment:1", "comment:2", "comment:3"]);
-  });
-  it("retains expanded history when the bulk read after loading older subjects fails", async () => {
-    const first = { ...notificationItem("comment:first", "read"), activity_type: "comment", repo } as ActivityItem;
-    const second = { ...notificationItem("comment:second", "read"), activity_type: "comment", repo } as ActivityItem;
-    const edited = { ...first, body_preview: "edited" };
-    let bulkRound = 0;
-    const client = {
-      GET: vi.fn(
-        async (
-          path: string,
-          options?: { params?: { query?: { projection?: string; before?: string; subject_before?: string } } },
-        ) => {
-          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-          const query = options?.params?.query;
-          if (query?.projection === "events") {
-            if (!query.before) bulkRound++;
-            if (bulkRound === 2)
-              return { error: { detail: "bulk unavailable" }, response: new Response(null, { status: 422 }) };
-            if (bulkRound === 3) return { data: { items: [edited], capped: false }, error: null };
+  it.each([
+    { pending: false, search: false },
+    { pending: true, search: false },
+    { pending: false, search: true },
+  ])(
+    "keeps expanded history through older pages and refresh (pending: $pending, search: $search)",
+    async ({ pending, search }) => {
+      const events = [1, 2, 3].map((number) => ({
+        ...notificationItem(`comment:${number}`, "read"),
+        activity_type: "comment",
+        item_number: number,
+        repo,
+      })) as ActivityItem[];
+      const firstBulk = Promise.withResolvers<unknown>();
+      let eventReads = 0;
+      const client = {
+        GET: vi.fn(
+          async (
+            path: string,
+            options?: { params?: { query?: { projection?: string; before?: string; subject_before?: string } } },
+          ) => {
+            if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+            const query = options?.params?.query;
+            if (query?.projection === "events") {
+              eventReads++;
+              if (!query.before && pending) return firstBulk.promise;
+              return {
+                data: {
+                  items: query.before ? [events[2]] : [events[0], events[1]],
+                  capped: true,
+                  next_cursor: query.before ? "" : "events-2",
+                },
+                error: null,
+              };
+            }
+            const number = query?.subject_before === "page-2" ? 2 : query?.subject_before === "page-3" ? 3 : 1;
             return {
-              data: { items: [query.before ? second : first], capped: true, next_cursor: query.before ? "" : "second" },
+              data: {
+                items: query?.projection === "collapsed" ? [] : [events[0]],
+                capped: true,
+                event_cursor: "snapshot",
+                item_activity: [{ ...itemActivity(number), repo }],
+                item_activity_capped: true,
+                next_subject_cursor: `page-${number + 1}`,
+              },
               error: null,
             };
-          }
-          const older = Boolean(query?.subject_before);
-          return {
-            data: {
-              items: [first],
-              capped: true,
-              event_cursor: "snapshot",
-              item_activity: [{ ...itemActivity(older ? 2 : 1), repo }],
-              item_activity_capped: !older,
-              next_subject_cursor: older ? "" : "older",
-            },
-            error: null,
-          };
-        },
-      ),
-    } as unknown as GeneratedClient;
-    const store = createActivityStore({ client });
-    store.hydrateDefaults(settings(false));
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([first.id, second.id]));
-    store.loadOlderItems();
-    await vi.waitFor(() => expect(store.getActivityError()).toBe("bulk unavailable"));
-    expect(store.getActivityItems().map((item) => item.id)).toEqual([first.id, second.id]);
-    store.expandAllThreads();
-    await vi.waitFor(() =>
-      expect(store.getActivityItems().map((item) => [item.id, item.body_preview])).toEqual([[first.id, "edited"]]),
-    );
-  });
+          },
+        ),
+      } as unknown as GeneratedClient;
+      const store = createActivityStore({ client });
+      store.hydrateDefaults(settings(false));
+      if (search) store.setActivitySearch("needle");
+      store.loadActivity();
+      await vi.waitFor(() => expect(eventReads).toBe(pending ? 1 : 2));
+      if (!pending) await vi.waitFor(() => expect(store.getActivityItems()).toHaveLength(3));
+      store.loadOlderItems();
+      await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(2));
+      store.loadOlderItems();
+      await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(3));
+      if (pending)
+        firstBulk.resolve({
+          data: { items: [events[0], events[1]], capped: true, next_cursor: "events-2" },
+          error: null,
+        });
+      await vi.waitFor(() =>
+        expect(store.getActivityItems().map((item) => item.id)).toEqual(events.map((item) => item.id)),
+      );
+      expect(eventReads).toBe(2);
+      if (runtime === undefined) throw new Error("test runtime was not created");
+      await runtime.runCommand(store.reconcileActivityEffect(), {
+        operation: "refresh activity",
+        safeContext: {},
+        onFailure: () => {},
+      }).exit;
+      expect(store.getActivityItems().map((item) => item.id)).toEqual(events.map((item) => item.id));
+      expect(eventReads).toBe(2);
+    },
+  );
   it("keeps the current page and permits retry when the next page fails", async () => {
     let fail = true;
     const pendingFailure = Promise.withResolvers<{ error: { detail: string }; response: Response }>();
@@ -715,10 +691,18 @@ describe("activity subject paging", () => {
     { name: "deleted", workspace: false, deleted: true },
   ])("refreshes $name subjects after a page boundary shifts", async ({ workspace, deleted }) => {
     let refreshed = false;
+    let failRequested = false;
+    let allowOlder = false;
+    const cursors: string[] = [];
     const client = {
       GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
         if (path === "/activity/authors") return { data: { authors: [] }, error: null };
         const cursor = options?.params?.query?.subject_before;
+        if (refreshed) cursors.push(cursor ?? "");
+        if (failRequested && cursor === "page-2")
+          return { error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) };
+        if (refreshed && cursor === "page-3" && !allowOlder)
+          return { error: { detail: "unexpected third page" }, response: new Response(null, { status: 422 }) };
         const numbers = refreshed
           ? cursor === "page-3"
             ? [deleted ? 6 : 4]
@@ -734,7 +718,10 @@ describe("activity subject paging", () => {
             items: [],
             capped: false,
             item_activity: numbers.map((number) => ({ ...itemActivity(number), repo })),
-            workspace_activity: workspace ? [{ ...workspaceActivity(4), repo }] : [],
+            workspace_activity:
+              workspace && ((!refreshed && cursor === "page-2") || (refreshed && cursor === "page-3"))
+                ? [{ ...workspaceActivity(4), repo }]
+                : [],
             item_activity_capped: Boolean(next),
             next_subject_cursor: next,
           },
@@ -755,58 +742,23 @@ describe("activity subject paging", () => {
       safeContext: {},
       onFailure: () => {},
     }).exit;
-    expect(store.getItemActivity().map((item) => item.item_number)).toEqual(deleted ? [5, 1, 2, 3] : [5, 1, 2, 3, 4]);
-  });
-
-  it.each([true, false])("publishes loaded pages when a deeper search fails (deleted: %s)", async (deleted) => {
-    let refreshed = false;
-    let failDeep = true;
-    const client = {
-      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
-        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-        const cursor = options?.params?.query?.subject_before;
-        if (refreshed && cursor === "page-3") {
-          if (failDeep) return { error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) };
-          return {
-            data: { items: [], capped: false, item_activity: deleted ? [] : [{ ...itemActivity(2), repo }] },
-            error: null,
-          };
-        }
-        const number = cursor ? (refreshed ? 3 : 2) : 1;
-        const next = !cursor ? "page-2" : refreshed ? "page-3" : "";
-        return {
-          data: {
-            items: [],
-            capped: false,
-            item_activity: [{ ...itemActivity(number), repo }],
-            item_activity_capped: Boolean(next),
-            next_subject_cursor: next,
-          },
-          error: null,
-        };
-      }),
-    } as unknown as GeneratedClient;
-    const store = createActivityStore({ client });
-    store.hydrateDefaults(settings(true));
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([5, 1, 2, 3]);
+    expect(store.getWorkspaceActivity()).toEqual([]);
+    expect(cursors).toEqual(["", "page-2"]);
+    failRequested = true;
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "refresh activity",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([5, 1, 2, 3]);
+    failRequested = false;
+    allowOlder = true;
     store.loadOlderItems();
-    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
-    refreshed = true;
-    if (runtime === undefined) throw new Error("test runtime was not created");
-    await runtime.runCommand(store.reconcileActivityEffect(), {
-      operation: "refresh activity",
-      safeContext: {},
-      onFailure: () => {},
-    }).exit;
-    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 3, 2]);
-    failDeep = false;
-    await runtime.runCommand(store.reconcileActivityEffect(), {
-      operation: "refresh activity",
-      safeContext: {},
-      onFailure: () => {},
-    }).exit;
-    expect(store.getItemActivity().map((item) => item.item_number)).toEqual(deleted ? [1, 3] : [1, 3, 2]);
+    await vi.waitFor(() =>
+      expect(store.getItemActivity().map((item) => item.item_number)).toEqual([5, 1, 2, 3, deleted ? 6 : 4]),
+    );
+    expect(store.getWorkspaceActivity().map((item) => item.item_number)).toEqual(workspace ? [4] : []);
   });
 
   it("stops refreshing at the loaded depth when a workspace is present", async () => {

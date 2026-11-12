@@ -847,53 +847,29 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     into: T[],
     seen: Set<string | undefined>,
     incoming: readonly T[] | undefined,
-    inWindow: boolean,
-    loaded: ReadonlySet<string | undefined>,
   ): void {
     for (const subject of incoming ?? []) {
       const key = stableParentKey(subject);
-      if (seen.has(key) || !(inWindow || loaded.has(key))) continue;
+      if (seen.has(key)) continue;
       seen.add(key);
       into.push(subject);
     }
   }
 
-  function hasUnseen(loaded: ReadonlySet<string | undefined>, seen: ReadonlySet<string | undefined>): boolean {
-    return [...loaded].some((key) => !seen.has(key));
-  }
-
-  // Pages past `depth` are read only to find loaded subjects a newer item pushed
-  // out of the window; a loaded subject missing from every page is gone.
   function activityReadPages(params: ActivityParams, depth: number) {
     return Effect.gen(function* () {
       const first = yield* activityRead(params);
-      const previousItems = depth > 1 ? itemActivity : [];
-      const previousWorkspaces = depth > 1 ? workspaceActivity : [];
-      const loadedItems = new Set(previousItems.map(stableParentKey));
-      const loadedWorkspaces = new Set(previousWorkspaces.map(stableParentKey));
       const subjects = [...(first.response.item_activity ?? [])];
       const seen = new Set(subjects.map(stableParentKey));
       const workspaces = [...(first.response.workspace_activity ?? [])];
       const seenWorkspaces = new Set(workspaces.map(stableParentKey));
       let cursor = first.response.next_subject_cursor ?? "";
-      let windowCursor = cursor;
       let subjectsCapped = first.response.item_activity_capped ?? false;
-      const missing = () => hasUnseen(loadedItems, seen) || hasUnseen(loadedWorkspaces, seenWorkspaces);
-      for (let page = 1; cursor && (page < depth || missing()); page++) {
-        const inWindow = page < depth;
-        const read = activityRead({ ...params, subject_before: cursor });
-        const next = yield* inWindow ? read : read.pipe(Effect.catch(() => Effect.succeed(undefined)));
-        if (next === undefined) {
-          // An unread page may still contain a loaded subject; retain it until a later scan can confirm deletion.
-          appendUnseen(subjects, seen, previousItems, true, loadedItems);
-          appendUnseen(workspaces, seenWorkspaces, previousWorkspaces, true, loadedWorkspaces);
-          break;
-        }
-        appendUnseen(subjects, seen, next.response.item_activity, inWindow, loadedItems);
-        appendUnseen(workspaces, seenWorkspaces, next.response.workspace_activity, inWindow, loadedWorkspaces);
+      for (let page = 1; cursor && page < depth; page++) {
+        const next = yield* activityRead({ ...params, subject_before: cursor });
+        appendUnseen(subjects, seen, next.response.item_activity);
+        appendUnseen(workspaces, seenWorkspaces, next.response.workspace_activity);
         cursor = next.response.next_subject_cursor ?? "";
-        if (!inWindow) continue;
-        windowCursor = cursor;
         subjectsCapped = next.response.item_activity_capped ?? false;
       }
       return {
@@ -903,7 +879,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           ...first.response,
           item_activity: subjects,
           workspace_activity: workspaces,
-          next_subject_cursor: windowCursor,
+          next_subject_cursor: cursor,
           item_activity_capped: subjectsCapped,
         },
       };
@@ -1092,7 +1068,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       ) {
         changedThreadKeys.add(key);
       }
-      if (reconcileCollapsedThreads && autoLoadExpandedThreadEvents && key && !previous && isThreadItemExpanded(key)) {
+      if (
+        reconcileCollapsedThreads &&
+        autoLoadExpandedThreadEvents &&
+        (collapseThreads || !result.response.item_activity_capped) &&
+        key &&
+        !previous &&
+        isThreadItemExpanded(key)
+      ) {
         newExpandedThreadKeys.add(key);
       }
     }
@@ -1100,7 +1083,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       ? []
       : items.filter((item) => {
           const key = stableParentKey(item);
-          if (result.response.item_activity_capped && !parentFilterActive && (result.subjectDepth ?? 1) === 1) {
+          if (
+            result.response.item_activity_capped &&
+            (!collapseThreads || (!parentFilterActive && (result.subjectDepth ?? 1) === 1))
+          ) {
             return (
               (item.item_type === "pr" || item.item_type === "issue") &&
               !receivedIDs.has(item.id) &&
@@ -1187,13 +1173,6 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         const key = stableParentKey(subject);
         if (key && isThreadItemExpanded(key)) loadThreadEvents(key);
       }
-    } else if (
-      params.projection === "full" &&
-      viewMode === "threaded" &&
-      !collapseThreads &&
-      activityEventCursor !== ""
-    ) {
-      loadBulkActivity();
     }
   }
 

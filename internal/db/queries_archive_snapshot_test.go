@@ -84,8 +84,8 @@ func TestSnapshotMeasurementCountsAuthorTypeOnlyForExpandedScope(t *testing.T) {
 		return value
 	}
 	beforeDefault, beforeExpanded := measure(false), measure(true)
-	_, err := database.WriteDB().ExecContext(t.Context(), `UPDATE forge_merge_requests SET author_account_type=? WHERE id=?`, strings.Repeat("a", 100), mrID)
+	_, err := database.WriteDB().ExecContext(t.Context(), `UPDATE forge_merge_requests SET author_account_type=? WHERE id=?`, "organization", mrID)
 	require.NoError(t, err)
-	assert.Equal(t, beforeDefault, measure(false))
-	assert.Equal(t, int64(98), measure(true).TextBytes-beforeExpanded.TextBytes)
+	assert.Equal(t, beforeDefault, measure(false), "default measurement ignores author account type")
+	assert.Equal(t, int64(10), measure(true).TextBytes-beforeExpanded.TextBytes)
 }

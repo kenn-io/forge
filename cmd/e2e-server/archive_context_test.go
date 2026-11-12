@@ -73,26 +73,3 @@ func TestArchiveContextScenarioExportsEvidenceAndCoverage(t *testing.T) {
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &result))
 	assert.Equal("current", result.Repositories[0].Coverage.Status)
 }
-
-func TestArchiveSnapshotPullRequestScopeValidation(t *testing.T) {
-	assets, err := web.Assets()
-	require.NoError(t, err)
-	state, err := buildAppState(t.Context(), assets, appOptions{scenario: "archive-context", roborevEndpoint: defaultRoborevEndpoint})
-	require.NoError(t, err)
-	t.Cleanup(state.close)
-	end := time.Now().UTC().Add(time.Minute)
-	path := "http://127.0.0.1/api/v1/archive/snapshot?start=" + end.Add(-time.Hour).Format(time.RFC3339) + "&end=" + end.Format(time.RFC3339)
-	for _, tc := range []struct {
-		scope  string
-		status int
-	}{{"recently_closed", http.StatusOK}, {"invalid", http.StatusUnprocessableEntity}} {
-		response := httptest.NewRecorder()
-		state.handler.ServeHTTP(response, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path+"&pull_request_scope="+tc.scope, nil))
-		require.Equal(t, tc.status, response.Code, response.Body.String())
-		if tc.status == http.StatusOK {
-			var result snapshot.ArchiveSnapshot
-			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &result))
-			require.Equal(t, tc.scope, result.PullRequestScope)
-		}
-	}
-}

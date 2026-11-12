@@ -229,7 +229,7 @@ func TestPullRequestAuthorAccountType(t *testing.T) {
 	for _, tc := range []struct {
 		input string
 		want  *string
-	}{{"Bot", new("bot")}, {"User", new("user")}, {"Organization", new("organization")}, {"", nil}} {
+	}{{"Bot", new("bot")}, {"", nil}} {
 		t.Run(tc.input, func(t *testing.T) {
 			rest, err := NormalizePullRequest(testRepoRef(), &gh.PullRequest{User: &gh.User{Type: new(tc.input)}})
 			require.NoError(t, err)

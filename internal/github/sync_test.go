@@ -23205,8 +23205,7 @@ func TestArchiveHydratesCachedBotAuthor(t *testing.T) {
 	progress, err := database.GetDatasetProgress(ctx, repoID, db.ArchiveItemTypeMergeRequest, 1, db.ArchiveDatasetLookup)
 	require.NoError(t, err)
 	require.Equal(t, db.ArchiveDatasetProgressComplete, progress.Status)
-	result, err := service.Snapshot(ctx, archive.SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
-	require.NoError(t, err)
-	require.Len(t, result.PullRequests, 1)
-	require.Equal(t, new("bot"), result.PullRequests[0].AuthorAccountType)
+	var accountType *string
+	require.NoError(t, database.ReadDB().QueryRowContext(ctx, `SELECT author_account_type FROM forge_merge_requests WHERE repo_id=? AND number=1`, repoID).Scan(&accountType))
+	require.Equal(t, new("bot"), accountType)
 }

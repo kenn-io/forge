@@ -8,6 +8,7 @@ import PRReviewTimelineTestHarness from "./PRReviewTimelineTestHarness.svelte";
 const HEAD = "96027d7aa1b2c3d4e5f60718293a4b5c6d7e8f90";
 let runtime: OwnedAppRuntime;
 let reviewOutput: string;
+let jobStatus: string;
 
 const providerComment: PREvent = {
   Author: "roborev-ci[bot]",
@@ -27,7 +28,7 @@ const providerComment: PREvent = {
   ThreadID: null,
 };
 
-const localJob = {
+const localJob = () => ({
   id: 8,
   agent: "codex",
   agentic: false,
@@ -38,10 +39,10 @@ const localJob = {
   prompt_prebuilt: false,
   repo_id: 1,
   retry_count: 0,
-  status: "done",
+  status: jobStatus,
   verdict: "P",
   finding_counts: { critical: 0, high: 0, medium: 0, low: 0 },
-};
+});
 
 function urlOf(input: RequestInfo | URL): URL {
   return new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost");
@@ -84,7 +85,10 @@ function stubServer(options: { daemonAvailable: boolean }): URL[] {
       case "/api/roborev/api/repos/resolve":
         return Response.json({ tracked: true, repo: { root_path: "/repos/widgets", identity: "", name: "widgets" } });
       case "/api/roborev/api/jobs":
-        return Response.json({ jobs: [localJob], has_more: false });
+        return Response.json({ jobs: [localJob()], has_more: false });
+      case "/api/roborev/api/job/cancel":
+        jobStatus = "canceled";
+        return Response.json({ success: true });
       case "/api/roborev/api/review":
         return Response.json({
           id: 80,
@@ -104,9 +108,9 @@ function stubServer(options: { daemonAvailable: boolean }): URL[] {
   return calls;
 }
 
-function renderTimeline(workspaceId: string | null) {
+function renderTimeline(workspaceId: string | null, workspacePending = false) {
   return render(PRReviewTimelineTestHarness, {
-    props: { runtime, timelineProps: { events: [providerComment], headSha: HEAD, workspaceId } },
+    props: { runtime, timelineProps: { events: [providerComment], headSha: HEAD, workspaceId, workspacePending } },
   });
 }
 
@@ -114,15 +118,19 @@ describe("PRReviewTimeline", () => {
   beforeEach(() => {
     runtime = makeAppRuntime();
     reviewOutput = "Local review found nothing";
+    jobStatus = "done";
   });
 
   afterEach(async () => {
     cleanup();
     vi.restoreAllMocks();
+    localStorage.clear();
     await Effect.runPromise(runtime.disposeEffect);
   });
 
   it("lists provider and workspace reviews in order and opens each in a drawer", async () => {
+    // The shared "hide closed" preference must not drop addressed reviews from the history.
+    localStorage.setItem("kenn-forge:roborev:hideClosed", "1");
     const calls = stubServer({ daemonAvailable: true });
     renderTimeline("ws-1");
 
@@ -139,6 +147,8 @@ describe("PRReviewTimeline", () => {
     expect(jobsQuery?.get("repo")).toBe("/repos/widgets");
     expect(jobsQuery?.get("branch")).toBe("feature/widgets");
     expect(jobsQuery?.get("include_findings")).toBe("true");
+    expect(jobsQuery?.get("limit")).toBe("0");
+    expect(jobsQuery?.has("closed")).toBe(false);
     expect(calls.find((url) => url.pathname === "/api/roborev/api/repos/resolve")?.searchParams.get("path")).toBe(
       "/work/widgets",
     );
@@ -163,6 +173,28 @@ describe("PRReviewTimeline", () => {
     reviewOutput = "Local review finished later";
     await fireEvent.click(screen.getByRole("button", { name: "Refresh Roborev reviews" }));
     await waitFor(() => expect(screen.getByText("Local review finished later")).toBeTruthy());
+  });
+
+  it("updates a row when its review is canceled from the drawer", async () => {
+    jobStatus = "running";
+    stubServer({ daemonAvailable: true });
+    renderTimeline("ws-1");
+
+    await waitFor(() => expect(screen.getAllByRole("listitem")[1]?.textContent).toContain("Running"));
+    await fireEvent.click(within(screen.getAllByRole("listitem")[1] as HTMLElement).getByRole("button"));
+    await fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => expect(screen.getAllByRole("listitem")[1]?.textContent).toContain("Failed"));
+  });
+
+  it("says the workspace is not ready instead of reading local reviews", async () => {
+    const calls = stubServer({ daemonAvailable: true });
+    renderTimeline(null, true);
+
+    expect(screen.getByText("Workspace is not ready")).toBeTruthy();
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(calls.filter((url) => url.pathname.includes("roborev"))).toEqual([]);
   });
 
   it("keeps provider reviews when the local daemon is unreachable", async () => {

@@ -2895,6 +2895,7 @@
             events={detail.events}
             headSha={detail.platform_head_sha}
             workspaceId={detail.workspace?.status === "ready" ? detail.workspace.id : null}
+            workspacePending={detail.workspace != null && detail.workspace.status !== "ready"}
           />
         {/if}
       </div>

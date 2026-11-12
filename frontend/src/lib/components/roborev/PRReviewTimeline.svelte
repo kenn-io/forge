@@ -19,9 +19,11 @@
     headSha: string;
     /** This node's workspace for the pull request; local reviews come from it. */
     workspaceId: string | null;
+    /** The pull request has a workspace on this node that is not ready yet. */
+    workspacePending: boolean;
   }
 
-  let { timeline, events, headSha, workspaceId }: Props = $props();
+  let { timeline, events, headSha, workspaceId, workspacePending }: Props = $props();
 
   // Showing the panel is the read: there is no polling while it stays open.
   $effect(() => {
@@ -60,7 +62,7 @@
 <div class="roborev-timeline" data-testid="roborev-timeline">
   <div class="roborev-timeline__header">
     <span class="roborev-timeline__count">
-      {entries.length} {entries.length === 1 ? "review" : "reviews"}
+      {#if entries.length > 0}{entries.length} {entries.length === 1 ? "review" : "reviews"}{/if}
     </span>
     <IconButton
       size="sm"
@@ -84,6 +86,8 @@
       <EmptyState title={loadError} role="status">
         <Button size="sm" onclick={() => timeline.reload()}>Retry</Button>
       </EmptyState>
+    {:else if workspacePending}
+      <EmptyState title="Workspace is not ready" role="status" />
     {:else if unavailable === "daemon-unreachable"}
       <EmptyState title="Roborev daemon not reachable" description={timeline.getDaemonEndpoint()} role="status" />
     {:else if unavailable === "untracked"}
@@ -110,7 +114,7 @@
             {#if entry.state}
               <Chip size="sm" tone={STATE_TONES[entry.state]}>{STATE_LABELS[entry.state]}</Chip>
             {/if}
-            <span class="roborev-timeline__source">{entry.source === "local" ? "Local" : "CI"}</span>
+            <span class="roborev-timeline__source">{entry.source === "local" ? "Local" : "roborev-ci"}</span>
           </button>
         </li>
       {/each}
@@ -120,10 +124,10 @@
         {loadError}
         <Button size="sm" onclick={() => timeline.reload()}>Retry</Button>
       </div>
+    {:else if workspacePending}
+      <div class="roborev-timeline__note" role="status">Workspace is not ready</div>
     {:else if unavailable === "daemon-unreachable"}
       <div class="roborev-timeline__note" role="status">Roborev daemon not reachable</div>
-    {:else if timeline.isTruncated()}
-      <div class="roborev-timeline__note">Older local reviews are not shown.</div>
     {/if}
   {/if}
 </div>
@@ -181,6 +185,7 @@
 
   .roborev-timeline__row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3);
     width: 100%;

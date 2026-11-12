@@ -23,6 +23,12 @@ export interface JobsStoreOptions {
   runtime: AppRuntime;
   owner: string;
   onError?: (msg: string) => void;
+  /**
+   * Fixed list query fields. A store with them lists exactly what its owner
+   * asks for and ignores the shared list preferences (hide closed, show
+   * auto-design), which would otherwise drop closed reviews from a history.
+   */
+  listQuery?: Pick<ListJobsQuery, "limit" | "include_findings" | "omit_prompt" | "hide_classify_jobs">;
 }
 
 export interface JobStatusCounts {
@@ -140,14 +146,15 @@ export function createJobsStore(opts: JobsStoreOptions) {
   let activeEventOwner: string | undefined;
 
   function buildQuery(): ListJobsQuery {
-    const q: ListJobsQuery = { limit: 50 };
+    const fixed = opts.listQuery;
+    const q: ListJobsQuery = fixed ? { ...fixed } : { limit: 50 };
     if (filterRepo) q.repo = [filterRepo];
     if (filterBranch) q.branch = filterBranch;
     if (filterStatus) q.status = filterStatus;
     if (filterSearch) q.git_ref = filterSearch;
-    if (booleanFilterPreferences.hideClosed) q.closed = "false";
+    if (!fixed && booleanFilterPreferences.hideClosed) q.closed = "false";
     if (filterJobType) q.job_type = filterJobType;
-    if (!booleanFilterPreferences.showAutoDesign) q.hide_classify_jobs = "true";
+    if (!fixed && !booleanFilterPreferences.showAutoDesign) q.hide_classify_jobs = "true";
     return q;
   }
 
@@ -248,7 +255,8 @@ export function createJobsStore(opts: JobsStoreOptions) {
     query: ListJobsQuery,
     strictCount: boolean,
   ) {
-    const filtered = queryHasActiveFilters(query);
+    // An unlimited listing already holds every matching job; counting would fetch them all again.
+    const filtered = queryHasActiveFilters(query) && query.limit !== 0;
     const countQuery: ListJobsQuery = { ...query, limit: 0, omit_prompt: "true" };
     const countScope = JSON.stringify(countQuery);
     const countRequest = executeRoborevRequest("count filtered Roborev jobs", (signal) =>
@@ -947,9 +955,11 @@ export function createJobsStore(opts: JobsStoreOptions) {
     booleanFilterSubscribers.delete(filterOwner);
   }
 
-  booleanFilterSubscribers.set(filterOwner, () => {
-    if (!disposed) loadJobs();
-  });
+  if (!opts.listQuery) {
+    booleanFilterSubscribers.set(filterOwner, () => {
+      if (!disposed) loadJobs();
+    });
+  }
 
   return {
     getJobs,

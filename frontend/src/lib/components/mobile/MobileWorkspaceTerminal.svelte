@@ -1021,7 +1021,7 @@
     <ErrorShown kind="workspace_opened" scope={quickActionWorkspaceKey(workspaceId, hostKey)} shown={visible} />
     <div class="mobile-workspace-terminal__state error">
       <strong>{hostKey ? `Fleet · ${hostKey}` : "Workspace unavailable"}</strong>
-      <span>{loadError}</span>
+      <span class="mobile-workspace-terminal__detail">{loadError}</span>
       <button type="button" onclick={() => {
         loadError = null;
         appRuntime.runCommand(loadWorkspaceAndRuntime(), {
@@ -1045,8 +1045,8 @@
       {#if workspace.status === "creating" && startingTargetKey}
         <Spinner size={18} /><span role="status">Preparing worktree…</span>
       {/if}
-      {#if workspace.error_message}<span>{workspace.error_message}</span>{/if}
-      {#if runtimeError}<span>{runtimeError}</span>{/if}
+      {#if workspace.error_message}<span class="mobile-workspace-terminal__detail">{workspace.error_message}</span>{/if}
+      {#if runtimeError}<span class="mobile-workspace-terminal__detail">{runtimeError}</span>{/if}
       {#if workspace.status === "error"}
         {#if !retryingSetup}<ErrorShown kind="workspace_opened" scope={quickActionWorkspaceKey(workspaceId, hostKey)} shown={visible} />{/if}
         <button type="button" disabled={retryingSetup} onclick={retryWorkspaceSetup}>
@@ -1345,6 +1345,8 @@
   .mobile-workspace-terminal__state strong, .mobile-workspace-terminal__empty strong { color: var(--text-primary); font-size: var(--font-size-xl); }
   .mobile-workspace-terminal__state button { min-height: 2.75rem; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0 1rem; border: thin solid var(--border-default); border-radius: var(--radius-md); color: var(--text-primary); background: var(--bg-surface); font: inherit; font-weight: 650; }
   .mobile-workspace-terminal__state.error span { max-width: 32rem; color: var(--accent-red); }
+  /* Server errors can be any length; scroll them so the actions stay on screen. */
+  .mobile-workspace-terminal__detail { max-width: 32rem; max-height: min(40vh, 16rem); overflow-y: auto; overscroll-behavior: contain; overflow-wrap: anywhere; white-space: pre-line; }
   .mobile-workspace-terminal__empty > div:first-child { display: flex; flex-direction: column; gap: 0.375rem; }
   .mobile-workspace-terminal__launch-grid { width: min(100%, 28rem); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.625rem; }
   .mobile-workspace-terminal__launch-grid button { min-height: 3rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0 0.75rem; border: thin solid var(--border-default); border-radius: var(--radius-md); color: var(--text-primary); background: var(--bg-surface); font: inherit; font-weight: 650; }

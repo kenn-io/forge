@@ -867,8 +867,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function activityReadPages(params: ActivityParams, depth: number) {
     return Effect.gen(function* () {
       const first = yield* activityRead(params);
-      const loadedItems = new Set(depth > 1 ? itemActivity.map(stableParentKey) : []);
-      const loadedWorkspaces = new Set(depth > 1 ? workspaceActivity.map(stableParentKey) : []);
+      const previousItems = depth > 1 ? itemActivity : [];
+      const previousWorkspaces = depth > 1 ? workspaceActivity : [];
+      const loadedItems = new Set(previousItems.map(stableParentKey));
+      const loadedWorkspaces = new Set(previousWorkspaces.map(stableParentKey));
       const subjects = [...(first.response.item_activity ?? [])];
       const seen = new Set(subjects.map(stableParentKey));
       const workspaces = [...(first.response.workspace_activity ?? [])];
@@ -878,8 +880,15 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       let subjectsCapped = first.response.item_activity_capped ?? false;
       const missing = () => hasUnseen(loadedItems, seen) || hasUnseen(loadedWorkspaces, seenWorkspaces);
       for (let page = 1; cursor && (page < depth || missing()); page++) {
-        const next = yield* activityRead({ ...params, subject_before: cursor });
         const inWindow = page < depth;
+        const read = activityRead({ ...params, subject_before: cursor });
+        const next = yield* inWindow ? read : read.pipe(Effect.catch(() => Effect.succeed(undefined)));
+        if (next === undefined) {
+          // An unread page may still contain a loaded subject; retain it until a later scan can confirm deletion.
+          appendUnseen(subjects, seen, previousItems, true, loadedItems);
+          appendUnseen(workspaces, seenWorkspaces, previousWorkspaces, true, loadedWorkspaces);
+          break;
+        }
         appendUnseen(subjects, seen, next.response.item_activity, inWindow, loadedItems);
         appendUnseen(workspaces, seenWorkspaces, next.response.workspace_activity, inWindow, loadedWorkspaces);
         cursor = next.response.next_subject_cursor ?? "";

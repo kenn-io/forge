@@ -758,6 +758,57 @@ describe("activity subject paging", () => {
     expect(store.getItemActivity().map((item) => item.item_number)).toEqual(deleted ? [5, 1, 2, 3] : [5, 1, 2, 3, 4]);
   });
 
+  it.each([true, false])("publishes loaded pages when a deeper search fails (deleted: %s)", async (deleted) => {
+    let refreshed = false;
+    let failDeep = true;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        const cursor = options?.params?.query?.subject_before;
+        if (refreshed && cursor === "page-3") {
+          if (failDeep) return { error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) };
+          return {
+            data: { items: [], capped: false, item_activity: deleted ? [] : [{ ...itemActivity(2), repo }] },
+            error: null,
+          };
+        }
+        const number = cursor ? (refreshed ? 3 : 2) : 1;
+        const next = !cursor ? "page-2" : refreshed ? "page-3" : "";
+        return {
+          data: {
+            items: [],
+            capped: false,
+            item_activity: [{ ...itemActivity(number), repo }],
+            item_activity_capped: Boolean(next),
+            next_subject_cursor: next,
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
+    refreshed = true;
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "refresh activity",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 3, 2]);
+    failDeep = false;
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "refresh activity",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual(deleted ? [1, 3] : [1, 3, 2]);
+  });
+
   it("stops refreshing at the loaded depth when a workspace is present", async () => {
     const cursors: string[] = [];
     const client = {

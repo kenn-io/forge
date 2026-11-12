@@ -1,7 +1,10 @@
-// The one definition of the PR and issue list filter menus. The desktop
-// sidebars and every focus and phone list render these menus; a surface must
-// not add, drop, or rename a filter on its own. App.list-filter-parity checks
-// that every surface shows the same items and narrows the list the same way.
+// The one definition of the PR, issue, and Activity filter menus. Each filter
+// is an element built once here and bound to whichever list shows it, so the
+// PR list, the issue list, and Activity offer the same filters on desktop and
+// phone. Activity is built from the PR and issue elements plus its own extras:
+// a filter added to `pullFilterSections` or `issueFilterSections` reaches
+// Activity without further work, and its target type fails to compile until
+// Activity can apply it. App.list-filter-parity checks every surface in the browser.
 import type { FilterDropdownItem, FilterDropdownSection } from "@kenn-io/kit-ui";
 import type { Snippet } from "svelte";
 
@@ -12,22 +15,42 @@ import { labelFilterSummary, type LabelFilters } from "../../utils/label-filter.
 import { triFilterInSelection, type PullAttributeFilter } from "../../utils/pull-attributes.js";
 import { cycleTriFilter, triFilterRow, type TriFilter } from "../../utils/tri-filter.js";
 
+/** A filter row. The fields beyond kit's tell the phone renderer which control to use. */
+export interface FilterChoice extends FilterDropdownItem {
+  /** A three-way filter; the phone renders it as Any, Yes, and No. */
+  tri?: { value: TriFilter; set: (value: TriFilter) => void };
+  /** Turns the row off. Rows without it, such as pick-one options, reset with their section. */
+  reset?: () => void;
+  /** The row is on by default, like Activity's event types; turning it off is the filter. */
+  defaultOn?: boolean;
+}
+
+export interface FilterSection extends FilterDropdownSection {
+  items: FilterChoice[];
+  /**
+   * The items are mutually exclusive, so the phone renders one select. A
+   * required section always has one choice on and resets to `defaultId`; an
+   * optional one offers Any, which runs `clear`.
+   */
+  pick?: { defaultId?: string; clear?: () => void };
+}
+
 /** A pick-one section the desktop sidebar also shows as toolbar toggles. */
-export interface ToolbarSection extends FilterDropdownSection {
-  items: (FilterDropdownItem & { shortLabel: string })[];
+export interface ToolbarSection extends FilterSection {
+  items: (FilterChoice & { shortLabel: string })[];
 }
 
 export interface ListFilterMenu {
   state: ToolbarSection;
   group: ToolbarSection;
   /** The Starred row, which the desktop search bar also shows as a star button. */
-  starred: FilterDropdownItem;
+  starred: FilterChoice;
   /** State and group. */
   listSections: ToolbarSection[];
   /** Every other filter and view option. */
-  filterSections: FilterDropdownSection[];
+  filterSections: FilterSection[];
   /** Every section, for a surface with a single filter menu. */
-  sections: FilterDropdownSection[];
+  sections: FilterSection[];
   /** Whether any choice differs from the default view. */
   changed: boolean;
   /** How many filterSections choices are on, for a badge. */
@@ -38,12 +61,41 @@ export interface ListFilterMenu {
   clearFilters: () => void;
 }
 
-interface MenuDeps {
-  grouping: GroupingStore;
-  /** Content of the Labels row's flyout. */
-  labelMenu: Snippet;
-  /** Reloads the list with the surface's own query parameters. */
+interface Value<T> {
+  get: () => T;
+  set: (value: T) => void;
+}
+
+export type ListState = "open" | "closed" | "all";
+
+/** What every list must expose for the filters the PR list, issue list, and Activity share. */
+export interface ListFilterTarget {
+  state: Value<string>;
+  starred: Value<boolean>;
+  involvesMe: Value<TriFilter>;
+  unassigned: Value<TriFilter>;
+  labels: { filters: LabelFilters; clear: () => void; menu: Snippet };
+  /** Reloads the list after a filter the server applies changes. */
   reload: () => void;
+}
+
+/** What a list must expose to offer the PR filters. Activity implements it too. */
+export interface PullFilterTarget extends ListFilterTarget {
+  attributes: {
+    get: () => readonly PullAttributeFilter[];
+    toggle: (filter: PullAttributeFilter) => void;
+    cycle: (filter: PullAttributeFilter, opposite: PullAttributeFilter) => void;
+    /** Replaces the selection in one step; `changed` names the filter that moved. */
+    set: (next: PullAttributeFilter[], changed: PullAttributeFilter) => void;
+    clear: () => void;
+  };
+}
+
+/** What a list must expose to offer the issue filters. Activity implements it too. */
+export interface IssueFilterTarget extends ListFilterTarget {
+  /** Null when the synced providers cannot say which issues a PR references. */
+  referencedByPR: Value<TriFilter> | null;
+  hideBotAuthors: Value<boolean>;
 }
 
 const LIST_STATES = [
@@ -52,80 +104,119 @@ const LIST_STATES = [
   { value: "all", label: "All states", shortLabel: "All" },
 ] as const;
 
-function stateSection(current: string, select: (state: string) => void): ToolbarSection {
+export function toggleChoice(id: string, label: string, value: Value<boolean>, after?: () => void): FilterChoice {
+  const active = value.get();
+  return {
+    id,
+    label,
+    active,
+    reset: () => {
+      if (value.get()) value.set(false);
+    },
+    onSelect: () => {
+      // Read the store, not the value this row was built with, so quick repeated clicks step correctly.
+      value.set(!value.get());
+      after?.();
+    },
+  };
+}
+
+export function triChoice(id: string, label: string, value: Value<TriFilter>, after?: () => void): FilterChoice {
+  const current = value.get();
+  const choose = (next: TriFilter) => {
+    value.set(next);
+    after?.();
+  };
+  return {
+    id,
+    label,
+    ...triFilterRow(current),
+    tri: { value: current, set: choose },
+    reset: () => value.set(undefined),
+    onSelect: () => choose(cycleTriFilter(value.get())),
+  };
+}
+
+function stateSection(target: ListFilterTarget, defaultState: ListState = "open"): ToolbarSection {
+  const current = target.state.get();
   return {
     title: "State",
+    pick: { defaultId: `state-${defaultState}` },
     items: LIST_STATES.map((state) => ({
       id: `state-${state.value}`,
       label: state.label,
       shortLabel: state.shortLabel,
       active: current === state.value,
-      onSelect: () => select(state.value),
+      onSelect: () => {
+        target.state.set(state.value);
+        target.reload();
+      },
     })),
   };
 }
 
-function labelsItem(filters: LabelFilters, labelMenu: Snippet) {
+/** Repository grouping. Short labels name the desktop toolbar toggles. */
+export function groupSection(
+  grouping: GroupingStore,
+  shortLabels: { byRepo: string; flat: string } = { byRepo: "Repo", flat: "All" },
+): ToolbarSection {
   return {
-    id: "labels",
-    label: "Labels",
-    detail: labelFilterSummary(filters),
-    active: filters.size > 0,
-    submenu: labelMenu,
-    onSelect: () => {},
+    title: "Group",
+    pick: { defaultId: "group-byRepo" },
+    items: [
+      { id: "group-byRepo", label: "By repo", shortLabel: shortLabels.byRepo, byRepo: true },
+      { id: "group-flat", label: "Flat list", shortLabel: shortLabels.flat, byRepo: false },
+    ].map(({ id, label, shortLabel, byRepo }) => ({
+      id,
+      label,
+      shortLabel,
+      active: grouping.getGroupByRepo() === byRepo,
+      onSelect: () => grouping.setGroupByRepo(byRepo),
+    })),
   };
 }
 
-function starredItem(starred: boolean, set: (value: boolean) => void, reload: () => void): FilterDropdownItem {
+export function hideOrgNameChoice(grouping: GroupingStore): FilterChoice {
+  return toggleChoice("hide-org-name", "Hide org name", {
+    get: grouping.getHideOrgName,
+    set: grouping.setHideOrgName,
+  });
+}
+
+/** Labels, Starred, Involves me, and Unassigned: the filters every list offers. */
+function commonSection(target: ListFilterTarget): FilterSection {
+  const labels = target.labels.filters;
   return {
-    id: "starred",
-    label: "Starred",
-    active: starred,
-    onSelect: () => {
-      set(!starred);
-      reload();
-    },
+    title: "Filters",
+    items: [
+      {
+        id: "labels",
+        label: "Labels",
+        detail: labelFilterSummary(labels),
+        active: labels.size > 0,
+        submenu: target.labels.menu,
+        reset: target.labels.clear,
+        onSelect: () => {},
+      },
+      toggleChoice("starred", "Starred", target.starred, target.reload),
+      triChoice("involves-me", "Involves me", target.involvesMe, target.reload),
+      triChoice("unassigned", "Unassigned", target.unassigned, target.reload),
+    ],
   };
 }
 
-function triItem(id: string, label: string, value: TriFilter, set: (value: TriFilter) => void, reload: () => void) {
-  return {
-    id,
-    label,
-    ...triFilterRow(value),
-    onSelect: () => {
-      set(cycleTriFilter(value));
-      reload();
-    },
-  };
-}
-
-function hideOrgNameItem(grouping: GroupingStore) {
-  return {
-    id: "hide-org-name",
-    label: "Hide org name",
-    active: grouping.getHideOrgName(),
-    onSelect: () => grouping.setHideOrgName(!grouping.getHideOrgName()),
-  };
-}
-
-// Every selected filter must match. Review and CI are pick-one pairs of opposites;
-// a condition row cycles through off, required, and its opposite.
+// Every selected filter must match. CI is a pick-one pair; a condition row cycles
+// through off, required, and its opposite.
 const PULL_CONDITIONS: { value: PullAttributeFilter; opposite: PullAttributeFilter; label: string }[] = [
+  { value: "draft", opposite: "not_draft", label: "Draft" },
   { value: "approved", opposite: "not_approved", label: "Approved" },
   { value: "merge_conflicts", opposite: "no_merge_conflicts", label: "Merge conflicts" },
   { value: "merge_queued", opposite: "not_merge_queued", label: "Merge queued" },
   { value: "has_workspace", opposite: "no_workspace", label: "Has workspace" },
+  { value: "fork", opposite: "not_fork", label: "From fork" },
 ];
 
 const PULL_PICK_ONE: { title: string; options: { value: PullAttributeFilter; label: string }[] }[] = [
-  {
-    title: "Review",
-    options: [
-      { value: "draft", label: "Draft" },
-      { value: "ready", label: "Ready for review" },
-    ],
-  },
   {
     title: "CI",
     options: [
@@ -135,85 +226,101 @@ const PULL_PICK_ONE: { title: string; options: { value: PullAttributeFilter; lab
   },
 ];
 
-/** The PR list filter menu. Read it inside a `$derived` so it tracks the stores. */
-export function pullListFilterMenu({
-  pulls,
-  grouping,
-  labelMenu,
-  reload,
-}: MenuDeps & { pulls: PullsStore }): ListFilterMenu {
-  const attributes = pulls.getAttributeFilters();
-  const state = stateSection(pulls.getFilterState(), (value) => {
-    pulls.setFilterState(value);
-    reload();
-  });
-  const group: ToolbarSection = {
-    title: "Group",
-    items: [
-      { id: "group-byRepo", label: "By repo", shortLabel: "Repo", value: "byRepo" as const },
-      { id: "group-flat", label: "Flat list", shortLabel: "All", value: "flat" as const },
-    ].map(({ id, label, shortLabel, value }) => ({
-      id,
-      label,
-      shortLabel,
-      active: grouping.getGroupingMode() === value,
-      onSelect: () => grouping.setGroupingMode(value),
-    })),
-  };
-  const listSections = [state, group];
-  const starred = starredItem(pulls.getFilterStarred(), pulls.setFilterStarred, reload);
-  const filterSections: FilterDropdownSection[] = [
+/** The PR filters. The PR list and Activity both show exactly these. */
+export function pullFilterSections(target: PullFilterTarget): FilterSection[] {
+  const { attributes } = target;
+  const selected = attributes.get();
+  return [
     {
-      title: "PR",
-      items: [
-        labelsItem(pulls.getLabelFilters(), labelMenu),
-        starred,
-        triItem("involves-me", "Involves me", pulls.getInvolvesMe(), pulls.setInvolvesMe, reload),
-        triItem("unassigned", "Unassigned", pulls.getUnassigned(), pulls.setUnassigned, reload),
-        ...PULL_CONDITIONS.map((condition) => ({
+      title: "Pull requests",
+      items: PULL_CONDITIONS.map((condition) => {
+        const value = triFilterInSelection(selected, condition.value, condition.opposite);
+        const set = (next: TriFilter) => {
+          const others = attributes
+            .get()
+            .filter((filter) => filter !== condition.value && filter !== condition.opposite);
+          const chosen = next === "require" ? [condition.value] : next === "exclude" ? [condition.opposite] : [];
+          attributes.set([...others, ...chosen], condition.value);
+        };
+        return {
           id: condition.value === "has_workspace" ? "has-workspace" : `pr-${condition.value}`,
           label: condition.label,
-          ...triFilterRow(triFilterInSelection(attributes, condition.value, condition.opposite)),
-          onSelect: () => pulls.cycleAttributeFilter(condition.value, condition.opposite),
-        })),
-      ],
+          ...triFilterRow(value),
+          tri: { value, set },
+          reset: () => set(undefined),
+          onSelect: () => attributes.cycle(condition.value, condition.opposite),
+        };
+      }),
     },
     ...PULL_PICK_ONE.map((section) => ({
       title: section.title,
+      pick: {
+        clear: () => {
+          for (const option of section.options)
+            if (attributes.get().includes(option.value)) attributes.toggle(option.value);
+        },
+      },
       items: section.options.map((option) => ({
         id: `pr-${option.value}`,
         label: option.label,
-        active: attributes.includes(option.value),
-        onSelect: () => pulls.toggleAttributeFilter(option.value),
+        active: selected.includes(option.value),
+        onSelect: () => attributes.toggle(option.value),
       })),
     })),
+  ];
+}
+
+/** The issue filters. The issue list and Activity both show exactly these. */
+export function issueFilterSections(target: IssueFilterTarget): FilterSection[] {
+  return [
     {
-      title: "View",
+      title: "Issues",
       items: [
-        {
-          id: "stack-tree",
-          label: "Stack tree",
-          active: pulls.getStackTree(),
-          onSelect: () => pulls.setStackTree(!pulls.getStackTree()),
-        },
-        hideOrgNameItem(grouping),
+        ...(target.referencedByPR
+          ? [triChoice("referenced-by-pr", "Referenced by PR", target.referencedByPR, target.reload)]
+          : []),
+        toggleChoice("hide-bot-authored-issues", "Hide bot-authored issues", target.hideBotAuthors),
       ],
     },
   ];
+}
 
-  function clearFilters(): void {
-    pulls.clearLocalFilters();
-    pulls.setFilterStarred(false);
-    pulls.setStackTree(false);
-    grouping.setHideOrgName(false);
-    reload();
+/** Rows that count toward the badge: every filter row that is on, and every non-default pick-one choice. */
+export function countFilters(sections: FilterSection[]): number {
+  return sections.flatMap((section) =>
+    section.pick?.defaultId !== undefined
+      ? section.items.filter((item) => item.active && item.id !== section.pick?.defaultId)
+      : section.items.filter((item) => item.excluded || item.active !== (item.defaultOn ?? false)),
+  ).length;
+}
+
+/** Turns every row and optional pick-one section off, and returns required sections to their default. */
+export function resetSections(sections: FilterSection[]): void {
+  for (const section of sections) {
+    if (section.pick?.defaultId !== undefined) {
+      const fallback = section.items.find((item) => item.id === section.pick?.defaultId);
+      if (fallback && !fallback.active) fallback.onSelect();
+    } else if (section.pick) {
+      section.pick.clear?.();
+    } else {
+      for (const item of section.items) item.reset?.();
+    }
   }
+}
 
-  const filterCount =
-    pulls.getLocalFilterCount() +
-    Number(pulls.getFilterStarred()) +
-    Number(pulls.getStackTree()) +
-    Number(grouping.getHideOrgName());
+function listMenu(
+  state: ToolbarSection,
+  group: ToolbarSection,
+  starred: FilterChoice,
+  filterSections: FilterSection[],
+  reload: () => void,
+): ListFilterMenu {
+  const listSections = [state, group];
+  const clearFilters = () => {
+    resetSections(filterSections);
+    reload();
+  };
+  const filterCount = countFilters(filterSections);
   return {
     state,
     group,
@@ -221,15 +328,66 @@ export function pullListFilterMenu({
     listSections,
     filterSections,
     sections: [...listSections, ...filterSections],
-    changed: filterCount > 0 || pulls.getFilterState() !== "open" || grouping.getGroupingMode() !== "byRepo",
+    changed: filterCount > 0 || countFilters(listSections) > 0,
     filterCount,
     reset: () => {
-      pulls.setFilterState("open");
-      grouping.setGroupingMode("byRepo");
+      resetSections(listSections);
       clearFilters();
     },
     clearFilters,
   };
+}
+
+interface MenuDeps {
+  grouping: GroupingStore;
+  /** Content of the Labels row's flyout. */
+  labelMenu: Snippet;
+  /** Reloads the list with the surface's own query parameters. */
+  reload: () => void;
+}
+
+/** The PR list filter menu. Read it inside a `$derived` so it tracks the stores. */
+export function pullListFilterMenu({
+  pulls,
+  grouping,
+  labelMenu,
+  reload,
+}: MenuDeps & { pulls: PullsStore }): ListFilterMenu {
+  const target: PullFilterTarget = {
+    state: { get: pulls.getFilterState, set: pulls.setFilterState },
+    starred: { get: pulls.getFilterStarred, set: pulls.setFilterStarred },
+    involvesMe: { get: pulls.getInvolvesMe, set: pulls.setInvolvesMe },
+    unassigned: { get: pulls.getUnassigned, set: pulls.setUnassigned },
+    labels: { filters: pulls.getLabelFilters(), clear: pulls.clearLabelFilters, menu: labelMenu },
+    attributes: {
+      get: pulls.getAttributeFilters,
+      toggle: pulls.toggleAttributeFilter,
+      cycle: pulls.cycleAttributeFilter,
+      set: pulls.setAttributeFilters,
+      clear: pulls.clearAttributeFilters,
+    },
+    reload,
+  };
+  const common = commonSection(target);
+  const starred = common.items.find((item) => item.id === "starred")!;
+  return listMenu(
+    stateSection(target),
+    groupSection(grouping),
+    starred,
+    [
+      common,
+      ...pullFilterSections(target),
+      {
+        title: "View",
+        items: [
+          // Stacks arrange PR rows; Activity rows are events, so it has no stack layout.
+          toggleChoice("stack-tree", "Stack tree", { get: pulls.getStackTree, set: pulls.setStackTree }),
+          hideOrgNameChoice(grouping),
+        ],
+      },
+    ],
+    reload,
+  );
 }
 
 /** The issue list filter menu. Read it inside a `$derived` so it tracks the stores. */
@@ -239,92 +397,27 @@ export function issueListFilterMenu({
   labelMenu,
   reload,
 }: MenuDeps & { issues: IssuesStore }): ListFilterMenu {
-  const state = stateSection(issues.getIssueFilterState(), (value) => {
-    issues.setIssueFilterState(value);
-    reload();
-  });
-  const group: ToolbarSection = {
-    title: "Group",
-    items: [
-      { id: "group-byRepo", label: "By repo", shortLabel: "By Repo", byRepo: true },
-      { id: "group-flat", label: "Flat list", shortLabel: "All", byRepo: false },
-    ].map(({ id, label, shortLabel, byRepo }) => ({
-      id,
-      label,
-      shortLabel,
-      active: grouping.getGroupByRepo() === byRepo,
-      onSelect: () => grouping.setGroupByRepo(byRepo),
-    })),
+  const target: IssueFilterTarget = {
+    state: { get: issues.getIssueFilterState, set: issues.setIssueFilterState },
+    starred: { get: issues.getIssueFilterStarred, set: issues.setIssueFilterStarred },
+    involvesMe: { get: issues.getInvolvesMe, set: issues.setInvolvesMe },
+    unassigned: { get: issues.getUnassigned, set: issues.setUnassigned },
+    labels: { filters: issues.getLabelFilters(), clear: issues.clearLabelFilters, menu: labelMenu },
+    referencedByPR: issues.canFilterReferencedByPR()
+      ? { get: issues.getReferencedByPR, set: issues.setReferencedByPR }
+      : null,
+    hideBotAuthors: { get: issues.getHideBots, set: issues.setHideBots },
+    reload,
   };
-  const listSections = [state, group];
-  const starred = starredItem(issues.getIssueFilterStarred(), issues.setIssueFilterStarred, reload);
-  const filterSections: FilterDropdownSection[] = [
-    {
-      title: "Issue",
-      items: [
-        labelsItem(issues.getLabelFilters(), labelMenu),
-        starred,
-        triItem("involves-me", "Involves me", issues.getInvolvesMe(), issues.setInvolvesMe, reload),
-        triItem("unassigned", "Unassigned", issues.getUnassigned(), issues.setUnassigned, reload),
-        ...(issues.canFilterReferencedByPR()
-          ? [
-              triItem(
-                "referenced-by-pr",
-                "Referenced by PR",
-                issues.getReferencedByPR(),
-                issues.setReferencedByPR,
-                reload,
-              ),
-            ]
-          : []),
-        {
-          id: "hide-bot-authored-issues",
-          label: "Hide bot-authored issues",
-          active: issues.getHideBots(),
-          onSelect: () => issues.setHideBots(!issues.getHideBots()),
-        },
-      ],
-    },
-    {
-      title: "View",
-      items: [hideOrgNameItem(grouping)],
-    },
-  ];
-
-  function clearFilters(): void {
-    issues.clearLabelFilters();
-    issues.setIssueFilterStarred(false);
-    issues.setInvolvesMe(undefined);
-    issues.setUnassigned(undefined);
-    issues.setReferencedByPR(undefined);
-    // Hide bots is a saved server setting; skip the write when it is already off.
-    if (issues.getHideBots()) issues.setHideBots(false);
-    grouping.setHideOrgName(false);
-    reload();
-  }
-
-  const filterCount =
-    issues.getLabelFilters().size +
-    Number(issues.getIssueFilterStarred()) +
-    Number(issues.getInvolvesMe() !== undefined) +
-    Number(issues.getUnassigned() !== undefined) +
-    Number(issues.getReferencedByPR() !== undefined) +
-    Number(issues.getHideBots()) +
-    Number(grouping.getHideOrgName());
-  return {
-    state,
-    group,
+  const common = commonSection(target);
+  const starred = common.items.find((item) => item.id === "starred")!;
+  return listMenu(
+    stateSection(target),
+    groupSection(grouping, { byRepo: "By Repo", flat: "All" }),
     starred,
-    listSections,
-    filterSections,
-    sections: [...listSections, ...filterSections],
-    changed: filterCount > 0 || issues.getIssueFilterState() !== "open" || !grouping.getGroupByRepo(),
-    filterCount,
-    reset: () => {
-      issues.setIssueFilterState("open");
-      grouping.setGroupByRepo(true);
-      clearFilters();
-    },
-    clearFilters,
-  };
+    [common, ...issueFilterSections(target), { title: "View", items: [hideOrgNameChoice(grouping)] }],
+    reload,
+  );
 }
+
+export { commonSection, stateSection };

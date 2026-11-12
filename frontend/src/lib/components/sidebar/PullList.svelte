@@ -27,7 +27,7 @@
   import { pullListFilterMenu } from "../shared/list-filter-menus.js";
   import { repoGroups, repoItemLabel, type RepoGroup } from "../shared/repo-groups.js";
   import { createRepoLabelFormatter } from "../../utils/repo-label.js";
-  import { labelFilterChoices } from "../../utils/label-filter.js";
+  import { rememberedLabelChoices } from "../../utils/label-filter.js";
   import {
     INITIAL_RENDER_BUDGET,
     RENDER_BUDGET_STEP,
@@ -122,7 +122,8 @@
     );
   }
 
-  const labelChoices = $derived(labelFilterChoices(pulls.getPulls(), pulls.getLabelFilters()));
+  const pullLabelChoices = rememberedLabelChoices(pulls.getPulls, pulls.getLabelFilters);
+  const labelChoices = $derived(pullLabelChoices());
   const filterMenu = $derived(pullListFilterMenu({
     pulls,
     grouping,
@@ -498,7 +499,7 @@
       </div>
     {:else if visiblePulls.length === 0 && !sync.getSyncState()?.last_run_at && pulls.getPulls().length === 0}
       <p class="state-message">Waiting for first sync…</p>
-    {:else if visiblePulls.length === 0 && pulls.getLocalFilterCount() > 0}
+    {:else if visiblePulls.length === 0 && filterMenu.filterCount > 0}
       <p class="state-message">No pull requests match these filters.</p>
     {:else if visiblePulls.length === 0}
       <p class="state-message">No pull requests found.</p>

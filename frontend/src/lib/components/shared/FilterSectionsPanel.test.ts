@@ -52,7 +52,15 @@ function rowValues(rows: Element[], prefix: string): RowValues[] {
     count: text(row, "count"),
     detail: text(row, "detail"),
     description: row.getAttribute("title") ?? "",
-    describedBy: document.getElementById(row.getAttribute("aria-describedby") ?? "")?.textContent?.trim() ?? "",
+    // A phone toggle carries the description on its switch input inside the row.
+    describedBy:
+      document
+        .getElementById(
+          (row.closest("[aria-describedby]") ?? row.querySelector("[aria-describedby]"))?.getAttribute(
+            "aria-describedby",
+          ) ?? "",
+        )
+        ?.textContent?.trim() ?? "",
   }));
 }
 

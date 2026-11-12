@@ -25,7 +25,12 @@ import {
   toggleFilterInSections,
   type PullAttributeFilter,
 } from "../utils/pull-attributes.js";
-import { cycleLabelFilter as cycleLabel, matchesLabelFilters, type LabelFilters } from "../utils/label-filter.js";
+import {
+  cycleLabelFilter as cycleLabel,
+  labelFilterParams,
+  matchesLabelFilters,
+  type LabelFilters,
+} from "../utils/label-filter.js";
 import { showFlash } from "./flash.svelte.js";
 import { PullsWorkflow, type FetchPullResult } from "./pulls-workflow.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
@@ -159,6 +164,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return pulls;
   }
 
+  // The server applies every filter before its limit, so each page it returns
+  // already matches. The browser checks loaded rows again only so rows from an
+  // earlier query never show while a refresh for new filters fails.
   const filteredPulls = $derived(
     attributeFilters.length === 0 && labelFilters.size === 0
       ? pulls
@@ -256,12 +264,6 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return labelFilters;
   }
 
-  function getLocalFilterCount(): number {
-    return (
-      attributeFilters.length + labelFilters.size + Number(involvesMe !== undefined) + Number(unassigned !== undefined)
-    );
-  }
-
   function getFilterStarred(): boolean {
     return filterStarred;
   }
@@ -357,29 +359,37 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   // --- writes ---
 
-  function applyAttributeFilters(next: PullAttributeFilter[], changed: PullAttributeFilter): void {
+  function applyAttributeFilters(next: PullAttributeFilter[]): void {
     attributeFilters = next;
-    if (!BROWSER_ONLY_PULL_ATTRIBUTES.includes(changed) && (involvesMe || unassigned)) loadPulls(activeListParams);
+    loadPulls(activeListParams);
   }
 
   function toggleAttributeFilter(filter: PullAttributeFilter): void {
-    applyAttributeFilters(toggleFilterInSections(PULL_ATTRIBUTE_SECTIONS, attributeFilters, filter), filter);
+    applyAttributeFilters(toggleFilterInSections(PULL_ATTRIBUTE_SECTIONS, attributeFilters, filter));
   }
 
   /** Cycles an attribute through off, required, and its opposite. */
   function cycleAttributeFilter(filter: PullAttributeFilter, opposite: PullAttributeFilter): void {
-    applyAttributeFilters(cycleFilterInSections(PULL_ATTRIBUTE_SECTIONS, attributeFilters, filter, opposite), filter);
+    applyAttributeFilters(cycleFilterInSections(PULL_ATTRIBUTE_SECTIONS, attributeFilters, filter, opposite));
   }
 
   function cycleLabelFilter(name: string): void {
     labelFilters = cycleLabel(labelFilters, name);
+    loadPulls(activeListParams);
   }
 
-  function clearLocalFilters(): void {
-    attributeFilters = [];
+  function clearLabelFilters(): void {
+    if (labelFilters.size === 0) return;
     labelFilters = new Map();
-    setInvolvesMe(undefined);
-    setUnassigned(undefined);
+    loadPulls(activeListParams);
+  }
+
+  function setAttributeFilters(next: PullAttributeFilter[]): void {
+    applyAttributeFilters(next);
+  }
+
+  function clearAttributeFilters(): void {
+    if (attributeFilters.length > 0) applyAttributeFilters([]);
   }
 
   function getSearchQuery(): string | undefined {
@@ -623,7 +633,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ...(involvesMe === "exclude" && { not_involves_me: true }),
       ...(unassigned === "require" && { unassigned: true }),
       ...(unassigned === "exclude" && { assigned: true }),
-      ...((involvesMe || unassigned) && serverAttributes.length > 0 && { attributes: serverAttributes.join(",") }),
+      ...(serverAttributes.length > 0 && { attributes: serverAttributes.join(",") }),
+      ...labelFilterParams(labelFilters),
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
@@ -730,7 +741,6 @@ export function createPullsStore(opts: PullsStoreOptions) {
     pullsByRepo,
     getAttributeFilters,
     getLabelFilters,
-    getLocalFilterCount,
     getFilterStarred,
     setFilterStarred,
     getInvolvesMe,
@@ -749,7 +759,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
     toggleAttributeFilter,
     cycleAttributeFilter,
     cycleLabelFilter,
-    clearLocalFilters,
+    clearLabelFilters,
+    clearAttributeFilters,
+    setAttributeFilters,
     getSearchQuery,
     setSearchQuery,
     searchTextChanged: emptySearch.textChanged,

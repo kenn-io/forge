@@ -321,6 +321,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let enabledItemTypes = $state<Set<ActivityItemType>>(new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
   let enabledEvents = $state<Set<string>>(new Set(DEFAULT_EVENT_TYPES));
   let showNotifications = $state(true);
+  // Filters Activity shares with the PR and issue lists that the lists keep per session.
+  let starred = $state(false);
+  let referencedByPR = $state<TriFilter>(undefined);
+  let hideBotAuthoredIssues = $state(false);
   let involvesMe = $state(readInvolvesMeFilter("activity"));
   let unassigned = $state(readUnassignedFilter("activity"));
   let initialized = false;
@@ -489,6 +493,21 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function getShowNotifications(): boolean {
     return showNotifications;
   }
+  function getTimeRangeDefault(): TimeRange {
+    return timeRangeDefault;
+  }
+  function getViewModeDefault(): ViewMode {
+    return viewModeDefault;
+  }
+  function getStarred(): boolean {
+    return starred;
+  }
+  function getReferencedByPR(): TriFilter {
+    return referencedByPR;
+  }
+  function getHideBotAuthoredIssues(): boolean {
+    return hideBotAuthoredIssues;
+  }
   function getInvolvesMe(): TriFilter {
     return involvesMe;
   }
@@ -636,6 +655,17 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     showNotifications = v;
     invalidatePagedActivityRequests();
   }
+  function setStarred(value: boolean): void {
+    starred = value;
+    invalidatePagedActivityRequests();
+  }
+  function setReferencedByPR(value: TriFilter): void {
+    referencedByPR = value;
+    invalidatePagedActivityRequests();
+  }
+  function setHideBotAuthoredIssues(value: boolean): void {
+    hideBotAuthoredIssues = value;
+  }
   function setInvolvesMe(value: TriFilter): void {
     involvesMe = value;
     invalidatePagedActivityRequests();
@@ -731,6 +761,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (onlyClosedMerged) p.closed_merged = true;
     if (onlyBots) p.bots = true;
     if (serverPullAttributes.length > 0) p.attributes = serverPullAttributes.join(",");
+    if (starred) p.starred = true;
+    if (referencedByPR === "require") p.referenced_by_pr = true;
+    if (referencedByPR === "exclude") p.not_referenced_by_pr = true;
     if (hideDefaultBranchActivity) p.hide_default_branch = true;
     if (activityPageLimit === undefined && viewMode === "flat") {
       return { ...flatPaging.withLimit(activityPageQuery(p)), since };
@@ -762,6 +795,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       params.merge_queued ?? false,
       params.closed_merged ?? false,
       params.bots ?? false,
+      params.starred ?? false,
+      params.referenced_by_pr ?? false,
+      params.not_referenced_by_pr ?? false,
       params.attributes ?? "",
       params.hide_default_branch ?? false,
       params.limit ?? 0,
@@ -1142,6 +1178,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       onlyClosedMerged ||
       onlyBots ||
       serverPullAttributes.length > 0 ||
+      starred ||
+      referencedByPR !== undefined ||
       enabledItemTypes.size !== DEFAULT_ACTIVITY_ITEM_TYPES.length;
     const refreshFilteredBulk =
       !result.partialFailure &&
@@ -1486,6 +1524,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       ...(onlyClosedMerged ? { closed_merged: true } : {}),
       ...(onlyBots ? { bots: true } : {}),
       ...(serverPullAttributes.length > 0 ? { attributes: serverPullAttributes.join(",") } : {}),
+      ...(starred ? { starred: true } : {}),
+      ...(referencedByPR === "require" ? { referenced_by_pr: true } : {}),
+      ...(referencedByPR === "exclude" ? { not_referenced_by_pr: true } : {}),
       ...(hideDefaultBranchActivity ? { hide_default_branch: true } : {}),
     };
     const isCurrentRequest = () =>
@@ -1996,6 +2037,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getHideMergeQueued,
     getMergeQueued,
     getActivityState,
+    getTimeRangeDefault,
+    getViewModeDefault,
+    getStarred,
+    getReferencedByPR,
+    getHideBotAuthoredIssues,
+    setStarred,
+    setReferencedByPR,
+    setHideBotAuthoredIssues,
     getBots,
     getDraft,
     getPullAttributeFilters,

@@ -13,20 +13,13 @@
   import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getAppRuntime } from "../app/runtime-context.js";
-  import {
-    DEFAULT_EVENT_TYPES,
-    isActivityItemTypeEnabled,
-    type ActivityItemType,
-    type TimeRange,
-    type ViewMode,
-  } from "../stores/activity.svelte.js";
   import { getStores, getNavigate } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
   import ListLoadMore from "./sidebar/ListLoadMore.svelte";
-  import { activityFilterOptions, activityItemVisible, activitySubjectVisible } from "./activityFilters.js";
+  import { activityFilterMenu, activityItemVisible, activitySubjectVisible } from "./activityFilters.js";
   import AuthorFilterMenu from "./shared/AuthorFilterMenu.svelte";
   import LabelFilterMenu from "./shared/LabelFilterMenu.svelte";
-  import { labelFilterChoices, labelFilterSummary, matchesLabelFilters } from "../utils/label-filter.js";
+  import { rememberedLabelChoices } from "../utils/label-filter.js";
   import { FilterDropdown, ScrollBox } from "@kenn-io/kit-ui";
   import {
     isDefaultBranchActivity,
@@ -59,7 +52,7 @@
   import ChevronsDownUpIcon from "@lucide/svelte/icons/chevrons-down-up";
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
 
-  const { activity, settings, sync, grouping } = getStores();
+  const { activity, settings, sync, grouping, issues } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
 
@@ -101,14 +94,8 @@
   let searchInput = $state("");
   let debounceExecution: AppExecution<void, never> | null = null;
 
-  const filters = $derived.by(() => activityFilterOptions(activity, grouping));
-
-  const popoverFilterCount = $derived(
-    (activity.getActivityAuthor() ? 1 : 0)
-    + filters.events.filter((filter) => !filter.active).length
-    + filters.visibility.filter((filter) => filter.active || filter.excluded).length
-    + filters.activeChoiceCount
-    + activity.getLabelFilters().size,
+  const filterMenu = $derived(
+    activityFilterMenu({ activity, grouping, issues, labelMenu: labelFilterMenu, authorMenu: authorFilterMenu }),
   );
 
   let unsubSync: (() => void) | undefined;
@@ -133,37 +120,6 @@
   });
 
 
-  function toggleItemType(itemType: ActivityItemType): void {
-    const next = new Set(activity.getEnabledItemTypes());
-    if (next.has(itemType)) next.delete(itemType);
-    else next.add(itemType);
-    activity.setEnabledItemTypes(next);
-    filters.applyFilters();
-  }
-
-  function handleTimeRangeChange(range: TimeRange): void {
-    activity.setTimeRange(range);
-    activity.syncToURL();
-    activity.loadActivity();
-  }
-
-  function handleViewModeChange(mode: ViewMode): void {
-    activity.setViewMode(mode);
-    activity.syncToURL();
-    activity.loadActivity();
-  }
-
-  function handleRollUpCommitsChange(value: boolean): void {
-    activity.setRollUpCommits(value);
-    activity.syncToURL();
-  }
-
-  const TIME_RANGES: { value: TimeRange; label: string }[] = [
-    { value: "24h", label: "24h" },
-    { value: "7d", label: "7d" },
-    { value: "30d", label: "30d" },
-    { value: "90d", label: "90d" },
-  ];
 
   function handleSearchInput(val: string): void {
     searchInput = val;
@@ -259,15 +215,7 @@
     if (url) window.open(url, "_blank", "noopener");
   }
 
-  const displayItems = $derived.by(() => {
-    let result = activity.getActivityItems().filter((item) =>
-      isActivityItemTypeEnabled(item.item_type, activity.getEnabledItemTypes())
-      && activityItemVisible(activity, item)
-    );
-    const labels = activity.getLabelFilters();
-    if (labels.size > 0) result = result.filter((it) => matchesLabelFilters(it.labels, labels));
-    return result;
-  });
+  const displayItems = $derived(activity.getActivityItems().filter((item) => activityItemVisible(activity, item)));
 
   type LabeledSubject = Pick<ActivityItem, "repo_owner" | "repo_name" | "platform_host" | "item_type" | "item_number" | "labels"> & {
     repo?: (RepositoryKeyWire & { provider?: string; platform_host?: string; repo_path?: string | undefined }) | undefined;
@@ -306,28 +254,17 @@
     return key ? providerLabels.get(key) : undefined;
   }
 
-  const visibleWorkspaceActivity = $derived.by(() => {
-    if (!activity.getUseWorkspaceActivityForRecency()) return [];
-    let result: WorkspaceActivitySubject[] = activity.getWorkspaceActivity().filter((subject) =>
-      isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
-      && activitySubjectVisible(activity, subject)
-    );
-    const labels = activity.getLabelFilters();
-    if (labels.size > 0) {
-      result = result.filter((subject) => matchesLabelFilters(workspaceSubjectLabels(subject), labels));
-    }
-    return result;
-  });
+  const visibleWorkspaceActivity = $derived(
+    activity.getUseWorkspaceActivityForRecency()
+      ? activity
+          .getWorkspaceActivity()
+          .filter((subject) => activitySubjectVisible(activity, subject, workspaceSubjectLabels(subject)))
+      : [],
+  );
 
-  const visibleItemActivity = $derived.by(() => {
-    let result: ActivitySubject[] = activity.getItemActivity().filter((subject) =>
-      isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
-      && activitySubjectVisible(activity, subject)
-    );
-    const labels = activity.getLabelFilters();
-    if (labels.size > 0) result = result.filter((subject) => matchesLabelFilters(subject.labels, labels));
-    return result;
-  });
+  const visibleItemActivity = $derived(
+    activity.getItemActivity().filter((subject) => activitySubjectVisible(activity, subject)),
+  );
 
   const flatRows = $derived.by(() => collapseActivityRuns(displayItems, {
     rollUpCommits: activity.getRollUpCommits(),
@@ -356,34 +293,17 @@
   }
 
   // One entry per pull request or issue, so a label's count is items, not events.
-  const labelChoices = $derived.by(() => {
+  const labelSubjects = $derived.by(() => {
     const subjects = new Map<string, { labels?: ActivityItem["labels"] }>();
     for (const [key, labels] of providerLabels) subjects.set(key, { labels });
     for (const subject of activity.getWorkspaceActivity()) {
       const key = labelSubjectKey(subject);
       if (key && !subjects.has(key)) subjects.set(key, { labels: subject.labels });
     }
-    return labelFilterChoices([...subjects.values()], activity.getLabelFilters());
+    return [...subjects.values()];
   });
-
-  function resetFilters(): void {
-    activity.setActivityAuthor(undefined);
-    activity.clearLabelFilters();
-    activity.setEnabledEvents(new Set(DEFAULT_EVENT_TYPES));
-    activity.setShowNotifications(true);
-    for (const filter of filters.visibility) filter.reset();
-    filters.resetChoices();
-    filters.applyFilters();
-  }
-
-  function choiceItems<T extends string>(choice: { id: string; value: T; options: { value: T; label: string }[]; choose: (value: T) => void }) {
-    return choice.options.map((option) => ({
-      id: `${choice.id}-${option.value}`,
-      label: option.label,
-      active: choice.value === option.value,
-      onSelect: () => choice.choose(option.value),
-    }));
-  }
+  const activityLabelChoices = rememberedLabelChoices(() => labelSubjects, activity.getLabelFilters);
+  const labelChoices = $derived(activityLabelChoices());
 
   // Compact mode has no author chip, so the trigger names the author instead.
   const compactAuthor = $derived(compact ? activity.getActivityAuthor() : undefined);
@@ -398,100 +318,6 @@
   const collapseAllLabel = $derived(
     collapseThreads ? "Expand all" : "Collapse all",
   );
-
-  // Sections follow the pull request list's menu: State, then layout and scope, the conditions,
-  // CI, and View.
-  const filterSections = $derived.by(() => [
-    { title: "State", items: choiceItems(filters.state) },
-    {
-      title: "Layout",
-      items: [
-        {
-          id: "view-flat",
-          label: "Flat",
-          active: activity.getViewMode() === "flat",
-          closeOnSelect: true,
-          onSelect: () => handleViewModeChange("flat"),
-        },
-        {
-          id: "view-threaded",
-          label: "Threaded",
-          active: activity.getViewMode() === "threaded",
-          closeOnSelect: true,
-          onSelect: () => handleViewModeChange("threaded"),
-        },
-      ],
-    },
-    ...(activity.getViewMode() === "threaded"
-      ? [
-          {
-            title: "Group",
-            items: [
-              {
-                id: "group-by-repo",
-                label: "By repo",
-                active: grouping.getGroupByRepo(),
-                closeOnSelect: true,
-                onSelect: () => grouping.setGroupByRepo(true),
-              },
-              {
-                id: "group-all",
-                label: "All",
-                active: !grouping.getGroupByRepo(),
-                closeOnSelect: true,
-                onSelect: () => grouping.setGroupByRepo(false),
-              },
-            ],
-          },
-        ]
-      : []),
-    {
-      title: "Time range",
-      items: TIME_RANGES.map((range) => ({
-        id: `range-${range.value}`,
-        label: range.label,
-        active: activity.getTimeRange() === range.value,
-        closeOnSelect: true,
-        onSelect: () => handleTimeRangeChange(range.value),
-      })),
-    },
-    { title: "Event types", items: filters.events },
-    {
-      title: "Filter",
-      items: [
-        {
-          id: "author",
-          label: "Author",
-          detail: activity.getActivityAuthor() || "Anyone",
-          active: Boolean(activity.getActivityAuthor()),
-          submenu: authorFilterMenu,
-          onSelect: () => {},
-        },
-        {
-          id: "labels",
-          label: "Labels",
-          detail: labelFilterSummary(activity.getLabelFilters()),
-          active: activity.getLabelFilters().size > 0,
-          submenu: labelFilterMenu,
-          onSelect: () => {},
-        },
-        ...filters.conditions,
-      ],
-    },
-    { title: "CI", items: choiceItems(filters.ci) },
-    {
-      title: "View",
-      items: [
-        {
-          id: "roll-up-commits",
-          label: "Roll up commits",
-          active: activity.getRollUpCommits(),
-          onSelect: () => handleRollUpCommitsChange(!activity.getRollUpCommits()),
-        },
-        ...filters.view,
-      ],
-    },
-  ]);
 
   function eventClass(type: string): string {
     switch (type) {
@@ -621,16 +447,9 @@
 >
   <div class="controls-bar">
     <div class="filter-group" aria-label="Item types">
-      <Toggle
-        checked={activity.getEnabledItemTypes().has("pr")}
-        label="PRs"
-        onchange={() => toggleItemType("pr")}
-      />
-      <Toggle
-        checked={activity.getEnabledItemTypes().has("issue")}
-        label="Issues"
-        onchange={() => toggleItemType("issue")}
-      />
+      {#each filterMenu.itemTypes as item (item.id)}
+        <Toggle checked={item.active} label={item.label} onchange={item.onSelect} />
+      {/each}
     </div>
 
     <div class="filters-wrap">
@@ -638,10 +457,10 @@
         label={compactAuthor ? `Filters · ${compactAuthor}` : "Filters"}
         title="View and filter activity"
         detail={compactAuthor ? "" : currentViewDetail}
-        badgeCount={popoverFilterCount}
-        sections={filterSections}
+        badgeCount={filterMenu.filterCount}
+        sections={filterMenu.desktopSections}
         resetLabel="Reset filters"
-        onReset={resetFilters}
+        onReset={filterMenu.reset}
         minWidth="240px"
         onOpenChange={setFiltersOpen}
       />

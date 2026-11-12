@@ -416,7 +416,7 @@ describe("grouping toggle", () => {
     await vi.waitFor(() => expect(document.querySelector(".activity-feed")).not.toBeNull(), WAIT);
     await selectActivityViewItem("Threaded");
     await vi.waitFor(() => expect(document.querySelector(".threaded-view .item-row")).not.toBeNull(), WAIT);
-    await selectActivityViewItem("All");
+    await selectActivityViewItem("Flat list");
     await vi.waitFor(() => expect(document.querySelector(".threaded-view .repo-tag")).not.toBeNull(), WAIT);
 
     // widgets#1 and tools#1 must stay distinct threads, so an exact "#1" ref appears twice.
@@ -477,7 +477,7 @@ describe("grouping toggle", () => {
     await vi.waitFor(() => expect(document.querySelector(".activity-feed")).not.toBeNull(), WAIT);
     await selectActivityViewItem("Threaded");
     await vi.waitFor(() => expect(document.querySelector(".threaded-view .item-row")).not.toBeNull(), WAIT);
-    await selectActivityViewItem("All");
+    await selectActivityViewItem("Flat list");
     await vi.waitFor(() => expect(document.querySelector(".threaded-view .repo-tag")).not.toBeNull(), WAIT);
 
     const row = (): Element =>
@@ -507,7 +507,7 @@ describe("grouping toggle", () => {
     expect(document.querySelector(".activity-feed .kit-empty-state")?.textContent ?? "").toContain("No activity found");
 
     await selectActivityViewItem("Threaded");
-    await selectActivityViewItem("All");
+    await selectActivityViewItem("Flat list");
     await vi.waitFor(() => expect(document.querySelector(".threaded-view .kit-empty-state")).not.toBeNull(), WAIT);
   });
 });

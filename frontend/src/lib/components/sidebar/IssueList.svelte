@@ -15,7 +15,7 @@
   import ListLoadMore from "./ListLoadMore.svelte";
   import ListCountChip from "./ListCountChip.svelte";
   import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
-  import { labelFilterChoices } from "../../utils/label-filter.js";
+  import { rememberedLabelChoices } from "../../utils/label-filter.js";
   import { issueListFilterMenu } from "../shared/list-filter-menus.js";
   import {
     FilterDropdown,
@@ -102,7 +102,8 @@
     );
   }
 
-  const labelChoices = $derived(labelFilterChoices(issues.getIssues(), issues.getLabelFilters()));
+  const issueLabelChoices = rememberedLabelChoices(issues.getIssues, issues.getLabelFilters);
+  const labelChoices = $derived(issueLabelChoices());
   const filterMenu = $derived(issueListFilterMenu({
     issues,
     grouping,
@@ -363,10 +364,10 @@
       </div>
     {:else if issues.getIssues().length === 0 && !sync.getSyncState()?.last_run_at}
       <p class="state-message">Waiting for first sync…</p>
+    {:else if issues.getFilteredIssues().length === 0 && !issues.isIssueListCapped() && filterMenu.filterCount > 0}
+      <p class="state-message">No issues match these filters.</p>
     {:else if issues.getIssues().length === 0 && !issues.isIssueListCapped()}
       <p class="state-message">No issues found.</p>
-    {:else if issues.getFilteredIssues().length === 0 && !issues.isIssueListCapped()}
-      <p class="state-message">No issues match these filters.</p>
     {:else}
       {#if renderedGroups !== null}
         {#each renderedGroups.groups as { repo, items: repoIssues, count, collapsed } (repo)}

@@ -91,18 +91,21 @@ test.describe("Involves me standard filters", () => {
     await page.goto(`${baseURL}/m/pulls`);
     await expect(page.locator(".focus-list .pull-item").first()).toBeVisible();
     await page.getByRole("button", { name: "Filters" }).click();
+    // The phone shows a three-way filter as an Any/Yes/No select.
     const pullsResponse = waitForInvolvesMeRequest(page, "/api/v1/pulls");
-    await page.getByRole("button", { name: "Involves me" }).click();
+    await page.getByRole("combobox", { name: /Involves me/ }).click();
+    await page.getByRole("option", { name: "Yes" }).click();
     expect((await pullsResponse).ok()).toBe(true);
-    await expect(page.getByRole("button", { name: "Involves me" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("combobox", { name: /Involves me/ })).toContainText("Yes");
 
     await page.goto(`${baseURL}/m/issues`);
     await expect(page.locator(".focus-list .issue-item").first()).toBeVisible();
     await page.getByRole("button", { name: "Filters" }).click();
     const issuesResponse = waitForInvolvesMeRequest(page, "/api/v1/issues");
-    await page.getByRole("button", { name: "Involves me" }).click();
+    await page.getByRole("combobox", { name: /Involves me/ }).click();
+    await page.getByRole("option", { name: "Yes" }).click();
     expect((await issuesResponse).ok()).toBe(true);
-    await expect(page.getByRole("button", { name: "Involves me" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("combobox", { name: /Involves me/ })).toContainText("Yes");
   });
 
   test("keeps Unassigned reachable in the regular Pulls, Issues, and Activity menus", async ({ page }) => {

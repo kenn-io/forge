@@ -1,14 +1,16 @@
-// The phone lists must offer exactly the desktop sidebar's filters and narrow,
-// group, and stack rows the same way. Each surface is driven through its own UI
-// against the same fixture: the menus must list the same sections and items,
-// and every item must leave both surfaces showing the same rows and sending the
-// same list query. A filter added to one surface only, one a surface offers but
-// ignores, one Reset leaves on, or one the fixture does not exercise fails here.
+// Every list shape must offer the same filters and apply them the same way.
+// The PR and issue lists are compared desktop against phone; Activity is
+// compared desktop against phone and must contain every PR and issue list
+// filter, since it is built from the same elements. Each surface is driven
+// through its own UI against one fixture (src/test/filterSurfaces.ts). A filter
+// added to one shape only, one a shape offers but ignores, one Reset leaves
+// on, or one the fixture does not exercise fails here.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
-import type { Issue, PullRequest } from "./lib/api/types.js";
+import type { ActivityItem, ActivitySubject, Issue, PullRequest } from "./lib/api/types.js";
 import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
+import { desktopSurface, exercise, phoneSurface, type ExerciseOptions, type Surface } from "./test/filterSurfaces.js";
 import {
   jsonResponse,
   mockIssueFixture,
@@ -19,265 +21,23 @@ import {
 } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
-
-type MenuSection = { title: string; items: string[] };
-/** What a menu row shows: its tick or cross, and any count or value summary. */
-interface ItemState {
-  state: "on" | "excluded" | "off";
-  count: string;
-  detail: string;
-}
-
-function itemState(node: Element, classPrefix: string, on: string, excluded: string): ItemState {
-  const text = (part: string) => node.querySelector(`.${classPrefix}__${part}`)?.textContent?.trim() ?? "";
-  const state = node.classList.contains(excluded) ? "excluded" : node.classList.contains(on) ? "on" : "off";
-  return { state, count: text("count"), detail: text("detail") };
-}
-
-interface Surface {
-  /** Root element of the list on this surface. */
-  list(): HTMLElement;
-  open(): Promise<void>;
-  menu(): MenuSection[];
-  /** What each row shows, by label. */
-  itemStates(): Record<string, ItemState>;
-  item(label: string): HTMLElement;
-  /** The open submenu of a row that has one, or null for a plain row. */
-  submenu(label: string): Promise<HTMLElement | null>;
-  reset(): Promise<void>;
-}
-
-const desktop = (container: string): Surface => {
-  const list = () => document.querySelector<HTMLElement>(container)!;
-  const panel = () => document.querySelector<HTMLElement>(".kit-filter-dropdown__panel");
-  async function open(): Promise<void> {
-    if (panel()) return;
-    await page.elementLocator(list().querySelector(".compact-filter-menu button")!).click();
-    await vi.waitFor(() => expect(panel()).not.toBeNull());
-  }
-  return {
-    list,
-    open,
-    menu() {
-      const sections: MenuSection[] = [];
-      for (const node of panel()!.children) {
-        if (node.classList.contains("kit-filter-dropdown__section-title")) {
-          sections.push({ title: node.textContent!.trim(), items: [] });
-        } else if (node.classList.contains("kit-filter-dropdown__item")) {
-          sections.at(-1)!.items.push(node.querySelector(".kit-filter-dropdown__label")!.textContent!.trim());
-        }
-      }
-      return sections;
-    },
-    itemStates() {
-      return Object.fromEntries(
-        [...panel()!.querySelectorAll(".kit-filter-dropdown__item")].map((node) => [
-          node.querySelector(".kit-filter-dropdown__label")!.textContent!.trim(),
-          itemState(node, "kit-filter-dropdown", "active", "excluded"),
-        ]),
-      );
-    },
-    item(label) {
-      return [...panel()!.querySelectorAll<HTMLElement>(".kit-filter-dropdown__item")].find(
-        (node) => node.querySelector(".kit-filter-dropdown__label")!.textContent!.trim() === label,
-      )!;
-    },
-    async submenu(label) {
-      const row = this.item(label);
-      if (!row.classList.contains("submenu")) return null;
-      const flyout = () => document.querySelector<HTMLElement>(".kit-filter-dropdown__submenu");
-      if (row.getAttribute("aria-expanded") !== "true") await page.elementLocator(row).click();
-      await vi.waitFor(() => expect(flyout()).not.toBeNull());
-      return flyout()!;
-    },
-    async reset() {
-      await open();
-      await page.elementLocator(panel()!.querySelector(".kit-filter-dropdown__reset")!).click();
-    },
-  };
-};
-
-const phone = (): Surface => {
-  const list = () => document.querySelector<HTMLElement>(".mobile-main .focus-list")!;
-  const panel = () => list().querySelector<HTMLElement>(".filter-sections-panel");
-  async function open(): Promise<void> {
-    if (panel()) return;
-    await page.elementLocator(list().querySelector(".mobile-triage-search-bar__filter button")!).click();
-    await vi.waitFor(() => expect(panel()).not.toBeNull());
-  }
-  return {
-    list,
-    open,
-    menu() {
-      return [...panel()!.querySelectorAll(".filter-sections-panel__section")].map((section) => ({
-        title: section.querySelector(".filter-sections-panel__title")!.textContent!.trim(),
-        items: [...section.querySelectorAll(".filter-sections-panel__label")].map((label) => label.textContent!.trim()),
-      }));
-    },
-    itemStates() {
-      return Object.fromEntries(
-        [...panel()!.querySelectorAll(".filter-sections-panel__item")].map((node) => [
-          node.querySelector(".filter-sections-panel__label")!.textContent!.trim(),
-          itemState(
-            node,
-            "filter-sections-panel",
-            "filter-sections-panel__item--active",
-            "filter-sections-panel__item--excluded",
-          ),
-        ]),
-      );
-    },
-    item(label) {
-      return [...panel()!.querySelectorAll<HTMLElement>(".filter-sections-panel__item")].find(
-        (node) => node.querySelector(".filter-sections-panel__label")!.textContent!.trim() === label,
-      )!;
-    },
-    async submenu(label) {
-      const row = this.item(label);
-      if (!row.hasAttribute("aria-expanded")) return null;
-      const content = () => panel()!.querySelector<HTMLElement>(".filter-sections-panel__submenu");
-      if (row.getAttribute("aria-expanded") !== "true") await page.elementLocator(row).click();
-      await vi.waitFor(() => expect(content()).not.toBeNull());
-      return content()!;
-    },
-    async reset() {
-      await open();
-      await page.elementLocator(panel()!.querySelector(".filter-sections-panel__reset")!).click();
-    },
-  };
-};
+const PHONE_FILTERS = ".mobile-triage-search-bar__filter button";
 
 /** Repo group headings, item numbers, titles, and row repo names in on-screen order. */
-function visibleRows(list: HTMLElement): string[] {
+function listRows(list: HTMLElement): string[] {
   const selector = [".sidebar-group-header__name", ".item-number", ".title-text", ".repo-name"].map(
     (name) => `.list-body ${name}`,
   );
   return [...list.querySelectorAll(selector.join(", "))].map((node) => node.textContent!.trim());
 }
 
-/** The last list request's filters; paging differs by surface and is not a filter. */
-function lastListQuery(requests: MockRequest[], pathname: string): string {
-  const request = requests.findLast((req) => req.method === "GET" && req.url.pathname === pathname);
-  if (!request) return "";
-  const params = new URLSearchParams(request.url.search);
-  params.delete("limit");
-  params.delete("offset");
-  params.sort();
-  return params.toString();
-}
-
-interface Outcome {
-  rows: string[];
-  query: string;
-  items: Record<string, ItemState>;
-}
-
-async function settled(mounted: MountedBrowserApp, surface: Surface, pathname: string): Promise<Outcome> {
-  // Wait until the list stops requesting and re-rendering.
-  let previous = "";
-  for (let frame = 0; ; frame++) {
-    if (frame === 50) throw new Error(`list never settled: ${previous}`);
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    const current = JSON.stringify([mounted.api.requests.length, visibleRows(surface.list())]);
-    if (current === previous) break;
-    previous = current;
-  }
-  await surface.open();
-  return {
-    rows: visibleRows(surface.list()),
-    query: lastListQuery(mounted.api.requests, pathname),
-    items: surface.itemStates(),
-  };
-}
-
-async function click(surface: Surface, label: string): Promise<void> {
-  await surface.open();
-  await page.elementLocator(surface.item(label)).click();
-}
-
-// Submenus this test can drive. A row whose submenu holds anything else fails
-// until the test learns to exercise its choices on both surfaces.
-const SUBMENU_CHOICE = ".label-filter__row";
-const SUBMENU_CHOICE_NAME = ".label-filter__name";
-
-async function submenuChoices(surface: Surface, label: string): Promise<string[] | null> {
-  await surface.open();
-  const submenu = await surface.submenu(label);
-  if (!submenu) return null;
-  const names = [...submenu.querySelectorAll(`${SUBMENU_CHOICE} ${SUBMENU_CHOICE_NAME}`)].map((node) =>
-    node.textContent!.trim(),
-  );
-  if (names.length === 0) throw new Error(`no choices this test can drive in the "${label}" submenu`);
-  return names;
-}
-
-async function clickChoice(surface: Surface, label: string, name: string): Promise<void> {
-  const submenu = (await surface.submenu(label))!;
-  const choice = [...submenu.querySelectorAll<HTMLElement>(SUBMENU_CHOICE)].find(
-    (node) => node.querySelector(SUBMENU_CHOICE_NAME)!.textContent!.trim() === name,
-  )!;
-  await page.elementLocator(choice).click();
-}
-
 /**
- * Applies every menu item twice (on, then its next state), resetting between
- * items. Grouping picks the list's render path, so every item runs under each
- * Group choice. Each Reset must restore the starting view, and every row or
- * submenu choice that starts off must change the rows or the query under some
- * grouping, so a filter the fixture cannot tell apart fails instead of passing
- * vacuously.
+ * The PRs and issues an Activity shape shows. Desktop lists events and the
+ * phone shows one card per item, so the comparison is the set of items.
  */
-async function exercise(mounted: MountedBrowserApp, surface: Surface, pathname: string) {
-  await vi.waitFor(() => expect(visibleRows(surface.list()).length).toBeGreaterThan(0), WAIT);
-  await surface.open();
-  const menu = surface.menu();
-  const initial = await settled(mounted, surface, pathname);
-  const groupings = menu.find((section) => section.title === "Group")!.items;
-  const outcomes: Record<string, unknown> = { initial };
-  // Every plain row is one target; a row with a submenu is one target per choice.
-  const submenus: Record<string, string[]> = {};
-  const targets: { key: string; label: string; apply: () => Promise<void> }[] = [];
-  for (const section of menu) {
-    for (const label of section.items) {
-      const choices = await submenuChoices(surface, label);
-      if (choices) submenus[label] = choices;
-      for (const name of choices ?? [null]) {
-        targets.push({
-          key: `${section.title} / ${label}${name === null ? "" : ` / ${name}`}`,
-          label,
-          apply: () => (name === null ? click(surface, label) : clickChoice(surface, label, name)),
-        });
-      }
-    }
-  }
-  await surface.reset();
-  const narrowed = new Set<string>();
-  for (const grouping of groupings) {
-    for (const { key, apply } of targets) {
-      await click(surface, grouping);
-      const base = await settled(mounted, surface, pathname);
-      const states = [];
-      for (let round = 0; round < 2; round++) {
-        await surface.open();
-        await apply();
-        states.push(await settled(mounted, surface, pathname));
-      }
-      if (
-        states.some((state) => state.query !== base.query || JSON.stringify(state.rows) !== JSON.stringify(base.rows))
-      ) {
-        narrowed.add(key);
-      }
-      await surface.reset();
-      expect(await settled(mounted, surface, pathname), `Reset after ${grouping}: ${key}`).toEqual(initial);
-      outcomes[`${grouping}: ${key}`] = states;
-    }
-  }
-  // Each plain row and each submenu choice must narrow on its own.
-  const unexercised = targets
-    .filter(({ key, label }) => initial.items[label]?.state === "off" && !narrowed.has(key))
-    .map(({ key }) => key);
-  expect(unexercised, "menu items the fixture does not tell apart").toEqual([]);
-  return { menu, submenus, outcomes };
+function activityItems(list: HTMLElement): string[] {
+  const numbers = list.querySelectorAll(".item-number, .item-ref, .mobile-activity-number");
+  return [...new Set([...numbers].map((node) => node.textContent!.trim()))].sort();
 }
 
 function label(name: string) {
@@ -361,8 +121,79 @@ function savedSettings(): MockRouteOverride {
   };
 }
 
-describe("phone and desktop list filters", () => {
-  vi.setConfig({ testTimeout: 120_000 });
+/** One event per item, so each filter's effect shows in which items remain. */
+function activityFixture() {
+  const now = Date.now();
+  const repo = {
+    provider: "github",
+    platform_host: "github.com",
+    platform_repo_id: 1001,
+    owner: "acme",
+    name: "widgets",
+    repo_path: "acme/widgets",
+  };
+  const subject = (
+    itemType: "pr" | "issue",
+    number: number,
+    overrides: Partial<ActivitySubject> = {},
+  ): ActivitySubject => ({
+    activity_at: new Date(now - number * 60_000).toISOString(),
+    event_ledger_revision: `r${number}`,
+    item_number: number,
+    item_state: "open",
+    item_title: `Item ${number}`,
+    item_author: "octocat",
+    item_type: itemType,
+    item_url: `https://github.com/acme/widgets/${itemType === "pr" ? "pull" : "issues"}/${number}`,
+    platform_host: "github.com",
+    repo_owner: "acme",
+    repo_name: "widgets",
+    repo,
+    labels: [],
+    ...overrides,
+  });
+  const subjects = [
+    subject("pr", 11, { labels: [label("bug")], workspace: { id: "ws-11", status: "ready" } }),
+    subject("pr", 12, { labels: [label("docs")] }),
+    subject("issue", 21, { item_author: "renovate[bot]", labels: [label("bug")] }),
+    subject("issue", 22, { item_state: "closed" }),
+  ];
+  const items = subjects.map(
+    (item, index): ActivityItem =>
+      ({
+        ...item,
+        id: `event-${item.item_number}`,
+        cursor: `event-${item.item_number}`,
+        activity_type: "comment",
+        // One event author is a bot, for Activity's own Hide bots filter.
+        author: index === 1 ? "dependabot[bot]" : "octocat",
+        body_preview: "",
+        created_at: item.activity_at,
+      }) as unknown as ActivityItem,
+  );
+  return { items, item_activity: subjects };
+}
+
+function answerActivity(): MockRouteOverride {
+  const fixture = activityFixture();
+  return (req) =>
+    req.method === "GET" && req.url.pathname === "/api/v1/activity"
+      ? jsonResponse({
+          items: fixture.items,
+          item_activity: fixture.item_activity,
+          capped: false,
+          item_activity_capped: false,
+          event_cursor: "cursor",
+          use_workspace_activity_for_recency: false,
+          workspace_activity: [],
+        })
+      : req.url.pathname === "/api/v1/activity/authors"
+        ? jsonResponse({ authors: ["octocat", "renovate[bot]"] })
+        : null;
+}
+
+describe("list filters across desktop, phone, and Activity", () => {
+  vi.setConfig({ testTimeout: 240_000 });
 
   let mounted: MountedBrowserApp | null = null;
 
@@ -380,27 +211,33 @@ describe("phone and desktop list filters", () => {
 
   async function run(
     path: string,
-    pathname: string,
-    body: { Title: string }[],
-    surface: () => Surface,
+    overrides: MockRouteOverride[],
+    surface: Surface,
     phoneRoute: boolean,
+    options: ExerciseOptions,
   ) {
     localStorage.clear();
     window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = phoneRoute;
     await page.viewport(phoneRoute ? 390 : 1280, phoneRoute ? 844 : 900);
-    mounted = await mountBrowserApp(path, {
-      overrides: [
-        (req) => (req.method === "GET" && req.url.pathname === pathname ? jsonResponse(answerFor(req, body)) : null),
-        savedSettings(),
-      ],
-    });
-    const result = await exercise(mounted, surface(), pathname);
+    mounted = await mountBrowserApp(path, { overrides: [...overrides, savedSettings()] });
+    const result = await exercise(mounted, surface, options);
     mounted.unmount();
     mounted = null;
     return result;
   }
 
-  it.each([
+  const listOptions = (pathname: string): ExerciseOptions => ({
+    pathname,
+    visibleRows: listRows,
+    // Grouping picks the list's render path, so every item runs under each Group choice.
+    bases: (menu) => menu.find((section) => section.title === "Group")!.items,
+  });
+  const answerList =
+    (pathname: string, body: () => { Title: string }[]): MockRouteOverride =>
+    (req) =>
+      req.method === "GET" && req.url.pathname === pathname ? jsonResponse(answerFor(req, body())) : null;
+
+  const lists = [
     {
       kind: "PR",
       desktopPath: "/pulls",
@@ -417,13 +254,91 @@ describe("phone and desktop list filters", () => {
       container: ".issue-list",
       body: issueFixtures,
     },
-  ])("offers the desktop $kind filters on the phone and applies each one the same way", async (list) => {
-    const onDesktop = await run(list.desktopPath, list.pathname, list.body(), () => desktop(list.container), false);
-    const onPhone = await run(list.phonePath, list.pathname, list.body(), phone, true);
+  ];
+
+  it.each(lists)("offers the desktop $kind filters on the phone and applies each one the same way", async (list) => {
+    const answer = answerList(list.pathname, list.body);
+    const onDesktop = await run(
+      list.desktopPath,
+      [answer],
+      desktopSurface(list.container, ".compact-filter-menu button"),
+      false,
+      listOptions(list.pathname),
+    );
+    const onPhone = await run(
+      list.phonePath,
+      [answer],
+      phoneSurface(".mobile-main .focus-list", PHONE_FILTERS),
+      true,
+      listOptions(list.pathname),
+    );
 
     expect(onPhone.menu).toEqual(onDesktop.menu);
     expect(onPhone.submenus).toEqual(onDesktop.submenus);
     expect(onPhone.outcomes).toEqual(onDesktop.outcomes);
+  });
+
+  it("offers the same Activity filters on the phone and applies each one the same way", async () => {
+    const options: ExerciseOptions = {
+      pathname: "/api/v1/activity",
+      visibleRows: activityItems,
+      bases: () => [null],
+      // The phone inbox always shows one card per PR or issue with its newest
+      // events, so View, Group, and commit roll-up are desktop feed layouts.
+      skipSections: ["Layout", "Group", "Commits"],
+    };
+    const onDesktop = await run(
+      "/",
+      [answerActivity()],
+      desktopSurface(".activity-feed", ".filters-wrap .kit-filter-dropdown__btn"),
+      false,
+      options,
+    );
+    const onPhone = await run(
+      "/m",
+      [answerActivity()],
+      phoneSurface(".mobile-activity-inbox", PHONE_FILTERS),
+      true,
+      options,
+    );
+
+    expect(onPhone.menu).toEqual(onDesktop.menu);
+    expect(onPhone.submenus).toEqual(onDesktop.submenus);
+    expect(onPhone.outcomes).toEqual(onDesktop.outcomes);
+  });
+
+  it("gives Activity every PR list and issue list filter", async () => {
+    await page.viewport(1280, 900);
+    const labelsOf = async (path: string, overrides: MockRouteOverride[], surface: Surface) => {
+      mounted = await mountBrowserApp(path, { overrides: [...overrides, savedSettings()] });
+      await vi.waitFor(() => expect(surface.list()).not.toBeNull(), WAIT);
+      const labels = (await surface.menu()).flatMap((section) => section.items);
+      mounted.unmount();
+      mounted = null;
+      return labels;
+    };
+    const activity = await labelsOf(
+      "/",
+      [answerActivity()],
+      desktopSurface(".activity-feed", ".filters-wrap .kit-filter-dropdown__btn"),
+    );
+    const pulls = await labelsOf(
+      "/pulls",
+      [answerList("/api/v1/pulls", pullFixtures)],
+      desktopSurface(".pull-list", ".compact-filter-menu button"),
+    );
+    const issues = await labelsOf(
+      "/issues",
+      [answerList("/api/v1/issues", issueFixtures)],
+      desktopSurface(".issue-list", ".compact-filter-menu button"),
+    );
+
+    // Stack tree arranges PR list rows; Activity rows are events, so it has no stack layout.
+    const listOnly = ["Stack tree"];
+    const missing = [...new Set([...pulls, ...issues])].filter(
+      (label) => !listOnly.includes(label) && !activity.includes(label),
+    );
+    expect(missing, "PR or issue list filters Activity lacks").toEqual([]);
   });
 
   it("keeps every phone filter reachable and touch-sized in a short landscape viewport", async () => {
@@ -434,8 +349,8 @@ describe("phone and desktop list filters", () => {
         (req) => (req.method === "GET" && req.url.pathname === "/api/v1/pulls" ? jsonResponse(pullFixtures()) : null),
       ],
     });
-    const surface = phone();
-    await vi.waitFor(() => expect(visibleRows(surface.list()).length).toBeGreaterThan(0), WAIT);
+    const surface = phoneSurface(".mobile-main .focus-list", PHONE_FILTERS);
+    await vi.waitFor(() => expect(listRows(surface.list()).length).toBeGreaterThan(0), WAIT);
     await surface.open();
     await surface.submenu("Labels");
 
@@ -452,39 +367,5 @@ describe("phone and desktop list filters", () => {
     for (const target of targets) {
       expect(target.getBoundingClientRect().height, target.textContent!.trim()).toBeGreaterThanOrEqual(40);
     }
-  });
-
-  it("offers a touch-sized Load more when phone filters hide every loaded row of a capped list", async () => {
-    window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = true;
-    await page.viewport(390, 844);
-    const [base] = pullFixtures();
-    mounted = await mountBrowserApp("/m/pulls", {
-      overrides: [
-        (req) => {
-          if (req.method !== "GET" || req.url.pathname !== "/api/v1/pulls") return null;
-          // A full page of open, non-draft PRs: the list is capped and Draft hides all of it.
-          const limit = Number(req.url.searchParams.get("limit"));
-          return jsonResponse(
-            Array.from({ length: limit }, (_, index) => ({
-              ...base!,
-              ID: 3000 + index,
-              Number: 100 + index,
-              IsDraft: false,
-            })),
-          );
-        },
-      ],
-    });
-    const surface = phone();
-    await vi.waitFor(() => expect(visibleRows(surface.list()).length).toBeGreaterThan(0), WAIT);
-    await click(surface, "Draft");
-
-    const loadMore = await vi.waitFor(() => {
-      const button = surface.list().querySelector<HTMLElement>(".list-pagination button");
-      expect(button).not.toBeNull();
-      return button!;
-    }, WAIT);
-    expect(loadMore.getBoundingClientRect().height).toBeGreaterThanOrEqual(40);
-    expect(surface.list().textContent).not.toContain("No pull requests match these filters.");
   });
 });

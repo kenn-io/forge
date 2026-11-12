@@ -397,9 +397,10 @@ test.describe("phone routes", () => {
     const queued = page.getByRole("combobox", { name: /Merge queued/ });
     await expect(queued).toContainText("No");
 
+    // An older hide_merge_queued link opens as the PR list's Merge queued: No.
     const cleared = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return url.pathname === "/api/v1/activity" && !url.searchParams.has("hide_merge_queued");
+      return url.pathname === "/api/v1/activity" && !url.searchParams.has("attributes");
     });
     await queued.click();
     await page.getByRole("option", { name: "Any" }).click();
@@ -407,14 +408,14 @@ test.describe("phone routes", () => {
     await expect(queued).toContainText("Any");
     await filters.click();
     await expect(filters).toHaveAttribute("aria-pressed", "false");
-    await expect(page).toHaveURL(/hide_merge_queued=0/);
+    await expect(page).toHaveURL(/pr_filters=(&|$)/);
     await page.reload();
     await filters.click();
     await expect(queued).toContainText("Any");
 
     const enabled = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return url.pathname === "/api/v1/activity" && url.searchParams.get("hide_merge_queued") === "true";
+      return url.pathname === "/api/v1/activity" && url.searchParams.get("attributes") === "not_merge_queued";
     });
     await queued.click();
     await page.getByRole("option", { name: "No" }).click();
@@ -434,11 +435,11 @@ test.describe("phone routes", () => {
     await filters.click();
     await expect(filters).toHaveAttribute("aria-expanded", "true");
 
-    await page.getByRole("button", { name: "Filter authors" }).click();
-    await expect(page.getByRole("combobox", { name: "Filter authors" })).toBeVisible();
-    await expect(page.getByRole("option", { name: "carol" })).toBeVisible();
+    // Author opens the same author list as desktop Activity, inline in the panel.
+    await page.getByRole("button", { name: /^Author/ }).click();
+    await expect(page.getByRole("button", { name: "carol" })).toBeVisible();
 
-    const overlayMetrics = await page.locator(".mobile-author-filter .kit-typeahead__panel").evaluate((panel) => {
+    const overlayMetrics = await page.locator(".filter-sections-panel__submenu .author-filter").evaluate((panel) => {
       const bounds = panel.getBoundingClientRect();
       return {
         viewportWidth: window.innerWidth,
@@ -455,7 +456,7 @@ test.describe("phone routes", () => {
       const url = new URL(response.url());
       return url.pathname === "/api/v1/activity" && url.searchParams.get("author") === "carol";
     });
-    await page.getByRole("option", { name: "carol" }).click();
+    await page.getByRole("button", { name: "carol" }).click();
     const response = await filteredResponse;
     expect(response.status()).toBe(200);
     const payload = await response.json();
@@ -525,7 +526,7 @@ test.describe("phone routes", () => {
 
     const repoLabel = card.locator(".mobile-activity-card__meta span").first();
     const hideOrgToggle = page.getByRole("switch", {
-      name: "Hide org",
+      name: "Hide org name",
     });
     await expect(hideOrgToggle).not.toBeChecked();
     await expect(repoLabel).toHaveText("acme/widgets");
@@ -727,10 +728,8 @@ test.describe("phone routes", () => {
       expect(bounds?.width ?? 0).toBeGreaterThanOrEqual(40);
       expect(bounds?.height ?? 0).toBeGreaterThanOrEqual(40);
       await trigger.click();
-      await expect(page.getByRole("button", { name: "Unassigned" })).toBeVisible();
-      if (route === "pulls") {
-        await expect(page.getByRole("button", { name: "By repo" })).toBeVisible();
-      }
+      await expect(page.getByRole("combobox", { name: /Unassigned/ })).toBeVisible();
+      await expect(page.getByRole("combobox", { name: /Group/ })).toContainText("By repo");
     }
   });
 

@@ -48,7 +48,13 @@ import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter
 import { readIssuePRReferenceFilter, writeIssuePRReferenceFilter } from "./issue-pr-reference-filter.js";
 import { createRecentDetails } from "./recent-details.js";
 import { repoIdentityKey } from "../utils/repo-label.js";
-import { cycleLabelFilter as cycleLabel, matchesLabelFilters, type LabelFilters } from "../utils/label-filter.js";
+import {
+  cycleLabelFilter as cycleLabel,
+  labelFilterParams,
+  matchesLabelFilters,
+  type LabelFilters,
+} from "../utils/label-filter.js";
+import { isBotAuthor } from "../utils/bot-author.js";
 import {
   repositoryKeyAllows,
   repositoryKeyFromWire,
@@ -119,16 +125,6 @@ function readErrorMessage(error: ApiProblemError | TransientTransportError): str
     return apiErrorMessage(error.problem, "failed to load issues");
   }
   return "Could not reach Kenn Forge";
-}
-
-const GITLAB_RESOURCE_BOT_USERNAME = /^(?:project|group)_\d+_bot_[a-z0-9]+$/;
-
-function isBotAuthor(issue: Issue): boolean {
-  const author = issue.Author.toLowerCase();
-  if (author.endsWith("-bot")) return true;
-  if (issue.repo.provider === "github") return author.endsWith("[bot]");
-  if (issue.repo.provider === "gitlab") return GITLAB_RESOURCE_BOT_USERNAME.test(author);
-  return false;
 }
 
 export function createIssuesStore(opts: IssuesStoreOptions) {
@@ -219,13 +215,18 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   // --- list reads ---
 
-  const visibleIssues = $derived(hideBots ? issues.filter((issue) => !isBotAuthor(issue)) : issues);
+  // The server applies every filter, Hide bots and labels included, before its
+  // limit, so each page it returns already matches. The browser checks loaded
+  // rows again only so rows from an earlier query never show while a refresh
+  // for new filters fails.
+  const visibleIssues = $derived(
+    hideBots ? issues.filter((issue) => !isBotAuthor(issue.Author, issue.repo.provider)) : issues,
+  );
 
   function getIssues(): Issue[] {
     return visibleIssues;
   }
 
-  // Label filters only narrow the sidebar list and its keyboard order.
   const labelFilteredIssues = $derived(
     labelFilters.size === 0
       ? visibleIssues
@@ -242,10 +243,13 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   function cycleLabelFilter(name: string): void {
     labelFilters = cycleLabel(labelFilters, name);
+    loadIssues(activeListParams);
   }
 
   function clearLabelFilters(): void {
+    if (labelFilters.size === 0) return;
     labelFilters = new Map();
+    loadIssues(activeListParams);
   }
 
   function getHideBots(): boolean {
@@ -413,12 +417,16 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
 
   function hydrateDefaults(settings: IssueSettings): void {
+    const changed = hideBots !== settings.hide_bots;
     hideBots = settings.hide_bots;
     confirmedHideBots = settings.hide_bots;
+    // The server applies Hide bots, so a list loaded before settings arrived reloads with it.
+    if (changed && issues.length > 0) loadIssues(activeListParams);
   }
 
   function setHideBots(value: boolean): void {
     hideBots = value;
+    loadIssues(activeListParams);
     const generation = ++hideBotsMutationGeneration;
     const program = Effect.gen(function* () {
       const workflow = yield* SettingsWorkflow;
@@ -472,6 +480,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       ...(unassigned === "exclude" && { assigned: true }),
       ...(referencedByPR === "require" && canFilterReferencedByPR() && { referenced_by_pr: true }),
       ...(referencedByPR === "exclude" && canFilterReferencedByPR() && { not_referenced_by_pr: true }),
+      ...(hideBots && { hide_bots: true }),
+      ...labelFilterParams(labelFilters),
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };

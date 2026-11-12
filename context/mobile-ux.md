@@ -173,11 +173,10 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
 - Phone Activity, PR, and issue filters use the shared repository selector;
   preset management stays outside the phone workflow.
 - Those lists share one full-width search/filter trigger with repository
-  selection first; Activity owns its filter content.
-- Phone PR and issue filters must equal desktop's, including Group and View, and
-  narrow rows the same way; every surface renders the one shared menu, never a
-  phone copy (`frontend/src/lib/components/shared/list-filter-menus.ts`). A parity browser
-  test fails CI on drift (`frontend/src/App.list-filter-parity.browser.svelte.ts`).
+  selection first, then the shared filter menu, never a phone copy; the
+  cross-list filter rule lives in `context/ui-interaction-contracts.md`.
+- The phone Activity inbox shows one card per PR or issue, so Activity's Layout,
+  Group, and commit roll-up stay desktop-only.
 
 ## Routing expectations
 

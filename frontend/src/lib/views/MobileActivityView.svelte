@@ -1,33 +1,25 @@
 <script lang="ts">
   import RepoPrivateIcon from "../components/shared/RepoPrivateIcon.svelte";
-  import {
-    ACTIVITY_TRI_FILTER_OPTIONS,
-    activityFilterOptions,
-    activityItemVisible,
-    activitySubjectVisible,
-  } from "../components/activityFilters.js";
+  import { activityFilterMenu, activityItemVisible, activitySubjectVisible } from "../components/activityFilters.js";
+  import FilterSectionsPanel from "../components/shared/FilterSectionsPanel.svelte";
+  import LabelFilterMenu from "../components/shared/LabelFilterMenu.svelte";
+  import AuthorFilterMenu from "../components/shared/AuthorFilterMenu.svelte";
+  import { rememberedLabelChoices } from "../utils/label-filter.js";
   import { Effect } from "effect";
   import { onDestroy, onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
-  import { SvelteMap, SvelteSet } from "svelte/reactivity";
+  import { SvelteMap } from "svelte/reactivity";
   import { getAppRuntime } from "../app/runtime-context.js";
   import { observeIntersection } from "../browser/observers.js";
   import type { AppExecution } from "../app/runtime.js";
   import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
-    isActivityItemTypeEnabled,
-    type ActivityItemType,
-    type TimeRange,
-  } from "../stores/activity.svelte.js";
-  import {
     Card,
     Chip,
     ScrollBox,
     Timeline,
     TimelineItem,
-    Toggle,
-    Typeahead,
     type TypeaheadOption,
     type TimelineTone,
   } from "@kenn-io/kit-ui";
@@ -43,12 +35,9 @@
   import ItemStateChip from "../components/shared/ItemStateChip.svelte";
   import RepoTypeahead from "../components/RepoTypeahead.svelte";
   import MobileTriageSearchBar from "../components/mobile/MobileTriageSearchBar.svelte";
-  import ListLoadMore from "../components/sidebar/ListLoadMore.svelte";
-  import { SelectDropdown } from "@kenn-io/kit-ui";
   import WorkspaceIndicator from "../components/shared/WorkspaceIndicator.svelte";
   import AgentStatusIndicator from "../components/shared/AgentStatusIndicator.svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
-  import UserRoundIcon from "@lucide/svelte/icons/user-round";
   import {
     activityBranchKey,
     activityAuthor,
@@ -64,7 +53,7 @@
   } from "../utils/repo-label.js";
   import { repositoryKeyFromWire } from "../api/repository-key.js";
 
-  const { activity, settings, sync, grouping } = getStores();
+  const { activity, settings, sync, grouping, issues } = getStores();
   const runtime = getAppRuntime();
 
   interface Props {
@@ -85,12 +74,9 @@
     workspaceActivityAt?: string;
   };
 
-  const filters = $derived.by(() => activityFilterOptions(activity, grouping));
-  const timeRanges: TimeRange[] = ["24h", "7d", "30d", "90d"];
-  const timeRangeOptions = timeRanges.map((range) => ({
-    value: range,
-    label: range,
-  }));
+  const filterMenu = $derived(
+    activityFilterMenu({ activity, grouping, issues, labelMenu: labelFilterMenu, authorMenu: authorFilterMenu }),
+  );
   let searchInput = $state("");
   let activityPageLimit = $state(30);
   let filtersExpanded = $state(false);
@@ -134,27 +120,38 @@
     searchExecution?.interrupt();
   });
 
-  const displayItems = $derived.by(() =>
-    activity.getActivityItems().filter((item) =>
-      isActivityItemTypeEnabled(item.item_type, activity.getEnabledItemTypes())
-      && activityItemVisible(activity, item)
-    )
+  const displayItems = $derived(activity.getActivityItems().filter((item) => activityItemVisible(activity, item)));
+
+  const visibleWorkspaceActivity = $derived(
+    activity.getUseWorkspaceActivityForRecency()
+      ? activity.getWorkspaceActivity().filter((subject) => activitySubjectVisible(activity, subject))
+      : [],
   );
 
-  const visibleWorkspaceActivity = $derived.by(() => {
-    if (!activity.getUseWorkspaceActivityForRecency()) return [];
-    return activity.getWorkspaceActivity().filter((subject) =>
-      isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
-      && activitySubjectVisible(activity, subject)
-    );
+  const visibleItemActivity = $derived(
+    activity.getItemActivity().filter((subject) => activitySubjectVisible(activity, subject)),
+  );
+
+  // One entry per loaded PR or issue, so a label's count is items, not events.
+  const labelSubjects = $derived.by(() => {
+    const subjects = new SvelteMap<string, { labels?: ActivityItem["labels"] }>();
+    for (const subject of [...activity.getActivityItems(), ...activity.getItemActivity()]) {
+      const key = activityItemKey({
+        provider: subject.repo.provider,
+        platformHost: subject.repo.platform_host,
+        repositoryKey: repositoryKeyFromWire(subject.repo),
+        owner: subject.repo.owner,
+        name: subject.repo.name,
+        repoPath: subject.repo.repo_path,
+        itemType: subject.item_type,
+        itemNumber: subject.item_number,
+      });
+      subjects.set(key, { labels: subject.labels });
+    }
+    return [...subjects.values()];
   });
-
-  const visibleItemActivity = $derived.by(() =>
-    activity.getItemActivity().filter((subject) =>
-      isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
-      && activitySubjectVisible(activity, subject)
-    )
-  );
+  const activityLabelChoices = rememberedLabelChoices(() => labelSubjects, activity.getLabelFilters);
+  const labelChoices = $derived(activityLabelChoices());
 
   const groups = $derived.by(() => {
     const map = new SvelteMap<string, ActivityItem[]>();
@@ -312,13 +309,9 @@
   );
 
   const activeFilterCount = $derived(
-    (activity.getActivityAuthor() ? 1 : 0)
+    filterMenu.filterCount
     + (selectedRepo ? 1 : 0)
-    + (activity.getEnabledItemTypes().has("pr") ? 0 : 1)
-    + (activity.getEnabledItemTypes().has("issue") ? 0 : 1)
-    + filters.events.filter((filter) => !filter.active).length
-    + filters.visibility.filter((filter) => filter.active || filter.excluded).length
-    + filters.activeChoiceCount,
+    + filterMenu.itemTypes.filter((item) => !item.active).length,
   );
 
   const repoLabelFormatter = $derived.by(() =>
@@ -332,24 +325,6 @@
     ),
   );
 
-
-  function toggleItemType(itemType: ActivityItemType): void {
-    const next = new SvelteSet(activity.getEnabledItemTypes());
-    if (next.has(itemType)) next.delete(itemType);
-    else next.add(itemType);
-    activity.setEnabledItemTypes(next);
-    filters.applyFilters();
-  }
-
-  function setTimeRange(range: TimeRange): void {
-    activity.setTimeRange(range);
-    activity.syncToURL();
-    activity.loadActivity();
-  }
-
-  function handleTimeRangeChange(value: string): void {
-    setTimeRange(value as TimeRange);
-  }
 
   function handleRepoChange(value: string | undefined): void {
     onRepoChange?.(value);
@@ -653,6 +628,24 @@
   }
 </script>
 
+{#snippet authorFilterMenu()}
+  <AuthorFilterMenu
+    options={authorOptions}
+    value={activity.getActivityAuthor() ?? ""}
+    loading={activity.isActivityAuthorsLoading()}
+    error={activity.getActivityAuthorsError() ?? ""}
+    onselect={handleAuthorSelect}
+  />
+{/snippet}
+
+{#snippet labelFilterMenu()}
+  <LabelFilterMenu
+    choices={labelChoices}
+    oncycle={(name) => activity.cycleLabelFilter(name)}
+    emptyText="No labels on loaded activity"
+  />
+{/snippet}
+
 <section class="mobile-activity-inbox" aria-label="Mobile activity inbox" bind:this={inboxRoot}>
   <ScrollBox label="Activity inbox">
   <div class="mobile-activity-scroll">
@@ -691,100 +684,11 @@
             mobile
           />
         </div>
-
-        <div class="mobile-author-filter">
-          <span class="mobile-author-icon">
-            <UserRoundIcon size="16" strokeWidth="2" aria-hidden="true" />
-          </span>
-          <div class="mobile-author-picker">
-            <Typeahead
-              options={authorOptions}
-              value={activity.getActivityAuthor() ?? ""}
-              fallbackLabel="Anyone"
-              placeholder="Filter authors"
-              title="Filter by PR or issue author"
-              allowClear
-              clearLabel="Anyone"
-              loading={activity.isActivityAuthorsLoading()}
-              error={activity.getActivityAuthorsError() ?? ""}
-              onselect={handleAuthorSelect}
-            />
-            <span class="mobile-author-summary">
-              {activity.getActivityAuthor() ? "Selected author" : "All authors"}
-            </span>
-          </div>
-        </div>
       </div>
 
-      <div class="mobile-item-type-toggle">
-        <Toggle
-          checked={activity.getEnabledItemTypes().has("pr")}
-          label="PRs"
-          onchange={() => toggleItemType("pr")}
-        />
+      <div class="mobile-shared-filters">
+        <FilterSectionsPanel sections={filterMenu.sections} resetLabel="Reset filters" onReset={filterMenu.reset} />
       </div>
-
-      <div class="mobile-item-type-toggle">
-        <Toggle
-          checked={activity.getEnabledItemTypes().has("issue")}
-          label="Issues"
-          onchange={() => toggleItemType("issue")}
-        />
-      </div>
-
-      {#each filters.events as filter (filter.id)}
-        <div class="mobile-event-type-toggle">
-          <Toggle checked={filter.active} label={filter.label} onchange={filter.onSelect} />
-        </div>
-      {/each}
-
-      <div class="mobile-filter-select">
-        <span>Range</span>
-        <SelectDropdown
-          class="mobile-filter-dropdown"
-          title="Time range"
-          value={activity.getTimeRange()}
-          options={timeRangeOptions}
-          onchange={handleTimeRangeChange}
-        />
-      </div>
-
-      {#each [filters.state, filters.ci] as choice (choice.id)}
-        <div class="mobile-filter-select">
-          <span>{choice.label}</span>
-          <SelectDropdown
-            class="mobile-filter-dropdown"
-            title={choice.label}
-            value={choice.value}
-            options={choice.selectOptions}
-            onchange={choice.select}
-          />
-        </div>
-      {/each}
-
-      {#each filters.visibility as filter (filter.id)}
-        {#if filter.tri}
-          {@const tri = filter.tri}
-          <div class="mobile-filter-select">
-            <span>{filter.mobileLabel ?? filter.label}</span>
-            <SelectDropdown
-              class="mobile-filter-dropdown"
-              title={filter.label}
-              value={tri.value ?? "any"}
-              options={ACTIVITY_TRI_FILTER_OPTIONS}
-              onchange={(value) => tri.set(value === "require" || value === "exclude" ? value : undefined)}
-            />
-          </div>
-        {:else}
-          <div class="mobile-boolean-toggle">
-            <Toggle
-              checked={filter.active}
-              label={filter.mobileLabel ?? filter.label}
-              onchange={filter.onSelect}
-            />
-          </div>
-        {/if}
-      {/each}
     </div>
 
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
@@ -959,6 +863,11 @@
     display: grid;
   }
 
+  .mobile-shared-filters {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
   .mobile-identity-filters {
     grid-column: 1 / -1;
     min-width: 0;
@@ -966,87 +875,15 @@
     gap: 0;
   }
 
-  .mobile-author-filter {
-    grid-column: 1 / -1;
-    min-width: 0;
-    display: grid;
-    grid-template-columns: 28px minmax(0, 1fr);
-    align-items: center;
-    gap: var(--mobile-space-sm);
-    min-height: 48px;
-    padding: var(--mobile-space-2xs) var(--mobile-space-xs);
-    border: 0;
-    border-top: 0;
-    border-bottom: thin solid var(--border-muted);
-    border-radius: 0;
-    color: var(--text-secondary);
-    background: transparent;
-  }
 
-  .mobile-author-icon {
-    width: 28px;
-    height: 28px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-sm);
-    color: var(--accent-blue);
-    background: color-mix(in srgb, var(--accent-blue) 13%, transparent);
-  }
 
-  .mobile-author-picker {
-    min-width: 0;
-    display: grid;
-    gap: var(--mobile-space-2xs);
-  }
 
-  .mobile-author-picker :global(.kit-typeahead) {
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-  }
 
-  .mobile-author-picker :global(.kit-typeahead__trigger) {
-    height: auto;
-    min-height: 20px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--text-primary);
-    font-size: var(--font-size-md);
-    font-weight: 700;
-  }
 
-  .mobile-author-picker :global(.kit-typeahead__trigger:hover),
-  .mobile-author-picker :global(.kit-typeahead__trigger:focus) {
-    border: 0;
-  }
 
-  .mobile-author-picker :global(.kit-typeahead__chevron) {
-    width: 16px;
-    height: 16px;
-    transform: rotate(-90deg);
-    opacity: 0.5;
-  }
 
-  .mobile-author-picker :global(.kit-typeahead__input) {
-    min-height: 24px;
-    font-size: var(--font-size-sm);
-  }
 
-  .mobile-author-summary {
-    overflow: hidden;
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    line-height: 1.15;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .mobile-filter-select,
-  .mobile-item-type-toggle,
-  .mobile-event-type-toggle,
-  .mobile-boolean-toggle {
+  .mobile-filter-select {
     min-width: 0;
     min-height: var(--mobile-hit-target);
     display: grid;
@@ -1058,23 +895,6 @@
     border-radius: var(--radius-md);
     color: var(--text-secondary);
     background: var(--bg-inset);
-  }
-
-  .mobile-item-type-toggle,
-  .mobile-event-type-toggle,
-  .mobile-boolean-toggle {
-    display: flex;
-    padding: 0 var(--mobile-space-2xs);
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-
-  .mobile-item-type-toggle :global(.kit-toggle),
-  .mobile-event-type-toggle :global(.kit-toggle),
-  .mobile-boolean-toggle :global(.kit-toggle) {
-    width: 100%;
-    min-height: var(--mobile-hit-target);
   }
 
   .mobile-filter-select--repo {
@@ -1090,50 +910,6 @@
   .mobile-filter-select--repo :global(.typeahead-popover) {
     left: auto;
     right: 0;
-  }
-
-  .mobile-filter-select span {
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-weight: 750;
-    letter-spacing: 0.01em;
-  }
-
-  .mobile-filter-select :global(.mobile-filter-dropdown) {
-    width: 100%;
-    min-width: 0;
-  }
-
-  .mobile-filter-select :global(.mobile-filter-dropdown .kit-select-dropdown__trigger) {
-    height: auto;
-    min-height: calc(var(--mobile-hit-target) - var(--mobile-space-sm));
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    font-weight: 750;
-  }
-
-  .mobile-filter-select :global(.mobile-filter-dropdown .kit-select-dropdown__list) {
-    left: 0;
-    right: auto;
-    width: min(260px, calc(100vw - (var(--mobile-space-sm) * 2)));
-    max-width: calc(100vw - (var(--mobile-space-sm) * 2));
-    padding: var(--mobile-space-2xs);
-    border-radius: var(--radius-md);
-  }
-
-  .mobile-filter-select :global(.mobile-filter-dropdown .kit-select-dropdown__option) {
-    min-height: var(--mobile-hit-target);
-    padding: var(--mobile-space-xs) var(--mobile-space-sm);
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-sm);
-    line-height: 1.2;
-  }
-
-  .mobile-filter-select :global(.mobile-filter-dropdown .kit-select-dropdown__check) {
-    width: 13px;
   }
 
   .mobile-activity-card-list {

@@ -18,9 +18,8 @@
   import LabelFilterMenu from "../components/shared/LabelFilterMenu.svelte";
   import { issueListFilterMenu, pullListFilterMenu } from "../components/shared/list-filter-menus.js";
   import { repoGroups, repoItemLabel } from "../components/shared/repo-groups.js";
-  import { labelFilterChoices } from "../utils/label-filter.js";
+  import { rememberedLabelChoices } from "../utils/label-filter.js";
   import IssueItem from "../components/sidebar/IssueItem.svelte";
-  import ListLoadMore from "../components/sidebar/ListLoadMore.svelte";
   import ItemActionsMenu from "../components/sidebar/ItemActionsMenu.svelte";
   import type { ListItemTarget } from "../stores/item-actions.js";
   import { createRangeSelection, isSelectAllShortcut } from "../utils/range-selection.svelte.js";
@@ -402,11 +401,9 @@
       ? pullListFilterMenu({ pulls, grouping, labelMenu: labelFilterMenu, reload: resetPageAndLoad })
       : issueListFilterMenu({ issues, grouping, labelMenu: labelFilterMenu, reload: resetPageAndLoad }),
   );
-  const labelChoices = $derived(
-    listType === "mrs"
-      ? labelFilterChoices(prLoaded, pulls.getLabelFilters())
-      : labelFilterChoices(issueLoaded, issues.getLabelFilters()),
-  );
+  const pullLabelChoices = rememberedLabelChoices(pulls.getPulls, pulls.getLabelFilters);
+  const issueLabelChoices = rememberedLabelChoices(issues.getIssues, issues.getLabelFilters);
+  const labelChoices = $derived(listType === "mrs" ? pullLabelChoices() : issueLabelChoices());
 
   const prGroups = $derived(
     listType === "mrs" && grouping.getGroupingMode() === "byRepo"
@@ -556,10 +553,10 @@
         </div>
       {:else if prLoaded.length === 0 && !sync.getSyncState()?.last_run_at}
         <p class="state-message">Waiting for first sync...</p>
+      {:else if prItems.length === 0 && filterMenu.filterCount > 0}
+        <p class="state-message">No pull requests match these filters.</p>
       {:else if prLoaded.length === 0}
         <p class="state-message">No pull requests found.</p>
-      {:else if prItems.length === 0 && !listCapped}
-        <p class="state-message">No pull requests match these filters.</p>
       {:else if prGroups !== null}
         {#each prGroups as group (group.key)}
           <GroupedSidebarSection
@@ -589,10 +586,10 @@
         </div>
       {:else if issueLoaded.length === 0 && !sync.getSyncState()?.last_run_at}
         <p class="state-message">Waiting for first sync...</p>
+      {:else if issueItems.length === 0 && !listCapped && filterMenu.filterCount > 0}
+        <p class="state-message">No issues match these filters.</p>
       {:else if issueLoaded.length === 0 && !listCapped}
         <p class="state-message">No issues found.</p>
-      {:else if issueItems.length === 0 && !listCapped}
-        <p class="state-message">No issues match these filters.</p>
       {:else if issueGroups !== null}
         {#each issueGroups as group (group.key)}
           <GroupedSidebarSection
@@ -610,10 +607,6 @@
       {/if}
     {/if}
     {#if listCapped && (!chunked || pageLimit < 500)}
-      {#if itemCount === 0}
-        <!-- Local filters can hide every loaded row, leaving no list to scroll for the next chunk. -->
-        <ListLoadMore loading={prLoading || issueLoading} onclick={loadMore} />
-      {/if}
       <div
         class="focus-list-loading-sentinel"
         aria-live="polite"
@@ -757,9 +750,7 @@
     overflow-y: auto;
   }
 
-  :global(.mobile-main) .focus-list :global(.label-filter__row),
-  :global(.mobile-main) .focus-list :global(.sidebar-group-header),
-  :global(.mobile-main) .focus-list :global(.list-pagination .kit-button) {
+  :global(.mobile-main) .focus-list :global(.sidebar-group-header) {
     min-height: var(--mobile-chrome-hit-target);
   }
 

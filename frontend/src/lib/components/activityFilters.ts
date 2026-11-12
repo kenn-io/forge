@@ -1,13 +1,46 @@
+// Activity's filter menu: the PR and issue list filters, built from the same
+// elements as those lists (shared/list-filter-menus.ts), plus Activity's own
+// timeline filters. Activity's extras must not overlap a shared filter.
+import type { Snippet } from "svelte";
+
 import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
-import { buildActivityFilterTypes, type ActivityStore, type DEFAULT_EVENT_TYPES } from "../stores/activity.svelte.js";
+import {
+  buildActivityFilterTypes,
+  DEFAULT_EVENT_TYPES,
+  isActivityItemTypeEnabled,
+  type ActivityItemType,
+  type ActivityStore,
+  type TimeRange,
+} from "../stores/activity.svelte.js";
 import type { GroupingStore } from "../stores/grouping.svelte.js";
+import type { IssuesStore } from "../stores/issues.svelte.js";
+import { isBotAuthor as isBotAccount } from "../utils/bot-author.js";
+import { matchesLabelFilters } from "../utils/label-filter.js";
 import {
   BROWSER_ONLY_PULL_ATTRIBUTES,
+  PULL_ATTRIBUTE_SECTIONS,
+  cycleFilterInSections,
+  toggleFilterInSections,
   triFilterInSelection,
   type PullAttributeFilter,
 } from "../utils/pull-attributes.js";
-import { cycleTriFilter, triFilterRow, type TriFilter } from "../utils/tri-filter.js";
 import { isClosedOrMergedActivity, isDefaultBranchActivity } from "./activityRows.js";
+import {
+  commonSection,
+  countFilters,
+  groupSection,
+  hideOrgNameChoice,
+  issueFilterSections,
+  pullFilterSections,
+  resetSections,
+  stateSection,
+  toggleChoice,
+  triChoice,
+  type FilterChoice,
+  type FilterSection,
+  type IssueFilterTarget,
+  type PullFilterTarget,
+} from "./shared/list-filter-menus.js";
 
 const EVENT_OPTIONS = [
   { value: "comment", label: "Comments", color: "var(--accent-amber)" },
@@ -16,81 +49,66 @@ const EVENT_OPTIONS = [
   { value: "force_push", label: "Force pushes", color: "var(--accent-red)" },
 ] satisfies { value: (typeof DEFAULT_EVENT_TYPES)[number]; label: string; color: string }[];
 
-interface ActivityVisibilityFilter {
-  id: string;
-  label: string;
-  mobileLabel?: string;
-  active: boolean;
-  /** The filter drops its matches; only a filter with `tri` can be excluded. */
-  excluded: boolean;
-  /** Set for a filter that can require or exclude its matches. `onSelect` cycles it. */
-  tri?: { value: TriFilter; set: (value: TriFilter) => void };
+const TIME_RANGES: TimeRange[] = ["24h", "7d", "30d", "90d"];
+
+const ITEM_TYPES: { value: ActivityItemType; label: string }[] = [
+  { value: "pr", label: "PRs" },
+  { value: "issue", label: "Issues" },
+];
+
+// Activity's store keeps Draft and Merge queued in their own saved fields; every
+// other PR attribute lives in one list. These names map between the two.
+const DRAFT = { require: "draft", exclude: "not_draft" } as const;
+const MERGE_QUEUED = { require: "merge_queued", exclude: "not_merge_queued" } as const;
+const OWN_FIELD_ATTRIBUTES: readonly PullAttributeFilter[] = [
+  DRAFT.require,
+  DRAFT.exclude,
+  "ready",
+  MERGE_QUEUED.require,
+  MERGE_QUEUED.exclude,
+];
+
+export interface ActivityFilterMenu {
+  /** PRs and Issues, which the desktop toolbar also shows as toggles. */
+  itemTypes: FilterChoice[];
+  /** What both desktop and phone Activity show: item types, time range, and every filter. */
+  sections: FilterSection[];
+  /**
+   * Desktop's sections: `sections` plus the Layout, Group, and Commits choices only the desktop feed has.
+   * The phone inbox always shows one card per PR or issue with its newest
+   * events, so it has no flat event list, repo grouping, or commit roll-up.
+   */
+  desktopSections: FilterSection[];
+  /** How many filter choices differ from their default, for a badge. */
+  filterCount: number;
+  /** Turns every filter off. View, time range, grouping, and item types stay. */
   reset: () => void;
-  onSelect: () => void;
 }
 
-/** A pick-one choice: each option is a row on desktop and a select option on phones. */
-interface ActivityChoiceFilter<T extends string> {
-  id: string;
-  label: string;
-  value: T;
-  /** The value Reset filters restores; any other value counts as an active filter. */
-  defaultValue: T;
-  options: { value: T; label: string }[];
-  set: (value: T) => void;
-  /** Chooses an option, or turns the filter off when an option with an off value is picked again. */
-  choose: (value: T) => void;
-  /** Phone select choices, including an off choice when the desktop rows have none. */
-  selectOptions: { value: string; label: string }[];
-  select: (value: string) => void;
+interface ActivityMenuDeps {
+  activity: ActivityStore;
+  grouping: GroupingStore;
+  issues: IssuesStore;
+  /** Content of the Labels row's flyout. */
+  labelMenu: Snippet;
+  /** Content of the Author row's flyout. */
+  authorMenu: Snippet;
 }
 
-function choiceFilter<T extends string>(
-  choice: Omit<ActivityChoiceFilter<T>, "value" | "choose" | "selectOptions" | "select"> & { get: () => T },
-  offLabel?: string,
-): ActivityChoiceFilter<T> {
-  return {
-    ...choice,
-    value: choice.get(),
-    choose: (value) => choice.set(offLabel !== undefined && choice.get() === value ? choice.defaultValue : value),
-    selectOptions:
-      offLabel === undefined ? choice.options : [{ value: choice.defaultValue, label: offLabel }, ...choice.options],
-    select: (value) =>
-      choice.set(choice.options.find((option) => option.value === value)?.value ?? choice.defaultValue),
+/** Activity's filter menu. Read it inside a `$derived` so it tracks the stores. */
+export function activityFilterMenu({
+  activity,
+  grouping,
+  issues,
+  labelMenu,
+  authorMenu,
+}: ActivityMenuDeps): ActivityFilterMenu {
+  const reload = () => {
+    activity.syncToURL();
+    activity.loadActivity();
   };
-}
-
-/** Phone choices for a filter that can be required or excluded. */
-export const ACTIVITY_TRI_FILTER_OPTIONS = [
-  { value: "any", label: "Any" },
-  { value: "require", label: "Yes" },
-  { value: "exclude", label: "No" },
-];
-
-// Labels and order match the pull request list's filter menu.
-const STATE_OPTIONS: { value: "open" | "closed" | "all"; label: string }[] = [
-  { value: "open", label: "Open" },
-  { value: "closed", label: "Closed" },
-  { value: "all", label: "All states" },
-];
-
-const CI_OPTIONS: { value: "any" | "passed_ci" | "failed_ci"; label: string }[] = [
-  { value: "passed_ci", label: "Passing CI" },
-  { value: "failed_ci", label: "Failed CI" },
-];
-
-/** The pull request list's conditions, in its order. They apply only to pull request activity. */
-const PULL_CONDITIONS: { id: string; value: PullAttributeFilter; opposite: PullAttributeFilter; label: string }[] = [
-  { id: "approved", value: "approved", opposite: "not_approved", label: "Approved" },
-  { id: "merge-conflicts", value: "merge_conflicts", opposite: "no_merge_conflicts", label: "Merge conflicts" },
-];
-const PULL_BROWSER_CONDITIONS: typeof PULL_CONDITIONS = [
-  { id: "has-workspace", value: "has_workspace", opposite: "no_workspace", label: "Has workspace" },
-  { id: "from-fork", value: "fork", opposite: "not_fork", label: "From fork" },
-];
-
-export function activityFilterOptions(activity: ActivityStore, grouping: GroupingStore) {
-  function applyFilters(): void {
+  // Event types and default-branch activity are sent as activity types.
+  const applyTypes = () => {
     activity.setActivityFilterTypes(
       buildActivityFilterTypes(
         activity.getEnabledItemTypes(),
@@ -99,149 +117,203 @@ export function activityFilterOptions(activity: ActivityStore, grouping: Groupin
         activity.getShowNotifications(),
       ),
     );
-    activity.syncToURL();
-    activity.loadActivity();
-  }
-  const events = [
-    ...EVENT_OPTIONS.map(({ value, label, color }) => ({
-      id: value,
-      label,
-      color,
-      active: activity.getEnabledEvents().has(value),
+    reload();
+  };
+
+  const getAttributes = (): PullAttributeFilter[] => {
+    const draft = activity.getDraft();
+    const queued = activity.getMergeQueued();
+    return [
+      ...(draft ? [DRAFT[draft]] : []),
+      ...(queued ? [MERGE_QUEUED[queued]] : []),
+      ...activity.getPullAttributeFilters(),
+    ];
+  };
+  const setAttributes = (next: PullAttributeFilter[]) => {
+    const before = getAttributes();
+    const tri = (pair: { require: PullAttributeFilter; exclude: PullAttributeFilter }) =>
+      next.includes(pair.require) ? "require" : next.includes(pair.exclude) ? "exclude" : undefined;
+    activity.setDraft(tri(DRAFT));
+    activity.setMergeQueued(tri(MERGE_QUEUED));
+    activity.setPullAttributeFilters(next.filter((filter) => !OWN_FIELD_ATTRIBUTES.includes(filter)));
+    // Has workspace and From fork apply to loaded rows; everything else asks the server.
+    const changed = [...before, ...next].filter((filter) => before.includes(filter) !== next.includes(filter));
+    if (changed.some((filter) => !BROWSER_ONLY_PULL_ATTRIBUTES.includes(filter))) reload();
+    else activity.syncToURL();
+  };
+
+  // Activity applies every PR and issue list filter. A filter added to those
+  // targets fails to compile here until Activity can apply it too.
+  const target = {
+    state: {
+      get: activity.getActivityState,
+      set: (value: string) => activity.setActivityState(value === "open" || value === "closed" ? value : "all"),
+    },
+    starred: { get: activity.getStarred, set: activity.setStarred },
+    involvesMe: { get: activity.getInvolvesMe, set: activity.setInvolvesMe },
+    unassigned: { get: activity.getUnassigned, set: activity.setUnassigned },
+    labels: { filters: activity.getLabelFilters(), clear: activity.clearLabelFilters, menu: labelMenu },
+    attributes: {
+      get: getAttributes,
+      toggle: (filter: PullAttributeFilter) =>
+        setAttributes(toggleFilterInSections(PULL_ATTRIBUTE_SECTIONS, getAttributes(), filter)),
+      cycle: (filter: PullAttributeFilter, opposite: PullAttributeFilter) =>
+        setAttributes(cycleFilterInSections(PULL_ATTRIBUTE_SECTIONS, getAttributes(), filter, opposite)),
+      set: (next: PullAttributeFilter[]) => setAttributes(next),
+      clear: () => setAttributes([]),
+    },
+    referencedByPR: issues.canFilterReferencedByPR()
+      ? { get: activity.getReferencedByPR, set: activity.setReferencedByPR }
+      : null,
+    hideBotAuthors: { get: activity.getHideBotAuthoredIssues, set: activity.setHideBotAuthoredIssues },
+    reload,
+  } satisfies PullFilterTarget & IssueFilterTarget;
+
+  const itemTypes = ITEM_TYPES.map(({ value, label }) => ({
+    id: `items-${value}`,
+    label,
+    active: activity.getEnabledItemTypes().has(value),
+    defaultOn: true,
+    onSelect: () => {
+      const next = new Set(activity.getEnabledItemTypes());
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      activity.setEnabledItemTypes(next);
+      applyTypes();
+    },
+  }));
+
+  const items: FilterSection = { title: "Items", items: itemTypes };
+  const timeRange: FilterSection = {
+    title: "Time range",
+    pick: { defaultId: `range-${activity.getTimeRangeDefault()}` },
+    items: TIME_RANGES.map((range) => ({
+      id: `range-${range}`,
+      label: range,
+      active: activity.getTimeRange() === range,
+      closeOnSelect: true,
       onSelect: () => {
-        const next = new Set(activity.getEnabledEvents());
-        // An empty selection hides filterable events while PR commits and
-        // Notifications retain their independent selections.
-        if (next.has(value)) next.delete(value);
-        else next.add(value);
-        activity.setEnabledEvents(next);
-        applyFilters();
+        activity.setTimeRange(range);
+        reload();
       },
     })),
+  };
+  const desktopLayout: FilterSection[] = [
     {
-      id: "notification",
-      label: "Notifications",
-      color: "var(--accent-blue)",
-      active: activity.getShowNotifications(),
-      onSelect: () => {
-        activity.setShowNotifications(!activity.getShowNotifications());
-        applyFilters();
-      },
+      title: "Layout",
+      pick: { defaultId: `view-${activity.getViewModeDefault()}` },
+      items: (["flat", "threaded"] as const).map((mode) => ({
+        id: `view-${mode}`,
+        label: mode === "flat" ? "Flat" : "Threaded",
+        active: activity.getViewMode() === mode,
+        closeOnSelect: true,
+        onSelect: () => {
+          activity.setViewMode(mode);
+          reload();
+        },
+      })),
+    },
+    ...(activity.getViewMode() === "threaded" ? [groupSection(grouping)] : []),
+    {
+      title: "Commits",
+      items: [
+        toggleChoice(
+          "roll-up-commits",
+          "Roll up commits",
+          { get: activity.getRollUpCommits, set: activity.setRollUpCommits },
+          activity.syncToURL,
+        ),
+      ],
     },
   ];
 
-  const state = choiceFilter<"open" | "closed" | "all">({
-    id: "state",
-    label: "State",
-    get: () => activity.getActivityState(),
-    defaultValue: "all",
-    options: STATE_OPTIONS,
-    set: (value) => {
-      activity.setActivityState(value);
-      activity.loadActivity();
-    },
-  });
-
-  const ci = choiceFilter<"any" | "passed_ci" | "failed_ci">(
+  const author = activity.getActivityAuthor();
+  const common = commonSection(target);
+  const filterSections: FilterSection[] = [
+    stateSection(target, "all"),
     {
-      id: "ci",
-      label: "CI",
-      get: () =>
-        activity.getPullAttributeFilters().find((filter) => filter === "passed_ci" || filter === "failed_ci") ?? "any",
-      defaultValue: "any",
-      options: CI_OPTIONS,
-      set: (value) => {
-        const next = activity
-          .getPullAttributeFilters()
-          .filter((filter) => filter !== "passed_ci" && filter !== "failed_ci");
-        activity.setPullAttributeFilters(value === "any" ? next : [...next, value]);
-        activity.loadActivity();
-      },
+      ...common,
+      items: [
+        {
+          id: "author",
+          label: "Author",
+          detail: author || "Anyone",
+          active: Boolean(author),
+          submenu: authorMenu,
+          reset: () => activity.setActivityAuthor(undefined),
+          onSelect: () => {},
+        },
+        ...common.items,
+      ],
     },
-    "Any",
-  );
-
-  function triFilter(id: string, label: string, get: () => TriFilter, set: (value: TriFilter) => void, reload = true) {
-    const value = get();
-    const choose = (next: TriFilter) => {
-      set(next);
-      if (reload) activity.loadActivity();
-    };
-    return {
-      id,
-      label,
-      ...triFilterRow(value),
-      tri: { value, set: choose },
-      reset: () => set(undefined),
-      onSelect: () => choose(cycleTriFilter(get())),
-    } satisfies ActivityVisibilityFilter;
-  }
-
-  function pullCondition({ id, value, opposite, label }: (typeof PULL_CONDITIONS)[number]) {
-    const get = () => triFilterInSelection(activity.getPullAttributeFilters(), value, opposite);
-    const set = (next: TriFilter) => {
-      const others = activity.getPullAttributeFilters().filter((filter) => filter !== value && filter !== opposite);
-      activity.setPullAttributeFilters(
-        next === undefined ? others : [...others, next === "require" ? value : opposite],
-      );
-    };
-    return triFilter(id, label, get, set, !BROWSER_ONLY_PULL_ATTRIBUTES.includes(value));
-  }
-
-  const conditions: ActivityVisibilityFilter[] = [
-    triFilter("involves-me", "Involves me", activity.getInvolvesMe, activity.setInvolvesMe),
-    triFilter("unassigned", "Unassigned", activity.getUnassigned, activity.setUnassigned),
-    triFilter("bots", "Bots", activity.getBots, activity.setBots),
-    triFilter("draft", "Draft", activity.getDraft, activity.setDraft),
-    ...PULL_CONDITIONS.map(pullCondition),
-    triFilter("merge-queued", "Merge queued", activity.getMergeQueued, activity.setMergeQueued),
-    ...PULL_BROWSER_CONDITIONS.map(pullCondition),
+    ...pullFilterSections(target),
+    ...issueFilterSections(target),
     {
-      id: "hide-default-branch",
-      label: "Hide default-branch activity",
-      mobileLabel: "Hide branch",
-      active: activity.getHideDefaultBranchActivity(),
-      excluded: false,
-      reset: () => activity.setHideDefaultBranchActivity(false),
-      onSelect: () => {
-        activity.setHideDefaultBranchActivity(!activity.getHideDefaultBranchActivity());
-        applyFilters();
-      },
+      title: "Event types",
+      items: [
+        ...EVENT_OPTIONS.map(({ value, label, color }) => ({
+          id: value,
+          label,
+          color,
+          active: activity.getEnabledEvents().has(value),
+          defaultOn: true,
+          reset: () => activity.setEnabledEvents(new Set(DEFAULT_EVENT_TYPES)),
+          onSelect: () => {
+            const next = new Set(activity.getEnabledEvents());
+            // An empty selection hides filterable events while PR commits and
+            // Notifications keep their own selections.
+            if (next.has(value)) next.delete(value);
+            else next.add(value);
+            activity.setEnabledEvents(next);
+            applyTypes();
+          },
+        })),
+        {
+          id: "notification",
+          label: "Notifications",
+          color: "var(--accent-blue)",
+          active: activity.getShowNotifications(),
+          defaultOn: true,
+          reset: () => activity.setShowNotifications(true),
+          onSelect: () => {
+            activity.setShowNotifications(!activity.getShowNotifications());
+            applyTypes();
+          },
+        },
+      ],
     },
+    {
+      title: "Visibility",
+      items: [
+        // Bots is who wrote each event; Hide bot-authored issues is who opened the issue.
+        triChoice("bots", "Bots", { get: activity.getBots, set: activity.setBots }, reload),
+        toggleChoice(
+          "hide-default-branch",
+          "Hide default-branch activity",
+          { get: activity.getHideDefaultBranchActivity, set: activity.setHideDefaultBranchActivity },
+          applyTypes,
+        ),
+      ],
+    },
+    { title: "View", items: [hideOrgNameChoice(grouping)] },
   ];
 
-  const view: ActivityVisibilityFilter[] = [
-    {
-      id: "hide-org-name",
-      label: "Hide org name",
-      mobileLabel: "Hide org",
-      active: grouping.getHideOrgName(),
-      excluded: false,
-      reset: () => grouping.setHideOrgName(false),
-      onSelect: () => grouping.setHideOrgName(!grouping.getHideOrgName()),
-    },
-  ];
-
+  const [view, ...afterView] = desktopLayout;
   return {
-    applyFilters,
-    events,
-    state,
-    conditions,
-    ci,
-    view,
-    /** Every on/off and three-state filter, for counts, reset, and the phone sheet. */
-    visibility: [...conditions, ...view],
-    /** Pick-one filters that differ from their default. */
-    activeChoiceCount: [state, ci].filter((choice) => choice.value !== choice.defaultValue).length,
-    resetChoices: () => {
-      activity.setActivityState("all");
-      activity.setPullAttributeFilters([]);
+    itemTypes,
+    sections: [items, timeRange, ...filterSections],
+    desktopSections: [items, view!, timeRange, ...afterView, ...filterSections],
+    filterCount: countFilters(filterSections),
+    reset: () => {
+      resetSections(filterSections);
+      applyTypes();
     },
   };
 }
 
 const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
 
+/** Whether an event author is a bot, for Activity's Bots filter. */
 export function isBotAuthor(author: string): boolean {
   const lower = author.toLowerCase();
   return BOT_SUFFIXES.some((suffix) => lower.endsWith(suffix));
@@ -251,20 +323,31 @@ interface ActivityRowFacts {
   itemType: string;
   closedOrMerged: boolean;
   author: string;
+  itemAuthor: string;
+  provider: string | undefined;
   hasWorkspace: boolean;
   headRepoKind: string | undefined;
+  labels: ActivitySubject["labels"];
 }
 
 /**
- * Applies the filters the browser can check on a loaded row: State and Bots, so a change shows
- * before the next load, and Has workspace and From fork, which only the browser matches. Pull
- * request conditions leave issue and repository rows alone.
+ * Applies the filters the browser checks on a loaded row. The server applies
+ * the same filters to what it returns; the browser repeats them so rows that
+ * arrive through live updates or workspace activity obey them, and applies
+ * the ones only the browser can match (Has workspace, From fork). Desktop and
+ * phone Activity both call these. Pull request conditions leave issue and
+ * repository rows alone.
  */
 function activityRowVisible(activity: ActivityStore, row: ActivityRowFacts): boolean {
+  if (!isActivityItemTypeEnabled(row.itemType, activity.getEnabledItemTypes())) return false;
   const state = activity.getActivityState();
   if (state !== "all" && row.closedOrMerged !== (state === "closed")) return false;
   const bots = activity.getBots();
   if (bots !== undefined && isBotAuthor(row.author) !== (bots === "require")) return false;
+  if (!matchesLabelFilters(row.labels, activity.getLabelFilters())) return false;
+  if (row.itemType === "issue") {
+    return !(activity.getHideBotAuthoredIssues() && isBotAccount(row.itemAuthor, row.provider));
+  }
   if (row.itemType !== "pr") return true;
   const filters = activity.getPullAttributeFilters();
   const workspace = triFilterInSelection(filters, "has_workspace", "no_workspace");
@@ -280,20 +363,31 @@ export function activityItemVisible(activity: ActivityStore, item: ActivityItem)
     itemType: item.item_type,
     closedOrMerged: isClosedOrMergedActivity(item),
     author: item.author,
+    itemAuthor: item.item_author ?? "",
+    provider: item.repo?.provider,
     hasWorkspace: item.workspace !== undefined,
     headRepoKind: item.head_repo_kind,
+    labels: item.labels,
   });
 }
 
+/**
+ * Whether Activity's filters keep a loaded PR or issue. A workspace row can
+ * arrive without labels; pass the labels known for its item instead.
+ */
 export function activitySubjectVisible(
   activity: ActivityStore,
   subject: ActivitySubject | WorkspaceActivitySubject,
+  labels: ActivitySubject["labels"] = subject.labels,
 ): boolean {
   return activityRowVisible(activity, {
     itemType: subject.item_type,
     closedOrMerged: subject.item_state === "closed" || subject.item_state === "merged",
     author: subject.item_author ?? "",
+    itemAuthor: subject.item_author ?? "",
+    provider: subject.repo?.provider,
     hasWorkspace: subject.workspace !== undefined,
     headRepoKind: subject.head_repo_kind,
+    labels,
   });
 }

@@ -74,9 +74,8 @@ cadence loops are intentionally separate.
 
 ## Sync coalescing
 
-- First sync retries a lost status read before repeating its trigger, and stops
-  on `serviceUnavailable` or permanent status errors. A delayed status can cause
-  an extra coalesced sync.
+- Onboarding retries a transient first-sync trigger at most twice. The server
+  coalesces overlapping triggers; permanent refusals stop immediately.
 - Provider-index sync keeps at most one coalesced follow-up: bursts neither drop
   accepted work nor build an unbounded queue, and nil-versus-empty scope is preserved
   (`internal/github/sync_run.go::triggerRunWithCadence`).

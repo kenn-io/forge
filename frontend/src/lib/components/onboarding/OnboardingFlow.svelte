@@ -29,6 +29,7 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { buildProviderPullRequestRoute } from "../../routes.js";
   import { navigate } from "../../stores/router.svelte.ts";
+  import { readErrorMessage } from "../../stores/sync.svelte.js";
   import { githubAccount, resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
   import { recordWorkspaceCreated } from "../../stores/workspace-create-pending.svelte.js";
   import { createDefaultWorkspaceTarget } from "../../stores/workspace-target.svelte.js";
@@ -300,7 +301,7 @@
         Effect.catch((failure) =>
           Effect.sync(() => {
             triggerFailed = true;
-            syncError = stores.sync.getSyncState()?.last_error || errorMessage(failure);
+            syncError = stores.sync.getSyncState()?.last_error || errorMessage(failure) || readErrorMessage(failure, "failed to trigger sync");
           }),
         ),
       );

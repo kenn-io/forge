@@ -13,7 +13,7 @@ export interface SyncStoreOptions {
   getPriorityRepos?: (() => string | undefined) | undefined;
 }
 
-function readErrorMessage(error: SyncReadError, fallback: string): string {
+export function readErrorMessage(error: SyncReadError, fallback: string): string {
   if (error._tag === "ApiProblemError") {
     return error.problem.detail ?? error.problem.title ?? fallback;
   }
@@ -36,7 +36,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
   // The trigger endpoint can acknowledge before status observes the new run.
   // Retain the optimistic state until status reports running or advances past
   // the authoritative pre-trigger completion time.
-  let triggeredSyncLastRunAt: string | null | undefined;
+  let pendingTrigger: { acknowledged: boolean; lastRunAt: string | null } | undefined;
   let pollWakeSignal: Deferred.Deferred<void> | null = null;
 
   function getSyncState(): SyncStatus | null {
@@ -82,9 +82,16 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
   function applySyncStatus(next: SyncStatus | null): void {
     const isRunning = next?.running ?? false;
-    if (triggeredSyncLastRunAt !== undefined) {
-      if (triggerObserved(triggeredSyncLastRunAt, next)) {
-        triggeredSyncLastRunAt = undefined;
+    if (pendingTrigger !== undefined) {
+      if (!pendingTrigger.acknowledged) {
+        if (!isRunning && next?.last_run_at) pendingTrigger.lastRunAt = next.last_run_at;
+        return;
+      }
+      if (
+        isRunning ||
+        (pendingTrigger.lastRunAt !== null && lastRunAdvanced(pendingTrigger.lastRunAt, next?.last_run_at ?? ""))
+      ) {
+        pendingTrigger = undefined;
       } else {
         return;
       }
@@ -103,12 +110,10 @@ export function createSyncStore(opts: SyncStoreOptions) {
     adjustPollingSpeed(isRunning);
   }
 
-  function syncStatusRequest() {
-    return executeGeneratedApiRequest("GET /sync/status", (client) => client.SyncService.getSyncStatus());
-  }
-
   function syncStatusRead() {
-    return syncStatusRequest().pipe(retryIdempotentRead);
+    return executeGeneratedApiRequest("GET /sync/status", (client) => client.SyncService.getSyncStatus()).pipe(
+      retryIdempotentRead,
+    );
   }
 
   function rateLimitsRead() {
@@ -189,22 +194,22 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return Date.parse(next) > Date.parse(previous);
   }
 
-  function triggerObserved(baseline: string | null, next: SyncStatus | null): boolean {
-    return !!next?.running || (baseline !== null && lastRunAdvanced(baseline, next?.last_run_at ?? ""));
-  }
-
   function triggeredSyncProgram(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>) {
     const previous = status;
     refreshGeneration += 1;
     let baselineLastRunAt = previous ? (previous.last_run_at ?? "") : null;
+    const pending = { acknowledged: false, lastRunAt: baselineLastRunAt };
 
     return Effect.gen(function* () {
+      yield* Effect.sync(() => {
+        pendingTrigger = pending;
+      });
       if (previous === null) {
         const baseline = yield* Effect.option(syncStatusRead());
         baselineLastRunAt = Option.isSome(baseline) ? (baseline.value.last_run_at ?? "") : null;
       }
       yield* Effect.sync(() => {
-        triggeredSyncLastRunAt = baselineLastRunAt;
+        pending.lastRunAt = baselineLastRunAt;
         status = {
           ...(previous?.relay && { relay: previous.relay }),
           ...(previous?.repo_errors && { repo_errors: previous.repo_errors }),
@@ -216,11 +221,15 @@ export function createSyncStore(opts: SyncStoreOptions) {
         adjustPollingSpeed(true);
       });
       yield* request;
+      yield* Effect.sync(() => {
+        pending.acknowledged = true;
+        refreshGeneration += 1;
+      });
       yield* Effect.suspend(refreshSyncStatusProgram);
     }).pipe(
       Effect.tapError((failure) =>
         Effect.sync(() => {
-          triggeredSyncLastRunAt = undefined;
+          if (pendingTrigger === pending) pendingTrigger = undefined;
           status = {
             ...(previous?.relay && { relay: previous.relay }),
             ...(previous?.repo_errors && { repo_errors: previous.repo_errors }),
@@ -230,6 +239,14 @@ export function createSyncStore(opts: SyncStoreOptions) {
           };
           wasRunning = false;
           adjustPollingSpeed(false);
+        }),
+      ),
+      Effect.onInterrupt(() =>
+        Effect.sync(() => {
+          if (pendingTrigger === pending) {
+            pendingTrigger = undefined;
+            refreshGeneration += 1;
+          }
         }),
       ),
       Effect.asVoid,
@@ -259,28 +276,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     const isRetryable = (failure: unknown) =>
       isTransientPickerReadFailure(failure) &&
       !(failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.serviceUnavailable);
-    const request = Effect.gen(function* () {
-      const baseline = yield* Effect.option(syncStatusRequest());
-      yield* fullSyncRequest().pipe(
-        Effect.catchIf(isRetryable, (postFailure) =>
-          syncStatusRequest().pipe(
-            Effect.retry({ schedule: transientRetrySchedule, while: isRetryable }),
-            Effect.mapError((failure) => ({ _tag: "StatusFailure" as const, failure })),
-            Effect.flatMap((next) =>
-              Option.isSome(baseline) &&
-              !baseline.value.running &&
-              triggerObserved(baseline.value.last_run_at ?? "", next)
-                ? Effect.void
-                : Effect.fail(postFailure),
-            ),
-          ),
-        ),
-        Effect.retry({ schedule: transientRetrySchedule, while: isRetryable }),
-        Effect.mapError((failure) =>
-          "_tag" in failure && failure._tag === "StatusFailure" ? failure.failure : failure,
-        ),
-      );
-    });
+    const request = fullSyncRequest().pipe(Effect.retry({ schedule: transientRetrySchedule, while: isRetryable }));
     return triggeredSyncProgram(request);
   }
 

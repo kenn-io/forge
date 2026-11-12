@@ -6,6 +6,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/platform"
 )
@@ -292,6 +293,7 @@ type ActivitySubjectResponse struct {
 	ItemAuthor          string                     `json:"item_author,omitempty"`
 	Labels              []db.Label                 `json:"labels,omitempty" doc:"The pull request's or issue's current labels."`
 	Workspace           *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
+	HeadRepoKind        pullapi.HeadRepoKind       `json:"head_repo_kind,omitempty" enum:"same_repo,fork,unknown" doc:"Whether a pull request's head branch lives in its base repository or a fork; absent for issues and repository-level activity."`
 	ActivityAt          string                     `json:"activity_at" format:"date-time"`
 	EventLedgerRevision string                     `json:"event_ledger_revision"`
 }
@@ -309,6 +311,7 @@ type WorkspaceActivitySubjectResponse struct {
 	ItemAuthor   string                     `json:"item_author,omitempty"`
 	Labels       []db.Label                 `json:"labels,omitempty" doc:"The pull request's or issue's current labels, when this server syncs its repository."`
 	Workspace    *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
+	HeadRepoKind pullapi.HeadRepoKind       `json:"head_repo_kind,omitempty" enum:"same_repo,fork,unknown" doc:"Whether a pull request's head branch lives in its base repository or a fork; absent for issues and when this server does not sync the repository."`
 	ActivityAt   string                     `json:"activity_at" format:"date-time"`
 }
 
@@ -332,6 +335,7 @@ type ActivityItemResponse struct {
 	ItemState          string                     `json:"item_state"`
 	Labels             []db.Label                 `json:"labels,omitempty" doc:"The parent pull request's or issue's current labels; absent for repository-level activity."`
 	Workspace          *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
+	HeadRepoKind       pullapi.HeadRepoKind       `json:"head_repo_kind,omitempty" enum:"same_repo,fork,unknown" doc:"Whether the parent pull request's head branch lives in its base repository or a fork; absent for issues and repository-level activity."`
 	Author             string                     `json:"author"`
 	ItemAuthor         string                     `json:"item_author,omitempty"`
 	CreatedAt          string                     `json:"created_at"`

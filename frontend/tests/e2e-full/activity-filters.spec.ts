@@ -14,11 +14,23 @@ async function waitForTable(page: Page): Promise<void> {
   await page.locator(".activity-table .activity-row").first().waitFor({ state: "visible", timeout: 10_000 });
 }
 
-async function selectActivityFilterItem(page: Page, label: string): Promise<void> {
+async function selectActivityFilterItem(page: Page, label: string | RegExp): Promise<void> {
   await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
   await page.locator(".kit-filter-dropdown__panel").waitFor({ state: "visible" });
-  await page.locator(".kit-filter-dropdown__item", { hasText: label }).click();
+  await filterItem(page, label).click();
 }
+
+// A string matches part of a row's text; a pattern matches its accessible name, which ends in
+// ", excluded" for an excluded condition.
+function filterItem(page: Page, label: string | RegExp) {
+  return typeof label === "string"
+    ? page.locator(".kit-filter-dropdown__item", { hasText: label })
+    : page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: label });
+}
+
+// State's options match the pull request list's: Open hides closed and merged items.
+const OPEN = /^Open$/;
+const ALL_STATES = /^All states$/;
 
 // Verify every badge in the activity table matches the expected text.
 // Uses auto-retrying assertions so it waits for the DOM to settle.
@@ -116,12 +128,17 @@ test.describe("activity feed filters", () => {
     });
   });
 
-  test("hide closed/merged removes those items", async ({ page }) => {
+  test("State Open removes closed and merged items, and Closed keeps only them", async ({ page }) => {
     // Verify closed/merged items exist initially.
     await expect(page.locator(".state-badge.state-closed, .state-badge.state-merged").first()).toBeVisible();
 
-    // Open filter dropdown and enable "Hide closed/merged".
-    await selectActivityFilterItem(page, "Hide closed/merged");
+    await selectActivityFilterItem(page, /^Closed$/);
+    await expect(page.locator(".activity-row", { hasText: "WIP: new dashboard layout" })).toHaveCount(0, {
+      timeout: 5_000,
+    });
+    await expect(page.locator(".state-badge.state-closed, .state-badge.state-merged").first()).toBeVisible();
+
+    await filterItem(page, OPEN).click();
 
     await expect(page.locator(".state-badge.state-closed")).toHaveCount(0, {
       timeout: 5_000,
@@ -129,21 +146,21 @@ test.describe("activity feed filters", () => {
     await expect(page.locator(".state-badge.state-merged")).toHaveCount(0);
   });
 
-  test("refresh preserves the selected time window and hide closed/merged", async ({ page }) => {
+  test("refresh preserves the selected time window and State Open", async ({ page }) => {
     await selectActivityFilterItem(page, "90d");
-    await selectActivityFilterItem(page, "Hide closed/merged");
+    await selectActivityFilterItem(page, OPEN);
     await page.reload();
     await waitForTable(page);
 
     await expect(page.locator(".activity-feed .kit-filter-dropdown__btn")).toContainText("90d");
     await expect(page.locator(".state-badge.state-closed, .state-badge.state-merged")).toHaveCount(0);
-    await selectActivityFilterItem(page, "Hide closed/merged");
+    await selectActivityFilterItem(page, ALL_STATES);
     await expect(page.locator(".state-badge.state-closed, .state-badge.state-merged").first()).toBeVisible();
   });
 
-  test("returning from Settings preserves the time window and hide closed/merged", async ({ page }) => {
+  test("returning from Settings preserves the time window and State Open", async ({ page }) => {
     await selectActivityFilterItem(page, "90d");
-    await selectActivityFilterItem(page, "Hide closed/merged");
+    await selectActivityFilterItem(page, OPEN);
     await page.goto("/settings");
     await page.getByRole("button", { name: "Back to app" }).click();
     await waitForTable(page);
@@ -151,27 +168,39 @@ test.describe("activity feed filters", () => {
     await expect(page.locator(".state-badge.state-closed, .state-badge.state-merged")).toHaveCount(0);
   });
 
-  test("hide bots removes bot-authored items", async ({ page }) => {
+  test("Bots keeps only bot activity, then hides it", async ({ page }) => {
     const botCells = page.locator(".activity-row .col-author", {
       hasText: "dependabot[bot]",
     });
     await expect(botCells.first()).toBeVisible();
 
-    // Open filter dropdown and enable "Hide bots".
-    await selectActivityFilterItem(page, "Hide bots");
+    await selectActivityFilterItem(page, /^Bots/);
+    await expect
+      .poll(async () => (await page.locator(".activity-row .col-author").allTextContents()).map((text) => text.trim()))
+      .toEqual(expect.arrayContaining(["dependabot[bot]"]));
+    await expect(page.locator(".activity-row .col-author").filter({ hasNotText: /bot/ })).toHaveCount(0);
 
+    await filterItem(page, /^Bots/).click();
     await expect(botCells).toHaveCount(0, { timeout: 5_000 });
   });
 
-  test("hide drafts removes draft pull request activity and restores it when cleared", async ({ page }) => {
+  test("Draft keeps or hides draft pull request activity and leaves issues alone", async ({ page }) => {
     const draftRows = page.locator(".activity-row", { hasText: "WIP: new dashboard layout" });
+    const issueBadges = page.locator(".activity-row .badge", { hasText: "Issue" });
     await expect(draftRows.first()).toBeVisible();
 
-    await selectActivityFilterItem(page, "Hide drafts");
-    await expect(draftRows).toHaveCount(0, { timeout: 5_000 });
-    await expect(page.locator(".activity-table .activity-row").first()).toBeVisible();
+    const draft = filterItem(page, /^Draft/);
+    await selectActivityFilterItem(page, /^Draft/);
+    await expect(draft).toHaveAttribute("aria-pressed", "true");
+    await expect(draftRows.first()).toBeVisible();
+    await expect(issueBadges.first()).toBeVisible();
 
-    await page.locator(".kit-filter-dropdown__item", { hasText: "Hide drafts" }).click();
+    await draft.click();
+    await expect(draft).toHaveAccessibleName(/, excluded$/);
+    await expect(draftRows).toHaveCount(0, { timeout: 5_000 });
+    await expect(issueBadges.first()).toBeVisible();
+
+    await draft.click();
     await expect(draftRows.first()).toBeVisible();
   });
 
@@ -287,13 +316,13 @@ test.describe("activity feed filters", () => {
     await expect(page).not.toHaveURL(/author=/);
   });
 
-  test("combined: PRs + hide closed/merged shows only open PRs", async ({ page }) => {
+  test("combined: PRs + State Open shows only open PRs", async ({ page }) => {
     // Hide issues and wait for filtered DOM.
     await page.getByRole("switch", { name: "Issues" }).click();
     await expectAllBadges(page, "PR");
 
-    // Enable hide closed/merged (client-side filter).
-    await selectActivityFilterItem(page, "Hide closed/merged");
+    // Choose Open (applied in the browser before the next load).
+    await selectActivityFilterItem(page, OPEN);
     await page.locator(".controls-bar").click({ position: { x: 5, y: 5 } });
 
     // Wait for merged/closed badges to disappear.

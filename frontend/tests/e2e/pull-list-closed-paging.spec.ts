@@ -38,7 +38,12 @@ test("Closed loads bounded pages and reaches the end of the history", async ({ p
   await expect(page.getByText("Closed change 202", { exact: true })).toBeVisible();
   expect(limits.at(-1)).toBe(400);
   await trigger.click();
-  await panel.getByRole("button", { name: "Draft", exact: true }).click();
+  // Draft cycles from only drafts through hiding drafts back to off.
+  const draft = panel.locator(".kit-filter-dropdown__item", { hasText: "Draft" });
+  await draft.click();
+  await expect(draft).toHaveAccessibleName(/, excluded$/);
+  await draft.click();
+  await expect(draft).toHaveAttribute("aria-pressed", "false");
   await trigger.click();
   await expect(count).toHaveText("400+ PRs");
   await expect(page.locator(".sidebar-group-header__count")).toHaveText("400+");

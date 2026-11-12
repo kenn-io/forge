@@ -1,6 +1,7 @@
 package workspaceapi
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -47,6 +48,51 @@ func TestWorkspaceSubjectSnapshotKeepsReferenceAndCachedActivity(t *testing.T) {
 	require.NotNil(snapshot.Subjects[key].ActivityAt)
 	assert.Equal(now.Add(time.Minute), *snapshot.Subjects[key].ActivityAt)
 	assert.Equal("Live work", snapshot.Subjects[key].Subject.Title)
+}
+
+// A pull request workspace records whether the pull request comes from a fork, so a pull
+// request with only workspace output can still match From fork.
+func TestWorkspaceSubjectSnapshotCarriesPullWorkspaceHeadRepository(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	h := newEnrichmentTestHandler(t, "")
+	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	h.now = func() time.Time { return now }
+	repoID, err := reposeed.Seed(t.Context(), h.db, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	forkURL := "https://github.com/contributor/widget.git"
+	unknown := ""
+	associated := 44
+	for _, number := range []int{41, 42, 43, 44} {
+		_, err = h.db.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(number), Number: number,
+			URL: "https://github.com/acme/widget/pull/" + strconv.Itoa(number), Title: "Change",
+			Author: "alice", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
+	for _, workspace := range []db.Workspace{
+		{ID: "ws-fork", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 41, MRHeadRepo: &forkURL},
+		{ID: "ws-same", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42},
+		{ID: "ws-unknown", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 43, MRHeadRepo: &unknown},
+		{ID: "ws-adhoc", ItemType: db.WorkspaceItemTypeAdHoc, ItemKey: "adhoc:work", AssociatedPRNumber: &associated},
+	} {
+		workspace.Platform, workspace.PlatformHost = "github", "github.com"
+		workspace.RepoOwner, workspace.RepoName = "acme", "widget"
+		workspace.GitHeadRef, workspace.WorkspaceBranch = "feature", "feature"
+		workspace.WorktreePath, workspace.TmuxSession, workspace.Status = t.TempDir(), workspace.ID, "ready"
+		require.NoError(h.db.InsertWorkspace(t.Context(), &workspace))
+	}
+
+	snapshot, err := h.WorkspaceSubjectSnapshot(t.Context())
+	require.NoError(err)
+	kinds := map[int]string{}
+	for key, activity := range snapshot.Subjects {
+		kinds[key.ItemNumber] = activity.HeadRepoKind
+	}
+	assert.Equal(map[int]string{41: "fork", 42: "same_repo", 43: "unknown", 44: ""}, kinds,
+		"an ad-hoc workspace records no head repository for the pull request it pushed")
 }
 
 func TestWorkspaceSubjectSnapshotResolvesAdHocAssociationAsPullReference(t *testing.T) {

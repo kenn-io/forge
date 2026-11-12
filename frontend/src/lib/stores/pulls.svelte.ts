@@ -562,6 +562,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
               platform_host: data.platform_host,
               repo_owner: data.repo_owner,
               repo_name: data.repo_name,
+              head_repo_kind: data.head_repo_kind,
               detail_loaded: data.detail_loaded,
               ...(data.detail_fetched_at !== undefined && { detail_fetched_at: data.detail_fetched_at }),
               worktree_links: data.worktree_links,

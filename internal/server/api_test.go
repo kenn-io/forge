@@ -4386,7 +4386,7 @@ func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testi
 			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
 			Author: "reviewer", BodyPreview: "matches the search",
 		}},
-		nil, true, nil,
+		nil, nil, true, nil,
 	)
 
 	require.Len(got, 1)
@@ -4400,7 +4400,7 @@ func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testi
 		db.ListActivityOpts{Search: "reviewer", Since: &since},
 		snapshot,
 		[]db.ActivityItem{{RepoID: repoID, ItemType: "pr", ItemNumber: 99}},
-		nil, true, []db.ActivitySubject{{Subject: db.WorkspaceSubjectMetadata{Key: db.WorkspaceSubjectKey{RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber}}}},
+		nil, nil, true, []db.ActivitySubject{{Subject: db.WorkspaceSubjectMetadata{Key: db.WorkspaceSubjectKey{RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber}}}},
 	)
 	require.Len(got, 1)
 	assert.Equal(matchedKey.ItemNumber, got[0].ItemNumber)
@@ -4455,7 +4455,7 @@ func TestWorkspaceActivitySearchExcludedTermOverridesMatchingProviderEvents(t *t
 		db.ListActivityOpts{Search: "reviewer NOT excluded-author", Since: &since},
 		snapshot,
 		[]db.ActivityItem{providerEvent(keptKey), providerEvent(excludedKey)},
-		nil, true, nil,
+		nil, nil, true, nil,
 	)
 
 	require.Len(got, 1)
@@ -4502,7 +4502,7 @@ func TestWorkspaceActivityHideDraftsDropsDraftPullRequests(t *testing.T) {
 	got := srv.itemapi.WorkspaceActivityResponse(
 		&itemapi.ListActivityInput{},
 		db.ListActivityOpts{HideDrafts: true, Since: &since},
-		snapshot, nil, nil, true, nil,
+		snapshot, nil, nil, nil, true, nil,
 	)
 
 	require.Len(got, 1)
@@ -4537,12 +4537,15 @@ func TestWorkspaceActivityHideMergeQueuedDropsQueuedPullRequests(t *testing.T) {
 			ActivityAt: &now,
 		}
 	}
+	// Merge queued is a pull request condition, so issue workspace activity passes both ways.
+	issueKey := db.WorkspaceSubjectKey{RepoID: 7, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 44}
 	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
 		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
 		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
 			queuedKey: subject(queuedKey, true),
 			readyKey:  subject(readyKey, false),
 			heldKey:   subject(heldKey, false),
+			issueKey:  subject(issueKey, false),
 		},
 	}
 	srv := wiredServer(&Server{
@@ -4554,7 +4557,7 @@ func TestWorkspaceActivityHideMergeQueuedDropsQueuedPullRequests(t *testing.T) {
 
 	numbers := func(opts db.ListActivityOpts) []int {
 		opts.Since, opts.DeferredMergeItems = &since, held
-		got := srv.itemapi.WorkspaceActivityResponse(&itemapi.ListActivityInput{}, opts, snapshot, nil, nil, true, nil)
+		got := srv.itemapi.WorkspaceActivityResponse(&itemapi.ListActivityInput{}, opts, snapshot, nil, nil, nil, true, nil)
 		out := []int{}
 		for _, subject := range got {
 			out = append(out, subject.ItemNumber)
@@ -4562,9 +4565,55 @@ func TestWorkspaceActivityHideMergeQueuedDropsQueuedPullRequests(t *testing.T) {
 		return out
 	}
 
-	assert.Equal([]int{readyKey.ItemNumber}, numbers(db.ListActivityOpts{HideMergeQueued: true}))
-	assert.ElementsMatch([]int{queuedKey.ItemNumber, heldKey.ItemNumber}, numbers(db.ListActivityOpts{OnlyMergeQueued: true}))
-	require.Len(numbers(db.ListActivityOpts{}), 3)
+	assert.ElementsMatch([]int{readyKey.ItemNumber, issueKey.ItemNumber}, numbers(db.ListActivityOpts{HideMergeQueued: true}))
+	assert.ElementsMatch([]int{queuedKey.ItemNumber, heldKey.ItemNumber, issueKey.ItemNumber},
+		numbers(db.ListActivityOpts{OnlyMergeQueued: true}))
+	require.Len(numbers(db.ListActivityOpts{}), 4)
+}
+
+// API callers get the same State and Bots filtering on workspace activity that the browser applies.
+func TestWorkspaceActivityAppliesStateAndBotFiltersBothWays(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	since := now.Add(-time.Hour)
+	subject := func(number int, state, author string) (db.WorkspaceSubjectKey, workspaceapi.SubjectActivity) {
+		key := db.WorkspaceSubjectKey{RepoID: 7, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number}
+		return key, workspaceapi.SubjectActivity{
+			Subject: db.WorkspaceSubjectMetadata{
+				Key: key, Platform: "github", PlatformHost: "github.com",
+				RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget",
+				Title: "Workspace work", Author: author, State: state,
+			},
+			Workspace:  workspaceapi.WorkspaceRef{ID: "ws-" + strconv.Itoa(number), Status: "ready"},
+			ActivityAt: &now,
+		}
+	}
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
+	}
+	for number, fields := range map[int][2]string{41: {"open", "alice"}, 42: {"merged", "bob"}, 43: {"open", "renovate[bot]"}} {
+		key, activity := subject(number, fields[0], fields[1])
+		snapshot.Subjects[key] = activity
+	}
+	srv := wiredServer(&Server{
+		repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{}),
+		cfg:          &config.Config{Activity: config.Activity{UseWorkspaceActivityForRecency: true}},
+	})
+	numbers := func(opts db.ListActivityOpts) []int {
+		opts.Since = &since
+		out := []int{}
+		for _, subject := range srv.itemapi.WorkspaceActivityResponse(&itemapi.ListActivityInput{}, opts, snapshot, nil, nil, nil, true, nil) {
+			out = append(out, subject.ItemNumber)
+		}
+		return out
+	}
+
+	assert.ElementsMatch([]int{42}, numbers(db.ListActivityOpts{OnlyClosedMerged: true}))
+	assert.ElementsMatch([]int{41, 43}, numbers(db.ListActivityOpts{HideClosedMerged: true}))
+	assert.ElementsMatch([]int{43}, numbers(db.ListActivityOpts{OnlyBots: true}))
+	assert.ElementsMatch([]int{41, 42}, numbers(db.ListActivityOpts{HideBots: true}))
 }
 
 func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t *testing.T) {
@@ -4613,7 +4662,7 @@ func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t 
 			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
 			Author: "reviewer", ItemAuthor: "alice",
 		}},
-		nil, true, nil,
+		nil, nil, true, nil,
 	)
 
 	require.Len(byAuthor, 2)
@@ -4630,7 +4679,7 @@ func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t 
 			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
 			Author: "reviewer", ItemAuthor: "alice",
 		}},
-		nil, true, nil,
+		nil, nil, true, nil,
 	)
 	require.Empty(byCommenter)
 }
@@ -4663,14 +4712,14 @@ func TestWorkspaceActivityProjectionUsesHubPolicy(t *testing.T) {
 	})
 
 	require.Empty(srv.itemapi.WorkspaceActivityResponse(
-		&itemapi.ListActivityInput{}, db.ListActivityOpts{}, snapshot, nil, nil, false, nil,
+		&itemapi.ListActivityInput{}, db.ListActivityOpts{}, snapshot, nil, nil, nil, false, nil,
 	))
 	require.Equal([]string{"provider author"}, srv.activityapi.ActivityAuthorsWithWorkspace(
 		[]string{"provider author"}, snapshot, db.ListActivityAuthorsOpts{}, false,
 	))
 
 	require.Len(srv.itemapi.WorkspaceActivityResponse(
-		&itemapi.ListActivityInput{}, db.ListActivityOpts{}, snapshot, nil, nil, true, nil,
+		&itemapi.ListActivityInput{}, db.ListActivityOpts{}, snapshot, nil, nil, nil, true, nil,
 	), 1)
 	require.ElementsMatch([]string{"provider author", "workspace owner"}, srv.activityapi.ActivityAuthorsWithWorkspace(
 		[]string{"provider author"}, snapshot, db.ListActivityAuthorsOpts{}, true,

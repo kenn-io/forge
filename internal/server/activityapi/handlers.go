@@ -48,5 +48,5 @@ type Handlers struct {
 	RunBackground                         func(fn func(ctx context.Context)) bool
 	ToRepoSummaryResponse                 func(summary dbpkg.RepoSummary, defaultPlatformHost string) itemapi.RepoSummaryResponse
 	WorkspaceActivityRepositoryIdentities func(ctx context.Context, snapshot workspaceapi.WorkspaceSubjectSnapshot) (map[int64]platform.RepositoryIdentity, error)
-	WorkspaceActivityResponse             func(input *itemapi.ListActivityInput, opts dbpkg.ListActivityOpts, snapshot workspaceapi.WorkspaceSubjectSnapshot, providerItems []dbpkg.ActivityItem, labels map[dbpkg.WorkspaceSubjectKey][]dbpkg.Label, useWorkspaceActivityForRecency bool, providerSubjects []dbpkg.ActivitySubject) []itemapi.WorkspaceActivitySubjectResponse
+	WorkspaceActivityResponse             func(input *itemapi.ListActivityInput, opts dbpkg.ListActivityOpts, snapshot workspaceapi.WorkspaceSubjectSnapshot, providerItems []dbpkg.ActivityItem, labels map[dbpkg.WorkspaceSubjectKey][]dbpkg.Label, headRepoKinds map[dbpkg.WorkspaceSubjectKey]pullapi.HeadRepoKind, useWorkspaceActivityForRecency bool, providerSubjects []dbpkg.ActivitySubject) []itemapi.WorkspaceActivitySubjectResponse
 }

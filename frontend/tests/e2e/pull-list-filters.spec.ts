@@ -42,6 +42,7 @@ function pull(number: number, title: string, overrides: Record<string, unknown> 
     repo_name: "widgets",
     platform_host: "github.com",
     platform_head_sha: `${number}`.padStart(40, "a"),
+    head_repo_kind: "same_repo",
     repo,
     worktree_links: [],
     ...overrides,
@@ -77,6 +78,7 @@ async function mockPulls(page: Page) {
             { name: "docs", color: "0075ca", is_default: true },
           ],
           IsDraft: true,
+          head_repo_kind: "unknown",
           CIStatus: "pending",
           CIChecksJSON: JSON.stringify([{ name: "test", status: "in_progress", conclusion: "" }]),
         }),
@@ -88,6 +90,7 @@ async function mockPulls(page: Page) {
         }),
         pull(13, "Ready conflict resolver", {
           MergeableState: "dirty",
+          head_repo_kind: "fork",
         }),
       ]),
     });
@@ -125,9 +128,11 @@ test("PR filters all apply and each pair of opposites is pick-one", async ({ pag
   await filterPanel.getByRole("button", { name: /^(Clear filters|Reset view)$/ }).click();
   await expect(rows).toHaveCount(4);
 
-  await filterPanel.getByRole("button", { name: "Draft", exact: true }).click();
+  const draft = filterPanel.locator(".kit-filter-dropdown__item", { hasText: "Draft" });
+  await draft.click();
   await expect(rows).toHaveText([/Draft parser cleanup/]);
-  await filterPanel.getByRole("button", { name: "Ready for review" }).click();
+  // Excluding drafts from the open list leaves what Ready for review used to show.
+  await draft.click();
   await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/, /Ready conflict resolver/]);
   await filterPanel.getByRole("button", { name: "Failed CI" }).click();
   await expect(rows).toHaveText([/Ready failed workflow/]);
@@ -141,7 +146,8 @@ test("PR filters all apply and each pair of opposites is pick-one", async ({ pag
 
   await expect(rows).toHaveText([/Approved review queue/, /Ready conflict resolver/]);
 
-  await filterPanel.getByRole("button", { name: "Ready for review" }).click();
+  await draft.click();
+  await draft.click();
   await filterPanel.getByRole("button", { name: "Approved", exact: true }).click();
   await expect(rows).toHaveText([/Approved review queue/]);
 });
@@ -156,6 +162,11 @@ test("a condition row cycles through required, excluded, and off", async ({ page
   const filterPanel = page.locator(".kit-filter-dropdown__panel");
 
   for (const condition of [
+    {
+      label: "Draft",
+      required: [/Draft parser cleanup/],
+      excluded: [/Approved review queue/, /Ready failed workflow/, /Ready conflict resolver/],
+    },
     {
       label: "Approved",
       required: [/Approved review queue/],
@@ -175,6 +186,12 @@ test("a condition row cycles through required, excluded, and off", async ({ page
       label: "Has workspace",
       required: [/Approved review queue/, /Ready failed workflow/],
       excluded: [/Draft parser cleanup/, /Ready conflict resolver/],
+    },
+    {
+      // A head repository that could not be classified stays visible when forks are hidden.
+      label: "From fork",
+      required: [/Ready conflict resolver/],
+      excluded: [/Approved review queue/, /Draft parser cleanup/, /Ready failed workflow/],
     },
   ]) {
     const row = filterPanel.locator(".kit-filter-dropdown__item", { hasText: condition.label });

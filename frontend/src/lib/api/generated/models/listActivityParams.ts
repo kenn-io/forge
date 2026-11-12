@@ -32,12 +32,18 @@ export type ListActivityParams = {
    */
   limit?: number;
   hide_closed_merged?: boolean;
+  /** Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged. */
+  closed_merged?: boolean;
   hide_bots?: boolean;
+  /** Keep only bot-authored activity. Wins over hide_bots. */
+  bots?: boolean;
   /** Exclude activity for draft pull requests. */
   hide_drafts?: boolean;
   /** Exclude activity for open pull requests in a merge queue or set to merge after CI. */
   hide_merge_queued?: boolean;
   /** Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued. */
   merge_queued?: boolean;
+  /** Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts. */
+  attributes?: string;
   hide_default_branch?: boolean;
 };

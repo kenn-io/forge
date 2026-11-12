@@ -265,11 +265,16 @@ and back.
 - `Involves me` and `Unassigned` are each three independent browser-local preferences (Pulls, Issues,
   Activity), sent as pre-limit server queries, never URL or config state.
 - A condition filter is three-state: a click cycles off, required (tick), excluded (cross), like a
-  label. This covers `Involves me`, `Unassigned`, `Referenced by PR`, `Approved`, `Merge conflicts`,
-  `Merge queued`, and `Has workspace` wherever they are one row; a pair already shown as a pick-one section stays
-  on/off (maintainer decision; `frontend/src/lib/utils/tri-filter.ts`). The server takes the opposite
-  as its own query (`not_involves_me`, `assigned`, `not_referenced_by_pr`, `not_approved`, `not_merge_queued`,
-  `no_merge_conflicts`), so both directions apply before limits.
+  label. This covers `Involves me`, `Unassigned`, `Referenced by PR`, `Draft`, `Approved`, `Merge conflicts`,
+  `Merge queued`, `Has workspace`, `From fork`, and Activity `Bots` wherever they are one row; a pair already
+  shown as a pick-one section (CI) stays on/off (maintainer decision; `frontend/src/lib/utils/tri-filter.ts`).
+  Server-matched conditions send their opposite as its own query (`not_draft`, `not_approved`, ...), so both
+  directions apply before limits; `Has workspace` and `From fork` match loaded rows in the browser.
+- The PR list and Activity filter menus are one design: shared controls keep the same names, order,
+  and behavior (State, conditions, CI, View), so a change to one menu's shared control goes to both
+  (maintainer decision; `frontend/src/lib/components/activityFilters.ts::activityFilterOptions`).
+- In Activity, PR conditions decide only which pull request activity shows; issue and repository
+  rows always pass (maintainer decision; `internal/db/queries_activity.go::activityPullAttributeClause`).
 - Phone Activity shows a three-state filter as an Any/Yes/No choice, since a switch has no third state.
 - `Unassigned` matches only PR/issue subjects with an empty synchronized assignee set; its opposite
   matches every other subject, including a PR whose assignees never synchronized.
@@ -303,10 +308,12 @@ and back.
   provider auto-merge on, or held by this server's "merge after CI" worker. Removed queue entries do not
   match. The worker keeps its held PRs only in memory, so the server passes them into the query
   (`internal/db/queries.go::mergeQueuedCondition`). On a spoke, workspace rows take the hub's view.
-- In Activity, excluded `Merge queued` is the saved `hide_merge_queued` choice: it applies to events,
-  notifications, and workspace activity, defaults off in Settings/`config.toml` (named `Hide queued for
-  merge` there), and its explicit on/off URL choice survives refresh and navigation. Required
-  (`merge_queued`) is a passing view and is not saved. Reset filters turns both off.
+- In Activity, each saved Settings hide default is the excluded side of its row: `Hide queued for
+  merge`, `Hide drafts`, and `Hide bots` cross `Merge queued`, `Draft`, and `Bots`, and `Hide
+  closed/merged` is State `Open`. The required side (and State `Closed`) is a passing view, not saved,
+  and wins over the saved hide in the request. Reset filters turns both off. Excluded `Merge queued`
+  applies to events, notifications, and workspace activity, and its explicit URL choice survives
+  refresh and navigation.
 - Activity filter defaults live in Settings and `config.toml`; URL overrides are session-scoped, and a
   partial Activity URL inherits the last validated route's missing params.
 - Explicit Activity choices survive refresh, Settings navigation, and late hydration; omit filter

@@ -65,6 +65,10 @@ const setEnabledEvents = vi.hoisted(() =>
   }),
 );
 const hideDrafts = vi.hoisted(() => ({ value: false }));
+const onlyClosedMerged = vi.hoisted(() => ({ value: false }));
+const onlyBots = vi.hoisted(() => ({ value: false }));
+const onlyDrafts = vi.hoisted(() => ({ value: false }));
+const pullAttributeFilters = vi.hoisted(() => ({ value: [] as string[] }));
 const mergeQueued = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const setMergeQueued = vi.hoisted(() =>
   vi.fn((value: "require" | "exclude" | undefined) => {
@@ -159,6 +163,25 @@ vi.mock("../context.js", () => ({
       getHideBots: () => hideBots.value,
       getHideDrafts: () => hideDrafts.value,
       getMergeQueued: () => mergeQueued.value,
+      getActivityState: () => (onlyClosedMerged.value ? "closed" : hideClosedMerged.value ? "open" : "all"),
+      getBots: () => (onlyBots.value ? "require" : hideBots.value ? "exclude" : undefined),
+      getDraft: () => (onlyDrafts.value ? "require" : hideDrafts.value ? "exclude" : undefined),
+      getPullAttributeFilters: () => pullAttributeFilters.value,
+      setActivityState: vi.fn((state: "open" | "closed" | "all") => {
+        onlyClosedMerged.value = state === "closed";
+        setHideClosedMerged(state === "open");
+      }),
+      setBots: vi.fn((value: "require" | "exclude" | undefined) => {
+        onlyBots.value = value === "require";
+        hideBots.value = value === "exclude";
+      }),
+      setDraft: vi.fn((value: "require" | "exclude" | undefined) => {
+        onlyDrafts.value = value === "require";
+        setHideDrafts(value === "exclude");
+      }),
+      setPullAttributeFilters: vi.fn((next: string[]) => {
+        pullAttributeFilters.value = next;
+      }),
       getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency.value,
       getHideDefaultBranchActivity: () => false,
       isActivityLoading: () => activityLoading.value,
@@ -261,6 +284,10 @@ describe("MobileActivityView branch activity", () => {
     setActivityAuthor.mockClear();
     setEnabledEvents.mockClear();
     setHideClosedMerged.mockClear();
+    onlyClosedMerged.value = false;
+    onlyBots.value = false;
+    onlyDrafts.value = false;
+    pullAttributeFilters.value = [];
     hideDrafts.value = false;
     mergeQueued.value = undefined;
     setMergeQueued.mockClear();
@@ -345,30 +372,45 @@ describe("MobileActivityView branch activity", () => {
     expect(screen.queryByRole("button", { name: "Delete preset Backend" })).toBeNull();
   });
 
-  it("exposes closed and merged visibility", async () => {
-    render(MobileActivityView, { props: { onSelectItem } });
-
-    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    const control = screen.getByRole<HTMLInputElement>("switch", { name: "Hide closed/merged" });
-    expect(control.checked).toBe(false);
-
-    await fireEvent.click(control);
-
-    expect(setHideClosedMerged).toHaveBeenCalledWith(true);
-  });
-
-  it("reloads activity when draft visibility changes", async () => {
+  it("chooses Open, Closed, or All states like the pull request list", async () => {
     render(MobileActivityView, { props: { onSelectItem } });
     const mountedReads = loadActivity.mock.calls.length;
 
     await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    const control = screen.getByRole<HTMLInputElement>("switch", { name: "Hide drafts" });
-    expect(control.checked).toBe(false);
+    await fireEvent.click(screen.getByRole("combobox", { name: /State/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "Open" }));
+    expect(setHideClosedMerged).toHaveBeenCalledWith(true);
 
-    await fireEvent.click(control);
+    await fireEvent.click(screen.getByRole("combobox", { name: /State/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "Closed" }));
+    expect(onlyClosedMerged.value).toBe(true);
+    expect(setHideClosedMerged).toHaveBeenLastCalledWith(false);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 2);
+  });
+
+  it("hides drafts through the Draft choice and reloads", async () => {
+    render(MobileActivityView, { props: { onSelectItem } });
+    const mountedReads = loadActivity.mock.calls.length;
+
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await fireEvent.click(screen.getByRole("combobox", { name: /Draft/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "No" }));
 
     expect(setHideDrafts).toHaveBeenCalledWith(true);
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 1);
+  });
+
+  it("offers Any, Passing, and Failed CI", async () => {
+    render(MobileActivityView, { props: { onSelectItem } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await fireEvent.click(screen.getByRole("combobox", { name: /CI/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "Failed CI" }));
+    expect(pullAttributeFilters.value).toEqual(["failed_ci"]);
+
+    await fireEvent.click(screen.getByRole("combobox", { name: /CI/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "Any" }));
+    expect(pullAttributeFilters.value).toEqual([]);
   });
 
   it("renders branch activity without a fake PR or issue number", () => {

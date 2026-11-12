@@ -3,10 +3,13 @@
  */
 import type { ActivityRepoRefResponse } from "./activityRepoRefResponse.ts";
 import type { Label } from "./label.ts";
+import type { WorkspaceActivitySubjectResponseHeadRepoKind } from "./workspaceActivitySubjectResponseHeadRepoKind.ts";
 import type { WorkspaceRef } from "./workspaceRef.ts";
 
 export interface WorkspaceActivitySubjectResponse {
   activity_at: string;
+  /** Whether a pull request's head branch lives in its base repository or a fork; absent for issues and when this server does not sync the repository. */
+  head_repo_kind?: WorkspaceActivitySubjectResponseHeadRepoKind;
   item_author?: string;
   item_number: number;
   item_state: string;

@@ -946,6 +946,80 @@ func (d *DB) ListLabelsForSubjects(
 	return out, nil
 }
 
+// pullRequestItems lists the pull requests among keys.
+func pullRequestItems(keys []WorkspaceSubjectKey) []RepoItemNumber {
+	items := []RepoItemNumber{}
+	for _, key := range keys {
+		if key.ItemType == WorkspaceItemTypePullRequest {
+			items = append(items, RepoItemNumber{RepoID: key.RepoID, Number: key.ItemNumber})
+		}
+	}
+	return items
+}
+
+// ListPullHeadRepoCloneURLs returns the stored head clone URL of each synced pull request among keys.
+func (d *DB) ListPullHeadRepoCloneURLs(
+	ctx context.Context, keys []WorkspaceSubjectKey,
+) (map[WorkspaceSubjectKey]string, error) {
+	out := make(map[WorkspaceSubjectKey]string)
+	items := pullRequestItems(keys)
+	if len(items) == 0 {
+		return out, nil
+	}
+	var args []any
+	cond := repoItemCondition("p", items, &args)
+	rows, err := d.roQueryContext(ctx,
+		"SELECT p.repo_id, p.number, p.head_repo_clone_url FROM forge_merge_requests p WHERE "+cond, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list pull head repositories: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		key := WorkspaceSubjectKey{ItemType: WorkspaceItemTypePullRequest}
+		var cloneURL string
+		if err := rows.Scan(&key.RepoID, &key.ItemNumber, &cloneURL); err != nil {
+			return nil, fmt.Errorf("scan pull head repository: %w", err)
+		}
+		out[key] = cloneURL
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list pull head repositories: %w", err)
+	}
+	return out, nil
+}
+
+// ListPullsMatchingAttributes returns the pull requests among keys that match every PR filter
+// section in attributes, with ListMergeRequestsOpts.Attributes semantics.
+func (d *DB) ListPullsMatchingAttributes(
+	ctx context.Context, keys []WorkspaceSubjectKey, attributes []string, held []RepoItemNumber,
+) (map[WorkspaceSubjectKey]struct{}, error) {
+	out := make(map[WorkspaceSubjectKey]struct{})
+	items := pullRequestItems(keys)
+	var args []any
+	filter := filterSectionsCondition(pullAttributeSections(attributes, held, &args)...)
+	if len(items) == 0 || filter == "" {
+		return out, nil
+	}
+	cond := repoItemCondition("p", items, &args)
+	rows, err := d.roQueryContext(ctx,
+		"SELECT p.repo_id, p.number FROM forge_merge_requests p WHERE "+filter+" AND "+cond, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list pulls matching filters: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		key := WorkspaceSubjectKey{ItemType: WorkspaceItemTypePullRequest}
+		if err := rows.Scan(&key.RepoID, &key.ItemNumber); err != nil {
+			return nil, fmt.Errorf("scan pull matching filters: %w", err)
+		}
+		out[key] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list pulls matching filters: %w", err)
+	}
+	return out, nil
+}
+
 func (d *DB) scanSubjectLabels(
 	ctx context.Context, query, payload, itemType string, out map[WorkspaceSubjectKey][]Label,
 ) error {
@@ -1840,6 +1914,64 @@ func filterSectionsCondition(sections ...[]string) string {
 	return "(" + strings.Join(selected, " AND ") + ")"
 }
 
+// pullAttributeSections turns PR inclusion filters into SQL sections over a merge request aliased p.
+// Mutually exclusive filters share a section and match either; the caller ANDs the sections.
+func pullAttributeSections(attributes []string, held []RepoItemNumber, args *[]any) [][]string {
+	// Empty and JSON null decode as no checks; invalid check arrays cannot match by check content.
+	const checks = `CASE
+		WHEN trim(p.ci_checks_json) = '' THEN '[]'
+		WHEN json_valid(p.ci_checks_json) THEN CASE json_type(p.ci_checks_json)
+			WHEN 'null' THEN '[]' WHEN 'array' THEN p.ci_checks_json END
+		END`
+	const pending = `COALESCE(json_extract(c.value, '$.status'), '') IN ('in_progress', 'queued', 'pending', 'waiting')`
+	var review, approval, ci, conflicts, mergeQueue, merging []string
+	for _, attribute := range attributes {
+		switch attribute {
+		case "merge_queued":
+			merging = append(merging, mergeQueuedCondition("p", held, args))
+		case "not_merge_queued":
+			merging = append(merging, notCondition(mergeQueuedCondition("p", held, args)))
+		case "approved":
+			approval = append(approval, "upper(trim(p.review_decision)) = 'APPROVED'")
+		case "not_approved":
+			approval = append(approval, notCondition("upper(trim(p.review_decision)) = 'APPROVED'"))
+		case "draft":
+			review = append(review, "p.is_draft")
+		case "not_draft":
+			review = append(review, "NOT p.is_draft")
+		case "ready":
+			review = append(review, "(p.state = 'open' AND NOT p.is_draft)")
+		case "merge_conflicts":
+			conflicts = append(conflicts, "(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))")
+		case "no_merge_conflicts":
+			conflicts = append(conflicts, notCondition("(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))"))
+		case "merge_queue":
+			mergeQueue = append(mergeQueue, `(p.state = 'open' AND EXISTS (
+				SELECT 1 FROM forge_merge_queue_states q
+				WHERE q.repo_id = p.repo_id AND q.number = p.number
+				  AND (q.queued OR (q.removal_reason != '' AND q.removed_at IS NOT NULL))
+			))`)
+		case "failed_ci":
+			ci = append(ci, `(lower(trim(p.ci_status)) IN ('failure', 'failed', 'error') OR (
+				NOT EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE c.type NOT IN ('object', 'null'))
+				AND EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
+					NOT (`+pending+`) AND json_extract(c.value, '$.conclusion') IN ('failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure')
+					ELSE 0 END)
+			))`)
+		case "passed_ci":
+			ci = append(ci, `(lower(trim(p.ci_status)) IN ('', 'success')
+				AND (`+checks+`) IS NOT NULL
+				AND (lower(trim(p.ci_status)) != '' OR json_array_length(`+checks+`) > 0)
+				AND NOT EXISTS (
+					SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
+						(`+pending+`) OR COALESCE(json_extract(c.value, '$.conclusion'), '') NOT IN ('success', 'skipped', 'neutral')
+						ELSE 1 END
+				))`)
+		}
+	}
+	return [][]string{review, approval, ci, conflicts, mergeQueue, merging}
+}
+
 func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeRequestsOpts) ([]MergeRequest, error) {
 	state := opts.State
 	if state == "" {
@@ -1991,57 +2123,8 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		}
 		involved = append(involved, involvement)
 	}
-	// Empty and JSON null decode as no checks; invalid check arrays cannot match by check content.
-	const checks = `CASE
-		WHEN trim(p.ci_checks_json) = '' THEN '[]'
-		WHEN json_valid(p.ci_checks_json) THEN CASE json_type(p.ci_checks_json)
-			WHEN 'null' THEN '[]' WHEN 'array' THEN p.ci_checks_json END
-		END`
-	const pending = `COALESCE(json_extract(c.value, '$.status'), '') IN ('in_progress', 'queued', 'pending', 'waiting')`
-	var review, approval, ci, conflicts, mergeQueue, merging []string
-	for _, attribute := range opts.Attributes {
-		switch attribute {
-		case "merge_queued":
-			merging = append(merging, mergeQueuedCondition("p", opts.DeferredMergeItems, &inclusionArgs))
-		case "not_merge_queued":
-			merging = append(merging, notCondition(mergeQueuedCondition("p", opts.DeferredMergeItems, &inclusionArgs)))
-		case "approved":
-			approval = append(approval, "upper(trim(p.review_decision)) = 'APPROVED'")
-		case "not_approved":
-			approval = append(approval, notCondition("upper(trim(p.review_decision)) = 'APPROVED'"))
-		case "draft":
-			review = append(review, "p.is_draft")
-		case "ready":
-			review = append(review, "(p.state = 'open' AND NOT p.is_draft)")
-		case "merge_conflicts":
-			conflicts = append(conflicts, "(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))")
-		case "no_merge_conflicts":
-			conflicts = append(conflicts, notCondition("(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))"))
-		case "merge_queue":
-			mergeQueue = append(mergeQueue, `(p.state = 'open' AND EXISTS (
-				SELECT 1 FROM forge_merge_queue_states q
-				WHERE q.repo_id = p.repo_id AND q.number = p.number
-				  AND (q.queued OR (q.removal_reason != '' AND q.removed_at IS NOT NULL))
-			))`)
-		case "failed_ci":
-			ci = append(ci, `(lower(trim(p.ci_status)) IN ('failure', 'failed', 'error') OR (
-				NOT EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE c.type NOT IN ('object', 'null'))
-				AND EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
-					NOT (`+pending+`) AND json_extract(c.value, '$.conclusion') IN ('failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure')
-					ELSE 0 END)
-			))`)
-		case "passed_ci":
-			ci = append(ci, `(lower(trim(p.ci_status)) IN ('', 'success')
-				AND (`+checks+`) IS NOT NULL
-				AND (lower(trim(p.ci_status)) != '' OR json_array_length(`+checks+`) > 0)
-				AND NOT EXISTS (
-					SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
-						(`+pending+`) OR COALESCE(json_extract(c.value, '$.conclusion'), '') NOT IN ('success', 'skipped', 'neutral')
-						ELSE 1 END
-				))`)
-		}
-	}
-	if inclusion := filterSectionsCondition(involved, unassigned, review, approval, ci, conflicts, mergeQueue, merging); inclusion != "" {
+	attributeSections := pullAttributeSections(opts.Attributes, opts.DeferredMergeItems, &inclusionArgs)
+	if inclusion := filterSectionsCondition(append([][]string{involved, unassigned}, attributeSections...)...); inclusion != "" {
 		if len(narrowing) > 0 {
 			// SQLite can reorder WHERE terms; evaluate narrowing filters before inclusion subqueries.
 			inclusion = "CASE WHEN " + strings.Join(narrowing, " AND ") + " THEN " + inclusion + " ELSE 0 END"

@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/itemapi"
+	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/server/routepolicy"
 	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
@@ -513,6 +514,136 @@ func TestSpokeHideDraftsUsesHubDraftStateForLocalWorkspaceSubjects(t *testing.T)
 	require.NoError(err)
 	require.Len(response.WorkspaceActivity, 1)
 	assert.Equal(10, response.WorkspaceActivity[0].ItemNumber)
+}
+
+// Only the hub classifies forks and matches pull request filters, so a spoke takes both
+// from the hub's rows for the same items, and pull request filters leave issues alone.
+func TestSpokeTakesForkKindAndPullFilterMatchesFromHubRows(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	hub, _, _ := setupTestServer(t)
+	spoke, spokeDatabase, _ := setupTestServer(t)
+	spokeRepoID, err := reposeed.Seed(t.Context(), spokeDatabase, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	spoke.providerSource = &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
+		_ context.Context, _ federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		request.Host = "127.0.0.1"
+		request.RemoteAddr = "127.0.0.1:1234"
+		recorder := httptest.NewRecorder()
+		hub.ServeHTTP(recorder, request)
+		return recorder.Result(), nil
+	})}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	repoKey := platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
+	}
+	for number, itemType := range map[int]string{9: db.WorkspaceItemTypePullRequest, 10: db.WorkspaceItemTypePullRequest, 11: db.WorkspaceItemTypeIssue} {
+		key := db.WorkspaceSubjectKey{RepoID: spokeRepoID, ItemType: itemType, ItemNumber: number}
+		snapshot.Subjects[key] = workspaceapi.SubjectActivity{
+			Subject: db.WorkspaceSubjectMetadata{
+				Key: key, Platform: "github", PlatformHost: "github.com", RepoKey: repoKey,
+				RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget", State: "open",
+			},
+			Workspace:  workspaceapi.WorkspaceRef{ID: "ws-" + strconv.Itoa(number), Status: "ready"},
+			ActivityAt: &now,
+		}
+	}
+	// Pull request 12 is a fork with only recent workspace output, so the hub has no row for it.
+	forkKey := db.WorkspaceSubjectKey{RepoID: spokeRepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 12}
+	snapshot.Subjects[forkKey] = workspaceapi.SubjectActivity{
+		Subject: db.WorkspaceSubjectMetadata{
+			Key: forkKey, Platform: "github", PlatformHost: "github.com", RepoKey: repoKey,
+			RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget", State: "open",
+		},
+		Workspace:    workspaceapi.WorkspaceRef{ID: "ws-12", Status: "ready"},
+		ActivityAt:   &now,
+		HeadRepoKind: "fork",
+	}
+	// The hub's filtered response names only pull request 9, a fork.
+	hubResponse := itemapi.ActivityResponse{
+		ItemActivity: []itemapi.ActivitySubjectResponse{{
+			Repo:     itemapi.ActivityRepoRefResponse{Provider: "github", PlatformHost: "github.com", Key: repoKey},
+			ItemType: "pr", ItemNumber: 9, HeadRepoKind: pullapi.HeadRepoKindFork,
+		}},
+		UseWorkspaceActivityForRecency: true,
+	}
+	listed := func(input *itemapi.ListActivityInput) map[int]pullapi.HeadRepoKind {
+		response, err := spoke.activityapi.OverlayLocalActivityWorkspaceSnapshot(t.Context(), input, hubResponse, snapshot)
+		require.NoError(err)
+		kinds := map[int]pullapi.HeadRepoKind{}
+		for _, subject := range response.WorkspaceActivity {
+			kinds[subject.ItemNumber] = subject.HeadRepoKind
+		}
+		return kinds
+	}
+
+	assert.Equal(map[int]pullapi.HeadRepoKind{9: pullapi.HeadRepoKindFork, 10: "", 11: "", 12: pullapi.HeadRepoKindFork},
+		listed(&itemapi.ListActivityInput{}), "a pull request the hub has no row for keeps its workspace's classification")
+	assert.Equal(map[int]pullapi.HeadRepoKind{9: pullapi.HeadRepoKindFork, 11: ""}, listed(&itemapi.ListActivityInput{Attributes: "approved"}),
+		"a pull request the hub's filtered rows leave out cannot be shown to match, and issues stay")
+}
+
+// A spoke without local provider copies takes each workspace subject's state and author from
+// the hub, so State Closed and Bots required keep the subjects they match.
+func TestSpokeUsesHubStateAndAuthorForLocalWorkspaceSubjects(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	hub, hubDatabase, _ := setupTestServer(t)
+	serverfake.SeedPR(t, hubDatabase, "acme", "widget", 9, func(pr *db.MergeRequest) { pr.State = db.MergeRequestStateMerged })
+	serverfake.SeedPR(t, hubDatabase, "acme", "widget", 10, func(pr *db.MergeRequest) { pr.Author = "renovate[bot]" })
+
+	spoke, spokeDatabase, _ := setupTestServer(t)
+	spokeRepoID, err := reposeed.Seed(t.Context(), spokeDatabase, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	spoke.providerSource = &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
+		_ context.Context, _ federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		request.Host = "127.0.0.1"
+		request.RemoteAddr = "127.0.0.1:1234"
+		recorder := httptest.NewRecorder()
+		hub.ServeHTTP(recorder, request)
+		return recorder.Result(), nil
+	})}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
+	}
+	// The spoke has no provider copies, so its own metadata carries no state or author.
+	for _, number := range []int{9, 10} {
+		key := db.WorkspaceSubjectKey{RepoID: spokeRepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number}
+		snapshot.Subjects[key] = workspaceapi.SubjectActivity{
+			Subject: db.WorkspaceSubjectMetadata{
+				Key: key, Platform: "github", PlatformHost: "github.com",
+				RepoKey:   platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
+				RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget",
+			},
+			Workspace:  workspaceapi.WorkspaceRef{ID: "ws-" + strconv.Itoa(number), Status: "ready"},
+			ActivityAt: &now,
+		}
+	}
+	listed := func(input *itemapi.ListActivityInput) map[int][2]string {
+		response, err := spoke.activityapi.OverlayLocalActivityWorkspaceSnapshot(
+			t.Context(), input, itemapi.ActivityResponse{UseWorkspaceActivityForRecency: true}, snapshot,
+		)
+		require.NoError(err)
+		subjects := map[int][2]string{}
+		for _, subject := range response.WorkspaceActivity {
+			subjects[subject.ItemNumber] = [2]string{subject.ItemState, subject.ItemAuthor}
+		}
+		return subjects
+	}
+
+	assert.Equal(map[int][2]string{9: {"merged", "testuser"}}, listed(&itemapi.ListActivityInput{ClosedMerged: true}))
+	assert.Equal(map[int][2]string{10: {"open", "renovate[bot]"}}, listed(&itemapi.ListActivityInput{Bots: true}))
+	assert.Equal(map[int][2]string{9: {"merged", "testuser"}}, listed(&itemapi.ListActivityInput{HideBots: true}))
 }
 
 func TestSpokeHideMergeQueuedUsesHubStateForLocalWorkspaceSubjects(t *testing.T) {

@@ -151,6 +151,13 @@ func (s *HubProviderSource) ApplyHubActivitySubjectState(
 		if workspace.RepoPrivate != nil {
 			activity.Subject.RepoPrivate = workspace.RepoPrivate
 		}
+		// State and author decide the State and Bots filters; the hub owns both.
+		if workspace.MRState != nil {
+			activity.Subject.State = *workspace.MRState
+		}
+		if workspace.ItemAuthor != nil {
+			activity.Subject.Author = *workspace.ItemAuthor
+		}
 		if keys[index].ItemType == db.WorkspaceItemTypePullRequest && workspace.MRIsDraft != nil {
 			activity.Subject.IsDraft = *workspace.MRIsDraft
 		}

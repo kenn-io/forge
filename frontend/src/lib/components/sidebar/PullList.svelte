@@ -56,19 +56,12 @@
     grouping.getGroupingMode(),
   );
   const pullStateOptions = ["open", "closed", "all"] as const;
-  // Every selected filter must match. Review and CI are pick-one pairs of opposites;
-  // a condition row cycles through off, required, and its opposite.
+  // Every selected filter must match. CI is a pick-one pair; a condition row cycles
+  // through off, required, and its opposite.
   const pickOneFilterSections: {
     title: string;
     options: { value: PullAttributeFilter; label: string }[];
   }[] = [
-    {
-      title: "Review",
-      options: [
-        { value: "draft", label: "Draft" },
-        { value: "ready", label: "Ready for review" },
-      ],
-    },
     {
       title: "CI",
       options: [
@@ -78,10 +71,12 @@
     },
   ];
   const conditionFilterOptions: { value: PullAttributeFilter; opposite: PullAttributeFilter; label: string }[] = [
+    { value: "draft", opposite: "not_draft", label: "Draft" },
     { value: "approved", opposite: "not_approved", label: "Approved" },
     { value: "merge_conflicts", opposite: "no_merge_conflicts", label: "Merge conflicts" },
     { value: "merge_queued", opposite: "not_merge_queued", label: "Merge queued" },
     { value: "has_workspace", opposite: "no_workspace", label: "Has workspace" },
+    { value: "fork", opposite: "not_fork", label: "From fork" },
   ];
   const groupingOptions: {
     value: GroupingMode;

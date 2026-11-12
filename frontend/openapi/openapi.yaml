@@ -491,6 +491,13 @@ components:
           type: string
         cursor:
           type: string
+        head_repo_kind:
+          description: Whether the parent pull request's head branch lives in its base repository or a fork; absent for issues and repository-level activity.
+          enum:
+            - same_repo
+            - fork
+            - unknown
+          type: string
         id:
           type: string
         item_author:
@@ -621,6 +628,13 @@ components:
           format: date-time
           type: string
         event_ledger_revision:
+          type: string
+        head_repo_kind:
+          description: Whether a pull request's head branch lives in its base repository or a fork; absent for issues and repository-level activity.
+          enum:
+            - same_repo
+            - fork
+            - unknown
           type: string
         item_author:
           type: string
@@ -6250,6 +6264,12 @@ components:
           items:
             $ref: "#/components/schemas/PRDiffSizePoint"
           type: array
+        head_repo_kind:
+          enum:
+            - same_repo
+            - fork
+            - unknown
+          type: string
         labels:
           items:
             $ref: "#/components/schemas/Label"
@@ -6308,6 +6328,7 @@ components:
         - repo_owner
         - repo_name
         - platform_host
+        - head_repo_kind
         - worktree_links
         - detail_loaded
         - ID
@@ -12257,6 +12278,13 @@ components:
         activity_at:
           format: date-time
           type: string
+        head_repo_kind:
+          description: Whether a pull request's head branch lives in its base repository or a fork; absent for issues and when this server does not sync the repository.
+          enum:
+            - same_repo
+            - fork
+            - unknown
+          type: string
         item_author:
           type: string
         item_number:
@@ -13823,10 +13851,24 @@ paths:
           name: hide_closed_merged
           schema:
             type: boolean
+        - description: Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged.
+          explode: false
+          in: query
+          name: closed_merged
+          schema:
+            description: Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged.
+            type: boolean
         - explode: false
           in: query
           name: hide_bots
           schema:
+            type: boolean
+        - description: Keep only bot-authored activity. Wins over hide_bots.
+          explode: false
+          in: query
+          name: bots
+          schema:
+            description: Keep only bot-authored activity. Wins over hide_bots.
             type: boolean
         - description: Exclude activity for draft pull requests.
           explode: false
@@ -13849,6 +13891,13 @@ paths:
           schema:
             description: Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
             type: boolean
+        - description: "Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts."
+          explode: false
+          in: query
+          name: attributes
+          schema:
+            description: "Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts."
+            type: string
         - explode: false
           in: query
           name: hide_default_branch
@@ -13990,10 +14039,24 @@ paths:
           name: hide_closed_merged
           schema:
             type: boolean
+        - description: Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged.
+          explode: false
+          in: query
+          name: closed_merged
+          schema:
+            description: Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged.
+            type: boolean
         - explode: false
           in: query
           name: hide_bots
           schema:
+            type: boolean
+        - description: Keep only bot-authored activity. Wins over hide_bots.
+          explode: false
+          in: query
+          name: bots
+          schema:
+            description: Keep only bot-authored activity. Wins over hide_bots.
             type: boolean
         - description: Exclude activity for draft pull requests.
           explode: false
@@ -14016,6 +14079,13 @@ paths:
           schema:
             description: Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
             type: boolean
+        - description: Comma-separated pull request filters, as on the activity list.
+          explode: false
+          in: query
+          name: attributes
+          schema:
+            description: Comma-separated pull request filters, as on the activity list.
+            type: string
         - explode: false
           in: query
           name: hide_default_branch
@@ -25171,12 +25241,12 @@ paths:
               format: int64
               type: integer
             type: array
-        - description: "Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination."
+        - description: "Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination."
           explode: false
           in: query
           name: attributes
           schema:
-            description: "Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination."
+            description: "Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination."
             type: string
         - description: Exact case-sensitive label name; applied before pagination.
           explode: false

@@ -70,8 +70,8 @@ test("Activity filter defaults save to TOML and apply in a new browser session",
     for (const [name, pressed] of [
       ["Reviews", false],
       ["Notifications", false],
-      ["Hide closed/merged", true],
-      ["Hide drafts", true],
+      // The saved Hide closed/merged default shows as State Open.
+      ["Open", true],
       ["Hide default-branch activity", true],
       ["Roll up commits", true],
     ] as const) {
@@ -80,11 +80,10 @@ test("Activity filter defaults save to TOML and apply in a new browser session",
         String(pressed),
       );
     }
-    // The saved Hide queued for merge default shows as an excluded Merge queued row.
-    await expect(freshPage.getByRole("button", { name: /^Merge queued\b.*excluded$/ })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    // The saved Hide queued for merge and Hide drafts defaults show as excluded condition rows.
+    for (const name of [/^Merge queued\b.*excluded$/, /^Draft\b.*excluded$/]) {
+      await expect(freshPage.getByRole("button", { name })).toHaveAttribute("aria-pressed", "true");
+    }
   } finally {
     await context.close();
     // Keep the shared server's defaults independent for the remaining tests.

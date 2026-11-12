@@ -19,6 +19,13 @@ import { showFlash } from "./flash.svelte.js";
 import { createListPaging } from "./list-paging.svelte.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
 import type { TriFilter } from "../utils/tri-filter.js";
+import {
+  BROWSER_ONLY_PULL_ATTRIBUTES,
+  PULL_ATTRIBUTE_SECTIONS,
+  cycleFilterInSections,
+  toggleFilterInSections,
+  type PullAttributeFilter,
+} from "../utils/pull-attributes.js";
 import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
 import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
 import { repositoryKeyFromWire, repositoryKeyToWire } from "../api/repository-key.js";
@@ -285,6 +292,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let hideClosedMerged = $state(false);
   let hideClosedMergedOverride: boolean | undefined;
   let hideBots = $state(false);
+  let hideBotsOverride: boolean | undefined;
   // Labels filter loaded rows in the browser, like the PR list's, so they are not saved.
   let labelFilters = $state.raw<LabelFilters>(new Map());
   let hideDrafts = $state(false);
@@ -295,6 +303,19 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let onlyMergeQueuedChoice = $state(false);
   // A restored URL or saved default can turn hiding on after the choice; hiding then wins.
   const onlyMergeQueued = $derived(onlyMergeQueuedChoice && !hideMergeQueued);
+  // Keeping only closed items, bot activity, or drafts are passing views too; their hide choices are saved.
+  let onlyClosedMergedChoice = $state(false);
+  const onlyClosedMerged = $derived(onlyClosedMergedChoice && !hideClosedMerged);
+  let onlyBotsChoice = $state(false);
+  const onlyBots = $derived(onlyBotsChoice && !hideBots);
+  let onlyDraftsChoice = $state(false);
+  const onlyDrafts = $derived(onlyDraftsChoice && !hideDrafts);
+  // The pull request list's other conditions. They apply only to pull request activity and are not saved.
+  let pullAttributeFilters = $state<PullAttributeFilter[]>([]);
+  const serverPullAttributes = $derived([
+    ...(onlyDrafts ? ["draft"] : []),
+    ...pullAttributeFilters.filter((filter) => !BROWSER_ONLY_PULL_ATTRIBUTES.includes(filter)),
+  ]);
   let useWorkspaceActivityForRecency = $state(false);
   let hideDefaultBranchActivity = $state(false);
   let enabledItemTypes = $state<Set<ActivityItemType>>(new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
@@ -411,6 +432,22 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function getHideClosedMerged(): boolean {
     return hideClosedMerged;
   }
+  /** Open hides closed and merged items, Closed keeps only them, and All shows both. */
+  function getActivityState(): "open" | "closed" | "all" {
+    if (onlyClosedMerged) return "closed";
+    return hideClosedMerged ? "open" : "all";
+  }
+  function getBots(): TriFilter {
+    if (onlyBots) return "require";
+    return hideBots ? "exclude" : undefined;
+  }
+  function getDraft(): TriFilter {
+    if (onlyDrafts) return "require";
+    return hideDrafts ? "exclude" : undefined;
+  }
+  function getPullAttributeFilters(): PullAttributeFilter[] {
+    return pullAttributeFilters;
+  }
   function getLabelFilters(): LabelFilters {
     return labelFilters;
   }
@@ -525,6 +562,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function setHideBots(v: boolean): void {
     hideBots = v;
+    hideBotsOverride = v;
     invalidatePagedActivityRequests();
   }
   function setHideMergeQueued(v: boolean): void {
@@ -536,6 +574,42 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function setMergeQueued(value: TriFilter): void {
     onlyMergeQueuedChoice = value === "require";
     setHideMergeQueued(value === "exclude");
+  }
+  function setActivityState(state: "open" | "closed" | "all"): void {
+    onlyClosedMergedChoice = state === "closed";
+    setHideClosedMerged(state === "open");
+  }
+  function setBots(value: TriFilter): void {
+    onlyBotsChoice = value === "require";
+    setHideBots(value === "exclude");
+  }
+  function setDraft(value: TriFilter): void {
+    onlyDraftsChoice = value === "require";
+    setHideDrafts(value === "exclude");
+  }
+  function applyPullAttributeFilters(next: PullAttributeFilter[], changed: PullAttributeFilter): void {
+    pullAttributeFilters = next;
+    if (!BROWSER_ONLY_PULL_ATTRIBUTES.includes(changed)) invalidatePagedActivityRequests();
+  }
+  /** Selects one option of a pick-one pair such as Passing CI and Failed CI. */
+  function togglePullAttributeFilter(filter: PullAttributeFilter): void {
+    applyPullAttributeFilters(toggleFilterInSections(PULL_ATTRIBUTE_SECTIONS, pullAttributeFilters, filter), filter);
+  }
+  /** Cycles a condition through off, required, and its opposite. */
+  function cyclePullAttributeFilter(filter: PullAttributeFilter, opposite: PullAttributeFilter): void {
+    applyPullAttributeFilters(
+      cycleFilterInSections(PULL_ATTRIBUTE_SECTIONS, pullAttributeFilters, filter, opposite),
+      filter,
+    );
+  }
+  function setPullAttributeFilters(next: PullAttributeFilter[]): void {
+    const serverChanged = [...next, ...pullAttributeFilters].some(
+      (filter) =>
+        !BROWSER_ONLY_PULL_ATTRIBUTES.includes(filter) &&
+        next.includes(filter) !== pullAttributeFilters.includes(filter),
+    );
+    pullAttributeFilters = next;
+    if (serverChanged) invalidatePagedActivityRequests();
   }
   function setHideDrafts(v: boolean): void {
     hideDrafts = v;
@@ -591,7 +665,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     viewMode = activity.view_mode;
     timeRange = activity.time_range;
     hideClosedMerged = activity.hide_closed;
-    hideBots = activity.hide_bots;
+    hideBots = hideBotsOverride ?? activity.hide_bots;
     hideDrafts = hideDraftsOverride ?? activity.hide_drafts;
     hideMergeQueued = hideMergeQueuedOverride ?? activity.hide_merge_queued;
     useWorkspaceActivityForRecency = activity.use_workspace_activity_for_recency;
@@ -654,6 +728,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (hideDrafts) p.hide_drafts = true;
     if (hideMergeQueued) p.hide_merge_queued = true;
     if (onlyMergeQueued) p.merge_queued = true;
+    if (onlyClosedMerged) p.closed_merged = true;
+    if (onlyBots) p.bots = true;
+    if (serverPullAttributes.length > 0) p.attributes = serverPullAttributes.join(",");
     if (hideDefaultBranchActivity) p.hide_default_branch = true;
     if (activityPageLimit === undefined && viewMode === "flat") {
       return { ...flatPaging.withLimit(activityPageQuery(p)), since };
@@ -683,6 +760,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       params.hide_drafts ?? false,
       params.hide_merge_queued ?? false,
       params.merge_queued ?? false,
+      params.closed_merged ?? false,
+      params.bots ?? false,
+      params.attributes ?? "",
       params.hide_default_branch ?? false,
       params.limit ?? 0,
     ]);
@@ -953,7 +1033,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const key = stableParentKey(item);
       const subject = key ? subjectsByKey.get(key) : undefined;
       if (!subject) return item;
-      const { workspace: _staleWorkspace, labels: _staleLabels, ...retainedEvent } = item;
+      const {
+        workspace: _staleWorkspace,
+        labels: _staleLabels,
+        head_repo_kind: _staleHeadRepoKind,
+        ...retainedEvent
+      } = item;
       return {
         ...retainedEvent,
         ...(item.activity_type === "notification" ? { activity_url: subject.item_url } : {}),
@@ -968,8 +1053,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         repo: subject.repo,
         ...(item.activity_type === "notification" ? { subject_state: subject.item_state } : {}),
         ...(subject.workspace ? { workspace: subject.workspace } : {}),
-        // The parent's current labels, so a label filter never acts on a retained event's old ones.
+        // The parent's current labels and fork kind, so a filter never acts on a retained event's old ones.
         ...(subject.labels ? { labels: subject.labels } : {}),
+        ...(subject.head_repo_kind ? { head_repo_kind: subject.head_repo_kind } : {}),
       };
     });
   }
@@ -1053,6 +1139,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       hideDrafts ||
       hideMergeQueued ||
       onlyMergeQueued ||
+      onlyClosedMerged ||
+      onlyBots ||
+      serverPullAttributes.length > 0 ||
       enabledItemTypes.size !== DEFAULT_ACTIVITY_ITEM_TYPES.length;
     const refreshFilteredBulk =
       !result.partialFailure &&
@@ -1394,6 +1483,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       ...(hideDrafts ? { hide_drafts: true } : {}),
       ...(hideMergeQueued ? { hide_merge_queued: true } : {}),
       ...(onlyMergeQueued ? { merge_queued: true } : {}),
+      ...(onlyClosedMerged ? { closed_merged: true } : {}),
+      ...(onlyBots ? { bots: true } : {}),
+      ...(serverPullAttributes.length > 0 ? { attributes: serverPullAttributes.join(",") } : {}),
       ...(hideDefaultBranchActivity ? { hide_default_branch: true } : {}),
     };
     const isCurrentRequest = () =>
@@ -1903,6 +1995,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getHideDrafts,
     getHideMergeQueued,
     getMergeQueued,
+    getActivityState,
+    getBots,
+    getDraft,
+    getPullAttributeFilters,
     getUseWorkspaceActivityForRecency,
     getHideDefaultBranchActivity,
     getEnabledItemTypes,
@@ -1929,6 +2025,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     setHideDrafts,
     setHideMergeQueued,
     setMergeQueued,
+    setActivityState,
+    setBots,
+    setDraft,
+    togglePullAttributeFilter,
+    cyclePullAttributeFilter,
+    setPullAttributeFilters,
     setHideDefaultBranchActivity,
     setEnabledItemTypes,
     setEnabledEvents,

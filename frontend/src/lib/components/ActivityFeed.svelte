@@ -23,7 +23,7 @@
   import { getStores, getNavigate } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
   import ListLoadMore from "./sidebar/ListLoadMore.svelte";
-  import { activityFilterOptions } from "./activityFilters.js";
+  import { activityFilterOptions, activityItemVisible, activitySubjectVisible } from "./activityFilters.js";
   import AuthorFilterMenu from "./shared/AuthorFilterMenu.svelte";
   import LabelFilterMenu from "./shared/LabelFilterMenu.svelte";
   import { labelFilterChoices, labelFilterSummary, matchesLabelFilters } from "../utils/label-filter.js";
@@ -33,7 +33,6 @@
     isDefaultBranchCommitActivity,
     isDefaultBranchForcePushActivity,
     isCollapsedActivityRow,
-    isClosedOrMergedActivity,
     collapseActivityRuns,
     activityAuthor,
     notificationReasonLabel,
@@ -104,17 +103,11 @@
 
   const filters = $derived.by(() => activityFilterOptions(activity, grouping));
 
-  const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
-
-  function isBot(author: string): boolean {
-    const lower = author.toLowerCase();
-    return BOT_SUFFIXES.some((s) => lower.endsWith(s));
-  }
-
   const popoverFilterCount = $derived(
     (activity.getActivityAuthor() ? 1 : 0)
     + filters.events.filter((filter) => !filter.active).length
     + filters.visibility.filter((filter) => filter.active || filter.excluded).length
+    + filters.activeChoiceCount
     + activity.getLabelFilters().size,
   );
 
@@ -269,16 +262,8 @@
   const displayItems = $derived.by(() => {
     let result = activity.getActivityItems().filter((item) =>
       isActivityItemTypeEnabled(item.item_type, activity.getEnabledItemTypes())
+      && activityItemVisible(activity, item)
     );
-    if (activity.getHideClosedMerged()) {
-      result = result.filter((it) => !isClosedOrMergedActivity(it));
-    }
-    if (activity.getHideBots()) {
-      result = result.filter((it) => !isBot(it.author));
-    }
-    if (activity.getHideDefaultBranchActivity()) {
-      result = result.filter((it) => !isDefaultBranchActivity(it));
-    }
     const labels = activity.getLabelFilters();
     if (labels.size > 0) result = result.filter((it) => matchesLabelFilters(it.labels, labels));
     return result;
@@ -325,13 +310,8 @@
     if (!activity.getUseWorkspaceActivityForRecency()) return [];
     let result: WorkspaceActivitySubject[] = activity.getWorkspaceActivity().filter((subject) =>
       isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
+      && activitySubjectVisible(activity, subject)
     );
-    if (activity.getHideClosedMerged()) {
-      result = result.filter((subject) => subject.item_state !== "closed" && subject.item_state !== "merged");
-    }
-    if (activity.getHideBots()) {
-      result = result.filter((subject) => !isBot(subject.item_author ?? ""));
-    }
     const labels = activity.getLabelFilters();
     if (labels.size > 0) {
       result = result.filter((subject) => matchesLabelFilters(workspaceSubjectLabels(subject), labels));
@@ -342,13 +322,8 @@
   const visibleItemActivity = $derived.by(() => {
     let result: ActivitySubject[] = activity.getItemActivity().filter((subject) =>
       isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
+      && activitySubjectVisible(activity, subject)
     );
-    if (activity.getHideClosedMerged()) {
-      result = result.filter((subject) => subject.item_state !== "closed" && subject.item_state !== "merged");
-    }
-    if (activity.getHideBots()) {
-      result = result.filter((subject) => !isBot(subject.item_author ?? ""));
-    }
     const labels = activity.getLabelFilters();
     if (labels.size > 0) result = result.filter((subject) => matchesLabelFilters(subject.labels, labels));
     return result;
@@ -397,13 +372,18 @@
     activity.setEnabledEvents(new Set(DEFAULT_EVENT_TYPES));
     activity.setShowNotifications(true);
     for (const filter of filters.visibility) filter.reset();
+    filters.resetChoices();
     filters.applyFilters();
   }
 
-  const activityFilterSections = $derived([
-    { title: "Event types", items: filters.events },
-    { title: "Visibility", items: filters.visibility },
-  ]);
+  function choiceItems<T extends string>(choice: { id: string; value: T; options: { value: T; label: string }[]; choose: (value: T) => void }) {
+    return choice.options.map((option) => ({
+      id: `${choice.id}-${option.value}`,
+      label: option.label,
+      active: choice.value === option.value,
+      onSelect: () => choice.choose(option.value),
+    }));
+  }
 
   // Compact mode has no author chip, so the trigger names the author instead.
   const compactAuthor = $derived(compact ? activity.getActivityAuthor() : undefined);
@@ -419,29 +399,12 @@
     collapseThreads ? "Expand all" : "Collapse all",
   );
 
+  // Sections follow the pull request list's menu: State, then layout and scope, the conditions,
+  // CI, and View.
   const filterSections = $derived.by(() => [
+    { title: "State", items: choiceItems(filters.state) },
     {
-      items: [
-        {
-          id: "author",
-          label: "Author",
-          detail: activity.getActivityAuthor() || "Anyone",
-          active: Boolean(activity.getActivityAuthor()),
-          submenu: authorFilterMenu,
-          onSelect: () => {},
-        },
-        {
-          id: "labels",
-          label: "Labels",
-          detail: labelFilterSummary(activity.getLabelFilters()),
-          active: activity.getLabelFilters().size > 0,
-          submenu: labelFilterMenu,
-          onSelect: () => {},
-        },
-      ],
-    },
-    {
-      title: "View",
+      title: "Layout",
       items: [
         {
           id: "view-flat",
@@ -459,32 +422,11 @@
         },
       ],
     },
-    {
-      title: "Time range",
-      items: TIME_RANGES.map((range) => ({
-        id: `range-${range.value}`,
-        label: range.label,
-        active: activity.getTimeRange() === range.value,
-        closeOnSelect: true,
-        onSelect: () => handleTimeRangeChange(range.value),
-      })),
-    },
-    {
-      title: "Commits",
-      items: [
-        {
-          id: "roll-up-commits",
-          label: "Roll up commits",
-          active: activity.getRollUpCommits(),
-          onSelect: () => handleRollUpCommitsChange(!activity.getRollUpCommits()),
-        },
-      ],
-    },
     ...(activity.getViewMode() === "threaded"
       ? [
           {
-            title: "Grouping",
-                  items: [
+            title: "Group",
+            items: [
               {
                 id: "group-by-repo",
                 label: "By repo",
@@ -503,7 +445,52 @@
           },
         ]
       : []),
-    ...activityFilterSections,
+    {
+      title: "Time range",
+      items: TIME_RANGES.map((range) => ({
+        id: `range-${range.value}`,
+        label: range.label,
+        active: activity.getTimeRange() === range.value,
+        closeOnSelect: true,
+        onSelect: () => handleTimeRangeChange(range.value),
+      })),
+    },
+    { title: "Event types", items: filters.events },
+    {
+      title: "Filter",
+      items: [
+        {
+          id: "author",
+          label: "Author",
+          detail: activity.getActivityAuthor() || "Anyone",
+          active: Boolean(activity.getActivityAuthor()),
+          submenu: authorFilterMenu,
+          onSelect: () => {},
+        },
+        {
+          id: "labels",
+          label: "Labels",
+          detail: labelFilterSummary(activity.getLabelFilters()),
+          active: activity.getLabelFilters().size > 0,
+          submenu: labelFilterMenu,
+          onSelect: () => {},
+        },
+        ...filters.conditions,
+      ],
+    },
+    { title: "CI", items: choiceItems(filters.ci) },
+    {
+      title: "View",
+      items: [
+        {
+          id: "roll-up-commits",
+          label: "Roll up commits",
+          active: activity.getRollUpCommits(),
+          onSelect: () => handleRollUpCommitsChange(!activity.getRollUpCommits()),
+        },
+        ...filters.view,
+      ],
+    },
   ]);
 
   function eventClass(type: string): string {

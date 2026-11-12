@@ -4,6 +4,7 @@
 import type { Label } from "./label.ts";
 import type { MergeQueueEntryResponse } from "./mergeQueueEntryResponse.ts";
 import type { MergeQueueRemovalResponse } from "./mergeQueueRemovalResponse.ts";
+import type { MergeRequestResponseHeadRepoKind } from "./mergeRequestResponseHeadRepoKind.ts";
 import type { MergeRequestResponseState } from "./mergeRequestResponseState.ts";
 import type { PRDiffSizePoint } from "./pRDiffSizePoint.ts";
 import type { RepoRefResponse } from "./repoRefResponse.ts";
@@ -55,6 +56,7 @@ export interface MergeRequestResponse {
   detail_fetched_at?: string;
   detail_loaded: boolean;
   diff_size_history?: PRDiffSizePoint[];
+  head_repo_kind: MergeRequestResponseHeadRepoKind;
   labels?: Label[];
   last_workspace_activity_at?: string;
   merge_queue?: MergeQueueEntryResponse;

@@ -13883,8 +13883,11 @@ func (c *Client) ListActivityWithResponse(ctx context.Context, options *ListActi
 		"after":               {Style: "form", Explode: &[]bool{false}[0]},
 		"assigned":            {Style: "form", Explode: &[]bool{false}[0]},
 		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":          {Style: "form", Explode: &[]bool{false}[0]},
 		"author":              {Style: "form", Explode: &[]bool{false}[0]},
 		"before":              {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":       {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
@@ -14047,8 +14050,11 @@ func (c *Client) ListActivityThreadEventsWithResponse(ctx context.Context, optio
 
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"at_or_before":              {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":                {Style: "form", Explode: &[]bool{false}[0]},
 		"before":                    {Style: "form", Explode: &[]bool{false}[0]},
 		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                      {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":             {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -42697,8 +42703,11 @@ func (c *Client) ListActivityRaw(ctx context.Context, httpClient *http.Client, o
 		"after":               {Style: "form", Explode: &[]bool{false}[0]},
 		"assigned":            {Style: "form", Explode: &[]bool{false}[0]},
 		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":          {Style: "form", Explode: &[]bool{false}[0]},
 		"author":              {Style: "form", Explode: &[]bool{false}[0]},
 		"before":              {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":       {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
@@ -42755,8 +42764,11 @@ func (c *Client) ListActivityThreadEventsRaw(ctx context.Context, httpClient *ht
 
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"at_or_before":              {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":                {Style: "form", Explode: &[]bool{false}[0]},
 		"before":                    {Style: "form", Explode: &[]bool{false}[0]},
 		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                      {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":             {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -50041,8 +50053,11 @@ func NewListActivityRequest(ctx context.Context, baseURL string, options *ListAc
 		"after":               {Style: "form", Explode: &[]bool{false}[0]},
 		"assigned":            {Style: "form", Explode: &[]bool{false}[0]},
 		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":          {Style: "form", Explode: &[]bool{false}[0]},
 		"author":              {Style: "form", Explode: &[]bool{false}[0]},
 		"before":              {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":       {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
@@ -50101,8 +50116,11 @@ func NewListActivityThreadEventsRequest(ctx context.Context, baseURL string, opt
 
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"at_or_before":              {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":                {Style: "form", Explode: &[]bool{false}[0]},
 		"before":                    {Style: "form", Explode: &[]bool{false}[0]},
 		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                      {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":             {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -57758,6 +57776,24 @@ const (
 	ActivityViewModeThreaded ActivityViewMode = "threaded"
 )
 
+// ActivityItemResponseHeadRepoKind Whether the parent pull request's head branch lives in its base repository or a fork; absent for issues and repository-level activity.
+type ActivityItemResponseHeadRepoKind string
+
+const (
+	ActivityItemResponseHeadRepoKindFork     ActivityItemResponseHeadRepoKind = "fork"
+	ActivityItemResponseHeadRepoKindSameRepo ActivityItemResponseHeadRepoKind = "same_repo"
+	ActivityItemResponseHeadRepoKindUnknown  ActivityItemResponseHeadRepoKind = "unknown"
+)
+
+// ActivitySubjectResponseHeadRepoKind Whether a pull request's head branch lives in its base repository or a fork; absent for issues and repository-level activity.
+type ActivitySubjectResponseHeadRepoKind string
+
+const (
+	ActivitySubjectResponseHeadRepoKindFork     ActivitySubjectResponseHeadRepoKind = "fork"
+	ActivitySubjectResponseHeadRepoKindSameRepo ActivitySubjectResponseHeadRepoKind = "same_repo"
+	ActivitySubjectResponseHeadRepoKindUnknown  ActivitySubjectResponseHeadRepoKind = "unknown"
+)
+
 type AgentProtocol string
 
 const (
@@ -58020,6 +58056,14 @@ const (
 	MergeRequestResponseStateOpen   MergeRequestResponseState = "open"
 )
 
+type MergeRequestResponseHeadRepoKind string
+
+const (
+	MergeRequestResponseHeadRepoKindFork     MergeRequestResponseHeadRepoKind = "fork"
+	MergeRequestResponseHeadRepoKindSameRepo MergeRequestResponseHeadRepoKind = "same_repo"
+	MergeRequestResponseHeadRepoKindUnknown  MergeRequestResponseHeadRepoKind = "unknown"
+)
+
 // ProblemErrorCode Machine-readable error code. Stable across occurrences.
 type ProblemErrorCode string
 
@@ -58134,6 +58178,15 @@ type WorklistItemResponseItemType string
 const (
 	WorklistItemResponseItemTypeIssue WorklistItemResponseItemType = "issue"
 	WorklistItemResponseItemTypePr    WorklistItemResponseItemType = "pr"
+)
+
+// WorkspaceActivitySubjectResponseHeadRepoKind Whether a pull request's head branch lives in its base repository or a fork; absent for issues and when this server does not sync the repository.
+type WorkspaceActivitySubjectResponseHeadRepoKind string
+
+const (
+	WorkspaceActivitySubjectResponseHeadRepoKindFork     WorkspaceActivitySubjectResponseHeadRepoKind = "fork"
+	WorkspaceActivitySubjectResponseHeadRepoKindSameRepo WorkspaceActivitySubjectResponseHeadRepoKind = "same_repo"
+	WorkspaceActivitySubjectResponseHeadRepoKindUnknown  WorkspaceActivitySubjectResponseHeadRepoKind = "unknown"
 )
 
 type WorkspaceChatCommandType string
@@ -60905,7 +60958,13 @@ type ListActivityQuery struct {
 	Projection       *ListActivityQueryProjection `json:"projection,omitempty"`
 	Limit            *int64                       `json:"limit,omitempty"`
 	HideClosedMerged *bool                        `json:"hide_closed_merged,omitempty"`
-	HideBots         *bool                        `json:"hide_bots,omitempty"`
+
+	// ClosedMerged Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged.
+	ClosedMerged *bool `json:"closed_merged,omitempty"`
+	HideBots     *bool `json:"hide_bots,omitempty"`
+
+	// Bots Keep only bot-authored activity. Wins over hide_bots.
+	Bots *bool `json:"bots,omitempty"`
 
 	// HideDrafts Exclude activity for draft pull requests.
 	HideDrafts *bool `json:"hide_drafts,omitempty"`
@@ -60914,8 +60973,11 @@ type ListActivityQuery struct {
 	HideMergeQueued *bool `json:"hide_merge_queued,omitempty"`
 
 	// MergeQueued Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
-	MergeQueued       *bool `json:"merge_queued,omitempty"`
-	HideDefaultBranch *bool `json:"hide_default_branch,omitempty"`
+	MergeQueued *bool `json:"merge_queued,omitempty"`
+
+	// Attributes Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts.
+	Attributes        *string `json:"attributes,omitempty"`
+	HideDefaultBranch *bool   `json:"hide_default_branch,omitempty"`
 }
 
 type ListActivityAuthorsQuery struct {
@@ -60941,7 +61003,13 @@ type ListActivityThreadEventsQuery struct {
 	AtOrBefore       *string `json:"at_or_before,omitempty"`
 	Limit            *int64  `json:"limit,omitempty"`
 	HideClosedMerged *bool   `json:"hide_closed_merged,omitempty"`
-	HideBots         *bool   `json:"hide_bots,omitempty"`
+
+	// ClosedMerged Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged.
+	ClosedMerged *bool `json:"closed_merged,omitempty"`
+	HideBots     *bool `json:"hide_bots,omitempty"`
+
+	// Bots Keep only bot-authored activity. Wins over hide_bots.
+	Bots *bool `json:"bots,omitempty"`
 
 	// HideDrafts Exclude activity for draft pull requests.
 	HideDrafts *bool `json:"hide_drafts,omitempty"`
@@ -60950,8 +61018,11 @@ type ListActivityThreadEventsQuery struct {
 	HideMergeQueued *bool `json:"hide_merge_queued,omitempty"`
 
 	// MergeQueued Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
-	MergeQueued       *bool `json:"merge_queued,omitempty"`
-	HideDefaultBranch *bool `json:"hide_default_branch,omitempty"`
+	MergeQueued *bool `json:"merge_queued,omitempty"`
+
+	// Attributes Comma-separated pull request filters, as on the activity list.
+	Attributes        *string `json:"attributes,omitempty"`
+	HideDefaultBranch *bool   `json:"hide_default_branch,omitempty"`
 }
 
 type GetArchiveReportQuery struct {
@@ -61410,7 +61481,7 @@ type ListPullsQuery struct {
 	// Numbers Item numbers in every repo unless repo is set; before pagination.
 	Numbers []int64 `json:"numbers,omitempty"`
 
-	// Attributes Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination.
+	// Attributes Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination.
 	Attributes *string `json:"attributes,omitempty"`
 
 	// Label Exact case-sensitive label name; applied before pagination.
@@ -67343,31 +67414,34 @@ type ActivityAuthorsResponse struct {
 }
 
 type ActivityItemResponse struct {
-	ActivityType       string     `json:"activity_type"`
-	ActivityURL        *string    `json:"activity_url,omitempty"`
-	AfterSha           *string    `json:"after_sha,omitempty"`
-	Author             string     `json:"author"`
-	AuthorEmail        *string    `json:"author_email,omitempty"`
-	AuthorName         *string    `json:"author_name,omitempty"`
-	AuthoredAt         *string    `json:"authored_at,omitempty"`
-	BeforeSha          *string    `json:"before_sha,omitempty"`
-	BodyPreview        string     `json:"body_preview"`
-	BranchName         *string    `json:"branch_name,omitempty"`
-	CommitAuthor       *string    `json:"commit_author,omitempty"`
-	CommitSha          *string    `json:"commit_sha,omitempty"`
-	CommittedAt        *string    `json:"committed_at,omitempty"`
-	CommitterEmail     *string    `json:"committer_email,omitempty"`
-	CommitterName      *string    `json:"committer_name,omitempty"`
-	CreatedAt          string     `json:"created_at"`
-	Cursor             string     `json:"cursor"`
-	ID                 string     `json:"id"`
-	ItemAuthor         *string    `json:"item_author,omitempty"`
-	ItemLastActivityAt *time.Time `json:"item_last_activity_at,omitempty"`
-	ItemNumber         int64      `json:"item_number"`
-	ItemState          string     `json:"item_state"`
-	ItemTitle          string     `json:"item_title"`
-	ItemType           string     `json:"item_type"`
-	ItemURL            string     `json:"item_url"`
+	ActivityType   string  `json:"activity_type"`
+	ActivityURL    *string `json:"activity_url,omitempty"`
+	AfterSha       *string `json:"after_sha,omitempty"`
+	Author         string  `json:"author"`
+	AuthorEmail    *string `json:"author_email,omitempty"`
+	AuthorName     *string `json:"author_name,omitempty"`
+	AuthoredAt     *string `json:"authored_at,omitempty"`
+	BeforeSha      *string `json:"before_sha,omitempty"`
+	BodyPreview    string  `json:"body_preview"`
+	BranchName     *string `json:"branch_name,omitempty"`
+	CommitAuthor   *string `json:"commit_author,omitempty"`
+	CommitSha      *string `json:"commit_sha,omitempty"`
+	CommittedAt    *string `json:"committed_at,omitempty"`
+	CommitterEmail *string `json:"committer_email,omitempty"`
+	CommitterName  *string `json:"committer_name,omitempty"`
+	CreatedAt      string  `json:"created_at"`
+	Cursor         string  `json:"cursor"`
+
+	// HeadRepoKind Whether the parent pull request's head branch lives in its base repository or a fork; absent for issues and repository-level activity.
+	HeadRepoKind       *ActivityItemResponseHeadRepoKind `json:"head_repo_kind,omitempty"`
+	ID                 string                            `json:"id"`
+	ItemAuthor         *string                           `json:"item_author,omitempty"`
+	ItemLastActivityAt *time.Time                        `json:"item_last_activity_at,omitempty"`
+	ItemNumber         int64                             `json:"item_number"`
+	ItemState          string                            `json:"item_state"`
+	ItemTitle          string                            `json:"item_title"`
+	ItemType           string                            `json:"item_type"`
+	ItemURL            string                            `json:"item_url"`
 
 	// Labels The parent pull request's or issue's current labels; absent for repository-level activity.
 	Labels       []Label                 `json:"labels,omitempty"`
@@ -67407,12 +67481,15 @@ type ActivityResponse struct {
 type ActivitySubjectResponse struct {
 	ActivityAt          time.Time `json:"activity_at"`
 	EventLedgerRevision string    `json:"event_ledger_revision"`
-	ItemAuthor          *string   `json:"item_author,omitempty"`
-	ItemNumber          int64     `json:"item_number"`
-	ItemState           string    `json:"item_state"`
-	ItemTitle           string    `json:"item_title"`
-	ItemType            string    `json:"item_type"`
-	ItemURL             string    `json:"item_url"`
+
+	// HeadRepoKind Whether a pull request's head branch lives in its base repository or a fork; absent for issues and repository-level activity.
+	HeadRepoKind *ActivitySubjectResponseHeadRepoKind `json:"head_repo_kind,omitempty"`
+	ItemAuthor   *string                              `json:"item_author,omitempty"`
+	ItemNumber   int64                                `json:"item_number"`
+	ItemState    string                               `json:"item_state"`
+	ItemTitle    string                               `json:"item_title"`
+	ItemType     string                               `json:"item_type"`
+	ItemURL      string                               `json:"item_url"`
 
 	// Labels The pull request's or issue's current labels.
 	Labels       []Label                 `json:"labels,omitempty"`
@@ -69669,58 +69746,59 @@ type MergeRequestEventResponse struct {
 }
 
 type MergeRequestResponse struct {
-	Additions                int64                      `json:"Additions"`
-	Author                   string                     `json:"Author"`
-	AuthorDisplayName        string                     `json:"AuthorDisplayName"`
-	BaseBranch               string                     `json:"BaseBranch"`
-	Body                     string                     `json:"Body"`
-	CIChecksJSON             string                     `json:"CIChecksJSON"`
-	CIHadPending             bool                       `json:"CIHadPending"`
-	CIStatus                 string                     `json:"CIStatus"`
-	ClosedAt                 *time.Time                 `json:"ClosedAt"`
-	CommentCount             int64                      `json:"CommentCount"`
-	CreatedAt                time.Time                  `json:"CreatedAt"`
-	Deletions                int64                      `json:"Deletions"`
-	FilesChanged             *int64                     `json:"FilesChanged"`
-	HeadBranch               string                     `json:"HeadBranch"`
-	HeadRepoCloneURL         string                     `json:"HeadRepoCloneURL"`
-	ID                       int64                      `json:"ID"`
-	IsDraft                  bool                       `json:"IsDraft"`
-	IsLocked                 bool                       `json:"IsLocked"`
-	LastActivityAt           time.Time                  `json:"LastActivityAt"`
-	MergeCommitSHA           string                     `json:"MergeCommitSHA"`
-	MergeableState           string                     `json:"MergeableState"`
-	MergedAt                 *time.Time                 `json:"MergedAt"`
-	Number                   int64                      `json:"Number"`
-	PlatformExternalID       string                     `json:"PlatformExternalID"`
-	PlatformID               int64                      `json:"PlatformID"`
-	RepoID                   int64                      `json:"RepoID"`
-	ReviewDecision           string                     `json:"ReviewDecision"`
-	Starred                  bool                       `json:"Starred"`
-	State                    MergeRequestResponseState  `json:"State"`
-	Title                    string                     `json:"Title"`
-	URL                      string                     `json:"URL"`
-	UpdatedAt                time.Time                  `json:"UpdatedAt"`
-	Assignees                []string                   `json:"assignees,omitempty"`
-	CiObservedAt             *time.Time                 `json:"ci_observed_at,omitempty"`
-	DeferredMergePending     *bool                      `json:"deferred_merge_pending,omitempty"`
-	DetailFetchedAt          *string                    `json:"detail_fetched_at,omitempty"`
-	DetailLoaded             bool                       `json:"detail_loaded"`
-	DiffSizeHistory          []PRDiffSizePoint          `json:"diff_size_history,omitempty"`
-	Labels                   []Label                    `json:"labels,omitempty"`
-	LastWorkspaceActivityAt  *time.Time                 `json:"last_workspace_activity_at,omitempty"`
-	MergeQueue               *MergeQueueEntryResponse   `json:"merge_queue,omitempty"`
-	MergeQueueRemoval        *MergeQueueRemovalResponse `json:"merge_queue_removal,omitempty"`
-	MergeRules               string                     `json:"merge_rules"`
-	MergeableStateObservedAt *time.Time                 `json:"mergeable_state_observed_at,omitempty"`
-	PlatformBaseSha          *string                    `json:"platform_base_sha,omitempty"`
-	PlatformHeadSha          *string                    `json:"platform_head_sha,omitempty"`
-	PlatformHost             string                     `json:"platform_host"`
-	Repo                     RepoRefResponse            `json:"repo"`
-	RepoName                 string                     `json:"repo_name"`
-	RepoOwner                string                     `json:"repo_owner"`
-	RequestedReviewers       []string                   `json:"requested_reviewers,omitempty"`
-	ReviewDecisionObservedAt *time.Time                 `json:"review_decision_observed_at,omitempty"`
+	Additions                int64                            `json:"Additions"`
+	Author                   string                           `json:"Author"`
+	AuthorDisplayName        string                           `json:"AuthorDisplayName"`
+	BaseBranch               string                           `json:"BaseBranch"`
+	Body                     string                           `json:"Body"`
+	CIChecksJSON             string                           `json:"CIChecksJSON"`
+	CIHadPending             bool                             `json:"CIHadPending"`
+	CIStatus                 string                           `json:"CIStatus"`
+	ClosedAt                 *time.Time                       `json:"ClosedAt"`
+	CommentCount             int64                            `json:"CommentCount"`
+	CreatedAt                time.Time                        `json:"CreatedAt"`
+	Deletions                int64                            `json:"Deletions"`
+	FilesChanged             *int64                           `json:"FilesChanged"`
+	HeadBranch               string                           `json:"HeadBranch"`
+	HeadRepoCloneURL         string                           `json:"HeadRepoCloneURL"`
+	ID                       int64                            `json:"ID"`
+	IsDraft                  bool                             `json:"IsDraft"`
+	IsLocked                 bool                             `json:"IsLocked"`
+	LastActivityAt           time.Time                        `json:"LastActivityAt"`
+	MergeCommitSHA           string                           `json:"MergeCommitSHA"`
+	MergeableState           string                           `json:"MergeableState"`
+	MergedAt                 *time.Time                       `json:"MergedAt"`
+	Number                   int64                            `json:"Number"`
+	PlatformExternalID       string                           `json:"PlatformExternalID"`
+	PlatformID               int64                            `json:"PlatformID"`
+	RepoID                   int64                            `json:"RepoID"`
+	ReviewDecision           string                           `json:"ReviewDecision"`
+	Starred                  bool                             `json:"Starred"`
+	State                    MergeRequestResponseState        `json:"State"`
+	Title                    string                           `json:"Title"`
+	URL                      string                           `json:"URL"`
+	UpdatedAt                time.Time                        `json:"UpdatedAt"`
+	Assignees                []string                         `json:"assignees,omitempty"`
+	CiObservedAt             *time.Time                       `json:"ci_observed_at,omitempty"`
+	DeferredMergePending     *bool                            `json:"deferred_merge_pending,omitempty"`
+	DetailFetchedAt          *string                          `json:"detail_fetched_at,omitempty"`
+	DetailLoaded             bool                             `json:"detail_loaded"`
+	DiffSizeHistory          []PRDiffSizePoint                `json:"diff_size_history,omitempty"`
+	HeadRepoKind             MergeRequestResponseHeadRepoKind `json:"head_repo_kind"`
+	Labels                   []Label                          `json:"labels,omitempty"`
+	LastWorkspaceActivityAt  *time.Time                       `json:"last_workspace_activity_at,omitempty"`
+	MergeQueue               *MergeQueueEntryResponse         `json:"merge_queue,omitempty"`
+	MergeQueueRemoval        *MergeQueueRemovalResponse       `json:"merge_queue_removal,omitempty"`
+	MergeRules               string                           `json:"merge_rules"`
+	MergeableStateObservedAt *time.Time                       `json:"mergeable_state_observed_at,omitempty"`
+	PlatformBaseSha          *string                          `json:"platform_base_sha,omitempty"`
+	PlatformHeadSha          *string                          `json:"platform_head_sha,omitempty"`
+	PlatformHost             string                           `json:"platform_host"`
+	Repo                     RepoRefResponse                  `json:"repo"`
+	RepoName                 string                           `json:"repo_name"`
+	RepoOwner                string                           `json:"repo_owner"`
+	RequestedReviewers       []string                         `json:"requested_reviewers,omitempty"`
+	ReviewDecisionObservedAt *time.Time                       `json:"review_decision_observed_at,omitempty"`
 
 	// SearchScore Similarity to q when semantic is set; compare only within one response.
 	SearchScore      *float32                  `json:"search_score,omitempty"`
@@ -71921,12 +71999,15 @@ type Workspace struct {
 
 type WorkspaceActivitySubjectResponse struct {
 	ActivityAt time.Time `json:"activity_at"`
-	ItemAuthor *string   `json:"item_author,omitempty"`
-	ItemNumber int64     `json:"item_number"`
-	ItemState  string    `json:"item_state"`
-	ItemTitle  string    `json:"item_title"`
-	ItemType   string    `json:"item_type"`
-	ItemURL    string    `json:"item_url"`
+
+	// HeadRepoKind Whether a pull request's head branch lives in its base repository or a fork; absent for issues and when this server does not sync the repository.
+	HeadRepoKind *WorkspaceActivitySubjectResponseHeadRepoKind `json:"head_repo_kind,omitempty"`
+	ItemAuthor   *string                                       `json:"item_author,omitempty"`
+	ItemNumber   int64                                         `json:"item_number"`
+	ItemState    string                                        `json:"item_state"`
+	ItemTitle    string                                        `json:"item_title"`
+	ItemType     string                                        `json:"item_type"`
+	ItemURL      string                                        `json:"item_url"`
 
 	// Labels The pull request's or issue's current labels, when this server syncs its repository.
 	Labels       []Label                 `json:"labels,omitempty"`

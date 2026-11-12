@@ -101,6 +101,33 @@ func TestAPIListPulls(t *testing.T) {
 	assert.Equal("acme/widget", body[0].Repo.RepoPath)
 }
 
+func TestAPIListPullsClassifiesHeadRepository(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	srv, database := servertest.SetupTestServer(t)
+	withHeadRepo := func(cloneURL string) serverfake.SeedPROpt {
+		return func(pr *db.MergeRequest) { pr.HeadRepoCloneURL = cloneURL }
+	}
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	serverfake.SeedPR(t, database, "acme", "widget", 2, withHeadRepo("https://github.com/contributor/widget.git"))
+	serverfake.SeedPR(t, database, "acme", "widget", 3, withHeadRepo(""))
+	client := servertest.SetupTestClient(t, srv)
+
+	resp, err := client.HTTP.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{})
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
+	require.NotNil(resp.JSON200)
+	kinds := map[int64]generated.MergeRequestResponseHeadRepoKind{}
+	for _, pull := range *resp.JSON200 {
+		kinds[pull.Number] = pull.HeadRepoKind
+	}
+	assert.Equal(t, map[int64]generated.MergeRequestResponseHeadRepoKind{
+		1: generated.MergeRequestResponseHeadRepoKindSameRepo,
+		2: generated.MergeRequestResponseHeadRepoKindFork,
+		3: generated.MergeRequestResponseHeadRepoKindUnknown,
+	}, kinds)
+}
+
 func TestAPIListPullsReportsRepositoryPrivacy(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

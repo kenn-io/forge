@@ -80,45 +80,55 @@ describe("WorkspaceTerminalView error text", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
-  it("scrolls a long deletion error inside the pane and keeps force delete on screen", async () => {
-    globalThis.fetch = createMockApiFetch([
-      (request) => {
-        if (request.method !== "GET") return null;
-        const path = request.url.pathname;
-        if (path === "/api/v1/workspaces/ws-1") return jsonResponse(failedWorkspace);
-        if (path === "/api/v1/workspaces/ws-1/runtime") return jsonResponse({ launch_targets: [], sessions: [] });
-        if (path === "/api/v1/workspaces") return jsonResponse({ workspaces: [failedWorkspace] });
-        return null;
-      },
-    ]).fetch;
-    const target = document.createElement("div");
-    target.style.width = "900px";
-    target.style.height = "600px";
-    target.style.display = "flex";
-    document.body.appendChild(target);
-    const instance = mount(WorkspaceTerminalView, {
-      target,
-      props: { runtime, workspaceId: "ws-1", hideWorkspaceList: true, hideRightSidebar: true },
-      context: new Map([[STORES_KEY, { events: eventsStore, settings: createSettingsStore() }]]),
-    });
+  // A split or resized pane can be much shorter than the browser window, so
+  // the text must fit the pane, not only the window.
+  it.each([
+    { name: "a full-height pane", height: 600 },
+    { name: "a short split pane", height: 140 },
+  ])(
+    "scrolls a long deletion error inside $name and keeps force delete reachable",
+    async ({ height }) => {
+      globalThis.fetch = createMockApiFetch([
+        (request) => {
+          if (request.method !== "GET") return null;
+          const path = request.url.pathname;
+          if (path === "/api/v1/workspaces/ws-1") return jsonResponse(failedWorkspace);
+          if (path === "/api/v1/workspaces/ws-1/runtime") return jsonResponse({ launch_targets: [], sessions: [] });
+          if (path === "/api/v1/workspaces") return jsonResponse({ workspaces: [failedWorkspace] });
+          return null;
+        },
+      ]).fetch;
+      const target = document.createElement("div");
+      target.style.width = "900px";
+      target.style.height = `${height}px`;
+      target.style.display = "flex";
+      document.body.appendChild(target);
+      const instance = mount(WorkspaceTerminalView, {
+        target,
+        props: { runtime, workspaceId: "ws-1", hideWorkspaceList: true, hideRightSidebar: true },
+        context: new Map([[STORES_KEY, { events: eventsStore, settings: createSettingsStore() }]]),
+      });
 
-    try {
-      const forceDelete = page.getByRole("button", { name: "Force delete workspace" });
-      await expect.element(forceDelete, { timeout: WAIT }).toBeVisible();
-      const text = page.getByText(longError).element() as HTMLElement;
+      try {
+        const forceDelete = page.getByRole("button", { name: "Force delete workspace" });
+        await expect.element(forceDelete, { timeout: WAIT }).toBeVisible();
+        const text = page.getByText(longError).element() as HTMLElement;
 
-      const box = target.getBoundingClientRect();
-      const textBox = text.getBoundingClientRect();
-      expect(textBox.height).toBeLessThan(box.height / 2);
-      expect(text.scrollHeight).toBeGreaterThan(text.clientHeight);
+        const box = target.getBoundingClientRect();
+        const textBox = text.getBoundingClientRect();
+        expect(textBox.top).toBeGreaterThanOrEqual(box.top);
+        expect(textBox.bottom).toBeLessThanOrEqual(box.bottom);
+        expect(text.scrollHeight).toBeGreaterThan(text.clientHeight);
 
-      const buttonBox = forceDelete.element().getBoundingClientRect();
-      expect(buttonBox.top).toBeGreaterThanOrEqual(box.top);
-      expect(buttonBox.bottom).toBeLessThanOrEqual(box.bottom);
-      expect(buttonBox.right).toBeLessThanOrEqual(box.right);
-    } finally {
-      flushSync(() => unmount(instance));
-      target.remove();
-    }
-  }, 30_000);
+        const buttonBox = forceDelete.element().getBoundingClientRect();
+        expect(buttonBox.top).toBeGreaterThanOrEqual(box.top);
+        expect(buttonBox.bottom).toBeLessThanOrEqual(box.bottom);
+        expect(buttonBox.right).toBeLessThanOrEqual(box.right);
+      } finally {
+        flushSync(() => unmount(instance));
+        target.remove();
+      }
+    },
+    30_000,
+  );
 });

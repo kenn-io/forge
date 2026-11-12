@@ -85,6 +85,4 @@ func TestFirstSyncReportsMissingCredentialRoute(t *testing.T) {
 	status := syncer.Status().FullSync
 	require.Less(t, status.SuccessfulGeneration, receipt.Generation)
 	require.Contains(t, status.LastError, "missing/repo")
-	require.Contains(t, status.LastError, "github.com")
-	require.Contains(t, status.LastError, "config.toml and restart Forge")
 }

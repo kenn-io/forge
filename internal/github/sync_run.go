@@ -494,13 +494,11 @@ func (s *Syncer) runOnceWithSlot(
 			terminalStatus.DetailRefreshOverdue = s.Status().DetailRefreshOverdue
 		}
 		s.runMu.Lock()
-		if fullGeneration > 0 {
-			err := "sync canceled"
-			if terminalStatus != nil {
-				err = terminalStatus.LastError
-			}
-			s.settleFullSyncLocked(fullGeneration, err)
+		failure := "sync canceled"
+		if terminalStatus != nil {
+			failure = terminalStatus.LastError
 		}
+		s.settleFullSyncLocked(fullGeneration, failure)
 		pending := s.pendingRun
 		s.pendingRun = nil
 		if pending != nil && !s.AutomaticSyncEnabled() && !pending.bypassNextSyncAfter {

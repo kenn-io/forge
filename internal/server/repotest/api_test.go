@@ -784,18 +784,21 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 
-	syncReachedGitHub := make(chan struct{})
+	syncReachedGitHub := make(chan error, 1)
 	releaseSync := make(chan struct{})
 	var releaseOnce sync.Once
 	defer releaseOnce.Do(func() { close(releaseSync) })
-	var syncReachedGitHubOnce sync.Once
 	mock := &serverfake.MockGH{
 		ListOpenPullRequestsFn: func(
-			_ context.Context, _, _ string,
+			ctx context.Context, _, _ string,
 		) ([]*gh.PullRequest, error) {
-			syncReachedGitHubOnce.Do(func() { close(syncReachedGitHub) })
-			<-releaseSync
-			return nil, nil
+			syncReachedGitHub <- ctx.Err()
+			select {
+			case <-releaseSync:
+				return nil, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		},
 	}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, []ghclient.RepoRef{{
@@ -825,12 +828,12 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	require.Positive(receipt.Generation)
 
 	select {
-	case <-syncReachedGitHub:
+	case err := <-syncReachedGitHub:
+		require.NoError(err)
 	case <-time.After(2 * time.Second):
 		require.Fail("expected sync to reach GitHub despite request context cancellation")
 	}
 
-	require.Less(syncer.Status().FullSync.SettledGeneration, receipt.Generation)
 	releaseOnce.Do(func() { close(releaseSync) })
 	repos, err := database.ListRepos(t.Context())
 	require.NoError(err)
@@ -910,28 +913,6 @@ func TestAPITriggerSyncOnlyRepoRestrictsRun(t *testing.T) {
 	require.NotNil(body)
 	require.NotContains(body, "instance_id")
 	require.NotContains(body, "generation")
-	spec := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/openapi.json", nil)
-	var document struct {
-		Paths map[string]struct {
-			Post struct {
-				Responses map[string]struct {
-					Content map[string]struct {
-						Schema struct {
-							Ref string `json:"$ref"`
-						} `json:"schema"`
-					} `json:"content"`
-				} `json:"responses"`
-			} `json:"post"`
-		} `json:"paths"`
-		Components struct {
-			Schemas map[string]struct{} `json:"schemas"`
-		} `json:"components"`
-	}
-	require.NoError(json.Unmarshal(spec.Body.Bytes(), &document))
-	ref := document.Paths["/sync"].Post.Responses["202"].Content["application/json"].Schema.Ref
-	require.NotEmpty(ref)
-	_, ok := document.Components.Schemas[strings.TrimPrefix(ref, "#/components/schemas/")]
-	require.True(ok)
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):

@@ -37,7 +37,7 @@ func TestFleetMigrateProtocolUnenrolledNeedsNoDatabaseAndRefusesRunningDaemon(t 
 	_, err = federation.Open(federation.DefaultStorePath(directory), federation.StoreOptions{})
 	require.NoError(err)
 	require.NoError(migrateFleetProtocol(t.Context(), path))
-	lock, err := runtimelock.Acquire(directory)
+	lock, err := runtimelock.Acquire(t.Context(), directory)
 	require.NoError(err)
 	t.Cleanup(func() { require.NoError(lock.Release()) })
 	err = migrateFleetProtocol(t.Context(), path)

@@ -23,7 +23,7 @@ func TestReadWhileLockHeldWithMetadata(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 
-	h, err := Acquire(dir)
+	h, err := Acquire(t.Context(), dir)
 	require.NoError(err)
 	t.Cleanup(func() { _ = h.Release() })
 
@@ -50,7 +50,7 @@ func TestReadWhileLockHeldWithoutMetadata(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 
-	h, err := Acquire(dir)
+	h, err := Acquire(t.Context(), dir)
 	require.NoError(err)
 	t.Cleanup(func() { _ = h.Release() })
 

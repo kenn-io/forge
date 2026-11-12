@@ -1,11 +1,13 @@
 package runtimelock
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/gofrs/flock"
 )
@@ -30,14 +32,20 @@ type Handle struct {
 //
 // On a collision with another running daemon, Acquire returns a
 // *CollisionError describing the holder; use errors.As to detect it.
+// It waits up to 250 ms for a briefly held lock, or until ctx ends.
 // Stale metadata left behind by an unclean shutdown is removed under
 // the held lock before Acquire returns; a slog.Warn announces the
 // cleanup so operators see it in the logs.
-func Acquire(dataDir string) (*Handle, error) {
+func Acquire(ctx context.Context, dataDir string) (*Handle, error) {
 	lock := flock.New(LockPath(dataDir))
 
-	ok, err := lock.TryLock()
-	if err != nil {
+	waitCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+	defer cancel()
+	ok, err := lock.TryLockContext(waitCtx, 10*time.Millisecond)
+	if !ok && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
 		return nil, fmt.Errorf("acquire runtime lock: %w", err)
 	}
 	if !ok {

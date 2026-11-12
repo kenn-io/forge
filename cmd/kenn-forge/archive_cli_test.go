@@ -434,7 +434,7 @@ func archiveCLITestConfig(t *testing.T, rawURL, basePath, token string) string {
 	root := t.TempDir()
 	dataDir := filepath.Join(root, "data")
 	require.NoError(t, os.MkdirAll(dataDir, 0o700))
-	lock, err := runtimelock.Acquire(dataDir)
+	lock, err := runtimelock.Acquire(t.Context(), dataDir)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, lock.Release()) })
 	require.NoError(t, lock.WriteMetadata(runtimelock.Metadata{

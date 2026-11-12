@@ -97,7 +97,7 @@ func TestFleetLeaveRejectsUnrevokedEnrollmentOrRunningDaemon(t *testing.T) {
 			require := require.New(t)
 			path, cfg, _ := fleetLeaveFixture(t, state)
 			if state == federation.EnrollmentRevoked {
-				lock, err := runtimelock.Acquire(cfg.DataDir)
+				lock, err := runtimelock.Acquire(t.Context(), cfg.DataDir)
 				require.NoError(err)
 				t.Cleanup(func() { require.NoError(lock.Release()) })
 			}

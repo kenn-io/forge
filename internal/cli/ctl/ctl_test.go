@@ -18,6 +18,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
@@ -535,7 +536,14 @@ func TestForgectlCommandsUseRealAPIAndSQLite(t *testing.T) {
 	assert.Contains(apiListOut, `"path":"/pulls"`)
 
 	syncOut := runForge(t, ts.URL, "sync")
-	assert.Empty(syncOut)
+	var receipt struct {
+		InstanceID string `json:"instance_id"`
+		Generation int    `json:"generation"`
+	}
+	require.NoError(json.Unmarshal([]byte(syncOut), &receipt), syncOut)
+	_, err := uuid.Parse(receipt.InstanceID)
+	require.NoError(err)
+	assert.Equal(1, receipt.Generation)
 }
 
 func setupForgectlE2E(t *testing.T) *httptest.Server {

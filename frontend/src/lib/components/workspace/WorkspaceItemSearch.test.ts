@@ -41,7 +41,7 @@ it("reopens and filters cached search results", async () => {
   vi.stubGlobal("fetch", api.fetch);
   const { props, context } = setupSearch();
   const first = render(WorkspaceItemSearch, { props, context });
-  await screen.findByRole("option", { name: /#55.*Refactor theme system/ }, { timeout: 5000 });
+  await screen.findByRole("option", { name: /#55.*Refactor theme system/ });
   first.unmount();
   const requestCount = api.requests.length;
 
@@ -128,7 +128,7 @@ it.each([503, 403, 504])(
   10000,
 );
 
-it("preserves the query when retrying closed searches", async () => {
+it("preserves the query on retry and clears stale closed-search results", async () => {
   const api = createMockApiFetch();
   vi.stubGlobal("fetch", api.fetch);
   const { props, context } = setupSearch();

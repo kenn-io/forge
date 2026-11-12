@@ -18,29 +18,18 @@ it.effect("turns a rejected generated request into a transient transport failure
   }),
 );
 
-it.effect("preserves the generated problem body from a failed request", () =>
-  Effect.gen(function* () {
-    const problem: ProblemBody = {
-      code: "validationError",
-      detail: "repository is required",
-      details: { field: "repository" },
-      status: 422,
-      title: "Invalid request",
-    };
-    const failure = yield* Effect.flip(
-      executeGeneratedRequest<{ readonly id: string }>("create workspace", () =>
-        Promise.reject(new GeneratedProblemResponse(problem, new Response(null, { status: 422 }))),
-      ),
-    );
-
-    assert.strictEqual(failure._tag, "ApiProblemError");
-    assert.strictEqual(failure.operation, "create workspace");
-    assert.deepStrictEqual(failure.problem, problem);
-  }),
-);
-
-for (const problem of [{ code: "internalError" }, { code: "internalError", status: 403 }] as const) {
-  it.effect(`retains HTTP status and problem body ${JSON.stringify(problem)}`, () =>
+for (const problem of [
+  {
+    code: "validationError",
+    detail: "repository is required",
+    details: { field: "repository" },
+    status: 422,
+    title: "Invalid request",
+  },
+  { code: "internalError" },
+  { code: "internalError", status: 403 },
+] satisfies ProblemBody[]) {
+  it.effect(`preserves the problem body and HTTP status ${JSON.stringify(problem)}`, () =>
     Effect.gen(function* () {
       const failure = yield* Effect.flip(
         executeGeneratedRequest("load repositories", () =>
@@ -49,6 +38,7 @@ for (const problem of [{ code: "internalError" }, { code: "internalError", statu
       );
       assert.strictEqual(failure._tag, "ApiProblemError");
       if (failure._tag === "ApiProblemError") {
+        assert.strictEqual(failure.operation, "load repositories");
         assert.strictEqual(failure.httpStatus, 504);
         assert.deepStrictEqual(failure.problem, problem);
       }

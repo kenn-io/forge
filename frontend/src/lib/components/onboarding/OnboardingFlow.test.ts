@@ -431,6 +431,26 @@ describe("OnboardingFlow", () => {
     expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy();
   });
 
+  it("starts sync when the initial status request remains pending", async () => {
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/sync/status") return new Promise<Response>(() => {});
+      if (path === "/api/v1/sync" && request.method === "POST") {
+        attempts++;
+        return Promise.resolve(Response.json({ instance_id: "instance", generation: 1 }));
+      }
+      return originalFetch(input, init);
+    });
+    const fixture = storeFixture({ configured: true });
+    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+    fixture.stores.sync = createSyncStore({ runtime: runtimeCapture.current });
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(attempts).toBe(1));
+  });
+
   it.each(["network failure", "unknown gateway problem"])(
     "recovers a transient %s without a click",
     async (failure) => {

@@ -7,6 +7,7 @@ import PRReviewTimelineTestHarness from "./PRReviewTimelineTestHarness.svelte";
 
 const HEAD = "96027d7aa1b2c3d4e5f60718293a4b5c6d7e8f90";
 let runtime: OwnedAppRuntime;
+let reviewOutput: string;
 
 const providerComment: PREvent = {
   Author: "roborev-ci[bot]",
@@ -91,7 +92,7 @@ function stubServer(options: { daemonAvailable: boolean }): URL[] {
           agent: "codex",
           closed: false,
           created_at: "2026-11-10T19:05:00Z",
-          output: "Local review found nothing",
+          output: reviewOutput,
           prompt: "",
         });
       case "/api/roborev/api/comments":
@@ -112,6 +113,7 @@ function renderTimeline(workspaceId: string | null) {
 describe("PRReviewTimeline", () => {
   beforeEach(() => {
     runtime = makeAppRuntime();
+    reviewOutput = "Local review found nothing";
   });
 
   afterEach(async () => {
@@ -148,6 +150,19 @@ describe("PRReviewTimeline", () => {
     await waitFor(() => expect(screen.getByText("Local review found nothing")).toBeTruthy());
     expect(screen.queryByText("Leaks the connection", { exact: false })).toBeNull();
     expect(calls.find((url) => url.pathname === "/api/roborev/api/review")?.searchParams.get("job_id")).toBe("8");
+  });
+
+  it("reloads the open local review when the timeline refreshes", async () => {
+    stubServer({ daemonAvailable: true });
+    renderTimeline("ws-1");
+
+    await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(2));
+    await fireEvent.click(within(screen.getAllByRole("listitem")[1] as HTMLElement).getByRole("button"));
+    await waitFor(() => expect(screen.getByText("Local review found nothing")).toBeTruthy());
+
+    reviewOutput = "Local review finished later";
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh Roborev reviews" }));
+    await waitFor(() => expect(screen.getByText("Local review finished later")).toBeTruthy());
   });
 
   it("keeps provider reviews when the local daemon is unreachable", async () => {

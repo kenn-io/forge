@@ -82,6 +82,20 @@ describe("providerReviewEntry", () => {
     ).toBeNull();
   });
 
+  it("reads a Bitbucket pull request comment", () => {
+    const entry = providerReviewEntry(
+      {
+        ...comment(
+          16,
+          "<!-- roborev-pr-comment -->\n## roborev: Combined Review (`96027d7`)\n\n**Verdict:** No issues found.\n",
+        ),
+        EventType: "comment",
+      },
+      HEAD,
+    );
+    expect(entry).toMatchObject({ verdict: "clean", state: "current" });
+  });
+
   it("drops the marker from the rendered body", () => {
     const entry = providerReviewEntry(
       comment(

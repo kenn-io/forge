@@ -72,9 +72,16 @@ function providerVerdict(title: string, body: string): Pick<TimelineEntryBase, "
   return { verdict: "unknown", findings: null };
 }
 
+// Bitbucket names its pull request comments "comment"; every other provider uses "issue_comment".
+const COMMENT_EVENT_TYPES: ReadonlySet<string> = new Set(["issue_comment", "comment"]);
+
+function isRoborevComment(event: PREvent): boolean {
+  return COMMENT_EVENT_TYPES.has(event.EventType) && event.Body.includes(ROBOREV_PR_COMMENT_MARKER);
+}
+
 /** Reads a review roborev posted as a pull request comment, or null for any other event. */
 export function providerReviewEntry(event: PREvent, headSha: string): ProviderTimelineEntry | null {
-  if (event.EventType !== "issue_comment" || !event.Body.includes(ROBOREV_PR_COMMENT_MARKER)) return null;
+  if (!isRoborevComment(event)) return null;
   const heading = HEADING.exec(event.Body);
   if (!heading) return null;
   const commit = heading[2] ?? null;
@@ -141,7 +148,7 @@ export function buildRoborevTimeline(
 }
 
 export function hasProviderReviews(events: ReadonlyArray<PREvent>): boolean {
-  return events.some((event) => event.EventType === "issue_comment" && event.Body.includes(ROBOREV_PR_COMMENT_MARKER));
+  return events.some(isRoborevComment);
 }
 
 export function roborevVerdictLabel(entry: Pick<RoborevTimelineEntry, "verdict" | "findings">): string {

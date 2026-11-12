@@ -124,6 +124,9 @@ export function createPRRoborevTimeline(opts: PRRoborevTimelineOptions) {
           loadError = null;
         });
         const result = yield* loadLocalJobs(workspaceId);
+        // The open review may have finished since it loaded; its row and the drawer must agree.
+        const selectedJobId = jobs.getSelectedJobId();
+        if (result.kind === "jobs" && selectedJobId !== undefined) yield* review.loadReviewEffect(selectedJobId);
         yield* Effect.sync(() => {
           if (result.kind === "unavailable") {
             localJobs = [];

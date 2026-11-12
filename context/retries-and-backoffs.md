@@ -74,9 +74,9 @@ cadence loops are intentionally separate.
 
 ## Sync coalescing
 
-- First sync retries a lost trigger when status shows no run, and stops on
-  `serviceUnavailable` or permanent status errors. An unreadable or delayed
-  status can cause one extra coalesced sync.
+- First sync retries a lost status read before repeating its trigger, and stops
+  on `serviceUnavailable` or permanent status errors. A delayed status can cause
+  an extra coalesced sync.
 - Provider-index sync keeps at most one coalesced follow-up: bursts neither drop
   accepted work nor build an unbounded queue, and nil-versus-empty scope is preserved
   (`internal/github/sync_run.go::triggerRunWithCadence`).

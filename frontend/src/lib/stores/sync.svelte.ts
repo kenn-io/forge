@@ -196,12 +196,12 @@ export function createSyncStore(opts: SyncStoreOptions) {
   function triggeredSyncProgram(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>) {
     const previous = status;
     refreshGeneration += 1;
-    let baselineLastRunAt = previous?.last_run_at ?? null;
+    let baselineLastRunAt = previous ? (previous.last_run_at ?? "") : null;
 
     return Effect.gen(function* () {
       if (previous === null) {
         const baseline = yield* Effect.option(syncStatusRead());
-        baselineLastRunAt = Option.isSome(baseline) ? (baseline.value.last_run_at ?? null) : null;
+        baselineLastRunAt = Option.isSome(baseline) ? (baseline.value.last_run_at ?? "") : null;
       }
       yield* Effect.sync(() => {
         triggeredSyncLastRunAt = baselineLastRunAt;
@@ -259,18 +259,28 @@ export function createSyncStore(opts: SyncStoreOptions) {
     const isRetryable = (failure: unknown) =>
       isTransientPickerReadFailure(failure) &&
       !(failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.serviceUnavailable);
-    const request = fullSyncRequest().pipe(
-      Effect.catchIf(isRetryable, (postFailure) =>
-        syncStatusRequest().pipe(
-          Effect.matchEffect({
-            onFailure: (failure) => Effect.fail(isRetryable(failure) ? postFailure : failure),
-            onSuccess: (next) =>
-              triggerObserved(triggeredSyncLastRunAt ?? null, next) ? Effect.void : Effect.fail(postFailure),
-          }),
+    const request = Effect.gen(function* () {
+      const baseline = yield* Effect.option(syncStatusRequest());
+      yield* fullSyncRequest().pipe(
+        Effect.catchIf(isRetryable, (postFailure) =>
+          syncStatusRequest().pipe(
+            Effect.retry({ schedule: transientRetrySchedule, while: isRetryable }),
+            Effect.mapError((failure) => ({ _tag: "StatusFailure" as const, failure })),
+            Effect.flatMap((next) =>
+              Option.isSome(baseline) &&
+              !baseline.value.running &&
+              triggerObserved(baseline.value.last_run_at ?? "", next)
+                ? Effect.void
+                : Effect.fail(postFailure),
+            ),
+          ),
         ),
-      ),
-      Effect.retry({ schedule: transientRetrySchedule, while: isRetryable }),
-    );
+        Effect.retry({ schedule: transientRetrySchedule, while: isRetryable }),
+        Effect.mapError((failure) =>
+          "_tag" in failure && failure._tag === "StatusFailure" ? failure.failure : failure,
+        ),
+      );
+    });
     return triggeredSyncProgram(request);
   }
 

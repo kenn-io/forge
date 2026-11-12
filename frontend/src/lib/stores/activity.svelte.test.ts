@@ -210,6 +210,151 @@ describe("activity subject paging", () => {
     owner: "acme",
     name: "widgets",
   };
+  it("loads discussion for new expanded subjects when more subjects remain", async () => {
+    const oldEvent = {
+      ...notificationItem("comment:old", "read"),
+      activity_type: "comment",
+      item_number: 1,
+      repo,
+    } as ActivityItem;
+    const newEvent = {
+      ...notificationItem("comment:new", "read"),
+      activity_type: "comment",
+      item_number: 2,
+      repo,
+    } as ActivityItem;
+    let snapshots = 0;
+    let bulkReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (options?.params?.query?.projection === "events") {
+          bulkReads++;
+          return { data: { items: bulkReads === 1 ? [oldEvent] : [oldEvent, newEvent], capped: false }, error: null };
+        }
+        snapshots++;
+        return {
+          data: {
+            items: [],
+            capped: snapshots === 1,
+            event_cursor: "snapshot",
+            item_activity: (snapshots === 1 ? [1] : [1, 2]).map((n) => ({ ...itemActivity(n), repo })),
+            item_activity_capped: true,
+            next_subject_cursor: "older",
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(oldEvent.id));
+    await runtime!.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(newEvent.id));
+  });
+
+  it("removes cached expanded discussion when a parent no longer matches search", async () => {
+    const oldEvent = {
+      ...notificationItem("comment:excluded", "read"),
+      activity_type: "comment",
+      item_number: 2,
+      repo,
+    } as ActivityItem;
+    let snapshots = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (options?.params?.query?.projection === "events")
+          return { data: { items: [oldEvent], capped: false }, error: null };
+        snapshots++;
+        return {
+          data: {
+            items: [],
+            capped: snapshots === 1,
+            event_cursor: "snapshot",
+            item_activity: (snapshots === 1 ? [1, 2] : [1]).map((n) => ({ ...itemActivity(n), repo })),
+            item_activity_capped: true,
+            next_subject_cursor: "older",
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
+    store.setActivitySearch("needle");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(oldEvent.id));
+    await runtime!.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1]);
+    expect(store.getActivityItems().map((item) => item.id)).not.toContain(oldEvent.id);
+  });
+
+  it("keeps a pending scheduled refresh when an older page finishes first", async () => {
+    vi.useFakeTimers();
+    const pending = Promise.withResolvers<unknown>();
+    let snapshots = 0;
+    const client = {
+      GET: vi.fn(
+        async (
+          path: string,
+          options?: { params?: { query?: { projection?: string; after?: string; subject_before?: string } } },
+        ) => {
+          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+          const query = options?.params?.query;
+          if (query?.after) return { data: { items: [], capped: false, event_cursor: "snapshot" }, error: null };
+          if (query?.subject_before)
+            return { data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] }, error: null };
+          snapshots++;
+          if (snapshots === 2) return pending.promise;
+          return {
+            data: {
+              items: [],
+              capped: false,
+              event_cursor: "snapshot",
+              item_activity: [{ ...itemActivity(1), repo }],
+              item_activity_capped: true,
+              next_subject_cursor: "older",
+            },
+            error: null,
+          };
+        },
+      ),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.startActivityPolling();
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(snapshots).toBe(2);
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(2));
+    pending.resolve({
+      data: {
+        items: [],
+        capped: false,
+        event_cursor: "snapshot",
+        item_activity: [{ ...itemActivity(1), repo, item_title: "Updated title" }],
+        item_activity_capped: true,
+        next_subject_cursor: "older",
+      },
+      error: null,
+    });
+    await vi.waitFor(() => expect(store.getItemActivity()[0]?.item_title).toBe("Updated title"));
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
+  });
+
   it.each([false, true])("loads new expanded threads only for collapsed projection: %s", async (collapsed) => {
     let threadReads = 0;
     const get = vi.fn((path: string, options?: { params?: { query?: { subject_before?: string } } }) => {

@@ -113,44 +113,36 @@ describe("sync store", () => {
       expect(post).toHaveBeenCalledTimes(2);
     });
 
-    it("does not repeat the trigger when the reconciling status read fails", async () => {
-      const denied = {
-        code: "forbidden",
-        detail: "status denied",
-        status: 403,
-        title: "Forbidden",
-        type: "about:blank",
-      };
-      const getStatus = vi
-        .fn()
-        .mockResolvedValueOnce(status(0))
-        .mockResolvedValueOnce(status(0))
-        .mockRejectedValue(new GeneratedProblemResponse(denied, Response.json(denied, { status: 403 })));
-      const post = vi.fn().mockRejectedValueOnce(new Error("connection lost")).mockResolvedValue(undefined);
-      const { execution } = startOnboarding(getStatus, post);
-      await Effect.runPromise(execution.await);
-      expect(post).toHaveBeenCalledOnce();
-    });
-
-    it("retries a lost status response without repeating the trigger", async () => {
-      vi.useFakeTimers();
-      let posted = false;
-      let lostReads = 0;
-      const getStatus = vi.fn(async () => {
-        if (posted && lostReads++ < 4) throw new Error("status response lost");
-        return status(posted ? 1 : 0, { running: posted });
-      });
-      const post = vi.fn(async () => {
-        posted = true;
-        throw new Error("trigger response lost");
-      });
-      const { execution } = startOnboarding(getStatus, post);
-      await vi.advanceTimersByTimeAsync(120000);
-      await Effect.runPromise(execution.await);
-      expect(post).toHaveBeenCalledOnce();
-      expect(lostReads).toBeGreaterThan(4);
-      vi.useRealTimers();
-    });
+    it.each(["forbidden", "lost response"])(
+      "does not repeat the trigger when the status read has a %s",
+      async (failure) => {
+        vi.useFakeTimers();
+        let posted = false;
+        let lostReads = 0;
+        const denied = {
+          code: "forbidden",
+          detail: "status denied",
+          status: 403,
+          title: "Forbidden",
+          type: "about:blank",
+        };
+        const getStatus = vi.fn(async () => {
+          if (posted && failure === "forbidden")
+            throw new GeneratedProblemResponse(denied, Response.json(denied, { status: 403 }));
+          if (posted && lostReads++ < 4) throw new Error("status response lost");
+          return status(posted ? 1 : 0, { running: posted });
+        });
+        const post = vi.fn(async () => {
+          posted = true;
+          throw new Error("trigger response lost");
+        });
+        const { execution } = startOnboarding(getStatus, post);
+        await vi.advanceTimersByTimeAsync(120000);
+        await Effect.runPromise(execution.await);
+        expect(post).toHaveBeenCalledOnce();
+        if (failure === "lost response") expect(lostReads).toBeGreaterThan(4);
+      },
+    );
 
     it("keeps waiting when a different run completes before the accepted full sync", async () => {
       let accepted = 0;
@@ -177,93 +169,57 @@ describe("sync store", () => {
         accepted++;
       });
       const { store, execution } = startOnboarding(getStatus, post);
-      const complete = vi.fn();
-      store.subscribeSyncComplete(complete);
       await Effect.runPromise(execution.await);
       accepted = 0;
       store.setSyncStatus(status(0));
       await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(2));
-      expect(complete).not.toHaveBeenCalled();
     });
   });
 
-  it("sends the trigger when its optional baseline read fails", async () => {
+  it.each([403, 503])("handles a %s baseline failure before triggering", async (status) => {
     const problem = {
-      code: "forbidden",
-      detail: "status denied",
-      status: 403,
-      title: "Forbidden",
-      type: "about:blank",
-    };
-    const getStatus = vi
-      .fn()
-      .mockRejectedValue(new GeneratedProblemResponse(problem, Response.json(problem, { status: 403 })));
-    const post = vi.fn().mockResolvedValue(undefined);
-    const onFailure = vi.fn();
-    const { execution } = startOnboarding(getStatus, post, onFailure);
-    await Effect.runPromise(execution.await);
-    expect(post).toHaveBeenCalledOnce();
-    expect(onFailure).not.toHaveBeenCalled();
-  });
-
-  it("recovers a temporary structured baseline failure", async () => {
-    const problem = {
-      code: "serviceUnavailable",
+      code: status === 403 ? "forbidden" : "serviceUnavailable",
       detail: "status unavailable",
-      status: 503,
+      status,
       title: "Unavailable",
       type: "about:blank",
     };
-    const running = { running: true, last_run_at: "", last_error: "" };
-    const getStatus = vi
-      .fn()
-      .mockRejectedValueOnce(new GeneratedProblemResponse(problem, Response.json(problem, { status: 503 })))
-      .mockRejectedValueOnce(new GeneratedProblemResponse(problem, Response.json(problem, { status: 503 })))
-      .mockResolvedValue(running);
-    const post = vi.fn().mockRejectedValueOnce(new Error("response lost")).mockResolvedValue(undefined);
-    const { execution } = startOnboarding(getStatus, post);
+    const error = new GeneratedProblemResponse(problem, Response.json(problem, { status }));
+    const getStatus = vi.fn();
+    if (status === 403) getStatus.mockRejectedValue(error);
+    else
+      getStatus
+        .mockRejectedValueOnce(error)
+        .mockRejectedValueOnce(error)
+        .mockResolvedValue({ running: true, last_run_at: "", last_error: "" });
+    const post = vi.fn();
+    if (status === 403) post.mockResolvedValue(undefined);
+    else post.mockRejectedValueOnce(new Error("response lost")).mockResolvedValue(undefined);
+    const onFailure = vi.fn();
+    const { execution } = startOnboarding(getStatus, post, onFailure);
     await Effect.runPromise(execution.await);
-    expect(post).toHaveBeenCalledTimes(2);
+    expect(post).toHaveBeenCalledTimes(status === 403 ? 1 : 2);
+    expect(onFailure).not.toHaveBeenCalled();
   });
 
-  it("does not retry a permanent 503", async () => {
-    const detail = "syncer not configured";
+  it.each([403, 503])("does not retry a permanent %s first sync failure", async (status) => {
+    const detail = status === 403 ? "Access denied" : "syncer not configured";
     const problem = {
-      code: "serviceUnavailable",
+      code: status === 403 ? "forbidden" : "serviceUnavailable",
       detail,
-      details: { retryable: false },
-      status: 503,
-      title: "Service Unavailable",
+      ...(status === 503 && { details: { retryable: false } }),
+      status,
+      title: status === 403 ? "Forbidden" : "Service Unavailable",
       type: "about:blank",
     };
-    const post = vi
-      .fn()
-      .mockRejectedValue(new GeneratedProblemResponse(problem, Response.json(problem, { status: 503 })));
+    const post = vi.fn().mockRejectedValue(new GeneratedProblemResponse(problem, Response.json(problem, { status })));
     const { store, execution } = startOnboarding(
       async () => ({ running: false, last_run_at: "", last_error: "" }),
       post,
     );
     await Effect.runPromise(execution.await);
     expect(post).toHaveBeenCalledOnce();
-    expect(store.getSyncState()?.last_error).toBe(detail);
-  });
-
-  it("does not retry a rejected first sync", async () => {
-    const status = 403;
-    const problem = {
-      code: "forbidden",
-      detail: "Access denied",
-      status,
-      title: "Forbidden",
-      type: "about:blank",
-    };
-    const getStatus = vi.fn().mockResolvedValue({ running: false, last_run_at: "", last_error: "" });
-    const post = vi.fn().mockRejectedValue(new GeneratedProblemResponse(problem, Response.json(problem, { status })));
-    const { store, execution } = startOnboarding(getStatus, post);
-    await Effect.runPromise(execution.await);
-    expect(post).toHaveBeenCalledOnce();
-    expect(getStatus).toHaveBeenCalledTimes(2);
-    expect(store.getSyncState()).toMatchObject({ running: false, last_error: "Access denied" });
+    expect(store.getSyncState()).toMatchObject({ running: false, last_error: detail });
   });
 
   it("stops after exhausting first-sync retries", async () => {

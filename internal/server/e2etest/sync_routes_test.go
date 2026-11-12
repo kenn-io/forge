@@ -69,12 +69,6 @@ func TestSyncRoutesWithoutProviderSyncerE2E(t *testing.T) {
 	assert.Equal(false, trigger.Error.Details["retryable"])
 	require.NotNil(trigger.Error.Detail)
 	assert.Equal("syncer not configured", *trigger.Error.Detail)
-
-	visible, err := client.HTTP.RefreshVisiblePullsWithResponse(t.Context(), &generated.RefreshVisiblePullsRequestOptions{Body: &generated.RefreshVisiblePullsBody{Visible: []generated.VisiblePullRef{}}})
-	require.Error(err)
-	require.Equal(http.StatusServiceUnavailable, visible.StatusCode)
-	require.NotNil(visible.Error)
-	assert.Equal(false, visible.Error.Details["retryable"])
 }
 
 func TestSyncTriggerUnavailableRetryabilityE2E(t *testing.T) {

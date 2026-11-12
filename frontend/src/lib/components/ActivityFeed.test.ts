@@ -358,7 +358,7 @@ describe("ActivityFeed compact mode", () => {
       rule: "shows older item control in threaded view",
       view: "threaded" as const,
       visible: true,
-      notice: /Load older items/,
+      notice: /Item totals cover loaded items only/,
       otherNotice: /most recent 5,000 events/,
     },
     {
@@ -366,7 +366,7 @@ describe("ActivityFeed compact mode", () => {
       rule: "hides older item control in flat view",
       view: "flat" as const,
       visible: false,
-      notice: /Load older items/,
+      notice: /Item totals cover loaded items only/,
       otherNotice: /most recent 5,000 events/,
     },
   ])("$rule", async ({ kind, view, visible, notice, otherNotice }) => {

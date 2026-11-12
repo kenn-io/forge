@@ -1041,6 +1041,13 @@
     </div>
   {/if}
 
+  {#if activity.getViewMode() === "threaded" && activity.isItemActivityCapped()}
+    <div class="capped-notice item-activity-capped-notice">
+      Showing the most recently active pull requests and issues. Item totals cover loaded items only; select Load older
+      items to see more.
+    </div>
+  {/if}
+
 </div>
 
 <style>

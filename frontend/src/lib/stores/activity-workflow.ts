@@ -1,4 +1,4 @@
-import { Cause, Context, Effect, Exit, Fiber, FiberHandle, FiberSet, Layer, Ref, Semaphore } from "effect";
+import { Context, Effect, Fiber, FiberHandle, Layer, Ref } from "effect";
 import type * as Duration from "effect/Duration";
 import { pollWhileVisible } from "../effect/poll-while-visible.js";
 import { TransientTransportError } from "../api/effect-errors.js";
@@ -6,7 +6,6 @@ import { TransientTransportError } from "../api/effect-errors.js";
 type ProjectActivityResult<A, E, R> = (value: A) => Effect.Effect<void, E, R>;
 
 interface ActivityWorkflowShape {
-  readonly page: <A, E, R>(operation: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
   readonly load: <A, E, R, ProjectError, ProjectRequirements>(
     scope: string,
     read: Effect.Effect<A, E, R>,
@@ -42,8 +41,6 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
   Effect.gen(function* () {
     const loadHandle = yield* FiberHandle.make<unknown, unknown>();
     const pollingHandle = yield* FiberHandle.make<void, unknown>();
-    const snapshotPermit = yield* Semaphore.make(1);
-    const backgroundSnapshots = yield* FiberSet.make<void, unknown>();
     const suppressedForegroundFailure = Symbol("suppressedForegroundFailure");
     const projectionState = yield* Ref.make({
       generation: 0,
@@ -150,64 +147,45 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
     ): Effect.Effect<void, E | ProjectError | TransientTransportError, R | ProjectRequirements> {
       return Effect.gen(function* () {
         const claim = yield* claimRead(owner, scope);
-        const operation = Effect.gen(function* () {
-          const value = yield* read.pipe(
-            Effect.catch((failure) => {
-              if (owner !== "foreground") {
-                const settle =
-                  onFailure === undefined
-                    ? Effect.void
-                    : isCurrent(claim.generation).pipe(
-                        Effect.flatMap((current) => (current ? onFailure : Effect.void)),
-                      );
-                return settle.pipe(Effect.andThen(Effect.fail(failure)));
-              }
-              return foregroundOwnership(claim.generation, scope, claim.requestStart).pipe(
-                Effect.flatMap((ownership) => {
-                  if (ownership.failure) {
-                    return (onFailure ?? Effect.void).pipe(Effect.andThen(Effect.fail(failure)));
-                  }
-                  const settle = ownership.loading ? (onFailure ?? Effect.void) : Effect.void;
-                  return settle.pipe(Effect.as(suppressedForegroundFailure));
-                }),
-              );
-            }),
-          );
-          if (value === suppressedForegroundFailure) return;
-          const current =
-            owner === "reconcile"
-              ? yield* claimReconciliation(scope, claim.requestStart, claim.reconciliation)
-              : yield* claimProjection(owner, scope, claim.requestStart);
-          if (current) {
-            yield* project(value);
-          } else if (owner === "reconcile") {
-            return yield* Effect.fail(
-              TransientTransportError.make({
-                operation: "reconcile activity after superseded provider event",
-                cause: new Error("a foreground activity query replaced event reconciliation"),
+        const ownedRead =
+          owner === "foreground" ? FiberHandle.run(loadHandle, read).pipe(Effect.flatMap(Fiber.join)) : read;
+        const value = yield* ownedRead.pipe(
+          Effect.catch((failure) => {
+            if (owner !== "foreground") {
+              const settle =
+                onFailure === undefined
+                  ? Effect.void
+                  : isCurrent(claim.generation).pipe(Effect.flatMap((current) => (current ? onFailure : Effect.void)));
+              return settle.pipe(Effect.andThen(Effect.fail(failure)));
+            }
+            return foregroundOwnership(claim.generation, scope, claim.requestStart).pipe(
+              Effect.flatMap((ownership) => {
+                if (ownership.failure) {
+                  return (onFailure ?? Effect.void).pipe(Effect.andThen(Effect.fail(failure)));
+                }
+                const settle = ownership.loading ? (onFailure ?? Effect.void) : Effect.void;
+                return settle.pipe(Effect.as(suppressedForegroundFailure));
               }),
             );
-          } else if (owner === "foreground" && onFailure !== undefined) {
-            const ownership = yield* foregroundOwnership(claim.generation, scope, claim.requestStart);
-            if (ownership.loading) yield* onFailure;
-          }
-        });
-        if (owner === "poll") {
-          yield* operation;
-        } else if (owner === "foreground") {
-          const foreground = FiberSet.clear(backgroundSnapshots).pipe(
-            Effect.andThen(snapshotPermit.withPermit(operation)),
+          }),
+        );
+        if (value === suppressedForegroundFailure) return;
+        const current =
+          owner === "reconcile"
+            ? yield* claimReconciliation(scope, claim.requestStart, claim.reconciliation)
+            : yield* claimProjection(owner, scope, claim.requestStart);
+        if (current) {
+          yield* project(value);
+        } else if (owner === "reconcile") {
+          return yield* Effect.fail(
+            TransientTransportError.make({
+              operation: "reconcile activity after superseded provider event",
+              cause: new Error("a foreground activity query replaced event reconciliation"),
+            }),
           );
-          yield* FiberHandle.run(loadHandle, foreground, { startImmediately: false }).pipe(Effect.flatMap(Fiber.join));
-        } else {
-          const exit = yield* Effect.uninterruptibleMask((restore) =>
-            FiberSet.run(backgroundSnapshots, Effect.interruptible(snapshotPermit.withPermit(operation))).pipe(
-              Effect.flatMap((fiber) =>
-                restore(Fiber.await(fiber)).pipe(Effect.onInterrupt(() => Fiber.interrupt(fiber))),
-              ),
-            ),
-          );
-          if (Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause)) return yield* Effect.failCause(exit.cause);
+        } else if (owner === "foreground" && onFailure !== undefined) {
+          const ownership = yield* foregroundOwnership(claim.generation, scope, claim.requestStart);
+          if (ownership.loading) yield* onFailure;
         }
       });
     }
@@ -255,7 +233,6 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
     }
 
     return {
-      page: (operation) => snapshotPermit.withPermit(operation),
       load,
       pollRead,
       pollSnapshotRead,

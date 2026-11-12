@@ -16,7 +16,6 @@ import {
   notificationDbId,
 } from "./activity.svelte.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
-import { ActivityWorkflow } from "./activity-workflow.js";
 import { involvesMeFilterStorageKey } from "./involves-me-filter.js";
 import { unassignedFilterStorageKey } from "./unassigned-filter.js";
 
@@ -211,145 +210,6 @@ describe("activity subject paging", () => {
     owner: "acme",
     name: "widgets",
   };
-  it("keeps later page demand when a queued reload fails", async () => {
-    const releaseCleanup = Promise.withResolvers<void>();
-    const backgroundResponse = Promise.withResolvers<unknown>();
-    let blockerStarted = false;
-    let blockerInterrupted = false;
-    let reads = 0;
-    let pages = 0;
-    const get = vi.fn((path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
-      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
-      if (options?.params?.query?.subject_before) {
-        pages++;
-        return Promise.resolve({
-          data: { items: [], item_activity: [{ ...itemActivity(2), repo }], capped: false },
-          error: null,
-        });
-      }
-      reads++;
-      if (reads === 2) return backgroundResponse.promise;
-      if (reads === 3)
-        return Promise.resolve({ error: { detail: "reload failed" }, response: new Response(null, { status: 422 }) });
-      return Promise.resolve({
-        data: {
-          items: [],
-          item_activity: [{ ...itemActivity(1), repo }],
-          item_activity_capped: true,
-          next_subject_cursor: "older",
-          capped: false,
-        },
-        error: null,
-      });
-    });
-    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
-    if (runtime === undefined) throw new Error("test runtime was not created");
-    const blocker = runtime.runCommand(
-      Effect.gen(function* () {
-        const workflow = yield* ActivityWorkflow;
-        yield* workflow.reconcileRead(
-          "old",
-          Effect.sync(() => {
-            blockerStarted = true;
-          }).pipe(
-            Effect.andThen(Effect.never),
-            Effect.onInterrupt(() =>
-              Effect.sync(() => {
-                blockerInterrupted = true;
-              }).pipe(Effect.andThen(Effect.promise(() => releaseCleanup.promise))),
-            ),
-          ),
-          () => Effect.void,
-        );
-      }),
-      { operation: "hold activity refresh", safeContext: {}, onFailure: () => {} },
-    );
-    await vi.waitFor(() => expect(blockerStarted).toBe(true));
-    store.loadActivity();
-    await vi.waitFor(() => expect(blockerInterrupted).toBe(true));
-    const background = runtime.runCommand(store.reconcileActivityEffect(), {
-      operation: "queued refresh",
-      safeContext: {},
-      onFailure: () => {},
-    });
-    await Promise.resolve();
-    releaseCleanup.resolve();
-    await vi.waitFor(() => expect(reads).toBe(2));
-    store.loadOlderItems();
-    backgroundResponse.resolve({
-      error: { detail: "background failed" },
-      response: new Response(null, { status: 422 }),
-    });
-    await background.exit;
-    await blocker.exit;
-    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
-    expect(pages).toBe(1);
-    expect(store.isLoadingOlderItems()).toBe(false);
-    await runtime.runCommand(store.reconcileActivityEffect(), {
-      operation: "refresh retained depth",
-      safeContext: {},
-      onFailure: () => {},
-    }).exit;
-    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
-    expect(pages).toBe(2);
-  });
-
-  it("skips a queued page when an earlier refresh already covers it", async () => {
-    const reload = Promise.withResolvers<unknown>();
-    let firstReads = 0;
-    let pageReads = 0;
-    const get = vi.fn((path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
-      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
-      if (options?.params?.query?.subject_before) {
-        pageReads++;
-        return Promise.resolve({
-          data: { items: [], item_activity: [{ ...itemActivity(2), repo }], capped: false },
-          error: null,
-        });
-      }
-      if (++firstReads === 2) return reload.promise;
-      return Promise.resolve({
-        data: {
-          items: [],
-          item_activity: [{ ...itemActivity(1), repo }],
-          item_activity_capped: true,
-          next_subject_cursor: "older",
-          capped: false,
-        },
-        error: null,
-      });
-    });
-    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
-    store.loadActivity();
-    await vi.waitFor(() => expect(firstReads).toBe(2));
-    if (runtime === undefined) throw new Error("test runtime was not created");
-    const refresh = runtime.runCommand(store.reconcileActivityEffect(), {
-      operation: "refresh activity",
-      safeContext: {},
-      onFailure: () => {},
-    });
-    await Promise.resolve();
-    store.loadOlderItems();
-    reload.resolve({
-      data: {
-        items: [],
-        item_activity: [{ ...itemActivity(1), repo }],
-        item_activity_capped: true,
-        next_subject_cursor: "older",
-        capped: false,
-      },
-      error: null,
-    });
-    await refresh.exit;
-    await vi.waitFor(() => expect(store.isLoadingOlderItems()).toBe(false));
-    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
-    expect(pageReads).toBe(1);
-    expect(store.getActivityError()).toBeNull();
-  });
   it.each([false, true])("loads new expanded threads only for collapsed projection: %s", async (collapsed) => {
     let threadReads = 0;
     const get = vi.fn((path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
@@ -380,195 +240,56 @@ describe("activity subject paging", () => {
     if (collapsed) await vi.waitFor(() => expect(threadReads).toBe(1));
     else expect(threadReads).toBe(0);
   });
-  it.each(["queued", "in flight"])("interrupts an older page %s when the search changes", async (state) => {
-    let refreshSignal: AbortSignal | undefined;
-    let olderSignal: AbortSignal | undefined;
-    let calls = 0;
-    let pageCalls = 0;
-    const older = Promise.withResolvers<unknown>();
-    const get = vi.fn(
-      (
-        path: string,
-        options?: { signal?: AbortSignal; params?: { query?: { subject_before?: string; search?: string } } },
-      ) => {
-        if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
-        if (options?.params?.query?.subject_before) {
-          pageCalls++;
-          olderSignal = options.signal;
-          return older.promise;
-        }
-        if (options?.params?.query?.search)
-          return Promise.resolve({
-            data: { items: [], item_activity: [{ ...itemActivity(3), repo }], capped: false },
-            error: null,
-          });
-        if (++calls === 1)
-          return Promise.resolve({
-            data: {
-              items: [],
-              item_activity: [{ ...itemActivity(1), repo }],
-              item_activity_capped: true,
-              next_subject_cursor: "older",
-              capped: false,
-            },
-            error: null,
-          });
-        refreshSignal = options?.signal;
-        return new Promise(() => {});
-      },
-    );
-    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
-    if (runtime === undefined) throw new Error("test runtime was not created");
-    const refresh =
-      state === "queued"
-        ? runtime.runCommand(store.reconcileActivityEffect(), {
-            operation: "refresh activity",
-            safeContext: {},
-            onFailure: () => {},
-          })
-        : undefined;
-    if (refresh) await vi.waitFor(() => expect(refreshSignal).toBeDefined());
-    store.loadOlderItems();
-    if (!refresh) await vi.waitFor(() => expect(olderSignal).toBeDefined());
-    store.setActivitySearch("new");
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([3]));
-    if (refresh) {
-      expect(refreshSignal?.aborted).toBe(true);
-      expect(pageCalls).toBe(0);
-      await refresh.exit;
-    } else {
-      expect(olderSignal?.aborted).toBe(true);
-      older.resolve({ data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] }, error: null });
-      await Promise.resolve();
-      expect(store.getItemActivity().map((item) => item.item_number)).toEqual([3]);
-      expect(store.canLoadOlderItems()).toBe(false);
-    }
-  });
-  it.each(["reload", "reconciliation"])("finishes a pending %s before loading from its cursor", async (operation) => {
-    let releaseReload: ((value: unknown) => void) | undefined;
-    let reloadSignal: AbortSignal | undefined;
-    let firstReads = 0;
-    const cursors: string[] = [];
+  it("reloads expanded discussion when loading a third subject page", async () => {
+    const events = [1, 2, 3].map((number) => ({
+      ...notificationItem(`comment:${number}`, "read"),
+      activity_type: "comment",
+      item_number: number,
+      repo,
+    })) as ActivityItem[];
     const client = {
       GET: vi.fn(
-        (path: string, options?: { signal?: AbortSignal; params?: { query?: { subject_before?: string } } }) => {
-          if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
-          const cursor = options?.params?.query?.subject_before;
-          if (cursor) {
-            cursors.push(cursor);
-            return Promise.resolve({
-              data: {
-                items: [],
-                item_activity: [{ ...itemActivity(operation === "reload" ? 3 : 2), repo }],
-                capped: false,
-              },
-              error: null,
-            });
-          }
-          if (++firstReads === 1)
-            return Promise.resolve({
-              data: {
-                items: [],
-                item_activity: [{ ...itemActivity(1), repo }],
-                item_activity_capped: true,
-                next_subject_cursor: "old",
-                capped: false,
-              },
-              error: null,
-            });
-          reloadSignal = options?.signal;
-          return new Promise((resolve) => {
-            releaseReload = resolve;
-          });
+        async (path: string, options?: { params?: { query?: { subject_before?: string; projection?: string } } }) => {
+          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+          const query = options?.params?.query;
+          const number = query?.subject_before === "page-2" ? 2 : query?.subject_before === "page-3" ? 3 : 1;
+          return {
+            data: {
+              items: query?.projection === "collapsed" ? [] : events,
+              capped: false,
+              item_activity: [{ ...itemActivity(number), repo }],
+              item_activity_capped: number < 3,
+              next_subject_cursor: number < 3 ? `page-${number + 1}` : "",
+            },
+            error: null,
+          };
         },
       ),
     } as unknown as GeneratedClient;
     const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
     store.loadActivity();
     await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(2));
     if (runtime === undefined) throw new Error("test runtime was not created");
-    const reconciliation =
-      operation === "reconciliation"
-        ? runtime.runCommand(store.reconcileActivityEffect(), {
-            operation: "refresh activity",
-            safeContext: {},
-            onFailure: () => {},
-          })
-        : undefined;
-    if (operation === "reload") store.loadActivity();
-    await vi.waitFor(() => expect(releaseReload).toBeDefined());
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "refresh activity",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(store.getActivityItems().map((item) => item.id)).toEqual(["comment:1", "comment:2"]);
     store.loadOlderItems();
-    await Promise.resolve();
-    expect(reloadSignal?.aborted).toBe(false);
-    expect(cursors).toEqual([]);
-    releaseReload?.({
-      data: {
-        items: [],
-        item_activity: [{ ...itemActivity(operation === "reload" ? 2 : 1), repo }],
-        item_activity_capped: true,
-        next_subject_cursor: operation === "reload" ? "new" : "old",
-        capped: false,
-      },
-      error: null,
-    });
-    if (reconciliation) await reconciliation.exit;
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(3));
     await vi.waitFor(() =>
-      expect(store.getItemActivity().map((item) => item.item_number)).toEqual(operation === "reload" ? [2, 3] : [1, 2]),
+      expect(store.getActivityItems().map((item) => item.id)).toEqual(["comment:1", "comment:2", "comment:3"]),
     );
-    expect(store.isActivityLoading()).toBe(false);
-    expect(cursors).toEqual([operation === "reload" ? "new" : "old"]);
-    expect(store.canLoadOlderItems()).toBe(false);
-  });
-  it.each(["loaded", "success", "failure"])("preserves a thread when loading an older page: %s", async (scenario) => {
-    const comment = { ...notificationItem("ntf:pending", "read"), item_number: 7, repo } as ActivityItem;
-    let threadReads = 0;
-    let release: ((value: unknown) => void) | undefined;
-    const pending = new Promise((resolve) => {
-      release = resolve;
-    });
-    const client = {
-      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
-        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-        if (path === "/activity/thread-events") {
-          threadReads++;
-          return pending;
-        }
-        if (options?.params?.query?.subject_before)
-          return scenario !== "failure"
-            ? { data: { items: [], item_activity: [{ ...itemActivity(8), repo }], capped: false }, error: null }
-            : { error: { detail: "page unavailable" }, response: new Response(null, { status: 422 }) };
-        return {
-          data: {
-            items: [],
-            item_activity: [{ ...itemActivity(7), repo }],
-            item_activity_capped: true,
-            next_subject_cursor: "older",
-            capped: false,
-          },
-          error: null,
-        };
-      }),
-    } as unknown as GeneratedClient;
-    const store = createActivityStore({ client });
-    store.hydrateDefaults(settings(true));
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
-    store.toggleThreadItem("github|github.com|id|1007:pr:7");
-    await vi.waitFor(() =>
-      expect(vi.mocked(client.GET).mock.calls.some(([path]) => path === "/activity/thread-events")).toBe(true),
-    );
-    if (scenario === "loaded") {
-      release?.({ data: { items: [comment], capped: false }, error: null });
-      await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id));
-    }
-    store.loadOlderItems();
-    await vi.waitFor(() => expect(store.isLoadingOlderItems()).toBe(false));
-    if (scenario !== "loaded") release?.({ data: { items: [comment], capped: false }, error: null });
-    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id));
-    expect(threadReads).toBe(1);
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "refresh activity",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(store.getActivityItems().map((item) => item.id)).toEqual(["comment:1", "comment:2", "comment:3"]);
   });
   it("keeps the current page and permits retry when the next page fails", async () => {
     let fail = true;
@@ -727,7 +448,7 @@ describe("activity subject paging", () => {
     store.loadOlderItems();
     await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 2]));
     expect(store.getWorkspaceActivity().map((subject) => subject.item_number)).toEqual([1, 2]);
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
     refreshed = true;
     if (runtime === undefined) throw new Error("test runtime was not created");
     await runtime.runCommand(store.reconcileActivityEffect(), {
@@ -3780,47 +3501,6 @@ describe("activity store author candidates", () => {
 });
 
 describe("activity store projection scope", () => {
-  it("keeps a foreground error when it interrupts an older reconciliation", async () => {
-    const pendingReconciliation = Promise.withResolvers<{
-      data: { items: ActivityItem[]; capped: boolean };
-      error: null;
-    }>();
-    const freshItem = notificationItem("ntf:fresh", "unread");
-    let feedReads = 0;
-    const get = vi.fn((path: string) => {
-      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
-      feedReads += 1;
-      if (feedReads === 1) return pendingReconciliation.promise;
-      return Promise.resolve({
-        error: {
-          code: "serviceUnavailable",
-          detail: "activity temporarily unavailable",
-          title: "Service unavailable",
-          type: "about:blank",
-        },
-        response: new Response(null, { status: 503 }),
-      });
-    });
-    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
-
-    if (runtime === undefined) throw new Error("test runtime was not created");
-    const reconciliation = runtime.runCommand(store.reconcileActivityEffect(), {
-      operation: "reconcile activity in test",
-      safeContext: {},
-      onFailure: () => {},
-    });
-    await vi.waitFor(() => expect(feedReads).toBe(1));
-
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.getActivityError()).toBe("activity temporarily unavailable"));
-
-    pendingReconciliation.resolve({ data: { items: [freshItem], capped: false }, error: null });
-    await reconciliation.exit;
-
-    expect(store.getActivityItems()).toEqual([]);
-    expect(store.getActivityError()).toBe("activity temporarily unavailable");
-  });
-
   it("rejects an older unfiltered reconciliation after an Involves me load fails", async () => {
     const pendingReconciliation = Promise.withResolvers<{
       data: { items: ActivityItem[]; capped: boolean };
@@ -4412,6 +4092,47 @@ describe("activity polling recovery", () => {
     await vi.waitFor(() => expect(feedReads).toBe(5));
 
     expect(store.getActivityItems()).toEqual([persistedBehindCursor]);
+  });
+
+  it("clears a foreground error when same-scope reconciliation succeeds", async () => {
+    const pendingReconciliation = Promise.withResolvers<{
+      data: { items: ActivityItem[]; capped: boolean };
+      error: null;
+    }>();
+    const freshItem = notificationItem("ntf:fresh", "unread");
+    let feedReads = 0;
+    const get = vi.fn((path: string) => {
+      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
+      feedReads += 1;
+      if (feedReads === 1) return pendingReconciliation.promise;
+      return Promise.resolve({
+        error: {
+          code: "serviceUnavailable",
+          detail: "activity temporarily unavailable",
+          title: "Service unavailable",
+          type: "about:blank",
+        },
+        response: new Response(null, { status: 503 }),
+      });
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    const reconciliation = runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await vi.waitFor(() => expect(feedReads).toBe(1));
+
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityError()).toBe("activity temporarily unavailable"));
+
+    pendingReconciliation.resolve({ data: { items: [freshItem], capped: false }, error: null });
+    await reconciliation.exit;
+
+    expect(store.getActivityItems()).toEqual([freshItem]);
+    expect(store.getActivityError()).toBeNull();
   });
 
   it("clears a foreground error when a replacement poll succeeds afterward", async () => {

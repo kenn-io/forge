@@ -625,6 +625,7 @@ describe("OnboardingFlow", () => {
     renderFlow(fixture.stores);
     await waitFor(() => expect(source).toBeDefined());
     await waitFor(() => expect(attempts).toBe(2));
+    // The accepted response and status event carry no common run identity.
     source?.dispatchEvent(
       new MessageEvent("sync_status", {
         data: JSON.stringify({ running: false, last_run_at: "2026-08-02T12:00:30Z", last_error: "" }),

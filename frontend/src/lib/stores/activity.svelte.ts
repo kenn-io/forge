@@ -337,7 +337,15 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function loadOlderItems(): void {
     if (!subjectCursor || isLoadingOlderItems()) return;
     requestedSubjectDepth += 1;
-    loadActivity();
+    const params = buildParams();
+    const scope = activityProjectionScope(params);
+    const generation = childProjectionInvalidationGeneration;
+    const page = { cursor: subjectCursor, depth: requestedSubjectDepth };
+    runtime.runCommand(loadActivityEffect(params, generation, scope, page), {
+      operation: "load older activity items",
+      safeContext: {},
+      onFailure: () => {},
+    });
   }
   function canLoadMoreActivity(): boolean {
     return (
@@ -1120,18 +1128,65 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (restartBulkActivity) loadBulkActivity();
   }
 
+  function projectOlderActivityPage(
+    result: ActivityReadResponse,
+    params: ActivityParams,
+    cursor: string,
+    depth: number,
+  ): void {
+    if (displayedSubjectDepth >= depth) return;
+    if (subjectCursor !== cursor) {
+      requestedSubjectDepth = displayedSubjectDepth;
+      if (subjectCursor) loadOlderItems();
+      return;
+    }
+    const existing = new Set(itemActivity.map(stableParentKey));
+    const added = (result.response.item_activity ?? []).filter((subject) => !existing.has(stableParentKey(subject)));
+    itemActivity = [...itemActivity, ...added];
+    const workspaces = new Set(workspaceActivity.map(stableParentKey));
+    workspaceActivity = [
+      ...workspaceActivity,
+      ...(result.response.workspace_activity ?? []).filter((subject) => !workspaces.has(stableParentKey(subject))),
+    ];
+    itemActivityCapped = result.response.item_activity_capped ?? false;
+    subjectCursor = result.response.next_subject_cursor ?? "";
+    displayedSubjectDepth = depth;
+    loading = false;
+    storeError = null;
+    if (params.projection === "collapsed" && activityPageLimit === undefined) {
+      for (const subject of added) {
+        const key = stableParentKey(subject);
+        if (key && isThreadItemExpanded(key)) loadThreadEvents(key);
+      }
+    } else if (
+      params.projection === "full" &&
+      viewMode === "threaded" &&
+      !collapseThreads &&
+      activityEventCursor !== ""
+    ) {
+      loadBulkActivity();
+    }
+  }
+
   function loadActivityProgram(
     params: ActivityParams,
     owner: "foreground" | "poll" = "foreground",
     acceptsProjection: () => boolean = () => true,
+    page?: { cursor: string; depth: number },
   ) {
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
       const scope = activityProjectionScope(params);
-      const read = Effect.suspend(() => activityReadPages({ ...params, since: computeSince() }, requestedSubjectDepth));
+      const read = Effect.suspend(() =>
+        page
+          ? activityRead({ ...params, since: computeSince(), subject_before: page.cursor })
+          : activityReadPages({ ...params, since: computeSince() }, requestedSubjectDepth),
+      );
       const project = (result: ActivityReadResponse) =>
         Effect.sync(() => {
-          if (acceptsProjection()) projectActivitySnapshot(result, params);
+          if (!acceptsProjection()) return;
+          if (page) projectOlderActivityPage(result, params, page.cursor, page.depth);
+          else projectActivitySnapshot(result, params);
         });
       const clearLoading = Effect.sync(() => {
         if (acceptsProjection()) loading = false;
@@ -1142,15 +1197,23 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     });
   }
 
-  function loadActivityEffect(params: ActivityParams, generation: number, scope: string) {
-    const ownsProjection = () => ownsForegroundSnapshot(generation, scope);
+  function loadActivityEffect(
+    params: ActivityParams,
+    generation: number,
+    scope: string,
+    page?: { cursor: string; depth: number },
+  ) {
+    const ownsProjection = () =>
+      page
+        ? generation === childProjectionInvalidationGeneration && scope === activityProjectionScope(buildParams())
+        : ownsForegroundSnapshot(generation, scope);
     const depth = requestedSubjectDepth;
     return Effect.sync(() => ownsProjection()).pipe(
       Effect.flatMap((current) => {
         if (!current) return Effect.void;
         loading = true;
         storeError = null;
-        return loadActivityProgram(params, "foreground", ownsProjection);
+        return loadActivityProgram(params, "foreground", ownsProjection, page);
       }),
       Effect.tapError((failure) =>
         Effect.sync(() => {
@@ -1159,6 +1222,20 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           loading = false;
           if (requestedSubjectDepth === depth) requestedSubjectDepth = displayedSubjectDepth;
           flatPaging.rollback(activityPageQuery(params));
+        }),
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (
+            page &&
+            ownsProjection() &&
+            subjectCursor === page.cursor &&
+            requestedSubjectDepth === depth &&
+            displayedSubjectDepth < depth
+          ) {
+            requestedSubjectDepth = displayedSubjectDepth;
+            loading = false;
+          }
         }),
       ),
     );

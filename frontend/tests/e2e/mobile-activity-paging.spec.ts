@@ -3,7 +3,7 @@ import { mockApi } from "./support/mockApi";
 
 test.use({ ...devices["iPhone 13"], browserName: "chromium" });
 
-test("reloads a visible preview after loading older items", async ({ page }) => {
+test("keeps a visible preview while loading older items", async ({ page }) => {
   await mockApi(page);
   const repo = {
     provider: "github",
@@ -39,19 +39,17 @@ test("reloads a visible preview after loading older items", async ({ page }) => 
   };
   let hold = false;
   let release: (() => void) | undefined;
-  let previewReads = 0;
   let limit = 0;
   await page.route("**/api/v1/activity**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/thread-events")) {
-      previewReads++;
       await route.fulfill({ json: { items: [event], capped: false } });
       return;
     }
     if (url.pathname !== "/api/v1/activity") return route.fallback();
     const older = url.searchParams.has("subject_before");
     limit = Number(url.searchParams.get("limit"));
-    if (hold && !older)
+    if (hold && older)
       await new Promise<void>((resolve) => {
         release = resolve;
       });
@@ -81,7 +79,6 @@ test("reloads a visible preview after loading older items", async ({ page }) => 
     }
     const button = page.getByRole("button", { name: "Load older items" });
     await expect(button).toBeVisible();
-    const readsBefore = previewReads;
     hold = true;
     await button.click();
     await expect(page.getByRole("button", { name: "Loading more…" })).toBeDisabled();
@@ -91,7 +88,6 @@ test("reloads a visible preview after loading older items", async ({ page }) => 
     release?.();
     await expect(page.getByText("Pull request 2")).toBeVisible();
     await expect(preview).toBeVisible();
-    expect(previewReads).toBeGreaterThan(readsBefore);
   } finally {
     release?.();
   }

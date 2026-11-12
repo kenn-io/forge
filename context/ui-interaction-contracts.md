@@ -757,7 +757,7 @@ Not every visibility control means "remove this entity entirely."
 - Flat Activity requests 200 events initially; event overflow offers Load more in 200-event increments through 5,000. Pending pages retain rows and a disabled control; the ceiling notice appears only after the final page succeeds.
 - Server filters, repositories, and ranges reset the flat page to 200; flat/threaded toggles and refreshes preserve its size. Flat authoritative snapshots replace the event page; threaded snapshots retain cached children. Cached repository rows are previews until the new page arrives.
 - Flat status counts cover loaded subjects and carry `+` when either events or parent summaries overflow. Browser-only filters apply to loaded events; an empty filtered page says `No matches in loaded activity` while more event pages remain.
-- Search finds event-matched parents before the subject page limit. Loading older subjects performs a deeper foreground reload and restarts child reads. Authoritative refreshes reread the requested subject depth with a fresh time boundary shared by all pages in that read.
+- Search finds event-matched parents before the subject page limit. Loading older subjects appends one subject page and restarts the applicable child reads. Authoritative refreshes reread the requested subject depth with a fresh time boundary shared by all pages in that read.
 - Collapsed cursors come from the same snapshot as visible summaries; never derive poll authority
   from a visible row. Opaque cursors preserve timestamps outside the Unix nanosecond range.
 - Empty deltas must not rebuild summaries.

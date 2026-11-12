@@ -1068,14 +1068,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       ) {
         changedThreadKeys.add(key);
       }
-      if (
-        reconcileCollapsedThreads &&
-        autoLoadExpandedThreadEvents &&
-        (collapseThreads || !result.response.item_activity_capped) &&
-        key &&
-        !previous &&
-        isThreadItemExpanded(key)
-      ) {
+      if (reconcileCollapsedThreads && autoLoadExpandedThreadEvents && key && !previous && isThreadItemExpanded(key)) {
         newExpandedThreadKeys.add(key);
       }
     }
@@ -1090,7 +1083,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
             return (
               (item.item_type === "pr" || item.item_type === "issue") &&
               !receivedIDs.has(item.id) &&
-              (key === undefined || !changedThreadKeys.has(key))
+              (key === undefined || (!changedThreadKeys.has(key) && !(parentFilterActive && absentThreadKeys.has(key))))
             );
           }
           return (

@@ -576,6 +576,76 @@ describe("OnboardingFlow", () => {
     expect(load).toHaveBeenCalledTimes(3);
   });
 
+  it("shows pulls after a failed initial load recovers in the background", async () => {
+    stubSyncRoutes({
+      post: () => respond({ instance_id: "instance", generation: 1 }),
+      status: () => respond({ running: false, last_run_at: "2026-08-02T12:01:00Z", full_sync: synced(1) }),
+    });
+    const fixture = storeFixture({ configured: true });
+    const sync = realSyncStore(fixture);
+    const load = vi.spyOn(fixture.stores.pulls, "loadPullsEffect");
+    load.mockImplementationOnce(() => Effect.fail(new Error("Could not load pull requests")));
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Could not load pull requests"));
+    sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:01:00Z" });
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:02:00Z" });
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText("Keep workspace activity across reloads")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Continue with PR #42" })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps the chosen pull when leaving during a background reload", async () => {
+    stubSyncRoutes({
+      post: () => respond({ instance_id: "instance", generation: 1 }),
+      status: () => respond({ running: false, last_run_at: "2026-08-02T12:01:00Z", full_sync: synced(1) }),
+    });
+    const fixture = storeFixture({ configured: true });
+    const sync = realSyncStore(fixture);
+    const pending = Promise.withResolvers<void>();
+    let pulls = [pullRequest()];
+    vi.spyOn(fixture.stores.pulls, "getPulls").mockImplementation(() => pulls);
+    const load = vi.spyOn(fixture.stores.pulls, "loadPullsEffect");
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Continue with PR #42" })).toBeTruthy());
+    load.mockImplementationOnce(() => Effect.promise(() => pending.promise));
+    sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:01:00Z" });
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:02:00Z" });
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with PR #42" }));
+    pulls = [{ ...pullRequest(), ID: 10, Number: 43, Title: "New pull" }];
+    pending.resolve();
+    await tick();
+    await waitFor(() => expect(screen.getByText("acme/forge · PR #42")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Create workspace" })).toBeTruthy();
+  });
+
+  it("refreshes pulls when another sync completes during the initial load", async () => {
+    stubSyncRoutes({
+      post: () => respond({ instance_id: "instance", generation: 1 }),
+      status: () => respond({ running: false, last_run_at: "2026-08-02T12:01:00Z", full_sync: synced(1) }),
+    });
+    const fixture = storeFixture({ configured: true });
+    const sync = realSyncStore(fixture);
+    const pending = Promise.withResolvers<void>();
+    let pulls = [pullRequest()];
+    vi.spyOn(fixture.stores.pulls, "getPulls").mockImplementation(() => pulls);
+    const load = vi.spyOn(fixture.stores.pulls, "loadPullsEffect");
+    load.mockImplementationOnce(() => Effect.promise(() => pending.promise));
+    load.mockImplementation(() =>
+      Effect.sync(() => {
+        pulls = [{ ...pullRequest(), ID: 10, Number: 43, Title: "New pull" }];
+      }),
+    );
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(load).toHaveBeenCalledOnce());
+    sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:01:00Z" });
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:02:00Z" });
+    pending.resolve();
+    await waitFor(() => expect(screen.getByText("New pull")).toBeTruthy());
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
   it("shows the credential action when the accepted sync cannot route a repository", async () => {
     let posts = 0;
     stubSyncRoutes({

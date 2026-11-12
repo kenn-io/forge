@@ -163,6 +163,7 @@
   }
 
   function moveTo(next: Phase): void {
+    pullsExecution?.interrupt();
     phaseExecution?.interrupt();
     phaseExecution = runtime.runCommand(moveToProgram(next), {
       operation: "move onboarding phase",
@@ -355,6 +356,7 @@
               selectedPull = null;
               return;
             }
+            pullsError = null;
             availablePulls = stores.pulls
               .getPulls()
               .filter((pull) => pull.State === "open")
@@ -372,14 +374,16 @@
 
   function finishSyncProgram(): Effect.Effect<void, never, AppServices> {
     if (syncFinishing) return Effect.void;
+    let syncAtLoad = "";
     return Effect.sync(() => {
       syncFinishing = true;
+      syncAtLoad = stores.sync.getSyncState()?.last_run_at ?? "";
     }).pipe(
       Effect.andThen(loadAvailablePullsProgram()),
       Effect.andThen(
         Effect.sync(() => {
           syncFinishing = false;
-          lastPullSync = stores.sync.getSyncState()?.last_run_at ?? "";
+          lastPullSync = syncAtLoad;
         }),
       ),
       Effect.andThen(moveToProgram("pulls")),

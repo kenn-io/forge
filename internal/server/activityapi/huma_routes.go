@@ -1194,8 +1194,9 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 
+	useWorkspaceActivityForRecency := s.useWorkspaceActivityForRecency()
 	var workspaceSubjects []db.ActivitySubject
-	if projection != "events" {
+	if useWorkspaceActivityForRecency && projection != "events" {
 		workspaceSubjects, err = s.workspaceSearchSubjects(ctx, opts, workspaceSnapshot)
 		if err != nil {
 			slog.Error("list workspace search subjects failed", "err", err)
@@ -1316,7 +1317,6 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		itemActivityOut = []itemapi.ActivitySubjectResponse{}
 	}
 
-	useWorkspaceActivityForRecency := s.useWorkspaceActivityForRecency()
 	workspaceActivity := s.WorkspaceActivityResponse(
 		input, opts, workspaceSnapshot, workspaceEventItems, labels,
 		useWorkspaceActivityForRecency, slices.Concat(itemActivity, workspaceSubjects),

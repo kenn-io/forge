@@ -542,7 +542,7 @@ func archiveReportCounts(counts report.Counts) archiveReportCountsResponse {
 }
 
 type archiveSnapshotInput struct {
-	PullRequestScope string   `query:"pull_request_scope" enum:"recently_closed" doc:"Include pull requests closed or merged in the last 30 days and their same-repository one-hop references."`
+	PullRequestScope string   `query:"pull_request_scope" enum:"recently_closed" doc:"Include open pull requests and those closed or merged within 30 days before observed_at, plus same-repository one-hop context in either direction. References point from the mentioning pull request to the referenced pull request."`
 	IssueScope       string   `query:"issue_scope" enum:"open" doc:"Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window."`
 	Repositories     []string `query:"repo,explode" doc:"Optional configured repository subset. Repeat repo=provider|platform_host/repo_path to split large exports. Limits: 10,000 items/reviews/references and 32 MiB projected text or response; no items are dropped."`
 	Start            string   `query:"start" required:"true" doc:"Inclusive UTC RFC3339 issue-creation boundary; not applied when issue_scope=open."`

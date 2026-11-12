@@ -4,6 +4,7 @@
 
 export interface SnapshotRelation {
   evidence_id: string;
+  /** pull_request_reference points from the mentioning pull request to the referenced pull request. */
   kind: string;
   observed_at: string;
   source_id: string;

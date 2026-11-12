@@ -9,9 +9,10 @@ SET scan_generation = scan_generation + 2 - (scan_generation % 2),
 WHERE dataset = 'lookup' AND item_type = 'merge_request' AND status = 'complete'
   AND EXISTS (SELECT 1 FROM forge_archive_items a
       JOIN forge_repos r ON r.id = a.repo_id
+      JOIN forge_archive_repos ar ON ar.repo_id = a.repo_id AND ar.collection_mode = 'full'
       JOIN forge_merge_requests p ON p.repo_id = a.repo_id AND p.number = a.item_number
       WHERE a.repo_id = progress.repo_id AND a.item_type = progress.item_type
         AND a.item_number = progress.item_number AND a.lifecycle_state = 'active'
         AND r.platform = 'github' AND p.author_account_type IS NULL
         AND (p.state = 'open' OR (p.state IN ('closed','merged')
-          AND julianday(COALESCE(p.merged_at,p.closed_at)) BETWEEN julianday('now','-30 days') AND julianday('now'))));
+          AND julianday(replace(CAST(COALESCE(p.merged_at,p.closed_at) AS TEXT), ' +0000 UTC', '')) BETWEEN julianday('now','-30 days') AND julianday('now'))));

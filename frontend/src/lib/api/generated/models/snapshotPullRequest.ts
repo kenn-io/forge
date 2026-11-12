@@ -10,6 +10,7 @@ export interface SnapshotPullRequest {
   additions: number | null;
   assignees?: string[];
   author: string;
+  /** Omitted when the provider has not reported an account type. */
   author_account_type?: string;
   /** @nullable */
   author_association: string | null;
@@ -22,6 +23,7 @@ export interface SnapshotPullRequest {
   checks: SnapshotCheck[];
   /** @nullable */
   closed_at?: string | null;
+  /** For terminal pull requests, comments by the author or MEMBER/OWNER accounts. */
   comments?: SnapshotComment[];
   created_at: string;
   /** @nullable */
@@ -32,6 +34,7 @@ export interface SnapshotPullRequest {
    */
   detail_fetched_at: string | null;
   draft: boolean;
+  /** Includes comment_author_association_unknown when a non-author comment lacks role evidence and is omitted. */
   gaps: string[];
   head_branch: string;
   /**

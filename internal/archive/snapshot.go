@@ -223,7 +223,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		result.Relations = append(result.Relations, snapshot.SnapshotRelation{SourceID: pull.ID, TargetID: issueID, Kind: "linked_issue", EvidenceID: issueID + "/reference/" + url.QueryEscape(link.EventKey), URL: link.URL, ObservedAt: link.ObservedAt.UTC()})
 	}
 	if opts.PullRequestScope == "recently_closed" {
-		comments, refs, err := db.LoadArchiveSnapshotPullEvidence(ctx, tx, mrIDs)
+		comments, refs, err := db.LoadArchiveSnapshotPullEvidence(ctx, tx, repoIDs, mrIDs, result.ObservedAt)
 		if err != nil {
 			return result, err
 		}

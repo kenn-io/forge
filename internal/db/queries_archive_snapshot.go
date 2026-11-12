@@ -93,35 +93,37 @@ const archiveSnapshotLinks = `link_candidates AS (
  ) WHERE reference_rank=1
 )`
 
-const archiveSnapshotPullLinks = `pull_links AS (
- SELECT e.merge_request_id AS target_id, source.id AS source_id, e.dedupe_key,
- COALESCE(json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END, '$.source_url'), '') AS source_url, e.created_at
- FROM forge_mr_events e JOIN pulls target ON target.id=e.merge_request_id
- JOIN pulls source ON source.repo_id=e.repo_id AND source.number=json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number')
- WHERE e.event_type='cross_referenced' AND json_valid(e.metadata_json)
- AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_type')='PullRequest'
- AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.is_cross_repository')=0
-)`
-
 const (
 	archiveSnapshotCommentBody   = `COALESCE(CAST(substr(CAST(COALESCE(e.body,'') AS BLOB),1,2049) AS TEXT),'')`
 	archiveSnapshotCommentFilter = `(e.author=p.author OR upper(e.author_association) IN ('MEMBER','OWNER'))`
 )
 
-// Reuse exactly the same candidate set for preflight and materialization.
-const archiveSnapshotScope = `WITH scoped_repos AS (SELECT value AS id FROM json_each(?)),
+// All three snapshot queries share the root-anchored pull and relation set.
+const archiveSnapshotPullScope = `WITH scoped_repos AS (SELECT value AS id FROM json_each(?)),
  roots AS (
  SELECT p.id,p.repo_id,p.number FROM forge_merge_requests p JOIN scoped_repos r ON r.id=p.repo_id
  WHERE (p.state='open' OR (? AND p.state IN ('closed','merged') AND COALESCE(p.merged_at,p.closed_at)>=? AND COALESCE(p.merged_at,p.closed_at)<=?)) AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=p.repo_id AND a.item_type='merge_request' AND a.item_number=p.number AND a.lifecycle_state='removed_upstream')
+ ), reference_candidates AS (
+ SELECT source.id AS source_id, target.id AS target_id, e.dedupe_key,
+ COALESCE(json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_url'),'') AS source_url, e.created_at
+ FROM forge_mr_events e
+ JOIN forge_merge_requests target ON target.id=e.merge_request_id AND target.repo_id=e.repo_id
+ JOIN scoped_repos r ON r.id=target.repo_id
+ JOIN forge_merge_requests source ON source.repo_id=e.repo_id AND source.number=json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number')
+ WHERE e.event_type='cross_referenced' AND json_valid(e.metadata_json)
+ AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_type')='PullRequest'
+ AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.is_cross_repository')=0
+ AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=target.repo_id AND a.item_type='merge_request' AND a.item_number=target.number AND a.lifecycle_state='removed_upstream')
+ AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=source.repo_id AND a.item_type='merge_request' AND a.item_number=source.number AND a.lifecycle_state='removed_upstream')
+ ), pull_links AS (
+ SELECT * FROM reference_candidates c WHERE ? AND (c.source_id IN (SELECT id FROM roots) OR c.target_id IN (SELECT id FROM roots))
  ), pulls AS (
  SELECT * FROM roots
- UNION
- SELECT source.id,source.repo_id,source.number FROM roots target
- JOIN forge_mr_events e ON e.merge_request_id=target.id AND e.event_type='cross_referenced' AND json_valid(e.metadata_json)
- JOIN forge_merge_requests source ON source.repo_id=e.repo_id AND source.number=json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number')
- WHERE ? AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_type')='PullRequest' AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.is_cross_repository')=0
- AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=source.repo_id AND a.item_type='merge_request' AND a.item_number=source.number AND a.lifecycle_state='removed_upstream')
- ), ` + archiveSnapshotLinks + `, ` + archiveSnapshotPullLinks + `,
+ UNION SELECT p.id,p.repo_id,p.number FROM forge_merge_requests p JOIN pull_links l ON p.id=l.source_id
+ UNION SELECT p.id,p.repo_id,p.number FROM forge_merge_requests p JOIN pull_links l ON p.id=l.target_id
+ )`
+
+const archiveSnapshotScope = archiveSnapshotPullScope + `, ` + archiveSnapshotLinks + `,
  issues AS (
  SELECT i.id FROM forge_issues i JOIN scoped_repos r ON r.id=i.repo_id
  WHERE ((CASE WHEN ? THEN i.state='open' ELSE i.created_at>=? AND i.created_at<? END) OR i.id IN (SELECT issue_id FROM links))
@@ -247,7 +249,7 @@ func LoadArchiveSnapshotReferences(ctx context.Context, tx *sql.Tx, repoIDs, mrI
 }
 
 // LoadArchiveSnapshotPullEvidence reads comments and PR references within the selected pulls.
-func LoadArchiveSnapshotPullEvidence(ctx context.Context, tx *sql.Tx, mrIDs []int64) ([]ArchiveSnapshotReview, []ArchiveSnapshotPullReference, error) {
+func LoadArchiveSnapshotPullEvidence(ctx context.Context, tx *sql.Tx, repoIDs, mrIDs []int64, observedAt time.Time) ([]ArchiveSnapshotReview, []ArchiveSnapshotPullReference, error) {
 	ids, err := json.Marshal(mrIDs)
 	if err != nil {
 		return nil, nil, err
@@ -268,7 +270,11 @@ func LoadArchiveSnapshotPullEvidence(ctx context.Context, tx *sql.Tx, mrIDs []in
 	if err := rows.Err(); err != nil {
 		return nil, nil, err
 	}
-	refsRows, err := tx.QueryContext(ctx, `WITH pulls AS (SELECT id,repo_id,number FROM forge_merge_requests WHERE id IN (SELECT value FROM json_each(?))), `+archiveSnapshotPullLinks+` SELECT source_id,target_id,source_url,dedupe_key,created_at FROM pull_links ORDER BY target_id,source_id,dedupe_key`, string(ids))
+	repos, err := json.Marshal(repoIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+	refsRows, err := tx.QueryContext(ctx, archiveSnapshotPullScope+` SELECT source_id,target_id,source_url,dedupe_key,created_at FROM pull_links ORDER BY target_id,source_id,dedupe_key`, string(repos), true, observedAt.Add(-30*24*time.Hour).UTC(), observedAt.UTC(), true)
 	if err != nil {
 		return nil, nil, err
 	}

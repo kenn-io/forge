@@ -50,7 +50,7 @@ For the same resolved repository, `pull_request` and the archive snapshot's
 never `node_id`) as a JSON integer, and Bitbucket Cloud sets
 `bitbucket_repository_uuid` instead (`platform/repository_key.go::RepositoryKey`).
 
-Archive snapshot consumers opt in to recent terminal pull requests and same-repository one-hop context with `pull_request_scope=recently_closed`; terminal pull requests without a close or merge time are excluded.
+Archive snapshot consumers opt in with `pull_request_scope=recently_closed` to open pull requests, those closed or merged within 30 days before `observed_at`, and same-repository one-hop context on either end of a reference. References point from the mentioning pull request to the referenced pull request. Terminal pull requests without a close or merge time are excluded from the root window. Terminal pull requests include comments by their author and MEMBER/OWNER accounts; omitted non-author comments with unknown roles add `comment_author_association_unknown` to gaps. Account type is absent until the provider reports it.
 
 Responses contain `card`, with null meaning not applicable. A card has
 `status` (`neutral`, `pending`, `success`, `warning`, `error`) and `summary`.

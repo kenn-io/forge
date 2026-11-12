@@ -58344,7 +58344,7 @@ const (
 	ListActivityThreadEventsQueryItemTypePr    ListActivityThreadEventsQueryItemType = "pr"
 )
 
-// GetArchiveSnapshotQueryPullRequestScope Include pull requests closed or merged in the last 30 days and their same-repository one-hop references.
+// GetArchiveSnapshotQueryPullRequestScope Include open pull requests and those closed or merged within 30 days before observed_at, plus same-repository one-hop context in either direction. References point from the mentioning pull request to the referenced pull request.
 type GetArchiveSnapshotQueryPullRequestScope string
 
 const (
@@ -61054,7 +61054,7 @@ type GetArchiveReportQuery struct {
 }
 
 type GetArchiveSnapshotQuery struct {
-	// PullRequestScope Include pull requests closed or merged in the last 30 days and their same-repository one-hop references.
+	// PullRequestScope Include open pull requests and those closed or merged within 30 days before observed_at, plus same-repository one-hop context in either direction. References point from the mentioning pull request to the referenced pull request.
 	PullRequestScope *GetArchiveSnapshotQueryPullRequestScope `json:"pull_request_scope,omitempty"`
 
 	// IssueScope Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window.
@@ -71281,27 +71281,33 @@ type SnapshotItem struct {
 }
 
 type SnapshotPullRequest struct {
-	Additions         *int64            `json:"additions"`
-	Assignees         []string          `json:"assignees,omitempty"`
-	Author            string            `json:"author"`
-	AuthorAccountType *string           `json:"author_account_type,omitempty"`
-	AuthorAssociation *string           `json:"author_association"`
-	BaseBranch        string            `json:"base_branch"`
-	Body              string            `json:"body"`
-	BodyTruncated     bool              `json:"body_truncated"`
-	ChangedFiles      *int64            `json:"changed_files"`
-	CheckState        string            `json:"check_state"`
-	Checks            []SnapshotCheck   `json:"checks"`
-	ClosedAt          *time.Time        `json:"closed_at,omitempty"`
-	Comments          []SnapshotComment `json:"comments,omitempty"`
-	CreatedAt         time.Time         `json:"created_at"`
-	Deletions         *int64            `json:"deletions"`
+	Additions *int64   `json:"additions"`
+	Assignees []string `json:"assignees,omitempty"`
+	Author    string   `json:"author"`
+
+	// AuthorAccountType Omitted when the provider has not reported an account type.
+	AuthorAccountType *string         `json:"author_account_type,omitempty"`
+	AuthorAssociation *string         `json:"author_association"`
+	BaseBranch        string          `json:"base_branch"`
+	Body              string          `json:"body"`
+	BodyTruncated     bool            `json:"body_truncated"`
+	ChangedFiles      *int64          `json:"changed_files"`
+	CheckState        string          `json:"check_state"`
+	Checks            []SnapshotCheck `json:"checks"`
+	ClosedAt          *time.Time      `json:"closed_at,omitempty"`
+
+	// Comments For terminal pull requests, comments by the author or MEMBER/OWNER accounts.
+	Comments  []SnapshotComment `json:"comments,omitempty"`
+	CreatedAt time.Time         `json:"created_at"`
+	Deletions *int64            `json:"deletions"`
 
 	// DetailFetchedAt Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
 	DetailFetchedAt *time.Time `json:"detail_fetched_at"`
 	Draft           bool       `json:"draft"`
-	Gaps            []string   `json:"gaps"`
-	HeadBranch      string     `json:"head_branch"`
+
+	// Gaps Includes comment_author_association_unknown when a non-author comment lacks role evidence and is omitted.
+	Gaps       []string `json:"gaps"`
+	HeadBranch string   `json:"head_branch"`
 
 	// HeadInSameRepository Null when either repository identity is unavailable or the head identity is stale; false means a known different repository.
 	HeadInSameRepository  *bool            `json:"head_in_same_repository"`
@@ -71323,7 +71329,9 @@ type SnapshotPullRequest struct {
 }
 
 type SnapshotRelation struct {
-	EvidenceID string    `json:"evidence_id"`
+	EvidenceID string `json:"evidence_id"`
+
+	// Kind pull_request_reference points from the mentioning pull request to the referenced pull request.
 	Kind       string    `json:"kind"`
 	ObservedAt time.Time `json:"observed_at"`
 	SourceID   string    `json:"source_id"`

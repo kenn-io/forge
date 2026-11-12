@@ -10285,6 +10285,7 @@ components:
         author:
           type: string
         author_account_type:
+          description: Omitted when the provider has not reported an account type.
           type: string
         author_association:
           type:
@@ -10313,6 +10314,7 @@ components:
             - string
             - "null"
         comments:
+          description: For terminal pull requests, comments by the author or MEMBER/OWNER accounts.
           items:
             $ref: "#/components/schemas/SnapshotComment"
           type: array
@@ -10333,6 +10335,7 @@ components:
         draft:
           type: boolean
         gaps:
+          description: Includes comment_author_association_unknown when a non-author comment lacks role evidence and is omitted.
           items:
             type: string
           type: array
@@ -10425,6 +10428,7 @@ components:
         evidence_id:
           type: string
         kind:
+          description: pull_request_reference points from the mentioning pull request to the referenced pull request.
           type: string
         observed_at:
           format: date-time
@@ -14283,12 +14287,12 @@ paths:
     get:
       operationId: get-archive-snapshot
       parameters:
-        - description: Include pull requests closed or merged in the last 30 days and their same-repository one-hop references.
+        - description: Include open pull requests and those closed or merged within 30 days before observed_at, plus same-repository one-hop context in either direction. References point from the mentioning pull request to the referenced pull request.
           explode: false
           in: query
           name: pull_request_scope
           schema:
-            description: Include pull requests closed or merged in the last 30 days and their same-repository one-hop references.
+            description: Include open pull requests and those closed or merged within 30 days before observed_at, plus same-repository one-hop context in either direction. References point from the mentioning pull request to the referenced pull request.
             enum:
               - recently_closed
             type: string

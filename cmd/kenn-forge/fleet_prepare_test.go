@@ -58,6 +58,7 @@ func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
 	cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
 	cmd.SetArgs([]string{"prepare-spoke"})
 	require.ErrorContains(t, cmd.Execute(), "not ready")
+	assert.NotContains(t, stdout.String(), "daemon restart")
 	for _, want := range []string{
 		"2 unprepared", "1 handoff conflict", "1 handoff error",
 		"4 provider write", "5 deferred merge", "6 notification acknowledgement",
@@ -85,17 +86,30 @@ func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
 			assert.Contains(t, stdout.String(), tc.want)
 		})
 	}
+	t.Run("pending work only", func(t *testing.T) {
+		runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{InFlightProviderWrites: 1}}
+		var stdout bytes.Buffer
+		cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
+		cmd.SetArgs([]string{"prepare-spoke"})
+		require.ErrorContains(t, cmd.Execute(), "not ready")
+		assert.Contains(t, stdout.String(), "Wait for pending work to finish")
+	})
 }
 
-func TestFleetPrepareSpokeRerunWithOnlyInFlightCounts(t *testing.T) {
-	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{InFlightProviderWrites: 1}}
+func TestFleetPrepareSpokeOldDaemonConflict(t *testing.T) {
+	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{
+		HandoffConflicts: []spokeapi.SpokePreparationConflict{{Kind: "review_draft", SourceKey: "github\x00github.com\x00123\x00pr\x0042"}},
+	}}
 	var stdout bytes.Buffer
 	cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
-	cmd.SetArgs([]string{"prepare-spoke"})
+	cmd.SetArgs([]string{"prepare-spoke", "--config", "/tmp/forge.toml"})
 	require.ErrorContains(t, cmd.Execute(), "not ready")
-	assert.Contains(t, stdout.String(), "1 provider write")
-	assert.Contains(t, stdout.String(), "Wait for pending work to finish")
-	assert.Contains(t, stdout.String(), "kenn-forge fleet prepare-spoke\n")
+	output := stdout.String()
+	assert.NotContains(t, output, "Handoff conflict:  (")
+	assert.Contains(t, output, `Handoff conflict: review_draft "github\x00github.com\x00123\x00pr\x0042"`)
+	assert.Contains(t, output, "kenn-forge daemon restart --config /tmp/forge.toml")
+	assert.Contains(t, output, "kenn-forge fleet prepare-spoke --config /tmp/forge.toml")
+	assert.Less(t, strings.Index(output, "kenn-forge daemon restart"), strings.Index(output, "kenn-forge fleet prepare-spoke"))
 }
 
 func TestFleetPrepareSpokeWorkspaceReasons(t *testing.T) {

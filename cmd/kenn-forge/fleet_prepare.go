@@ -47,14 +47,23 @@ func newFleetPrepareSpokeCommand(options fleetCLIOptions) *cobra.Command {
 				}
 				fmt.Fprintf(&output, ": %s\n", workspacePreparationReason(unprepared.Reason))
 			}
+			needsRestart := false
 			for _, conflict := range report.HandoffConflicts {
-				fmt.Fprintf(&output, "  Handoff conflict: %s (%s %q)\n", conflict.Description, conflict.Kind, conflict.SourceKey)
+				if conflict.Description == "" {
+					needsRestart = true
+					fmt.Fprintf(&output, "  Handoff conflict: %s %q\n", conflict.Kind, conflict.SourceKey)
+				} else {
+					fmt.Fprintf(&output, "  Handoff conflict: %s (%s %q)\n", conflict.Description, conflict.Kind, conflict.SourceKey)
+				}
 			}
 			for _, handoffErr := range report.HandoffErrors {
 				fmt.Fprintf(&output, "  Handoff error: %s\n", handoffErr)
 			}
 			if report.InFlightProviderWrites != 0 || report.ActiveDeferredMerges != 0 || report.UndrainedAcks != 0 {
 				output.WriteString("Wait for pending work to finish.\n")
+			}
+			if needsRestart {
+				fmt.Fprintf(&output, "Restart the daemon to identify the blocked review draft. If Forge runs as a service, restart it through your service manager. Otherwise run%s:\n  %s\n", commandHintShell, commandHint(cmd, []string{"kenn-forge", "daemon", "restart"}, "config"))
 			}
 			fmt.Fprintf(&output, "Rerun%s:\n  %s\n", commandHintShell, commandHint(cmd, []string{"kenn-forge", "fleet", "prepare-spoke"}, "config", "timeout"))
 			if _, err := fmt.Fprint(options.Stdout, output.String()); err != nil {

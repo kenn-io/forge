@@ -326,11 +326,12 @@
     }
     loadWorkspaceHosts(session);
     loadRepositories(session);
+    const execution = repoLoadExecution;
     const fleetExecution = fleetLoadExecution;
     return () => {
-      repoLoadExecution?.interrupt();
-      repoLoadExecution = null;
+      execution?.interrupt();
       fleetExecution?.interrupt();
+      if (repoLoadExecution === execution) repoLoadExecution = null;
       if (activeSession === session) activeSession = null;
     };
   });
@@ -458,7 +459,7 @@
   );
 
   const repoFallbackLabel = $derived(
-    reposLoading ? "Loading repositories…" : reposError ? "Could not load repositories" : "No tracked repositories yet",
+    reposLoading ? "Loading repositories…" : reposError ? "Could not load repositories" : repos.length > 0 ? "Select a repository" : "No tracked repositories yet",
   );
 
   const canSubmit = $derived(
@@ -753,9 +754,13 @@
           }}
         />
         {#if reposError}
-          <Button size="sm" onclick={() => { if (activeSession) loadRepositories(activeSession); }}>Retry</Button>
+          <div class="field-hint">
+            <Button size="sm" onclick={() => { if (activeSession) loadRepositories(activeSession); }}>Retry</Button>
+          </div>
         {:else if !reposLoading && repos.length === 0}
-          <Button size="sm" onclick={() => { onClose(); navigate("/settings"); }}>Open Settings</Button>
+          <div class="field-hint">
+            <Button size="sm" onclick={() => { onClose(); navigate("/settings"); }}>Open Settings</Button>
+          </div>
         {/if}
       </div>
 

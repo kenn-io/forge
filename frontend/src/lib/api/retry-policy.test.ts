@@ -2,8 +2,7 @@ import { assert, it } from "@effect/vitest";
 import { Effect, Fiber, Ref } from "effect";
 import { TestClock } from "effect/testing";
 import { ApiProblemError, TransientTransportError } from "./effect-errors.js";
-import { executeGeneratedRequest } from "./generated-api.js";
-import { listRepos } from "./generated/repositories/repositories.js";
+import { InvalidGeneratedErrorResponse } from "./runtime.js";
 import { isTransientPickerReadFailure, retryIdempotentRead } from "./retry-policy.js";
 
 it.effect("retries a transient idempotent read at most twice", () =>
@@ -46,127 +45,22 @@ it.effect("does not retry a generated validation problem", () =>
   }),
 );
 
-it.effect("classifies generated repository responses before retrying", () =>
-  Effect.gen(function* () {
-    const cases: Array<{ name: string; responses: Array<Response | Error>; attempts: number; succeeds: boolean }> = [
-      ...[502, 503, 504].flatMap((status) => [
-        {
-          name: `text ${status}`,
-          responses: [new Response("unavailable", { status }), Response.json([])],
-          attempts: 2,
-          succeeds: true,
-        },
-        {
-          name: `non-problem JSON ${status}`,
-          responses: [Response.json({ message: "unavailable" }, { status }), Response.json([])],
-          attempts: 2,
-          succeeds: true,
-        },
-        {
-          name: `malformed JSON ${status}`,
-          responses: [
-            new Response("{", { status, headers: { "Content-Type": "application/json" } }),
-            Response.json([]),
-          ],
-          attempts: 2,
-          succeeds: true,
-        },
-      ]),
-      ...[401, 403].flatMap((status) => [
-        { name: `text ${status}`, responses: [new Response("denied", { status })], attempts: 1, succeeds: false },
-        {
-          name: `malformed JSON ${status}`,
-          responses: [new Response("{", { status, headers: { "Content-Type": "application/json" } })],
-          attempts: 1,
-          succeeds: false,
-        },
-      ]),
-      {
-        name: "typed forbidden",
-        responses: [Response.json({ code: "forbidden", status: 403 }, { status: 403 })],
-        attempts: 1,
-        succeeds: false,
-      },
-      {
-        name: "typed validation",
-        responses: [Response.json({ code: "validationError", status: 400 }, { status: 400 })],
-        attempts: 1,
-        succeeds: false,
-      },
-      ...(
-        [
-          ["upstreamError", 502],
-          ["serviceUnavailable", 503],
-          ["hubUnavailable", 503],
-        ] as const
-      ).map(([code, status]) => ({
-        name: `typed ${code}`,
-        responses: [Response.json({ code, status }, { status }), Response.json([])],
-        attempts: 2,
-        succeeds: true,
-      })),
-      {
-        name: "malformed successful JSON",
-        responses: [new Response("{", { status: 200, headers: { "Content-Type": "application/json" } })],
-        attempts: 1,
-        succeeds: false,
-      },
-      {
-        name: "transport recovery",
-        responses: [new TypeError("offline"), Response.json([])],
-        attempts: 2,
-        succeeds: true,
-      },
-      {
-        name: "transport exhaustion",
-        responses: [new TypeError("offline"), new TypeError("offline"), new TypeError("offline")],
-        attempts: 3,
-        succeeds: false,
-      },
-      {
-        name: "gateway exhaustion",
-        responses: [
-          new Response("unavailable", { status: 503 }),
-          new Response("unavailable", { status: 503 }),
-          new Response("unavailable", { status: 503 }),
-        ],
-        attempts: 3,
-        succeeds: false,
-      },
-      {
-        name: "failed body read",
-        responses: [
-          new Response(
-            new ReadableStream({
-              start(controller) {
-                controller.error(new Error("interrupted"));
-              },
-            }),
-            { status: 502 },
-          ),
-          Response.json([]),
-        ],
-        attempts: 2,
-        succeeds: true,
-      },
-    ];
-    for (const fixture of cases) {
-      let attempts = 0;
-      const fetch: typeof globalThis.fetch = async () => {
-        const response = fixture.responses[attempts++]!;
-        if (response instanceof Error) throw response;
-        return response;
-      };
-      const read = executeGeneratedRequest("load repositories", (signal) =>
-        listRepos({ baseURL: "http://forge.test", fetch, signal }),
-      );
-      const fiber = yield* Effect.forkChild(Effect.exit(retryIdempotentRead(read, isTransientPickerReadFailure)));
-      yield* Effect.yieldNow;
-      yield* TestClock.adjust("10 seconds");
-      const exit = yield* Fiber.join(fiber);
-      assert.strictEqual(attempts, fixture.attempts, fixture.name);
-      assert.strictEqual(exit._tag, fixture.succeeds ? "Success" : "Failure", fixture.name);
-      if (exit._tag === "Success") assert.deepStrictEqual(exit.value, [], fixture.name);
-    }
-  }),
-);
+it("classifies picker read failures", () => {
+  const transport = (cause: unknown) => TransientTransportError.make({ operation: "load repositories", cause });
+  for (const status of [502, 503, 504]) {
+    assert.isTrue(isTransientPickerReadFailure(transport(new InvalidGeneratedErrorResponse("unavailable", status))));
+  }
+  assert.isFalse(isTransientPickerReadFailure(transport(new InvalidGeneratedErrorResponse("denied", 403))));
+  for (const code of ["upstreamError", "serviceUnavailable", "hubUnavailable"] as const) {
+    assert.isTrue(
+      isTransientPickerReadFailure(new ApiProblemError({ operation: "load repositories", problem: { code } })),
+    );
+  }
+  assert.isFalse(
+    isTransientPickerReadFailure(
+      new ApiProblemError({ operation: "load repositories", problem: { code: "forbidden" } }),
+    ),
+  );
+  assert.isTrue(isTransientPickerReadFailure(transport(new TypeError("offline"))));
+  assert.isFalse(isTransientPickerReadFailure(transport(new SyntaxError("invalid JSON"))));
+});

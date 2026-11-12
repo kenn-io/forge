@@ -82,18 +82,30 @@ describe("RepoTreePicker", () => {
     expect(screen.queryByPlaceholderText("Filter repos...")).toBeNull();
   });
 
-  it("offers a retry when branches fail and keeps the repository expanded", async () => {
+  it.each(["rejected", "interrupted"])("offers a retry when a branch read is %s", async (failure) => {
     client.GET.mockResolvedValueOnce({ data: { repos: [{ root_path: "/work/example", name: "example", count: 4 }] } });
-    client.GET.mockRejectedValueOnce(new Error("offline"));
+    if (failure === "interrupted") {
+      client.GET.mockImplementationOnce(() => new Promise(() => {}));
+      client.GET.mockResolvedValueOnce({
+        data: { repos: [{ root_path: "/work/example", name: "example", count: 4 }] },
+      });
+    } else {
+      client.GET.mockRejectedValueOnce(new Error("offline"));
+    }
     client.GET.mockResolvedValueOnce({ data: { branches: [{ name: "main", count: 2 }] } });
     render(RepoTreePicker);
     await fireEvent.click(screen.getByRole("button", { name: /all repos/i }));
     await screen.findByText("example");
     await fireEvent.click(screen.getByTitle("Show branches"));
+    if (failure === "interrupted") {
+      await screen.findByText("Loading...");
+      await fireEvent.click(screen.getByTitle("Filter by repository"));
+      await fireEvent.click(screen.getByTitle("Filter by repository"));
+    }
     const retry = await screen.findByRole("button", { name: "Retry" });
-    expect(client.GET).toHaveBeenCalledTimes(2);
+    expect(client.GET).toHaveBeenCalledTimes(failure === "interrupted" ? 3 : 2);
+    expect(screen.queryByText("No branches")).toBeNull();
     await fireEvent.click(retry);
     expect(await screen.findByText("main")).toBeTruthy();
-    expect(screen.queryByText("No branches")).toBeNull();
   });
 });

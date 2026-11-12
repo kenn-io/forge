@@ -22,7 +22,7 @@ import (
 	"github.com/spf13/viper"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	configpkg "go.kenn.io/forge/internal/config"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 const (

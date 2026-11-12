@@ -104,7 +104,7 @@ async function configureWidgetRepository(page: Page, baseURL: string): Promise<v
   await expect(page.getByRole("heading", { name: "Open a pull request" })).toBeVisible({ timeout: 30_000 });
 }
 
-test("shows a quota wait while repository sync is deferred", async ({ page }) => {
+test("shows the empty pull list when repository sync is deferred", async ({ page }) => {
   let server: IsolatedE2EServer | null = null;
   try {
     server = await startIsolatedE2EServerWithOptions();
@@ -133,8 +133,7 @@ test("shows a quota wait while repository sync is deferred", async ({ page }) =>
     );
     await page.route("**/api/v1/pulls?**", (route) => route.fulfill({ json: [] }));
     await configureWidgetRepository(page, server.info.base_url);
-    await expect(page.getByText("Waiting for repository sync")).toBeVisible();
-    await expect(page.getByText(/Quota for account on github.com/)).toBeVisible();
+    await expect(page.getByText("No open pull requests yet")).toBeVisible();
   } finally {
     await server?.stop();
   }
@@ -171,6 +170,34 @@ test("shows the credential recovery action during setup", async ({ page }) => {
     await page.getByRole("checkbox", { name: /acme\/widgets/ }).click();
     await page.getByRole("button", { name: "Configure 1 repository" }).click();
     await expect(page.getByRole("alert")).toContainText("config.toml and restart Forge");
+    await expect(page.getByRole("button", { name: "Retry sync" })).toBeVisible();
+  } finally {
+    await server?.stop();
+  }
+});
+
+test("offers retry when accepted sync status is forbidden", async ({ page }) => {
+  let server: IsolatedE2EServer | null = null;
+  try {
+    server = await startIsolatedE2EServerWithOptions();
+    await removeConfiguredRepositories(page, server.info.base_url);
+    await prepareGitHubOnboarding(page, defaultPlatformHost);
+    await page.route("**/api/v1/sync", (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({ status: 202, json: { instance_id: "instance", generation: 1 } })
+        : route.continue(),
+    );
+    await page.route("**/api/v1/sync/status", (route) =>
+      route.fulfill({
+        status: 403,
+        json: { code: "forbidden", status: 403, title: "Forbidden", detail: "Access denied", type: "about:blank" },
+      }),
+    );
+    await page.goto(`${server.info.base_url}/`);
+    await page.getByRole("button", { name: "Continue with GitHub" }).click();
+    await page.getByRole("checkbox", { name: /acme\/widgets/ }).click();
+    await page.getByRole("button", { name: "Configure 1 repository" }).click();
+    await expect(page.getByRole("alert")).toContainText("Access denied");
     await expect(page.getByRole("button", { name: "Retry sync" })).toBeVisible();
   } finally {
     await server?.stop();

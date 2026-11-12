@@ -119,17 +119,6 @@
     hasConfiguredRepos || providerConfirmed ? phase : "auth",
   );
   const syncState = $derived(stores.sync.getSyncState());
-  const airplaneMode = $derived(stores.settings.getAirplaneMode());
-  const quotaWaits = $derived.by(() => {
-    const now = Date.now();
-    const lastRun = Date.parse(syncState?.last_run_at ?? "") || 0;
-    // Archive reservations can reduce the scheduler's available quota further.
-    return Object.entries(stores.sync.getRateLimits().provider_pools).filter(([, pool]) => {
-      const reset = Date.parse(pool.rest.reset_at);
-      return pool.provider === "github" && pool.rest.known && Number.isFinite(reset) &&
-        pool.rest.remaining - 3 < pool.reserve_buffer && (reset > now || lastRun <= reset);
-    });
-  });
   const visibleRepositories = $derived.by(() => {
     const query = repositoryFilter.trim().toLowerCase();
     if (!query) return repositories;
@@ -831,22 +820,11 @@
             {#if availablePulls.length === 0}
               <div class="center-state empty-pulls">
                 <GitPullRequestIcon size={20} aria-hidden="true" />
-                <strong>{quotaWaits.length ? "Waiting for repository sync" : "No open pull requests yet"}</strong>
+                <strong>No open pull requests yet</strong>
               </div>
             {/if}
           {/if}
         </div>
-
-        {#each quotaWaits as [key, pool] (key)}
-          <p class="sync-note">
-            Quota for {pool.principal_label} on {pool.platform_host} resets at {new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(pool.rest.reset_at))}.
-            {#if !airplaneMode}{Date.parse(pool.rest.reset_at) > Date.now() ? "Sync resumes on a later scheduled pass." : "Sync resumes on the next scheduled pass."}{/if}
-          </p>
-        {/each}
-        {#if airplaneMode}
-          <p class="sync-note">Airplane mode pauses automatic sync. Turn it off in Sync settings.</p>
-          <Button size="sm" onclick={() => navigate("/settings?section=settings-sync")}>Sync settings</Button>
-        {/if}
 
         <div class="step-actions step-actions--end">
           {#if selectedPull}

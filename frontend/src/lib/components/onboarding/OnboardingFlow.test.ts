@@ -348,45 +348,6 @@ describe("OnboardingFlow", () => {
     expect(observedWorkspaceRequests).toEqual([]);
   });
 
-  it.each([true, false])("keeps the quota notice after reset with airplane mode %s", async (airplaneMode) => {
-    const fixture = storeFixture({ configured: true, pulls: [] });
-    fixture.stores.settings.setAirplaneMode(airplaneMode);
-    const reset = new Date(Date.now() - 60000).toISOString();
-    vi.spyOn(fixture.stores.sync, "getSyncState").mockReturnValue({
-      running: false,
-      last_run_at: new Date(Date.now() - 120000).toISOString(),
-    });
-    vi.spyOn(fixture.stores.sync, "getRateLimits").mockReturnValue({
-      local_ceilings: {},
-      provider_pools: {
-        pool: {
-          provider: "github",
-          platform_host: "github.example.com",
-          principal_label: "account",
-          rate_principal: "user:1",
-          reserve_buffer: 200,
-          sync_paused: false,
-          sync_throttle_factor: 1,
-          rest: { known: true, remaining: 100, limit: 5000, requests: 0, reset_at: reset },
-          graphql: { known: true, remaining: 5000, limit: 5000, requests: 0, reset_at: reset },
-        },
-      },
-    });
-    renderFlow(fixture.stores);
-    await waitFor(() => expect(screen.getByText("Waiting for repository sync")).toBeTruthy());
-    expect(screen.getByText(/Quota for account/).textContent).toContain(
-      new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(reset)),
-    );
-    if (airplaneMode) {
-      expect(screen.getByText(/Airplane mode pauses automatic sync/)).toBeTruthy();
-      expect(screen.queryByText(/Sync resumes/)).toBeNull();
-      await fireEvent.click(screen.getByRole("button", { name: "Sync settings" }));
-      expect(mocks.navigate).toHaveBeenCalledWith("/settings?section=settings-sync");
-    } else {
-      expect(screen.getByText(/Sync resumes on the next scheduled pass/)).toBeTruthy();
-    }
-  });
-
   it("verifies a newly authenticated gh session through repository discovery", async () => {
     mocks.tooling.value = {
       git: { available: true, version: "2.50" },
@@ -639,48 +600,61 @@ describe("OnboardingFlow", () => {
     expect(posts).toBe(1);
   });
 
-  it.each([
-    { remaining: 202, known: true, graphql: 5000, waiting: true, populated: false },
-    { remaining: 202, known: true, graphql: 5000, waiting: true, populated: true },
-    { remaining: 203, known: true, graphql: 5000, waiting: false, populated: false },
-    { remaining: 0, known: false, graphql: 5000, waiting: false, populated: false },
-    { remaining: 5000, known: true, graphql: 0, waiting: false, populated: false },
-  ])(
-    "shows quota waits only when REST admission is blocked: $remaining/$known/$graphql",
-    async ({ remaining, known, graphql, waiting, populated }) => {
-      const fixture = storeFixture({ configured: true, pulls: populated ? [pullRequest()] : [] });
-      const reset = new Date(Date.now() + 3600000).toISOString();
-      vi.spyOn(fixture.stores.sync, "getRateLimits").mockReturnValue({
-        local_ceilings: {},
-        provider_pools: {
-          pool: {
-            provider: "github",
-            platform_host: "github.example.com",
-            principal_label: "account",
-            rate_principal: "user:1",
-            reserve_buffer: 200,
-            sync_paused: false,
-            sync_throttle_factor: 1,
-            rest: { known, remaining, limit: 5000, requests: 0, reset_at: reset },
-            graphql: { known: true, remaining: graphql, limit: 5000, requests: 0, reset_at: reset },
-          },
+  it("does not report a quota wait for a different host", async () => {
+    const fixture = storeFixture({ configured: true, pulls: [] });
+    const reset = new Date(Date.now() + 3600000).toISOString();
+    vi.spyOn(fixture.stores.sync, "getRateLimits").mockReturnValue({
+      local_ceilings: {},
+      provider_pools: {
+        pool: {
+          provider: "github",
+          platform_host: "github.example.com",
+          principal_label: "account",
+          rate_principal: "user:1",
+          reserve_buffer: 200,
+          sync_paused: false,
+          sync_throttle_factor: 1,
+          rest: { known: true, remaining: 100, limit: 5000, requests: 0, reset_at: reset },
+          graphql: { known: true, remaining: 5000, limit: 5000, requests: 0, reset_at: reset },
         },
-      });
-      renderFlow(fixture.stores);
-      await waitFor(() =>
-        expect(
-          populated
-            ? screen.getByRole("button", { name: "Continue with PR #42" })
-            : screen.getByText(waiting ? "Waiting for repository sync" : "No open pull requests yet"),
-        ).toBeTruthy(),
-      );
-      if (waiting) {
-        expect(screen.getByText(/Quota for account on github.example.com/).textContent).toContain(
-          new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(reset)),
+      },
+    });
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByText("No open pull requests yet")).toBeTruthy());
+    expect(screen.queryByText(/Quota for account/)).toBeNull();
+  });
+
+  it("offers retry when accepted sync status is forbidden", async () => {
+    const originalFetch = globalThis.fetch;
+    let reads = 0;
+    let posts = 0;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/sync" && request.method === "POST") {
+        posts++;
+        return Promise.resolve(Response.json({ instance_id: "instance", generation: 1 }));
+      }
+      if (path === "/api/v1/sync/status") {
+        reads++;
+        return Promise.resolve(
+          Response.json(
+            { code: "forbidden", status: 403, title: "Forbidden", detail: "Access denied", type: "about:blank" },
+            { status: 403 },
+          ),
         );
-      } else expect(screen.queryByText(/Quota for account/)).toBeNull();
-    },
-  );
+      }
+      return originalFetch(input, init);
+    });
+    const fixture = storeFixture({ configured: true });
+    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+    fixture.stores.sync = createSyncStore({ runtime: runtimeCapture.current });
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(reads).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy());
+    expect(screen.getByRole("alert").textContent).toContain("Access denied");
+    expect(posts).toBe(1);
+  });
 
   it.each(["setup", "configuration reload"])("waits for a retry after %s", async (source) => {
     const originalFetch = globalThis.fetch;
@@ -751,8 +725,14 @@ describe("OnboardingFlow", () => {
           ? Promise.resolve(Response.json({ running: false, last_run_at: "2026-08-02T12:00:30Z", last_error: "" }))
           : Promise.resolve(
               Response.json(
-                { code: "forbidden", status: 403, title: "Forbidden", detail: "Denied", type: "about:blank" },
-                { status: 403 },
+                {
+                  code: "hubUnavailable",
+                  status: 503,
+                  title: "Unavailable",
+                  detail: "Unavailable",
+                  type: "about:blank",
+                },
+                { status: 503 },
               ),
             );
       }
@@ -808,8 +788,8 @@ describe("OnboardingFlow", () => {
         statusReads++;
         return Promise.resolve(
           Response.json(
-            { code: "forbidden", status: 403, title: "Forbidden", detail: "Denied", type: "about:blank" },
-            { status: 403 },
+            { code: "hubUnavailable", status: 503, title: "Unavailable", detail: "Unavailable", type: "about:blank" },
+            { status: 503 },
           ),
         );
       }

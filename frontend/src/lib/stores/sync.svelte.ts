@@ -65,7 +65,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
   let wasRunning = false;
   let onSyncCompleteOnce: (() => void) | null = null;
   const syncCompleteListeners = new Set<() => void>();
-  const statusObservers = new Set<(next: SyncStatus, fresh: boolean) => void>();
+  const statusObservers = new Set<(next: SyncStatus | null, fresh: boolean, failure?: SyncReadError) => void>();
   let receiptEpoch = 0;
   let currentIntervalMs = 30_000;
   let liveUpdatesConnected = false;
@@ -166,9 +166,22 @@ export function createSyncStore(opts: SyncStoreOptions) {
   }
 
   function syncStatusRead() {
-    return executeGeneratedApiRequest("GET /sync/status", (client, signal) =>
-      client.SyncService.getSyncStatus({ signal }),
-    ).pipe(retryIdempotentRead);
+    return Effect.suspend(() => {
+      const generation = refreshGeneration;
+      const epoch = receiptEpoch;
+      return executeGeneratedApiRequest("GET /sync/status", (client, signal) =>
+        client.SyncService.getSyncStatus({ signal }),
+      ).pipe(
+        retryIdempotentRead,
+        Effect.tapError((failure) =>
+          Effect.sync(() => {
+            if (generation === refreshGeneration) {
+              for (const observer of statusObservers) observer(null, epoch === receiptEpoch && epoch > 0, failure);
+            }
+          }),
+        ),
+      );
+    });
   }
 
   function rateLimitsRead() {
@@ -340,11 +353,24 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return Effect.gen(function* () {
       const previous = status;
       let receipt: SyncReceipt | undefined;
+      let acceptedEpoch = 0;
       let lastObserved: SyncStatus | undefined;
       const observed = new Map<string, FullSyncStatus>();
       let outcome: Effect.Effect<void, SyncReadError> | undefined;
       let resume: ((effect: Effect.Effect<void, SyncReadError>) => void) | undefined;
-      const observe = (next: SyncStatus, fresh: boolean) => {
+      const observe = (next: SyncStatus | null, fresh: boolean, failure?: SyncReadError) => {
+        if (outcome) return;
+        if (failure) {
+          if (receipt && fresh && acceptedEpoch === receiptEpoch && !isTransientPickerReadFailure(failure)) {
+            outcome = waitFailure(readErrorMessage(failure, "Could not read sync status."));
+            status = lastObserved ?? previous;
+            wasRunning = status?.running ?? false;
+            adjustPollingSpeed(wasRunning);
+            settleTriggeredSync(resume, outcome);
+          }
+          return;
+        }
+        if (!next) return;
         lastObserved = next;
         const full = next.full_sync;
         if (!full) return;
@@ -369,7 +395,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
           return yield* waitFailure("Could not confirm sync status.");
         }
         receipt = { instance_id: accepted.instance_id, generation: accepted.generation };
-        receiptEpoch += 1;
+        acceptedEpoch = ++receiptEpoch;
         const latest = observed.get(receipt.instance_id);
         if (latest) {
           const saved = lastObserved;

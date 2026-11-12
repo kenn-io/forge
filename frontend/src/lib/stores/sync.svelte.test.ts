@@ -102,7 +102,7 @@ describe("sync store", () => {
       },
     );
 
-    it("publishes a fast accepted completion after a failed initial status read", async () => {
+    it("publishes a fast accepted completion after the initial status poll fails", async () => {
       const completeStatus = {
         running: false,
         last_run_at: "2026-08-02T12:01:00Z",
@@ -111,11 +111,24 @@ describe("sync store", () => {
       const getStatus = vi.fn().mockRejectedValueOnce(problem("forbidden", 403)).mockResolvedValue(completeStatus);
       const post = vi.fn().mockResolvedValue({ instance_id: "instance", generation: 1 });
       const store = createSyncStore(
-        makeGeneratedClient({ SyncService: { triggerSync: post, getSyncStatus: getStatus } }),
+        makeGeneratedClient({
+          SyncService: {
+            triggerSync: post,
+            getSyncStatus: getStatus,
+            getRateLimits: vi.fn().mockResolvedValue({ provider_pools: {}, local_ceilings: {} }),
+          },
+        }),
       );
       const complete = vi.fn();
       store.subscribeSyncComplete(complete);
       if (!runtime) throw new Error("test runtime was not initialized");
+      const initialPoll = runtime.runCommand(store.refreshSyncStatusEffect, {
+        operation: "initial sync status",
+        safeContext: {},
+        onFailure: () => {},
+      });
+      await Effect.runPromise(initialPoll.await);
+      expect(store.getSyncState()).toBeNull();
       const execution = runtime.runCommand(store.triggerOnboardingSyncEffect(), {
         operation: "first sync",
         safeContext: {},

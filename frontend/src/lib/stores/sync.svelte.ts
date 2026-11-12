@@ -21,6 +21,40 @@ export function readErrorMessage(error: SyncReadError, fallback: string): string
   return "Could not reach Kenn Forge";
 }
 
+type SyncReceipt = Required<Pick<TriggerSyncResponse, "instance_id" | "generation">>;
+
+function isSyncReceipt(accepted: TriggerSyncResponse | undefined): accepted is TriggerSyncResponse & SyncReceipt {
+  return (
+    !!accepted &&
+    !!accepted.instance_id &&
+    typeof accepted.generation === "number" &&
+    Number.isSafeInteger(accepted.generation) &&
+    accepted.generation >= 1
+  );
+}
+
+function waitFailure(message: string) {
+  return Effect.fail(
+    new ApiProblemError({
+      operation: "wait for sync",
+      problem: { code: ProblemCodes.serviceUnavailable, detail: message },
+    }),
+  );
+}
+
+function lastRunAdvanced(previous: string, next: string): boolean {
+  if (next === "") return false;
+  if (previous === "") return true;
+  return Date.parse(next) > Date.parse(previous);
+}
+
+function parsePriorityRepos(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+}
+
 export function createSyncStore(opts: SyncStoreOptions) {
   const runtime = opts.runtime;
   const getPriorityRepos = opts.getPriorityRepos ?? (() => undefined);
@@ -108,6 +142,29 @@ export function createSyncStore(opts: SyncStoreOptions) {
     adjustPollingSpeed(isRunning);
   }
 
+  // A settled receipt proves the accepted run finished, so the optimistic
+  // pre-trigger gate must not hold back the status that reports it.
+  function settleTriggeredSync(
+    resume: ((effect: Effect.Effect<void, SyncReadError>) => void) | undefined,
+    outcome: Effect.Effect<void, SyncReadError>,
+  ): void {
+    triggeredSyncLastRunAt = undefined;
+    resume?.(outcome);
+  }
+
+  // Same fence as reconcileSyncStatusProgram, for a status read alone.
+  function fencedSyncStatusRead() {
+    const generation = refreshGeneration;
+    const epoch = receiptEpoch;
+    return syncStatusRead().pipe(
+      Effect.tap((next) =>
+        Effect.sync(() => {
+          if (generation === refreshGeneration) applySyncStatus(next, epoch === receiptEpoch && epoch > 0);
+        }),
+      ),
+    );
+  }
+
   function syncStatusRead() {
     return executeGeneratedApiRequest("GET /sync/status", (client, signal) =>
       client.SyncService.getSyncStatus({ signal }),
@@ -188,19 +245,13 @@ export function createSyncStore(opts: SyncStoreOptions) {
     applySyncStatus(next);
   }
 
-  function lastRunAdvanced(previous: string, next: string): boolean {
-    if (next === "") return false;
-    if (previous === "") return true;
-    return Date.parse(next) > Date.parse(previous);
-  }
-
   function triggeredSyncProgram<A>(request: Effect.Effect<A, SyncReadError, GeneratedApi>, retry = false) {
     let previous = status;
     refreshGeneration += 1;
     let baselineLastRunAt = previous ? (previous.last_run_at ?? "") : null;
 
     return Effect.gen(function* () {
-      if (previous === null) {
+      if (previous === null && !retry) {
         const baseline = yield* Effect.option(syncStatusRead());
         baselineLastRunAt = Option.isSome(baseline) ? (baseline.value.last_run_at ?? "") : null;
       }
@@ -288,24 +339,17 @@ export function createSyncStore(opts: SyncStoreOptions) {
   function triggerOnboardingSyncEffect() {
     return Effect.gen(function* () {
       const previous = status;
-      let receipt: Required<Pick<TriggerSyncResponse, "instance_id" | "generation">> | undefined;
+      let receipt: SyncReceipt | undefined;
       let lastObserved: SyncStatus | undefined;
       const observed = new Map<string, FullSyncStatus>();
       let outcome: Effect.Effect<void, SyncReadError> | undefined;
       let resume: ((effect: Effect.Effect<void, SyncReadError>) => void) | undefined;
-      const fail = (message: string) =>
-        Effect.fail(
-          new ApiProblemError({
-            operation: "wait for sync",
-            problem: { code: ProblemCodes.serviceUnavailable, detail: message },
-          }),
-        );
       const observe = (next: SyncStatus, fresh: boolean) => {
         lastObserved = next;
         const full = next.full_sync;
         if (!full) return;
         if (receipt && full.instance_id !== receipt.instance_id) {
-          if (fresh) outcome = fail("Sync service restarted. Retry sync.");
+          if (fresh) outcome = waitFailure("Sync service restarted. Retry sync.");
         } else {
           const previous = observed.get(full.instance_id);
           if (!previous || full.settled_generation >= previous.settled_generation) observed.set(full.instance_id, full);
@@ -314,21 +358,15 @@ export function createSyncStore(opts: SyncStoreOptions) {
         if (receipt && latest) {
           if (latest.successful_generation >= receipt.generation) outcome = Effect.void;
           else if (latest.settled_generation >= receipt.generation)
-            outcome = fail(latest.last_error || "Sync failed. Retry sync.");
+            outcome = waitFailure(latest.last_error || "Sync failed. Retry sync.");
         }
-        if (outcome && resume) resume(outcome);
+        if (outcome) settleTriggeredSync(resume, outcome);
       };
       yield* Effect.sync(() => statusObservers.add(observe));
       return yield* Effect.gen(function* () {
         const accepted = yield* triggeredSyncProgram(fullSyncRequest(), true);
-        if (
-          !accepted ||
-          !accepted.instance_id ||
-          typeof accepted.generation !== "number" ||
-          !Number.isSafeInteger(accepted.generation) ||
-          accepted.generation < 1
-        ) {
-          return yield* fail("Sync was accepted without a receipt. Retry sync.");
+        if (!isSyncReceipt(accepted)) {
+          return yield* waitFailure("Sync was accepted without a receipt. Retry sync.");
         }
         receipt = { instance_id: accepted.instance_id, generation: accepted.generation };
         receiptEpoch += 1;
@@ -338,16 +376,15 @@ export function createSyncStore(opts: SyncStoreOptions) {
           observe({ running: false, full_sync: latest }, false);
           lastObserved = saved;
         }
-        if (outcome) return yield* outcome;
+        if (outcome) {
+          if (lastObserved) applySyncStatus(lastObserved);
+          return yield* outcome;
+        }
         const wait = Effect.callback<void, SyncReadError>((callback) => {
           resume = callback;
           if (outcome) callback(outcome);
         });
-        const refresh = syncStatusRead().pipe(
-          Effect.tap((next) => Effect.sync(() => applySyncStatus(next, true))),
-          Effect.ignore,
-          Effect.andThen(Effect.never),
-        );
+        const refresh = Effect.suspend(fencedSyncStatusRead).pipe(Effect.ignore, Effect.andThen(Effect.never));
         return yield* Effect.raceFirst(wait, refresh);
       }).pipe(
         Effect.onInterrupt(() =>
@@ -376,13 +413,6 @@ export function createSyncStore(opts: SyncStoreOptions) {
     runTriggeredSync(
       executeGeneratedApiRequest("POST /sync", (client) => client.SyncService.triggerSync({ only_repo: [repo] })),
     );
-  }
-
-  function parsePriorityRepos(value: string | undefined): string[] {
-    return (value ?? "")
-      .split(",")
-      .map((part) => part.trim())
-      .filter((part) => part !== "");
   }
 
   function adjustPollingSpeed(running: boolean): void {

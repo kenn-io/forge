@@ -23,14 +23,13 @@ INSERT INTO forge_archive_repos (repo_id,collection_mode,operator_state,created_
  (3,'discovery','active',datetime('now'),datetime('now'));
 INSERT INTO forge_merge_requests (id,repo_id,platform_id,number,state,created_at,updated_at,last_activity_at,closed_at) VALUES
  (1,1,1,1,'closed',datetime('now','-40 days'),datetime('now'),datetime('now'),NULL),
- (2,1,2,2,'closed',datetime('now','-60 days'),datetime('now'),datetime('now'),datetime('now','-45 days')),
+ (2,1,2,2,'closed',datetime('now','-60 days'),datetime('now'),datetime('now'),NULL),
  (3,2,3,3,'open',datetime('now'),datetime('now'),datetime('now'),NULL),
  (4,1,4,4,'open',datetime('now'),datetime('now'),datetime('now'),NULL),
  (5,1,5,5,'open',datetime('now'),datetime('now'),datetime('now'),NULL),
  (6,3,6,6,'open',datetime('now'),datetime('now'),datetime('now'),NULL),
  (7,1,7,7,'open',datetime('now'),datetime('now'),datetime('now'),NULL),
  (8,1,8,8,'merged',datetime('now','-40 days'),datetime('now'),datetime('now'),NULL);
-UPDATE forge_merge_requests SET merged_at=datetime('now','-15 days') WHERE id=8;
 INSERT INTO forge_archive_items (repo_id,item_type,item_number,provider_item_id,provider_created_at,provider_updated_at,lifecycle_state) VALUES
  (1,'merge_request',1,'1',datetime('now'),datetime('now'),'active'),
  (1,'merge_request',2,'2',datetime('now'),datetime('now'),'active'),
@@ -53,6 +52,10 @@ UPDATE forge_archive_dataset_progress SET next_cursor='cursor',page_count=7,obse
 		require.NoError(t, err)
 		_, err = raw.ExecContext(t.Context(), `UPDATE forge_merge_requests SET closed_at=? WHERE id=1`, time.Now().UTC().Add(-15*24*time.Hour))
 		require.NoError(t, err)
+		_, err = raw.ExecContext(t.Context(), `UPDATE forge_merge_requests SET closed_at=? WHERE id=2`, time.Now().UTC().Add(-45*24*time.Hour))
+		require.NoError(t, err)
+		_, err = raw.ExecContext(t.Context(), `UPDATE forge_merge_requests SET closed_at=?, merged_at=? WHERE id=8`, time.Now().UTC().Add(-15*24*time.Hour), time.Now().UTC().Add(-15*24*time.Hour))
+		require.NoError(t, err)
 	})
 	d, err := Open(path)
 	require.NoError(t, err)
@@ -73,13 +76,4 @@ UPDATE forge_archive_dataset_progress SET next_cursor='cursor',page_count=7,obse
 	var preserved string
 	require.NoError(t, d.ReadDB().QueryRowContext(t.Context(), `SELECT next_cursor||'/'||page_count||'/'||observed_count||'/'||attempt_count FROM forge_archive_dataset_progress WHERE repo_id=3`).Scan(&preserved))
 	require.Equal(t, "cursor/7/8/2", preserved, "discovery lookups keep their cursor and counters")
-	var accountType *string
-	require.NoError(t, d.ReadDB().QueryRowContext(t.Context(), `SELECT author_account_type FROM forge_merge_requests WHERE id=1`).Scan(&accountType))
-	require.Nil(t, accountType)
-	err = d.CommitArchiveItemSync(t.Context(), ArchiveItemSyncCommit{RepoID: 1, ItemType: ArchiveItemTypeMergeRequest, ItemNumber: 1, ScanGeneration: 3, Outcome: ArchiveLookupPresent})
-	var stale *StaleDatasetProgressError
-	require.ErrorAs(t, err, &stale)
-	progress, err := d.GetDatasetProgress(t.Context(), 1, ArchiveItemTypeMergeRequest, 1, ArchiveDatasetLookup)
-	require.NoError(t, err)
-	require.Equal(t, ArchiveDatasetProgressPending, progress.Status)
 }

@@ -88,4 +88,23 @@ func TestSnapshotMeasurementCountsAuthorTypeOnlyForExpandedScope(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, beforeDefault, measure(false), "default measurement ignores author account type")
 	assert.Equal(t, int64(10), measure(true).TextBytes-beforeExpanded.TextBytes)
+	old := now.Add(-45 * 24 * time.Hour)
+	closed := now.Add(-time.Hour)
+	original, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 2, Number: 2, Author: "author", State: MergeRequestStateClosed, CreatedAt: old, UpdatedAt: now, ClosedAt: &closed})
+	require.NoError(t, err)
+	merged, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 3, Number: 3, State: MergeRequestStateMerged, CreatedAt: old, UpdatedAt: now, MergedAt: &closed})
+	require.NoError(t, err)
+	_, err = database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 4, Number: 4, State: MergeRequestStateMerged, CreatedAt: old, UpdatedAt: now, MergedAt: &old})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{
+		{MergeRequestID: original, EventType: "issue_comment", Author: "author", Body: "Author", DedupeKey: "author", CreatedAt: now},
+		{MergeRequestID: original, EventType: "issue_comment", Author: "member", AuthorAssociation: new("MEMBER"), Body: "Member", DedupeKey: "member", CreatedAt: now},
+		{MergeRequestID: original, EventType: "issue_comment", Author: "owner", AuthorAssociation: new("OWNER"), Body: "Owner", DedupeKey: "owner", CreatedAt: now},
+		{MergeRequestID: original, EventType: "issue_comment", Author: "collaborator", AuthorAssociation: new("COLLABORATOR"), Body: "Collaborator", DedupeKey: "collaborator", CreatedAt: now},
+		{MergeRequestID: merged, EventType: "issue_comment", Author: "member", AuthorAssociation: new("MEMBER"), Body: "Member", DedupeKey: "merged-member", CreatedAt: now},
+		{MergeRequestID: original, EventType: "cross_referenced", DedupeKey: "reference", MetadataJSON: `{"source_type":"PullRequest","source_number":4,"is_cross_repository":false}`, CreatedAt: now},
+	}))
+	defaultSize, expandedSize := measure(false), measure(true)
+	assert.Equal(t, defaultSize.Records+9, expandedSize.Records)
+	assert.Greater(t, expandedSize.TextBytes, defaultSize.TextBytes)
 }

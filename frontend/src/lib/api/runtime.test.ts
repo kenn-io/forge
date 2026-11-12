@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { getListActivityUrl } from "./generated/activity/activity.js";
-import { getGetRepoBrowserLastChangedUrl } from "./generated/repositories/repositories.js";
+import { getGetRepoBrowserLastChangedUrl, listRepos } from "./generated/repositories/repositories.js";
 import { readDocsBlob } from "./generated/docs/docs.js";
-import { GeneratedProblemResponse, orvalFetch } from "./runtime.js";
+import { GeneratedProblemResponse, InvalidGeneratedErrorResponse, orvalFetch } from "./runtime.js";
 
 describe("runtime", () => {
   it.each(["image/png", "application/octet-stream", "video/mp4"])(
@@ -43,6 +43,44 @@ describe("runtime", () => {
       fetch: async () => new Response("plain text", { headers: { "Content-Type": "text/plain" } }),
     });
     expect(result).toBe("plain text");
+  });
+
+  it.each([
+    [
+      "malformed JSON",
+      () => new Response("{", { status: 503, headers: { "Content-Type": "application/json" } }),
+      503,
+      "{",
+    ],
+    ["text", () => new Response("unavailable", { status: 503 }), 503, "unavailable"],
+    [
+      "non-problem JSON",
+      () => Response.json({ message: "unavailable" }, { status: 504 }),
+      504,
+      { message: "unavailable" },
+    ],
+  ])("preserves status and body for %s error responses", async (_name, response, status, body) => {
+    const result = listRepos({ fetch: async () => response() });
+    await expect(result).rejects.toBeInstanceOf(InvalidGeneratedErrorResponse);
+    await expect(result).rejects.toMatchObject({ status, body });
+  });
+
+  it("rethrows malformed successful JSON", async () => {
+    const result = orvalFetch("/repos", {
+      fetch: async () => new Response("{", { headers: { "Content-Type": "application/json" } }),
+    });
+    await expect(result).rejects.toBeInstanceOf(SyntaxError);
+  });
+
+  it("preserves an interrupted error body read", async () => {
+    const error = new TypeError("connection reset");
+    const body = new ReadableStream({
+      start(controller) {
+        controller.error(error);
+      },
+    });
+    const result = listRepos({ fetch: async () => new Response(body, { status: 503 }) });
+    await expect(result).rejects.toBe(error);
   });
 
   it("serializes array query parameters as comma-separated values for Huma", () => {

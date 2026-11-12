@@ -23,6 +23,7 @@
   } from "../../api/effect-errors.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
   import { RepositoryReads } from "../../api/repository-reads.js";
+  import { isTransientPickerReadFailure, retryIdempotentRead } from "../../api/retry-policy.js";
   import { repositoryKeyFromCatalog, repositoryKeyToWire, type RepositoryKey } from "../../api/repository-key.js";
   import { executeOpaqueGeneratedApiRequest } from "../../api/generated-api.js";
   import { FleetSnapshotReads, type HostSummary } from "../../api/fleet-snapshot.js";
@@ -240,16 +241,17 @@
 
   function loadRepositories(session: object): void {
     reposLoading = true;
+    reposError = null;
     repoLoadExecution = untrack(() => runtime.runCommand(
       Effect.gen(function* () {
         const reads = yield* RepositoryReads;
         yield* Effect.sync(() => {
-          if (activeSession !== session || reads.snapshot === undefined) return;
+          if (activeSession !== session || reads.snapshot === undefined || repos.length > 0) return;
           repos = reads.snapshot.map(repoOption);
           selectedKey = defaultRepoSelection();
-          reposLoading = false;
+          if (repos.length > 0) reposLoading = false;
         });
-        const loaded = yield* reads.refresh;
+        const loaded = yield* retryIdempotentRead(reads.refresh, isTransientPickerReadFailure);
         yield* Effect.sync(() => {
           if (activeSession !== session) return;
           reposLoading = false;
@@ -457,7 +459,7 @@
   );
 
   const repoFallbackLabel = $derived(
-    reposLoading ? "Loading repositories…" : "No tracked repositories yet",
+    reposLoading ? "Loading repositories…" : reposError ? "Could not load repositories" : repos.length > 0 ? "Select a repository" : "No tracked repositories yet",
   );
 
   const canSubmit = $derived(
@@ -751,6 +753,15 @@
             reposError = null;
           }}
         />
+        {#if reposError}
+          <div class="field-hint">
+            <Button size="sm" onclick={() => { if (activeSession) loadRepositories(activeSession); }}>Retry</Button>
+          </div>
+        {:else if !reposLoading && repos.length === 0}
+          <div class="field-hint">
+            <Button size="sm" onclick={() => { onClose(); navigate("/settings"); }}>Open Settings</Button>
+          </div>
+        {/if}
       </div>
 
       <label class="field">

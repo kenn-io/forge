@@ -19,6 +19,7 @@ export class BrowserStreamError extends Schema.TaggedError<BrowserStreamError>()
 export class ApiProblemError extends Data.TaggedError("ApiProblemError")<{
   readonly operation: string;
   readonly problem: ProblemBody;
+  readonly httpStatus?: number;
 }> {}
 
 export class UnsupportedCapabilityError extends Data.TaggedError("UnsupportedCapabilityError")<{

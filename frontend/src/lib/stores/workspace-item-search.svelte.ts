@@ -1,5 +1,6 @@
 import { Effect, Semaphore } from "effect";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
+import { isTransientPickerReadFailure, retryIdempotentRead } from "../api/retry-policy.js";
 import type { Issue, PullRequest } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
 
@@ -53,10 +54,10 @@ export function createWorkspaceItemSearchStore(runtime: AppRuntime) {
       {
         pulls: executeGeneratedApiRequest("load open workspace pull requests", (client, signal) =>
           client.PullRequestsService.listPulls({ state: "open" }, { signal }),
-        ),
+        ).pipe((read) => retryIdempotentRead(read, isTransientPickerReadFailure)),
         issues: executeGeneratedApiRequest("load open workspace issues", (client, signal) =>
           client.IssuesService.listIssues({ state: "open" }, { signal }),
-        ),
+        ).pipe((read) => retryIdempotentRead(read, isTransientPickerReadFailure)),
       },
       { concurrency: "unbounded" },
     );
@@ -66,7 +67,7 @@ export function createWorkspaceItemSearchStore(runtime: AppRuntime) {
   }).pipe(
     Effect.tapError(() =>
       Effect.sync(() => {
-        error = "Could not refresh PRs and issues. Type to retry.";
+        error = "Could not refresh PRs and issues.";
       }),
     ),
   );

@@ -554,7 +554,9 @@ describe("PullDetail provider workflow actions", () => {
     }, WAIT);
 
     workflowTrigger!.click();
-    wrapper.style.width = "180px";
+    // Narrow enough to collapse into the Actions menu, wide enough that a
+    // control left at its natural width would leave a gap inside it.
+    wrapper.style.width = "320px";
     await vi.waitFor(() => {
       expect(document.querySelector(".pull-detail-content--actions-menu")).not.toBeNull();
       expect(visibleActionsTriggers()).toHaveLength(1);
@@ -579,6 +581,11 @@ describe("PullDetail provider workflow actions", () => {
       );
       expect(menu!.textContent).toContain("GitHub Actions");
       expect(visibleActionsTriggers()).toHaveLength(1);
+      // Every menu control spans the same width, the create split included.
+      const closeRect = visibleButton("Close")!.getBoundingClientRect();
+      const splitRect = visibleButton("Create Workspace")!.closest(".workspace-create-split")!.getBoundingClientRect();
+      expect(Math.abs(splitRect.left - closeRect.left)).toBeLessThanOrEqual(1);
+      expect(Math.abs(splitRect.right - closeRect.right)).toBeLessThanOrEqual(1);
     }, WAIT);
 
     wrapper.remove();

@@ -4575,8 +4575,13 @@
     flex-wrap: wrap;
   }
 
-  .actions-menu-popover > .actions-row--primary {
+  .actions-menu-popover > .actions-row--primary,
+  .actions-menu-popover > .actions-row--utility {
     flex-direction: column;
+    width: 100%;
+  }
+
+  .actions-menu-popover :global(.workspace-create-split) {
     width: 100%;
   }
 

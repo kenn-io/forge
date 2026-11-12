@@ -11,6 +11,7 @@ semantic ranking of the pull request and issue lists.
 - `local_embeddings = "builtin"` selects the built-in server. A configured endpoint takes precedence. `local_embeddings = "auto"` prefers Ollama. Local discovery runs per request; its recipe and API key are startup-bound.
 - `[embeddings]` is startup-bound: the encoder and its API key are resolved once
   (`internal/server/configreload/config_reload.go::StartupConfigSnapshot`).
+- Built-in setup shares consent across Kenn apps; Ollama and saved config do not record it. An unconfigured provider owner reads that choice at launch without saving a recipe (`cmd/kenn-forge/semantic.go`).
 - Only the provider owner builds an index; spokes forward list requests with
   `semantic` to the hub like any other list request (`cmd/kenn-forge/main.go`).
 - Semantic search is a ranking mode of the existing list routes and

@@ -156,7 +156,7 @@
         disabled={saving}
         aria-label="Member request timeout"
       />
-      <span class="field-help">Bounds snapshot and health requests to another Forge.</span>
+      <span class="field-help">How long Forge waits for status and health responses from another Forge.</span>
     </label>
   </div>
 

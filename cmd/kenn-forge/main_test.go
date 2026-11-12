@@ -35,6 +35,7 @@ import (
 	"go.kenn.io/forge/internal/server/hostapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/testtmux"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -45,18 +46,23 @@ func TestMain(m *testing.M) {
 	if code, ok := testtmux.CommandWrapperExitCode(); ok {
 		os.Exit(code)
 	}
+	if err := gitsafe.PinGoDirectories(); err != nil {
+		panic(err)
+	}
 	runtimeDir, err := os.MkdirTemp("", "kenn-forge-test-home-")
 	if err != nil {
 		panic(err)
 	}
-	if err := os.Setenv("KENN_FORGE_HOME", runtimeDir); err != nil {
-		panic(err)
+	for _, name := range []string{"HOME", "USERPROFILE", "KENN_FORGE_HOME"} {
+		if err := os.Setenv(name, runtimeDir); err != nil {
+			panic(err)
+		}
 	}
 	forgeBuildDir = filepath.Join(runtimeDir, "binaries")
 	if err := os.Mkdir(forgeBuildDir, 0o700); err != nil {
 		panic(err)
 	}
-	code := m.Run()
+	code := gitsafe.RunIsolatedMain(m)
 	// Windows can briefly keep daemon executables locked after process exit,
 	// failing with either an access denied or a sharing violation.
 	_, err = backoff.Retry(context.Background(), func() (struct{}, error) {

@@ -1813,6 +1813,20 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 // filterSectionsCondition ORs the options within each section and ANDs the
 // sections. Only mutually exclusive options, such as draft and ready, share a
 // section, so every other selected filter narrows the list.
+// mergeQueuedCondition matches an open pull request in its provider merge
+// queue, with provider auto-merge on, or held by this server's worker for a
+// merge after CI.
+func mergeQueuedCondition(alias string, held []RepoItemNumber, args *[]any) string {
+	cond := alias + `.auto_merge_enabled OR EXISTS (
+		SELECT 1 FROM forge_merge_queue_states q
+		WHERE q.repo_id = ` + alias + `.repo_id AND q.number = ` + alias + `.number AND q.queued
+	)`
+	if len(held) > 0 {
+		cond += " OR " + repoItemCondition(alias, held, args)
+	}
+	return "(" + alias + ".state = 'open' AND (" + cond + "))"
+}
+
 func filterSectionsCondition(sections ...[]string) string {
 	var selected []string
 	for _, options := range sections {
@@ -1967,8 +1981,15 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 	if opts.Unassigned {
 		unassigned = append(unassigned, unassignedCondition("p"))
 	}
+	if opts.Assigned {
+		unassigned = append(unassigned, notCondition(unassignedCondition("p")))
+	}
 	if opts.ViewerLogins != nil {
-		involved = append(involved, mergeRequestInvolvementCondition("p", opts.ViewerLogins, &inclusionArgs))
+		involvement := mergeRequestInvolvementCondition("p", opts.ViewerLogins, &inclusionArgs)
+		if opts.ViewerUninvolved {
+			involvement = notCondition(involvement)
+		}
+		involved = append(involved, involvement)
 	}
 	// Empty and JSON null decode as no checks; invalid check arrays cannot match by check content.
 	const checks = `CASE
@@ -1977,17 +1998,25 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 			WHEN 'null' THEN '[]' WHEN 'array' THEN p.ci_checks_json END
 		END`
 	const pending = `COALESCE(json_extract(c.value, '$.status'), '') IN ('in_progress', 'queued', 'pending', 'waiting')`
-	var review, approval, ci, conflicts, mergeQueue []string
+	var review, approval, ci, conflicts, mergeQueue, merging []string
 	for _, attribute := range opts.Attributes {
 		switch attribute {
+		case "merge_queued":
+			merging = append(merging, mergeQueuedCondition("p", opts.DeferredMergeItems, &inclusionArgs))
+		case "not_merge_queued":
+			merging = append(merging, notCondition(mergeQueuedCondition("p", opts.DeferredMergeItems, &inclusionArgs)))
 		case "approved":
 			approval = append(approval, "upper(trim(p.review_decision)) = 'APPROVED'")
+		case "not_approved":
+			approval = append(approval, notCondition("upper(trim(p.review_decision)) = 'APPROVED'"))
 		case "draft":
 			review = append(review, "p.is_draft")
 		case "ready":
 			review = append(review, "(p.state = 'open' AND NOT p.is_draft)")
 		case "merge_conflicts":
 			conflicts = append(conflicts, "(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))")
+		case "no_merge_conflicts":
+			conflicts = append(conflicts, notCondition("(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))"))
 		case "merge_queue":
 			mergeQueue = append(mergeQueue, `(p.state = 'open' AND EXISTS (
 				SELECT 1 FROM forge_merge_queue_states q
@@ -2012,7 +2041,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 				))`)
 		}
 	}
-	if inclusion := filterSectionsCondition(involved, unassigned, review, approval, ci, conflicts, mergeQueue); inclusion != "" {
+	if inclusion := filterSectionsCondition(involved, unassigned, review, approval, ci, conflicts, mergeQueue, merging); inclusion != "" {
 		if len(narrowing) > 0 {
 			// SQLite can reorder WHERE terms; evaluate narrowing filters before inclusion subqueries.
 			inclusion = "CASE WHEN " + strings.Join(narrowing, " AND ") + " THEN " + inclusion + " ELSE 0 END"
@@ -3283,7 +3312,7 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 	)`)
 
 	pageAll := len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 &&
-		opts.Items == nil && opts.Numbers == nil && !opts.Starred && opts.Assignee == "" && !opts.ReferencedByPR && opts.ViewerLogins == nil &&
+		opts.Items == nil && opts.Numbers == nil && !opts.Starred && opts.Assignee == "" && !opts.ReferencedByPR && !opts.NotReferencedByPR && opts.ViewerLogins == nil &&
 		len(opts.WorkspaceActivity) == 0
 	allowedRepoCondIndex := len(conds)
 	if cond := repoIDCondition("i.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
@@ -3350,14 +3379,25 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 	if opts.Unassigned {
 		conds = append(conds, unassignedCondition("i"))
 	}
-	if opts.ViewerLogins != nil {
-		conds = append(conds, issueInvolvementCondition("i", opts.ViewerLogins, &args))
+	if opts.Assigned {
+		conds = append(conds, notCondition(unassignedCondition("i")))
 	}
-	if opts.ReferencedByPR {
-		conds = append(conds, `EXISTS (
+	if opts.ViewerLogins != nil {
+		involvement := issueInvolvementCondition("i", opts.ViewerLogins, &args)
+		if opts.ViewerUninvolved {
+			involvement = notCondition(involvement)
+		}
+		conds = append(conds, involvement)
+	}
+	const referencedByPR = `EXISTS (
 			SELECT 1 FROM forge_issue_pr_references ref
 			WHERE ref.issue_id = i.id
-		)`)
+		)`
+	if opts.ReferencedByPR {
+		conds = append(conds, referencedByPR)
+	}
+	if opts.NotReferencedByPR {
+		conds = append(conds, "NOT "+referencedByPR)
 	}
 
 	pageAll = pageAll && d.activityPageWalks(ctx, "forge_issues", "+last_activity_at", opts.AllowedRepoIDs, opts.Limit, opts.Offset)

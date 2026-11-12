@@ -905,6 +905,22 @@ describe("WorklistView", () => {
     expect(rowTitles()).toHaveLength(3);
     expect(refs()).toEqual(["acme/widgets#42", "acme/gadgets#84", "acme/widgets#7"]);
 
+    // Excluding still needs the server to mark the items that involve the viewer.
+    await fireEvent.click(await menuItem("Involves me"));
+    await waitFor(() => expect(reads).toEqual([false, true, false, true]));
+    const involvesMe = () => screen.getByRole("button", { name: /^Involves me/ });
+    await fireEvent.click(involvesMe());
+    await waitFor(() => expect(rowTitles()).toEqual(["Add browser regression coverage"]));
+    await fireEvent.click(await menuItem("Merge conflicts"));
+    expect(rowTitles()).toEqual([]);
+    await fireEvent.click(screen.getByRole("button", { name: "Merge conflicts" }));
+    expect(rowTitles()).toEqual(["Add browser regression coverage"]);
+    expect(reads.slice(3).every(Boolean)).toBe(true);
+
+    await fireEvent.click(involvesMe());
+    await waitFor(() => expect(reads.at(-1)).toBe(false));
+    expect(rowTitles()).toHaveLength(3);
+
     await fireEvent.click(await menuItem("Hide org name"));
     expect(refs()).toEqual(["widgets#42", "gadgets#84", "widgets#7"]);
   });

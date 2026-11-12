@@ -792,6 +792,11 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 				"id":"RE_1",
 				"actor":{"login":"opener"},
 				"createdAt":"` + now + `"
+			},{
+				"__typename":"AddedToMergeQueueEvent",
+				"id":"AMQE_1",
+				"actor":{"login":"queuer"},
+				"createdAt":"` + now + `"
 			}],"pageInfo":{"hasNextPage":false,"endCursor":""}}
 		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
 	}))
@@ -810,7 +815,7 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 	assert.Nil(result.PullRequests[0].Comments[1].AuthorAssociation)                  //nolint:staticcheck // Fixture represents GraphQL, not an Events payload.
 	require.True(sawTimelineItems)
 	require.True(sawNativeStackFields)
-	require.Len(result.PullRequests[0].TimelineEvents, 7)
+	require.Len(result.PullRequests[0].TimelineEvents, 8)
 	require.NotNil(result.PullRequests[0].NativeStack)
 	assert.Equal(7, result.PullRequests[0].NativeStack.Number)
 
@@ -849,6 +854,10 @@ func TestGraphQLFetcherFetchRepoPRsIncludesTimelineEvents(t *testing.T) {
 	assert.Equal("reopened", reopened.EventType)
 	assert.Equal("RE_1", reopened.NodeID)
 	assert.Equal("opener", reopened.Actor)
+	queued := result.PullRequests[0].TimelineEvents[7]
+	assert.Equal("added_to_merge_queue", queued.EventType)
+	assert.Equal("AMQE_1", queued.NodeID)
+	assert.Equal("queuer", queued.Actor)
 	assert.True(result.PullRequests[0].TimelineComplete)
 }
 

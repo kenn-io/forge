@@ -60,7 +60,7 @@ func newEmbeddingsCommand(stdin io.Reader, stdout, stderr io.Writer, deps localE
 		local := cfg.LocalEmbeddings
 		rebuild := switching && !config.LocalEmbeddingCompatible(recipe)
 		if rebuild || !cfg.Embeddings.Enabled() {
-			recipe = embedconfig.Embedder{Model: embedlocal.TextModel, Dims: 768, DocumentPrefix: "search_document: ", QueryPrefix: "search_query: "}
+			recipe = config.DefaultLocalEmbeddingRecipe()
 		}
 		if local == "" {
 			local = "auto"
@@ -98,7 +98,8 @@ func newEmbeddingsCommand(stdin io.Reader, stdout, stderr io.Writer, deps localE
 			return ok, err
 		}
 		// Discover first, so a switch and any download share one confirmation.
-		if _, err = deps.resolve(cmd.Context(), local == "builtin", confirm); err != nil {
+		endpoint, err := deps.resolve(cmd.Context(), local == "builtin", confirm)
+		if err != nil {
 			return err
 		}
 		if switching && !confirmed {
@@ -123,7 +124,13 @@ func newEmbeddingsCommand(stdin io.Reader, stdout, stderr io.Writer, deps localE
 		if err := cfg.Save(path); err != nil {
 			return err
 		}
-		_, err = fmt.Fprintln(stdout, "Local embeddings configured. Restart Forge to apply.")
+		// Kit discovers Ollama at this fixed URL; its built-in server uses a dynamic port.
+		if endpoint != "http://127.0.0.1:11434/v1" {
+			if err := embedlocal.RecordChoice(); err != nil {
+				fmt.Fprintf(stderr, "Warning: search by meaning choice write reported an error: %v\n", err)
+			}
+		}
+		_, err = fmt.Fprintf(stdout, "Local embeddings configured. If Forge runs as a service, restart it through your service manager. Otherwise run%s:\n  %s\n", commandHintShell, commandHint(cmd, []string{"kenn-forge", "daemon", "restart"}, "config"))
 		return err
 	}}
 	local.Flags().StringVar(&path, "config", config.DefaultConfigPath(), "path to config file")

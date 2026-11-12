@@ -9,7 +9,7 @@
   import { isInlineMediaContent } from "./chat-content.js"
   import { decodeAppDescriptor } from "./mcp-app.js"
   import type { ContentScrollPositions } from "./chat-content-scroll.js"
-  import { toolStatus, type ChatMessage } from "./chat-types.js"
+  import { toolStatus, type ChatContent, type ChatMessage } from "./chat-types.js"
   import { parseToolTitle } from "./chat-tool-title.js"
 
   let {
@@ -51,7 +51,14 @@
       message.locations?.length ||
       message.toolContent?.length ||
       message.rawInput ||
-      message.rawOutput
+      message.rawOutput ||
+      message.detailsOmitted
+    )
+  }
+
+  function inlineContent(message: ChatMessage): ChatContent[] {
+    return (message.toolContent ?? []).flatMap((item) =>
+      item.content && (isInlineMediaContent(item.content) || decodeAppDescriptor(item.content)) ? [item.content] : [],
     )
   }
 
@@ -166,10 +173,9 @@
     </ul>
   {/if}
   {#each messages as message (message.id)}
-    {#each message.toolContent ?? [] as item, contentIndex (contentIndex)}
-      {#if item.content && (isInlineMediaContent(item.content) || decodeAppDescriptor(item.content))}
-        <ChatContentBlock content={item.content} />
-      {/if}
+    <!-- Keyed among inline items only, so details arriving around them keep them mounted. -->
+    {#each inlineContent(message) as content, contentIndex (contentIndex)}
+      <ChatContentBlock {content} />
     {/each}
   {/each}
 </div>

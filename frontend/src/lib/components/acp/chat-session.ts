@@ -22,6 +22,7 @@ const decodeFrame = Schema.decodeUnknownResult(
       HistoryFrameSchema,
       Schema.Struct({ commandError: Schema.String, command: Schema.String, id: Schema.String }),
       Schema.Struct({ accepted: Schema.Struct({ command: Schema.String, id: Schema.String }) }),
+      Schema.Struct({ toolDetails: ChatMessageSchema }),
     ]),
   ),
 );
@@ -69,11 +70,24 @@ export function makeChatSession(options: {
   // the predecessor of the range the reader has explicitly loaded.
   let boundary = "";
   let historyBefore: string | undefined;
+  let historyLimit = 100;
+  // Asked after each page; while it holds, the next page follows at once.
+  let historyWanted: (() => boolean) | undefined;
   let batching = false;
+  // Tool calls whose details were requested and not yet answered.
+  const detailsPending = new Set<string>();
   const setHistoryLoading = (beforeId: string | undefined) => {
     const wasLoading = historyBefore !== undefined;
     historyBefore = beforeId;
+    if (beforeId === undefined) historyWanted = undefined;
     if (wasLoading !== (beforeId !== undefined)) options.onHistoryLoading?.(beforeId !== undefined);
+  };
+  const requestHistory = (): boolean => {
+    const first = displayed[0];
+    if (!first?.previousId || !connection.isConnected()) return false;
+    historyBefore = first.id;
+    connection.send(JSON.stringify({ type: "history", beforeId: first.id, limit: historyLimit } satisfies ChatCommand));
+    return true;
   };
   const upsert = (entries: readonly ChatMessage[]) => {
     for (const entry of entries) {
@@ -172,6 +186,7 @@ export function makeChatSession(options: {
       displayedOffset = 0;
       boundary = "";
       batching = false;
+      detailsPending.clear();
       setHistoryLoading(undefined);
       options.onConnection(true);
     },
@@ -201,9 +216,20 @@ export function makeChatSession(options: {
           setHistoryLoading(undefined);
           publish();
         }
+        if (frame.command === "toolDetails") detailsPending.delete(frame.id);
         options.onError(frame.commandError, { command: frame.command, id: frame.id });
       } else if ("accepted" in frame) {
         options.onAccepted?.(frame.accepted);
+      } else if ("toolDetails" in frame) {
+        const entry = frame.toolDetails;
+        detailsPending.delete(entry.id);
+        const prior = messages.get(entry.id);
+        // The same version only adds the details; a newer one is an update.
+        if (prior) {
+          if (entry.version === prior.version) messages.set(entry.id, entry);
+          else upsert([entry]);
+          publish();
+        }
       } else if ("history" in frame) {
         if (frame.history.beforeId === historyBefore) {
           upsert(frame.history.messages);
@@ -212,8 +238,12 @@ export function makeChatSession(options: {
             boundary = messages.get(first.id)!.previousId;
             displayedOffset = frame.history.offset;
           }
-          setHistoryLoading(undefined);
+          // Publish as still loading, so an exit waits for the last page.
           publish();
+          if (!first || !historyWanted?.() || !requestHistory()) {
+            setHistoryLoading(undefined);
+            publish();
+          }
         }
       } else if ("updates" in frame) {
         upsert(frame.updates.messages);
@@ -243,12 +273,23 @@ export function makeChatSession(options: {
       connection.send(JSON.stringify(command));
       return true;
     },
+    // Asks for the details the host left out of a displayed tool call.
+    loadToolDetails(id: string): boolean {
+      const index = displayed.findIndex((entry) => entry.id === id);
+      if (index < 0 || detailsPending.has(id) || !connection.isConnected()) return false;
+      detailsPending.add(id);
+      const command: ChatCommand = { type: "toolDetails", id, beforeId: displayed[index + 1]?.id ?? "" };
+      connection.send(JSON.stringify(command));
+      return true;
+    },
     // History is loaded only on the reader's request, never to recover an update.
-    loadEarlier(limit = 100): boolean {
-      const first = displayed[0];
-      if (historyBefore !== undefined || !first?.previousId || !connection.isConnected()) return false;
-      setHistoryLoading(first.id);
-      connection.send(JSON.stringify({ type: "history", beforeId: first.id, limit } satisfies ChatCommand));
+    // While `wanted` returns true after a page, the next page is requested too.
+    loadEarlier(limit = 100, wanted?: () => boolean): boolean {
+      if (historyBefore !== undefined) return false;
+      historyLimit = limit;
+      if (!requestHistory()) return false;
+      historyWanted = wanted;
+      options.onHistoryLoading?.(true);
       return true;
     },
   };

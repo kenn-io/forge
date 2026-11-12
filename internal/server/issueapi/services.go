@@ -33,6 +33,10 @@ type ListQuery struct {
 	Assignee       string
 	Limit          int
 	Offset         int
+	// NotInvolvesMe, Assigned, and NotReferencedByPR are the opposites of the three filters above.
+	NotInvolvesMe     bool
+	Assigned          bool
+	NotReferencedByPR bool
 }
 
 type ItemIdentity struct {
@@ -66,6 +70,7 @@ func (s *Handler) ListProviderService(
 	output, err := s.listIssuesRouteCore(ctx, &listIssuesInput{
 		Repo: req.Repo, State: req.State, Starred: req.Starred,
 		InvolvesMe: req.InvolvesMe, Unassigned: req.Unassigned, ReferencedByPR: req.ReferencedByPR,
+		NotInvolvesMe: req.NotInvolvesMe, Assigned: req.Assigned, NotReferencedByPR: req.NotReferencedByPR,
 		Numbers: req.Numbers, Q: req.Text, Semantic: req.Semantic, Assignee: req.Assignee, Limit: req.Limit, Offset: req.Offset,
 	}, nil)
 	if err != nil {

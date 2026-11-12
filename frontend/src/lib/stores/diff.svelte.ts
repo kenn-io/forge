@@ -804,36 +804,34 @@ export function createDiffStore(opts: DiffStoreOptions) {
       path,
       side ?? "preview",
     ].join("\u0000");
-    const request = executeGeneratedApiRequest<FilePreviewResponse>(
-      "GET pull request file preview",
-      (client, signal) =>
-        providerUsesHostRoute(ref)
-          ? client.PullRequestsService.getPullFilePreviewOnHost(
-              { ...providerHostRouteParams(ref), number: number },
-              {
-                path,
-                ...(side && { side }),
-                ...(requestScope.kind === "commit" && { commit: requestScope.sha }),
-                ...(requestScope.kind === "range" && {
-                  from: requestScope.fromSha,
-                  to: requestScope.toSha,
-                }),
-              },
-              { signal },
-            )
-          : client.PullRequestsService.getPullFilePreview(
-              { ...providerRouteParams(ref), number: number },
-              {
-                path,
-                ...(side && { side }),
-                ...(requestScope.kind === "commit" && { commit: requestScope.sha }),
-                ...(requestScope.kind === "range" && {
-                  from: requestScope.fromSha,
-                  to: requestScope.toSha,
-                }),
-              },
-              { signal },
-            ),
+    const request = executeGeneratedApiRequest<FilePreviewResponse>("GET pull request file preview", (client, signal) =>
+      providerUsesHostRoute(ref)
+        ? client.PullRequestsService.getPullFilePreviewOnHost(
+            { ...providerHostRouteParams(ref), number: number },
+            {
+              path,
+              ...(side && { side }),
+              ...(requestScope.kind === "commit" && { commit: requestScope.sha }),
+              ...(requestScope.kind === "range" && {
+                from: requestScope.fromSha,
+                to: requestScope.toSha,
+              }),
+            },
+            { signal },
+          )
+        : client.PullRequestsService.getPullFilePreview(
+            { ...providerRouteParams(ref), number: number },
+            {
+              path,
+              ...(side && { side }),
+              ...(requestScope.kind === "commit" && { commit: requestScope.sha }),
+              ...(requestScope.kind === "range" && {
+                from: requestScope.fromSha,
+                to: requestScope.toSha,
+              }),
+            },
+            { signal },
+          ),
     ).pipe(retryIdempotentRead);
     return Effect.gen(function* () {
       const workflow = yield* FilePreviewWorkflow;

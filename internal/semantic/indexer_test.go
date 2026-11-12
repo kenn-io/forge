@@ -281,7 +281,7 @@ func TestLocalEndpointRediscoveredForRequests(t *testing.T) {
 	second := embedfake.New(t, "cache")
 	cfg := first.Embedder("nomic-embed-text")
 	endpoint := cfg.BaseURL
-	encoder, err := NewEncoder(cfg, func(context.Context) (string, error) { return endpoint, nil })
+	encoder, err := NewEncoder(cfg, func(context.Context) (string, bool, error) { return endpoint, false, nil })
 	require.NoError(t, err)
 	_, err = encoder.query(t.Context(), "cache")
 	require.NoError(t, err)

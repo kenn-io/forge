@@ -137,7 +137,6 @@
                 id: "hide-bots",
                 label: "Hide bot activity",
                 active: filter.hideBots,
-                color: "var(--accent-purple)",
                 onSelect: () =>
                   updateFilter({ hideBots: !filter.hideBots }),
               },

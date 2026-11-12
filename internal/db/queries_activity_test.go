@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1056,6 +1057,69 @@ func TestActivityHideMergeQueued(t *testing.T) {
 	require.Len(items, 1)
 	assert.Equal("notification", items[0].ActivityType)
 	assert.Equal(1, items[0].ItemNumber)
+}
+
+func TestActivityMergeQueuedCoversAutoMergeAndHeldMerges(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "example", "merging-filter")
+	// 1 is queued, 2 has provider auto-merge, 3 is held by this server's worker,
+	// 4 has nothing pending, and 5 is closed with auto-merge left on.
+	for number := 1; number <= 5; number++ {
+		mr := testMR(repoID, number, withMRActivity(now))
+		mr.AutoMergeEnabled = number == 2 || number == 5
+		if number == 5 {
+			mr.State = "closed"
+		}
+		id := insertTestMRWithOptions(t, d, mr)
+		_, err := d.UpsertMergeQueueState(ctx, repoID, MergeQueueState{Number: number, Queued: number == 1, ObservedAt: now})
+		require.NoError(err)
+		require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+			MergeRequestID: id, EventType: "issue_comment", Author: "reviewer",
+			CreatedAt: now.Add(time.Duration(10-number) * time.Minute),
+			DedupeKey: fmt.Sprintf("merging-filter-%d", number),
+		}}))
+	}
+	held := []RepoItemNumber{{RepoID: repoID, Number: 3}}
+	itemNumbers := func(opts ListActivityOpts) []int {
+		opts.DeferredMergeItems, opts.Limit = held, 10
+		items, err := d.ListActivity(ctx, opts)
+		require.NoError(err)
+		// A pull request has more than one row; compare which ones appear.
+		numbers := []int{}
+		for _, item := range items {
+			if !slices.Contains(numbers, item.ItemNumber) {
+				numbers = append(numbers, item.ItemNumber)
+			}
+		}
+		return numbers
+	}
+	subjectNumbers := func(opts ListActivitySubjectsOpts) []int {
+		opts.DeferredMergeItems, opts.Limit = held, 10
+		subjects, err := d.ListActivitySubjects(ctx, opts)
+		require.NoError(err)
+		numbers := []int{}
+		for _, subject := range subjects {
+			numbers = append(numbers, subject.Subject.Key.ItemNumber)
+		}
+		return numbers
+	}
+	assert.ElementsMatch([]int{1, 2, 3}, itemNumbers(ListActivityOpts{OnlyMergeQueued: true}))
+	assert.ElementsMatch([]int{4, 5}, itemNumbers(ListActivityOpts{HideMergeQueued: true}))
+	assert.ElementsMatch([]int{1, 2, 3}, subjectNumbers(ListActivitySubjectsOpts{OnlyMergeQueued: true}))
+	assert.ElementsMatch([]int{4, 5}, subjectNumbers(ListActivitySubjectsOpts{HideMergeQueued: true}))
+
+	metadata, err := d.ListWorkspaceSubjectMetadata(ctx, []WorkspaceSubjectKey{
+		{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 2},
+		{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 5},
+	})
+	require.NoError(err)
+	assert.True(metadata[WorkspaceSubjectKey{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 2}].IsMergeQueued)
+	assert.False(metadata[WorkspaceSubjectKey{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 5}].IsMergeQueued)
 }
 
 func TestListCollapsedActivityProjection(t *testing.T) {

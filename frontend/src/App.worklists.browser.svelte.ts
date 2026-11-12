@@ -31,7 +31,7 @@ it("opens an agent's new list from the Worklists tab", async () => {
   await page.viewport(1400, 900);
   const server: WorklistServer = { lists: [], requests: [] };
   mounted = await mountBrowserApp("/", { overrides: [worklistRoutes(server)] });
-  await expect.element(page.getByRole("button", { name: "Activity", exact: true })).toBeVisible();
+  await expect.element(page.getByRole("navigation", { name: "Page", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Worklists", exact: true }).click();
 
   server.lists = [worklistResponse(5, "Review queue")];

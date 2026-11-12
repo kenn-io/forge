@@ -257,17 +257,17 @@ export function worklistItemsInState(items: readonly WorklistItem[], filter: Wor
   return items.filter((item) => worklistItemClosed(item) === closed);
 }
 
-/** A rail filter: the PR list's Involves me, a pull request attribute, or No merge conflicts. */
-export type WorklistItemFilter = "involves_me" | "no_merge_conflicts" | PullAttributeFilter;
+/** A rail filter: the PR list's Involves me, its opposite, or a pull request attribute. */
+export type WorklistItemFilter = "involves_me" | "not_involves_me" | PullAttributeFilter;
 
 /** The rail's mutually exclusive filter sections, combined as in the PR list. */
 export const WORKLIST_FILTER_SECTIONS: readonly (readonly WorklistItemFilter[])[] = [
-  ["involves_me"],
+  ["involves_me", "not_involves_me"],
   ["draft", "ready"],
-  ["approved"],
+  ["approved", "not_approved"],
   ["passed_ci", "failed_ci"],
   ["merge_conflicts", "no_merge_conflicts"],
-  ["has_workspace"],
+  ["has_workspace", "no_workspace"],
 ];
 
 /**
@@ -278,9 +278,11 @@ export const WORKLIST_FILTER_SECTIONS: readonly (readonly WorklistItemFilter[])[
 export function worklistItemMatchesFilters(item: WorklistItem, filters: readonly WorklistItemFilter[]): boolean {
   return matchesFilterSections(WORKLIST_FILTER_SECTIONS, filters, (filter) => {
     if (filter === "involves_me") return item.involves_viewer;
-    if (filter === "has_workspace") return (item.pull ?? item.issue)?.workspace !== undefined;
+    if (filter === "not_involves_me") return !item.involves_viewer;
+    const hasWorkspace = (item.pull ?? item.issue)?.workspace !== undefined;
+    if (filter === "has_workspace") return hasWorkspace;
+    if (filter === "no_workspace") return !hasWorkspace;
     if (item.pull === null) return false;
-    if (filter === "no_merge_conflicts") return !pullMatchesAttribute(item.pull, "merge_conflicts");
     return pullMatchesAttribute(item.pull, filter);
   });
 }

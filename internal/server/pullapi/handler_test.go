@@ -214,6 +214,54 @@ func TestListPullsReportsStackPlacementForMultiMemberStacks(t *testing.T) {
 	assert.Nil(byNumber[5].Stack, "single-member stacks are not shown as stacked")
 }
 
+func TestListPullsMergeQueuedMatchesQueueAutoMergeAndWorker(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	ctx := t.Context()
+	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.Key = platform.RepositoryIDKey(1001)
+	repoID, err := reposeed.Seed(ctx, database, identity)
+	require.NoError(err)
+	// 1 is in the merge queue, 2 has provider auto-merge, 3 waits on this
+	// server's worker, and 4 has none of them.
+	for number := 1; number <= 4; number++ {
+		_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(number), Number: number, Title: "PR",
+			Author: "alice", State: db.MergeRequestStateOpen, AutoMergeEnabled: number == 2,
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now.Add(time.Duration(number) * time.Minute),
+		})
+		require.NoError(err)
+	}
+	_, err = database.UpsertMergeQueueState(ctx, repoID, db.MergeQueueState{Number: 1, Queued: true, ObservedAt: now})
+	require.NoError(err)
+	repo, err := database.GetRepoByID(ctx, repoID)
+	require.NoError(err)
+	handler := New(Deps{
+		DB:       database,
+		Resolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database}),
+	})
+	handle, marked := handler.markDeferredMergeInFlight(deferredMergeKey(*repo, 3), db.RepoItemNumber{RepoID: repoID, Number: 3})
+	require.True(marked)
+
+	list := func(attributes string) []int {
+		result, err := handler.listPulls(ctx, &listPullsInput{State: "open", Attributes: attributes})
+		require.NoError(err)
+		numbers := []int{}
+		for _, row := range result.Body {
+			numbers = append(numbers, row.Number)
+			assert.Equal(row.Number == 2 || row.Number == 3, row.DeferredMergePending, "PR %d", row.Number)
+		}
+		return numbers
+	}
+	assert.Equal([]int{3, 2, 1}, list("merge_queued"))
+	assert.Equal([]int{4}, list("not_merge_queued"))
+
+	handler.clearDeferredMergeInFlight(deferredMergeKey(*repo, 3), handle)
+	assert.Equal([]int{2, 1}, list("merge_queued"), "a finished worker no longer holds the pull request")
+}
+
 func TestListPullsReportsWorkflowApprovalForCurrentHead(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

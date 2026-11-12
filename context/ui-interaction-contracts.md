@@ -264,7 +264,15 @@ and back.
 
 - `Involves me` and `Unassigned` are each three independent browser-local preferences (Pulls, Issues,
   Activity), sent as pre-limit server queries, never URL or config state.
-- `Unassigned` matches only PR/issue subjects with an empty synchronized assignee set.
+- A condition filter is three-state: a click cycles off, required (tick), excluded (cross), like a
+  label. This covers `Involves me`, `Unassigned`, `Referenced by PR`, `Approved`, `Merge conflicts`,
+  `Merge queued`, and `Has workspace` wherever they are one row; a pair already shown as a pick-one section stays
+  on/off (maintainer decision; `frontend/src/lib/utils/tri-filter.ts`). The server takes the opposite
+  as its own query (`not_involves_me`, `assigned`, `not_referenced_by_pr`, `not_approved`, `not_merge_queued`,
+  `no_merge_conflicts`), so both directions apply before limits.
+- Phone Activity shows a three-state filter as an Any/Yes/No choice, since a switch has no third state.
+- `Unassigned` matches only PR/issue subjects with an empty synchronized assignee set; its opposite
+  matches every other subject, including a PR whose assignees never synchronized.
 - `Referenced by PR` is a browser-local Issues preference, default off, exposed in every issue-filter
   presentation; it ANDs with involvement and unassigned before limits, and reset clears it.
 - `Referenced by PR` shows whenever any configured provider-host supplies reference edges; edges never
@@ -291,9 +299,14 @@ and back.
 - Desktop and phone Activity must share event/visibility definitions and actions; derive active indicators
   and reset from those lists. Layout and short phone labels may differ (maintainer decision;
   `frontend/src/lib/components/activityFilters.ts::activityFilterOptions`).
-- Activity's `Hide queued for merge` excludes currently queued open PRs, including their events, notifications,
-  and workspace activity. Removed queue entries remain visible. It defaults off in Settings/`config.toml`;
-  explicit on/off URL choices survive refresh and navigation, and Reset filters turns it off.
+- `Merge queued` matches an open PR that needs no more action to merge: in a provider merge queue, with
+  provider auto-merge on, or held by this server's "merge after CI" worker. Removed queue entries do not
+  match. The worker keeps its held PRs only in memory, so the server passes them into the query
+  (`internal/db/queries.go::mergeQueuedCondition`). On a spoke, workspace rows take the hub's view.
+- In Activity, excluded `Merge queued` is the saved `hide_merge_queued` choice: it applies to events,
+  notifications, and workspace activity, defaults off in Settings/`config.toml` (named `Hide queued for
+  merge` there), and its explicit on/off URL choice survives refresh and navigation. Required
+  (`merge_queued`) is a passing view and is not saved. Reset filters turns both off.
 - Activity filter defaults live in Settings and `config.toml`; URL overrides are session-scoped, and a
   partial Activity URL inherits the last validated route's missing params.
 - Explicit Activity choices survive refresh, Settings navigation, and late hydration; omit filter
@@ -696,9 +709,9 @@ Not every visibility control means "remove this entity entirely."
 - When two data sources race, prefer the one matching the current filter/scope over a faster stale preview.
 - Workspace status counts use the complete event-refreshed open-item cache, not page lists or capped search.
 - Every selected PR, issue, and Activity filter must match, including Involves me with Unassigned.
-  Opposite options (Draft or Ready for review, Passing or Failed CI, Merge conflicts or No merge
-  conflicts) are pick-one menu sections. The menu shows this through its sections, without
-  explanatory text. The database applies it before
+  Opposite options shown as two rows (Draft or Ready for review, Passing or Failed CI, and the
+  worklist rail's Merge conflicts or No merge conflicts) are pick-one menu sections. The menu shows
+  this through its sections, without explanatory text. The database applies it before
   pagination; the PR store and worklist rail use the same sections
   (`internal/db/queries.go::filterSectionsCondition`, `frontend/src/lib/utils/pull-attributes.ts::toggleFilterInSections`).
 - A spoke lists standalone local workspace activity only without Involves me, because only the hub

@@ -307,25 +307,50 @@ func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T)
 	require.NoError(database.UpdateMergeRequestAssignees(t.Context(), repo.ID, unassignedID, nil))
 	require.NoError(database.UpdateMergeRequestAssignees(t.Context(), repo.ID, assignedID, []string{"reviewer"}))
 
-	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
-		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
-		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
-	}
-	for number, workspaceID := range map[int]string{1: "ws-unassigned", 2: "ws-assigned"} {
-		key := db.WorkspaceSubjectKey{
-			RepoID: repo.ID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
+	// Filtering removes subjects from the snapshot it is given, so each read gets its own.
+	newSnapshot := func() workspaceapi.WorkspaceSubjectSnapshot {
+		snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+			OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+			Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
 		}
-		snapshot.Subjects[key] = workspaceapi.SubjectActivity{
-			Subject: db.WorkspaceSubjectMetadata{
-				Key: key, Platform: repo.Platform, PlatformHost: repo.PlatformHost,
-				RepoKey: repo.Key, RepoOwner: repo.Owner, RepoName: repo.Name,
-				RepoPath: repo.RepoPath, Title: "Local workspace", State: "open",
-				URL: "https://github.com/acme/widget/pull/1", Author: "author",
-			},
-			Workspace:  workspaceapi.WorkspaceRef{ID: workspaceID, Status: "ready"},
-			ActivityAt: &now,
+		for number, workspaceID := range map[int]string{1: "ws-unassigned", 2: "ws-assigned"} {
+			key := db.WorkspaceSubjectKey{
+				RepoID: repo.ID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
+			}
+			snapshot.Subjects[key] = workspaceapi.SubjectActivity{
+				Subject: db.WorkspaceSubjectMetadata{
+					Key: key, Platform: repo.Platform, PlatformHost: repo.PlatformHost,
+					RepoKey: repo.Key, RepoOwner: repo.Owner, RepoName: repo.Name,
+					RepoPath: repo.RepoPath, Title: "Local workspace", State: "open",
+					URL: "https://github.com/acme/widget/pull/1", Author: "author",
+				},
+				Workspace:  workspaceapi.WorkspaceRef{ID: workspaceID, Status: "ready"},
+				ActivityAt: &now,
+			}
 		}
+		return snapshot
 	}
+	snapshot := newSnapshot()
+
+	assigned, err := srv.activityapi.OverlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&itemapi.ListActivityInput{Assigned: true},
+		itemapi.ActivityResponse{UseWorkspaceActivityForRecency: true},
+		newSnapshot(),
+	)
+	require.NoError(err)
+	require.Len(assigned.WorkspaceActivity, 1)
+	assert.Equal("ws-assigned", assigned.WorkspaceActivity[0].Workspace.ID)
+
+	uninvolved, err := srv.activityapi.OverlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&itemapi.ListActivityInput{NotInvolvesMe: true},
+		itemapi.ActivityResponse{UseWorkspaceActivityForRecency: true},
+		newSnapshot(),
+	)
+	require.NoError(err)
+	// Only the hub can tell whether a standalone local subject involves the viewer.
+	assert.Empty(uninvolved.WorkspaceActivity)
 
 	combined, err := srv.activityapi.OverlayLocalActivityWorkspaceSnapshot(
 		t.Context(),
@@ -502,6 +527,8 @@ func TestSpokeHideMergeQueuedUsesHubStateForLocalWorkspaceSubjects(t *testing.T)
 	})
 	require.NoError(err)
 	serverfake.SeedPR(t, hubDatabase, "acme", "widget", 10)
+	// The hub has provider auto-merge on for 11, so it waits to merge after CI.
+	serverfake.SeedPR(t, hubDatabase, "acme", "widget", 11, func(pr *db.MergeRequest) { pr.AutoMergeEnabled = true })
 
 	spoke, spokeDatabase, _ := setupTestServer(t)
 	spokeRepoID, err := reposeed.Seed(t.Context(), spokeDatabase, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
@@ -523,7 +550,7 @@ func TestSpokeHideMergeQueuedUsesHubStateForLocalWorkspaceSubjects(t *testing.T)
 		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
 		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
 	}
-	for _, number := range []int{9, 10} {
+	for _, number := range []int{9, 10, 11} {
 		key := db.WorkspaceSubjectKey{
 			RepoID: spokeRepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
 		}
@@ -545,7 +572,7 @@ func TestSpokeHideMergeQueuedUsesHubStateForLocalWorkspaceSubjects(t *testing.T)
 		snapshot,
 	)
 	require.NoError(err)
-	assert.Len(unfiltered.WorkspaceActivity, 2)
+	assert.Len(unfiltered.WorkspaceActivity, 3)
 
 	response, err := spoke.activityapi.OverlayLocalActivityWorkspaceSnapshot(
 		t.Context(),
@@ -556,6 +583,19 @@ func TestSpokeHideMergeQueuedUsesHubStateForLocalWorkspaceSubjects(t *testing.T)
 	require.NoError(err)
 	require.Len(response.WorkspaceActivity, 1)
 	assert.Equal(10, response.WorkspaceActivity[0].ItemNumber)
+
+	only, err := spoke.activityapi.OverlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&itemapi.ListActivityInput{MergeQueued: true},
+		itemapi.ActivityResponse{UseWorkspaceActivityForRecency: true},
+		snapshot,
+	)
+	require.NoError(err)
+	numbers := []int{}
+	for _, subject := range only.WorkspaceActivity {
+		numbers = append(numbers, subject.ItemNumber)
+	}
+	assert.ElementsMatch([]int{9, 11}, numbers)
 }
 
 func TestSpokeActivityUsesHubPrivacyForLocalWorkspaceSubjects(t *testing.T) {

@@ -237,7 +237,7 @@ func (p SpokePreparer) Prepare(
 
 	report := spokeapi.SpokePreparationReport{
 		Unprepared:       []db.UnpreparedWorkspace{},
-		HandoffConflicts: []db.ProviderStateConflict{},
+		HandoffConflicts: []spokeapi.SpokePreparationConflict{},
 		HandoffErrors:    []string{},
 	}
 	status, err := p.WriteGate.Status(ctx)

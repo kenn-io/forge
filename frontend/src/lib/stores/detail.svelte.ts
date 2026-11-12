@@ -1583,7 +1583,15 @@ export function createDetailStore(opts: DetailStoreOptions) {
               if (didApply) noteObservedFetchedAt(next.detail_fetched_at);
               return didApply;
             });
-            return applied;
+            // An overlapping read may already carry this synchronized action context.
+            return (
+              applied ||
+              (isCurrent() &&
+                detail?.merge_request.State === next.merge_request.State &&
+                detail?.reviewed_head_sha === next.reviewed_head_sha &&
+                detail?.platform_head_sha === next.platform_head_sha &&
+                detail?.merge_request.HeadRepoCloneURL === next.merge_request.HeadRepoCloneURL)
+            );
           }),
         ),
         Effect.ensuring(
@@ -2712,15 +2720,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
         optimistic: undefined,
         apply: () => Effect.void,
         commit,
-        refreshOnStale: executeGeneratedApiRequest(
-          "sync pull request after stale discussion reply",
-          (client, signal) =>
-            providerUsesHostRoute(ref)
-              ? client.PullRequestsService.syncPullOnHost(
-                  { ...providerHostRouteParams(ref), number: number },
-                  { signal },
-                )
-              : client.PullRequestsService.syncPull({ ...providerRouteParams(ref), number: number }, { signal }),
+        refreshOnStale: executeGeneratedApiRequest("sync pull request after stale discussion reply", (client, signal) =>
+          providerUsesHostRoute(ref)
+            ? client.PullRequestsService.syncPullOnHost({ ...providerHostRouteParams(ref), number: number }, { signal })
+            : client.PullRequestsService.syncPull({ ...providerRouteParams(ref), number: number }, { signal }),
         ).pipe(Effect.asVoid),
       });
       const shouldReconcile = yield* Effect.sync(() => {

@@ -12,7 +12,7 @@ const pullRequestTimelineEventsQuery = `
 query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT], first: 100, after: $cursor) {
+      timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, ADDED_TO_MERGE_QUEUE_EVENT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT], first: 100, after: $cursor) {
         nodes {
           __typename
           ... on Node {
@@ -89,6 +89,10 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
               ... on Organization { login }
               ... on User { login }
             }
+            createdAt
+          }
+          ... on AddedToMergeQueueEvent {
+            actor { login }
             createdAt
           }
           ... on MergedEvent {

@@ -381,7 +381,7 @@ func NormalizeTimelineEvent(
 			CreatedAt:          event.CreatedAt,
 			DedupeKey:          timelineDedupeKey(event),
 		}
-	case "merged", "closed", "reopened":
+	case "added_to_merge_queue", "merged", "closed", "reopened":
 		return &platform.MergeRequestEvent{
 			Repo:               repo,
 			MergeRequestNumber: mrNumber,
@@ -398,6 +398,8 @@ func NormalizeTimelineEvent(
 
 func lifecycleSummary(eventType string) string {
 	switch eventType {
+	case "added_to_merge_queue":
+		return "added this to the merge queue"
 	case "merged":
 		return "merged this"
 	case "closed":

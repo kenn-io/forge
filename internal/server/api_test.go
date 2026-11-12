@@ -4510,6 +4510,11 @@ func TestWorkspaceActivityHideMergeQueuedDropsQueuedPullRequests(t *testing.T) {
 	readyKey := db.WorkspaceSubjectKey{
 		RepoID: 7, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
 	}
+	// This server's worker holds 43 for a merge after CI.
+	heldKey := db.WorkspaceSubjectKey{
+		RepoID: 7, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 43,
+	}
+	held := []db.RepoItemNumber{{RepoID: 7, Number: 43}}
 	subject := func(key db.WorkspaceSubjectKey, isQueued bool) workspaceapi.SubjectActivity {
 		return workspaceapi.SubjectActivity{
 			Subject: db.WorkspaceSubjectMetadata{
@@ -4526,6 +4531,7 @@ func TestWorkspaceActivityHideMergeQueuedDropsQueuedPullRequests(t *testing.T) {
 		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
 			queuedKey: subject(queuedKey, true),
 			readyKey:  subject(readyKey, false),
+			heldKey:   subject(heldKey, false),
 		},
 	}
 	srv := wiredServer(&Server{
@@ -4535,14 +4541,19 @@ func TestWorkspaceActivityHideMergeQueuedDropsQueuedPullRequests(t *testing.T) {
 		}},
 	})
 
-	got := srv.itemapi.WorkspaceActivityResponse(
-		&itemapi.ListActivityInput{},
-		db.ListActivityOpts{HideMergeQueued: true, Since: &since},
-		snapshot, nil, nil, true,
-	)
+	numbers := func(opts db.ListActivityOpts) []int {
+		opts.Since, opts.DeferredMergeItems = &since, held
+		got := srv.itemapi.WorkspaceActivityResponse(&itemapi.ListActivityInput{}, opts, snapshot, nil, nil, true)
+		out := []int{}
+		for _, subject := range got {
+			out = append(out, subject.ItemNumber)
+		}
+		return out
+	}
 
-	require.Len(got, 1)
-	assert.Equal(readyKey.ItemNumber, got[0].ItemNumber)
+	assert.Equal([]int{readyKey.ItemNumber}, numbers(db.ListActivityOpts{HideMergeQueued: true}))
+	assert.ElementsMatch([]int{queuedKey.ItemNumber, heldKey.ItemNumber}, numbers(db.ListActivityOpts{OnlyMergeQueued: true}))
+	require.Len(numbers(db.ListActivityOpts{}), 3)
 }
 
 func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t *testing.T) {
@@ -9268,6 +9279,15 @@ func TestAPIPullFiltersCombineSectionsBeforePagination(t *testing.T) {
 		{"state=all&involves_me=true&attributes=failed_ci,passed_ci&limit=1&offset=1", []int{1}},
 		{"state=all&attributes=merge_conflicts&limit=1&offset=1", []int{3}},
 		{"state=all&involves_me=true&attributes=merge_conflicts", []int{3}},
+		{"not_involves_me=true", []int{4, 2}},
+		{"assigned=true", []int{4, 3, 1}},
+		{"not_involves_me=true&assigned=true", []int{4}},
+		{"not_involves_me=true&unassigned=true", []int{2}},
+		{"involves_me=true&not_involves_me=true", []int{4, 3, 2, 1}},
+		{"unassigned=true&assigned=true", []int{4, 3, 2, 1}},
+		{"attributes=no_merge_conflicts", []int{2, 1}},
+		{"involves_me=true&attributes=no_merge_conflicts", []int{1}},
+		{"attributes=merge_conflicts,no_merge_conflicts", []int{4, 3, 2, 1}},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?"+tc.query, nil)

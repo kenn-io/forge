@@ -1,6 +1,6 @@
 <script lang="ts">
   import RepoPrivateIcon from "../components/shared/RepoPrivateIcon.svelte";
-  import { activityFilterOptions } from "../components/activityFilters.js";
+  import { ACTIVITY_TRI_FILTER_OPTIONS, activityFilterOptions } from "../components/activityFilters.js";
   import { Effect } from "effect";
   import { onDestroy, onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
@@ -348,7 +348,7 @@
     + (activity.getEnabledItemTypes().has("pr") ? 0 : 1)
     + (activity.getEnabledItemTypes().has("issue") ? 0 : 1)
     + filters.events.filter((filter) => !filter.active).length
-    + filters.visibility.filter((filter) => filter.active).length,
+    + filters.visibility.filter((filter) => filter.active || filter.excluded).length,
   );
 
   const repoLabelFormatter = $derived.by(() =>
@@ -780,13 +780,27 @@
       </div>
 
       {#each filters.visibility as filter (filter.id)}
-        <div class="mobile-boolean-toggle">
-          <Toggle
-            checked={filter.active}
-            label={filter.mobileLabel ?? filter.label}
-            onchange={filter.onSelect}
-          />
-        </div>
+        {#if filter.tri}
+          {@const tri = filter.tri}
+          <div class="mobile-filter-select">
+            <span>{filter.mobileLabel ?? filter.label}</span>
+            <SelectDropdown
+              class="mobile-filter-dropdown"
+              title={filter.label}
+              value={tri.value ?? "any"}
+              options={ACTIVITY_TRI_FILTER_OPTIONS}
+              onchange={(value) => tri.set(value === "require" || value === "exclude" ? value : undefined)}
+            />
+          </div>
+        {:else}
+          <div class="mobile-boolean-toggle">
+            <Toggle
+              checked={filter.active}
+              label={filter.mobileLabel ?? filter.label}
+              onchange={filter.onSelect}
+            />
+          </div>
+        {/if}
       {/each}
     </div>
 

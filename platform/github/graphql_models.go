@@ -85,7 +85,7 @@ type GraphQLPR struct {
 	TimelineItems struct {
 		Nodes    []GraphQLPullRequestTimelineItem
 		PageInfo GraphQLPageInfo
-	} `graphql:"timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT], first: 100)"`
+	} `graphql:"timelineItems(itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, COMMENT_DELETED_EVENT, CROSS_REFERENCED_EVENT, RENAMED_TITLE_EVENT, BASE_REF_CHANGED_EVENT, ASSIGNED_EVENT, UNASSIGNED_EVENT, ADDED_TO_MERGE_QUEUE_EVENT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT], first: 100)"`
 }
 
 // GraphQLPRWithNativeStacks is a distinct query shape so preview-only fields are
@@ -229,6 +229,7 @@ type GraphQLPullRequestTimelineItem struct {
 	BaseRefChangedEvent     GraphQLBaseRefChangedEvent     `graphql:"... on BaseRefChangedEvent"`
 	AssignedEvent           GraphQLAssignedEvent           `graphql:"... on AssignedEvent"`
 	UnassignedEvent         GraphQLAssignedEvent           `graphql:"... on UnassignedEvent"`
+	AddedToMergeQueueEvent  GraphQLLifecycleEvent          `graphql:"... on AddedToMergeQueueEvent"`
 	MergedEvent             GraphQLLifecycleEvent          `graphql:"... on MergedEvent"`
 	ClosedEvent             GraphQLLifecycleEvent          `graphql:"... on ClosedEvent"`
 	ReopenedEvent           GraphQLLifecycleEvent          `graphql:"... on ReopenedEvent"`

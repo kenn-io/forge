@@ -118,7 +118,7 @@ export function roborevMutationFailureMessage(fallback: string, failure: unknown
     return `Could not confirm whether the previous ${failure.operation} was applied. This action was not sent.`;
   }
   if (failure instanceof RoborevMutationOutcomeUnknown) {
-    return `Could not confirm whether the ${failure.operation} was applied. Matching actions remain blocked until Roborev authority is available.`;
+    return `Forge couldn't confirm the outcome. It will check when you retry. Action: ${failure.operation}.`;
   }
   return fallback;
 }

@@ -179,6 +179,8 @@ func (c *Client) ListPullRequestTimelineEvents(
 				event.EventType = "assigned"
 			case "UnassignedEvent":
 				event.EventType = "unassigned"
+			case "AddedToMergeQueueEvent":
+				event.EventType = "added_to_merge_queue"
 			case "MergedEvent":
 				event.EventType = "merged"
 			case "ClosedEvent":

@@ -88,7 +88,8 @@ type listActivityThreadEventsInput struct {
 	HideClosedMerged        bool     `query:"hide_closed_merged"`
 	HideBots                bool     `query:"hide_bots"`
 	HideDrafts              bool     `query:"hide_drafts" doc:"Exclude activity for draft pull requests."`
-	HideMergeQueued         bool     `query:"hide_merge_queued" doc:"Exclude activity for pull requests currently queued for merge."`
+	HideMergeQueued         bool     `query:"hide_merge_queued" doc:"Exclude activity for open pull requests in a merge queue or set to merge after CI."`
+	MergeQueued             bool     `query:"merge_queued" doc:"Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued."`
 	HideDefaultBranch       bool     `query:"hide_default_branch"`
 }
 
@@ -823,8 +824,8 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 	input *itemapi.ListActivityInput,
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
 ) (func(itemapi.ActivityResponse) itemapi.ActivityResponse, error) {
-	if input.Unassigned {
-		if err := s.retainUnassignedWorkspaceSubjects(ctx, &snapshot); err != nil {
+	if input.Unassigned != input.Assigned {
+		if err := s.filterWorkspaceSubjectsByAssignment(ctx, &snapshot, input.Unassigned); err != nil {
 			slog.Error("list unassigned workspace subjects failed", "err", err)
 			return nil, httpapi.Internal("list workspace activity failed")
 		}
@@ -835,7 +836,7 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 	}
 	overlays := activityWorkspaceOverlays(snapshot, repositories)
 	// Only the hub can tell whether a standalone local subject involves the viewer.
-	listWorkspaceActivity := input.Projection != "events" && !input.InvolvesMe
+	listWorkspaceActivity := input.Projection != "events" && input.InvolvesMe == input.NotInvolvesMe
 	var opts db.ListActivityOpts
 	if listWorkspaceActivity {
 		if (*s.ProviderSource) != nil {
@@ -876,15 +877,26 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 	}, nil
 }
 
+// deferredMergeItems lists the pull requests this server's worker holds for
+// a merge after CI, when a merge-queued filter needs them.
+func (s *Handlers) deferredMergeItems(needed bool) []db.RepoItemNumber {
+	if !needed || s.PullAPI == nil || *s.PullAPI == nil {
+		return nil
+	}
+	return (*s.PullAPI).DeferredMergeItems()
+}
+
 func localWorkspaceActivityOptions(input *itemapi.ListActivityInput, now time.Time) (db.ListActivityOpts, error) {
 	opts := db.ListActivityOpts{
 		RepoFilters:     itemapi.ParseRepoFilters(input.Repo),
 		ItemTypes:       input.ItemTypes,
 		Search:          strings.TrimSpace(input.Search),
 		Author:          strings.TrimSpace(input.Author),
-		Unassigned:      input.Unassigned,
+		Unassigned:      input.Unassigned && !input.Assigned,
+		Assigned:        input.Assigned && !input.Unassigned,
 		HideDrafts:      input.HideDrafts,
 		HideMergeQueued: input.HideMergeQueued,
+		OnlyMergeQueued: input.MergeQueued,
 	}
 	if input.Since == "" {
 		defaultSince := now.UTC().AddDate(0, 0, -7)
@@ -969,7 +981,8 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		ItemTypes:   input.ItemTypes,
 		Search:      strings.TrimSpace(input.Search),
 		Author:      strings.TrimSpace(input.Author),
-		Unassigned:  input.Unassigned,
+		Unassigned:  input.Unassigned && !input.Assigned,
+		Assigned:    input.Assigned && !input.Unassigned,
 		// Notifications are always on; this only drops notification rows in
 		// SQL when no config is loaded (the nil-config safety guard), so the
 		// safety-cap window is filled by real activity, not stale notifications.
@@ -978,6 +991,8 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		HideBots:             input.HideBots,
 		HideDrafts:           input.HideDrafts,
 		HideMergeQueued:      input.HideMergeQueued,
+		OnlyMergeQueued:      input.MergeQueued,
+		DeferredMergeItems:   s.deferredMergeItems(input.HideMergeQueued || input.MergeQueued),
 		HideDefaultBranch:    input.HideDefaultBranch,
 	}
 
@@ -993,12 +1008,13 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 	opts.Limit = pageLimit + 1
-	if input.InvolvesMe {
+	if input.InvolvesMe != input.NotInvolvesMe {
 		viewerLogins, err := s.ResolveAuthenticatedViewerLogins(ctx, opts.RepoFilters)
 		if err != nil {
 			return nil, err
 		}
 		opts.ViewerLogins = viewerLogins
+		opts.ViewerUninvolved = input.NotInvolvesMe
 	}
 
 	if input.Since != "" {
@@ -1138,11 +1154,15 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			SearchMatchedSubjectKeys: searchMatchedSubjectKeys,
 			Author:                   opts.Author,
 			Unassigned:               opts.Unassigned,
+			Assigned:                 opts.Assigned,
 			ViewerLogins:             opts.ViewerLogins,
+			ViewerUninvolved:         opts.ViewerUninvolved,
 			HideClosedMerged:         opts.HideClosedMerged,
 			HideBots:                 opts.HideBots,
 			HideDrafts:               opts.HideDrafts,
 			HideMergeQueued:          opts.HideMergeQueued,
+			OnlyMergeQueued:          opts.OnlyMergeQueued,
+			DeferredMergeItems:       opts.DeferredMergeItems,
 			Limit:                    pageLimit + 1,
 			Since:                    opts.Since,
 		})
@@ -1156,8 +1176,8 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		slog.Error("list workspace activity failed", "err", err)
 		return nil, httpapi.Internal("list workspace activity failed")
 	}
-	if opts.Unassigned {
-		if err := s.retainUnassignedWorkspaceSubjects(ctx, &workspaceSnapshot); err != nil {
+	if opts.Unassigned || opts.Assigned {
+		if err := s.filterWorkspaceSubjectsByAssignment(ctx, &workspaceSnapshot, opts.Unassigned); err != nil {
 			slog.Error("list unassigned workspace subjects failed", "err", err)
 			return nil, httpapi.Internal("list workspace activity failed")
 		}
@@ -1172,12 +1192,12 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			return nil, httpapi.Internal("list workspace activity failed")
 		}
 		for key := range workspaceSnapshot.Subjects {
-			if _, ok := involvedSubjects[key]; !ok {
+			if _, ok := involvedSubjects[key]; ok == opts.ViewerUninvolved {
 				delete(workspaceSnapshot.Subjects, key)
 			}
 		}
 		for key := range workspaceSnapshot.OwnReferences {
-			if _, ok := involvedSubjects[key]; !ok {
+			if _, ok := involvedSubjects[key]; ok == opts.ViewerUninvolved {
 				delete(workspaceSnapshot.OwnReferences, key)
 			}
 		}
@@ -1357,8 +1377,10 @@ func workspaceSnapshotSubjectKeys(
 	return keys
 }
 
-func (s *Handlers) retainUnassignedWorkspaceSubjects(
-	ctx context.Context, snapshot *workspaceapi.WorkspaceSubjectSnapshot,
+// filterWorkspaceSubjectsByAssignment keeps the subjects with no assignees when
+// unassigned is true, and every other subject when it is false.
+func (s *Handlers) filterWorkspaceSubjectsByAssignment(
+	ctx context.Context, snapshot *workspaceapi.WorkspaceSubjectSnapshot, unassigned bool,
 ) error {
 	if (*s.ProviderSource) != nil {
 		repositories, err := s.WorkspaceActivityRepositoryIdentities(ctx, *snapshot)
@@ -1366,11 +1388,11 @@ func (s *Handlers) retainUnassignedWorkspaceSubjects(
 			return err
 		}
 		identitiesByKey, candidates := spokeapi.WorkspaceActivitySubjectIdentities(*snapshot, repositories)
-		unassigned, err := (*s.ProviderSource).FilterUnassignedActivitySubjects(ctx, candidates)
+		unassignedSubjects, err := (*s.ProviderSource).FilterUnassignedActivitySubjects(ctx, candidates)
 		if err != nil {
 			return err
 		}
-		spokeapi.RetainActivitySubjectsByIdentity(snapshot, identitiesByKey, unassigned)
+		spokeapi.FilterActivitySubjectsByIdentity(snapshot, identitiesByKey, unassignedSubjects, unassigned)
 		return nil
 	}
 	unassignedSubjects, err := s.Db.ListUnassignedWorkspaceSubjectKeys(
@@ -1380,12 +1402,12 @@ func (s *Handlers) retainUnassignedWorkspaceSubjects(
 		return err
 	}
 	for key := range snapshot.Subjects {
-		if _, ok := unassignedSubjects[key]; !ok {
+		if _, ok := unassignedSubjects[key]; ok != unassigned {
 			delete(snapshot.Subjects, key)
 		}
 	}
 	for key := range snapshot.OwnReferences {
-		if _, ok := unassignedSubjects[key]; !ok {
+		if _, ok := unassignedSubjects[key]; ok != unassigned {
 			delete(snapshot.OwnReferences, key)
 		}
 	}
@@ -1439,6 +1461,7 @@ func (s *Handlers) ListActivityThreadEvents(
 		HideBots:           input.HideBots,
 		HideDrafts:         input.HideDrafts,
 		HideMergeQueued:    input.HideMergeQueued,
+		MergeQueued:        input.MergeQueued,
 		HideDefaultBranch:  input.HideDefaultBranch,
 		ParentProvider:     input.Provider,
 		ParentPlatformHost: input.PlatformHost,

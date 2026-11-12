@@ -186,13 +186,13 @@ func TestClearDeferredMergeInFlightKeepsNewerHandle(t *testing.T) {
 	handler := New(Deps{})
 	key := "gitlab:gitlab.example.com:group/project#7"
 
-	stale, marked := handler.markDeferredMergeInFlight(key)
+	stale, marked := handler.markDeferredMergeInFlight(key, db.RepoItemNumber{})
 	require.True(marked)
 	// Terminal paths clear the key before broadcasting, so a new deferred
 	// merge can be queued before the old worker goroutine runs its deferred
 	// cleanup for the same key.
 	handler.clearDeferredMergeInFlight(key, stale)
-	current, marked := handler.markDeferredMergeInFlight(key)
+	current, marked := handler.markDeferredMergeInFlight(key, db.RepoItemNumber{})
 	require.True(marked)
 
 	// The old worker's deferred cleanup must not delete the newer handle;
@@ -218,7 +218,7 @@ func TestSpokePreparationTracksDeferredMergeUntilClearOrSupersede(t *testing.T) 
 
 	release, err := gate.BeginDeferredMerge(t.Context())
 	require.NoError(err)
-	handle, marked := handler.markDeferredMergeInFlight(key, release)
+	handle, marked := handler.markDeferredMergeInFlight(key, db.RepoItemNumber{}, release)
 	require.True(marked)
 	status, err := gate.Status(t.Context())
 	require.NoError(err)
@@ -230,7 +230,7 @@ func TestSpokePreparationTracksDeferredMergeUntilClearOrSupersede(t *testing.T) 
 
 	release, err = gate.BeginDeferredMerge(t.Context())
 	require.NoError(err)
-	_, marked = handler.markDeferredMergeInFlight(key, release)
+	_, marked = handler.markDeferredMergeInFlight(key, db.RepoItemNumber{}, release)
 	require.True(marked)
 	handler.supersedeDeferredMerge(key)
 	status, err = gate.Status(t.Context())

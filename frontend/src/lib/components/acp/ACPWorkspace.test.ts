@@ -1898,6 +1898,146 @@ describe("ACPWorkspace terminal output", () => {
   });
 });
 
+describe("ACPWorkspace tool details on request", () => {
+  const summary = { role: "tool", text: "Run tests", toolCallId: "t1", status: "completed", detailsOmitted: true };
+  const details = {
+    id: "entry-1",
+    previousId: "entry-0",
+    version: 1,
+    role: "tool",
+    text: "Run tests",
+    toolCallId: "t1",
+    status: "completed",
+    toolContent: [{ type: "terminal", terminalId: "term-1", output: "ok 12 passed", exitCode: 0 }],
+  };
+  const detailRequests = () =>
+    (sentCommands() as Array<{ type: string }>).filter((command) => command.type === "toolDetails");
+
+  it("asks for a tool call's details when it is expanded and shows them", async () => {
+    await openChat({ messages: [{ role: "user", text: "Check" }, summary, { role: "assistant", text: "Done" }] });
+    await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
+    expect(detailRequests()).toEqual([]);
+
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await tick();
+    expect(detailRequests()).toEqual([{ type: "toolDetails", id: "entry-1", beforeId: "entry-2" }]);
+    expect(screen.getByText("Loading details…")).toBeDefined();
+
+    socket.options!.onMessage(JSON.stringify({ toolDetails: details }));
+    await tick();
+    expect(screen.queryByText("Loading details…")).toBeNull();
+    expect(screen.getByLabelText("Command output").textContent).toBe("ok 12 passed");
+
+    // Loaded details stay; expanding again does not ask again.
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    expect(detailRequests()).toHaveLength(1);
+  });
+
+  it("asks again after a failure only when the tool call is expanded again", async () => {
+    await openChat({ messages: [{ role: "user", text: "Check" }, summary] });
+    await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await tick();
+    expect(detailRequests()).toEqual([{ type: "toolDetails", id: "entry-1", beforeId: "" }]);
+
+    socket.options!.onMessage(
+      JSON.stringify({ commandError: "The chat changed. Try again.", command: "toolDetails", id: "entry-1" }),
+    );
+    await tick();
+    expect(screen.getByRole("alert").textContent).toContain("The chat changed. Try again.");
+    // A failed request closes the tool call instead of loading forever.
+    expect(screen.getByRole("button", { name: /Run tests/ }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Loading details…")).toBeNull();
+    expect(detailRequests()).toHaveLength(1);
+
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await tick();
+    expect(detailRequests()).toHaveLength(2);
+  });
+
+  it("asks again when a new state on the same socket leaves the details out", async () => {
+    // A dormant chat whose agent starts sends a full state without reconnecting.
+    await openChat({ messages: [{ role: "user", text: "Check" }, summary] });
+    await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await tick();
+    socket.options!.onMessage(JSON.stringify({ toolDetails: details }));
+    await tick();
+
+    await push({ messages: [{ role: "user", text: "Check" }, summary] });
+    await tick();
+    expect(detailRequests()).toHaveLength(2);
+  });
+
+  it("keeps a generated app running when the details arrive", async () => {
+    let widgetStarts = 0;
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      if (String(input instanceof Request ? input.url : input).endsWith("/mcp-apps/resource")) widgetStarts += 1;
+      return new Promise<Response>(() => {});
+    });
+    const app = {
+      type: "content",
+      content: {
+        type: "text",
+        text: JSON.stringify({ kind: "kenn-forge://apps/generated", title: "Chart", html: "<p>chart</p>" }),
+      },
+    };
+    await openChat({
+      messages: [
+        { role: "user", text: "Check" },
+        { ...summary, toolContent: [app] },
+      ],
+    });
+    await waitFor(() => expect(widgetStarts).toBe(1));
+    await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    socket.options!.onMessage(
+      JSON.stringify({ toolDetails: { ...details, toolContent: [...details.toolContent, structuredClone(app)] } }),
+    );
+    await tick();
+    expect(screen.getByLabelText("Command output").textContent).toBe("ok 12 passed");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(widgetStarts).toBe(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps inline media mounted when the details arrive", async () => {
+    const image = { type: "content", content: { type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" } };
+    await openChat({
+      messages: [
+        { role: "user", text: "Check" },
+        { ...summary, toolContent: [image] },
+      ],
+    });
+    const shown = screen.getByRole("img");
+    await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await tick();
+    socket.options!.onMessage(
+      JSON.stringify({ toolDetails: { ...details, toolContent: [...details.toolContent, image] } }),
+    );
+    await tick();
+    expect(screen.getByLabelText("Command output").textContent).toBe("ok 12 passed");
+    expect(screen.getByRole("img")).toBe(shown);
+  });
+
+  it("asks again for an expanded tool call after reconnecting", async () => {
+    await openChat({ messages: [{ role: "user", text: "Check" }, summary] });
+    await fireEvent.click(screen.getByRole("button", { name: /^1 tool/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /Run tests/ }));
+    await tick();
+    socket.options!.onMessage(JSON.stringify({ toolDetails: details }));
+    await tick();
+
+    socket.options!.onOpen?.();
+    await push({ messages: [{ role: "user", text: "Check" }, summary] });
+    await tick();
+    expect(detailRequests()).toHaveLength(2);
+    expect(screen.getByText("Loading details…")).toBeDefined();
+  });
+});
+
 describe("ACPWorkspace transcript paging", () => {
   const user = (index: number) => ({
     id: `entry-${index}`,
@@ -1935,6 +2075,61 @@ describe("ACPWorkspace transcript paging", () => {
 
     await fireEvent.scroll(conversation());
     expect(historyRequests().at(-1)).toEqual({ type: "history", beforeId: "entry-100", limit: 100 });
+  });
+
+  it("keeps paging while earlier pages add only a few rows", async () => {
+    // Ten tool calls, then a reply: one page adds two rows.
+    const turn = (from: number) => [
+      ...Array.from({ length: 10 }, (_, offset) => ({
+        ...user(from + offset),
+        role: "tool",
+        toolCallId: `call-${from + offset}`,
+        title: `Read file ${from + offset}`,
+      })),
+      user(from + 10),
+    ];
+    const page = (from: number) => ({
+      history: { beforeId: `entry-${from + 11}`, offset: from, messages: turn(from) },
+    });
+    await openChat({ messages: range(1100, 1101), messageOffset: 1100, messageCount: 1101 });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Load earlier messages" }));
+    for (let request = 0; request < 15; request += 1) {
+      expect(historyRequests()).toHaveLength(request + 1);
+      socket.options!.onMessage(JSON.stringify(page(1100 - 11 * (request + 1))));
+    }
+    await tick();
+
+    // Thirty more rows arrived, so loading stops and the button returns.
+    expect(historyRequests()).toHaveLength(15);
+    expect(historyRequests().at(-1)).toEqual({ type: "history", beforeId: "entry-946", limit: 100 });
+    expect(screen.getByRole("button", { name: "Load earlier messages" })).toBeDefined();
+    expect(document.querySelectorAll("[data-activity-group]")).toHaveLength(15);
+    expect(texts()).toHaveLength(16);
+  });
+
+  it("does not count live replies toward the earlier rows a click loads", async () => {
+    await openChat({ messages: range(1000, 1001), messageOffset: 1000, messageCount: 1001 });
+    await fireEvent.click(screen.getByRole("button", { name: "Load earlier messages" }));
+    // The agent appends 40 replies while the first page is in flight.
+    socket.options!.onMessage(
+      JSON.stringify({
+        updates: {
+          ...baseState,
+          messages: range(1001, 1041),
+          messageOffset: 1001,
+          messageCount: 1041,
+          lastMessageId: "entry-1040",
+          messageCursor: 2,
+          more: false,
+        },
+      }),
+    );
+    socket.options!.onMessage(
+      JSON.stringify({ history: { beforeId: "entry-1000", offset: 990, messages: range(990, 1000) } }),
+    );
+    await tick();
+    expect(historyRequests().at(-1)).toEqual({ type: "history", beforeId: "entry-990", limit: 100 });
   });
 
   it("asks for earlier history when the conversation scrolls near the top", async () => {

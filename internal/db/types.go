@@ -827,9 +827,14 @@ type MRReviewThread struct {
 
 type ListMergeRequestsOpts struct {
 	// Attributes are PR inclusion filters. Mutually exclusive ones (draft and ready, failed_ci and
-	// passed_ci) match either; every other filter, including Unassigned and ViewerLogins, must
-	// also match before pagination.
+	// passed_ci, approved and not_approved, merge_conflicts and no_merge_conflicts) match either;
+	// every other filter, including Unassigned and ViewerLogins, must also match before pagination.
+	// merge_queued matches an open pull request in its provider merge queue, with provider
+	// auto-merge on, or named in DeferredMergeItems; not_merge_queued matches every other one.
 	Attributes []string
+	// DeferredMergeItems are the pull requests this server's own worker holds for a merge after CI.
+	// Only merge_queued and not_merge_queued read them.
+	DeferredMergeItems []RepoItemNumber
 	// AllowedRepoIDs scopes repositories before pagination. nil is unrestricted; empty matches none.
 	AllowedRepoIDs []int64
 	// Numbers filters item numbers before pagination. nil is unrestricted; empty matches none.
@@ -862,6 +867,10 @@ type ListMergeRequestsOpts struct {
 	// viewer in each repository. nil disables the filter; an empty non-nil
 	// slice matches no subjects.
 	ViewerLogins []RepoViewerLogin
+	// ViewerUninvolved inverts ViewerLogins: only subjects that do not involve the viewer.
+	ViewerUninvolved bool
+	// Assigned is the opposite of Unassigned: every pull request Unassigned would drop.
+	Assigned bool
 }
 
 type RepoItemNumber struct {
@@ -882,19 +891,20 @@ type WorkspaceSubjectKey struct {
 }
 
 type WorkspaceSubjectMetadata struct {
-	Key           WorkspaceSubjectKey
-	Platform      string
-	PlatformHost  string
-	RepoKey       platform.RepositoryKey
-	RepoOwner     string
-	RepoName      string
-	RepoPath      string
-	RepoPrivate   *bool
-	Title         string
-	State         string
-	URL           string
-	Author        string
-	IsDraft       bool
+	Key          WorkspaceSubjectKey
+	Platform     string
+	PlatformHost string
+	RepoKey      platform.RepositoryKey
+	RepoOwner    string
+	RepoName     string
+	RepoPath     string
+	RepoPrivate  *bool
+	Title        string
+	State        string
+	URL          string
+	Author       string
+	IsDraft      bool
+	// IsMergeQueued: open and in a merge queue, or with provider auto-merge on.
 	IsMergeQueued bool
 }
 
@@ -987,6 +997,11 @@ type ListIssuesOpts struct {
 	WorkspaceActivity []ItemActivityOverride
 	ViewerLogins      []RepoViewerLogin
 	ReferencedByPR    bool
+	// Assigned, ViewerUninvolved, and NotReferencedByPR are the opposites of Unassigned,
+	// ViewerLogins, and ReferencedByPR.
+	Assigned          bool
+	ViewerUninvolved  bool
+	NotReferencedByPR bool
 }
 
 type Notification struct {
@@ -1654,9 +1669,13 @@ type ListActivityOpts struct {
 	// Unassigned limits rows to PR and issue subjects with no assignees.
 	// Repository-only rows never match.
 	Unassigned bool
+	// Assigned keeps every row Unassigned would drop, repository-only rows included.
+	Assigned bool
 	// ViewerLogins limits rows to PR and issue subjects involving the
 	// authenticated viewer. Repository-only rows never match.
 	ViewerLogins []RepoViewerLogin
+	// ViewerUninvolved inverts ViewerLogins: every row it would drop, repository-only rows included.
+	ViewerUninvolved bool
 	// ExcludeNotifications drops notification rows from the union before
 	// ordering/limit. Notifications are always enabled in normal operation;
 	// the server only sets this when no config is loaded (nil-config
@@ -1667,10 +1686,15 @@ type ListActivityOpts struct {
 	HideBots             bool
 	HideDrafts           bool
 	HideMergeQueued      bool
-	HideDefaultBranch    bool
-	ParentRepoID         int64
-	ParentItemType       string
-	ParentItemNumber     int
+	// OnlyMergeQueued keeps only activity on pull requests HideMergeQueued would hide: open and
+	// in a merge queue, with provider auto-merge on, or in DeferredMergeItems.
+	OnlyMergeQueued bool
+	// DeferredMergeItems are the pull requests this server's worker holds for a merge after CI.
+	DeferredMergeItems []RepoItemNumber
+	HideDefaultBranch  bool
+	ParentRepoID       int64
+	ParentItemType     string
+	ParentItemNumber   int
 	// DirectProjectionOnly selects rows that cannot be represented by the
 	// filtered parent projection, including repository/unparented rows and
 	// visible human events whose bot-authored parent is hidden.
@@ -1716,8 +1740,13 @@ type ListActivitySubjectsOpts struct {
 	HideBots                 bool
 	HideDrafts               bool
 	HideMergeQueued          bool
+	OnlyMergeQueued          bool
+	DeferredMergeItems       []RepoItemNumber
 	Limit                    int
 	Since                    *time.Time
+	// Assigned and ViewerUninvolved invert Unassigned and ViewerLogins, as in ListActivityOpts.
+	Assigned         bool
+	ViewerUninvolved bool
 }
 
 type ActivityProjection struct {

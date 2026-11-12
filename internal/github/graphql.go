@@ -1226,6 +1226,8 @@ func adaptPullRequestTimelineEvent(gql *platformgithub.GraphQLPullRequestTimelin
 		copyAssignmentEvent(&event, "assigned", gql.AssignedEvent)
 	case "UnassignedEvent":
 		copyAssignmentEvent(&event, "unassigned", gql.UnassignedEvent)
+	case "AddedToMergeQueueEvent":
+		copyLifecycleEvent(&event, "added_to_merge_queue", gql.AddedToMergeQueueEvent)
 	case "MergedEvent":
 		copyLifecycleEvent(&event, "merged", gql.MergedEvent)
 	case "ClosedEvent":

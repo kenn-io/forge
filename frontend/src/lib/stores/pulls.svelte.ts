@@ -18,6 +18,8 @@ import {
   providerUsesHostRoute,
 } from "../api/provider-routes.js";
 import {
+  BROWSER_ONLY_PULL_ATTRIBUTES,
+  cycleFilterInSections,
   PULL_ATTRIBUTE_SECTIONS,
   pullMatchesAttributeFilters,
   toggleFilterInSections,
@@ -29,6 +31,7 @@ import { PullsWorkflow, type FetchPullResult } from "./pulls-workflow.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
 import { providerItemKey, providerMutationKey } from "./provider-key.js";
 import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js";
+import type { TriFilter } from "../utils/tri-filter.js";
 import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
 import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
 import { repoIdentityKey } from "../utils/repo-label.js";
@@ -254,7 +257,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   function getLocalFilterCount(): number {
-    return attributeFilters.length + labelFilters.size + Number(involvesMe) + Number(unassigned);
+    return (
+      attributeFilters.length + labelFilters.size + Number(involvesMe !== undefined) + Number(unassigned !== undefined)
+    );
   }
 
   function getFilterStarred(): boolean {
@@ -265,20 +270,20 @@ export function createPullsStore(opts: PullsStoreOptions) {
     filterStarred = v;
   }
 
-  function getInvolvesMe(): boolean {
+  function getInvolvesMe(): TriFilter {
     return involvesMe;
   }
 
-  function setInvolvesMe(value: boolean): void {
+  function setInvolvesMe(value: TriFilter): void {
     involvesMe = value;
     writeInvolvesMeFilter("pulls", value);
   }
 
-  function getUnassigned(): boolean {
+  function getUnassigned(): TriFilter {
     return unassigned;
   }
 
-  function setUnassigned(value: boolean): void {
+  function setUnassigned(value: TriFilter): void {
     unassigned = value;
     writeUnassignedFilter("pulls", value);
   }
@@ -352,9 +357,18 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   // --- writes ---
 
+  function applyAttributeFilters(next: PullAttributeFilter[], changed: PullAttributeFilter): void {
+    attributeFilters = next;
+    if (!BROWSER_ONLY_PULL_ATTRIBUTES.includes(changed) && (involvesMe || unassigned)) loadPulls(activeListParams);
+  }
+
   function toggleAttributeFilter(filter: PullAttributeFilter): void {
-    attributeFilters = toggleFilterInSections(PULL_ATTRIBUTE_SECTIONS, attributeFilters, filter);
-    if (filter !== "has_workspace" && (involvesMe || unassigned)) loadPulls(activeListParams);
+    applyAttributeFilters(toggleFilterInSections(PULL_ATTRIBUTE_SECTIONS, attributeFilters, filter), filter);
+  }
+
+  /** Cycles an attribute through off, required, and its opposite. */
+  function cycleAttributeFilter(filter: PullAttributeFilter, opposite: PullAttributeFilter): void {
+    applyAttributeFilters(cycleFilterInSections(PULL_ATTRIBUTE_SECTIONS, attributeFilters, filter, opposite), filter);
   }
 
   function cycleLabelFilter(name: string): void {
@@ -364,8 +378,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
   function clearLocalFilters(): void {
     attributeFilters = [];
     labelFilters = new Map();
-    setInvolvesMe(false);
-    setUnassigned(false);
+    setInvolvesMe(undefined);
+    setUnassigned(undefined);
   }
 
   function getSearchQuery(): string | undefined {
@@ -599,16 +613,16 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function listQuery(params?: PullsParams): PullsParams {
     const globalRepo = getGlobalRepo();
+    const serverAttributes = attributeFilters.filter((filter) => !BROWSER_ONLY_PULL_ATTRIBUTES.includes(filter));
     const query: PullsParams = {
       state: filterState,
       ...(globalRepo !== undefined && { repo: globalRepo }),
       ...(filterStarred && { starred: true }),
-      ...(involvesMe && { involves_me: true }),
-      ...(unassigned && { unassigned: true }),
-      ...((involvesMe || unassigned) &&
-        attributeFilters.some((filter) => filter !== "has_workspace") && {
-          attributes: attributeFilters.filter((filter) => filter !== "has_workspace").join(","),
-        }),
+      ...(involvesMe === "require" && { involves_me: true }),
+      ...(involvesMe === "exclude" && { not_involves_me: true }),
+      ...(unassigned === "require" && { unassigned: true }),
+      ...(unassigned === "exclude" && { assigned: true }),
+      ...((involvesMe || unassigned) && serverAttributes.length > 0 && { attributes: serverAttributes.join(",") }),
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
@@ -732,6 +746,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     selectNextPR,
     selectPrevPR,
     toggleAttributeFilter,
+    cycleAttributeFilter,
     cycleLabelFilter,
     clearLocalFilters,
     getSearchQuery,

@@ -454,6 +454,11 @@ Forge prefers a running Ollama with Nomic, then the shared built-in server.
 Setup downloads missing shared assets with your consent. Run setup again to
 switch from automatic discovery or a configured endpoint to the built-in server. A configured endpoint
 takes precedence over `local_embeddings = "builtin"`. Restart Forge after setup.
+Turning on the built-in server records a shared choice. When another Kenn app
+records that choice, the Forge that syncs providers enables the built-in server
+at its next launch if it has no embeddings configuration. Ollama setup stays
+local to Forge. A saved built-in configuration enables Forge without recording
+shared consent. Forge has no setting or command to clear the shared choice.
 To configure an endpoint yourself, for example Ollama:
 
 ```toml
@@ -471,6 +476,10 @@ set `api_key` to the key itself or to `{ env = "NAME" }` or
 `trust_private_network = true`. Optional `batch_size`, `timeout_seconds`,
 `request_dimensions`, `input_type_mode`, `model_context_tokens`, and
 `max_batch_tokens` tune requests for endpoints that need it.
+The discovered built-in server defaults to eight inputs per request, a five-minute
+request timeout, and one request at a time. Explicit `batch_size` and
+`timeout_seconds` settings override these defaults. Configured endpoints and
+discovered Ollama default to 32 inputs and a 30-second timeout.
 
 The Forge that syncs providers builds the index in `semantic.db` under
 `data_dir` after each sync and serves searches for its whole fleet. Changing

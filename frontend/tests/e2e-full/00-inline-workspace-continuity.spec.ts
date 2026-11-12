@@ -2260,17 +2260,14 @@ test.describe("inline workspace pane continuity", () => {
         helperFinishPath = path.join(workspaceA.worktree_path, `${boundary.name}-finish`);
         const helperPath = path.join(workspaceA.worktree_path, `${boundary.name}-helper.sh`);
         const completionMarker = `${boundary.name}-complete`;
+        // One passthrough keeps the replay-sized filler from flooding the live subscriber with tiny chunks.
         const command = [
-          "i=0",
-          `while [ "$i" -lt 2500 ]; do printf '${tmuxPassthroughFormat("0123456789abcdef0123456789abcdef\\r\\n")}'; i=$((i+1)); done`,
+          `printf '${tmuxPassthroughFormat("0123456789abcdef0123456789abcdef\\r\\n".repeat(2500))}'`,
           ...(boundary.entersAlternateScreen ? [`printf '${tmuxPassthroughFormat("\\033\\033[?1049h")}'`] : []),
           ...(boundary.evictsCandidateFromReplay ? [`printf '${tmuxPassthroughFormat("\\033\\033[?2004l")}'`] : []),
           ...("directCandidate" in boundary ? [] : [`printf '${tmuxPassthroughFormat(boundary.candidateFormat)}'`]),
           ...(boundary.evictsCandidateFromReplay
-            ? [
-                "i=0",
-                `while [ "$i" -lt 2500 ]; do printf '${tmuxPassthroughFormat("fedcba9876543210fedcba9876543210\\r\\n")}'; i=$((i+1)); done`,
-              ]
+            ? [`printf '${tmuxPassthroughFormat("fedcba9876543210fedcba9876543210\\r\\n".repeat(2500))}'`]
             : []),
           `touch '${readyPath}'`,
           `while [ ! -f '${continuePath}' ]; do sleep 0.05; done`,

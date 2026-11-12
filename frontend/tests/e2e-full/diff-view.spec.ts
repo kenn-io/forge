@@ -4351,7 +4351,9 @@ test.describe("diff view (git-backed)", () => {
       const cacheContentBox = await visibleBoundingBox(cacheFile.locator(".file-content"));
       const composerBox = await visibleBoundingBox(inlineComposerFor(rightComposer));
       expect(composerBox.x + composerBox.width).toBeLessThanOrEqual(cacheContentBox.x + cacheContentBox.width + 1);
+      await rightComposer.click();
       await rightComposer.fill("Right-side cache note");
+      await expect(rightComposer).toHaveValue("Right-side cache note");
       await submitInlineComposer(rightComposer);
       await expect(
         page.locator(".inline-draft-comment", {
@@ -4365,7 +4367,9 @@ test.describe("diff view (git-backed)", () => {
       const leftComposer = page.getByPlaceholder("Leave a comment");
       await expect(leftComposer).toBeVisible();
       await expect(leftComposer).toBeEditable();
+      await leftComposer.click();
       await leftComposer.fill("Left-side config note");
+      await expect(leftComposer).toHaveValue("Left-side config note");
       await submitInlineComposer(leftComposer);
       await expect(
         page.locator(".inline-draft-comment", {

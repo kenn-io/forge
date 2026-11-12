@@ -36,6 +36,8 @@ type deferredMergeCheckKey struct {
 // must stand down silently instead of later broadcasting a misleading
 // "no longer open" failure for a pull request the maintainer just merged.
 type deferredMergeHandle struct {
+	// item is the pull request the worker holds, so list filters can match it.
+	item        db.RepoItemNumber
 	superseded  chan struct{}
 	once        sync.Once
 	release     func()
@@ -298,7 +300,7 @@ func (s *Handler) enqueueDeferredMerge(
 			return deferMergePRBody{}, httpapi.Internal("admit deferred merge: " + err.Error())
 		}
 	}
-	handle, marked := s.markDeferredMergeInFlight(key, releaseDeferred)
+	handle, marked := s.markDeferredMergeInFlight(key, db.RepoItemNumber{RepoID: repo.ID, Number: number}, releaseDeferred)
 	if !marked {
 		if releaseDeferred != nil {
 			releaseDeferred()
@@ -1346,6 +1348,7 @@ func deferredMergeKey(repo db.Repo, number int) string {
 
 func (s *Handler) markDeferredMergeInFlight(
 	key string,
+	item db.RepoItemNumber,
 	releases ...func(),
 ) (*deferredMergeHandle, bool) {
 	s.deferredMergeMu.Lock()
@@ -1357,6 +1360,7 @@ func (s *Handler) markDeferredMergeInFlight(
 		return nil, false
 	}
 	handle := newDeferredMergeHandle()
+	handle.item = item
 	if len(releases) > 0 {
 		handle.release = releases[0]
 	}
@@ -1372,6 +1376,18 @@ func (s *Handler) DeferredMergeInFlight(repo db.Repo, number int) bool {
 	defer s.deferredMergeMu.Unlock()
 	_, ok := s.deferredMergeInFlight[deferredMergeKey(repo, number)]
 	return ok
+}
+
+// DeferredMergeItems lists the pull requests this daemon's workers hold for
+// CI. Provider auto-merge is stored on the pull request instead.
+func (s *Handler) DeferredMergeItems() []db.RepoItemNumber {
+	s.deferredMergeMu.Lock()
+	defer s.deferredMergeMu.Unlock()
+	items := make([]db.RepoItemNumber, 0, len(s.deferredMergeInFlight))
+	for _, handle := range s.deferredMergeInFlight {
+		items = append(items, handle.item)
+	}
+	return items
 }
 
 // clearDeferredMergeInFlight removes the key only while it still maps to

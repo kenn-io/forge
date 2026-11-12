@@ -675,7 +675,7 @@ describe("activity store workspace activity", () => {
     const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
 
-    store.setInvolvesMe(true);
+    store.setInvolvesMe("require");
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
 
@@ -688,11 +688,33 @@ describe("activity store workspace activity", () => {
     );
   });
 
+  it("persists and sends the opposite of Involves me and Unassigned", async () => {
+    const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+
+    store.setInvolvesMe("exclude");
+    store.setUnassigned("exclude");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(localStorage.getItem(involvesMeFilterStorageKey("activity"))).toBe("0");
+    expect(localStorage.getItem(unassignedFilterStorageKey("activity"))).toBe("0");
+    const query = (get.mock.calls.at(-1) as unknown as [string, { params: { query: Record<string, unknown> } }])[1]
+      .params.query;
+    expect(query).toMatchObject({ not_involves_me: true, assigned: true });
+    expect(query).not.toHaveProperty("involves_me");
+    expect(query).not.toHaveProperty("unassigned");
+
+    const reloaded = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    expect(reloaded.getInvolvesMe()).toBe("exclude");
+    expect(reloaded.getUnassigned()).toBe("exclude");
+  });
+
   it("persists and sends the Unassigned filter", async () => {
     const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
 
-    store.setUnassigned(true);
+    store.setUnassigned("require");
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
 
@@ -730,6 +752,45 @@ describe("activity store workspace activity", () => {
         params: { query: expect.not.objectContaining({ hide_drafts: true }) },
       }),
     );
+  });
+
+  it("sends the Merge queued filter as required, excluded, or off", async () => {
+    const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    const lastQuery = () =>
+      (get.mock.lastCall as unknown as [string, { params: { query: Record<string, unknown> } }])[1].params.query;
+
+    for (const [value, required, hidden] of [
+      ["require", true, undefined],
+      ["exclude", undefined, true],
+      [undefined, undefined, undefined],
+    ] as const) {
+      store.setMergeQueued(value);
+      store.loadActivity();
+      await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+      expect(store.getMergeQueued()).toBe(value);
+      expect(lastQuery().merge_queued).toBe(required);
+      expect(lastQuery().hide_merge_queued).toBe(hidden);
+    }
+  });
+
+  it("lets a restored Merge queued exclusion win over an earlier requirement", async () => {
+    const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.setMergeQueued("require");
+
+    // History restores an Activity URL from before the requirement.
+    window.history.replaceState(null, "", "/?hide_merge_queued=1");
+    store.syncFromURL();
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(store.getMergeQueued()).toBe("exclude");
+    const query = (get.mock.lastCall as unknown as [string, { params: { query: Record<string, unknown> } }])[1].params
+      .query;
+    expect(query.hide_merge_queued).toBe(true);
+    expect(query.merge_queued).toBeUndefined();
+    window.history.replaceState(null, "", "/");
   });
 
   it("sends the Hide queued for merge filter", async () => {
@@ -1050,7 +1111,7 @@ describe("activity store collapse state", () => {
       );
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.hydrateDefaults(settings(true));
-    store.setUnassigned(true);
+    store.setUnassigned("require");
     store.setHideDrafts(true);
     store.setHideMergeQueued(true);
     store.loadActivity();
@@ -3247,7 +3308,7 @@ describe("activity store projection scope", () => {
     });
     await vi.waitFor(() => expect(feedReads).toBe(1));
 
-    store.setInvolvesMe(true);
+    store.setInvolvesMe("require");
     store.loadActivity();
     await vi.waitFor(() => expect(store.getActivityError()).toBe("filtered activity unavailable"));
 

@@ -21,11 +21,17 @@ import {
 const WAIT = 10_000;
 
 type MenuSection = { title: string; items: string[] };
-type ItemState = "on" | "excluded" | "off";
+/** What a menu row shows: its tick or cross, and any count or value summary. */
+interface ItemState {
+  state: "on" | "excluded" | "off";
+  count: string;
+  detail: string;
+}
 
-function itemState(node: Element, on: string, excluded: string): ItemState {
-  if (node.classList.contains(excluded)) return "excluded";
-  return node.classList.contains(on) ? "on" : "off";
+function itemState(node: Element, classPrefix: string, on: string, excluded: string): ItemState {
+  const text = (part: string) => node.querySelector(`.${classPrefix}__${part}`)?.textContent?.trim() ?? "";
+  const state = node.classList.contains(excluded) ? "excluded" : node.classList.contains(on) ? "on" : "off";
+  return { state, count: text("count"), detail: text("detail") };
 }
 
 interface Surface {
@@ -33,7 +39,7 @@ interface Surface {
   list(): HTMLElement;
   open(): Promise<void>;
   menu(): MenuSection[];
-  /** Each item's tick or cross, by label. */
+  /** What each row shows, by label. */
   itemStates(): Record<string, ItemState>;
   item(label: string): HTMLElement;
   /** The open submenu of a row that has one, or null for a plain row. */
@@ -67,7 +73,7 @@ const desktop = (container: string): Surface => {
       return Object.fromEntries(
         [...panel()!.querySelectorAll(".kit-filter-dropdown__item")].map((node) => [
           node.querySelector(".kit-filter-dropdown__label")!.textContent!.trim(),
-          itemState(node, "active", "excluded"),
+          itemState(node, "kit-filter-dropdown", "active", "excluded"),
         ]),
       );
     },
@@ -112,7 +118,12 @@ const phone = (): Surface => {
       return Object.fromEntries(
         [...panel()!.querySelectorAll(".filter-sections-panel__item")].map((node) => [
           node.querySelector(".filter-sections-panel__label")!.textContent!.trim(),
-          itemState(node, "filter-sections-panel__item--active", "filter-sections-panel__item--excluded"),
+          itemState(
+            node,
+            "filter-sections-panel",
+            "filter-sections-panel__item--active",
+            "filter-sections-panel__item--excluded",
+          ),
         ]),
       );
     },
@@ -209,9 +220,10 @@ async function clickChoice(surface: Surface, label: string, name: string): Promi
 /**
  * Applies every menu item twice (on, then its next state), resetting between
  * items. Grouping picks the list's render path, so every item runs under each
- * Group choice. Each Reset must restore the starting view, and every item that
- * starts off must change the rows or the query under some grouping, so a filter
- * the fixture cannot tell apart fails instead of passing vacuously.
+ * Group choice. Each Reset must restore the starting view, and every row or
+ * submenu choice that starts off must change the rows or the query under some
+ * grouping, so a filter the fixture cannot tell apart fails instead of passing
+ * vacuously.
  */
 async function exercise(mounted: MountedBrowserApp, surface: Surface, pathname: string) {
   await vi.waitFor(() => expect(visibleRows(surface.list()).length).toBeGreaterThan(0), WAIT);
@@ -239,7 +251,7 @@ async function exercise(mounted: MountedBrowserApp, surface: Surface, pathname: 
   await surface.reset();
   const narrowed = new Set<string>();
   for (const grouping of groupings) {
-    for (const { key, label, apply } of targets) {
+    for (const { key, apply } of targets) {
       await click(surface, grouping);
       const base = await settled(mounted, surface, pathname);
       const states = [];
@@ -251,16 +263,17 @@ async function exercise(mounted: MountedBrowserApp, surface: Surface, pathname: 
       if (
         states.some((state) => state.query !== base.query || JSON.stringify(state.rows) !== JSON.stringify(base.rows))
       ) {
-        narrowed.add(label);
+        narrowed.add(key);
       }
       await surface.reset();
       expect(await settled(mounted, surface, pathname), `Reset after ${grouping}: ${key}`).toEqual(initial);
       outcomes[`${grouping}: ${key}`] = states;
     }
   }
-  const unexercised = menu
-    .flatMap((section) => section.items)
-    .filter((label) => initial.items[label] === "off" && !narrowed.has(label));
+  // Each plain row and each submenu choice must narrow on its own.
+  const unexercised = targets
+    .filter(({ key, label }) => initial.items[label]?.state === "off" && !narrowed.has(key))
+    .map(({ key }) => key);
   expect(unexercised, "menu items the fixture does not tell apart").toEqual([]);
   return { menu, submenus, outcomes };
 }
@@ -322,6 +335,22 @@ function issueFixtures(): Issue[] {
   ];
 }
 
+/**
+ * Answers each list query with the fixture in a different order, so a surface
+ * that sends the right query but keeps showing the previous rows fails. Every
+ * row stays in the answer, so each filter still has its rows to narrow.
+ */
+function answerFor<T>(req: MockRequest, rows: T[]): T[] {
+  const params = new URLSearchParams(req.url.search);
+  params.delete("limit");
+  params.delete("offset");
+  params.sort();
+  let hash = 7;
+  for (const char of params.toString()) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  const shift = hash % rows.length;
+  return [...rows.slice(shift), ...rows.slice(0, shift)];
+}
+
 /** Echoes saved settings, so a filter stored as a setting (Hide bots) stays on. */
 function savedSettings(): MockRouteOverride {
   let hideBots: boolean = mockSettings.issues.hide_bots;
@@ -351,13 +380,13 @@ describe("phone and desktop list filters", () => {
     await resetKeyboardModuleState();
   });
 
-  async function run(path: string, pathname: string, body: unknown, surface: () => Surface, phoneRoute: boolean) {
+  async function run(path: string, pathname: string, body: unknown[], surface: () => Surface, phoneRoute: boolean) {
     localStorage.clear();
     window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = phoneRoute;
     await page.viewport(phoneRoute ? 390 : 1280, phoneRoute ? 844 : 900);
     mounted = await mountBrowserApp(path, {
       overrides: [
-        (req) => (req.method === "GET" && req.url.pathname === pathname ? jsonResponse(body) : null),
+        (req) => (req.method === "GET" && req.url.pathname === pathname ? jsonResponse(answerFor(req, body)) : null),
         savedSettings(),
       ],
     });

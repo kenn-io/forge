@@ -758,7 +758,8 @@
   }
 
   :global(.mobile-main) .focus-list :global(.label-filter__row),
-  :global(.mobile-main) .focus-list :global(.sidebar-group-header) {
+  :global(.mobile-main) .focus-list :global(.sidebar-group-header),
+  :global(.mobile-main) .focus-list :global(.list-pagination .kit-button) {
     min-height: var(--mobile-chrome-hit-target);
   }
 

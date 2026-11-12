@@ -210,6 +210,93 @@ describe("activity subject paging", () => {
     owner: "acme",
     name: "widgets",
   };
+  it("keeps an unchanged filtered discussion load through refreshes", async () => {
+    const pending = Promise.withResolvers<unknown>();
+    const event = {
+      ...notificationItem("comment:2", "read"),
+      activity_type: "comment",
+      item_number: 2,
+      repo,
+    } as ActivityItem;
+    let bulkReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (options?.params?.query?.projection === "events") {
+          bulkReads++;
+          return pending.promise;
+        }
+        return {
+          data: {
+            items: [],
+            capped: false,
+            event_cursor: "snapshot",
+            item_activity: [{ ...itemActivity(1), repo }],
+            item_activity_capped: true,
+            next_subject_cursor: "older",
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
+    store.setActivitySearch("needle");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(bulkReads).toBe(1));
+    await runtime!.runCommand(store.reconcileActivityEffect(), {
+      operation: "refresh",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    await runtime!.runCommand(store.reconcileActivityEffect(), {
+      operation: "refresh again",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(store.isActivityLoading()).toBe(true);
+    pending.resolve({ data: { items: [event], capped: false }, error: null });
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([event.id]));
+    expect(bulkReads).toBe(1);
+  });
+
+  it("refreshes cached event labels when an older parent arrives", async () => {
+    const label = { name: "bug", color: "d73a4a", is_default: false };
+    const event = {
+      ...notificationItem("comment:2", "read"),
+      activity_type: "comment",
+      item_number: 2,
+      repo,
+      labels: [label],
+    } as ActivityItem;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        const older = Boolean(options?.params?.query?.subject_before);
+        return {
+          data: {
+            items: older ? [] : [event],
+            capped: false,
+            item_activity: [{ ...itemActivity(older ? 2 : 1), repo }],
+            item_activity_capped: !older,
+            next_subject_cursor: older ? "" : "older",
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
+    store.cycleLabelFilter("bug");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    expect(store.getActivityItems().find((item) => item.id === event.id)?.labels).toEqual([label]);
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
+    expect(store.getActivityItems().find((item) => item.id === event.id)?.labels).toBeUndefined();
+  });
   it.each([
     { collapsed: false, phone: false, capped: false },
     { collapsed: false, phone: false, capped: true },

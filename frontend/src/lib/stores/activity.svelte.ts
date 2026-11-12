@@ -1060,7 +1060,6 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       parentFilterActive &&
       !!result.response.item_activity_capped &&
       (result.response.event_cursor ?? activityEventCursor) !== "";
-    restartBulkActivity = refreshFilteredBulk;
     const absentThreadKeys = new Set<string>();
     if (
       reconcileCollapsedThreads &&
@@ -1090,6 +1089,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         newExpandedThreadKeys.add(key);
       }
     }
+    const previousSubjectKeys = [...previousSubjects.keys()].filter((key): key is string => key !== undefined);
+    const unchangedBulk =
+      bulkRequestToken !== undefined &&
+      (result.response.event_cursor ?? activityEventCursor) === activityEventCursor &&
+      changedThreadKeys.size === 0 &&
+      previousSubjectKeys.length === receivedSubjectKeys.size &&
+      previousSubjectKeys.every((key) => receivedSubjectKeys.has(key));
+    restartBulkActivity = refreshFilteredBulk && !unchangedBulk;
     const retainedThreadItems = childProjectionStale
       ? []
       : items.filter((item) => {
@@ -1151,7 +1158,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         }
       }
     }
-    loading = false;
+    loading = bulkRequestToken !== undefined;
     storeError = null;
     if (restartBulkActivity) loadBulkActivity();
   }
@@ -1217,6 +1224,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     appendUnseen(subjects, new Set(subjects.map(stableParentKey)), result.response.item_activity);
     const added = subjects.slice(itemActivity.length);
     itemActivity = subjects;
+    reconcileItemsWithParentSubjects(added);
     const workspaces = [...workspaceActivity];
     appendUnseen(workspaces, new Set(workspaces.map(stableParentKey)), result.response.workspace_activity);
     workspaceActivity = workspaces;

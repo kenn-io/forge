@@ -205,10 +205,7 @@ test.describe("Involves me standard filters", () => {
       await page.goto(`${baseURL}/${list.route}`);
       await expect(page.locator(`.focus-list ${list.item}`).first()).toBeVisible();
       expect(new URL(page.url()).pathname).toBe(`/${list.route}`);
-      await expect(page.locator("#focus-list-filters .state-toggle")).toBeHidden();
-      await expect(page.locator("#focus-list-filters .visibility-controls")).toBeHidden();
-
-      const trigger = page.locator("#focus-list-filters .compact-filter-menu .kit-filter-dropdown__btn");
+      const trigger = page.locator(".focus-list .header .kit-filter-dropdown__btn");
       await expect(trigger).toBeVisible();
       await trigger.click();
       await expectFilterItemInViewport(page, "Unassigned");

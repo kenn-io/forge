@@ -15,8 +15,8 @@
   import ListLoadMore from "./ListLoadMore.svelte";
   import ListCountChip from "./ListCountChip.svelte";
   import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
-  import { labelFilterChoices, labelFilterSummary } from "../../utils/label-filter.js";
-  import { cycleTriFilter, triFilterRow } from "../../utils/tri-filter.js";
+  import { labelFilterChoices } from "../../utils/label-filter.js";
+  import { issueListFilterMenu } from "../shared/list-filter-menus.js";
   import {
     FilterDropdown,
     ScrollBox,
@@ -48,11 +48,6 @@
 
   const { sidebarWidth = 340 }: Props = $props();
 
-  const issueStateOptions = ["open", "closed", "all"] as const;
-  const groupingOptions = [
-    { byRepo: true, label: "By Repo" },
-    { byRepo: false, label: "All" },
-  ];
   // Playwright-measured with a buffered "9999 issues" count label and the
   // icon-only visibility control: the full issue filter row first fits at 402px.
   const COMPACT_FILTER_MAX_WIDTH = 401;
@@ -107,135 +102,13 @@
     );
   }
 
-  function issueStateLabel(state: string): string {
-    if (state === "open") return "Open";
-    if (state === "closed") return "Closed";
-    return "All";
-  }
-
-  function setIssueState(state: string): void {
-    issues.setIssueFilterState(state);
-    issues.loadIssues();
-  }
-
-  function resetCompactView(): void {
-    const reloadIssues = issues.getIssueFilterState() !== "open"
-      || issues.getInvolvesMe() !== undefined
-      || issues.getUnassigned() !== undefined
-      || issues.getReferencedByPR() !== undefined;
-    if (issues.getIssueFilterState() !== "open") issues.setIssueFilterState("open");
-    issues.clearLabelFilters();
-    grouping.setGroupByRepo(true);
-    grouping.setHideOrgName(false);
-    if (issues.getHideBots()) void issues.setHideBots(false);
-    issues.setInvolvesMe(undefined);
-    issues.setUnassigned(undefined);
-    issues.setReferencedByPR(undefined);
-    if (reloadIssues) issues.loadIssues();
-  }
-
-  function resetVisibility(): void {
-    issues.clearLabelFilters();
-    grouping.setHideOrgName(false);
-    if (issues.getHideBots()) void issues.setHideBots(false);
-    const reloadIssues = issues.getInvolvesMe() !== undefined
-      || issues.getUnassigned() !== undefined
-      || issues.getReferencedByPR() !== undefined;
-    issues.setInvolvesMe(undefined);
-    issues.setUnassigned(undefined);
-    issues.setReferencedByPR(undefined);
-    if (reloadIssues) {
-      issues.loadIssues();
-    }
-  }
-
   const labelChoices = $derived(labelFilterChoices(issues.getIssues(), issues.getLabelFilters()));
-
-  const visibilityFilterSection = $derived({
-    title: "Visibility",
-    items: [
-      {
-        id: "labels",
-        label: "Labels",
-        detail: labelFilterSummary(issues.getLabelFilters()),
-        active: issues.getLabelFilters().size > 0,
-        submenu: labelFilterMenu,
-        onSelect: () => {},
-      },
-      {
-        id: "involves-me",
-        label: "Involves me",
-        ...triFilterRow(issues.getInvolvesMe()),
-        onSelect: () => {
-          issues.setInvolvesMe(cycleTriFilter(issues.getInvolvesMe()));
-          issues.loadIssues();
-        },
-      },
-      {
-        id: "unassigned",
-        label: "Unassigned",
-        ...triFilterRow(issues.getUnassigned()),
-        onSelect: () => {
-          issues.setUnassigned(cycleTriFilter(issues.getUnassigned()));
-          issues.loadIssues();
-        },
-      },
-      ...(issues.canFilterReferencedByPR() ? [{
-        id: "referenced-by-pr",
-        label: "Referenced by PR",
-        ...triFilterRow(issues.getReferencedByPR()),
-        onSelect: () => {
-          issues.setReferencedByPR(cycleTriFilter(issues.getReferencedByPR()));
-          issues.loadIssues();
-        },
-      }] : []),
-      {
-        id: "hide-org-name",
-        label: "Hide org name",
-        active: grouping.getHideOrgName(),
-        onSelect: () => grouping.setHideOrgName(!grouping.getHideOrgName()),
-      },
-      {
-        id: "hide-bot-authored-issues",
-        label: "Hide bot-authored issues",
-        active: issues.getHideBots(),
-        onSelect: () => void issues.setHideBots(!issues.getHideBots()),
-      },
-    ],
-  });
-
-  const compactFilterSections = $derived.by(() => [
-    {
-      title: "State",
-      items: issueStateOptions.map((state) => ({
-        id: `state-${state}`,
-        label: issueStateLabel(state),
-        active: issues.getIssueFilterState() === state,
-        onSelect: () => setIssueState(state),
-      })),
-    },
-    {
-      title: "Group",
-      items: groupingOptions.map((option) => ({
-        id: `group-${option.byRepo ? "byRepo" : "all"}`,
-        label: option.label,
-        active: grouping.getGroupByRepo() === option.byRepo,
-        onSelect: () => grouping.setGroupByRepo(option.byRepo),
-      })),
-    },
-    visibilityFilterSection,
-  ]);
-
-  const hasCompactFilterChanges = $derived(
-    issues.getIssueFilterState() !== "open"
-      || issues.getLabelFilters().size > 0
-      || !grouping.getGroupByRepo()
-      || grouping.getHideOrgName()
-      || issues.getHideBots()
-      || issues.getInvolvesMe() !== undefined
-      || issues.getUnassigned() !== undefined
-      || issues.getReferencedByPR() !== undefined,
-  );
+  const filterMenu = $derived(issueListFilterMenu({
+    issues,
+    grouping,
+    labelMenu: labelFilterMenu,
+    reload: () => issues.loadIssues(),
+  }));
   const useCompactFilters = $derived(
     sidebarWidth <= COMPACT_FILTER_MAX_WIDTH,
   );
@@ -401,21 +274,13 @@
       noun="issues"
     />
     <div class="state-toggle">
-      {#each issueStateOptions as s (s)}
-        <button
-          class="state-btn"
-          class:state-btn--active={issues.getIssueFilterState() === s}
-          onclick={() => setIssueState(s)}
-        >{issueStateLabel(s)}</button>
+      {#each filterMenu.state.items as item (item.id)}
+        <button class="state-btn" class:state-btn--active={item.active} onclick={item.onSelect}>{item.shortLabel}</button>
       {/each}
     </div>
     <div class="group-toggle">
-      {#each groupingOptions as option (option.label)}
-        <button
-          class="group-btn"
-          class:group-btn--active={grouping.getGroupByRepo() === option.byRepo}
-          onclick={() => grouping.setGroupByRepo(option.byRepo)}
-        >{option.label}</button>
+      {#each filterMenu.group.items as item (item.id)}
+        <button class="group-btn" class:group-btn--active={item.active} onclick={item.onSelect}>{item.shortLabel}</button>
       {/each}
     </div>
     <div class="compact-filter-menu">
@@ -423,11 +288,11 @@
         label="Filters"
         title="Filters"
         icon="more"
-        active={hasCompactFilterChanges}
+        active={filterMenu.changed}
         showBadge={false}
-        sections={compactFilterSections}
+        sections={filterMenu.sections}
         resetLabel="Reset view"
-        onReset={resetCompactView}
+        onReset={filterMenu.reset}
         minWidth="160px"
       />
     </div>
@@ -435,16 +300,11 @@
       <FilterDropdown
         label="Visibility"
         title="Issue visibility"
-        active={issues.getLabelFilters().size > 0
-          || grouping.getHideOrgName()
-          || issues.getHideBots()
-          || issues.getInvolvesMe() !== undefined
-          || issues.getUnassigned() !== undefined
-          || issues.getReferencedByPR() !== undefined}
+        active={filterMenu.filterCount > 0}
         showBadge={false}
-        sections={[visibilityFilterSection]}
+        sections={filterMenu.filterSections}
         resetLabel="Reset visibility"
-        onReset={resetVisibility}
+        onReset={filterMenu.clearFilters}
         minWidth="180px"
       />
     </div>

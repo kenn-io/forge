@@ -33,7 +33,8 @@ async function selectIssueGrouping(page: Page, label: string): Promise<void> {
   }
 
   await page.getByRole("button", { name: "Filters" }).click();
-  await page.locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", { hasText: label }).last().click();
+  const compactLabel = label === "All" ? "Flat list" : label;
+  await page.locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", { hasText: compactLabel }).click();
 }
 
 const longRepoName = "widgets-with-an-extremely-long-repository-name";

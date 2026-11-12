@@ -59,7 +59,7 @@ async function expectReadableFocusList(page: Page, itemSelector: string): Promis
     const title = item?.querySelector(".title") ?? null;
     const meta = item?.querySelector(".meta-text") ?? null;
     const search = document.querySelector(".focus-list .kit-search-input input");
-    const stateButton = document.querySelector(".focus-list .state-btn");
+    const stateButton = document.querySelector(".focus-list .filter-sections-panel__item");
     const focusList = document.querySelector(".focus-list");
     const tokenValue = (node: Element | null, name: string): string =>
       node ? getComputedStyle(node).getPropertyValue(name).trim() : "";

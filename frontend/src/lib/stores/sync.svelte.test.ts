@@ -98,6 +98,28 @@ describe("sync store", () => {
       },
     );
 
+    it("restores the latest completion when a retried request is interrupted", async () => {
+      const post = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("response lost"))
+        .mockImplementation(() => new Promise<void>(() => {}));
+      const store = createSyncStore(makeGeneratedClient({ SyncService: { triggerSync: post } }));
+      store.setSyncStatus({ ...idle, running: true, last_run_at: "2026-08-02T12:00:00Z" });
+      if (!runtime) throw new Error("test runtime was not initialized");
+      const execution = runtime.runCommand(store.triggerOnboardingSyncEffect(), {
+        operation: "first sync",
+        safeContext: {},
+        onFailure: () => {},
+      });
+      await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+      const completed = { ...idle, last_run_at: "2026-08-02T12:00:30Z" };
+      store.setSyncStatus(completed);
+      await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+      execution.interrupt();
+      await Effect.runPromise(execution.await);
+      expect(store.getSyncState()).toEqual(completed);
+    });
+
     it("shows sync progress while a retry response is delayed", async () => {
       const accepted = Promise.withResolvers<void>();
       const post = vi

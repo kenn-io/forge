@@ -188,8 +188,8 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return Date.parse(next) > Date.parse(previous);
   }
 
-  function triggeredSyncProgram(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>) {
-    const previous = status;
+  function triggeredSyncProgram(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>, retry = false) {
+    let previous = status;
     refreshGeneration += 1;
     let baselineLastRunAt = previous ? (previous.last_run_at ?? "") : null;
 
@@ -210,7 +210,25 @@ export function createSyncStore(opts: SyncStoreOptions) {
         wasRunning = true;
         adjustPollingSpeed(true);
       });
-      yield* request;
+      const attempt = Effect.suspend(() => {
+        if (triggeredSyncLastRunAt === undefined && status) {
+          previous = status;
+          triggeredSyncLastRunAt = status.last_run_at ?? "";
+          status = { ...status, running: true };
+          wasRunning = true;
+          refreshGeneration += 1;
+          adjustPollingSpeed(true);
+        }
+        return request;
+      });
+      yield* retry
+        ? retryIdempotentRead(
+            attempt,
+            (failure) =>
+              isTransientPickerReadFailure(failure) &&
+              !(failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.serviceUnavailable),
+          )
+        : request;
       yield* Effect.suspend(refreshSyncStatusProgram);
     }).pipe(
       Effect.tapError((failure) =>
@@ -260,14 +278,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
   }
 
   function triggerOnboardingSyncEffect() {
-    return triggeredSyncProgram(
-      retryIdempotentRead(
-        fullSyncRequest(),
-        (failure) =>
-          isTransientPickerReadFailure(failure) &&
-          !(failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.serviceUnavailable),
-      ),
-    );
+    return triggeredSyncProgram(fullSyncRequest(), true);
   }
 
   function triggerSync(): void {

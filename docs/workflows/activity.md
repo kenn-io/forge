@@ -14,7 +14,8 @@ Threaded Activity loads up to 5,000 pull requests and issues at a time. When
 more match, select **Load older items** at the bottom of the list. On a phone,
 the list loads as you scroll through the first 500 items, then offers the same
 button. Changing the time range, repository, or search starts a new list;
-Activity updates refresh the number of pages you loaded. Newly active items can move older items onto the next page.
+Activity updates refresh the number of pages you loaded. Newly active items can
+move older items onto the next page.
 
 <figure class="workflow-shot">
   <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/activity-threaded-light.svg" alt="Forge Activity in Threaded mode with events grouped under their pull requests and issues in light mode">

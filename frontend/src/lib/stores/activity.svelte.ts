@@ -1240,7 +1240,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   ) {
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
-      const scope = activityProjectionScope(params);
+      const scope = pagedActivityScopeKey();
       const read = Effect.suspend(() =>
         page
           ? activityRead({ ...params, since: computeSince(), subject_before: page.cursor })
@@ -1310,8 +1310,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return Effect.suspend(() => {
       retainedFeedStale = false;
       const params = buildParams();
+      const scope = pagedActivityScopeKey();
       if (shouldUseCollapsedAuthoritativeProjection()) params.projection = "collapsed";
-      const scope = activityProjectionScope(params);
       const read = Effect.suspend(() => activityReadPages({ ...params, since: computeSince() }, requestedSubjectDepth));
       const project = (result: ActivityReadResponse) => projectReadSnapshot(result, params, true);
       return Effect.gen(function* () {
@@ -1570,10 +1570,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   function refreshActivityProgram(params: ActivityParams) {
     return Effect.gen(function* () {
+      const scope = pagedActivityScopeKey();
       if (shouldUseCollapsedAuthoritativeProjection()) params.projection = "collapsed";
       const workflow = yield* ActivityWorkflow;
       yield* workflow.pollSnapshotRead(
-        activityProjectionScope(params),
+        scope,
         Effect.suspend(() => activityReadPages({ ...params, since: computeSince() }, requestedSubjectDepth)),
         (result) => projectReadSnapshot(result, params, true),
         Effect.sync(() => {
@@ -1665,9 +1666,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       return refreshActivityProgram(params).pipe(Effect.andThen(loadActivityAuthorsEffect()));
     }
     if (activityEventCursor === "") return Effect.void;
+    const scope = pagedActivityScopeKey();
     const authoritativeParams = { ...params };
     if (shouldUseCollapsedAuthoritativeProjection()) authoritativeParams.projection = "collapsed";
-    const scope = activityProjectionScope(authoritativeParams);
     params.projection = "events";
     params.limit = 500;
     params.after = activityEventCursor;
@@ -1691,9 +1692,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         (result) => {
           if (!result.response.capped) return projectPoll({ mode: "append", result });
           const replacementParams = buildParams();
+          const replacementScope = pagedActivityScopeKey();
           if (shouldUseCollapsedAuthoritativeProjection()) replacementParams.projection = "collapsed";
           return workflow.pollSnapshotRead(
-            activityProjectionScope(replacementParams),
+            replacementScope,
             Effect.suspend(() =>
               activityReadPages({ ...replacementParams, since: computeSince() }, requestedSubjectDepth),
             ),

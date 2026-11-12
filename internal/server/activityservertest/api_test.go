@@ -405,8 +405,22 @@ func TestAPIListActivityHonorsLimit(t *testing.T) {
 			require.Len(resp.JSON200.ItemActivity, int(limit))
 			assert.True(resp.JSON200.ItemActivityCapped)
 			assert.Equal(int64(1), resp.JSON200.ItemActivity[0].ItemNumber)
+			require.NotNil(resp.JSON200.NextSubjectCursor)
+			next, err := client.HTTP.ListActivityWithResponse(t.Context(), &generated.ListActivityRequestOptions{
+				Query: &generated.ListActivityQuery{Since: &since, Limit: &limit, Projection: tc.projection, SubjectBefore: resp.JSON200.NextSubjectCursor},
+			})
+			require.NoError(err)
+			require.Len(next.JSON200.ItemActivity, 1)
+			assert.Equal(int64(2), next.JSON200.ItemActivity[0].ItemNumber)
 		})
 	}
+}
+
+func TestAPIListActivityRejectsInvalidSubjectCursor(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	srv, _, _ := setupTestServer(t)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?subject_before=invalid", nil)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testing.T) {
@@ -1010,19 +1024,14 @@ func TestAPIListActivityAppliesTrackedRepoScopeBeforeAuthorLimit(t *testing.T) {
 	assert.False(feedBody.Capped)
 }
 
-func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
+func TestAPIListActivitySearchFindsParentsBeyondEventCap(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		events    int
-		limit     int
-		parents   []int
-		truncated bool
-	}{
-		{"beyond page", 201, 200, []int{2, 1}, false},
-		{"beyond window", itemapi.ActivitySafetyCap + 1, 0, []int{2}, true},
-	} {
+		name  string
+		count int
+		limit string
+	}{{"page limit", 201, "&limit=200"}, {"safety cap", itemapi.ActivitySafetyCap + 1, ""}} {
 		t.Run(tc.name, func(t *testing.T) {
+			serverfake.RunParallelServerTest(t)
 			srv, database, _ := setupTestServer(t)
 			ctx := t.Context()
 			base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
@@ -1036,7 +1045,7 @@ func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap
 			noisyPRID := serverfake.SeedPR(t, database, "acme", "widget", 2,
 				serverfake.WithSeedPRTitle("Unrelated noisy parent"),
 				serverfake.WithSeedPRTimes(base, base, base))
-			noisyEvents := make([]db.MREvent, tc.events)
+			noisyEvents := make([]db.MREvent, tc.count)
 			for i := range noisyEvents {
 				noisyEvents[i] = db.MREvent{
 					MergeRequestID: noisyPRID, EventType: "issue_comment", Author: "reviewer",
@@ -1046,24 +1055,20 @@ func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap
 			}
 			require.NoError(t, database.UpsertMREvents(ctx, noisyEvents))
 			since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
-			limit := ""
-			if tc.limit > 0 {
-				limit = "&limit=" + strconv.Itoa(tc.limit)
-			}
 			for _, projection := range []string{"full", "collapsed"} {
 				t.Run(projection, func(t *testing.T) {
-					rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle&projection="+projection+limit, nil)
+					rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle"+tc.limit+"&projection="+projection, nil)
 					require.Equal(t, http.StatusOK, rr.Code)
 					var body itemapi.ActivityResponse
 					require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
-					require.Len(t, body.ItemActivity, len(tc.parents))
-					for i, number := range tc.parents {
+					require.Len(t, body.ItemActivity, 2)
+					for i, number := range []int{2, 1} {
 						assert.Equal(t, number, body.ItemActivity[i].ItemNumber)
 					}
-					assert.Equal(t, tc.truncated, body.ItemActivityCapped)
-					if tc.limit == 0 && projection == "full" {
-						assert.Len(t, body.Items, itemapi.ActivitySafetyCap)
+					assert.False(t, body.ItemActivityCapped)
+					if projection == "full" {
 						assert.True(t, body.Capped)
+						assert.Len(t, body.Items, tc.count-1)
 					}
 				})
 			}

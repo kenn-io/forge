@@ -4386,13 +4386,24 @@ func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testi
 			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
 			Author: "reviewer", BodyPreview: "matches the search",
 		}},
-		nil, true,
+		nil, true, nil,
 	)
 
 	require.Len(got, 1)
 	assert.Equal(matchedKey.ItemNumber, got[0].ItemNumber)
 	require.NotNil(got[0].Workspace)
 	assert.Equal("ws-41", got[0].Workspace.ID)
+
+	// The matching event may be outside the event page while its parent is in the subject page.
+	got = srv.itemapi.WorkspaceActivityResponse(
+		&itemapi.ListActivityInput{},
+		db.ListActivityOpts{Search: "reviewer", Since: &since},
+		snapshot,
+		[]db.ActivityItem{{RepoID: repoID, ItemType: "pr", ItemNumber: 99}},
+		nil, true, []db.ActivitySubject{{Subject: db.WorkspaceSubjectMetadata{Key: db.WorkspaceSubjectKey{RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber}}}},
+	)
+	require.Len(got, 1)
+	assert.Equal(matchedKey.ItemNumber, got[0].ItemNumber)
 }
 
 func TestWorkspaceActivitySearchExcludedTermOverridesMatchingProviderEvents(t *testing.T) {
@@ -4444,7 +4455,7 @@ func TestWorkspaceActivitySearchExcludedTermOverridesMatchingProviderEvents(t *t
 		db.ListActivityOpts{Search: "reviewer NOT excluded-author", Since: &since},
 		snapshot,
 		[]db.ActivityItem{providerEvent(keptKey), providerEvent(excludedKey)},
-		nil, true,
+		nil, true, nil,
 	)
 
 	require.Len(got, 1)
@@ -4491,7 +4502,7 @@ func TestWorkspaceActivityHideDraftsDropsDraftPullRequests(t *testing.T) {
 	got := srv.itemapi.WorkspaceActivityResponse(
 		&itemapi.ListActivityInput{},
 		db.ListActivityOpts{HideDrafts: true, Since: &since},
-		snapshot, nil, nil, true,
+		snapshot, nil, nil, true, nil,
 	)
 
 	require.Len(got, 1)
@@ -4543,7 +4554,7 @@ func TestWorkspaceActivityHideMergeQueuedDropsQueuedPullRequests(t *testing.T) {
 
 	numbers := func(opts db.ListActivityOpts) []int {
 		opts.Since, opts.DeferredMergeItems = &since, held
-		got := srv.itemapi.WorkspaceActivityResponse(&itemapi.ListActivityInput{}, opts, snapshot, nil, nil, true)
+		got := srv.itemapi.WorkspaceActivityResponse(&itemapi.ListActivityInput{}, opts, snapshot, nil, nil, true, nil)
 		out := []int{}
 		for _, subject := range got {
 			out = append(out, subject.ItemNumber)
@@ -4602,7 +4613,7 @@ func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t 
 			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
 			Author: "reviewer", ItemAuthor: "alice",
 		}},
-		nil, true,
+		nil, true, nil,
 	)
 
 	require.Len(byAuthor, 2)
@@ -4619,7 +4630,7 @@ func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t 
 			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
 			Author: "reviewer", ItemAuthor: "alice",
 		}},
-		nil, true,
+		nil, true, nil,
 	)
 	require.Empty(byCommenter)
 }
@@ -4652,14 +4663,14 @@ func TestWorkspaceActivityProjectionUsesHubPolicy(t *testing.T) {
 	})
 
 	require.Empty(srv.itemapi.WorkspaceActivityResponse(
-		&itemapi.ListActivityInput{}, db.ListActivityOpts{}, snapshot, nil, nil, false,
+		&itemapi.ListActivityInput{}, db.ListActivityOpts{}, snapshot, nil, nil, false, nil,
 	))
 	require.Equal([]string{"provider author"}, srv.activityapi.ActivityAuthorsWithWorkspace(
 		[]string{"provider author"}, snapshot, db.ListActivityAuthorsOpts{}, false,
 	))
 
 	require.Len(srv.itemapi.WorkspaceActivityResponse(
-		&itemapi.ListActivityInput{}, db.ListActivityOpts{}, snapshot, nil, nil, true,
+		&itemapi.ListActivityInput{}, db.ListActivityOpts{}, snapshot, nil, nil, true, nil,
 	), 1)
 	require.ElementsMatch([]string{"provider author", "workspace owner"}, srv.activityapi.ActivityAuthorsWithWorkspace(
 		[]string{"provider author"}, snapshot, db.ListActivityAuthorsOpts{}, true,

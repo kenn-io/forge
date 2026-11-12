@@ -29,6 +29,17 @@ func WorkspaceItemTypeFromActivity(itemType string) string {
 	}
 }
 
+func ActivityItemTypeFromWorkspace(itemType string) string {
+	switch itemType {
+	case db.WorkspaceItemTypePullRequest:
+		return db.ItemTypePR
+	case db.WorkspaceItemTypeIssue:
+		return db.ItemTypeIssue
+	default:
+		return ""
+	}
+}
+
 func WorkspaceRefForActivityItem(
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
 	item db.ActivityItem,

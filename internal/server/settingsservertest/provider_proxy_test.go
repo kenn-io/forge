@@ -204,6 +204,26 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabelAndNumbers(t *t
 	}, seen)
 }
 
+func TestHubActivityForwardsSubjectCursor(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
+		_ context.Context, scope federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		assert.Equal(t, federationauth.ScopeProviderRead, scope)
+		assert.Equal(t, "/api/v1/activity", request.URL.Path)
+		assert.Equal(t, "subject-page-2", request.URL.Query().Get("subject_before"))
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewBufferString(`{"next_subject_cursor":"subject-page-3"}`)),
+			Request:    request,
+		}, nil
+	})}
+	response, err := source.ListActivity(t.Context(), &itemapi.ListActivityInput{SubjectBefore: "subject-page-2"})
+	require.NoError(t, err)
+	assert.Equal(t, "subject-page-3", response.NextSubjectCursor)
+}
+
 func TestHubUnassignedActivitySubjectFilterBatchesLargeSnapshots(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)

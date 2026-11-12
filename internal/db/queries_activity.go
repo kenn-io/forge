@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"strconv"
@@ -129,11 +130,8 @@ func (d *DB) ListActivity(
 	return listActivityWithQueryer(ctx, d.roStmts, opts)
 }
 
-// activityEventsQuery builds the filtered event union shared by feed and
-// cursor reads: a FROM clause through ORDER BY and LIMIT, plus its arguments.
-func activityEventsQuery(opts ListActivityOpts) (string, []any) {
-	limit := activityLimit(opts.Limit)
-
+// activityEventsFrom builds the filtered event union shared by feed and subject reads.
+func activityEventsFrom(opts ListActivityOpts) (string, []any) {
 	var whereClauses []string
 	var args []any
 
@@ -529,17 +527,19 @@ func activityEventsQuery(opts ListActivityOpts) (string, []any) {
 			JOIN forge_repos r ON bfp.repo_id = r.id AND r.lifecycle_state = 'active'
 			%[3]s
 		) unified
-		%[2]s
-		ORDER BY created_at DESC, source DESC, source_id DESC
-		LIMIT ?`,
+		%[2]s`,
 		branchCommitIdentityMaxBytes, where, notificationUnion,
 		searchNamedColumn, searchEmptyColumn, searchPRColumn, searchBranchColumn, parentJoin)
 
-	queryArgs := make([]any, 0, len(notificationArgs)+len(args)+1)
+	queryArgs := make([]any, 0, len(notificationArgs)+len(args))
 	queryArgs = append(queryArgs, notificationArgs...)
 	queryArgs = append(queryArgs, args...)
-	queryArgs = append(queryArgs, limit)
 	return fromSQL, queryArgs
+}
+
+func activityEventsQuery(opts ListActivityOpts) (string, []any) {
+	from, args := activityEventsFrom(opts)
+	return from + " ORDER BY created_at DESC, source DESC, source_id DESC LIMIT ?", append(args, activityLimit(opts.Limit))
 }
 
 // activityEventCursorWithQueryer returns the cursor of the newest event the
@@ -791,44 +791,11 @@ func listActivitySubjectsWithQueryer(
 			whereClauses = append(whereClauses, "("+strings.Join(itemTypeClauses, " OR ")+")")
 		}
 	}
-	// Included terms match the subject's own fields or any of its events
-	// (SearchMatchedSubjectKeys); excluded terms reject the subject by its own
-	// fields so one unrelated comment cannot resurface an excluded item.
-	searchQuery := ParseSearchQuery(opts.Search)
-	const subjectSearchTerm = "LOWER('#' || item_number || ' ' || item_title) LIKE ? OR " +
-		"LOWER(item_title) LIKE ? OR LOWER(item_author) LIKE ?"
-	if len(searchQuery.Include) > 0 {
-		includeCond, includeArgs := SearchQuery{Include: searchQuery.Include}.sqlCondition(
-			subjectSearchTerm, 3, lowerLikePattern)
-		searchClauses := []string{includeCond}
-		args = append(args, includeArgs...)
-
-		matchedSubjectPlaceholders := make([]string, 0, len(opts.SearchMatchedSubjectKeys))
-		seenMatchedSubjects := make(map[WorkspaceSubjectKey]struct{}, len(opts.SearchMatchedSubjectKeys))
-		for _, key := range opts.SearchMatchedSubjectKeys {
-			if key.ItemType != "pr" && key.ItemType != "issue" {
-				continue
-			}
-			if _, seen := seenMatchedSubjects[key]; seen {
-				continue
-			}
-			seenMatchedSubjects[key] = struct{}{}
-			matchedSubjectPlaceholders = append(matchedSubjectPlaceholders, "(?, ?, ?)")
-			args = append(args, key.RepoID, key.ItemType, key.ItemNumber)
-		}
-		if len(matchedSubjectPlaceholders) > 0 {
-			searchClauses = append(searchClauses,
-				"(repo_id, item_type, item_number) IN ("+
-					strings.Join(matchedSubjectPlaceholders, ", ")+")")
-		}
-		whereClauses = append(whereClauses, "("+strings.Join(searchClauses, " OR ")+")")
+	searchClauses, err := activitySubjectSearchClauses(opts, &args)
+	if err != nil {
+		return nil, err
 	}
-	if len(searchQuery.Exclude) > 0 {
-		excludeCond, excludeArgs := SearchQuery{Exclude: searchQuery.Exclude}.sqlCondition(
-			subjectSearchTerm, 3, lowerLikePattern)
-		whereClauses = append(whereClauses, excludeCond)
-		args = append(args, excludeArgs...)
-	}
+	whereClauses = append(whereClauses, searchClauses...)
 	if opts.Author != "" {
 		whereClauses = append(whereClauses, "LOWER(item_author) = LOWER(?)")
 		args = append(args, opts.Author)
@@ -861,6 +828,10 @@ func listActivitySubjectsWithQueryer(
 	if opts.Since != nil {
 		whereClauses = append(whereClauses, "activity_at >= ?")
 		args = append(args, *opts.Since)
+	}
+	if opts.Before != nil {
+		whereClauses = append(whereClauses, "(activity_at, repo_id, item_type, item_number) < (?, ?, ?, ?)")
+		args = append(args, opts.Before.ActivityAt, opts.Before.RepoID, opts.Before.ItemType, opts.Before.ItemNumber)
 	}
 
 	where := ""
@@ -951,6 +922,7 @@ func listActivitySubjectsWithQueryer(
 		); err != nil {
 			return nil, fmt.Errorf("scan activity subject: %w", err)
 		}
+		subject.activityAtRaw = activityAt
 		subject.ActivityAt, err = parseDBTime(activityAt)
 		if err != nil {
 			return nil, fmt.Errorf("parse activity subject activity_at %q: %w", activityAt, err)
@@ -961,6 +933,53 @@ func listActivitySubjectsWithQueryer(
 		return nil, fmt.Errorf("list activity subjects rows: %w", err)
 	}
 	return subjects, nil
+}
+
+// activitySubjectSearchClauses restricts subjects to opts.Keys and to the
+// search. Included terms match the subject's own fields or any of its events
+// in the filtered event union; excluded terms reject the subject by its own
+// fields so one unrelated comment cannot resurface an excluded item.
+func activitySubjectSearchClauses(opts ListActivitySubjectsOpts, args *[]any) ([]string, error) {
+	var clauses []string
+	if opts.Keys != nil {
+		cond, err := activitySubjectKeysCondition(opts.Keys, args)
+		if err != nil {
+			return nil, err
+		}
+		clauses = append(clauses, cond)
+	}
+	searchQuery := ParseSearchQuery(opts.Search)
+	const subjectSearchTerm = "LOWER('#' || item_number || ' ' || item_title) LIKE ? OR " +
+		"LOWER(item_title) LIKE ? OR LOWER(item_author) LIKE ?"
+	if len(searchQuery.Include) > 0 {
+		includeCond, includeArgs := SearchQuery{Include: searchQuery.Include}.sqlCondition(
+			subjectSearchTerm, 3, lowerLikePattern)
+		searchClauses := []string{includeCond}
+		*args = append(*args, includeArgs...)
+		if opts.SearchEventOpts != nil {
+			from, eventArgs := activityEventsFrom(*opts.SearchEventOpts)
+			searchClauses = append(searchClauses, "(repo_id, item_type, item_number) IN (SELECT repo_id, item_type, item_number "+from+")")
+			*args = append(*args, eventArgs...)
+		}
+		clauses = append(clauses, "("+strings.Join(searchClauses, " OR ")+")")
+	}
+	if len(searchQuery.Exclude) > 0 {
+		excludeCond, excludeArgs := SearchQuery{Exclude: searchQuery.Exclude}.sqlCondition(
+			subjectSearchTerm, 3, lowerLikePattern)
+		clauses = append(clauses, excludeCond)
+		*args = append(*args, excludeArgs...)
+	}
+	return clauses, nil
+}
+
+// activitySubjectKeysCondition matches the outer subject columns against keys.
+func activitySubjectKeysCondition(keys []WorkspaceSubjectKey, args *[]any) (string, error) {
+	payload, err := json.Marshal(keys)
+	if err != nil {
+		return "", fmt.Errorf("encode activity subject keys: %w", err)
+	}
+	*args = append(*args, string(payload))
+	return "(repo_id, item_type, item_number) IN (" + workspaceSubjectKeysSQL + ")", nil
 }
 
 // ListActivityAuthors returns the distinct, non-empty PR and issue authors
@@ -1268,6 +1287,33 @@ func EncodeCursor(
 	raw := fmt.Sprintf("%d:%d:%s:%d",
 		createdAt.Unix(), createdAt.Nanosecond(), source, sourceID)
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+// EncodeActivitySubjectCursor identifies the last subject in a page.
+func EncodeActivitySubjectCursor(subject ActivitySubject) string {
+	key := subject.Subject.Key
+	raw := fmt.Sprintf("%s|%d|%s|%d", subject.activityAtRaw, key.RepoID, key.ItemType, key.ItemNumber)
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+func DecodeActivitySubjectCursor(cursor string) (ActivitySubjectCursor, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return ActivitySubjectCursor{}, fmt.Errorf("decode subject cursor: %w", err)
+	}
+	parts := strings.Split(string(raw), "|")
+	if len(parts) != 4 {
+		return ActivitySubjectCursor{}, errors.New("invalid subject cursor")
+	}
+	repoID, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return ActivitySubjectCursor{}, fmt.Errorf("invalid subject cursor repo_id: %w", err)
+	}
+	number, err := strconv.Atoi(parts[3])
+	if err != nil {
+		return ActivitySubjectCursor{}, fmt.Errorf("invalid subject cursor item number: %w", err)
+	}
+	return ActivitySubjectCursor{ActivityAt: parts[0], RepoID: repoID, ItemType: parts[2], ItemNumber: number}, nil
 }
 
 // DecodeCursor parses an opaque cursor string into its components.

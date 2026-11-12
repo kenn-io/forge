@@ -597,6 +597,8 @@ components:
           type: array
         next_cursor:
           type: string
+        next_subject_cursor:
+          type: string
         use_workspace_activity_for_recency:
           type: boolean
         workspace_activity:
@@ -13723,6 +13725,11 @@ paths:
         - explode: false
           in: query
           name: before
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: subject_before
           schema:
             type: string
         - explode: false

@@ -107,6 +107,7 @@ type ListActivityInput struct {
 	Assigned           bool     `query:"assigned" doc:"Drop activity for pull requests and issues with no assignees. With unassigned, neither filter applies."`
 	After              string   `query:"after"`
 	Before             string   `query:"before"`
+	SubjectBefore      string   `query:"subject_before"`
 	AtOrBefore         string   `query:"at_or_before"`
 	Since              string   `query:"since"`
 	Projection         string   `query:"projection" enum:"full,collapsed,events" default:"full"`
@@ -383,6 +384,7 @@ func (s *Handlers) WorkspaceActivityResponse(
 	providerItems []db.ActivityItem,
 	labels map[db.WorkspaceSubjectKey][]db.Label,
 	useWorkspaceActivityForRecency bool,
+	providerSubjects []db.ActivitySubject,
 ) []WorkspaceActivitySubjectResponse {
 	if !useWorkspaceActivityForRecency {
 		return []WorkspaceActivitySubjectResponse{}
@@ -398,6 +400,11 @@ func (s *Handlers) WorkspaceActivityResponse(
 	searchQuery := db.ParseSearchQuery(opts.Search)
 	matchedSubjects := make(map[db.WorkspaceSubjectKey]struct{})
 	if len(searchQuery.Include) > 0 {
+		for _, activity := range providerSubjects {
+			key := activity.Subject.Key
+			key.ItemType = WorkspaceItemTypeFromActivity(key.ItemType)
+			matchedSubjects[key] = struct{}{}
+		}
 		for _, item := range providerItems {
 			itemType := WorkspaceItemTypeFromActivity(item.ItemType)
 			if itemType == "" {

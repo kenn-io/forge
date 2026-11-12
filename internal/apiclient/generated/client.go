@@ -13831,6 +13831,7 @@ func (c *Client) ListActivityWithResponse(ctx context.Context, options *ListActi
 		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
 		"search":              {Style: "form", Explode: &[]bool{false}[0]},
 		"since":               {Style: "form", Explode: &[]bool{false}[0]},
+		"subject_before":      {Style: "form", Explode: &[]bool{false}[0]},
 		"types":               {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":          {Style: "form", Explode: &[]bool{false}[0]},
 	}
@@ -42484,6 +42485,7 @@ func (c *Client) ListActivityRaw(ctx context.Context, httpClient *http.Client, o
 		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
 		"search":              {Style: "form", Explode: &[]bool{false}[0]},
 		"since":               {Style: "form", Explode: &[]bool{false}[0]},
+		"subject_before":      {Style: "form", Explode: &[]bool{false}[0]},
 		"types":               {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":          {Style: "form", Explode: &[]bool{false}[0]},
 	}
@@ -49787,6 +49789,7 @@ func NewListActivityRequest(ctx context.Context, baseURL string, options *ListAc
 		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
 		"search":              {Style: "form", Explode: &[]bool{false}[0]},
 		"since":               {Style: "form", Explode: &[]bool{false}[0]},
+		"subject_before":      {Style: "form", Explode: &[]bool{false}[0]},
 		"types":               {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":          {Style: "form", Explode: &[]bool{false}[0]},
 	}
@@ -60573,6 +60576,7 @@ type ListActivityQuery struct {
 	Assigned         *bool                        `json:"assigned,omitempty"`
 	After            *string                      `json:"after,omitempty"`
 	Before           *string                      `json:"before,omitempty"`
+	SubjectBefore    *string                      `json:"subject_before,omitempty"`
 	AtOrBefore       *string                      `json:"at_or_before,omitempty"`
 	Since            *string                      `json:"since,omitempty"`
 	Projection       *ListActivityQueryProjection `json:"projection,omitempty"`
@@ -67033,6 +67037,7 @@ type ActivityResponse struct {
 	ItemActivityCapped             bool                               `json:"item_activity_capped"`
 	Items                          []ActivityItemResponse             `json:"items"`
 	NextCursor                     *string                            `json:"next_cursor,omitempty"`
+	NextSubjectCursor              *string                            `json:"next_subject_cursor,omitempty"`
 	UseWorkspaceActivityForRecency bool                               `json:"use_workspace_activity_for_recency"`
 	WorkspaceActivity              []WorkspaceActivitySubjectResponse `json:"workspace_activity"`
 }

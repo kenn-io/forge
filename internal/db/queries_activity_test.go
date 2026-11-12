@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"slices"
 	"strings"
@@ -1801,7 +1802,83 @@ func TestListActivitySubjectsUsesAuthoritativeRecencyForWindowAndLimit(t *testin
 	assert.Equal(recentActivityAt, subjects[0].ActivityAt)
 }
 
-func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T) {
+func TestListActivitySubjectsPagesEqualTimestamps(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	firstRepo := insertTestRepo(t, d, "alice", "alpha")
+	secondRepo := insertTestRepo(t, d, "alice", "beta")
+	now := baseTime().Add(123456789 * time.Nanosecond)
+	insertTestMRWithOptions(t, d, testMR(firstRepo, 1, withMRActivity(now)))
+	insertTestMRWithOptions(t, d, testMR(secondRepo, 2, withMRActivity(now)))
+	insertTestMRWithOptions(t, d, testMR(secondRepo, 3, withMRActivity(now)))
+	insertTestIssue(t, d, secondRepo, 4, "Issue", now)
+	first, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 2})
+	require.NoError(t, err)
+	require.Len(t, first, 2)
+	assert.Equal(t, 3, first[0].Subject.Key.ItemNumber)
+	assert.Equal(t, 2, first[1].Subject.Key.ItemNumber)
+	last := first[1]
+	second, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 2, Before: &ActivitySubjectCursor{
+		ActivityAt: last.activityAtRaw, RepoID: last.Subject.Key.RepoID, ItemType: last.Subject.Key.ItemType, ItemNumber: last.Subject.Key.ItemNumber,
+	}})
+	require.NoError(t, err)
+	require.Len(t, second, 2)
+	assert.Equal(t, "issue", second[0].Subject.Key.ItemType)
+	assert.Equal(t, 4, second[0].Subject.Key.ItemNumber)
+	assert.Equal(t, 1, second[1].Subject.Key.ItemNumber)
+	last = second[1]
+	third, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 2, Before: &ActivitySubjectCursor{
+		ActivityAt: last.activityAtRaw, RepoID: last.Subject.Key.RepoID, ItemType: last.Subject.Key.ItemType, ItemNumber: last.Subject.Key.ItemNumber,
+	}})
+	require.NoError(t, err)
+	assert.Empty(t, third)
+}
+
+func TestListActivitySubjectsPagesStoredTimestampEncodings(t *testing.T) {
+	t.Parallel()
+	for _, stored := range []string{"2024-01-15T12:00:00Z", "2024-01-15T12:00:00.123456789Z", "2024-01-15 12:00:00 +0000 UTC"} {
+		t.Run(stored, func(t *testing.T) {
+			t.Parallel()
+			d := openTestDB(t)
+			repo := insertTestRepo(t, d, "alice", "alpha")
+			insertTestMRWithOptions(t, d, testMR(repo, 1))
+			insertTestMRWithOptions(t, d, testMR(repo, 2))
+			_, err := d.WriteDB().ExecContext(t.Context(), `UPDATE forge_merge_requests SET created_at = ? WHERE repo_id = ?`, stored, repo)
+			require.NoError(t, err)
+
+			first, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 1})
+			require.NoError(t, err)
+			require.Len(t, first, 1)
+			assert.Equal(t, 2, first[0].Subject.Key.ItemNumber)
+			cursor, err := DecodeActivitySubjectCursor(EncodeActivitySubjectCursor(first[0]))
+			require.NoError(t, err)
+			second, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 1, Before: &cursor})
+			require.NoError(t, err)
+			require.Len(t, second, 1)
+			assert.Equal(t, 1, second[0].Subject.Key.ItemNumber)
+		})
+	}
+}
+
+func TestActivitySubjectCursorValidation(t *testing.T) {
+	t.Parallel()
+	stamp := time.Date(2024, 1, 2, 3, 4, 5, 123456789, time.UTC)
+	subject := ActivitySubject{activityAtRaw: stamp.Format(time.RFC3339Nano), ActivityAt: stamp, Subject: WorkspaceSubjectMetadata{Key: WorkspaceSubjectKey{RepoID: 7, ItemType: "issue", ItemNumber: 9}}}
+	cursor, err := DecodeActivitySubjectCursor(EncodeActivitySubjectCursor(subject))
+	require.NoError(t, err)
+	assert.Equal(t, stamp.Format(time.RFC3339Nano), cursor.ActivityAt)
+	assert.Equal(t, int64(7), cursor.RepoID)
+	assert.Equal(t, "issue", cursor.ItemType)
+	assert.Equal(t, 9, cursor.ItemNumber)
+	for _, raw := range []string{"2024-01-15T12:00:00Z|1|pr", "2024-01-15T12:00:00Z|x|pr|1", "2024-01-15T12:00:00Z|1|pr|x"} {
+		_, err := DecodeActivitySubjectCursor(base64.RawURLEncoding.EncodeToString([]byte(raw)))
+		require.Error(t, err, raw)
+	}
+	_, err = DecodeActivitySubjectCursor("invalid=")
+	require.Error(t, err)
+}
+
+func TestListActivitySubjectsSearchAndKeyRestriction(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
@@ -1811,25 +1888,19 @@ func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T)
 	now := baseTime()
 	repoID := insertTestRepo(t, d, "alice", "alpha")
 
-	insertTestMRWithOptions(t, d, testMR(repoID, 1,
+	firstID := insertTestMRWithOptions(t, d, testMR(repoID, 1,
 		withMRTitle("Unrelated parent matched through an event"),
 		withMRActivity(now.Add(-time.Hour)),
 	))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{MergeRequestID: firstID, EventType: "issue_comment", Author: "reviewer", Body: "needle", CreatedAt: now, DedupeKey: "match"}}))
 	insertTestMRWithOptions(t, d, testMR(repoID, 2,
 		withMRTitle("Needle in the parent title"),
 		withMRActivity(now.Add(-2*time.Hour)),
 	))
-	insertTestMRWithOptions(t, d, testMR(repoID, 3,
-		withMRTitle("Unrelated parent without a matching event"),
-		withMRActivity(now.Add(-3*time.Hour)),
-	))
+	insertTestMRWithOptions(t, d, testMR(repoID, 4, withMRTitle("Unrelated parent without a matching event"), withMRActivity(now.Add(-4*time.Hour))))
 
 	subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{
-		Search: "needle",
-		SearchMatchedSubjectKeys: []WorkspaceSubjectKey{
-			{RepoID: repoID, ItemType: "pr", ItemNumber: 1},
-		},
-		Limit: 50,
+		Search: "needle", SearchEventOpts: &ListActivityOpts{Search: "needle"}, Limit: 50,
 	})
 	require.NoError(err)
 	require.Len(subjects, 2)
@@ -1837,6 +1908,14 @@ func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T)
 		subjects[0].Subject.Key.ItemNumber,
 		subjects[1].Subject.Key.ItemNumber,
 	})
+
+	subjects, err = d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{
+		Search: "needle", SearchEventOpts: &ListActivityOpts{Search: "needle"}, Limit: 50,
+		Keys: []WorkspaceSubjectKey{{RepoID: repoID, ItemType: "pr", ItemNumber: 1}, {RepoID: repoID, ItemType: "issue", ItemNumber: 2}},
+	})
+	require.NoError(err)
+	require.Len(subjects, 1)
+	assert.Equal(1, subjects[0].Subject.Key.ItemNumber)
 }
 
 func TestListActivitySearchExcludesNegatedItemAuthor(t *testing.T) {
@@ -1872,7 +1951,7 @@ func TestListActivitySearchExcludesNegatedItemAuthor(t *testing.T) {
 	}
 }
 
-func TestListActivitySubjectsExcludedTermOverridesMatchedEvents(t *testing.T) {
+func TestListActivitySubjectsExcludesNegatedParentAuthor(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
@@ -1880,17 +1959,17 @@ func TestListActivitySubjectsExcludedTermOverridesMatchedEvents(t *testing.T) {
 	d := openTestDB(t)
 	now := baseTime()
 	repoID := insertTestRepo(t, d, "alice", "alpha")
-	insertTestMRWithOptions(t, d, testMR(repoID, 1,
-		withMRTitle("Needle work"), withMRAuthor("excluded-author"), withMRActivity(now.Add(-time.Hour))))
+	excludedID := insertTestMRWithOptions(t, d, testMR(repoID, 1,
+		withMRTitle("Other work"), withMRAuthor("excluded-author"), withMRActivity(now.Add(-time.Hour))))
+	require.NoError(d.UpsertMREvents(t.Context(), []MREvent{{
+		MergeRequestID: excludedID, EventType: "issue_comment", Author: "reviewer",
+		Body: "needle", CreatedAt: now, DedupeKey: "match",
+	}}))
 	insertTestMRWithOptions(t, d, testMR(repoID, 2,
 		withMRTitle("Needle work"), withMRAuthor("kept-author"), withMRActivity(now.Add(-2*time.Hour))))
 
 	subjects, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{
-		Search: "needle NOT excluded-author",
-		SearchMatchedSubjectKeys: []WorkspaceSubjectKey{
-			{RepoID: repoID, ItemType: "pr", ItemNumber: 1},
-		},
-		Limit: 50,
+		Search: "needle NOT excluded-author", SearchEventOpts: &ListActivityOpts{Search: "needle"}, Limit: 50,
 	})
 	require.NoError(err)
 	require.Len(subjects, 1)

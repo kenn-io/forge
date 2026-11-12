@@ -138,9 +138,11 @@ const enabledEvents = vi.hoisted(() => ({
 const showNotifications = vi.hoisted(() => ({ value: true }));
 const activityCapped = vi.hoisted(() => ({ value: false }));
 const itemActivityCapped = vi.hoisted(() => ({ value: false }));
+const olderItemsAvailable = vi.hoisted(() => ({ value: false }));
 const canLoadMore = vi.hoisted(() => ({ value: false }));
 const loadingMore = vi.hoisted(() => ({ value: false }));
 const loadMoreActivity = vi.hoisted(() => vi.fn());
+const loadOlderItems = vi.hoisted(() => vi.fn());
 const involvesMe = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const unassigned = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
@@ -195,6 +197,9 @@ vi.mock("../context.js", () => ({
       isActivityLoading: () => false,
       isActivityCapped: () => activityCapped.value,
       isItemActivityCapped: () => itemActivityCapped.value,
+      canLoadOlderItems: () => olderItemsAvailable.value,
+      isLoadingOlderItems: () => false,
+      loadOlderItems,
       canLoadMoreActivity: () => canLoadMore.value,
       isLoadingMoreActivity: () => loadingMore.value,
       loadMoreActivity,
@@ -274,9 +279,11 @@ describe("ActivityFeed compact mode", () => {
     unassigned.value = undefined;
     activityCapped.value = false;
     itemActivityCapped.value = false;
+    olderItemsAvailable.value = false;
     canLoadMore.value = false;
     loadingMore.value = false;
     loadMoreActivity.mockClear();
+    loadOlderItems.mockClear();
     selectedAuthor.value = undefined;
     setActivityAuthor.mockClear();
     setActivityFilterTypes.mockClear();
@@ -340,38 +347,30 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
   });
 
-  it.each([
-    {
-      kind: "events",
-      rule: "shows the event ceiling notice after paging ends",
-      view: "threaded" as const,
-      visible: true,
-      notice: /most recent 5,000 events/,
-      otherNotice: /5,000 most recently active pull requests and issues/,
-    },
-    {
-      kind: "parents",
-      rule: "shows the parent ceiling notice in threaded view",
-      view: "threaded" as const,
-      visible: true,
-      notice: /5,000 most recently active pull requests and issues/,
-      otherNotice: /most recent 5,000 events/,
-    },
-    {
-      kind: "parents",
-      rule: "hides the parent ceiling notice in flat view",
-      view: "flat" as const,
-      visible: false,
-      notice: /5,000 most recently active pull requests and issues/,
-      otherNotice: /most recent 5,000 events/,
-    },
-  ])("$rule", ({ kind, view, visible, notice, otherNotice }) => {
-    activityCapped.value = kind === "events";
-    itemActivityCapped.value = kind === "parents";
-    viewMode.value = view;
+  it("shows the event ceiling notice after paging ends", () => {
+    activityCapped.value = true;
+    viewMode.value = "threaded";
     render(ActivityFeed);
-    expect(screen.queryByText(notice) !== null).toBe(visible);
-    expect(screen.queryByText(otherNotice)).toBeNull();
+    expect(screen.getByText(/most recent 5,000 events/)).toBeTruthy();
+  });
+
+  it("shows the older item control in threaded view", async () => {
+    itemActivityCapped.value = true;
+    olderItemsAvailable.value = true;
+    viewMode.value = "threaded";
+    render(ActivityFeed);
+    expect(screen.getByText(/Item totals cover loaded items only/)).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Load older items" }));
+    expect(loadOlderItems).toHaveBeenCalledOnce();
+  });
+
+  it("hides the older item control in flat view", () => {
+    itemActivityCapped.value = true;
+    olderItemsAvailable.value = true;
+    viewMode.value = "flat";
+    render(ActivityFeed);
+    expect(screen.queryByText(/Item totals cover loaded items only/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load older items" })).toBeNull();
   });
 
   it("offers to retry a failed thread history load", async () => {

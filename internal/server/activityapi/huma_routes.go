@@ -870,7 +870,7 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 			// can be left over from before it joined. The browser takes each
 			// subject's labels from the hub's rows for the same item.
 			response.WorkspaceActivity = s.WorkspaceActivityResponse(
-				input, opts, snapshot, nil, nil, response.UseWorkspaceActivityForRecency,
+				input, opts, snapshot, nil, nil, response.UseWorkspaceActivityForRecency, nil,
 			)
 		}
 		return response
@@ -969,6 +969,27 @@ func activityWorkspaceOverlays(
 	return overlays
 }
 
+// workspaceSearchSubjects reads, in SQL, which workspace subjects the
+// search's included terms match, whatever page or event cap the feed read
+// stopped at.
+func (s *Handlers) workspaceSearchSubjects(
+	ctx context.Context, opts db.ListActivityOpts, snapshot workspaceapi.WorkspaceSubjectSnapshot,
+) ([]db.ActivitySubject, error) {
+	if len(db.ParseSearchQuery(opts.Search).Include) == 0 {
+		return nil, nil
+	}
+	keys := workspaceSnapshotSubjectKeys(snapshot)
+	for i := range keys {
+		keys[i].ItemType = itemapi.ActivityItemTypeFromWorkspace(keys[i].ItemType)
+	}
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	subjectOpts := db.ActivitySubjectsOpts(opts, nil, len(keys))
+	subjectOpts.Keys = keys
+	return s.Db.ListActivitySubjects(ctx, subjectOpts)
+}
+
 func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.ListActivityInput) (*listActivityOutput, error) {
 	if itemapi.HasInvalidRepoFilter(input.Repo) {
 		return nil, httpapi.Validation("query.repo", "repo filter must be provider|platform_host/repo_path")
@@ -1046,6 +1067,14 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		opts.BeforeSource = source
 		opts.BeforeSourceID = sourceID
 	}
+	var subjectBefore *db.ActivitySubjectCursor
+	if input.SubjectBefore != "" {
+		cursor, err := db.DecodeActivitySubjectCursor(input.SubjectBefore)
+		if err != nil {
+			return nil, httpapi.Validation("query.subject_before", "invalid subject cursor: "+err.Error())
+		}
+		subjectBefore = &cursor
+	}
 	if input.AtOrBefore != "" {
 		t, source, sourceID, err := db.DecodeCursor(input.AtOrBefore)
 		if err != nil {
@@ -1094,7 +1123,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		collapsed, projectionErr := s.Db.ListCollapsedActivityProjection(ctx, db.ListActivityProjectionOpts{
 			ListActivityOpts: opts,
 			SubjectLimit:     pageLimit + 1,
-			SearchEventLimit: itemapi.ActivitySafetyCap + 1,
+			SubjectBefore:    subjectBefore,
 		})
 		if projectionErr != nil {
 			slog.Error("list collapsed activity failed", "err", projectionErr)
@@ -1126,46 +1155,8 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			return nil, httpapi.Internal("list activity failed")
 		}
 	}
-	// Search-matched parents are derived from the bounded event read, so an
-	// event page that overflowed can hide parents whose only matches fell off
-	// it; report that as parent truncation rather than a complete snapshot.
-	searchMatchesTruncated := searchHasIncludes && len(workspaceEventItems) > itemapi.ActivitySafetyCap
-	var searchMatchedSubjectKeys []db.WorkspaceSubjectKey
-	if searchHasIncludes {
-		searchMatchedSubjectKeys = make([]db.WorkspaceSubjectKey, 0, len(workspaceEventItems))
-		for _, item := range workspaceEventItems {
-			if item.ItemType != "pr" && item.ItemType != "issue" {
-				continue
-			}
-			searchMatchedSubjectKeys = append(searchMatchedSubjectKeys, db.WorkspaceSubjectKey{
-				RepoID: item.RepoID, ItemType: item.ItemType, ItemNumber: item.ItemNumber,
-			})
-		}
-	}
 	if projection == "full" {
-		itemActivity, err = s.Db.ListActivitySubjects(ctx, db.ListActivitySubjectsOpts{
-			Repo:           opts.Repo,
-			RepoFilters:    opts.RepoFilters,
-			AllowedRepoIDs: opts.AllowedRepoIDs,
-			ItemTypes:      opts.ItemTypes,
-			ExcludeNotificationRecency: opts.ExcludeNotifications ||
-				(len(opts.Types) > 0 && !slices.Contains(opts.Types, "notification")),
-			Search:                   opts.Search,
-			SearchMatchedSubjectKeys: searchMatchedSubjectKeys,
-			Author:                   opts.Author,
-			Unassigned:               opts.Unassigned,
-			Assigned:                 opts.Assigned,
-			ViewerLogins:             opts.ViewerLogins,
-			ViewerUninvolved:         opts.ViewerUninvolved,
-			HideClosedMerged:         opts.HideClosedMerged,
-			HideBots:                 opts.HideBots,
-			HideDrafts:               opts.HideDrafts,
-			HideMergeQueued:          opts.HideMergeQueued,
-			OnlyMergeQueued:          opts.OnlyMergeQueued,
-			DeferredMergeItems:       opts.DeferredMergeItems,
-			Limit:                    pageLimit + 1,
-			Since:                    opts.Since,
-		})
+		itemActivity, err = s.Db.ListActivitySubjects(ctx, db.ActivitySubjectsOpts(opts, subjectBefore, pageLimit+1))
 		if err != nil {
 			slog.Error("list activity subjects failed", "err", err)
 			return nil, httpapi.Internal("list activity failed")
@@ -1203,8 +1194,18 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 
+	useWorkspaceActivityForRecency := s.useWorkspaceActivityForRecency()
+	var workspaceSubjects []db.ActivitySubject
+	if useWorkspaceActivityForRecency && projection != "events" {
+		workspaceSubjects, err = s.workspaceSearchSubjects(ctx, opts, workspaceSnapshot)
+		if err != nil {
+			slog.Error("list workspace search subjects failed", "err", err)
+			return nil, httpapi.Internal("list workspace activity failed")
+		}
+	}
+
 	eventsCapped := len(items) > pageLimit
-	itemActivityCapped := len(itemActivity) > pageLimit || searchMatchesTruncated
+	itemActivityCapped := len(itemActivity) > pageLimit
 	if len(items) > pageLimit {
 		items = items[:pageLimit]
 	}
@@ -1213,8 +1214,10 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		last := items[len(items)-1]
 		nextCursor = db.EncodeCursor(last.CreatedAt, last.Source, last.SourceID)
 	}
+	nextSubjectCursor := ""
 	if len(itemActivity) > pageLimit {
 		itemActivity = itemActivity[:pageLimit]
+		nextSubjectCursor = db.EncodeActivitySubjectCursor(itemActivity[len(itemActivity)-1])
 	}
 	if hasFullWorkspaceEventItems {
 		if len(workspaceEventItems) > itemapi.ActivitySafetyCap {
@@ -1314,10 +1317,9 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		itemActivityOut = []itemapi.ActivitySubjectResponse{}
 	}
 
-	useWorkspaceActivityForRecency := s.useWorkspaceActivityForRecency()
 	workspaceActivity := s.WorkspaceActivityResponse(
 		input, opts, workspaceSnapshot, workspaceEventItems, labels,
-		useWorkspaceActivityForRecency,
+		useWorkspaceActivityForRecency, slices.Concat(itemActivity, workspaceSubjects),
 	)
 	if projection == "events" {
 		workspaceActivity = []itemapi.WorkspaceActivitySubjectResponse{}
@@ -1332,6 +1334,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			ItemActivityCapped:             itemActivityCapped,
 			EventCursor:                    eventCursor,
 			NextCursor:                     nextCursor,
+			NextSubjectCursor:              nextSubjectCursor,
 		},
 	}, nil
 }

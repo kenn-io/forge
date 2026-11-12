@@ -1165,6 +1165,7 @@ type ActivityItem struct {
 // ActivitySubject is the authoritative parent projection for one pull request
 // or issue in the Activity time range. It is independent of event visibility.
 type ActivitySubject struct {
+	activityAtRaw       string // Preserves the SQLite sort key for pagination.
 	Subject             WorkspaceSubjectMetadata
 	ActivityAt          time.Time
 	EventLedgerRevision string
@@ -1720,7 +1721,7 @@ type ListActivityOpts struct {
 }
 
 // ListActivitySubjectsOpts holds parent-level filters for the Activity feed.
-// Event-type filters and cursors do not apply to this authoritative snapshot.
+// Event cursors do not apply to this authoritative snapshot.
 type ListActivitySubjectsOpts struct {
 	Repo           string
 	RepoFilters    []RepoFilter
@@ -1730,23 +1731,31 @@ type ListActivitySubjectsOpts struct {
 	// admitting or reordering otherwise-old parents.
 	ExcludeNotificationRecency bool
 	Search                     string
-	// SearchMatchedSubjectKeys identifies parents whose provider events matched
-	// Search. The parent title and author do not necessarily contain that term.
-	SearchMatchedSubjectKeys []WorkspaceSubjectKey
-	Author                   string
-	Unassigned               bool
-	ViewerLogins             []RepoViewerLogin
-	HideClosedMerged         bool
-	HideBots                 bool
-	HideDrafts               bool
-	HideMergeQueued          bool
-	OnlyMergeQueued          bool
-	DeferredMergeItems       []RepoItemNumber
-	Limit                    int
-	Since                    *time.Time
+	SearchEventOpts            *ListActivityOpts
+	Author                     string
+	Unassigned                 bool
+	ViewerLogins               []RepoViewerLogin
+	HideClosedMerged           bool
+	HideBots                   bool
+	HideDrafts                 bool
+	HideMergeQueued            bool
+	OnlyMergeQueued            bool
+	DeferredMergeItems         []RepoItemNumber
+	Limit                      int
+	Since                      *time.Time
+	Before                     *ActivitySubjectCursor
+	// Keys, when non-nil, restricts subjects to these activity-typed keys.
+	Keys []WorkspaceSubjectKey
 	// Assigned and ViewerUninvolved invert Unassigned and ViewerLogins, as in ListActivityOpts.
 	Assigned         bool
 	ViewerUninvolved bool
+}
+
+type ActivitySubjectCursor struct {
+	ActivityAt string
+	RepoID     int64
+	ItemType   string
+	ItemNumber int
 }
 
 type ActivityProjection struct {
@@ -1757,8 +1766,8 @@ type ActivityProjection struct {
 
 type ListActivityProjectionOpts struct {
 	ListActivityOpts
-	SubjectLimit     int
-	SearchEventLimit int
+	SubjectLimit  int
+	SubjectBefore *ActivitySubjectCursor
 }
 
 // ListActivityAuthorsOpts holds the repository and time scopes used to build

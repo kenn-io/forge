@@ -22,6 +22,7 @@ export type ListActivityParams = {
   assigned?: boolean;
   after?: string;
   before?: string;
+  subject_before?: string;
   at_or_before?: string;
   since?: string;
   projection?: ListActivityProjection;

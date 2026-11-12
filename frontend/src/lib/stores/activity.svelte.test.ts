@@ -201,6 +201,943 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
+describe("activity subject paging", () => {
+  const repo = {
+    provider: "github",
+    platform_host: "github.com",
+    platform_repo_id: 1007,
+    repo_path: "acme/widgets",
+    owner: "acme",
+    name: "widgets",
+  };
+  const threadEvent = (id: string, item_number: number, activity_type = "comment") =>
+    ({ ...notificationItem(id, "read"), activity_type, item_number, repo }) as ActivityItem;
+  const reconcile = (store: ReturnType<typeof createActivityStore>, operation: string) =>
+    runtime!.runCommand(store.reconcileActivityEffect(), { operation, safeContext: {}, onFailure: () => {} });
+  const subjectPage = (numbers: number[], next = "", data: Record<string, unknown> = {}) => ({
+    data: {
+      items: [],
+      capped: false,
+      item_activity: numbers.map((number) => ({ ...itemActivity(number), repo })),
+      item_activity_capped: next !== "",
+      next_subject_cursor: next,
+      ...data,
+    },
+    error: null,
+  });
+  it("clears off-page discussion when a filtered refresh has no events", async () => {
+    const pending = Promise.withResolvers<unknown>();
+    const commit = threadEvent("commit:2", 2, "commit");
+    let bulkReads = 0;
+    let snapshotReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (options?.params?.query?.projection === "events") {
+          bulkReads++;
+          return pending.promise;
+        }
+        snapshotReads++;
+        return {
+          data: {
+            items: snapshotReads === 1 ? [commit] : [],
+            capped: false,
+            event_cursor: snapshotReads === 1 ? "old" : "",
+            item_activity: [
+              {
+                ...itemActivity(1),
+                repo,
+                activity_at: snapshotReads === 1 ? "2026-08-09T12:00:01Z" : "2026-08-09T12:01:01Z",
+              },
+            ],
+            item_activity_capped: true,
+            next_subject_cursor: "older",
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
+    store.setUnassigned("require");
+    store.setEnabledEvents(new Set(["commit"]));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([commit.id]));
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(bulkReads).toBe(1));
+    await reconcile(store, "refresh without matching commits").exit;
+    const afterRefresh = store.getActivityItems().map((item) => item.id);
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1]);
+    pending.resolve({ data: { items: [commit], capped: false }, error: null });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(afterRefresh).toEqual([]);
+    expect(store.getActivityItems()).toEqual([]);
+    expect(snapshotReads).toBe(2);
+  });
+  it("keeps an unchanged filtered discussion load through refreshes", async () => {
+    const pending = Promise.withResolvers<unknown>();
+    const event = threadEvent("comment:2", 2);
+    let bulkReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (options?.params?.query?.projection === "events") {
+          bulkReads++;
+          return pending.promise;
+        }
+        return subjectPage([1], "older", { event_cursor: "snapshot" });
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
+    store.setActivitySearch("needle");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(bulkReads).toBe(1));
+    await reconcile(store, "refresh").exit;
+    await reconcile(store, "refresh again").exit;
+    expect(store.isActivityLoading()).toBe(true);
+    pending.resolve({ data: { items: [event], capped: false }, error: null });
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([event.id]));
+    expect(bulkReads).toBe(1);
+  });
+
+  it("refreshes cached event labels when an older parent arrives", async () => {
+    const label = { name: "bug", color: "d73a4a", is_default: false };
+    const event = { ...threadEvent("comment:2", 2), labels: [label] };
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        const older = Boolean(options?.params?.query?.subject_before);
+        return subjectPage([older ? 2 : 1], older ? "" : "older", { items: older ? [] : [event] });
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
+    store.cycleLabelFilter("bug");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    expect(store.getActivityItems().find((item) => item.id === event.id)?.labels).toEqual([label]);
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
+    expect(store.getActivityItems().find((item) => item.id === event.id)?.labels).toBeUndefined();
+  });
+  it.each([false, true])("keeps an older page through a poll (capped: %s)", async (capped) => {
+    vi.useFakeTimers();
+    const page = Promise.withResolvers<unknown>();
+    let pageRequested = false;
+    let polls = 0;
+    let pageReads = 0;
+    let snapshots = 0;
+    const client = {
+      GET: vi.fn(
+        async (
+          path: string,
+          options?: { params?: { query?: { after?: string; subject_before?: string; projection?: string } } },
+        ) => {
+          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+          const query = options?.params?.query;
+          if (query?.subject_before) {
+            pageRequested = true;
+            if (++pageReads > 1)
+              return {
+                data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] },
+                error: null,
+              };
+            return page.promise;
+          }
+          if (query?.after) {
+            polls++;
+            return { data: { items: [], capped: capped && polls === 1, event_cursor: "polled" }, error: null };
+          }
+          if (query?.projection === "events") return { data: { items: [], capped: false }, error: null };
+          snapshots++;
+          return subjectPage([1], "older", { event_cursor: snapshots === 1 ? "snapshot" : "polled" });
+        },
+      ),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(pageRequested).toBe(true));
+    store.startActivityPolling();
+    await vi.waitFor(() => expect(store.getActivityEventCursor()).toBe("polled"));
+    page.resolve(subjectPage([2]));
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
+    expect(store.isLoadingOlderItems()).toBe(false);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(polls).toBe(2);
+    expect(snapshots).toBe(capped ? 2 : 1);
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
+  });
+  it("refreshes edits and deletions through a page loaded during the refresh", async () => {
+    vi.useFakeTimers();
+    const pending = Promise.withResolvers<unknown>();
+    let snapshots = 0;
+    const client = {
+      GET: vi.fn(
+        async (
+          path: string,
+          options?: { params?: { query?: { projection?: string; after?: string; subject_before?: string } } },
+        ) => {
+          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+          const query = options?.params?.query;
+          if (query?.after) return { data: { items: [], capped: false, event_cursor: "snapshot" }, error: null };
+          if (query?.subject_before) {
+            const number = query.subject_before === "displaced" ? 3 : 2;
+            return subjectPage([number], number === 2 ? "displaced" : "");
+          }
+          snapshots++;
+          if (snapshots === 2) return pending.promise;
+          return subjectPage([1, 4], "older", { event_cursor: "snapshot" });
+        },
+      ),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.startActivityPolling();
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(snapshots).toBe(2);
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(3));
+    pending.resolve({
+      data: {
+        items: [],
+        capped: false,
+        event_cursor: "snapshot",
+        item_activity: [{ ...itemActivity(1), repo, item_title: "Updated title" }],
+        item_activity_capped: true,
+        next_subject_cursor: "fresh",
+      },
+      error: null,
+    });
+    await vi.waitFor(() => expect(store.getItemActivity()[0]?.item_title).toBe("Updated title"));
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2, 3]));
+  });
+
+  it.each(["success", "failure"])("settles an older page after Expand all on %s", async (outcome) => {
+    const pendingPage = Promise.withResolvers<unknown>();
+    const pendingBulk = Promise.withResolvers<unknown>();
+    let pageReads = 0;
+    let bulkRequested = false;
+    const client = {
+      GET: vi.fn(
+        async (path: string, options?: { params?: { query?: { projection?: string; subject_before?: string } } }) => {
+          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+          if (options?.params?.query?.projection === "events") {
+            bulkRequested = true;
+            return pendingBulk.promise;
+          }
+          if (options?.params?.query?.subject_before) {
+            pageReads++;
+            if (pageReads === 1) return pendingPage.promise;
+            return subjectPage([2]);
+          }
+          return subjectPage([1], "older", { event_cursor: "snapshot" });
+        },
+      ),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(pageReads).toBe(1));
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(bulkRequested).toBe(true));
+    pendingPage.resolve(
+      outcome === "success"
+        ? subjectPage([2])
+        : { error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) },
+    );
+    await vi.waitFor(() => expect(store.isLoadingOlderItems()).toBe(false));
+    expect(store.isActivityLoading()).toBe(true);
+    pendingBulk.resolve({ data: { items: [], capped: false }, error: null });
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
+  });
+
+  it.each(["search", "assignment"])("refreshes off-page filtered discussion by %s", async (filter) => {
+    const stale = threadEvent("comment:2", 2);
+    const matching = { ...stale, id: "comment:3", item_number: 3 };
+    const lastPage = Promise.withResolvers<unknown>();
+    let bulkReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { projection?: string; before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        const query = options?.params?.query;
+        if (query?.projection === "events") {
+          bulkReads++;
+          if (bulkReads === 1) return { data: { items: [stale, matching], capped: false }, error: null };
+          if (bulkReads === 2)
+            return { error: { detail: "bulk unavailable" }, response: new Response(null, { status: 422 }) };
+          if (!query.before) return { data: { items: [matching], capped: true, next_cursor: "last" }, error: null };
+          return lastPage.promise;
+        }
+        return subjectPage([1], "older", { event_cursor: "snapshot" });
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
+    if (filter === "search") store.setActivitySearch("needle");
+    else store.setUnassigned("require");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(1));
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([stale.id, matching.id]));
+    await reconcile(store, "reconcile").exit;
+    await vi.waitFor(() => expect(store.getActivityError()).toBe("bulk unavailable"));
+    expect(store.getActivityItems().map((item) => item.id)).toEqual([stale.id, matching.id]);
+    await reconcile(store, "recover").exit;
+    await vi.waitFor(() => expect(bulkReads).toBe(4));
+    expect(store.getActivityItems().map((item) => item.id)).toEqual([stale.id, matching.id]);
+    lastPage.resolve({ data: { items: [], capped: false }, error: null });
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([matching.id]));
+    expect(bulkReads).toBe(4);
+  });
+
+  it("loads discussion for new expanded subjects when more subjects remain", async () => {
+    const oldEvent = threadEvent("comment:old", 1);
+    const newEvent = threadEvent("comment:new", 2);
+    let snapshots = 0;
+    let bulkReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (options?.params?.query?.projection === "events") {
+          bulkReads++;
+          return { data: { items: bulkReads === 1 ? [oldEvent] : [oldEvent, newEvent], capped: false }, error: null };
+        }
+        snapshots++;
+        return subjectPage(snapshots === 1 ? [1] : [1, 2], "older", { event_cursor: "snapshot" });
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(1));
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(oldEvent.id));
+    await reconcile(store, "reconcile").exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(newEvent.id));
+  });
+
+  it("removes cached expanded discussion when a parent no longer matches search", async () => {
+    const oldEvent = threadEvent("comment:excluded", 2);
+    let snapshots = 0;
+    let bulkReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { projection?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (options?.params?.query?.projection === "events")
+          return { data: { items: ++bulkReads === 1 ? [oldEvent] : [], capped: false }, error: null };
+        snapshots++;
+        return subjectPage(snapshots === 1 ? [1, 2] : [1], "older", { event_cursor: "snapshot" });
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
+    store.setActivitySearch("needle");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(2));
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(oldEvent.id));
+    await reconcile(store, "reconcile").exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1]);
+    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).not.toContain(oldEvent.id));
+  });
+
+  it.each([false, true])("loads new expanded threads only for collapsed projection: %s", async (collapsed) => {
+    let threadReads = 0;
+    const get = vi.fn((path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+      if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
+      if (path === "/activity/thread-events") {
+        threadReads++;
+        return Promise.resolve({ data: { items: [], capped: false }, error: null });
+      }
+      const page = Boolean(options?.params?.query?.subject_before);
+      return Promise.resolve(subjectPage([page ? 8 : 7], page ? "" : "older"));
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(collapsed));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    if (collapsed) store.toggleThreadItem("github|github.com|id|1007:pr:8");
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.isLoadingOlderItems()).toBe(false));
+    if (collapsed) await vi.waitFor(() => expect(threadReads).toBe(1));
+    else expect(threadReads).toBe(0);
+  });
+  it.each([
+    { pending: false, search: false },
+    { pending: true, search: false },
+    { pending: false, search: true },
+  ])(
+    "keeps expanded history through older pages and refresh (pending: $pending, search: $search)",
+    async ({ pending, search }) => {
+      const events = [1, 2, 3].map((number) => threadEvent(`comment:${number}`, number));
+      const firstBulk = Promise.withResolvers<unknown>();
+      let eventReads = 0;
+      const client = {
+        GET: vi.fn(
+          async (
+            path: string,
+            options?: { params?: { query?: { projection?: string; before?: string; subject_before?: string } } },
+          ) => {
+            if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+            const query = options?.params?.query;
+            if (query?.projection === "events") {
+              eventReads++;
+              if (!query.before && pending) return firstBulk.promise;
+              return {
+                data: {
+                  items: query.before ? [events[2]] : [events[0], events[1]],
+                  capped: true,
+                  next_cursor: query.before ? "" : "events-2",
+                },
+                error: null,
+              };
+            }
+            const number = query?.subject_before === "page-2" ? 2 : query?.subject_before === "page-3" ? 3 : 1;
+            return subjectPage([number], `page-${number + 1}`, {
+              items: query?.projection === "collapsed" ? [] : [events[0]],
+              capped: true,
+              event_cursor: "snapshot",
+            });
+          },
+        ),
+      } as unknown as GeneratedClient;
+      const store = createActivityStore({ client });
+      store.hydrateDefaults(settings(false));
+      if (search) store.setActivitySearch("needle");
+      store.loadActivity();
+      await vi.waitFor(() => expect(eventReads).toBe(pending ? 1 : 2));
+      if (!pending) await vi.waitFor(() => expect(store.getActivityItems()).toHaveLength(3));
+      if (search) {
+        await reconcile(store, "refresh before loading older subjects").exit;
+        expect(store.getActivityItems().map((item) => item.id)).toEqual(events.map((item) => item.id));
+      }
+      store.loadOlderItems();
+      await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(2));
+      store.loadOlderItems();
+      await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(3));
+      if (pending)
+        firstBulk.resolve({
+          data: { items: [events[0], events[1]], capped: true, next_cursor: "events-2" },
+          error: null,
+        });
+      await vi.waitFor(() =>
+        expect(store.getActivityItems().map((item) => item.id)).toEqual(events.map((item) => item.id)),
+      );
+      expect(eventReads).toBe(search ? 4 : 2);
+      await reconcile(store, "refresh activity").exit;
+      expect(store.getActivityItems().map((item) => item.id)).toEqual(events.map((item) => item.id));
+      await vi.waitFor(() => expect(eventReads).toBe(search ? 6 : 2));
+    },
+  );
+  it("keeps the current page and permits retry when the next page fails", async () => {
+    let fail = true;
+    const pendingFailure = Promise.withResolvers<{ error: { detail: string }; response: Response }>();
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (path !== "/activity") return { data: { items: [], capped: false }, error: null };
+        if (options?.params?.query?.subject_before && fail) return pendingFailure.promise;
+        const number = options?.params?.query?.subject_before ? 2 : 1;
+        return subjectPage([number], number === 1 ? "older" : "");
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.setViewMode("threaded");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.isLoadingOlderItems()).toBe(true));
+    expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1]);
+    pendingFailure.resolve({ error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) });
+    await vi.waitFor(() => expect(store.getActivityError()).toBe("unavailable"));
+    expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1]);
+    expect(store.isLoadingOlderItems()).toBe(false);
+    fail = false;
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 2]));
+  });
+  it("keeps a requested older page when reload overlaps it", async () => {
+    let release: ((value: unknown) => void) | undefined;
+    const deferred = new Promise((resolve) => {
+      release = resolve;
+    });
+    let pageReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (path !== "/activity") return { data: { items: [], capped: false }, error: null };
+        if (options?.params?.query?.subject_before) {
+          pageReads++;
+          if (pageReads === 1) return deferred;
+          return subjectPage([2]);
+        }
+        return subjectPage([1], "older");
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.setViewMode("threaded");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(pageReads).toBe(1));
+    store.loadActivity();
+    release?.(subjectPage([2]));
+    await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 2]));
+  });
+  it("fetches one subject page per click and deduplicates overlapping parents", async () => {
+    const cursors: string[] = [];
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        const cursor = options?.params?.query?.subject_before ?? "";
+        cursors.push(cursor);
+        const numbers = cursor === "" ? [1] : cursor === "page-2" ? [1, 2] : [2, 3];
+        return subjectPage(numbers, cursor === "" ? "page-2" : cursor === "page-2" ? "page-3" : "");
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2, 3]));
+    expect(cursors).toEqual(["", "page-2", "page-3"]);
+    expect(store.canLoadOlderItems()).toBe(false);
+  });
+
+  it("keeps a successful page after its refresh fails", async () => {
+    const pendingPage = Promise.withResolvers<unknown>();
+    let pageReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (options?.params?.query?.subject_before) {
+          pageReads++;
+          if (pageReads === 1) return pendingPage.promise;
+          return { error: { detail: "older refresh unavailable" }, response: new Response(null, { status: 422 }) };
+        }
+        return subjectPage([1], "older");
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(pageReads).toBe(1));
+    await reconcile(store, "refresh while page is pending").exit;
+    expect(pageReads).toBe(2);
+    expect(store.getActivityError()).toBe("older refresh unavailable");
+    pendingPage.resolve({
+      data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] },
+      error: null,
+    });
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
+    expect(store.isLoadingOlderItems()).toBe(false);
+    expect(store.getActivityError()).toBe("older refresh unavailable");
+  });
+
+  it("keeps depth when a page fails", async () => {
+    const failedPage = Promise.withResolvers<unknown>();
+    const refreshedPage = Promise.withResolvers<unknown>();
+    let pageReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (options?.params?.query?.subject_before) {
+          pageReads++;
+          if (pageReads === 1) return failedPage.promise;
+          if (pageReads === 2) return refreshedPage.promise;
+          return subjectPage([2]);
+        }
+        return subjectPage([1], "older");
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(pageReads).toBe(1));
+    const refresh = reconcile(store, "refresh");
+    await vi.waitFor(() => expect(pageReads).toBe(2));
+    failedPage.resolve({ error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) });
+    await vi.waitFor(() => expect(store.getActivityError()).toBe("unavailable"));
+    refreshedPage.resolve({
+      data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] },
+      error: null,
+    });
+    await refresh.exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
+    await reconcile(store, "refresh again").exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
+  });
+
+  it("ignores a superseded page", async () => {
+    const pending = Promise.withResolvers<unknown>();
+    let pageReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        const cursor = options?.params?.query?.subject_before;
+        if (cursor && ++pageReads === 1) return pending.promise;
+        const number = cursor ? 3 : 1;
+        return subjectPage([number], cursor ? "" : "older");
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(pageReads).toBe(1));
+    await reconcile(store, "refresh activity").exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 3]);
+    pending.resolve(subjectPage([2], "stale"));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(store.isLoadingOlderItems()).toBe(false);
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 3]);
+    expect(store.canLoadOlderItems()).toBe(false);
+  });
+
+  it("discards a pending older page when the search changes", async () => {
+    const pending = Promise.withResolvers<unknown>();
+    let signal: AbortSignal | undefined;
+    const client = {
+      GET: vi.fn(
+        async (
+          path: string,
+          options?: { signal?: AbortSignal; params?: { query?: { subject_before?: string; search?: string } } },
+        ) => {
+          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+          const query = options?.params?.query;
+          if (query?.subject_before) {
+            signal = options?.signal;
+            return pending.promise;
+          }
+          const number = query?.search ? 3 : 1;
+          return subjectPage([number], query?.search ? "" : "older");
+        },
+      ),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(signal).toBeDefined());
+    store.setActivitySearch("new");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([3]));
+    expect(signal?.aborted).toBe(true);
+    pending.resolve(subjectPage([2]));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([3]);
+    expect(store.isLoadingOlderItems()).toBe(false);
+  });
+
+  it.each(["success", "failure"])(
+    "continues a requested page after a cursor-changing refresh and stale %s",
+    async (outcome) => {
+      const refresh = Promise.withResolvers<unknown>();
+      const stalePage = Promise.withResolvers<unknown>();
+      const cursors: string[] = [];
+      let firstReads = 0;
+      const client = {
+        GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+          const cursor = options?.params?.query?.subject_before;
+          if (cursor) {
+            cursors.push(cursor);
+            if (cursor === "old") return stalePage.promise;
+            return subjectPage([3]);
+          }
+          if (++firstReads === 2) return refresh.promise;
+          return subjectPage([1], "old");
+        }),
+      } as unknown as GeneratedClient;
+      const store = createActivityStore({ client });
+      store.hydrateDefaults(settings(true));
+      store.loadActivity();
+      await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+      const reconciliation = reconcile(store, "refresh activity");
+      await vi.waitFor(() => expect(firstReads).toBe(2));
+      store.loadOlderItems();
+      await vi.waitFor(() => expect(cursors).toEqual(["old"]));
+      refresh.resolve(subjectPage([1], "new"));
+      await reconciliation.exit;
+      if (outcome === "failure") {
+        stalePage.resolve({ error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) });
+        await vi.waitFor(() => expect(store.isLoadingOlderItems()).toBe(false));
+        store.loadOlderItems();
+      } else {
+        stalePage.resolve({
+          data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] },
+          error: null,
+        });
+      }
+      await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 3]));
+      expect(cursors).toEqual(["old", "new"]);
+      expect(store.isLoadingOlderItems()).toBe(false);
+    },
+  );
+
+  it.each(["foreground", "provider", "scheduled"])(
+    "preserves refreshed prefix after a later-page failure (%s)",
+    async (source) => {
+      vi.useFakeTimers();
+      const event = threadEvent("comment:2", 2);
+      let phase: "initial" | "failure" | "recovery" = "initial";
+      const client = {
+        GET: vi.fn(
+          async (
+            path: string,
+            options?: { params?: { query?: { subject_before?: string; after?: string; projection?: string } } },
+          ) => {
+            if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+            const query = options?.params?.query;
+            if (query?.after) return { data: { items: [], capped: false, event_cursor: "event" }, error: null };
+            if (phase === "failure" && query?.subject_before)
+              return { error: { detail: "older page unavailable" }, response: new Response(null, { status: 422 }) };
+            const subjects = query?.subject_before
+              ? phase === "initial"
+                ? [2]
+                : []
+              : phase === "initial"
+                ? [1]
+                : [3, 1];
+            return {
+              data: {
+                items: query?.projection === "collapsed" ? [] : [event],
+                capped: false,
+                event_cursor: "event",
+                item_activity: subjects.map((n) => ({
+                  ...itemActivity(n),
+                  repo,
+                  item_title: n === 1 && phase !== "initial" ? "Fresh title" : `PR ${n}`,
+                })),
+                workspace_activity: subjects.map((n) => ({ ...workspaceActivity(n), repo })),
+                item_activity_capped: !query?.subject_before,
+                next_subject_cursor: query?.subject_before ? "" : "page-2",
+              },
+              error: null,
+            };
+          },
+        ),
+      } as unknown as GeneratedClient;
+      const store = createActivityStore({ client });
+      store.hydrateDefaults(settings(false));
+      store.loadActivity();
+      await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+      store.loadOlderItems();
+      await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
+      phase = "failure";
+      if (source === "foreground") store.loadActivity();
+      else if (source === "provider") await reconcile(store, "refresh").exit;
+      else {
+        store.startActivityPolling();
+        await vi.advanceTimersByTimeAsync(45_000);
+      }
+      await vi.waitFor(() => expect(store.getActivityError()).toBe("older page unavailable"));
+      expect(store.getItemActivity().map((item) => item.item_number)).toEqual([3, 1, 2]);
+      expect(store.getItemActivity()[1]?.item_title).toBe("Fresh title");
+      expect(store.getWorkspaceActivity().map((item) => item.item_number)).toEqual([3, 1, 2]);
+      expect(store.canLoadOlderItems()).toBe(true);
+      expect(store.getActivityItems().map((item) => item.id)).toContain(event.id);
+      await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+      phase = "recovery";
+      await reconcile(store, "recover").exit;
+      expect(store.getItemActivity().map((item) => item.item_number)).toEqual([3, 1]);
+      expect(store.getWorkspaceActivity().map((item) => item.item_number)).toEqual([3, 1]);
+      expect(store.getActivityItems().map((item) => item.id)).not.toContain(event.id);
+      expect(store.getActivityError()).toBeNull();
+    },
+  );
+
+  it("ignores a superseded partial refresh and its error", async () => {
+    const failedPage = Promise.withResolvers<unknown>();
+    let phase: "initial" | "stale" | "fresh" = "initial";
+    let pending = false;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        const older = Boolean(options?.params?.query?.subject_before);
+        if (older && phase === "stale") {
+          pending = true;
+          return failedPage.promise;
+        }
+        const number = older ? 2 : phase === "fresh" ? 3 : 1;
+        return subjectPage([number], older ? "" : "page-2");
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(2));
+    phase = "stale";
+    const olderRefresh = reconcile(store, "older refresh");
+    await vi.waitFor(() => expect(pending).toBe(true));
+    phase = "fresh";
+    await reconcile(store, "newer refresh").exit;
+    failedPage.resolve({ error: { detail: "stale failure" }, response: new Response(null, { status: 422 }) });
+    await olderRefresh.exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([3, 2]);
+    expect(store.getActivityError()).toBeNull();
+  });
+
+  it.each([
+    { name: "loaded", workspace: false, deleted: false },
+    { name: "loaded with workspace activity", workspace: true, deleted: false },
+    { name: "deleted", workspace: false, deleted: true },
+  ])("refreshes $name subjects after a page boundary shifts", async ({ workspace, deleted }) => {
+    let refreshed = false;
+    let failRequested = false;
+    let allowOlder = false;
+    const cursors: string[] = [];
+    const queries: Array<{ since?: string; search?: string; subject_before?: string }> = [];
+    const client = {
+      GET: vi.fn(
+        async (
+          path: string,
+          options?: { params?: { query?: { since?: string; search?: string; subject_before?: string } } },
+        ) => {
+          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+          const query = options?.params?.query ?? {};
+          queries.push(query);
+          const cursor = query.subject_before;
+          if (refreshed) cursors.push(cursor ?? "");
+          if (failRequested && cursor === "page-2")
+            return { error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) };
+          if (refreshed && cursor === "page-3" && !allowOlder)
+            return { error: { detail: "unexpected third page" }, response: new Response(null, { status: 422 }) };
+          const numbers = refreshed
+            ? cursor === "page-3"
+              ? [deleted ? 6 : 4]
+              : cursor
+                ? [2, 3]
+                : [5, 1]
+            : cursor
+              ? [3, 4]
+              : [1, 2];
+          const next = !cursor ? "page-2" : (refreshed || deleted) && cursor === "page-2" ? "page-3" : "";
+          return {
+            data: {
+              items: [],
+              capped: false,
+              item_activity: numbers.map((number) => ({ ...itemActivity(number), repo })),
+              workspace_activity: workspace
+                ? (cursor === "page-3" ? [4] : cursor ? (refreshed ? [1, 3] : [1, 2, 4]) : [1]).map((number) => ({
+                    ...workspaceActivity(number),
+                    repo,
+                  }))
+                : [],
+              item_activity_capped: Boolean(next),
+              next_subject_cursor: next,
+            },
+            error: null,
+          };
+        },
+      ),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true, workspace));
+    store.setActivitySearch("cache");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2, 3, 4]));
+    expect(store.getWorkspaceActivity().map((item) => item.item_number)).toEqual(workspace ? [1, 2, 4] : []);
+    refreshed = true;
+    await reconcile(store, "refresh activity").exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([5, 1, 2, 3]);
+    expect(store.getWorkspaceActivity().map((item) => item.item_number)).toEqual(workspace ? [1, 3] : []);
+    expect(queries.every((query) => query.search === "cache")).toBe(true);
+    expect(cursors).toEqual(["", "page-2"]);
+    failRequested = true;
+    await reconcile(store, "refresh activity").exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([5, 1, 2, 3]);
+    failRequested = false;
+    allowOlder = true;
+    store.loadOlderItems();
+    await vi.waitFor(() =>
+      expect(store.getItemActivity().map((item) => item.item_number)).toEqual([5, 1, 2, 3, deleted ? 6 : 4]),
+    );
+    expect(store.getWorkspaceActivity().map((item) => item.item_number)).toEqual(workspace ? [1, 3, 4] : []);
+  });
+
+  it("advances the time window on a same-scope reload", async () => {
+    const since: string[] = [];
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    const expiration = now - 7 * 24 * 60 * 60 * 1000 + 30_000;
+    const client = {
+      GET: vi.fn(
+        async (path: string, options?: { params?: { query?: { since?: string; subject_before?: string } } }) => {
+          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+          if (path === "/activity") since.push(options?.params?.query?.since ?? "");
+          return {
+            data: {
+              items: [],
+              item_activity:
+                Date.parse(options?.params?.query?.since ?? "") < expiration
+                  ? [{ ...itemActivity(options?.params?.query?.subject_before ? 2 : 1), repo }]
+                  : [],
+              item_activity_capped: !options?.params?.query?.subject_before,
+              next_subject_cursor: options?.params?.query?.subject_before ? "" : "page-2",
+              capped: false,
+            },
+            error: null,
+          };
+        },
+      ),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(1));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(2));
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
+    const firstSince = since[0]!;
+    expect(since.every((value) => value === firstSince)).toBe(true);
+    since.length = 0;
+    clock.mockReturnValue(now + 60_000);
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(0));
+    expect(since.length).toBeGreaterThan(0);
+    const reloadSince = since[0]!;
+    expect(Date.parse(reloadSince) - Date.parse(firstSince)).toBeGreaterThan(59_000);
+    expect(since.every((value) => value === reloadSince)).toBe(true);
+    since.length = 0;
+    clock.mockReturnValue(now + 120_000);
+    await reconcile(store, "reconcile activity").exit;
+    expect(since.length).toBeGreaterThan(0);
+    expect(since.every((value) => Date.parse(value) - Date.parse(reloadSince) === 60_000)).toBe(true);
+    clock.mockRestore();
+  });
+});
+
 describe("flat activity paging", () => {
   const pageItem: ActivityItem = {
     ...itemActivity(7),
@@ -850,7 +1787,13 @@ describe("activity store workspace activity", () => {
     const get = vi.fn(async (path: string) => {
       if (path === "/activity/authors") return { data: { authors: [] }, error: null };
       return {
-        data: { items: [], capped: false, item_activity: [itemActivity(7)], item_activity_capped: true },
+        data: {
+          items: [],
+          capped: false,
+          item_activity: [itemActivity(7)],
+          item_activity_capped: true,
+          next_subject_cursor: "next",
+        },
         error: null,
       };
     });
@@ -2082,6 +3025,8 @@ describe("activity store collapse state", () => {
     const first = notificationItem("ntf:71", "unread");
     const second = notificationItem("ntf:70", "unread");
     const eventQueries: Array<Record<string, unknown>> = [];
+    const pendingReconciliation = Promise.withResolvers<unknown>();
+    let activityReads = 0;
     const get = vi.fn(async (path: string, options: { params?: { query?: Record<string, unknown> } }) => {
       if (path === "/activity/authors") return { data: { authors: [] }, error: null };
       const query = options.params?.query ?? {};
@@ -2105,6 +3050,7 @@ describe("activity store collapse state", () => {
           error: null,
         };
       }
+      if (++activityReads === 2) return pendingReconciliation.promise;
       return {
         data: {
           items: [],
@@ -2121,6 +3067,13 @@ describe("activity store collapse state", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
 
+    const reconciliation = runtime!.runCommand(store.reconcileActivityEffect(), {
+      operation: "reconcile while expanding",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await vi.waitFor(() => expect(activityReads).toBe(2));
+
     store.expandAllThreads();
 
     await vi.waitFor(() => expect(eventQueries).toHaveLength(2));
@@ -2133,6 +3086,18 @@ describe("activity store collapse state", () => {
     );
     expect(eventQueries[1]).toEqual(expect.objectContaining({ before: "page-2" }));
     expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:71", "ntf:70"]);
+    pendingReconciliation.resolve({
+      data: {
+        items: [],
+        item_activity: [{ ...itemActivity(7), item_title: "Updated title" }],
+        workspace_activity: [],
+        capped: false,
+        event_cursor: "snapshot",
+      },
+      error: null,
+    });
+    await reconciliation.exit;
+    expect(store.getItemActivity()[0]?.item_title).toBe("Updated title");
   });
 
   it("keeps bulk expansion when an older collapsed foreground load resolves later", async () => {
@@ -3905,6 +4870,7 @@ describe("activity polling recovery", () => {
       }),
     } as unknown as GeneratedClient;
     const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
     store.loadActivity();
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([initial.id]));
 
@@ -4138,6 +5104,7 @@ describe("activity polling recovery", () => {
               capped: false,
               item_activity: [itemActivity(7)],
               item_activity_capped: true,
+              next_subject_cursor: "next",
               event_cursor: initial.cursor,
             },
             error: null,
@@ -4201,6 +5168,7 @@ describe("activity polling recovery", () => {
             items: [],
             item_activity: [],
             item_activity_capped: true,
+            next_subject_cursor: "next",
             capped: false,
             event_cursor: initial.cursor,
           },

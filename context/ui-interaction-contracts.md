@@ -747,10 +747,8 @@ Not every visibility control means "remove this entity entirely."
   draft state from the hub (`internal/server/spokeapi/provider_activity_subjects.go::HubProviderSource.MarkDraftActivitySubjects`).
 - Hide drafts' default lives in Settings; a session choice wins over later hydration.
 - Server-backed visibility filters reload Activity so turning one off restores omitted rows.
-- Activity `capped` reports event overflow and alone drives event reloads and the warning;
-  `item_activity_capped` adds `+` to loaded-subject counts and a parent-truncation notice in threaded view.
-- A search whose event matches overflow the bounded matching window also reports `item_activity_capped`, since
-  event-matched parents derive from that window.
+- Activity `capped` reports event overflow and drives event reloads and the warning;
+  `item_activity_capped` adds `+` to loaded-subject counts and shows a partial-count warning independently of the subject cursor.
 - Status totals deduplicate open subjects across snapshots; parent lifecycle state overrides event state.
 - Authoritative parents rewrite retained event parent metadata, keyed by stable identity.
 
@@ -759,13 +757,22 @@ Not every visibility control means "remove this entity entirely."
 - Flat Activity requests 200 events initially; event overflow offers Load more in 200-event increments through 5,000. Pending pages retain rows and a disabled control; the ceiling notice appears only after the final page succeeds.
 - Server filters, repositories, and ranges reset the flat page to 200; flat/threaded toggles and refreshes preserve its size. Flat authoritative snapshots replace the event page; threaded snapshots retain cached children. Cached repository rows are previews until the new page arrives.
 - Flat status counts cover loaded subjects and carry `+` when either events or parent summaries overflow. Browser-only filters apply to loaded events; an empty filtered page says `No matches in loaded activity` while more event pages remain.
-- Full search reads one bounded event window for child-text parent matches, then trims events to the requested page; cursored and collapsed reads may need a separate matching window.
+- Search finds event-matched parents before the subject page limit. Loading older subjects uses
+  `subject_before` and `next_subject_cursor` to append one page while preserving completed
+  discussion; individually expanded new threads load their events. A changed filter cancels a
+  pending older page. Authoritative refreshes reread the requested subject depth with a fresh time
+  boundary shared by all pages in that read, including pages that finish loading while the refresh
+  runs. If a later page fails, the refreshed prefix and cached tail remain visible with an error.
+  Items displaced beyond that window remain reachable on the next page. A filtered, globally
+  expanded feed refreshes its complete discussion after a complete subject refresh; it retains the
+  previous discussion if that read fails and retries on the next refresh.
 - Collapsed cursors come from the same snapshot as visible summaries; never derive poll authority
   from a visible row. Opaque cursors preserve timestamps outside the Unix nanosecond range.
 - Empty deltas must not rebuild summaries.
 - Full snapshots are latest-successful-request-wins by request start; incremental polls never claim
   snapshot authority, and failed reads never claim or suppress others.
-- Projection is part of snapshot scope; the `events` projection is delta-only.
+- The displayed projection is part of snapshot scope; collapsed summaries can refresh an expanded
+  display, and the `events` projection is delta-only.
 - In collapsed threaded mode every fourth scheduled poll is an authoritative replacement, so events
   hidden behind the forward cursor self-heal. Every authoritative snapshot clears an error banner.
 - Single-thread expansion uses stable identity, a frozen upper bound, and active filters; global

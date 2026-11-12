@@ -1,7 +1,6 @@
 package itemapi
 
 import (
-	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/workspaceapi"
@@ -21,14 +20,7 @@ func OverlayFleetActivityWorkspaces(response *ActivityResponse, workspaces []fle
 			},
 			ItemType: workspace.ItemType, ItemNumber: workspace.ItemNumber,
 		}.Canonical()
-		switch workspace.ItemType {
-		case db.WorkspaceItemTypePullRequest:
-			identity.ItemType = "pr"
-		case db.WorkspaceItemTypeIssue:
-			identity.ItemType = "issue"
-		default:
-			identity.ItemType = ""
-		}
+		identity.ItemType = ActivityItemTypeFromWorkspace(workspace.ItemType)
 		ref := workspaceapi.WorkspaceRef{ID: workspace.ID, Status: workspace.Status}
 		if workspace.SourceItemVisible && identity.Valid() {
 			if _, exists := overlays[identity]; !exists {

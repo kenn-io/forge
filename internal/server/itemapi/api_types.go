@@ -252,6 +252,7 @@ type ActivityResponse struct {
 	ItemActivityCapped             bool                               `json:"item_activity_capped"`
 	EventCursor                    string                             `json:"event_cursor"`
 	NextCursor                     string                             `json:"next_cursor,omitempty"`
+	NextSubjectCursor              string                             `json:"next_subject_cursor,omitempty"`
 }
 
 // activityRepoRefResponse carries only stable identity and current route

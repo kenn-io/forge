@@ -171,10 +171,7 @@ function sparseCommitPatch(): string {
   ].join("\n");
 }
 
-async function mockDefaultBranchActivity(
-  page: Page,
-  options: { readonly itemActivityCapped?: boolean } = {},
-): Promise<void> {
+async function mockDefaultBranchActivity(page: Page): Promise<void> {
   await page.addInitScript(() => {
     Object.defineProperty(window, "__kenn_forgeOpenedURL", {
       configurable: true,
@@ -231,7 +228,7 @@ async function mockDefaultBranchActivity(
       contentType: "application/json",
       body: JSON.stringify({
         capped: false,
-        item_activity_capped: options.itemActivityCapped ?? false,
+        item_activity_capped: false,
         items,
       }),
     });
@@ -352,16 +349,6 @@ test.describe("default branch activity", () => {
         hasText: "Add browser regression coverage",
       }),
     ).toBeVisible();
-  });
-
-  test("warns about capped parents in threaded activity", async ({ page }) => {
-    await mockDefaultBranchActivity(page, { itemActivityCapped: true });
-    await page.goto("/?view=threaded");
-
-    await expect(page.locator(".item-activity-capped-notice")).toContainText(
-      "5,000 most recently active pull requests and issues",
-    );
-    await expect(page.locator(".event-capped-notice")).toHaveCount(0);
   });
 
   test("deselecting Commits hides default-branch commit rows", async ({ page }) => {

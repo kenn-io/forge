@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
 import MobileActivityView from "./MobileActivityViewRuntimeHarness.svelte";
-import { takeMobileListPosition } from "../stores/mobile-list-return.js";
+import { rememberMobileListPosition, takeMobileListPosition } from "../stores/mobile-list-return.js";
 
 function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
   return {
@@ -100,6 +100,8 @@ const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
 const loadActivity = vi.hoisted(() => vi.fn(async () => undefined));
 const setFullEventProjectionRequired = vi.hoisted(() => vi.fn());
 const setActivityPageLimit = vi.hoisted(() => vi.fn());
+const loadOlderItems = vi.hoisted(() => vi.fn());
+const olderItemsAvailable = vi.hoisted(() => ({ value: false }));
 const loadThreadPreview = vi.hoisted(() => vi.fn());
 const selectedAuthor = vi.hoisted(() => ({ value: undefined as string | undefined }));
 const setActivityAuthor = vi.hoisted(() =>
@@ -162,6 +164,9 @@ vi.mock("../context.js", () => ({
       isActivityLoading: () => activityLoading.value,
       isActivityCapped: () => activityCapped.value,
       isItemActivityCapped: () => itemActivityCapped.value,
+      canLoadOlderItems: () => olderItemsAvailable.value,
+      isLoadingOlderItems: () => false,
+      loadOlderItems,
       setActivityFilterTypes: vi.fn(),
       setActivitySearch: vi.fn(),
       setActivityAuthor,
@@ -228,6 +233,8 @@ vi.mock("../context.js", () => ({
 }));
 
 beforeEach(() => {
+  olderItemsAvailable.value = false;
+  loadOlderItems.mockClear();
   hideBots.value = false;
   involvesMe.value = undefined;
   unassigned.value = undefined;
@@ -436,6 +443,19 @@ describe("MobileActivityView branch activity", () => {
 
     await waitFor(() => expect(container.querySelectorAll("article")).toHaveLength(31));
   });
+
+  it("loads older items after reaching the phone page limit", async () => {
+    rememberMobileListPosition("activity", { scrollTop: 0, pageLimit: 500 });
+    olderItemsAvailable.value = true;
+    itemActivityCapped.value = true;
+    items.value = Array.from({ length: 501 }, (_, index) =>
+      branchActivityItem(`branch-${index}`, { branch_name: `branch-${index}` }),
+    );
+    const { container } = render(MobileActivityView, { props: { onSelectItem } });
+    expect(container.querySelectorAll("article")).toHaveLength(501);
+    await fireEvent.click(screen.getByRole("button", { name: "Load older items" }));
+    expect(loadOlderItems).toHaveBeenCalledOnce();
+  }, 20000);
 
   it("reports connection errors through the shared Kit UI warning banner", async () => {
     activityError.value = "Could not reach Kenn Forge";

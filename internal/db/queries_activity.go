@@ -7,29 +7,40 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// activityMergeQueuedCondition matches activity on a pull request that
-// mergeQueuedCondition matches.
-func activityMergeQueuedCondition(held []RepoItemNumber, args *[]any) string {
-	return `(item_type = 'pr' AND (repo_id, item_number) IN (
-    SELECT p.repo_id, p.number FROM forge_merge_requests p
-    WHERE ` + mergeQueuedCondition("p", held, args) + `
-))`
-}
-
-// activityMergeQueuedClause applies the merge-queued filter, if one is set.
-func activityMergeQueuedClause(hide, only bool, held []RepoItemNumber, args *[]any) string {
-	switch {
-	case only:
-		return activityMergeQueuedCondition(held, args)
-	case hide:
-		return notCondition(activityMergeQueuedCondition(held, args))
+// activityPullAttributeClause keeps rows whose pull request matches every selected PR filter.
+// Issue, repository, and other non-PR rows always pass. A pull request that has not synced
+// cannot be shown to match, so only a selection made purely of exclusions keeps it.
+func activityPullAttributeClause(
+	attributes []string, hideDrafts, hideMergeQueued, onlyMergeQueued bool, held []RepoItemNumber, args *[]any,
+) string {
+	selected := slices.Clone(attributes)
+	// A required choice wins over the saved hide choice in the same section.
+	if hideDrafts && !slices.Contains(selected, "draft") {
+		selected = append(selected, "not_draft")
 	}
-	return ""
+	if onlyMergeQueued {
+		selected = append(selected, "merge_queued")
+	} else if hideMergeQueued {
+		selected = append(selected, "not_merge_queued")
+	}
+	cond := filterSectionsCondition(pullAttributeSections(selected, held, args)...)
+	if cond == "" {
+		return ""
+	}
+	matched := "(repo_id, item_number) IN (SELECT p.repo_id, p.number FROM forge_merge_requests p WHERE " + cond + ")"
+	onlyExclusions := !slices.ContainsFunc(selected, func(attribute string) bool {
+		return !slices.Contains([]string{"not_draft", "not_approved", "no_merge_conflicts", "not_merge_queued"}, attribute)
+	})
+	if onlyExclusions {
+		matched += " OR (repo_id, item_number) NOT IN (SELECT p.repo_id, p.number FROM forge_merge_requests p)"
+	}
+	return "(item_type != 'pr' OR " + matched + ")"
 }
 
 // prActivityAtExpr is a pull request's provider-event recency: opening, the
@@ -209,21 +220,24 @@ func activityEventsFrom(opts ListActivityOpts) (string, []any) {
 		whereClauses = append(whereClauses, "LOWER(item_author) = LOWER(?)")
 		args = append(args, opts.Author)
 	}
-	if opts.HideClosedMerged {
+	if opts.OnlyClosedMerged {
+		whereClauses = append(whereClauses,
+			"((source = 'ntf' AND subject_state IN ('closed', 'merged')) OR "+
+				"(source != 'ntf' AND item_state IN ('closed', 'merged')))")
+	} else if opts.HideClosedMerged {
 		whereClauses = append(whereClauses,
 			"((source = 'ntf' AND (subject_state = '' OR subject_state NOT IN ('closed', 'merged'))) OR "+
 				"(source != 'ntf' AND item_state NOT IN ('closed', 'merged')))")
 	}
-	if opts.HideBots {
+	if opts.OnlyBots {
+		whereClauses = append(whereClauses, "NOT "+activityNotBotCondition("author"))
+	} else if opts.HideBots {
 		whereClauses = append(whereClauses, activityNotBotCondition("author"))
 	}
-	if cond := activityMergeQueuedClause(opts.HideMergeQueued, opts.OnlyMergeQueued, opts.DeferredMergeItems, &args); cond != "" {
+	if cond := activityPullAttributeClause(
+		opts.PullAttributes, opts.HideDrafts, opts.HideMergeQueued, opts.OnlyMergeQueued, opts.DeferredMergeItems, &args,
+	); cond != "" {
 		whereClauses = append(whereClauses, cond)
-	}
-	if opts.HideDrafts {
-		whereClauses = append(whereClauses,
-			"(item_type != 'pr' OR parent_id IS NULL OR parent_id NOT IN "+
-				"(SELECT id FROM forge_merge_requests WHERE is_draft = 1))")
 	}
 	if opts.HideDefaultBranch {
 		whereClauses = append(whereClauses,
@@ -243,7 +257,10 @@ func activityEventsFrom(opts ListActivityOpts) (string, []any) {
 	}
 	if opts.DirectProjectionOnly {
 		directConditions := []string{"parent_id IS NULL"}
-		if opts.HideBots {
+		// Events whose parent the bot filter hides from the projection stay visible on their own.
+		if opts.OnlyBots {
+			directConditions = append(directConditions, activityNotBotCondition("item_author"))
+		} else if opts.HideBots {
 			directConditions = append(directConditions,
 				"NOT "+activityNotBotCondition("item_author"))
 		}
@@ -800,17 +817,20 @@ func listActivitySubjectsWithQueryer(
 		whereClauses = append(whereClauses, "LOWER(item_author) = LOWER(?)")
 		args = append(args, opts.Author)
 	}
-	if opts.HideClosedMerged {
+	if opts.OnlyClosedMerged {
+		whereClauses = append(whereClauses, "item_state IN ('closed', 'merged')")
+	} else if opts.HideClosedMerged {
 		whereClauses = append(whereClauses, "item_state NOT IN ('closed', 'merged')")
 	}
-	if opts.HideBots {
+	if opts.OnlyBots {
+		whereClauses = append(whereClauses, "NOT "+activityNotBotCondition("item_author"))
+	} else if opts.HideBots {
 		whereClauses = append(whereClauses, activityNotBotCondition("item_author"))
 	}
-	if cond := activityMergeQueuedClause(opts.HideMergeQueued, opts.OnlyMergeQueued, opts.DeferredMergeItems, &args); cond != "" {
+	if cond := activityPullAttributeClause(
+		opts.PullAttributes, opts.HideDrafts, opts.HideMergeQueued, opts.OnlyMergeQueued, opts.DeferredMergeItems, &args,
+	); cond != "" {
 		whereClauses = append(whereClauses, cond)
-	}
-	if opts.HideDrafts {
-		whereClauses = append(whereClauses, "item_is_draft = 0")
 	}
 	if opts.Unassigned {
 		whereClauses = append(whereClauses, activityUnassignedCondition())
@@ -860,8 +880,7 @@ func listActivitySubjectsWithQueryer(
 			       'pr' AS item_type, p.number AS item_number, p.title AS item_title,
 			       p.url AS item_url, p.state AS item_state, p.author AS item_author,
 			       ` + prActivitySubjectAtExpr("p", opts.ExcludeNotificationRecency) + ` AS activity_at,
-			       ` + prEventLedgerRevisionExpr("p") + ` AS event_ledger_revision,
-			       p.is_draft AS item_is_draft
+			       ` + prEventLedgerRevisionExpr("p") + ` AS event_ledger_revision
 			FROM ` + activitySubjectFrom("forge_merge_requests", "p", "idx_mr_repo_signal", opts.Since != nil) + `
 			WHERE ` + prWindow + `NOT EXISTS (
 			    SELECT 1 FROM forge_archive_items ai
@@ -875,8 +894,7 @@ func listActivitySubjectsWithQueryer(
 			       r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title, i.url, i.state, i.author,
 			       ` + issueActivitySubjectAtExpr("i", opts.ExcludeNotificationRecency) + `,
-			       ` + issueEventLedgerRevisionExpr("i") + `,
-			       0
+			       ` + issueEventLedgerRevisionExpr("i") + `
 			FROM ` + activitySubjectFrom("forge_issues", "i", "idx_issues_repo_signal", opts.Since != nil) + `
 			WHERE ` + issueWindow + `NOT EXISTS (
 			    SELECT 1 FROM forge_archive_items ai

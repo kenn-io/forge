@@ -27,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/itemapi"
+	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
@@ -663,6 +664,67 @@ func TestAPIListActivityHideDraftsAppliesToEveryProjection(t *testing.T) {
 	var threadBody itemapi.ActivityResponse
 	require.NoError(json.NewDecoder(thread.Body).Decode(&threadBody))
 	assert.Empty(threadBody.Items)
+}
+
+// Activity takes the pull request list's filters, which decide only which pull
+// request activity shows, and reports each pull request's head repository kind
+// so the browser can filter forks.
+func TestAPIListActivityPullFiltersKeepIssuesAndReportHeadRepository(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServer(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	serverfake.SeedPR(
+		t, database, "acme", "widget", 91,
+		serverfake.WithSeedPRTimes(now.Add(-time.Hour), now.Add(-time.Hour), now.Add(-time.Hour)),
+		func(pr *db.MergeRequest) {
+			pr.IsDraft = true
+			pr.HeadRepoCloneURL = "https://github.com/contributor/widget.git"
+		},
+	)
+	serverfake.SeedPR(
+		t, database, "acme", "widget", 92,
+		serverfake.WithSeedPRTimes(now.Add(-2*time.Hour), now.Add(-2*time.Hour), now.Add(-2*time.Hour)),
+		func(pr *db.MergeRequest) { pr.ReviewDecision = "APPROVED" },
+	)
+	serverfake.SeedIssue(t, database, "acme", "widget", 93, "open")
+
+	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
+	list := func(query string) itemapi.ActivityResponse {
+		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+query, nil)
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+		var body itemapi.ActivityResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+		return body
+	}
+	parents := func(body itemapi.ActivityResponse) map[int]pullapi.HeadRepoKind {
+		kinds := map[int]pullapi.HeadRepoKind{}
+		for _, subject := range body.ItemActivity {
+			kinds[subject.ItemNumber] = subject.HeadRepoKind
+		}
+		return kinds
+	}
+
+	all := list("")
+	assert.Equal(map[int]pullapi.HeadRepoKind{
+		91: pullapi.HeadRepoKindFork, 92: pullapi.HeadRepoKindSameRepo, 93: "",
+	}, parents(all))
+	for _, item := range all.Items {
+		if item.ItemNumber == 91 {
+			assert.Equal(pullapi.HeadRepoKindFork, item.HeadRepoKind)
+		}
+	}
+
+	assert.Equal(map[int]pullapi.HeadRepoKind{91: pullapi.HeadRepoKindFork, 93: ""},
+		parents(list("&attributes=draft&hide_drafts=true")), "a required draft choice wins over the saved hide")
+	assert.Equal(map[int]pullapi.HeadRepoKind{92: pullapi.HeadRepoKindSameRepo, 93: ""},
+		parents(list("&attributes=approved")))
+	assert.Equal(map[int]pullapi.HeadRepoKind{91: pullapi.HeadRepoKindFork, 93: ""},
+		parents(list("&attributes=not_approved")))
+
+	invalid := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?attributes=ready", nil)
+	assert.Equal(http.StatusBadRequest, invalid.Code, invalid.Body.String())
 }
 
 func TestAPIListActivityReturnsRecentParentWhenItsVisibleEventsAreFiltered(t *testing.T) {

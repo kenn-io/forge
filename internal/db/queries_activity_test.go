@@ -3667,3 +3667,135 @@ func TestListCollapsedActivityProjectionSignalMatchesExactWindow(t *testing.T) {
 		}
 	}
 }
+
+// PR filters in Activity decide only which pull request rows show; issue rows
+// always pass. A notification for a pull request that has not synced cannot be
+// shown to match a required filter, so only exclusions keep it.
+func TestActivityPullFiltersLeaveIssuesAndOnlyDirectionsMirrorHide(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	since := now.Add(-24 * time.Hour)
+	repoID := insertTestRepo(t, d, "acme", "widget")
+
+	draftID := insertTestMRWithOptions(t, d, testMR(repoID, 1, withMRAuthor("ann"), withMRActivity(now.Add(-time.Hour)),
+		func(mr *MergeRequest) { mr.IsDraft = true }))
+	insertTestMRWithOptions(t, d, testMR(repoID, 2, withMRAuthor("bob"), withMRActivity(now.Add(-2*time.Hour)),
+		func(mr *MergeRequest) { mr.ReviewDecision = "APPROVED" }))
+	merged := testMR(repoID, 3, withMRAuthor("cy"), withMRState(MergeRequestStateMerged), withMRActivity(now.Add(-3*time.Hour)))
+	merged.MergedAt = &merged.LastActivityAt
+	insertTestMRWithOptions(t, d, merged)
+	insertTestMRWithOptions(t, d, testMR(repoID, 4, withMRAuthor("renovate[bot]"), withMRActivity(now.Add(-4*time.Hour))))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: draftID, EventType: "issue_comment", Author: "dependabot[bot]",
+		CreatedAt: now.Add(-30 * time.Minute), DedupeKey: "bot-on-human",
+	}}))
+	insertTestIssueWithOptions(t, d, testIssue(repoID, 5, withIssueAuthor("eve"), withIssueActivity(now.Add(-5*time.Hour))))
+	closedIssue := testIssue(repoID, 6, withIssueAuthor("fay"), withIssueActivity(now.Add(-6*time.Hour)))
+	closedIssue.State = "closed"
+	closedIssue.ClosedAt = &closedIssue.LastActivityAt
+	insertTestIssueWithOptions(t, d, closedIssue)
+	unsyncedPull := 7
+	require.NoError(d.UpsertNotifications(ctx, []Notification{{
+		Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "unsynced-pull",
+		RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest", SubjectTitle: "PR 7",
+		WebURL: "https://github.com/acme/widget/pull/7", ItemNumber: &unsyncedPull, ItemType: "pr",
+		ItemAuthor: "gil", Reason: "mention", Unread: true,
+		SourceUpdatedAt: now.Add(-7 * time.Hour), SyncedAt: now.Add(-7 * time.Hour),
+	}}))
+
+	feed := func(opts ListActivityOpts) []string {
+		opts.Since, opts.Limit = &since, 50
+		items, err := d.ListActivity(ctx, opts)
+		require.NoError(err)
+		keys := []string{}
+		for _, item := range items {
+			key := fmt.Sprintf("%s:%d", item.ItemType, item.ItemNumber)
+			if !slices.Contains(keys, key) {
+				keys = append(keys, key)
+			}
+		}
+		return keys
+	}
+	subjects := func(opts ListActivitySubjectsOpts) []string {
+		opts.Since, opts.Limit = &since, 50
+		rows, err := d.ListActivitySubjects(ctx, opts)
+		require.NoError(err)
+		keys := []string{}
+		for _, row := range rows {
+			keys = append(keys, fmt.Sprintf("%s:%d", row.Subject.Key.ItemType, row.Subject.Key.ItemNumber))
+		}
+		return keys
+	}
+
+	issues := []string{"issue:5", "issue:6"}
+	assert.ElementsMatch(append([]string{"pr:1"}, issues...), feed(ListActivityOpts{PullAttributes: []string{"draft"}}))
+	assert.ElementsMatch(append([]string{"pr:2", "pr:3", "pr:4", "pr:7"}, issues...), feed(ListActivityOpts{HideDrafts: true}))
+	assert.ElementsMatch(append([]string{"pr:1"}, issues...),
+		feed(ListActivityOpts{HideDrafts: true, PullAttributes: []string{"draft"}}), "a required draft choice wins over the saved hide")
+	assert.ElementsMatch(append([]string{"pr:2"}, issues...), feed(ListActivityOpts{PullAttributes: []string{"approved"}}))
+	assert.ElementsMatch(append([]string{"pr:1", "pr:3", "pr:4", "pr:7"}, issues...), feed(ListActivityOpts{PullAttributes: []string{"not_approved"}}))
+	assert.ElementsMatch(issues, feed(ListActivityOpts{OnlyMergeQueued: true}), "no PR is queued, and issues still show")
+	assert.ElementsMatch([]string{"pr:3", "issue:6"}, feed(ListActivityOpts{OnlyClosedMerged: true, HideClosedMerged: true}))
+	assert.ElementsMatch([]string{"pr:1", "pr:4"}, feed(ListActivityOpts{OnlyBots: true, HideBots: true}),
+		"only bot-authored rows: the bot PR and the bot comment on a human PR")
+
+	assert.ElementsMatch(append([]string{"pr:1"}, issues...), subjects(ListActivitySubjectsOpts{PullAttributes: []string{"draft"}}))
+	assert.ElementsMatch(append([]string{"pr:2", "pr:3", "pr:4"}, issues...), subjects(ListActivitySubjectsOpts{HideDrafts: true}))
+	assert.ElementsMatch([]string{"pr:3", "issue:6"}, subjects(ListActivitySubjectsOpts{OnlyClosedMerged: true}))
+	assert.ElementsMatch([]string{"pr:4"}, subjects(ListActivitySubjectsOpts{OnlyBots: true}))
+
+	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
+		OnlyBots: true, Since: &since, Limit: 50, SubjectLimit: 50,
+	})
+	require.NoError(err)
+	parents := []string{}
+	for _, subject := range projection.Subjects {
+		parents = append(parents, fmt.Sprintf("%s:%d", subject.Subject.Key.ItemType, subject.Subject.Key.ItemNumber))
+	}
+	assert.Equal([]string{"pr:4"}, parents)
+	direct := []string{}
+	for _, row := range projection.DirectRows {
+		direct = append(direct, fmt.Sprintf("%s:%d:%s", row.ItemType, row.ItemNumber, row.Author))
+	}
+	assert.Equal([]string{"pr:1:dependabot[bot]"}, direct, "a bot event on a hidden human parent stays direct")
+}
+
+// Workspace activity subjects take the same PR filters through a key lookup, and
+// the head clone URL lookup lets the server classify forks for Activity rows.
+func TestListPullsMatchingAttributesAndHeadRepoCloneURLs(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	insertTestMRWithOptions(t, d, testMR(repoID, 1, func(mr *MergeRequest) {
+		mr.ReviewDecision = "APPROVED"
+		mr.HeadRepoCloneURL = "https://github.com/contributor/widget.git"
+	}))
+	insertTestMRWithOptions(t, d, testMR(repoID, 2, func(mr *MergeRequest) { mr.IsDraft = true }))
+	insertTestIssue(t, d, repoID, 3, "Issue", baseTime())
+	keys := []WorkspaceSubjectKey{
+		{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 1},
+		{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 2},
+		{RepoID: repoID, ItemType: WorkspaceItemTypeIssue, ItemNumber: 3},
+	}
+
+	approved, err := d.ListPullsMatchingAttributes(ctx, keys, []string{"approved"}, nil)
+	require.NoError(err)
+	assert.Equal(map[WorkspaceSubjectKey]struct{}{keys[0]: {}}, approved)
+	notDraft, err := d.ListPullsMatchingAttributes(ctx, keys, []string{"not_draft"}, nil)
+	require.NoError(err)
+	assert.Equal(map[WorkspaceSubjectKey]struct{}{keys[0]: {}}, notDraft, "issues are never returned")
+
+	cloneURLs, err := d.ListPullHeadRepoCloneURLs(ctx, keys)
+	require.NoError(err)
+	assert.Equal(map[WorkspaceSubjectKey]string{
+		keys[0]: "https://github.com/contributor/widget.git",
+		keys[1]: "",
+	}, cloneURLs)
+}

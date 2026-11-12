@@ -42,7 +42,7 @@ const (
 
 type listPullsInput struct {
 	Numbers    []int64 `query:"numbers" doc:"Item numbers in every repo unless repo is set; before pagination."`
-	Attributes string  `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination."`
+	Attributes string  `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination."`
 	Label      string  `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
 	Repo       string  `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
 	State      string  `query:"state" doc:"open (default), closed (including merged), merged, closed_unmerged, or all."`
@@ -410,7 +410,7 @@ func (s *Handler) listPullsRouteCore(
 	if input.Attributes != "" {
 		for attribute := range strings.SplitSeq(input.Attributes, ",") {
 			switch attribute {
-			case "approved", "not_approved", "draft", "ready", "merge_conflicts", "no_merge_conflicts",
+			case "approved", "not_approved", "draft", "not_draft", "ready", "merge_conflicts", "no_merge_conflicts",
 				"failed_ci", "passed_ci", "merge_queue", "merge_queued", "not_merge_queued":
 			default:
 				return nil, httpapi.Validation("query.attributes", "unknown PR inclusion filter")
@@ -535,6 +535,7 @@ func (s *Handler) listPullsRouteCore(
 			RepoOwner:     rp.Owner,
 			RepoName:      rp.Name,
 			PlatformHost:  rp.PlatformHost,
+			HeadRepoKind:  classifyHeadRepoKind(rp, mr),
 			WorktreeLinks: wl,
 			Workspace:     workspaceRef,
 			DetailLoaded:  mr.DetailFetchedAt != nil,
@@ -714,12 +715,18 @@ func (s *Handler) buildPullDetailResponse(
 }
 
 func classifyHeadRepoKind(repo db.Repo, mr db.MergeRequest) HeadRepoKind {
+	return ClassifyHeadRepoKind(repo, mr.HeadRepoCloneURL)
+}
+
+// ClassifyHeadRepoKind reports whether a pull request's head clone URL names its base
+// repository, a fork, or a repository it cannot identify.
+func ClassifyHeadRepoKind(repo db.Repo, headRepoCloneURL string) HeadRepoKind {
 	headRepo := workspace.WorkspaceHeadRepo(
 		string(httpapi.ProviderKind(repo)),
 		httpapi.ProviderHost(repo),
 		repo.Owner,
 		repo.Name,
-		mr.HeadRepoCloneURL,
+		headRepoCloneURL,
 	)
 	if headRepo == nil {
 		return HeadRepoKindSameRepo

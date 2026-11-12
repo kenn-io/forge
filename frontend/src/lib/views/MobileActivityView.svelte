@@ -1,6 +1,11 @@
 <script lang="ts">
   import RepoPrivateIcon from "../components/shared/RepoPrivateIcon.svelte";
-  import { ACTIVITY_TRI_FILTER_OPTIONS, activityFilterOptions } from "../components/activityFilters.js";
+  import {
+    ACTIVITY_TRI_FILTER_OPTIONS,
+    activityFilterOptions,
+    activityItemVisible,
+    activitySubjectVisible,
+  } from "../components/activityFilters.js";
   import { Effect } from "effect";
   import { onDestroy, onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
@@ -48,7 +53,6 @@
     activityBranchKey,
     activityAuthor,
     activityItemKey,
-    isClosedOrMergedActivity,
     isDefaultBranchActivity,
     isDefaultBranchForcePushActivity,
     notificationReasonLabel,
@@ -81,7 +85,6 @@
     workspaceActivityAt?: string;
   };
 
-  const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
   const filters = $derived.by(() => activityFilterOptions(activity, grouping));
   const timeRanges: TimeRange[] = ["24h", "7d", "30d", "90d"];
   const timeRangeOptions = timeRanges.map((range) => ({
@@ -131,62 +134,27 @@
     searchExecution?.interrupt();
   });
 
-  function isBot(author: string): boolean {
-    const lower = author.toLowerCase();
-    return BOT_SUFFIXES.some((suffix) => lower.endsWith(suffix));
-  }
-
-  const displayItems = $derived.by(() => {
-    let result = activity.getActivityItems().filter((item) =>
+  const displayItems = $derived.by(() =>
+    activity.getActivityItems().filter((item) =>
       isActivityItemTypeEnabled(item.item_type, activity.getEnabledItemTypes())
-    );
-
-    if (activity.getHideClosedMerged()) {
-      result = result.filter((item) => !isClosedOrMergedActivity(item));
-    }
-
-    if (activity.getHideBots()) {
-      result = result.filter((item) => !isBot(item.author));
-    }
-
-    if (activity.getHideDefaultBranchActivity()) {
-      result = result.filter((item) => !isDefaultBranchActivity(item));
-    }
-
-    return result;
-  });
+      && activityItemVisible(activity, item)
+    )
+  );
 
   const visibleWorkspaceActivity = $derived.by(() => {
     if (!activity.getUseWorkspaceActivityForRecency()) return [];
-    let result = activity.getWorkspaceActivity().filter((subject) =>
+    return activity.getWorkspaceActivity().filter((subject) =>
       isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
+      && activitySubjectVisible(activity, subject)
     );
-
-    if (activity.getHideClosedMerged()) {
-      result = result.filter((subject) =>
-        subject.item_state !== "closed" && subject.item_state !== "merged"
-      );
-    }
-
-    if (activity.getHideBots()) {
-      result = result.filter((subject) => !isBot(subject.item_author ?? ""));
-    }
-
-    return result;
   });
 
-  const visibleItemActivity = $derived.by(() => {
-    let result = activity.getItemActivity().filter((subject) =>
+  const visibleItemActivity = $derived.by(() =>
+    activity.getItemActivity().filter((subject) =>
       isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
-    );
-    if (activity.getHideClosedMerged()) {
-      result = result.filter((subject) => subject.item_state !== "closed" && subject.item_state !== "merged");
-    }
-    if (activity.getHideBots()) {
-      result = result.filter((subject) => !isBot(subject.item_author ?? ""));
-    }
-    return result;
-  });
+      && activitySubjectVisible(activity, subject)
+    )
+  );
 
   const groups = $derived.by(() => {
     const map = new SvelteMap<string, ActivityItem[]>();
@@ -349,7 +317,8 @@
     + (activity.getEnabledItemTypes().has("pr") ? 0 : 1)
     + (activity.getEnabledItemTypes().has("issue") ? 0 : 1)
     + filters.events.filter((filter) => !filter.active).length
-    + filters.visibility.filter((filter) => filter.active || filter.excluded).length,
+    + filters.visibility.filter((filter) => filter.active || filter.excluded).length
+    + filters.activeChoiceCount,
   );
 
   const repoLabelFormatter = $derived.by(() =>
@@ -779,6 +748,19 @@
           onchange={handleTimeRangeChange}
         />
       </div>
+
+      {#each [filters.state, filters.ci] as choice (choice.id)}
+        <div class="mobile-filter-select">
+          <span>{choice.label}</span>
+          <SelectDropdown
+            class="mobile-filter-dropdown"
+            title={choice.label}
+            value={choice.value}
+            options={choice.selectOptions}
+            onchange={choice.select}
+          />
+        </div>
+      {/each}
 
       {#each filters.visibility as filter (filter.id)}
         {#if filter.tri}

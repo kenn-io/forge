@@ -113,10 +113,13 @@ type ListActivityInput struct {
 	Projection         string   `query:"projection" enum:"full,collapsed,events" default:"full"`
 	Limit              int      `query:"limit" minimum:"1" maximum:"5000"`
 	HideClosedMerged   bool     `query:"hide_closed_merged"`
+	ClosedMerged       bool     `query:"closed_merged" doc:"Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged."`
 	HideBots           bool     `query:"hide_bots"`
+	Bots               bool     `query:"bots" doc:"Keep only bot-authored activity. Wins over hide_bots."`
 	HideDrafts         bool     `query:"hide_drafts" doc:"Exclude activity for draft pull requests."`
 	HideMergeQueued    bool     `query:"hide_merge_queued" doc:"Exclude activity for open pull requests in a merge queue or set to merge after CI."`
 	MergeQueued        bool     `query:"merge_queued" doc:"Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued."`
+	Attributes         string   `query:"attributes" doc:"Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts."`
 	HideDefaultBranch  bool     `query:"hide_default_branch"`
 	ParentProvider     string
 	ParentPlatformHost string
@@ -383,6 +386,7 @@ func (s *Handlers) WorkspaceActivityResponse(
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
 	providerItems []db.ActivityItem,
 	labels map[db.WorkspaceSubjectKey][]db.Label,
+	headRepoKinds map[db.WorkspaceSubjectKey]pullapi.HeadRepoKind,
 	useWorkspaceActivityForRecency bool,
 	providerSubjects []db.ActivitySubject,
 ) []WorkspaceActivitySubjectResponse {
@@ -442,10 +446,20 @@ func (s *Handlers) WorkspaceActivityResponse(
 		if opts.Author != "" && !strings.EqualFold(subject.Author, opts.Author) {
 			continue
 		}
-		if (opts.HideMergeQueued || opts.OnlyMergeQueued) && workspaceSubjectMergeQueued(subject, opts.DeferredMergeItems) != opts.OnlyMergeQueued {
+		// Pull request conditions leave issue activity alone.
+		if key.ItemType == db.WorkspaceItemTypePullRequest && (opts.HideMergeQueued || opts.OnlyMergeQueued) &&
+			workspaceSubjectMergeQueued(subject, opts.DeferredMergeItems) != opts.OnlyMergeQueued {
 			continue
 		}
 		if opts.HideDrafts && subject.IsDraft {
+			continue
+		}
+		closed := subject.State == string(db.MergeRequestStateClosed) || subject.State == string(db.MergeRequestStateMerged)
+		if (opts.OnlyClosedMerged && !closed) || (opts.HideClosedMerged && closed) {
+			continue
+		}
+		bot := db.IsBotLogin(subject.Author)
+		if (opts.OnlyBots && !bot) || (opts.HideBots && bot) {
 			continue
 		}
 		if !searchQuery.Empty() {
@@ -472,7 +486,8 @@ func (s *Handlers) WorkspaceActivityResponse(
 			PlatformHost: subject.PlatformHost, RepoOwner: subject.RepoOwner, RepoName: subject.RepoName,
 			ItemType: wireType, ItemNumber: key.ItemNumber, ItemTitle: subject.Title,
 			ItemURL: subject.URL, ItemState: subject.State, ItemAuthor: subject.Author,
-			Labels: labels[key], Workspace: &ref, ActivityAt: FormatUTCRFC3339(*activity.ActivityAt),
+			Labels: labels[key], Workspace: &ref, HeadRepoKind: headRepoKinds[key],
+			ActivityAt: FormatUTCRFC3339(*activity.ActivityAt),
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -795,4 +810,32 @@ func (s *Handlers) ResolveItem(
 			RepoTracked: true,
 		},
 	}, nil
+}
+
+// ApplyActivityFilters copies the pull request, state, and bot filters from input onto opts.
+// A required choice wins over the saved hide choice for the same condition.
+func ApplyActivityFilters(opts *db.ListActivityOpts, input *ListActivityInput) error {
+	var attributes []string
+	if input.Attributes != "" {
+		for attribute := range strings.SplitSeq(input.Attributes, ",") {
+			switch attribute {
+			case "draft", "not_draft", "approved", "not_approved", "merge_conflicts", "no_merge_conflicts",
+				"failed_ci", "passed_ci":
+			default:
+				return httpapi.Validation("query.attributes", "unknown pull request filter")
+			}
+			if !slices.Contains(attributes, attribute) {
+				attributes = append(attributes, attribute)
+			}
+		}
+	}
+	opts.PullAttributes = attributes
+	opts.OnlyClosedMerged = input.ClosedMerged
+	opts.HideClosedMerged = input.HideClosedMerged && !input.ClosedMerged
+	opts.OnlyBots = input.Bots
+	opts.HideBots = input.HideBots && !input.Bots
+	opts.HideDrafts = input.HideDrafts && !slices.Contains(attributes, "draft")
+	opts.OnlyMergeQueued = input.MergeQueued
+	opts.HideMergeQueued = input.HideMergeQueued && !input.MergeQueued
+	return nil
 }

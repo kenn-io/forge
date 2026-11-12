@@ -115,6 +115,10 @@ const hideClosedMerged = vi.hoisted(() => ({ value: false }));
 const hideBots = vi.hoisted(() => ({ value: false }));
 const hideDrafts = vi.hoisted(() => ({ value: false }));
 const mergeQueued = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
+const onlyClosedMerged = vi.hoisted(() => ({ value: false }));
+const onlyBots = vi.hoisted(() => ({ value: false }));
+const onlyDrafts = vi.hoisted(() => ({ value: false }));
+const pullAttributeFilters = vi.hoisted(() => ({ value: [] as string[] }));
 const labelFilters = vi.hoisted(() => ({ value: new Map() as LabelFilters }));
 const cycleLabelFilter = vi.hoisted(() =>
   vi.fn((name: string) => {
@@ -179,6 +183,10 @@ vi.mock("../context.js", () => ({
       getHideBots: () => hideBots.value,
       getHideDrafts: () => hideDrafts.value,
       getMergeQueued: () => mergeQueued.value,
+      getActivityState: () => (onlyClosedMerged.value ? "closed" : hideClosedMerged.value ? "open" : "all"),
+      getBots: () => (onlyBots.value ? "require" : hideBots.value ? "exclude" : undefined),
+      getDraft: () => (onlyDrafts.value ? "require" : hideDrafts.value ? "exclude" : undefined),
+      getPullAttributeFilters: () => pullAttributeFilters.value,
       getLabelFilters: () => labelFilters.value,
       cycleLabelFilter,
       clearLabelFilters: vi.fn(() => {
@@ -233,6 +241,21 @@ vi.mock("../context.js", () => ({
       setHideClosedMerged: vi.fn(),
       setHideBots: vi.fn(),
       setHideDrafts,
+      setActivityState: vi.fn((state: "open" | "closed" | "all") => {
+        onlyClosedMerged.value = state === "closed";
+        hideClosedMerged.value = state === "open";
+      }),
+      setBots: vi.fn((value: "require" | "exclude" | undefined) => {
+        onlyBots.value = value === "require";
+        hideBots.value = value === "exclude";
+      }),
+      setDraft: vi.fn((value: "require" | "exclude" | undefined) => {
+        onlyDrafts.value = value === "require";
+        setHideDrafts(value === "exclude");
+      }),
+      setPullAttributeFilters: vi.fn((next: string[]) => {
+        pullAttributeFilters.value = next;
+      }),
       setMergeQueued: (value: "require" | "exclude" | undefined) => {
         mergeQueued.value = value;
       },
@@ -271,6 +294,10 @@ describe("ActivityFeed compact mode", () => {
     rollUpCommits.value = false;
     hideDefaultBranchActivity.value = false;
     hideClosedMerged.value = false;
+    onlyClosedMerged.value = false;
+    onlyBots.value = false;
+    onlyDrafts.value = false;
+    pullAttributeFilters.value = [];
     hideOrgName.value = false;
     enabledItemTypes.value = new Set(["pr", "issue"]);
     enabledEvents.value = new Set(["comment", "review", "commit", "force_push"]);
@@ -595,27 +622,100 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.getByRole("button", { name: "Unassigned" }).getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("reloads server-filtered activity when closed or bot visibility changes", async () => {
+  it("reloads server-filtered activity when state, bot, draft, or PR filters change", async () => {
     render(ActivityFeed, { props: { compact: false } });
     const mountedReads = loadActivity.mock.calls.length;
 
     await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
-    await fireEvent.click(screen.getByRole("button", { name: "Hide closed/merged" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(hideClosedMerged.value).toBe(true);
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 1);
 
-    await fireEvent.click(screen.getByRole("button", { name: "Hide bots" }));
-    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 2);
-
-    await fireEvent.click(screen.getByRole("button", { name: "Hide drafts" }));
-    expect(setHideDrafts).toHaveBeenCalledWith(true);
+    const bots = screen.getByRole("button", { name: "Bots" });
+    await fireEvent.click(bots);
+    await fireEvent.click(bots);
+    expect(hideBots.value).toBe(true);
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 3);
 
+    const draft = screen.getByRole("button", { name: "Draft" });
+    await fireEvent.click(draft);
+    expect(onlyDrafts.value).toBe(true);
+    await fireEvent.click(draft);
+    expect(setHideDrafts).toHaveBeenLastCalledWith(true);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 5);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Approved" }));
+    expect(pullAttributeFilters.value).toEqual(["approved"]);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 6);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Passing CI" }));
+    expect(pullAttributeFilters.value).toEqual(["approved", "passed_ci"]);
+    await fireEvent.click(screen.getByRole("button", { name: "Failed CI" }));
+    expect(pullAttributeFilters.value).toEqual(["approved", "failed_ci"]);
+    await fireEvent.click(screen.getByRole("button", { name: "Failed CI" }));
+    expect(pullAttributeFilters.value).toEqual(["approved"]);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 9);
+
     await fireEvent.click(screen.getByRole("button", { name: "Unassigned" }));
-    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 4);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 10);
 
     await fireEvent.click(screen.getByRole("button", { name: "Merge queued" }));
     expect(mergeQueued.value).toBe("require");
-    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 5);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 11);
+  });
+
+  it("filters loaded pull request rows by fork and workspace in the browser and leaves issues alone", async () => {
+    items.value = [
+      activityItem("fork", { item_number: 1, item_title: "Fork pull request", head_repo_kind: "fork" }),
+      activityItem("same", {
+        item_number: 2,
+        item_title: "Same-repo pull request",
+        head_repo_kind: "same_repo",
+        workspace: { id: "ws-2", status: "ready" } as ActivityItem["workspace"],
+      }),
+      activityItem("issue", { item_number: 3, item_title: "Open issue", item_type: "issue" }),
+    ];
+    const visible = (filters: string[]) => {
+      pullAttributeFilters.value = filters;
+      const view = render(ActivityFeed, { props: { compact: false } });
+      const text = view.container.textContent ?? "";
+      view.unmount();
+      return ["Fork pull request", "Same-repo pull request", "Open issue"].filter((title) => text.includes(title));
+    };
+
+    expect(visible(["fork"])).toEqual(["Fork pull request", "Open issue"]);
+    expect(visible(["not_fork"])).toEqual(["Same-repo pull request", "Open issue"]);
+    expect(visible(["has_workspace"])).toEqual(["Same-repo pull request", "Open issue"]);
+    expect(visible(["no_workspace"])).toEqual(["Fork pull request", "Open issue"]);
+
+    pullAttributeFilters.value = [];
+    render(ActivityFeed, { props: { compact: false } });
+    const mountedReads = loadActivity.mock.calls.length;
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "From fork" }));
+    expect(pullAttributeFilters.value).toEqual(["fork"]);
+    await fireEvent.click(screen.getByRole("button", { name: "Has workspace" }));
+    expect(pullAttributeFilters.value).toEqual(["fork", "has_workspace"]);
+    expect(loadActivity, "browser-only filters do not reload").toHaveBeenCalledTimes(mountedReads);
+  });
+
+  it("keeps only closed and merged items, or only bot activity, before the next load", async () => {
+    items.value = [
+      activityItem("open", { item_number: 1, item_title: "Open by a person" }),
+      activityItem("merged", { item_number: 2, item_title: "Merged by a person", item_state: "merged" }),
+      activityItem("bot", { item_number: 3, item_title: "Open by a bot", author: "renovate[bot]" }),
+    ];
+    onlyClosedMerged.value = true;
+    const closed = render(ActivityFeed, { props: { compact: false } });
+    expect(closed.container.textContent).toContain("Merged by a person");
+    expect(closed.container.textContent).not.toContain("Open by a person");
+    closed.unmount();
+
+    onlyClosedMerged.value = false;
+    onlyBots.value = true;
+    const bots = render(ActivityFeed, { props: { compact: false } });
+    expect(bots.container.textContent).toContain("Open by a bot");
+    expect(bots.container.textContent).not.toContain("Open by a person");
   });
 
   it("cycles Involves me, Unassigned, and Merge queued through required, excluded, and off", async () => {

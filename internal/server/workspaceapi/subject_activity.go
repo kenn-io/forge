@@ -11,6 +11,10 @@ type SubjectActivity struct {
 	Subject    db.WorkspaceSubjectMetadata
 	Workspace  WorkspaceRef
 	ActivityAt *time.Time
+	// HeadRepoKind is a pull request workspace's own head repository
+	// classification (same_repo, fork, or unknown), or empty when no
+	// workspace for the pull request recorded one.
+	HeadRepoKind string
 }
 
 type WorkspaceSubjectSnapshot struct {
@@ -39,6 +43,7 @@ func (s *Handler) WorkspaceSubjectSnapshot(
 	keys := make([]db.WorkspaceSubjectKey, 0, len(summaries)*2)
 	resolved := make(map[db.WorkspaceSubjectKey]workspaceSubjectCandidate)
 	own := make(map[db.WorkspaceSubjectKey]db.WorkspaceSummary)
+	headRepoKinds := make(map[db.WorkspaceSubjectKey]string)
 	for i := range summaries {
 		summary := summaries[i]
 		if summary.RepoID == 0 {
@@ -49,6 +54,10 @@ func (s *Handler) WorkspaceSubjectSnapshot(
 			keys = append(keys, ownKey)
 			if current, ok := own[ownKey]; !ok || workspaceCandidatePreferred(summary, current, ownKey) {
 				own[ownKey] = summary
+			}
+			if kind := mrHeadRepoKind(summary.ItemType, summary.MRHeadRepo); kind != "" &&
+				headRepoKinds[ownKey] != mrHeadRepoKindFork && headRepoKinds[ownKey] != mrHeadRepoKindSameRepo {
+				headRepoKinds[ownKey] = kind
 			}
 		}
 		resolvedKey, ok := resolvedWorkspaceSubjectKey(summary)
@@ -95,9 +104,10 @@ func (s *Handler) WorkspaceSubjectSnapshot(
 			continue
 		}
 		snapshot.Subjects[key] = SubjectActivity{
-			Subject:    subject,
-			Workspace:  s.workspaceReference(ctx, &candidate.summary),
-			ActivityAt: candidate.activityAt,
+			Subject:      subject,
+			Workspace:    s.workspaceReference(ctx, &candidate.summary),
+			ActivityAt:   candidate.activityAt,
+			HeadRepoKind: headRepoKinds[key],
 		}
 	}
 	return snapshot, nil

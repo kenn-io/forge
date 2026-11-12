@@ -262,8 +262,9 @@ async function selectActivityViewItem(label: string): Promise<void> {
     await page.elementLocator(activityFiltersBtn()).click();
     await vi.waitFor(() => expect(document.querySelector(".kit-filter-dropdown__panel")).not.toBeNull(), WAIT);
   }
+  // Match the whole label: State's "All states" precedes Group's "All".
   const item = Array.from(document.querySelectorAll(".kit-filter-dropdown__panel .kit-filter-dropdown__item")).find(
-    (el) => (el.textContent ?? "").includes(label),
+    (el) => (el.textContent ?? "").trim() === label,
   )!;
   await page.elementLocator(item).click();
 }

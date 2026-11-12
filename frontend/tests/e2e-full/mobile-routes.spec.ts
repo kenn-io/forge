@@ -210,7 +210,7 @@ test.describe("phone routes", () => {
     await expect(page.getByRole("switch", { name: "Commits" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Force pushes" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Notifications" })).toBeVisible();
-    await expect(page.getByRole("switch", { name: "Hide closed/merged" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: /State/ })).toBeVisible();
     await expect(page.getByLabel("Time range")).toBeVisible();
     await expect(page.getByRole("button", { name: /^Select repository:/ })).toBeVisible();
     await expect(page.locator(".threaded-view")).toHaveCount(0);

@@ -7,6 +7,7 @@ export type PullAttributeFilter =
   | "approved"
   | "not_approved"
   | "draft"
+  | "not_draft"
   | "ready"
   | "merge_conflicts"
   | "no_merge_conflicts"
@@ -15,7 +16,9 @@ export type PullAttributeFilter =
   | "has_workspace"
   | "no_workspace"
   | "merge_queued"
-  | "not_merge_queued";
+  | "not_merge_queued"
+  | "fork"
+  | "not_fork";
 
 /**
  * Whether the selection matches. Each section holds mutually exclusive options and
@@ -64,16 +67,22 @@ export function triFilterInSelection<T>(selected: readonly T[], filter: T, oppos
 
 /** The PR list's attribute sections, matched as `matchesFilterSections` describes. */
 export const PULL_ATTRIBUTE_SECTIONS: readonly (readonly PullAttributeFilter[])[] = [
-  ["draft", "ready"],
+  ["draft", "not_draft", "ready"],
   ["approved", "not_approved"],
   ["passed_ci", "failed_ci"],
   ["merge_conflicts", "no_merge_conflicts"],
   ["merge_queued", "not_merge_queued"],
   ["has_workspace", "no_workspace"],
+  ["fork", "not_fork"],
 ];
 
 /** Attributes only the browser can match; the server never receives them. */
-export const BROWSER_ONLY_PULL_ATTRIBUTES: readonly PullAttributeFilter[] = ["has_workspace", "no_workspace"];
+export const BROWSER_ONLY_PULL_ATTRIBUTES: readonly PullAttributeFilter[] = [
+  "has_workspace",
+  "no_workspace",
+  "fork",
+  "not_fork",
+];
 
 export function pullMatchesAttributeFilters(pr: PullRequest, filters: readonly PullAttributeFilter[]): boolean {
   return matchesFilterSections(PULL_ATTRIBUTE_SECTIONS, filters, (filter) => pullMatchesAttribute(pr, filter));
@@ -84,6 +93,9 @@ export function pullMatchesAttribute(pr: PullRequest, filter: PullAttributeFilte
   if (filter === "no_merge_conflicts") return !pullMatchesAttribute(pr, "merge_conflicts");
   if (filter === "no_workspace") return !pullMatchesAttribute(pr, "has_workspace");
   if (filter === "not_merge_queued") return !pullMatchesAttribute(pr, "merge_queued");
+  if (filter === "not_fork") return !pullMatchesAttribute(pr, "fork");
+  if (filter === "not_draft") return !pr.IsDraft;
+  if (filter === "fork") return pr.head_repo_kind === "fork";
   if (filter === "merge_queued") {
     // In the provider merge queue, or set to merge once CI passes.
     return pr.State === "open" && (pr.merge_queue !== undefined || pr.deferred_merge_pending === true);

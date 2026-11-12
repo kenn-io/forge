@@ -1684,12 +1684,19 @@ type ListActivityOpts struct {
 	// caller will not serve.
 	ExcludeNotifications bool
 	HideClosedMerged     bool
-	HideBots             bool
-	HideDrafts           bool
-	HideMergeQueued      bool
+	// OnlyClosedMerged keeps only activity HideClosedMerged would hide, and wins over it.
+	OnlyClosedMerged bool
+	HideBots         bool
+	// OnlyBots keeps only bot-authored activity, and wins over HideBots.
+	OnlyBots        bool
+	HideDrafts      bool
+	HideMergeQueued bool
 	// OnlyMergeQueued keeps only activity on pull requests HideMergeQueued would hide: open and
 	// in a merge queue, with provider auto-merge on, or in DeferredMergeItems.
 	OnlyMergeQueued bool
+	// PullAttributes are PR inclusion filters with ListMergeRequestsOpts.Attributes semantics.
+	// They apply only to pull request rows; issue and repository rows always pass.
+	PullAttributes []string
 	// DeferredMergeItems are the pull requests this server's worker holds for a merge after CI.
 	DeferredMergeItems []RepoItemNumber
 	HideDefaultBranch  bool
@@ -1736,10 +1743,13 @@ type ListActivitySubjectsOpts struct {
 	Unassigned                 bool
 	ViewerLogins               []RepoViewerLogin
 	HideClosedMerged           bool
+	OnlyClosedMerged           bool
 	HideBots                   bool
+	OnlyBots                   bool
 	HideDrafts                 bool
 	HideMergeQueued            bool
 	OnlyMergeQueued            bool
+	PullAttributes             []string
 	DeferredMergeItems         []RepoItemNumber
 	Limit                      int
 	Since                      *time.Time

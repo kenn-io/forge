@@ -24,12 +24,18 @@ export type ListActivityThreadEventsParams = {
    */
   limit?: number;
   hide_closed_merged?: boolean;
+  /** Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged. */
+  closed_merged?: boolean;
   hide_bots?: boolean;
+  /** Keep only bot-authored activity. Wins over hide_bots. */
+  bots?: boolean;
   /** Exclude activity for draft pull requests. */
   hide_drafts?: boolean;
   /** Exclude activity for open pull requests in a merge queue or set to merge after CI. */
   hide_merge_queued?: boolean;
   /** Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued. */
   merge_queued?: boolean;
+  /** Comma-separated pull request filters, as on the activity list. */
+  attributes?: string;
   hide_default_branch?: boolean;
 };

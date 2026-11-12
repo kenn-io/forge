@@ -126,6 +126,16 @@ describe("configured Activity filters", () => {
     expect(store.getHideDrafts()).toBe(false);
   });
 
+  it("keeps a required Bots choice when settings with Hide bots reload", () => {
+    const store = makeStore();
+    store.hydrateDefaults({ ...defaults(), hide_bots: true });
+    store.initializeFromMount();
+    expect(store.getBots()).toBe("exclude");
+    store.setBots("require");
+    store.hydrateDefaults({ ...defaults(), hide_bots: true });
+    expect(store.getBots()).toBe("require");
+  });
+
   it("preserves the session draft choice when settings reload", () => {
     const store = makeStore();
     store.hydrateDefaults(defaults());
@@ -1708,6 +1718,56 @@ describe("activity store workspace activity", () => {
       expect(store.getMergeQueued()).toBe(value);
       expect(lastQuery().merge_queued).toBe(required);
       expect(lastQuery().hide_merge_queued).toBe(hidden);
+    }
+  });
+
+  it("sends State, Bots, Draft, and the pull request conditions in their required and hidden forms", async () => {
+    const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    const lastQuery = async () => {
+      store.loadActivity();
+      await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+      return (get.mock.lastCall as unknown as [string, { params: { query: Record<string, unknown> } }])[1].params.query;
+    };
+
+    store.setActivityState("closed");
+    store.setBots("require");
+    store.setDraft("require");
+    store.cyclePullAttributeFilter("approved", "not_approved");
+    store.togglePullAttributeFilter("failed_ci");
+    store.cyclePullAttributeFilter("fork", "not_fork");
+    let query = await lastQuery();
+    expect(query).toMatchObject({ closed_merged: true, bots: true, attributes: "draft,approved,failed_ci" });
+    expect(query.hide_closed_merged).toBeUndefined();
+    expect(query.hide_bots).toBeUndefined();
+    expect(query.hide_drafts).toBeUndefined();
+
+    store.setActivityState("open");
+    store.setBots("exclude");
+    store.setDraft("exclude");
+    store.cyclePullAttributeFilter("approved", "not_approved");
+    store.togglePullAttributeFilter("failed_ci");
+    query = await lastQuery();
+    expect(query).toMatchObject({
+      hide_closed_merged: true,
+      hide_bots: true,
+      hide_drafts: true,
+      attributes: "not_approved",
+    });
+    expect(query.closed_merged).toBeUndefined();
+    expect(query.bots).toBeUndefined();
+    expect(store.getActivityState()).toBe("open");
+    expect(store.getBots()).toBe("exclude");
+    expect(store.getDraft()).toBe("exclude");
+    expect(store.getPullAttributeFilters(), "From fork stays a browser-only choice").toContain("fork");
+
+    store.setActivityState("all");
+    store.setBots(undefined);
+    store.setDraft(undefined);
+    store.setPullAttributeFilters([]);
+    query = await lastQuery();
+    for (const key of ["closed_merged", "hide_closed_merged", "bots", "hide_bots", "hide_drafts", "attributes"]) {
+      expect(query[key], key).toBeUndefined();
     }
   });
 
@@ -4717,6 +4777,7 @@ describe("activity polling recovery", () => {
         repo_path: "acme/widgets-renamed",
       },
       workspace: { id: "current-workspace", status: "ready" },
+      head_repo_kind: "fork",
       ...(parentLabels ? { labels: parentLabels } : {}),
     } as ActivitySubject;
     const replacement = {
@@ -4785,6 +4846,8 @@ describe("activity polling recovery", () => {
     );
     // The parent's labels replace the event's old ones, and a parent with none clears them.
     expect(reconciledEvent?.labels).toEqual(parentLabels);
+    // A parent classified as a fork after the event loaded passes that on, so From fork filters it.
+    expect(reconciledEvent?.head_repo_kind).toBe("fork");
     expect(reconciledNotification).toEqual(
       expect.objectContaining({
         activity_url: renamed.item_url,

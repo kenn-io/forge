@@ -21,6 +21,7 @@ type MergeRequestResponse struct {
 	RepoOwner               string                     `json:"repo_owner"`
 	RepoName                string                     `json:"repo_name"`
 	PlatformHost            string                     `json:"platform_host"`
+	HeadRepoKind            HeadRepoKind               `json:"head_repo_kind" enum:"same_repo,fork,unknown"`
 	WorktreeLinks           []worktreeLinkResponse     `json:"worktree_links"`
 	Workspace               *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
 	LastWorkspaceActivityAt string                     `json:"last_workspace_activity_at,omitempty" format:"date-time"`

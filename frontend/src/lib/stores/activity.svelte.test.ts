@@ -740,6 +740,142 @@ describe("activity subject paging", () => {
     },
   );
 
+  it.each(["foreground", "provider", "scheduled"])(
+    "preserves refreshed prefix after a later-page failure (%s)",
+    async (source) => {
+      vi.useFakeTimers();
+      const event = {
+        ...notificationItem("comment:2", "read"),
+        activity_type: "comment",
+        item_number: 2,
+        repo,
+      } as ActivityItem;
+      let phase: "initial" | "failure" | "recovery" = "initial";
+      const client = {
+        GET: vi.fn(
+          async (
+            path: string,
+            options?: { params?: { query?: { subject_before?: string; after?: string; projection?: string } } },
+          ) => {
+            if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+            const query = options?.params?.query;
+            if (query?.after) return { data: { items: [], capped: false, event_cursor: "event" }, error: null };
+            if (phase === "failure" && query?.subject_before)
+              return { error: { detail: "older page unavailable" }, response: new Response(null, { status: 422 }) };
+            const subjects = query?.subject_before
+              ? phase === "initial"
+                ? [2]
+                : []
+              : phase === "initial"
+                ? [1]
+                : [3, 1];
+            return {
+              data: {
+                items: query?.projection === "collapsed" ? [] : [event],
+                capped: false,
+                event_cursor: "event",
+                item_activity: subjects.map((n) => ({
+                  ...itemActivity(n),
+                  repo,
+                  item_title: n === 1 && phase !== "initial" ? "Fresh title" : `PR ${n}`,
+                })),
+                workspace_activity: subjects.map((n) => ({ ...workspaceActivity(n), repo })),
+                item_activity_capped: !query?.subject_before,
+                next_subject_cursor: query?.subject_before ? "" : "page-2",
+              },
+              error: null,
+            };
+          },
+        ),
+      } as unknown as GeneratedClient;
+      const store = createActivityStore({ client });
+      store.hydrateDefaults(settings(false));
+      store.loadActivity();
+      await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+      store.loadOlderItems();
+      await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
+      phase = "failure";
+      if (source === "foreground") store.loadActivity();
+      else if (source === "provider")
+        await runtime!.runCommand(store.reconcileActivityEffect(), {
+          operation: "refresh",
+          safeContext: {},
+          onFailure: () => {},
+        }).exit;
+      else {
+        store.startActivityPolling();
+        await vi.advanceTimersByTimeAsync(45_000);
+      }
+      await vi.waitFor(() => expect(store.getActivityError()).toBe("older page unavailable"));
+      expect(store.getItemActivity().map((item) => item.item_number)).toEqual([3, 1, 2]);
+      expect(store.getItemActivity()[1]?.item_title).toBe("Fresh title");
+      expect(store.getWorkspaceActivity().map((item) => item.item_number)).toEqual([3, 1, 2]);
+      expect(store.canLoadOlderItems()).toBe(true);
+      expect(store.getActivityItems().map((item) => item.id)).toContain(event.id);
+      await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+      phase = "recovery";
+      await runtime!.runCommand(store.reconcileActivityEffect(), {
+        operation: "recover",
+        safeContext: {},
+        onFailure: () => {},
+      }).exit;
+      expect(store.getItemActivity().map((item) => item.item_number)).toEqual([3, 1]);
+      expect(store.getWorkspaceActivity().map((item) => item.item_number)).toEqual([3, 1]);
+      expect(store.getActivityItems().map((item) => item.id)).not.toContain(event.id);
+      expect(store.getActivityError()).toBeNull();
+    },
+  );
+
+  it("ignores a superseded partial refresh and its error", async () => {
+    const failedPage = Promise.withResolvers<unknown>();
+    let phase: "initial" | "stale" | "fresh" = "initial";
+    let pending = false;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        const older = Boolean(options?.params?.query?.subject_before);
+        if (older && phase === "stale") {
+          pending = true;
+          return failedPage.promise;
+        }
+        const number = older ? 2 : phase === "fresh" ? 3 : 1;
+        return {
+          data: {
+            items: [],
+            capped: false,
+            item_activity: [{ ...itemActivity(number), repo }],
+            item_activity_capped: !older,
+            next_subject_cursor: older ? "" : "page-2",
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(2));
+    phase = "stale";
+    const olderRefresh = runtime!.runCommand(store.reconcileActivityEffect(), {
+      operation: "older refresh",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await vi.waitFor(() => expect(pending).toBe(true));
+    phase = "fresh";
+    await runtime!.runCommand(store.reconcileActivityEffect(), {
+      operation: "newer refresh",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    failedPage.resolve({ error: { detail: "stale failure" }, response: new Response(null, { status: 422 }) });
+    await olderRefresh.exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([3, 2]);
+    expect(store.getActivityError()).toBeNull();
+  });
+
   it.each([
     { name: "loaded", workspace: false, deleted: false },
     { name: "loaded with workspace activity", workspace: true, deleted: false },

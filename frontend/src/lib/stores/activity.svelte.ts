@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Result } from "effect";
 import type { AppRuntime } from "../app/runtime.js";
 import type { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
@@ -176,6 +176,7 @@ interface ActivityReadResponse extends OwnedActivityResponse {
   readonly repo: string | undefined;
   readonly filterScope: string;
   readonly subjectDepth?: number;
+  readonly partialFailure?: ApiProblemError | TransientTransportError;
 }
 
 interface CachedActivitySnapshot {
@@ -865,8 +866,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const seenWorkspaces = new Set(workspaces.map(stableParentKey));
       let cursor = first.response.next_subject_cursor ?? "";
       let subjectsCapped = first.response.item_activity_capped ?? false;
+      let partialFailure: ApiProblemError | TransientTransportError | undefined;
       for (let page = 1; cursor && page < depth; page++) {
-        const next = yield* activityRead({ ...params, subject_before: cursor });
+        const nextResult = yield* Effect.result(activityRead({ ...params, subject_before: cursor }));
+        if (Result.isFailure(nextResult)) {
+          partialFailure = nextResult.failure;
+          break;
+        }
+        const next = nextResult.success;
         appendUnseen(subjects, seen, next.response.item_activity);
         appendUnseen(workspaces, seenWorkspaces, next.response.workspace_activity);
         cursor = next.response.next_subject_cursor ?? "";
@@ -875,6 +882,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       return {
         ...first,
         subjectDepth: depth,
+        ...(partialFailure ? { partialFailure } : {}),
         response: {
           ...first.response,
           item_activity: subjects,
@@ -1136,6 +1144,37 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (restartBulkActivity) loadBulkActivity();
   }
 
+  function projectReadSnapshot(result: ActivityReadResponse, params: ActivityParams, authoritative: boolean) {
+    return Effect.gen(function* () {
+      const failure = result.partialFailure;
+      let projected = result;
+      const sameScope = result.scope === snapshotScope;
+      if (failure && sameScope) {
+        const subjects = [...(result.response.item_activity ?? [])];
+        const workspaces = [...(result.response.workspace_activity ?? [])];
+        appendUnseen(subjects, new Set(subjects.map(stableParentKey)), itemActivity);
+        appendUnseen(workspaces, new Set(workspaces.map(stableParentKey)), workspaceActivity);
+        projected = {
+          ...result,
+          subjectDepth: displayedSubjectDepth,
+          response: {
+            ...result.response,
+            item_activity: subjects,
+            workspace_activity: workspaces,
+            next_subject_cursor: subjectCursor || result.response.next_subject_cursor || "",
+            item_activity_capped: subjectCursor ? itemActivityCapped : (result.response.item_activity_capped ?? false),
+          },
+        };
+      }
+      if (authoritative || (failure && sameScope)) projectAuthoritativeActivitySnapshot(projected, params);
+      else projectActivitySnapshot(projected, params);
+      if (failure) {
+        storeError = readErrorMessage(failure);
+        return yield* Effect.fail(failure);
+      }
+    });
+  }
+
   function projectOlderActivityPage(
     result: ActivityReadResponse,
     params: ActivityParams,
@@ -1148,14 +1187,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       if (subjectCursor) loadOlderItems();
       return;
     }
-    const existing = new Set(itemActivity.map(stableParentKey));
-    const added = (result.response.item_activity ?? []).filter((subject) => !existing.has(stableParentKey(subject)));
-    itemActivity = [...itemActivity, ...added];
-    const workspaces = new Set(workspaceActivity.map(stableParentKey));
-    workspaceActivity = [
-      ...workspaceActivity,
-      ...(result.response.workspace_activity ?? []).filter((subject) => !workspaces.has(stableParentKey(subject))),
-    ];
+    const subjects = [...itemActivity];
+    appendUnseen(subjects, new Set(subjects.map(stableParentKey)), result.response.item_activity);
+    const added = subjects.slice(itemActivity.length);
+    itemActivity = subjects;
+    const workspaces = [...workspaceActivity];
+    appendUnseen(workspaces, new Set(workspaces.map(stableParentKey)), result.response.workspace_activity);
+    workspaceActivity = workspaces;
     itemActivityCapped = result.response.item_activity_capped ?? false;
     subjectCursor = result.response.next_subject_cursor ?? "";
     displayedSubjectDepth = depth;
@@ -1184,10 +1222,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           : activityReadPages({ ...params, since: computeSince() }, requestedSubjectDepth),
       );
       const project = (result: ActivityReadResponse) =>
-        Effect.sync(() => {
-          if (!acceptsProjection()) return;
-          if (page) projectOlderActivityPage(result, params, page.cursor, page.depth);
-          else projectActivitySnapshot(result, params);
+        Effect.suspend(() => {
+          if (!acceptsProjection()) return Effect.void;
+          if (page) return Effect.sync(() => projectOlderActivityPage(result, params, page.cursor, page.depth));
+          return projectReadSnapshot(result, params, false);
         });
       const clearLoading = Effect.sync(() => {
         if (acceptsProjection()) loading = false;
@@ -1249,8 +1287,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       if (shouldUseCollapsedAuthoritativeProjection()) params.projection = "collapsed";
       const scope = activityProjectionScope(params);
       const read = Effect.suspend(() => activityReadPages({ ...params, since: computeSince() }, requestedSubjectDepth));
-      const project = (result: ActivityReadResponse) =>
-        Effect.sync(() => projectAuthoritativeActivitySnapshot(result, params));
+      const project = (result: ActivityReadResponse) => projectReadSnapshot(result, params, true);
       return Effect.gen(function* () {
         const workflow = yield* ActivityWorkflow;
         yield* Effect.all([workflow.reconcileRead(scope, read, project), loadActivityAuthorsEffect()], {
@@ -1512,7 +1549,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       yield* workflow.pollSnapshotRead(
         activityProjectionScope(params),
         Effect.suspend(() => activityReadPages({ ...params, since: computeSince() }, requestedSubjectDepth)),
-        (result) => Effect.sync(() => projectAuthoritativeActivitySnapshot(result, params)),
+        (result) => projectReadSnapshot(result, params, true),
         Effect.sync(() => {
           loading = false;
         }),
@@ -1611,17 +1648,17 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
       const projectPoll = ({ mode, result }: ActivityPollProjection) =>
-        Effect.sync(() => {
-          if (mode === "replace") {
-            projectAuthoritativeActivitySnapshot(result, authoritativeParams);
-            return;
-          }
-          const existingIds = new Set(items.map((item) => item.id));
-          const newItems = projectOwnedNotificationStates(result, false).filter((item) => !existingIds.has(item.id));
-          activityEventCursor = result.response.event_cursor ?? activityEventCursor;
-          const nextItems = liveActivityPage(newItems.length > 0 ? [...newItems, ...items] : items);
-          if (newItems.length > 0 || nextItems.length !== items.length) items = nextItems;
-        });
+        mode === "replace"
+          ? projectReadSnapshot(result, authoritativeParams, true)
+          : Effect.sync(() => {
+              const existingIds = new Set(items.map((item) => item.id));
+              const newItems = projectOwnedNotificationStates(result, false).filter(
+                (item) => !existingIds.has(item.id),
+              );
+              activityEventCursor = result.response.event_cursor ?? activityEventCursor;
+              const nextItems = liveActivityPage(newItems.length > 0 ? [...newItems, ...items] : items);
+              if (newItems.length > 0 || nextItems.length !== items.length) items = nextItems;
+            });
       yield* workflow.pollRead(
         scope,
         activityRead(params),

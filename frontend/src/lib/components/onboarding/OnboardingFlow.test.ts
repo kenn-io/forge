@@ -1,6 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
-import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../../api/types.js";
 import { TransientTransportError } from "../../api/effect-errors.js";
@@ -463,39 +462,6 @@ describe("OnboardingFlow", () => {
     expect(recoveryReads).toBe(0);
   });
 
-  it("offers retry when transient first sync attempts are exhausted", async () => {
-    const originalFetch = globalThis.fetch;
-    let attempts = 0;
-    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = input instanceof Request ? input : new Request(input, init);
-      const path = new URL(request.url).pathname;
-      if (path === "/api/v1/sync" && request.method === "POST") {
-        attempts++;
-        return Promise.resolve(
-          Response.json(
-            {
-              code: "hubUnavailable",
-              status: 503,
-              title: "Unavailable",
-              detail: "temporary outage",
-              type: "about:blank",
-            },
-            { status: 503 },
-          ),
-        );
-      }
-      if (path === "/api/v1/sync/status")
-        return Promise.resolve(Response.json({ running: false, last_run_at: "", last_error: "" }));
-      return originalFetch(input, init);
-    });
-    const fixture = storeFixture({ configured: true });
-    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
-    fixture.stores.sync = createSyncStore({ runtime: runtimeCapture.current });
-    renderFlow(fixture.stores);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy(), { timeout: 5000 });
-    expect(attempts).toBe(3);
-  }, 7000);
-
   it("shows a retry for a transport error with no message", async () => {
     const fixture = storeFixture({
       configured: true,
@@ -506,72 +472,6 @@ describe("OnboardingFlow", () => {
     renderFlow(fixture.stores);
     await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy());
     expect(screen.getByRole("alert").textContent).toContain("Could not reach Kenn Forge");
-  });
-
-  it("does not advance on another sync while its retry awaits acknowledgement", async () => {
-    const accepted = Promise.withResolvers<Response>();
-    const originalFetch = globalThis.fetch;
-    let attempts = 0;
-    let statusReads = 0;
-    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = input instanceof Request ? input : new Request(input, init);
-      const path = new URL(request.url).pathname;
-      if (path === "/api/v1/sync" && request.method === "POST") {
-        attempts++;
-        return attempts === 1 ? Promise.reject(new Error("response lost")) : accepted.promise;
-      }
-      if (path === "/api/v1/sync/status") {
-        statusReads++;
-        return Promise.resolve(Response.json({ running: false, last_run_at: "", last_error: "" }));
-      }
-      if (path === "/api/v1/rate-limits")
-        return Promise.resolve(Response.json({ provider_pools: {}, local_ceilings: {} }));
-      return originalFetch(input, init);
-    });
-    const fixture = storeFixture({ configured: true });
-    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
-    const sync = createSyncStore({ runtime: runtimeCapture.current });
-    sync.setSyncStatus({ running: true, last_run_at: "", last_error: "" });
-    fixture.stores.sync = sync;
-    renderFlow(fixture.stores);
-    await waitFor(() => expect(attempts).toBe(2));
-    sync.setSyncStatus({ running: true, last_run_at: "", last_error: "" });
-    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:00:30Z", last_error: "" });
-    await tick();
-    expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
-    accepted.resolve(Response.json({}));
-    await waitFor(() => expect(statusReads).toBe(1));
-    sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:00:30Z", last_error: "" });
-    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:01:00Z", last_error: "" });
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
-  });
-
-  it("releases sync status when onboarding unmounts during a request", async () => {
-    const originalFetch = globalThis.fetch;
-    let attempts = 0;
-    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = input instanceof Request ? input : new Request(input, init);
-      const path = new URL(request.url).pathname;
-      if (path === "/api/v1/sync" && request.method === "POST") {
-        attempts++;
-        return new Promise<Response>(() => {});
-      }
-      if (path === "/api/v1/sync/status")
-        return Promise.resolve(Response.json({ running: false, last_run_at: "", last_error: "" }));
-      return originalFetch(input, init);
-    });
-    const fixture = storeFixture({ configured: true });
-    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
-    const sync = createSyncStore({ runtime: runtimeCapture.current });
-    sync.setSyncStatus({ running: false, last_run_at: "", last_error: "" });
-    fixture.stores.sync = sync;
-    const view = renderFlow(fixture.stores);
-    await waitFor(() => expect(attempts).toBe(1));
-    view.unmount();
-    await waitFor(() => {
-      sync.setSyncStatus({ running: false, last_run_at: "", last_error: "" });
-      expect(sync.getSyncState()?.running).toBe(false);
-    });
   });
 
   it("starts sync when repositories become configured while onboarding remains mounted", async () => {

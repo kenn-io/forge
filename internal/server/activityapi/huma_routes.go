@@ -321,10 +321,15 @@ func (s *Handlers) listRepoSummariesRouteCore(
 	return &listRepoSummariesOutput{Body: out}, nil
 }
 
+type triggerSyncOutput struct {
+	Status int
+	Body   *ghclient.FullSyncReceipt
+}
+
 func (s *Handlers) TriggerSync(
 	ctx context.Context,
 	input *triggerSyncInput,
-) (*itemapi.AcceptedOutput, error) {
+) (*triggerSyncOutput, error) {
 	if err := s.RequireSync(); err != nil {
 		return nil, err
 	}
@@ -336,12 +341,13 @@ func (s *Handlers) TriggerSync(
 		if !(*s.Syncer).TriggerRunForRepos(context.WithoutCancel(ctx), repos) {
 			return nil, httpapi.ServiceUnavailable("syncer is stopping")
 		}
-		return &itemapi.AcceptedOutput{Status: http.StatusAccepted}, nil
+		return &triggerSyncOutput{Status: http.StatusAccepted}, nil
 	}
-	if !(*s.Syncer).TriggerRunWithPriority(
+	receipt, accepted := (*s.Syncer).TriggerRunWithPriority(
 		context.WithoutCancel(ctx),
 		s.priorityReposFromFilter(input.PriorityRepos),
-	) {
+	)
+	if !accepted {
 		return nil, httpapi.ServiceUnavailable("syncer is stopping")
 	}
 	if s.NotificationsEnabled() {
@@ -351,7 +357,7 @@ func (s *Handlers) TriggerSync(
 			}
 		})
 	}
-	return &itemapi.AcceptedOutput{Status: http.StatusAccepted}, nil
+	return &triggerSyncOutput{Status: http.StatusAccepted, Body: &receipt}, nil
 }
 
 func (s *Handlers) RequireSync() error {

@@ -442,7 +442,7 @@ describe("OnboardingFlow", () => {
         const path = new URL(request.url).pathname;
         if (path === "/api/v1/sync" && request.method === "POST") {
           attempts++;
-          if (attempts !== 1) return Promise.resolve(Response.json({}));
+          if (attempts !== 1) return Promise.resolve(Response.json({ instance_id: "instance", generation: 1 }));
           if (failure === "network failure") return Promise.reject(new Error("response lost"));
           return Promise.resolve(
             Response.json(
@@ -454,7 +454,16 @@ describe("OnboardingFlow", () => {
         if (path === "/api/v1/sync/status") {
           if (attempts === 1) recoveryReads++;
           return Promise.resolve(
-            Response.json({ running: false, last_run_at: attempts > 1 ? "2026-08-02T12:01:00Z" : "", last_error: "" }),
+            Response.json({
+              running: false,
+              last_run_at: attempts > 1 ? "2026-08-02T12:01:00Z" : "",
+              last_error: "",
+              full_sync: {
+                instance_id: "instance",
+                settled_generation: attempts > 1 ? 1 : 0,
+                successful_generation: attempts > 1 ? 1 : 0,
+              },
+            }),
           );
         }
         if (path === "/api/v1/rate-limits")
@@ -513,9 +522,14 @@ describe("OnboardingFlow", () => {
     expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
     await waitFor(() => expect(attempts).toBe(2));
     expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
-    accepted.resolve(Response.json({}));
+    accepted.resolve(Response.json({ instance_id: "sync-instance", generation: 2 }));
     await waitFor(() => expect(statusReads).toBe(1));
-    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:01:00Z", last_error: "" });
+    sync.setSyncStatus({
+      running: false,
+      last_run_at: "2026-08-02T12:01:00Z",
+      last_error: "",
+      full_sync: { instance_id: "sync-instance", settled_generation: 2, successful_generation: 2 },
+    });
     await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
   });
 
@@ -523,7 +537,7 @@ describe("OnboardingFlow", () => {
     const originalFetch = globalThis.fetch;
     const accepted = Promise.withResolvers<Response>();
     let attempts = 0;
-    let settled = false;
+    let statusReads = 0;
     vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init);
       const path = new URL(request.url).pathname;
@@ -532,6 +546,7 @@ describe("OnboardingFlow", () => {
         return attempts === 1 ? Promise.reject(new Error("response lost")) : accepted.promise;
       }
       if (path === "/api/v1/sync/status") {
+        statusReads++;
         return refresh === "stale"
           ? Promise.resolve(Response.json({ running: false, last_run_at: "2026-08-02T12:00:30Z", last_error: "" }))
           : Promise.resolve(
@@ -547,28 +562,24 @@ describe("OnboardingFlow", () => {
     if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
     const sync = createSyncStore({ runtime: runtimeCapture.current });
     sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:00:00Z", last_error: "" });
-    const trigger = sync.triggerOnboardingSyncEffect;
-    sync.triggerOnboardingSyncEffect = () =>
-      trigger().pipe(
-        Effect.tap(() =>
-          Effect.sync(() => {
-            settled = true;
-          }),
-        ),
-      );
     fixture.stores.sync = sync;
     renderFlow(fixture.stores);
     await waitFor(() => expect(attempts).toBe(1));
     sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:00:30Z", last_error: "" });
     await waitFor(() => expect(attempts).toBe(2));
     expect(sync.getSyncState()).toMatchObject({ running: true, last_error: "" });
-    accepted.resolve(Response.json({}));
-    await waitFor(() => expect(settled).toBe(true));
+    accepted.resolve(Response.json({ instance_id: "sync-instance", generation: 2 }));
+    await waitFor(() => expect(statusReads).toBeGreaterThan(0));
     await tick();
     expect(fixture.loadPulls).not.toHaveBeenCalled();
     expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
     sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:00:30Z", last_error: "" });
-    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:01:00Z", last_error: "" });
+    sync.setSyncStatus({
+      running: false,
+      last_run_at: "2026-08-02T12:01:00Z",
+      last_error: "",
+      full_sync: { instance_id: "sync-instance", settled_generation: 2, successful_generation: 2 },
+    });
     await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
   });
 
@@ -585,7 +596,7 @@ describe("OnboardingFlow", () => {
     const originalFetch = globalThis.fetch;
     const accepted = Promise.withResolvers<Response>();
     let attempts = 0;
-    let settled = false;
+    let statusReads = 0;
     vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init);
       const path = new URL(request.url).pathname;
@@ -593,13 +604,15 @@ describe("OnboardingFlow", () => {
         attempts++;
         return attempts === 1 ? Promise.reject(new Error("response lost")) : accepted.promise;
       }
-      if (path === "/api/v1/sync/status")
+      if (path === "/api/v1/sync/status") {
+        statusReads++;
         return Promise.resolve(
           Response.json(
             { code: "forbidden", status: 403, title: "Forbidden", detail: "Denied", type: "about:blank" },
             { status: 403 },
           ),
         );
+      }
       return originalFetch(input, init);
     });
     const fixture = storeFixture({ configured: true });
@@ -607,15 +620,6 @@ describe("OnboardingFlow", () => {
     const runtime = runtimeCapture.current;
     const sync = createSyncStore({ runtime });
     sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:00:00Z", last_error: "" });
-    const trigger = sync.triggerOnboardingSyncEffect;
-    sync.triggerOnboardingSyncEffect = () =>
-      trigger().pipe(
-        Effect.tap(() =>
-          Effect.sync(() => {
-            settled = true;
-          }),
-        ),
-      );
     fixture.stores.sync = sync;
     const events = createEventsStore({
       runtime,
@@ -625,19 +629,35 @@ describe("OnboardingFlow", () => {
     renderFlow(fixture.stores);
     await waitFor(() => expect(source).toBeDefined());
     await waitFor(() => expect(attempts).toBe(2));
-    // The accepted response and status event carry no common run identity.
+    // This completion belongs to an earlier accepted pass.
     source?.dispatchEvent(
       new MessageEvent("sync_status", {
-        data: JSON.stringify({ running: false, last_run_at: "2026-08-02T12:00:30Z", last_error: "" }),
+        data: JSON.stringify({
+          running: false,
+          last_run_at: "2026-08-02T12:00:30Z",
+          last_error: "",
+          full_sync: { instance_id: "sync-instance", settled_generation: 1, successful_generation: 1 },
+        }),
         lastEventId: "1",
       }),
     );
     await waitFor(() => expect(sync.getSyncState()?.running).toBe(false));
-    accepted.resolve(Response.json({}));
-    await waitFor(() => expect(settled).toBe(true));
+    accepted.resolve(Response.json({ instance_id: "sync-instance", generation: 2 }));
+    await waitFor(() => expect(statusReads).toBeGreaterThan(0));
     await tick();
     expect(fixture.loadPulls).not.toHaveBeenCalled();
     expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
+    source?.dispatchEvent(
+      new MessageEvent("sync_status", {
+        data: JSON.stringify({
+          running: true,
+          full_sync: { instance_id: "sync-instance", settled_generation: 2, successful_generation: 2 },
+        }),
+        lastEventId: "2",
+      }),
+    );
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+    expect(fixture.loadPulls).toHaveBeenCalledTimes(1);
   });
 
   it("advances when the retried sync finishes before its response", async () => {
@@ -663,11 +683,82 @@ describe("OnboardingFlow", () => {
     renderFlow(fixture.stores);
     await waitFor(() => expect(attempts).toBe(2));
     sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:00:00Z", last_error: "" });
-    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:01:00Z", last_error: "" });
+    sync.setSyncStatus({
+      running: false,
+      last_run_at: "2026-08-02T12:01:00Z",
+      last_error: "",
+      full_sync: { instance_id: "sync-instance", settled_generation: 2, successful_generation: 2 },
+    });
     await tick();
     expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
-    accepted.resolve(Response.json({}));
+    accepted.resolve(Response.json({ instance_id: "sync-instance", generation: 2 }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+  });
+
+  it("offers retry when a fresh status identifies a restarted syncer", async () => {
+    const originalFetch = globalThis.fetch;
+    let reads = 0;
+    let posts = 0;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/sync" && request.method === "POST") {
+        posts++;
+        return Promise.resolve(Response.json({ instance_id: "old-instance", generation: 1 }));
+      }
+      if (path === "/api/v1/sync/status") {
+        reads++;
+        return Promise.resolve(
+          Response.json({
+            running: false,
+            full_sync: {
+              instance_id: reads === 1 ? "old-instance" : "new-instance",
+              settled_generation: reads === 1 ? 0 : 1,
+              successful_generation: reads === 1 ? 0 : 1,
+            },
+          }),
+        );
+      }
+      return originalFetch(input, init);
+    });
+    const fixture = storeFixture({ configured: true });
+    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+    const runtime = runtimeCapture.current;
+    const sync = createSyncStore({ runtime });
+    sync.setSyncStatus({ running: false });
+    fixture.stores.sync = sync;
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(reads).toBe(1));
+    runtime.runCommand(sync.reconcileSyncStatusEffect, {
+      operation: "refresh sync",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy());
+    expect(posts).toBe(1);
+    expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
+  });
+
+  it("offers retry when the accepted response has no receipt", async () => {
+    const originalFetch = globalThis.fetch;
+    let posts = 0;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname === "/api/v1/sync" && request.method === "POST") {
+        posts++;
+        return Promise.resolve(Response.json({}));
+      }
+      return originalFetch(input, init);
+    });
+    const fixture = storeFixture({ configured: true });
+    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+    const sync = createSyncStore({ runtime: runtimeCapture.current });
+    sync.setSyncStatus({ running: false });
+    fixture.stores.sync = sync;
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy());
+    expect(posts).toBe(1);
+    expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
   });
 
   it("shows a retry when status clears the transport error", async () => {

@@ -5,6 +5,7 @@ import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-
 import { isTransientPickerReadFailure, retryIdempotentRead } from "../api/retry-policy.js";
 import { ApiProblemError } from "../api/effect-errors.js";
 import { ProblemCodes } from "../api/problems.js";
+import type { FullSyncReceipt, FullSyncStatus } from "../api/generated/models/index.js";
 import type { RateLimitsResponse, SyncStatus } from "../api/types.js";
 import { SyncWorkflow, type SyncReadError } from "./sync-workflow.js";
 
@@ -30,6 +31,8 @@ export function createSyncStore(opts: SyncStoreOptions) {
   let wasRunning = false;
   let onSyncCompleteOnce: (() => void) | null = null;
   const syncCompleteListeners = new Set<() => void>();
+  const statusObservers = new Set<(next: SyncStatus, fresh: boolean) => void>();
+  let receiptEpoch = 0;
   let currentIntervalMs = 30_000;
   let liveUpdatesConnected = false;
   let refreshGeneration = 0;
@@ -80,7 +83,8 @@ export function createSyncStore(opts: SyncStoreOptions) {
     });
   }
 
-  function applySyncStatus(next: SyncStatus | null): void {
+  function applySyncStatus(next: SyncStatus | null, fresh = false): void {
+    if (next) for (const observer of statusObservers) observer(next, fresh);
     const isRunning = next?.running ?? false;
     if (triggeredSyncLastRunAt !== undefined) {
       const nextLastRunAt = next?.last_run_at ?? "";
@@ -105,9 +109,9 @@ export function createSyncStore(opts: SyncStoreOptions) {
   }
 
   function syncStatusRead() {
-    return executeGeneratedApiRequest("GET /sync/status", (client) => client.SyncService.getSyncStatus()).pipe(
-      retryIdempotentRead,
-    );
+    return executeGeneratedApiRequest("GET /sync/status", (client, signal) =>
+      client.SyncService.getSyncStatus({ signal }),
+    ).pipe(retryIdempotentRead);
   }
 
   function rateLimitsRead() {
@@ -118,13 +122,14 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
   function refreshSyncStatusProgram() {
     const generation = refreshGeneration;
+    const epoch = receiptEpoch;
     return Effect.gen(function* () {
       const workflow = yield* SyncWorkflow;
       const snapshot = yield* workflow.refresh(generation, syncStatusRead(), rateLimitsRead());
       if (generation !== refreshGeneration) return;
       yield* Effect.sync(() => {
         if (Option.isSome(snapshot.status)) {
-          applySyncStatus(snapshot.status.value);
+          applySyncStatus(snapshot.status.value, epoch === receiptEpoch && epoch > 0);
         }
         if (Option.isSome(snapshot.rateLimits)) {
           rateLimits = snapshot.rateLimits.value;
@@ -163,13 +168,14 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
   function reconcileSyncStatusProgram() {
     const generation = refreshGeneration;
+    const epoch = receiptEpoch;
     return Effect.gen(function* () {
       const [nextStatus, nextRateLimits] = yield* Effect.all([syncStatusRead(), Effect.option(rateLimitsRead())], {
         concurrency: "unbounded",
       });
       if (generation !== refreshGeneration) return;
       yield* Effect.sync(() => {
-        applySyncStatus(nextStatus);
+        applySyncStatus(nextStatus, epoch === receiptEpoch && epoch > 0);
         if (Option.isSome(nextRateLimits)) rateLimits = nextRateLimits.value;
       });
     });
@@ -188,7 +194,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return Date.parse(next) > Date.parse(previous);
   }
 
-  function triggeredSyncProgram(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>, retry = false) {
+  function triggeredSyncProgram<A>(request: Effect.Effect<A, SyncReadError, GeneratedApi>, retry = false) {
     let previous = status;
     refreshGeneration += 1;
     let baselineLastRunAt = previous ? (previous.last_run_at ?? "") : null;
@@ -221,7 +227,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
         }
         return request;
       });
-      yield* retry
+      const result = yield* retry
         ? retryIdempotentRead(
             attempt,
             (failure) =>
@@ -229,7 +235,8 @@ export function createSyncStore(opts: SyncStoreOptions) {
               !(failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.serviceUnavailable),
           )
         : request;
-      yield* Effect.suspend(refreshSyncStatusProgram);
+      if (!retry) yield* Effect.suspend(refreshSyncStatusProgram);
+      return result;
     }).pipe(
       Effect.tapError((failure) =>
         Effect.sync(() => {
@@ -254,7 +261,6 @@ export function createSyncStore(opts: SyncStoreOptions) {
           adjustPollingSpeed(wasRunning);
         }),
       ),
-      Effect.asVoid,
     );
   }
 
@@ -268,8 +274,10 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
   function fullSyncRequest() {
     const priorityRepos = parsePriorityRepos(getPriorityRepos());
-    return executeGeneratedApiRequest("POST /sync", (client) =>
-      client.SyncService.triggerSync(priorityRepos.length > 0 ? { priority_repo: priorityRepos } : undefined),
+    return executeGeneratedApiRequest("POST /sync", (client, signal) =>
+      client.SyncService.triggerSync(priorityRepos.length > 0 ? { priority_repo: priorityRepos } : undefined, {
+        signal,
+      }),
     );
   }
 
@@ -278,7 +286,81 @@ export function createSyncStore(opts: SyncStoreOptions) {
   }
 
   function triggerOnboardingSyncEffect() {
-    return triggeredSyncProgram(fullSyncRequest(), true);
+    return Effect.gen(function* () {
+      const previous = status;
+      let receipt: FullSyncReceipt | undefined;
+      let lastObserved: SyncStatus | undefined;
+      const observed = new Map<string, FullSyncStatus>();
+      let outcome: Effect.Effect<void, SyncReadError> | undefined;
+      let resume: ((effect: Effect.Effect<void, SyncReadError>) => void) | undefined;
+      const fail = (message: string) =>
+        Effect.fail(
+          new ApiProblemError({
+            operation: "wait for sync",
+            problem: { code: ProblemCodes.serviceUnavailable, detail: message },
+          }),
+        );
+      const observe = (next: SyncStatus, fresh: boolean) => {
+        lastObserved = next;
+        const full = next.full_sync;
+        if (!full) return;
+        if (receipt && full.instance_id !== receipt.instance_id) {
+          if (fresh) outcome = fail("Sync service restarted. Retry sync.");
+        } else {
+          const previous = observed.get(full.instance_id);
+          if (!previous || full.settled_generation >= previous.settled_generation) observed.set(full.instance_id, full);
+        }
+        const latest = receipt && observed.get(receipt.instance_id);
+        if (receipt && latest) {
+          if (latest.successful_generation >= receipt.generation) outcome = Effect.void;
+          else if (latest.settled_generation >= receipt.generation)
+            outcome = fail(latest.last_error || "Sync failed. Retry sync.");
+        }
+        if (outcome && resume) resume(outcome);
+      };
+      yield* Effect.sync(() => statusObservers.add(observe));
+      return yield* Effect.gen(function* () {
+        const accepted = yield* triggeredSyncProgram(fullSyncRequest(), true);
+        if (
+          !accepted ||
+          !accepted.instance_id ||
+          !Number.isSafeInteger(accepted.generation) ||
+          accepted.generation < 1
+        ) {
+          return yield* fail("Sync was accepted without a receipt. Retry sync.");
+        }
+        receipt = accepted;
+        receiptEpoch += 1;
+        const latest = observed.get(receipt.instance_id);
+        if (latest) {
+          const saved = lastObserved;
+          observe({ running: false, full_sync: latest }, false);
+          lastObserved = saved;
+        }
+        if (outcome) return yield* outcome;
+        const wait = Effect.callback<void, SyncReadError>((callback) => {
+          resume = callback;
+          if (outcome) callback(outcome);
+        });
+        const refresh = syncStatusRead().pipe(
+          Effect.tap((next) => Effect.sync(() => applySyncStatus(next, true))),
+          Effect.ignore,
+          Effect.andThen(Effect.never),
+        );
+        return yield* Effect.raceFirst(wait, refresh);
+      }).pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            if (triggeredSyncLastRunAt === undefined && !lastObserved) return;
+            triggeredSyncLastRunAt = undefined;
+            status = lastObserved ?? previous;
+            wasRunning = status?.running ?? false;
+            adjustPollingSpeed(wasRunning);
+          }),
+        ),
+        Effect.ensuring(Effect.sync(() => statusObservers.delete(observe))),
+      );
+    });
   }
 
   function triggerSync(): void {

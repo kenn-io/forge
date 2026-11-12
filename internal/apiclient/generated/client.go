@@ -38703,6 +38703,20 @@ func (c *Client) TriggerSyncWithResponse(ctx context.Context, options *TriggerSy
 	}
 	switch resp.StatusCode {
 	case 202:
+		out.JSON202 = new(TriggerSyncResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON202); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "TriggerSyncResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
 		return out, nil
 	default:
 		out.ApplicationProblemPlusJSONDefault = new(TriggerSyncErrorResponse)
@@ -62732,6 +62746,8 @@ type UnsetStarredErrorResponse = ProblemError
 
 type SetStarredErrorResponse = ProblemError
 
+type TriggerSyncResponse = FullSyncReceipt
+
 type TriggerSyncErrorResponse = ProblemError
 
 type GetSyncStatusResponse = SyncStatus
@@ -66309,6 +66325,7 @@ type TriggerSyncResp struct {
 	Body                              []byte
 	StatusCode                        int
 	Error                             *TriggerSyncErrorResponse
+	JSON202                           *TriggerSyncResponse
 	ApplicationProblemPlusJSONDefault *TriggerSyncErrorResponse
 }
 
@@ -68272,6 +68289,20 @@ type FleetSettingsResponse struct {
 	RestartRequired bool          `json:"restart_required"`
 	Role            string        `json:"role"`
 	Sessions        FleetSessions `json:"sessions"`
+}
+
+type FullSyncReceipt struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string   `json:"$schema,omitempty"`
+	Generation int64     `json:"generation"`
+	InstanceID uuid.UUID `json:"instance_id"`
+}
+
+type FullSyncStatus struct {
+	InstanceID           uuid.UUID `json:"instance_id"`
+	LastError            *string   `json:"last_error,omitempty"`
+	SettledGeneration    int64     `json:"settled_generation"`
+	SuccessfulGeneration int64     `json:"successful_generation"`
 }
 
 type GetPullsInputBody struct {
@@ -71000,6 +71031,7 @@ type SyncStatus struct {
 	Schema                  *string                  `json:"$schema,omitempty"`
 	CurrentRepo             *string                  `json:"current_repo,omitempty"`
 	DetailRefreshOverdue    *int64                   `json:"detail_refresh_overdue,omitempty"`
+	FullSync                *FullSyncStatus          `json:"full_sync,omitempty"`
 	GitAccess               []GitAccessProblem       `json:"git_access,omitempty"`
 	LastError               *string                  `json:"last_error,omitempty"`
 	LastErrorCeilingKey     *string                  `json:"last_error_ceiling_key,omitempty"`

@@ -26,7 +26,8 @@ import (
 // is owned by the syncer's lifecycle so caller completion cannot retract it.
 // It returns true only after the request is retained as active or pending work.
 func (s *Syncer) TriggerRun(ctx context.Context) bool {
-	return s.TriggerRunWithPriority(ctx, nil)
+	_, accepted := s.TriggerRunWithPriority(ctx, nil)
+	return accepted
 }
 
 // TriggerRunWithPriority kicks off a non-blocking ad-hoc sync and dispatches
@@ -34,21 +35,22 @@ func (s *Syncer) TriggerRun(ctx context.Context) bool {
 func (s *Syncer) TriggerRunWithPriority(
 	ctx context.Context,
 	priorityRepos []RepoRef,
-) bool {
+) (FullSyncReceipt, bool) {
 	return s.triggerRun(ctx, slices.Clone(priorityRepos), nil)
 }
 
 // TriggerRunForRepos kicks off a non-blocking ad-hoc sync restricted to the
 // matching configured repositories.
 func (s *Syncer) TriggerRunForRepos(ctx context.Context, repos []RepoRef) bool {
-	return s.triggerRun(ctx, nil, slices.Clone(repos))
+	_, accepted := s.triggerRun(ctx, nil, slices.Clone(repos))
+	return accepted
 }
 
 func (s *Syncer) triggerRun(
 	ctx context.Context,
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
-) bool {
+) (FullSyncReceipt, bool) {
 	return s.triggerRunWithCadence(ctx, true, priorityRepos, onlyRepos)
 }
 
@@ -57,9 +59,9 @@ func (s *Syncer) triggerRunWithCadence(
 	bypassNextSyncAfter bool,
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
-) bool {
+) (FullSyncReceipt, bool) {
 	if !s.SyncEnabled() {
-		return false
+		return FullSyncReceipt{}, false
 	}
 
 	// Admission and lifecycle registration are one operation from the
@@ -68,29 +70,37 @@ func (s *Syncer) triggerRunWithCadence(
 	s.lifecycleMu.Lock()
 	if s.stopped {
 		s.lifecycleMu.Unlock()
-		return false
+		return FullSyncReceipt{}, false
 	}
 	s.runMu.Lock()
+	var receipt FullSyncReceipt
+	if onlyRepos == nil && (bypassNextSyncAfter || !s.running.Load() || s.exclusiveRun) {
+		s.fullGeneration++
+		receipt = FullSyncReceipt{InstanceID: s.fullSync.InstanceID, Generation: s.fullGeneration}
+	}
 	if s.running.Load() {
 		accepted := bypassNextSyncAfter || onlyRepos == nil && s.exclusiveRun
 		if accepted {
 			s.coalescePendingRunLocked(
 				bypassNextSyncAfter, priorityRepos, onlyRepos,
 			)
+			if receipt.Generation > 0 {
+				s.pendingRun.fullGeneration = receipt.Generation
+			}
 		}
 		s.runMu.Unlock()
 		s.lifecycleMu.Unlock()
-		return accepted
+		return receipt, accepted
 	}
 	s.running.Store(true)
 	s.exclusiveRun = onlyRepos != nil
 	s.runMu.Unlock()
 
 	s.startClaimedRunLocked(
-		ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, nil,
+		ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, nil, receipt.Generation,
 	)
 	s.lifecycleMu.Unlock()
-	return true
+	return receipt, true
 }
 
 // startClaimedRunLocked registers and starts work whose single-flight slot is
@@ -101,6 +111,7 @@ func (s *Syncer) startClaimedRunLocked(
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
 	bypassRepos []RepoRef,
+	fullGeneration uint64,
 ) {
 	merged, cancel := s.mergeWithRunCtx(ctx)
 	s.wg.Go(func() {
@@ -112,6 +123,7 @@ func (s *Syncer) startClaimedRunLocked(
 			onlyRepos,
 			bypassRepos,
 			true,
+			fullGeneration,
 		)
 	})
 }
@@ -122,6 +134,7 @@ func (s *Syncer) launchClaimedRun(
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
 	bypassRepos []RepoRef,
+	fullGeneration uint64,
 ) bool {
 	if !s.SyncEnabled() {
 		return false
@@ -132,7 +145,7 @@ func (s *Syncer) launchClaimedRun(
 		return false
 	}
 	s.startClaimedRunLocked(
-		ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, bypassRepos,
+		ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, bypassRepos, fullGeneration,
 	)
 	s.lifecycleMu.Unlock()
 	return true
@@ -427,7 +440,7 @@ func (s *Syncer) runOnce(
 	priorityRepos []RepoRef,
 	onlyRepos []RepoRef,
 ) {
-	s.runOnceWithSlot(ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, nil, false)
+	s.runOnceWithSlot(ctx, bypassNextSyncAfter, priorityRepos, onlyRepos, nil, false, 0)
 }
 
 func (s *Syncer) runOnceWithSlot(
@@ -437,10 +450,11 @@ func (s *Syncer) runOnceWithSlot(
 	onlyRepos []RepoRef,
 	bypassRepos []RepoRef,
 	slotClaimed bool,
+	fullGeneration uint64,
 ) {
 	if !s.SyncEnabled() {
 		if slotClaimed {
-			s.releaseRunSlot()
+			s.releaseRunSlotWithStatus(nil, fullGeneration)
 		}
 		return
 	}
@@ -480,6 +494,13 @@ func (s *Syncer) runOnceWithSlot(
 			terminalStatus.DetailRefreshOverdue = s.Status().DetailRefreshOverdue
 		}
 		s.runMu.Lock()
+		if fullGeneration > 0 {
+			err := "sync canceled"
+			if terminalStatus != nil {
+				err = terminalStatus.LastError
+			}
+			s.settleFullSyncLocked(fullGeneration, err)
+		}
 		pending := s.pendingRun
 		s.pendingRun = nil
 		if pending != nil && !s.AutomaticSyncEnabled() && !pending.bypassNextSyncAfter {
@@ -524,9 +545,10 @@ func (s *Syncer) runOnceWithSlot(
 			pending.priorityRepos,
 			only,
 			appendUniqueRepoRefs(pending.bypassRepos, pending.startupRetryRepos),
+			pending.fullGeneration,
 		)
 		if !launched {
-			s.releaseRunSlotWithStatus(terminalStatus)
+			s.releaseRunSlotWithStatus(terminalStatus, pending.fullGeneration)
 		}
 	}()
 
@@ -719,11 +741,9 @@ dispatch:
 	// completed-count heuristic. A misbehaving syncRepo that
 	// ignores ctx and returns success would otherwise let the
 	// run fall through to onSyncCompleted even though the user
-	// asked to cancel. A cancel that races in strictly *after*
-	// every worker finished and returned never latches the flag,
-	// so the late-cancel-after-clean-sync case still reports
-	// success.
-	if canceled.Load() {
+	// asked to cancel. A full receipt also requires its completion
+	// hooks to finish before cancellation can be reported as success.
+	if canceled.Load() || fullGeneration > 0 && ctx.Err() != nil {
 		err := ctx.Err()
 		if err == nil {
 			err = context.Canceled
@@ -757,6 +777,14 @@ dispatch:
 		s.advanceNextSync(advance, s.nextSyncAfter, s.interval, startedAt)
 	}
 
+	if fullGeneration > 0 && lastErr == "" {
+		for _, result := range results {
+			if result.Error != "" {
+				lastErr = result.Error
+				break
+			}
+		}
+	}
 	slog.Info("sync complete", "repos", total)
 
 	if s.onSyncCompleted != nil {
@@ -777,21 +805,33 @@ dispatch:
 	}
 }
 
-func (s *Syncer) releaseRunSlot() {
+func (s *Syncer) settleFullSyncLocked(generation uint64, failure string) {
+	if generation == 0 {
+		return
+	}
+	s.fullSync.SettledGeneration = generation
+	s.fullSync.LastError = failure
+	if failure == "" {
+		s.fullSync.SuccessfulGeneration = generation
+	}
+}
+
+func (s *Syncer) releaseRunSlotWithStatus(status *SyncStatus, generation uint64) {
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
 	s.runMu.Lock()
+	if s.pendingRun != nil && s.pendingRun.fullGeneration > generation {
+		generation = s.pendingRun.fullGeneration
+	}
+	s.settleFullSyncLocked(generation, "sync canceled")
 	s.running.Store(false)
 	s.exclusiveRun = false
 	s.pendingRun = nil
 	s.runMu.Unlock()
-}
-
-func (s *Syncer) releaseRunSlotWithStatus(status *SyncStatus) {
-	s.statusMu.Lock()
-	defer s.statusMu.Unlock()
-	s.releaseRunSlot()
-	if status != nil {
-		s.publishStatusLocked(status)
+	if status == nil {
+		status = &SyncStatus{LastError: "sync canceled"}
 	}
+	s.publishStatusLocked(status)
 }
 
 // coalescePendingRunLocked records work accepted while another pass owns the

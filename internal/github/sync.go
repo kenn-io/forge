@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"uuid"
 
 	"go.kenn.io/forge/internal/platformdb"
 
@@ -30,6 +31,7 @@ const (
 )
 
 type pendingSyncRun struct {
+	fullGeneration      uint64
 	bypassNextSyncAfter bool
 	full                bool
 	priorityRepos       []RepoRef
@@ -88,7 +90,9 @@ type Syncer struct {
 	parallelism              atomic.Int32
 	runMu                    sync.Mutex
 	running                  atomic.Bool
-	exclusiveRun             bool                 // guarded by runMu
+	exclusiveRun             bool // guarded by runMu
+	fullGeneration           uint64
+	fullSync                 FullSyncStatus       // guarded by statusMu
 	pendingRun               *pendingSyncRun      // guarded by runMu
 	startupRepoSyncTimes     map[string]time.Time // one-shot credential completions, guarded by runMu
 	providerWorkMu           sync.Mutex
@@ -291,6 +295,8 @@ func (s *Syncer) publishStatus(status *SyncStatus) {
 }
 
 func (s *Syncer) publishStatusLocked(status *SyncStatus) {
+	fullSync := s.fullSync
+	status.FullSync = &fullSync
 	if status.Running {
 		status.DetailRefreshOverdue = s.Status().DetailRefreshOverdue
 	}
@@ -384,7 +390,9 @@ func NewSyncerWithRegistry(
 	s.directClients = registry
 	s.clients = registry.WithProviderGate(s.syncDisabledError)
 	s.parallelism.Store(defaultParallelism)
-	s.status.Store(&SyncStatus{})
+	s.fullSync.InstanceID = uuid.New()
+	initialFullSync := s.fullSync
+	s.status.Store(&SyncStatus{FullSync: &initialFullSync})
 
 	// Wire budget reset to rate tracker window resets.
 	for h, rt := range rateTrackers {
@@ -439,7 +447,7 @@ func (s *Syncer) Start(ctx context.Context) {
 		s.startupRepoSyncTimes = oldest
 		s.runMu.Unlock()
 		if s.AutomaticSyncEnabled() {
-			s.runOnceWithSlot(startMerged, false, nil, nil, retry, false)
+			s.runOnceWithSlot(startMerged, false, nil, nil, retry, false, 0)
 		}
 		if archiveReady != nil {
 			close(archiveReady)

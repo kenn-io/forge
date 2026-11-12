@@ -785,12 +785,16 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	database := dbtest.Open(t)
 
 	syncReachedGitHub := make(chan struct{})
+	releaseSync := make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(releaseSync) })
 	var syncReachedGitHubOnce sync.Once
 	mock := &serverfake.MockGH{
 		ListOpenPullRequestsFn: func(
 			_ context.Context, _, _ string,
 		) ([]*gh.PullRequest, error) {
 			syncReachedGitHubOnce.Do(func() { close(syncReachedGitHub) })
+			<-releaseSync
 			return nil, nil
 		},
 	}
@@ -815,6 +819,10 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+	var receipt ghclient.FullSyncReceipt
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &receipt))
+	require.Equal(syncer.Status().FullSync.InstanceID, receipt.InstanceID)
+	require.Positive(receipt.Generation)
 
 	select {
 	case <-syncReachedGitHub:
@@ -822,6 +830,8 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 		require.Fail("expected sync to reach GitHub despite request context cancellation")
 	}
 
+	require.Less(syncer.Status().FullSync.SettledGeneration, receipt.Generation)
+	releaseOnce.Do(func() { close(releaseSync) })
 	repos, err := database.ListRepos(t.Context())
 	require.NoError(err)
 	require.Len(repos, 1)

@@ -3840,6 +3840,48 @@ components:
         - sessions
         - restart_required
       type: object
+    FullSyncReceipt:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FullSyncReceipt.json
+          format: uri
+          readOnly: true
+          type: string
+        generation:
+          format: int64
+          minimum: 0
+          type: integer
+        instance_id:
+          format: uuid
+          type: string
+      required:
+        - instance_id
+        - generation
+      type: object
+    FullSyncStatus:
+      additionalProperties: false
+      properties:
+        instance_id:
+          format: uuid
+          type: string
+        last_error:
+          type: string
+        settled_generation:
+          format: int64
+          minimum: 0
+          type: integer
+        successful_generation:
+          format: int64
+          minimum: 0
+          type: integer
+      required:
+        - instance_id
+        - settled_generation
+        - successful_generation
+      type: object
     GetPullsInputBody:
       additionalProperties: false
       properties:
@@ -10786,6 +10828,8 @@ components:
         detail_refresh_overdue:
           format: int64
           type: integer
+        full_sync:
+          $ref: "#/components/schemas/FullSyncStatus"
         git_access:
           items:
             $ref: "#/components/schemas/GitAccessProblem"
@@ -29040,6 +29084,10 @@ paths:
             type: array
       responses:
         "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FullSyncReceipt"
           description: Accepted
         default:
           content:

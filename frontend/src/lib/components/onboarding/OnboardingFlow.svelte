@@ -85,7 +85,6 @@
   let configureBusy = $state(false);
   let configureError = $state<string | null>(null);
   let syncStartIssued = $state(false);
-  let syncAccepted = false;
   let syncFinishing = $state(false);
   let syncError = $state<string | null>(null);
 
@@ -295,7 +294,6 @@
       if (syncStartIssued) return;
       yield* Effect.sync(() => {
         syncStartIssued = true;
-        syncAccepted = false;
         syncError = null;
       });
       let triggerFailed = false;
@@ -303,23 +301,14 @@
         Effect.catch((failure) =>
           Effect.sync(() => {
             triggerFailed = true;
-            syncError = stores.sync.getSyncState()?.last_error || errorMessage(failure) || readErrorMessage(failure, "failed to trigger sync");
+            syncError = failure.operation === "wait for sync"
+              ? readErrorMessage(failure, "failed to sync")
+              : stores.sync.getSyncState()?.last_error || errorMessage(failure) || readErrorMessage(failure, "failed to trigger sync");
           }),
         ),
       );
       if (triggerFailed) return;
-      syncAccepted = true;
-      const state = stores.sync.getSyncState();
-      if (!state?.running) {
-        const lastError = state?.last_error;
-        if (lastError) {
-          yield* Effect.sync(() => {
-            syncError = lastError;
-          });
-        } else if (state?.last_run_at) {
-          yield* finishSyncProgram();
-        }
-      }
+      yield* finishSyncProgram();
     });
   }
 
@@ -393,15 +382,6 @@
         }),
       ),
     );
-  }
-
-  function finishSync(): void {
-    pullsExecution?.interrupt();
-    pullsExecution = runtime.runCommand(finishSyncProgram(), {
-      operation: "finish onboarding sync",
-      safeContext: {},
-      onFailure: () => {},
-    });
   }
 
   function retryPullLoad(): void {
@@ -559,14 +539,7 @@
 
   onMount(() => {
     onStart();
-    const unsubscribe = stores.sync.subscribeSyncComplete(() => {
-      if (phase !== "sync" || !syncAccepted) return;
-      const state = stores.sync.getSyncState();
-      if (state?.last_error) syncError = state.last_error;
-      else finishSync();
-    });
     if (phase === "sync") startSync();
-    return unsubscribe;
   });
 
   onDestroy(() => {

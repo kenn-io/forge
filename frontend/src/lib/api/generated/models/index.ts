@@ -308,6 +308,8 @@ export * from "./fleetHub.ts";
 export * from "./fleetMember.ts";
 export * from "./fleetSessions.ts";
 export * from "./fleetSettingsResponse.ts";
+export * from "./fullSyncReceipt.ts";
+export * from "./fullSyncStatus.ts";
 export * from "./getArchiveReportParams.ts";
 export * from "./getArchiveSnapshotIssueScope.ts";
 export * from "./getArchiveSnapshotParams.ts";

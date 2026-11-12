@@ -43,6 +43,13 @@ export const schemaConstraints = {
   FederationDiffDescriptorRequest: {
     pull_number: { minimum: 1 },
   },
+  FullSyncReceipt: {
+    generation: { minimum: 0 },
+  },
+  FullSyncStatus: {
+    settled_generation: { minimum: 0 },
+    successful_generation: { minimum: 0 },
+  },
   ItemIdentity: {
     number: { minimum: 1 },
   },

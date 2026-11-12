@@ -64,10 +64,6 @@ export const schemaConstraints = {
   SyncSettingsUpdate: {
     budget_per_hour: { minimum: 50, maximum: 15000 },
   },
-  SyncStatus: {
-    accepted_full_syncs: { minimum: 0 },
-    completed_full_syncs: { minimum: 0 },
-  },
   Terminal: {
     retained_sessions: { minimum: 0, maximum: 100 },
   },

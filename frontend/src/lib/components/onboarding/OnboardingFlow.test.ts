@@ -2,10 +2,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../../api/types.js";
-import { ApiProblemError } from "../../api/effect-errors.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
-import type { SyncReadError } from "../../stores/sync-workflow.js";
+import { createSyncStore } from "../../stores/sync.svelte.js";
 import {
   createdWorkspaceRef,
   resetWorkspaceCreatePendingForTest,
@@ -88,7 +87,7 @@ function storeFixture(
     configured?: boolean;
     pulls?: PullRequest[];
     pullsError?: string | null;
-    syncTrigger?: Effect.Effect<void, SyncReadError>;
+    syncTrigger?: Effect.Effect<void, Error>;
   } = {},
 ) {
   const pulls = options.pulls ?? [pullRequest()];
@@ -96,10 +95,9 @@ function storeFixture(
   const setConfiguredRepos = vi.spyOn(settings, "setConfiguredRepos");
   if (options.configured) settings.setConfiguredRepos([configuredRepo()]);
   const triggerSync = vi.fn();
-  const triggerOnboardingSyncEffect = vi.fn(() =>
+  const triggerSyncEffect = vi.fn(() =>
     Effect.sync(triggerSync).pipe(Effect.andThen(options.syncTrigger ?? Effect.void)),
   );
-  let syncComplete = () => {};
   const loadPulls = vi.fn();
   const stores = {
     settings,
@@ -111,11 +109,9 @@ function storeFixture(
         last_error: "",
       }),
       triggerSync,
-      triggerOnboardingSyncEffect,
-      subscribeSyncComplete: (fn: () => void) => {
-        syncComplete = fn;
-        return () => {};
-      },
+      triggerSyncEffect,
+      triggerOnboardingSyncEffect: triggerSyncEffect,
+      subscribeSyncComplete: () => () => {},
     },
     pulls: {
       loadPulls,
@@ -125,15 +121,7 @@ function storeFixture(
     },
   } as unknown as StoreInstances;
   const configureExternally = () => settings.setConfiguredRepos([configuredRepo()]);
-  return {
-    stores,
-    setConfiguredRepos,
-    triggerSync,
-    triggerOnboardingSyncEffect,
-    loadPulls,
-    configureExternally,
-    syncComplete: () => syncComplete(),
-  };
+  return { stores, setConfiguredRepos, triggerSync, loadPulls, configureExternally };
 }
 
 function renderFlow(stores: StoreInstances) {
@@ -210,7 +198,6 @@ describe("OnboardingFlow", () => {
   });
 
   afterEach(async () => {
-    vi.useRealTimers();
     if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
     runtimeCapture.current = undefined;
     resetWorkspaceCreatePendingForTest();
@@ -430,69 +417,45 @@ describe("OnboardingFlow", () => {
   });
 
   it("offers a retry when the sync trigger fails after onboarding starts", async () => {
-    const fixture = storeFixture({
-      configured: true,
-      syncTrigger: Effect.yieldNow.pipe(
-        Effect.andThen(
-          Effect.fail(
-            new ApiProblemError({
-              operation: "POST /sync",
-              problem: {
-                code: "serviceUnavailable",
-                detail: "sync endpoint unavailable",
-                status: 503,
-                title: "Unavailable",
-                type: "about:blank",
-              },
-            }),
-          ),
-        ),
-      ),
-    });
-    renderFlow(fixture.stores);
+    renderFlow(
+      storeFixture({
+        configured: true,
+        syncTrigger: Effect.yieldNow.pipe(Effect.andThen(Effect.fail(new Error("sync endpoint unavailable")))),
+      }).stores,
+    );
 
     await waitFor(() => {
       expect(screen.getByRole("alert").textContent).toContain("sync endpoint unavailable");
     });
     expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy();
-    fixture.syncComplete();
-    expect(fixture.loadPulls).not.toHaveBeenCalled();
   });
 
-  it("retries a failed first sync and advances after completion", async () => {
+  it("recovers a transient first sync failure without a click", async () => {
+    const originalFetch = globalThis.fetch;
+    let attempts = 0;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/sync" && request.method === "POST") {
+        attempts++;
+        return attempts === 1 ? Promise.reject(new Error("response lost")) : Promise.resolve(Response.json({}));
+      }
+      if (path === "/api/v1/sync/status")
+        return Promise.resolve(
+          Response.json({ running: false, last_run_at: attempts > 1 ? "2026-08-02T12:01:00Z" : "", last_error: "" }),
+        );
+      if (path === "/api/v1/rate-limits")
+        return Promise.resolve(Response.json({ provider_pools: {}, local_ceilings: {} }));
+      return originalFetch(input, init);
+    });
     const fixture = storeFixture({ configured: true });
-    fixture.triggerOnboardingSyncEffect.mockReturnValueOnce(
-      Effect.fail(
-        new ApiProblemError({
-          operation: "POST /sync",
-          problem: {
-            code: "serviceUnavailable",
-            detail: "sync unavailable",
-            status: 503,
-            title: "Unavailable",
-            type: "about:blank",
-          },
-        }),
-      ),
-    );
-    vi.spyOn(fixture.stores.sync, "getSyncState").mockReturnValue({ running: true, last_run_at: "", last_error: "" });
+    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+    fixture.stores.sync = createSyncStore({ runtime: runtimeCapture.current });
     renderFlow(fixture.stores);
-    await fireEvent.click(await screen.findByRole("button", { name: "Retry sync" }));
-    await waitFor(() => expect(fixture.triggerOnboardingSyncEffect).toHaveBeenCalledTimes(2));
-    fixture.syncComplete();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
-  });
-
-  it("waits for trigger acceptance before using a completion", async () => {
-    const accepted = Promise.withResolvers<void>();
-    const fixture = storeFixture({ configured: true, syncTrigger: Effect.promise(() => accepted.promise) });
-    renderFlow(fixture.stores);
-    await waitFor(() => expect(fixture.triggerSync).toHaveBeenCalledOnce());
-    fixture.syncComplete();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(fixture.loadPulls).not.toHaveBeenCalled();
-    accepted.resolve();
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy(), {
+      timeout: 5000,
+    });
+    expect(attempts).toBe(2);
   });
 
   it("starts sync when repositories become configured while onboarding remains mounted", async () => {

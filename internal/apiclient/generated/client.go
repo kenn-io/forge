@@ -70998,8 +70998,6 @@ type SyncSettingsUpdate struct {
 type SyncStatus struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                  *string                  `json:"$schema,omitempty"`
-	AcceptedFullSyncs       *int64                   `json:"accepted_full_syncs,omitempty"`
-	CompletedFullSyncs      *int64                   `json:"completed_full_syncs,omitempty"`
 	CurrentRepo             *string                  `json:"current_repo,omitempty"`
 	DetailRefreshOverdue    *int64                   `json:"detail_refresh_overdue,omitempty"`
 	GitAccess               []GitAccessProblem       `json:"git_access,omitempty"`

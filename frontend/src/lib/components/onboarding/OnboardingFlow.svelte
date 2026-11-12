@@ -32,7 +32,6 @@
   import { githubAccount, resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
   import { recordWorkspaceCreated } from "../../stores/workspace-create-pending.svelte.js";
   import { createDefaultWorkspaceTarget } from "../../stores/workspace-target.svelte.js";
-  import { readSyncErrorMessage } from "../../stores/sync.svelte.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
   import type { StoreInstances } from "../../types.js";
   import ProviderReadinessStep from "./ProviderReadinessStep.svelte";
@@ -84,7 +83,7 @@
 
   let configureBusy = $state(false);
   let configureError = $state<string | null>(null);
-  let syncStartState = $state<"idle" | "pending" | "admitted" | "failed">("idle");
+  let syncStartIssued = $state(false);
   let syncFinishing = $state(false);
   let syncError = $state<string | null>(null);
 
@@ -291,30 +290,26 @@
 
   function startSyncProgram(): Effect.Effect<void, never, AppServices> {
     return Effect.gen(function* () {
-      if (syncStartState !== "idle") return;
+      if (syncStartIssued) return;
       yield* Effect.sync(() => {
-        syncStartState = "pending";
+        syncStartIssued = true;
         syncError = null;
       });
-      let failed = false;
+      let triggerFailed = false;
       yield* stores.sync.triggerOnboardingSyncEffect().pipe(
-        Effect.matchEffect({ onFailure: (failure) =>
+        Effect.catch((failure) =>
           Effect.sync(() => {
-            syncStartState = "failed";
-            syncError = readSyncErrorMessage(failure, "failed to trigger sync");
-            failed = true;
+            triggerFailed = true;
+            syncError = stores.sync.getSyncState()?.last_error || errorMessage(failure);
           }),
-          onSuccess: () => Effect.void,
-        }),
+        ),
       );
-      if (failed) return;
-      yield* Effect.sync(() => { syncStartState = "admitted"; });
+      if (triggerFailed) return;
       const state = stores.sync.getSyncState();
       if (!state?.running) {
         const lastError = state?.last_error;
         if (lastError) {
           yield* Effect.sync(() => {
-            syncStartState = "failed";
             syncError = lastError;
           });
         } else if (state?.last_run_at) {
@@ -334,7 +329,7 @@
   }
 
   function retrySync(): void {
-    syncStartState = "idle";
+    syncStartIssued = false;
     syncError = null;
     startSync();
   }
@@ -377,7 +372,7 @@
   }
 
   function finishSyncProgram(): Effect.Effect<void, never, AppServices> {
-    if (syncFinishing || syncStartState !== "admitted") return Effect.void;
+    if (syncFinishing) return Effect.void;
     return Effect.sync(() => {
       syncFinishing = true;
     }).pipe(
@@ -561,12 +556,9 @@
   onMount(() => {
     onStart();
     const unsubscribe = stores.sync.subscribeSyncComplete(() => {
-      if (phase !== "sync" || syncStartState !== "admitted") return;
+      if (phase !== "sync") return;
       const state = stores.sync.getSyncState();
-      if (state?.last_error) {
-        syncStartState = "failed";
-        syncError = state.last_error;
-      }
+      if (state?.last_error) syncError = state.last_error;
       else finishSync();
     });
     if (phase === "sync") startSync();

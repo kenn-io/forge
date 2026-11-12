@@ -71,21 +71,21 @@ type SnapshotItem struct {
 
 type SnapshotPullRequest struct {
 	SnapshotItem
-	AuthorAccountType    *string            `json:"author_account_type,omitempty" doc:"Included for GitHub when reported; absent for other providers."`
-	Activity             []SnapshotActivity `json:"activity,omitzero"`
-	ClosedBy             *string            `json:"closed_by,omitempty"`
-	Comments             []SnapshotComment  `json:"comments,omitzero" doc:"For terminal pull requests, comments by the author or MEMBER/OWNER/COLLABORATOR accounts."`
-	Draft                bool               `json:"draft"`
-	HeadSHA              string             `json:"head_sha"`
-	HeadBranch           string             `json:"head_branch"`
-	BaseBranch           string             `json:"base_branch"`
-	HeadInSameRepository *bool              `json:"head_in_same_repository" doc:"Null when either repository identity is unavailable or the head identity is stale; false means a known different repository."`
-	Additions            *int               `json:"additions"`
-	Deletions            *int               `json:"deletions"`
-	ChangedFiles         *int               `json:"changed_files"`
-	ReviewState          string             `json:"review_state"`
-	CheckState           string             `json:"check_state"`
-	MergeableState       string             `json:"mergeable_state"`
+	LastAuthorAction     *SnapshotAction   `json:"last_author_action,omitempty"`
+	LastMaintainerAction *SnapshotAction   `json:"last_maintainer_action,omitempty"`
+	ClosedBy             *string           `json:"closed_by,omitempty"`
+	Comments             []SnapshotComment `json:"comments,omitzero" doc:"For terminal pull requests, comments by the author or MEMBER/OWNER accounts."`
+	Draft                bool              `json:"draft"`
+	HeadSHA              string            `json:"head_sha"`
+	HeadBranch           string            `json:"head_branch"`
+	BaseBranch           string            `json:"base_branch"`
+	HeadInSameRepository *bool             `json:"head_in_same_repository" doc:"Null when either repository identity is unavailable or the head identity is stale; false means a known different repository."`
+	Additions            *int              `json:"additions"`
+	Deletions            *int              `json:"deletions"`
+	ChangedFiles         *int              `json:"changed_files"`
+	ReviewState          string            `json:"review_state"`
+	CheckState           string            `json:"check_state"`
+	MergeableState       string            `json:"mergeable_state"`
 	// RequestedReviewers is omitted when the provider never reported the
 	// list, and "[]" when it confirmed an empty one.
 	RequestedReviewers []string `json:"requested_reviewers,omitzero"`
@@ -99,17 +99,13 @@ type SnapshotPullRequest struct {
 	Reviews               []SnapshotReview `json:"reviews"`
 	// Gaps includes merge_status_observation_time_unknown when
 	// MergeStatusObservedAt is null.
-	Gaps []string `json:"gaps" doc:"Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author. Includes unresolved_pull_request_reference when a same-repository reference to a root has an uncached source; the relation appears once the source is cached."`
+	Gaps []string `json:"gaps" doc:"Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author."`
 }
 
-type SnapshotActivity struct {
-	Kind             string    `json:"kind"`
-	Actor            string    `json:"actor"`
-	ActorAccountType *string   `json:"actor_account_type,omitempty"`
-	ActorAssociation *string   `json:"actor_association,omitempty"`
-	Subject          string    `json:"subject,omitempty"`
-	SubjectType      *string   `json:"subject_type,omitempty"`
-	OccurredAt       time.Time `json:"occurred_at"`
+type SnapshotAction struct {
+	Kind       string    `json:"kind"`
+	Actor      string    `json:"actor"`
+	OccurredAt time.Time `json:"occurred_at"`
 }
 
 type SnapshotCheck struct {

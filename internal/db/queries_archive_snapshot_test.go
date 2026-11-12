@@ -70,11 +70,12 @@ func TestMergeRequestAuthorAccountTypeRefresh(t *testing.T) {
 	assert.Nil(t, got)
 }
 
-func TestSnapshotMeasurementCountsAuthorTypeOnlyForExpandedScope(t *testing.T) {
+func TestSnapshotMeasurementCountsFullContributorBodies(t *testing.T) {
 	database := openTestDB(t)
 	now := time.Now().UTC()
 	repoID := insertArchiveReportRepo(t, database, RepoIdentity{Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: "widget"})
-	mrID := insertArchiveReportMR(t, database, repoID, 1, "mr-1", "Title", "author", now)
+	id, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", AuthorAssociation: new("CONTRIBUTOR"), AuthorAccountType: new("User"), State: MergeRequestStateOpen, Body: strings.Repeat("x", 12000), CreatedAt: now, UpdatedAt: now})
+	require.NoError(t, err)
 	measure := func(recent bool) ArchiveReportMeasurement {
 		tx, err := database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
 		require.NoError(t, err)
@@ -83,28 +84,10 @@ func TestSnapshotMeasurementCountsAuthorTypeOnlyForExpandedScope(t *testing.T) {
 		require.NoError(t, err)
 		return value
 	}
-	beforeDefault, beforeExpanded := measure(false), measure(true)
-	_, err := database.WriteDB().ExecContext(t.Context(), `UPDATE forge_merge_requests SET author_account_type=? WHERE id=?`, "organization", mrID)
-	require.NoError(t, err)
-	assert.Equal(t, beforeDefault, measure(false), "default measurement ignores author account type")
-	assert.Equal(t, int64(10), measure(true).TextBytes-beforeExpanded.TextBytes)
-	old := now.Add(-45 * 24 * time.Hour)
-	closed := now.Add(-time.Hour)
-	original, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 2, Number: 2, Author: "author", State: MergeRequestStateClosed, CreatedAt: old, UpdatedAt: now, ClosedAt: &closed})
-	require.NoError(t, err)
-	merged, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 3, Number: 3, State: MergeRequestStateMerged, CreatedAt: old, UpdatedAt: now, MergedAt: &closed})
-	require.NoError(t, err)
-	_, err = database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 4, Number: 4, State: MergeRequestStateMerged, CreatedAt: old, UpdatedAt: now, MergedAt: &old})
-	require.NoError(t, err)
-	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{
-		{MergeRequestID: original, EventType: "issue_comment", Author: "author", Body: "Author", DedupeKey: "author", CreatedAt: now},
-		{MergeRequestID: original, EventType: "issue_comment", Author: "member", AuthorAssociation: new("MEMBER"), Body: "Member", DedupeKey: "member", CreatedAt: now},
-		{MergeRequestID: original, EventType: "issue_comment", Author: "owner", AuthorAssociation: new("OWNER"), Body: "Owner", DedupeKey: "owner", CreatedAt: now},
-		{MergeRequestID: original, EventType: "issue_comment", Author: "collaborator", AuthorAssociation: new("COLLABORATOR"), Body: "Collaborator", DedupeKey: "collaborator", CreatedAt: now},
-		{MergeRequestID: merged, EventType: "issue_comment", Author: "member", AuthorAssociation: new("MEMBER"), Body: "Member", DedupeKey: "merged-member", CreatedAt: now},
-		{MergeRequestID: original, EventType: "cross_referenced", DedupeKey: "reference", MetadataJSON: `{"source_type":"PullRequest","source_number":4,"is_cross_repository":false}`, CreatedAt: now},
-	}))
-	defaultSize, expandedSize := measure(false), measure(true)
-	assert.Equal(t, defaultSize.Records+14, expandedSize.Records)
-	assert.Greater(t, expandedSize.TextBytes, defaultSize.TextBytes)
+	before := measure(true)
+	assert.Greater(t, before.TextBytes, measure(false).TextBytes+int64(3700))
+	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: "author", Body: "comment", DedupeKey: "comment", CreatedAt: now}}))
+	after := measure(true)
+	assert.Greater(t, after.Records, before.Records)
+	assert.Greater(t, after.TextBytes, before.TextBytes)
 }

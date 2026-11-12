@@ -50,11 +50,11 @@ For the same resolved repository, `pull_request` and the archive snapshot's
 never `node_id`) as a JSON integer, and Bitbucket Cloud sets
 `bitbucket_repository_uuid` instead (`platform/repository_key.go::RepositoryKey`).
 
-Archive snapshot consumers use `pull_request_scope=recently_closed` to include open pull requests and those closed or merged within 30 days before `observed_at`. The scope also includes same-repository context one reference away from either end. References point from the mentioning pull request to the referenced pull request. Terminal pull requests without a close or merge time are excluded from the root window.
+Archive snapshot consumers use `pull_request_scope=recently_closed` to include open pull requests and those closed or merged within 30 days before `observed_at`. Relations point from the mentioning pull request to the referenced pull request, including references to pull requests outside that window without adding their rows.
 
-A root with a recorded same-repository PR reference whose source is absent from the cache has an `unresolved_pull_request_reference` gap. The relation appears once the source is cached.
+The scope includes full bodies for known non-bot contributors, and terminal pull request comments by their author and MEMBER/OWNER accounts. Unknown contributor classification leaves the body truncated and adds `contributor_classification_unknown`; comments with unknown roles add `comment_author_association_unknown`. GitHub bot authors receive a `[bot]` suffix in this scope. Comment bodies are limited to 2,048 bytes at a valid UTF-8 boundary.
 
-Terminal pull requests include comments by their author and MEMBER/OWNER/COLLABORATOR accounts. Omitted comments with unknown roles add `comment_author_association_unknown` to gaps. Comment bodies are limited to 2,048 bytes at a valid UTF-8 boundary. GitHub account type is included when reported; it remains absent for other providers.
+The scope reports the current closer and the latest author and maintainer actions. `closer_unknown`, `actor_role_unknown`, and `activity_incomplete` identify missing evidence. Actions include comments, reviews, assignments, and pushes; commit actions match the cached head SHA.
 
 Responses contain `card`, with null meaning not applicable. A card has
 `status` (`neutral`, `pending`, `success`, `warning`, `error`) and `summary`.

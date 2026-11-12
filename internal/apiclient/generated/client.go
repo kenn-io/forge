@@ -58344,7 +58344,7 @@ const (
 	ListActivityThreadEventsQueryItemTypePr    ListActivityThreadEventsQueryItemType = "pr"
 )
 
-// GetArchiveSnapshotQueryPullRequestScope Include open pull requests and those closed or merged within 30 days before observed_at, plus same-repository one-hop context in either direction. References point from the mentioning pull request to the referenced pull request.
+// GetArchiveSnapshotQueryPullRequestScope Include open pull requests and those closed or merged within 30 days before observed_at, with same-repository references in either direction, including references outside the window.
 type GetArchiveSnapshotQueryPullRequestScope string
 
 const (
@@ -61054,7 +61054,7 @@ type GetArchiveReportQuery struct {
 }
 
 type GetArchiveSnapshotQuery struct {
-	// PullRequestScope Include open pull requests and those closed or merged within 30 days before observed_at, plus same-repository one-hop context in either direction. References point from the mentioning pull request to the referenced pull request.
+	// PullRequestScope Include open pull requests and those closed or merged within 30 days before observed_at, with same-repository references in either direction, including references outside the window.
 	PullRequestScope *GetArchiveSnapshotQueryPullRequestScope `json:"pull_request_scope,omitempty"`
 
 	// IssueScope Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window.
@@ -71223,14 +71223,10 @@ type Snapshot struct {
 	Worktrees             []WorktreeSummary  `json:"worktrees"`
 }
 
-type SnapshotActivity struct {
-	Actor            string    `json:"actor"`
-	ActorAccountType *string   `json:"actor_account_type,omitempty"`
-	ActorAssociation *string   `json:"actor_association,omitempty"`
-	Kind             string    `json:"kind"`
-	OccurredAt       time.Time `json:"occurred_at"`
-	Subject          *string   `json:"subject,omitempty"`
-	SubjectType      *string   `json:"subject_type,omitempty"`
+type SnapshotAction struct {
+	Actor      string    `json:"actor"`
+	Kind       string    `json:"kind"`
+	OccurredAt time.Time `json:"occurred_at"`
 }
 
 type SnapshotCheck struct {
@@ -71293,13 +71289,9 @@ type SnapshotItem struct {
 }
 
 type SnapshotPullRequest struct {
-	Activity  []SnapshotActivity `json:"activity,omitempty"`
-	Additions *int64             `json:"additions"`
-	Assignees []string           `json:"assignees,omitempty"`
-	Author    string             `json:"author"`
-
-	// AuthorAccountType Included for GitHub when reported; absent for other providers.
-	AuthorAccountType *string         `json:"author_account_type,omitempty"`
+	Additions         *int64          `json:"additions"`
+	Assignees         []string        `json:"assignees,omitempty"`
+	Author            string          `json:"author"`
 	AuthorAssociation *string         `json:"author_association"`
 	BaseBranch        string          `json:"base_branch"`
 	Body              string          `json:"body"`
@@ -71310,7 +71302,7 @@ type SnapshotPullRequest struct {
 	ClosedAt          *time.Time      `json:"closed_at,omitempty"`
 	ClosedBy          *string         `json:"closed_by,omitempty"`
 
-	// Comments For terminal pull requests, comments by the author or MEMBER/OWNER/COLLABORATOR accounts.
+	// Comments For terminal pull requests, comments by the author or MEMBER/OWNER accounts.
 	Comments  []SnapshotComment `json:"comments,omitempty"`
 	CreatedAt time.Time         `json:"created_at"`
 	Deletions *int64            `json:"deletions"`
@@ -71319,7 +71311,7 @@ type SnapshotPullRequest struct {
 	DetailFetchedAt *time.Time `json:"detail_fetched_at"`
 	Draft           bool       `json:"draft"`
 
-	// Gaps Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author. Includes unresolved_pull_request_reference when a same-repository reference to a root has an uncached source; the relation appears once the source is cached.
+	// Gaps Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author.
 	Gaps       []string `json:"gaps"`
 	HeadBranch string   `json:"head_branch"`
 
@@ -71329,6 +71321,8 @@ type SnapshotPullRequest struct {
 	ID                    string           `json:"id"`
 	Labels                []string         `json:"labels"`
 	LastActivityAt        *time.Time       `json:"last_activity_at"`
+	LastAuthorAction      *SnapshotAction  `json:"last_author_action,omitempty"`
+	LastMaintainerAction  *SnapshotAction  `json:"last_maintainer_action,omitempty"`
 	MergeStatusObservedAt *time.Time       `json:"merge_status_observed_at"`
 	MergeableState        string           `json:"mergeable_state"`
 	Number                int64            `json:"number"`

@@ -10094,23 +10094,15 @@ components:
         - sessions
         - workspaces
       type: object
-    SnapshotActivity:
+    SnapshotAction:
       additionalProperties: false
       properties:
         actor:
-          type: string
-        actor_account_type:
-          type: string
-        actor_association:
           type: string
         kind:
           type: string
         occurred_at:
           format: date-time
-          type: string
-        subject:
-          type: string
-        subject_type:
           type: string
       required:
         - kind
@@ -10297,10 +10289,6 @@ components:
     SnapshotPullRequest:
       additionalProperties: false
       properties:
-        activity:
-          items:
-            $ref: "#/components/schemas/SnapshotActivity"
-          type: array
         additions:
           format: int64
           type:
@@ -10311,9 +10299,6 @@ components:
             type: string
           type: array
         author:
-          type: string
-        author_account_type:
-          description: Included for GitHub when reported; absent for other providers.
           type: string
         author_association:
           type:
@@ -10344,7 +10329,7 @@ components:
         closed_by:
           type: string
         comments:
-          description: For terminal pull requests, comments by the author or MEMBER/OWNER/COLLABORATOR accounts.
+          description: For terminal pull requests, comments by the author or MEMBER/OWNER accounts.
           items:
             $ref: "#/components/schemas/SnapshotComment"
           type: array
@@ -10365,7 +10350,7 @@ components:
         draft:
           type: boolean
         gaps:
-          description: Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author. Includes unresolved_pull_request_reference when a same-repository reference to a root has an uncached source; the relation appears once the source is cached.
+          description: Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author.
           items:
             type: string
           type: array
@@ -10389,6 +10374,10 @@ components:
           type:
             - string
             - "null"
+        last_author_action:
+          $ref: "#/components/schemas/SnapshotAction"
+        last_maintainer_action:
+          $ref: "#/components/schemas/SnapshotAction"
         merge_status_observed_at:
           format: date-time
           type:
@@ -14317,12 +14306,12 @@ paths:
     get:
       operationId: get-archive-snapshot
       parameters:
-        - description: Include open pull requests and those closed or merged within 30 days before observed_at, plus same-repository one-hop context in either direction. References point from the mentioning pull request to the referenced pull request.
+        - description: Include open pull requests and those closed or merged within 30 days before observed_at, with same-repository references in either direction, including references outside the window.
           explode: false
           in: query
           name: pull_request_scope
           schema:
-            description: Include open pull requests and those closed or merged within 30 days before observed_at, plus same-repository one-hop context in either direction. References point from the mentioning pull request to the referenced pull request.
+            description: Include open pull requests and those closed or merged within 30 days before observed_at, with same-repository references in either direction, including references outside the window.
             enum:
               - recently_closed
             type: string

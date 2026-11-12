@@ -139,7 +139,13 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 	issueIDs := map[int64]string{}
 	for _, row := range items {
 		repo := repos[row.RepoID]
-		body, cut := snapshotText(row.Body, 8192)
+		bodyLimit := 8192
+		knownBot := strings.Contains(strings.ToLower(row.Author), "[bot]") || (row.AuthorAccountType != nil && strings.EqualFold(*row.AuthorAccountType, "bot"))
+		classificationUnknown := !knownBot && (row.Author == "" || row.AuthorAssociation == nil || *row.AuthorAssociation == "" || (repo.Platform == string(platform.KindGitHub) && (row.AuthorAccountType == nil || *row.AuthorAccountType == "")))
+		if opts.PullRequestScope == "recently_closed" && row.Kind == "pull_request" && !classificationUnknown && !strings.Contains(strings.ToLower(row.Author), "[bot]") && !strings.EqualFold(*row.AuthorAssociation, "MEMBER") && !strings.EqualFold(*row.AuthorAssociation, "OWNER") && (row.AuthorAccountType == nil || !strings.EqualFold(*row.AuthorAccountType, "bot")) {
+			bodyLimit = snapshot.MaxBytes
+		}
+		body, cut := snapshotText(row.Body, bodyLimit)
 		labels := []string{}
 		if err := json.Unmarshal([]byte(row.LabelsJSON), &labels); err != nil {
 			return result, fmt.Errorf("decode cached labels: %w", err)
@@ -155,7 +161,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		if row.State != "open" {
 			item.ClosedAt = row.ClosedAt
-			if item.ClosedAt == nil {
+			if row.State == "merged" && row.MergedAt != nil {
 				item.ClosedAt = row.MergedAt
 			}
 		}
@@ -172,9 +178,11 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		mergeStatusObservedAt := minObservedAt(mergeStatusTimes)
 		pull := snapshot.SnapshotPullRequest{SnapshotItem: item, Draft: row.Draft, HeadSHA: row.HeadSHA, HeadBranch: row.HeadBranch, BaseBranch: row.BaseBranch, ChangedFiles: row.FilesChanged, ReviewState: row.ReviewDecision, CheckState: row.CIStatus, MergeableState: row.MergeableState, RequestedReviewers: db.ParseUserNamesJSON(row.ReviewersJSON), MergeStatusObservedAt: mergeStatusObservedAt, Checks: []snapshot.SnapshotCheck{}, Reviews: []snapshot.SnapshotReview{}, Gaps: []string{}}
 		if opts.PullRequestScope == "recently_closed" {
-			pull.AuthorAccountType = row.AuthorAccountType
-			if row.UnresolvedPullRequestReference {
-				pull.Gaps = append(pull.Gaps, "unresolved_pull_request_reference")
+			if classificationUnknown {
+				pull.Gaps = append(pull.Gaps, "contributor_classification_unknown")
+			}
+			if row.AuthorAccountType != nil && strings.EqualFold(*row.AuthorAccountType, "bot") && !strings.HasSuffix(strings.ToLower(pull.Author), "[bot]") {
+				pull.Author += "[bot]"
 			}
 			if row.CommentAuthorAssociationUnknown {
 				pull.Gaps = append(pull.Gaps, "comment_author_association_unknown")
@@ -237,16 +245,18 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		for _, row := range lifecycle {
 			pull := &result.PullRequests[pullPositions[row.MergeRequestID]]
-			if row.Kind == "reopened" {
-				pull.ClosedBy = nil
-			} else if terminal := terminalTimes[row.MergeRequestID]; row.Kind == pull.State && terminal != nil && row.OccurredAt.Equal(*terminal) && row.Actor != "" {
+			pull.ClosedBy = nil
+			if terminal := terminalTimes[row.MergeRequestID]; row.Kind == pull.State && terminal != nil && row.OccurredAt.Equal(*terminal) && row.Actor != "" {
 				pull.ClosedBy = new(row.Actor)
 			}
 		}
 		for i := range result.PullRequests {
 			pull := &result.PullRequests[i]
-			if pull.DetailFetchedAt == nil || (pull.State != "open" && pull.ClosedBy == nil) {
+			if pull.DetailFetchedAt == nil {
 				pull.Gaps = append(pull.Gaps, "activity_incomplete")
+			}
+			if pull.State != "open" && pull.ClosedBy == nil {
+				pull.Gaps = append(pull.Gaps, "closer_unknown")
 			}
 		}
 		activity, err := db.LoadArchiveSnapshotActivity(ctx, tx, mrIDs)
@@ -255,7 +265,23 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		for _, row := range activity {
 			pull := &result.PullRequests[pullPositions[row.MergeRequestID]]
-			pull.Activity = append(pull.Activity, snapshot.SnapshotActivity{Kind: row.Kind, Actor: row.Actor, ActorAccountType: row.ActorType, ActorAssociation: row.ActorAssociation, Subject: row.Subject, SubjectType: row.SubjectType, OccurredAt: row.OccurredAt.UTC()})
+			if row.Actor == "" {
+				if !slices.Contains(pull.Gaps, "actor_role_unknown") {
+					pull.Gaps = append(pull.Gaps, "actor_role_unknown")
+				}
+				continue
+			}
+			action := &snapshot.SnapshotAction{Kind: row.Kind, Actor: row.Actor, OccurredAt: row.OccurredAt.UTC()}
+			if strings.EqualFold(row.Actor, pull.Author) || strings.EqualFold(row.Actor+"[bot]", pull.Author) {
+				pull.LastAuthorAction = action
+			}
+			if row.ActorAssociation == nil || *row.ActorAssociation == "" {
+				if !slices.Contains(pull.Gaps, "actor_role_unknown") {
+					pull.Gaps = append(pull.Gaps, "actor_role_unknown")
+				}
+			} else if strings.EqualFold(*row.ActorAssociation, "MEMBER") || strings.EqualFold(*row.ActorAssociation, "OWNER") {
+				pull.LastMaintainerAction = action
+			}
 		}
 		comments, refs, err := db.LoadArchiveSnapshotPullEvidence(ctx, tx, repoIDs, mrIDs, result.ObservedAt)
 		if err != nil {
@@ -267,9 +293,10 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			pull.Comments = append(pull.Comments, snapshot.SnapshotComment{ID: pull.ID + "/comment/" + url.QueryEscape(row.Key), Author: row.Author, AuthorAssociation: row.AuthorAssociation, Body: body, BodyTruncated: cut, URL: row.URL, CreatedAt: row.CreatedAt.UTC()})
 		}
 		for _, ref := range refs {
-			target := &result.PullRequests[pullPositions[ref.TargetID]]
-			source := result.PullRequests[pullPositions[ref.SourceID]]
-			result.Relations = append(result.Relations, snapshot.SnapshotRelation{SourceID: source.ID, TargetID: target.ID, Kind: "pull_request_reference", EvidenceID: target.ID + "/reference/" + url.QueryEscape(ref.Key), URL: ref.URL, ObservedAt: ref.ObservedAt.UTC()})
+			repoID := snapshotRepositoryID(repos[ref.RepoID])
+			sourceID := repoID + ":pull_request:" + strconv.Itoa(ref.SourceNumber)
+			targetID := repoID + ":pull_request:" + strconv.Itoa(ref.TargetNumber)
+			result.Relations = append(result.Relations, snapshot.SnapshotRelation{SourceID: sourceID, TargetID: targetID, Kind: "pull_request_reference", EvidenceID: targetID + "/reference/" + url.QueryEscape(ref.Key), URL: ref.URL, ObservedAt: ref.ObservedAt.UTC()})
 		}
 	}
 	encoded, err := json.Marshal(result)

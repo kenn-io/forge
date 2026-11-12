@@ -5,7 +5,7 @@ import type { GetArchiveSnapshotIssueScope } from "./getArchiveSnapshotIssueScop
 import type { GetArchiveSnapshotPullRequestScope } from "./getArchiveSnapshotPullRequestScope.ts";
 
 export type GetArchiveSnapshotParams = {
-  /** Include open pull requests and those closed or merged within 30 days before observed_at, plus same-repository one-hop context in either direction. References point from the mentioning pull request to the referenced pull request. */
+  /** Include open pull requests and those closed or merged within 30 days before observed_at, with same-repository references in either direction, including references outside the window. */
   pull_request_scope?: GetArchiveSnapshotPullRequestScope;
   /** Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window. */
   issue_scope?: GetArchiveSnapshotIssueScope;

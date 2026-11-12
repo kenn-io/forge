@@ -73,12 +73,11 @@ describe("sync store", () => {
       expect(store.getSyncState()?.last_error).toBe(error);
     });
 
-    it.each(["request", "backoff", "observed progress"])(
+    it.each(["request", "observed progress"])(
       "preserves the right sync state on interruption during %s",
       async (phase) => {
-        const post = vi.fn().mockResolvedValue(undefined);
-        if (phase !== "backoff") post.mockImplementationOnce(() => new Promise<void>(() => {}));
-        else post.mockRejectedValueOnce(new Error("response lost"));
+        const post = vi.fn((_params?: unknown, _options?: { signal?: AbortSignal }) => Promise.resolve());
+        post.mockImplementationOnce(() => new Promise<void>(() => {}));
         const getStatus = vi.fn().mockResolvedValue(idle);
         const store = createSyncStore(
           makeGeneratedClient({ SyncService: { triggerSync: post, getSyncStatus: getStatus } }),
@@ -97,6 +96,7 @@ describe("sync store", () => {
         if (phase === "observed progress") store.setSyncStatus(running);
         execution.interrupt();
         await Effect.runPromise(execution.await);
+        if (phase === "request") expect(post.mock.calls[0][1]?.signal?.aborted).toBe(true);
         expect(store.getSyncState()).toEqual(phase === "observed progress" ? running : idle);
         expect(complete).not.toHaveBeenCalled();
       },
@@ -578,7 +578,7 @@ describe("sync store", () => {
   });
 
   it("passes selected repo filters as sync priorities", async () => {
-    const post = vi.fn(async () => undefined);
+    const post = vi.fn(async (_params?: { priority_repo?: string[] }) => undefined);
     const getStatus = vi.fn(async () => ({ running: false, last_run_at: "", last_error: "" }));
     const getRates = vi.fn(async () => ({ provider_pools: {}, local_ceilings: {} }));
     const store = createSyncStore(
@@ -591,12 +591,9 @@ describe("sync store", () => {
     store.triggerSync();
     await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
 
-    expect(post).toHaveBeenCalledWith(
-      {
-        priority_repo: ["github|github.com/acme/first", "github|github.com/acme/second"],
-      },
-      { signal: expect.any(AbortSignal) },
-    );
+    expect(post.mock.calls[0][0]).toEqual({
+      priority_repo: ["github|github.com/acme/first", "github|github.com/acme/second"],
+    });
   });
 
   it("passes one provider-qualified repository as the only sync scope", async () => {

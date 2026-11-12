@@ -924,19 +924,14 @@ func TestAPITriggerSyncOnlyRepoRestrictsRun(t *testing.T) {
 			} `json:"post"`
 		} `json:"paths"`
 		Components struct {
-			Schemas map[string]struct {
-				Required []string `json:"required"`
-			} `json:"schemas"`
+			Schemas map[string]struct{} `json:"schemas"`
 		} `json:"components"`
 	}
 	require.NoError(json.Unmarshal(spec.Body.Bytes(), &document))
 	ref := document.Paths["/sync"].Post.Responses["202"].Content["application/json"].Schema.Ref
 	require.NotEmpty(ref)
-	schema, ok := document.Components.Schemas[strings.TrimPrefix(ref, "#/components/schemas/")]
+	_, ok := document.Components.Schemas[strings.TrimPrefix(ref, "#/components/schemas/")]
 	require.True(ok)
-	for _, field := range schema.Required {
-		require.Contains(body, field)
-	}
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):

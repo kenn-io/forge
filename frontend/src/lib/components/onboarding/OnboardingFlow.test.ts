@@ -112,7 +112,6 @@ function storeFixture(
       }),
       triggerSync,
       triggerOnboardingSyncEffect: triggerSyncEffect,
-      subscribeSyncComplete: () => () => {},
     },
     pulls: {
       loadPulls,
@@ -773,11 +772,12 @@ describe("OnboardingFlow", () => {
     const fixture = storeFixture({ configured: true });
     if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
     const sync = createSyncStore({ runtime: runtimeCapture.current });
-    sync.setSyncStatus({ running: false });
+    sync.setSyncStatus({ running: false, last_error: "Earlier sync failed" });
     fixture.stores.sync = sync;
     renderFlow(fixture.stores);
     await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy());
     expect(posts).toBe(1);
+    expect(screen.getByRole("alert").textContent).toContain("Sync was accepted without a receipt. Retry sync.");
     expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
   });
 

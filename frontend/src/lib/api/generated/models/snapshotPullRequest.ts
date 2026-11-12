@@ -10,7 +10,7 @@ export interface SnapshotPullRequest {
   additions: number | null;
   assignees?: string[];
   author: string;
-  /** Omitted when the provider has not reported an account type. */
+  /** Included for GitHub when reported; absent for other providers. */
   author_account_type?: string;
   /** @nullable */
   author_association: string | null;
@@ -34,7 +34,7 @@ export interface SnapshotPullRequest {
    */
   detail_fetched_at: string | null;
   draft: boolean;
-  /** Includes comment_author_association_unknown when a non-author comment lacks role evidence and is omitted. */
+  /** Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author. */
   gaps: string[];
   head_branch: string;
   /**

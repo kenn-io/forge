@@ -78,7 +78,7 @@ schema migrations.
   and a blank one breaks `Scan` for every arm
   (`internal/db/queries_archive_snapshot.go::LoadArchiveSnapshotItems`).
 
-Migration `000096` reopens eligible completed pull request lookups in full GitHub archives once; author account types remain absent until hydration supplies them.
+Migration `000096` reopens eligible completed pull request lookups in full GitHub archives. It queues a one-time provider re-read for subsequent full archive passes; account types remain absent until then.
 
 ## Federation Spoke Preparation
 

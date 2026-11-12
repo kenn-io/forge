@@ -10121,6 +10121,7 @@ components:
             - string
             - "null"
         body:
+          description: Truncated to at most 2048 bytes at a valid UTF-8 boundary.
           type: string
         body_truncated:
           type: boolean
@@ -10285,7 +10286,7 @@ components:
         author:
           type: string
         author_account_type:
-          description: Omitted when the provider has not reported an account type.
+          description: Included for GitHub when reported; absent for other providers.
           type: string
         author_association:
           type:
@@ -10335,7 +10336,7 @@ components:
         draft:
           type: boolean
         gaps:
-          description: Includes comment_author_association_unknown when a non-author comment lacks role evidence and is omitted.
+          description: Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author.
           items:
             type: string
           type: array

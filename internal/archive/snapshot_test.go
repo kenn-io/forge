@@ -658,3 +658,26 @@ func TestSnapshotReferenceFromRecentSourceIncludesOlderTarget(t *testing.T) {
 		})
 	}
 }
+
+func TestSnapshotEmptyAuthorsDoNotMatch(t *testing.T) {
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "project")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	registry, err := platform.NewRegistry(newArchiveServiceProvider(ref.Platform, ref.Host))
+	require.NoError(t, err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	closed := now.Add(-time.Hour)
+	id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, State: db.MergeRequestStateClosed, CreatedAt: closed, UpdatedAt: now, ClosedAt: &closed})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{
+		{MergeRequestID: id, EventType: "issue_comment", Body: "Unknown author", DedupeKey: "unknown", CreatedAt: now},
+		{MergeRequestID: id, EventType: "issue_comment", AuthorAssociation: new("MEMBER"), Body: "Member", DedupeKey: "member", CreatedAt: now},
+	}))
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: closed, End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	require.Len(t, result.PullRequests[0].Comments, 1)
+	require.Equal(t, "Member", result.PullRequests[0].Comments[0].Body)
+	require.Contains(t, result.PullRequests[0].Gaps, "comment_author_association_unknown")
+}

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -56,6 +57,8 @@ INSERT INTO forge_archive_dataset_progress (repo_id,item_type,item_number,datase
  (1,'merge_request',5,'lookup',3,'unsupported',datetime('now')),
  (3,'merge_request',6,'lookup',3,'complete',datetime('now'));
 UPDATE forge_archive_dataset_progress SET next_cursor='cursor',page_count=7,observed_count=8,attempt_count=2 WHERE repo_id=3;`)
+		require.NoError(t, err)
+		_, err = raw.ExecContext(t.Context(), `UPDATE forge_merge_requests SET closed_at=? WHERE id=1`, time.Now().UTC().Add(-15*24*time.Hour))
 		require.NoError(t, err)
 	})
 	d, err := Open(path)

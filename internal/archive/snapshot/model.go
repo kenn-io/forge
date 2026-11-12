@@ -71,7 +71,7 @@ type SnapshotItem struct {
 
 type SnapshotPullRequest struct {
 	SnapshotItem
-	AuthorAccountType    *string           `json:"author_account_type,omitempty" doc:"Omitted when the provider has not reported an account type."`
+	AuthorAccountType    *string           `json:"author_account_type,omitempty" doc:"Included for GitHub when reported; absent for other providers."`
 	Comments             []SnapshotComment `json:"comments,omitzero" doc:"For terminal pull requests, comments by the author or MEMBER/OWNER accounts."`
 	Draft                bool              `json:"draft"`
 	HeadSHA              string            `json:"head_sha"`
@@ -97,7 +97,7 @@ type SnapshotPullRequest struct {
 	Reviews               []SnapshotReview `json:"reviews"`
 	// Gaps includes merge_status_observation_time_unknown when
 	// MergeStatusObservedAt is null.
-	Gaps []string `json:"gaps" doc:"Includes comment_author_association_unknown when a non-author comment lacks role evidence and is omitted."`
+	Gaps []string `json:"gaps" doc:"Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author."`
 }
 
 type SnapshotCheck struct {
@@ -122,7 +122,7 @@ type SnapshotComment struct {
 	ID                string    `json:"id"`
 	Author            string    `json:"author"`
 	AuthorAssociation *string   `json:"author_association"`
-	Body              string    `json:"body"`
+	Body              string    `json:"body" doc:"Truncated to at most 2048 bytes at a valid UTF-8 boundary."`
 	BodyTruncated     bool      `json:"body_truncated"`
 	URL               string    `json:"url"`
 	CreatedAt         time.Time `json:"created_at"`

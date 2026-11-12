@@ -6,6 +6,7 @@ export interface SnapshotComment {
   author: string;
   /** @nullable */
   author_association: string | null;
+  /** Truncated to at most 2048 bytes at a valid UTF-8 boundary. */
   body: string;
   body_truncated: boolean;
   created_at: string;

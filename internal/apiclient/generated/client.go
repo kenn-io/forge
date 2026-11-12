@@ -71231,13 +71231,15 @@ type SnapshotCheck struct {
 }
 
 type SnapshotComment struct {
-	Author            string    `json:"author"`
-	AuthorAssociation *string   `json:"author_association"`
-	Body              string    `json:"body"`
-	BodyTruncated     bool      `json:"body_truncated"`
-	CreatedAt         time.Time `json:"created_at"`
-	ID                string    `json:"id"`
-	URL               string    `json:"url"`
+	Author            string  `json:"author"`
+	AuthorAssociation *string `json:"author_association"`
+
+	// Body Truncated to at most 2048 bytes at a valid UTF-8 boundary.
+	Body          string    `json:"body"`
+	BodyTruncated bool      `json:"body_truncated"`
+	CreatedAt     time.Time `json:"created_at"`
+	ID            string    `json:"id"`
+	URL           string    `json:"url"`
 }
 
 type SnapshotCoverage struct {
@@ -71285,7 +71287,7 @@ type SnapshotPullRequest struct {
 	Assignees []string `json:"assignees,omitempty"`
 	Author    string   `json:"author"`
 
-	// AuthorAccountType Omitted when the provider has not reported an account type.
+	// AuthorAccountType Included for GitHub when reported; absent for other providers.
 	AuthorAccountType *string         `json:"author_account_type,omitempty"`
 	AuthorAssociation *string         `json:"author_association"`
 	BaseBranch        string          `json:"base_branch"`
@@ -71305,7 +71307,7 @@ type SnapshotPullRequest struct {
 	DetailFetchedAt *time.Time `json:"detail_fetched_at"`
 	Draft           bool       `json:"draft"`
 
-	// Gaps Includes comment_author_association_unknown when a non-author comment lacks role evidence and is omitted.
+	// Gaps Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author.
 	Gaps       []string `json:"gaps"`
 	HeadBranch string   `json:"head_branch"`
 

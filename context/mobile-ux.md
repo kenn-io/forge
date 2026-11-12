@@ -173,7 +173,10 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
 - Phone Activity, PR, and issue filters use the shared repository selector;
   preset management stays outside the phone workflow.
 - Those lists share one full-width search/filter trigger with repository
-  selection first; each view owns its filter content.
+  selection first; Activity owns its filter content.
+- Phone PR and issue filters must equal desktop's, including Group and View, and
+  narrow rows the same way; every surface renders the one shared menu, never a
+  phone copy. A parity browser test fails CI on drift (`frontend/src/lib/components/shared/list-filter-menus.ts::pullListFilterMenu`).
 
 ## Routing expectations
 

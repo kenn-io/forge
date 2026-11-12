@@ -1292,6 +1292,29 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(screen.getByText("Run tests").closest("li")?.textContent).toContain("pending");
   });
 
+  it("shows a shell command in code with its status on the icon", async () => {
+    await openChat({
+      messages: [
+        {
+          role: "tool",
+          text: "git status --short",
+          toolCallId: "t1",
+          status: "failed",
+          kind: "execute",
+          createdAt: "2026-09-28T21:09:00Z",
+        },
+        { role: "tool", text: "Read parser.go", toolCallId: "t2", status: "completed", kind: "read" },
+      ],
+    });
+    await fireEvent.click(screen.getByRole("button", { name: /^2 tools/ }));
+
+    const command = screen.getByRole("button", { name: /^failed git status --short$/ });
+    expect(command.querySelector("code")?.textContent).toBe("git status --short");
+    expect(command.querySelector("[title]")?.getAttribute("title")).toMatch(/2026/);
+    const read = screen.getByRole("button", { name: /^completed Read parser\.go$/ });
+    expect(read.querySelector("code")?.textContent).toBe("parser.go");
+  });
+
   it("reads Stopping and disables Stop until the turn ends", async () => {
     await openChat({ busy: true });
     expect(statusText()).toBe("Replying…");

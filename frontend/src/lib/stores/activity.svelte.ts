@@ -229,6 +229,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let subjectCursor = $state("");
   let requestedSubjectDepth = $state(1);
   let displayedSubjectDepth = $state(1);
+  let olderItemsPage: { cursor: string; depth: number } | undefined;
   let subjectPageScope: string | undefined;
   let activityEventCursor = $state("");
   let loadedThreadKeys = $state.raw<ReadonlySet<string>>(new Set());
@@ -341,6 +342,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const scope = activityProjectionScope(params);
     const generation = childProjectionInvalidationGeneration;
     const page = { cursor: subjectCursor, depth: requestedSubjectDepth };
+    olderItemsPage = page;
     runtime.runCommand(loadActivityEffect(params, generation, scope, page), {
       operation: "load older activity items",
       safeContext: {},
@@ -986,6 +988,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     itemActivityCapped = response.item_activity_capped ?? false;
     subjectCursor = response.next_subject_cursor ?? "";
     displayedSubjectDepth = depth;
+    requestedSubjectDepth = Math.max(requestedSubjectDepth, depth);
   }
 
   function projectActivitySnapshot(result: ActivityReadResponse, params: ActivityParams): void {
@@ -1246,7 +1249,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           if (
             page &&
             ownsProjection() &&
-            subjectCursor === page.cursor &&
+            olderItemsPage === page &&
             requestedSubjectDepth === depth &&
             displayedSubjectDepth < depth
           ) {

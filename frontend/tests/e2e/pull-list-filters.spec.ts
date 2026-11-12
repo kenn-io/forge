@@ -253,3 +253,35 @@ test("the Labels flyout requires, excludes, and clears each label", async ({ pag
   await expect(rows).toHaveCount(4);
   await expect(labelsRow).toContainText("Any");
 });
+
+test("a changing PR count leaves the open filter menu and its trigger in place", async ({ page }) => {
+  await mockApi(page);
+  let listSize = 9;
+  await page.route("**/api/v1/pulls**", async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() !== "GET" || url.pathname !== "/api/v1/pulls") {
+      await route.fallback();
+      return;
+    }
+    const body = Array.from({ length: listSize }, (_, index) => pull(index + 1, `Change ${index + 1}`));
+    listSize = 123;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.goto("/pulls");
+
+  const count = page.locator(".filter-bar .list-count-chip");
+  await expect(count).toHaveText("9 PRs");
+  await openPrFilters(page);
+  const trigger = page.locator(".filter-bar .kit-filter-dropdown__btn[aria-expanded='true']");
+  const panel = page.locator(".kit-filter-dropdown__panel");
+  const triggerBefore = await trigger.boundingBox();
+  const panelBefore = await panel.boundingBox();
+
+  // Involves me reloads the list from the server, which now has 123 PRs.
+  await panel.getByRole("button", { name: "Involves me" }).click();
+  await expect(count).toHaveText("123 PRs");
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+
+  expect(await trigger.boundingBox()).toEqual(triggerBefore);
+  expect(await panel.boundingBox()).toEqual(panelBefore);
+});

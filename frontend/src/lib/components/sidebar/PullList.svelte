@@ -8,7 +8,6 @@
   import type { AppExecution } from "../../app/runtime.js";
   import { getStores, getNavigate, getSidebar, getHostState } from "../../context.js";
   import {
-    Chip,
     FilterDropdown,
     ScrollBox,
     SidebarToggle,
@@ -18,6 +17,7 @@
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import PullItem from "./PullItem.svelte";
   import ListLoadMore from "./ListLoadMore.svelte";
+  import ListCountChip from "./ListCountChip.svelte";
   import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
   import ItemActionsMenu from "./ItemActionsMenu.svelte";
   import type { MenuAnchorPoint } from "@kenn-io/kit-ui";
@@ -634,9 +634,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="pull-list" onkeydown={handleSelectionKeys}>
   <div class="filter-bar" class:filter-bar--compact={useCompactFilters}>
-    <Chip size="xs" tone="muted" uppercase={false} class="list-count-chip">
-      {visiblePulls.length}{pulls.isListCapped() ? "+" : ""} PRs
-    </Chip>
+    <ListCountChip count={visiblePulls.length} capped={pulls.isListCapped()} noun="PRs" />
     <div class="state-toggle">
       {#each pullStateOptions as s (s)}
         <button
@@ -929,10 +927,6 @@
 
   .star-filter-btn--active {
     color: var(--accent-amber);
-  }
-
-  :global(.list-count-chip) {
-    flex-shrink: 0;
   }
 
   /* Diff focus: combine typographic mute on siblings + a continuous

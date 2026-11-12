@@ -13,11 +13,11 @@
   import { createRangeSelection, isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import ListLoadMore from "./ListLoadMore.svelte";
+  import ListCountChip from "./ListCountChip.svelte";
   import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
   import { labelFilterChoices, labelFilterSummary } from "../../utils/label-filter.js";
   import { cycleTriFilter, triFilterRow } from "../../utils/tri-filter.js";
   import {
-    Chip,
     FilterDropdown,
     ScrollBox,
     SidebarToggle,
@@ -395,9 +395,11 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="issue-list" onkeydown={handleSelectionKeys}>
   <div class="filter-bar" class:filter-bar--compact={useCompactFilters}>
-    <Chip size="xs" tone="muted" uppercase={false} class="list-count-chip">
-      {issues.getFilteredIssues().length}{issues.isIssueListCapped() ? "+" : ""} issues
-    </Chip>
+    <ListCountChip
+      count={issues.getFilteredIssues().length}
+      capped={issues.isIssueListCapped()}
+      noun="issues"
+    />
     <div class="state-toggle">
       {#each issueStateOptions as s (s)}
         <button
@@ -649,10 +651,6 @@
 
   .star-filter-btn--active {
     color: var(--accent-amber);
-  }
-
-  :global(.list-count-chip) {
-    flex-shrink: 0;
   }
 
   .state-message {

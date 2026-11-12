@@ -39,6 +39,23 @@ it.effect("preserves the generated problem body from a failed request", () =>
   }),
 );
 
+for (const problem of [{ code: "internalError" }, { code: "internalError", status: 403 }] as const) {
+  it.effect(`retains HTTP status and problem body ${JSON.stringify(problem)}`, () =>
+    Effect.gen(function* () {
+      const failure = yield* Effect.flip(
+        executeGeneratedRequest("load repositories", () =>
+          Promise.reject(new GeneratedProblemResponse(problem, new Response(null, { status: 504 }))),
+        ),
+      );
+      assert.strictEqual(failure._tag, "ApiProblemError");
+      if (failure._tag === "ApiProblemError") {
+        assert.strictEqual(failure.httpStatus, 504);
+        assert.deepStrictEqual(failure.problem, problem);
+      }
+    }),
+  );
+}
+
 it.effect("rejects an untyped generated error body at the API boundary", () =>
   Effect.gen(function* () {
     const failure = yield* Effect.flip(

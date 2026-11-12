@@ -95,8 +95,8 @@ it("recovers failed open searches", async () => {
   expect(screen.queryByRole("alert")).toBeNull();
 }, 10000);
 
-it.each([503, 403])(
-  "classifies a malformed %s response for open searches",
+it.each([503, 403, 504])(
+  "classifies a %s response for open searches",
   async (status) => {
     const api = createMockApiFetch();
     let pulls = 0;
@@ -104,14 +104,18 @@ it.each([503, 403])(
       if ((args[0] instanceof Request ? args[0].url : String(args[0])).includes("/pulls")) {
         pulls++;
         if (status === 403 || pulls === 1) {
-          return Promise.resolve(new Response("{", { status, headers: { "Content-Type": "application/json" } }));
+          return Promise.resolve(
+            status === 504
+              ? Response.json({ code: "internalError", status: 504 }, { status })
+              : new Response("{", { status, headers: { "Content-Type": "application/json" } }),
+          );
         }
       }
       return api.fetch(...args);
     });
     const { props, context } = setupSearch();
     render(WorkspaceItemSearch, { props, context });
-    if (status === 503) {
+    if (status !== 403) {
       await screen.findByRole("option", { name: /#55.*Refactor theme system/ }, { timeout: 5000 });
       expect(screen.queryByRole("alert")).toBeNull();
       expect(pulls).toBe(2);

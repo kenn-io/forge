@@ -18,7 +18,7 @@ export const executeGeneratedRequest = Effect.fn("GeneratedApi.execute")(functio
     try: (signal) => withRequestParent(parent, () => request(signal)),
     catch: (cause) =>
       cause instanceof GeneratedProblemResponse
-        ? new ApiProblemError({ operation, problem: cause.problem })
+        ? new ApiProblemError({ operation, problem: cause.problem, httpStatus: cause.response.status })
         : TransientTransportError.make({ operation, cause }),
   });
 });

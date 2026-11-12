@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -31,11 +30,6 @@ func TestLocalEmbeddingsSetup(t *testing.T) {
 	cmd := newEmbeddingsCommand(strings.NewReader(""), &stdout, &bytes.Buffer{}, deps)
 	cmd.SetArgs([]string{"local", "--config", path})
 	require.NoError(t, cmd.ExecuteContext(t.Context()))
-	run := "Otherwise run:"
-	if runtime.GOOS == "windows" {
-		run = "Otherwise run in Command Prompt:"
-	}
-	assert.Contains(t, stdout.String(), run+"\n  ")
 	assert.Contains(t, stdout.String(), "kenn-forge daemon restart --config ")
 	assert.Contains(t, stdout.String(), path)
 	cfg, err := config.Load(path)

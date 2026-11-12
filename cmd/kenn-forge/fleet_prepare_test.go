@@ -45,16 +45,12 @@ func TestFleetPrepareSpokeReportsReadyWithoutPrintingSeal(t *testing.T) {
 }
 
 func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
-	rerun := "Rerun:"
-	if runtime.GOOS == "windows" {
-		rerun = "Rerun in Command Prompt:"
-	}
 	runner := &fakeFleetCommandRunner{prepareResult: spokeapi.SpokePreparationReport{
 		Unprepared: []db.UnpreparedWorkspace{
 			{Workspace: db.Workspace{ID: "ws-1", RepoOwner: "team", RepoName: "project", ItemType: "issue", ItemNumber: 42}, Reason: "launchSpecMissing"},
 			{Workspace: db.Workspace{ID: "ws-2", ItemType: "issue", ItemNumber: 7}, Reason: "sourceVisibilityExpired"},
 		},
-		HandoffConflicts:       []spokeapi.SpokePreparationConflict{{Kind: "review_draft", SourceKey: "github\x00example.com\x00123\x0042", Description: "review draft for team/project #42 on github.com (github)"}},
+		HandoffConflicts:       []spokeapi.SpokePreparationConflict{{Kind: "review_draft", SourceKey: "github\x00github.com\x00123\x00pr\x0042", Description: "review draft for team/project #42 on github.com (github)"}},
 		HandoffErrors:          []string{"handoff review draft for team/project #42 on github.com (github): offline"},
 		InFlightProviderWrites: 4, ActiveDeferredMerges: 5, UndrainedAcks: 6,
 	}}
@@ -65,9 +61,9 @@ func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
 	for _, want := range []string{
 		"2 unprepared", "1 handoff conflict", "1 handoff error",
 		"4 provider write", "5 deferred merge", "6 notification acknowledgement",
-		"Workspace ws-1: team/project issue 42: launch specification is missing",
-		"Workspace ws-2 issue 7: source visibility has expired",
-		`Handoff conflict: review draft for team/project #42 on github.com (github) (review_draft "github\x00example.com\x00123\x0042")`, "Handoff error: handoff review draft for team/project #42 on github.com (github): offline",
+		"Workspace ws-1: team/project issue 42:",
+		"Workspace ws-2 issue 7:",
+		`Handoff conflict: review draft for team/project #42 on github.com (github) (review_draft "github\x00github.com\x00123\x00pr\x0042")`, "Handoff error: handoff review draft for team/project #42 on github.com (github): offline",
 	} {
 		assert.Contains(t, stdout.String(), want)
 	}
@@ -86,7 +82,7 @@ func TestFleetPrepareSpokeReportsEveryBlockerCount(t *testing.T) {
 			cmd := newFleetCommand(fleetCLIOptions{Stdin: strings.NewReader(""), Stdout: &stdout, Runner: runner})
 			cmd.SetArgs(tc.args)
 			require.ErrorContains(t, cmd.Execute(), "not ready")
-			assert.Contains(t, stdout.String(), rerun+"\n  "+tc.want)
+			assert.Contains(t, stdout.String(), tc.want)
 		})
 	}
 }

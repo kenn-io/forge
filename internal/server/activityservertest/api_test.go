@@ -1026,12 +1026,10 @@ func TestAPIListActivityAppliesTrackedRepoScopeBeforeAuthorLimit(t *testing.T) {
 
 func TestAPIListActivitySearchFindsParentsBeyondEventCap(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		count      int
-		limit      string
-		fullCapped bool
-		fullItems  int
-	}{{"page limit", 201, "&limit=200", true, 200}, {"safety cap", itemapi.ActivitySafetyCap + 1, "", true, itemapi.ActivitySafetyCap}} {
+		name  string
+		count int
+		limit string
+	}{{"page limit", 201, "&limit=200"}, {"safety cap", itemapi.ActivitySafetyCap + 1, ""}} {
 		t.Run(tc.name, func(t *testing.T) {
 			serverfake.RunParallelServerTest(t)
 			srv, database, _ := setupTestServer(t)
@@ -1069,8 +1067,8 @@ func TestAPIListActivitySearchFindsParentsBeyondEventCap(t *testing.T) {
 					}
 					assert.False(t, body.ItemActivityCapped)
 					if projection == "full" {
-						assert.Equal(t, tc.fullCapped, body.Capped)
-						assert.Len(t, body.Items, tc.fullItems)
+						assert.True(t, body.Capped)
+						assert.Len(t, body.Items, tc.count-1)
 					}
 				})
 			}

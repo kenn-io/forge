@@ -297,78 +297,71 @@ describe("activity subject paging", () => {
     await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
     expect(store.getActivityItems().find((item) => item.id === event.id)?.labels).toBeUndefined();
   });
-  it.each([
-    { collapsed: false, phone: false, capped: false },
-    { collapsed: false, phone: false, capped: true },
-  ])(
-    "keeps an older page through a poll ($collapsed, phone: $phone, capped: $capped)",
-    async ({ collapsed, phone, capped }) => {
-      vi.useFakeTimers();
-      const page = Promise.withResolvers<unknown>();
-      let pageRequested = false;
-      let polls = 0;
-      let pageReads = 0;
-      let snapshots = 0;
-      const projections: string[] = [];
-      const snapshotProjections: string[] = [];
-      const client = {
-        GET: vi.fn(
-          async (
-            path: string,
-            options?: { params?: { query?: { after?: string; subject_before?: string; projection?: string } } },
-          ) => {
-            if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-            const query = options?.params?.query;
-            if (query?.subject_before) {
-              pageRequested = true;
-              if (++pageReads > 1)
-                return {
-                  data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] },
-                  error: null,
-                };
-              return page.promise;
-            }
-            if (query?.after) {
-              polls++;
-              projections.push(query.projection ?? "");
-              return { data: { items: [], capped: capped && polls === 1, event_cursor: "polled" }, error: null };
-            }
-            if (query?.projection === "events") return { data: { items: [], capped: false }, error: null };
-            snapshotProjections.push(query?.projection ?? "");
-            snapshots++;
-            return {
-              data: {
-                items: [],
-                capped: false,
-                event_cursor: snapshots === 1 ? "snapshot" : "polled",
-                item_activity: [{ ...itemActivity(1), repo }],
-                item_activity_capped: true,
-                next_subject_cursor: "older",
-              },
-              error: null,
-            };
-          },
-        ),
-      } as unknown as GeneratedClient;
-      const store = createActivityStore({ client });
-      store.hydrateDefaults(settings(collapsed));
-      if (phone) store.setActivityPageLimit(500);
-      store.loadActivity();
-      await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
-      store.loadOlderItems();
-      await vi.waitFor(() => expect(pageRequested).toBe(true));
-      store.startActivityPolling();
-      await vi.waitFor(() => expect(store.getActivityEventCursor()).toBe("polled"));
-      page.resolve({ data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] }, error: null });
-      await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
-      expect(store.isLoadingOlderItems()).toBe(false);
-      await vi.advanceTimersByTimeAsync(15_000);
-      expect(polls).toBe(2);
-      expect(projections).toEqual(["events", "events"]);
-      if (capped) expect(snapshotProjections).toEqual(["full", "collapsed"]);
-      expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
-    },
-  );
+  it.each([false, true])("keeps an older page through a poll (capped: %s)", async (capped) => {
+    vi.useFakeTimers();
+    const page = Promise.withResolvers<unknown>();
+    let pageRequested = false;
+    let polls = 0;
+    let pageReads = 0;
+    let snapshots = 0;
+    const projections: string[] = [];
+    const snapshotProjections: string[] = [];
+    const client = {
+      GET: vi.fn(
+        async (
+          path: string,
+          options?: { params?: { query?: { after?: string; subject_before?: string; projection?: string } } },
+        ) => {
+          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+          const query = options?.params?.query;
+          if (query?.subject_before) {
+            pageRequested = true;
+            if (++pageReads > 1)
+              return {
+                data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] },
+                error: null,
+              };
+            return page.promise;
+          }
+          if (query?.after) {
+            polls++;
+            projections.push(query.projection ?? "");
+            return { data: { items: [], capped: capped && polls === 1, event_cursor: "polled" }, error: null };
+          }
+          if (query?.projection === "events") return { data: { items: [], capped: false }, error: null };
+          snapshotProjections.push(query?.projection ?? "");
+          snapshots++;
+          return {
+            data: {
+              items: [],
+              capped: false,
+              event_cursor: snapshots === 1 ? "snapshot" : "polled",
+              item_activity: [{ ...itemActivity(1), repo }],
+              item_activity_capped: true,
+              next_subject_cursor: "older",
+            },
+            error: null,
+          };
+        },
+      ),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(false));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(pageRequested).toBe(true));
+    store.startActivityPolling();
+    await vi.waitFor(() => expect(store.getActivityEventCursor()).toBe("polled"));
+    page.resolve({ data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] }, error: null });
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
+    expect(store.isLoadingOlderItems()).toBe(false);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(polls).toBe(2);
+    expect(projections).toEqual(["events", "events"]);
+    if (capped) expect(snapshotProjections).toEqual(["full", "collapsed"]);
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
+  });
   it("refreshes edits and deletions through a page loaded during the refresh", async () => {
     vi.useFakeTimers();
     const pending = Promise.withResolvers<unknown>();
@@ -1066,12 +1059,9 @@ describe("activity subject paging", () => {
     expect(store.isLoadingOlderItems()).toBe(false);
   });
 
-  it.each([
-    { outcome: "success", collapsed: true },
-    { outcome: "failure", collapsed: true },
-  ])(
-    "continues a requested page after a cursor-changing refresh and stale $outcome (collapsed: $collapsed)",
-    async ({ outcome, collapsed }) => {
+  it.each(["success", "failure"])(
+    "continues a requested page after a cursor-changing refresh and stale %s",
+    async (outcome) => {
       const refresh = Promise.withResolvers<unknown>();
       const stalePage = Promise.withResolvers<unknown>();
       const cursors: string[] = [];
@@ -1099,7 +1089,7 @@ describe("activity subject paging", () => {
         }),
       } as unknown as GeneratedClient;
       const store = createActivityStore({ client });
-      store.hydrateDefaults(settings(collapsed));
+      store.hydrateDefaults(settings(true));
       store.loadActivity();
       await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
       if (runtime === undefined) throw new Error("test runtime was not created");

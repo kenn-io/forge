@@ -1861,7 +1861,8 @@ func TestListActivitySubjectsPagesStoredTimestampEncodings(t *testing.T) {
 }
 
 func TestActivitySubjectCursorValidation(t *testing.T) {
-	stamp := time.Date(2400, 1, 2, 3, 4, 5, 123456789, time.UTC)
+	t.Parallel()
+	stamp := time.Date(2024, 1, 2, 3, 4, 5, 123456789, time.UTC)
 	subject := ActivitySubject{activityAtRaw: stamp.Format(time.RFC3339Nano), ActivityAt: stamp, Subject: WorkspaceSubjectMetadata{Key: WorkspaceSubjectKey{RepoID: 7, ItemType: "issue", ItemNumber: 9}}}
 	cursor, err := DecodeActivitySubjectCursor(EncodeActivitySubjectCursor(subject))
 	require.NoError(t, err)

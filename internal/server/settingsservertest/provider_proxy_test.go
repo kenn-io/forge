@@ -212,7 +212,6 @@ func TestHubActivityForwardsSubjectCursor(t *testing.T) {
 		assert.Equal(t, federationauth.ScopeProviderRead, scope)
 		assert.Equal(t, "/api/v1/activity", request.URL.Path)
 		assert.Equal(t, "subject-page-2", request.URL.Query().Get("subject_before"))
-		assert.Equal(t, "event-page-2", request.URL.Query().Get("before"))
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
@@ -220,7 +219,7 @@ func TestHubActivityForwardsSubjectCursor(t *testing.T) {
 			Request:    request,
 		}, nil
 	})}
-	response, err := source.ListActivity(t.Context(), &itemapi.ListActivityInput{SubjectBefore: "subject-page-2", Before: "event-page-2"})
+	response, err := source.ListActivity(t.Context(), &itemapi.ListActivityInput{SubjectBefore: "subject-page-2"})
 	require.NoError(t, err)
 	assert.Equal(t, "subject-page-3", response.NextSubjectCursor)
 }

@@ -885,7 +885,9 @@
         return { label: "Input", status: "waiting", tone: "input" };
       case "done": {
         const version = doneStateVersion(ws);
-        if (sortMode !== "agent-status" && version !== null && acknowledgedDoneStates[workspaceRowKey(ws)] === version) {
+        // The Agent status sort ranks by the server's state, so an
+        // acknowledged row keeps its place and only loses the badge.
+        if (version !== null && acknowledgedDoneStates[workspaceRowKey(ws)] === version) {
           return null;
         }
         return { label: "Done", status: "idle", tone: "done" };
@@ -955,7 +957,7 @@
       !workspaceOperationAvailable(ws, "terminalAttach")
     ) return;
     const doneVersion = doneStateVersion(ws);
-    if (sortMode !== "agent-status" && doneVersion !== null) {
+    if (doneVersion !== null) {
       acknowledgedDoneStates = {
         ...acknowledgedDoneStates,
         [workspaceRowKey(ws)]: doneVersion,

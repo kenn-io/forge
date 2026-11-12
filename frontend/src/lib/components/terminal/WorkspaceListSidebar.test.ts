@@ -19,6 +19,7 @@ import {
 } from "../../stores/workspace-repo-catalog.svelte.js";
 import { repositoryKeyToWire, type RepositoryKey } from "../../api/repository-key.js";
 import { getFlashes } from "../../stores/flash.svelte.js";
+import { workspaceListSortOptions } from "./workspaceListSort.js";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
@@ -2031,7 +2032,7 @@ describe("WorkspaceListSidebar", () => {
     await fireEvent.click(doneRow!);
 
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/done-newer-hook");
-    expect(doneRow?.querySelector(".agent-state")?.textContent).toContain("Done");
+    expect(doneRow?.querySelector(".agent-state")).toBeNull();
     expect(doneRow?.querySelector(".workspace-sort-time")?.getAttribute("datetime")).toBe("2026-05-13T12:00:00Z");
     expect(rowTitles(container)).toEqual([
       "approval",
@@ -2045,7 +2046,7 @@ describe("WorkspaceListSidebar", () => {
 
     await fireEvent.click(screen.getByTitle("Filter workspaces"));
     await fireEvent.click(screen.getByRole("button", { name: "Created" }));
-    expect(doneRow?.querySelector(".agent-state")?.textContent).toContain("Done");
+    expect(doneRow?.querySelector(".agent-state")).toBeNull();
   });
 
   it("uses item activity as the agent-status fallback timestamp", async () => {
@@ -2969,6 +2970,59 @@ describe("WorkspaceListSidebar", () => {
     render(WorkspaceListSidebar, { props: { selectedId: "" } });
     expect(await screen.findByText("Done")).toBeTruthy();
   });
+
+  // Every sort clears Done on open; none, including Agent status, may opt out.
+  it.each(workspaceListSortOptions.map((option) => option.value))(
+    "clears Done when its workspace is opened in the %s sort until the agent finishes again",
+    async (sort) => {
+      localStorage.setItem("kenn-forge:workspaceListSort", sort);
+      let agentStateUpdatedAt = "2026-07-28T12:00:00Z";
+      mockGet.mockImplementation(() =>
+        Promise.resolve({
+          data: {
+            workspaces: [
+              workspaceFixture({
+                id: "ws-done",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "acme",
+                name: "widget",
+                number: 9,
+                title: "done",
+                agentState: "done",
+                agentStateUpdatedAt,
+              }),
+              workspaceFixture({
+                id: "ws-working",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "acme",
+                name: "widget",
+                number: 8,
+                title: "working",
+                agentState: "working",
+              }),
+            ],
+          },
+        }),
+      );
+
+      const first = render(WorkspaceListSidebar, { props: { selectedId: "" } });
+      expect(await screen.findByLabelText("Agent done")).toBeTruthy();
+      const orderBefore = rowTitles(first.container);
+
+      await fireEvent.click(screen.getByText("done").closest<HTMLElement>(".ws-row")!);
+
+      expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-done");
+      expect(screen.queryByLabelText("Agent done")).toBeNull();
+      expect(rowTitles(first.container)).toEqual(orderBefore);
+
+      first.unmount();
+      agentStateUpdatedAt = "2026-07-28T12:05:00Z";
+      render(WorkspaceListSidebar, { props: { selectedId: "" } });
+      expect(await screen.findByLabelText("Agent done")).toBeTruthy();
+    },
+  );
 
   it("does not dismiss an unversioned completed agent state", async () => {
     mockGet.mockResolvedValue({

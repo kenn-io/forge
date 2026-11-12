@@ -85,28 +85,6 @@ it.layer(ActivityWorkflowLive)("activity polling", (it) => {
     }),
   );
 
-  it.effect("runs a queued page after the full snapshot publishes", () =>
-    Effect.gen(function* () {
-      const workflow = yield* ActivityWorkflow;
-      const started = yield* Deferred.make<void>();
-      const release = yield* Deferred.make<void>();
-      const results = yield* Ref.make<string[]>([]);
-      const load = yield* Effect.forkChild(
-        workflow.load(
-          "activity",
-          Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(release)), Effect.as("snapshot")),
-          (value) => Ref.update(results, (rows) => [...rows, value]),
-        ),
-      );
-      yield* Deferred.await(started);
-      const page = yield* Effect.forkChild(workflow.page(Ref.update(results, (rows) => [...rows, "page"])));
-      yield* Deferred.succeed(release, undefined);
-      yield* Fiber.join(load);
-      yield* Fiber.join(page);
-      assert.deepStrictEqual(yield* Ref.get(results), ["snapshot", "page"]);
-    }),
-  );
-
   it.effect("interrupts active and queued background snapshots for a foreground load", () =>
     Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;

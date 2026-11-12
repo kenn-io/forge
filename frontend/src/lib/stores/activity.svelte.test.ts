@@ -203,15 +203,15 @@ afterEach(async () => {
 });
 
 describe("activity subject paging", () => {
+  const repo = {
+    provider: "github",
+    platform_host: "github.com",
+    platform_repo_id: 1007,
+    repo_path: "acme/widgets",
+    owner: "acme",
+    name: "widgets",
+  };
   it("keeps later page demand when a queued reload fails", async () => {
-    const repo = {
-      provider: "github",
-      platform_host: "github.com",
-      platform_repo_id: 1007,
-      repo_path: "acme/widgets",
-      owner: "acme",
-      name: "widgets",
-    };
     const releaseCleanup = Promise.withResolvers<void>();
     const backgroundResponse = Promise.withResolvers<unknown>();
     let blockerStarted = false;
@@ -232,7 +232,13 @@ describe("activity subject paging", () => {
       if (reads === 3)
         return Promise.resolve({ error: { detail: "reload failed" }, response: new Response(null, { status: 422 }) });
       return Promise.resolve({
-        data: { items: [], item_activity: [{ ...itemActivity(1), repo }], next_subject_cursor: "older", capped: false },
+        data: {
+          items: [],
+          item_activity: [{ ...itemActivity(1), repo }],
+          item_activity_capped: true,
+          next_subject_cursor: "older",
+          capped: false,
+        },
         error: null,
       });
     });
@@ -291,14 +297,6 @@ describe("activity subject paging", () => {
   });
 
   it("skips a queued page when an earlier refresh already covers it", async () => {
-    const repo = {
-      provider: "github",
-      platform_host: "github.com",
-      platform_repo_id: 1007,
-      repo_path: "acme/widgets",
-      owner: "acme",
-      name: "widgets",
-    };
     const reload = Promise.withResolvers<unknown>();
     let firstReads = 0;
     let pageReads = 0;
@@ -313,7 +311,13 @@ describe("activity subject paging", () => {
       }
       if (++firstReads === 2) return reload.promise;
       return Promise.resolve({
-        data: { items: [], item_activity: [{ ...itemActivity(1), repo }], next_subject_cursor: "older", capped: false },
+        data: {
+          items: [],
+          item_activity: [{ ...itemActivity(1), repo }],
+          item_activity_capped: true,
+          next_subject_cursor: "older",
+          capped: false,
+        },
         error: null,
       });
     });
@@ -331,7 +335,13 @@ describe("activity subject paging", () => {
     await Promise.resolve();
     store.loadOlderItems();
     reload.resolve({
-      data: { items: [], item_activity: [{ ...itemActivity(1), repo }], next_subject_cursor: "older", capped: false },
+      data: {
+        items: [],
+        item_activity: [{ ...itemActivity(1), repo }],
+        item_activity_capped: true,
+        next_subject_cursor: "older",
+        capped: false,
+      },
       error: null,
     });
     await refresh.exit;
@@ -341,14 +351,6 @@ describe("activity subject paging", () => {
     expect(store.getActivityError()).toBeNull();
   });
   it.each([false, true])("loads new expanded threads only for collapsed projection: %s", async (collapsed) => {
-    const repo = {
-      provider: "github",
-      platform_host: "github.com",
-      platform_repo_id: 1007,
-      repo_path: "acme/widgets",
-      owner: "acme",
-      name: "widgets",
-    };
     let threadReads = 0;
     const get = vi.fn((path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
       if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
@@ -361,6 +363,7 @@ describe("activity subject paging", () => {
         data: {
           items: [],
           item_activity: [{ ...itemActivity(page ? 8 : 7), repo }],
+          item_activity_capped: !page,
           next_subject_cursor: page ? "" : "older",
           capped: false,
         },
@@ -378,14 +381,6 @@ describe("activity subject paging", () => {
     else expect(threadReads).toBe(0);
   });
   it("interrupts a queued page and background refresh when the search changes", async () => {
-    const repo = {
-      provider: "github",
-      platform_host: "github.com",
-      platform_repo_id: 1007,
-      repo_path: "acme/widgets",
-      owner: "acme",
-      name: "widgets",
-    };
     let refreshSignal: AbortSignal | undefined;
     let calls = 0;
     let pageCalls = 0;
@@ -409,6 +404,7 @@ describe("activity subject paging", () => {
             data: {
               items: [],
               item_activity: [{ ...itemActivity(1), repo }],
+              item_activity_capped: true,
               next_subject_cursor: "older",
               capped: false,
             },
@@ -437,14 +433,6 @@ describe("activity subject paging", () => {
     await refresh.exit;
   });
   it("finishes a pending reload before loading from its new cursor", async () => {
-    const repo = {
-      provider: "github",
-      platform_host: "github.com",
-      platform_repo_id: 1007,
-      repo_path: "acme/widgets",
-      owner: "acme",
-      name: "widgets",
-    };
     let releaseReload: ((value: unknown) => void) | undefined;
     let reloadSignal: AbortSignal | undefined;
     let firstReads = 0;
@@ -466,6 +454,7 @@ describe("activity subject paging", () => {
               data: {
                 items: [],
                 item_activity: [{ ...itemActivity(1), repo }],
+                item_activity_capped: true,
                 next_subject_cursor: "old",
                 capped: false,
               },
@@ -488,7 +477,13 @@ describe("activity subject paging", () => {
     expect(reloadSignal?.aborted).toBe(false);
     expect(cursors).toEqual([]);
     releaseReload?.({
-      data: { items: [], item_activity: [{ ...itemActivity(2), repo }], next_subject_cursor: "new", capped: false },
+      data: {
+        items: [],
+        item_activity: [{ ...itemActivity(2), repo }],
+        item_activity_capped: true,
+        next_subject_cursor: "new",
+        capped: false,
+      },
       error: null,
     });
     await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([2, 3]));
@@ -497,14 +492,6 @@ describe("activity subject paging", () => {
     expect(store.canLoadOlderItems()).toBe(false);
   });
   it.each([true, false])("preserves an in-flight thread when an older page succeeds: %s", async (succeeds) => {
-    const repo = {
-      provider: "github",
-      platform_host: "github.com",
-      platform_repo_id: 1007,
-      repo_path: "acme/widgets",
-      owner: "acme",
-      name: "widgets",
-    };
     const comment = { ...notificationItem("ntf:pending", "read"), item_number: 7, repo } as ActivityItem;
     let release: ((value: unknown) => void) | undefined;
     const pending = new Promise((resolve) => {
@@ -522,6 +509,7 @@ describe("activity subject paging", () => {
           data: {
             items: [],
             item_activity: [{ ...itemActivity(7), repo }],
+            item_activity_capped: true,
             next_subject_cursor: "older",
             capped: false,
           },
@@ -543,14 +531,6 @@ describe("activity subject paging", () => {
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id));
   });
   it("keeps an expanded comment when loading older items", async () => {
-    const repo = {
-      provider: "github",
-      platform_host: "github.com",
-      platform_repo_id: 1007,
-      repo_path: "acme/widgets",
-      owner: "acme",
-      name: "widgets",
-    };
     const subject = { ...itemActivity(7), repo } satisfies ActivitySubject;
     const comment = { ...notificationItem("ntf:visible", "read"), item_number: 7, repo } as ActivityItem;
     let threadReads = 0;
@@ -565,6 +545,7 @@ describe("activity subject paging", () => {
           data: {
             items: [],
             item_activity: options?.params?.query?.subject_before ? [] : [subject],
+            item_activity_capped: !options?.params?.query?.subject_before,
             next_subject_cursor: options?.params?.query?.subject_before ? "" : "older",
             capped: false,
             event_cursor: "snapshot",
@@ -585,21 +566,19 @@ describe("activity subject paging", () => {
     expect(threadReads).toBe(1);
   });
   it("queues an older page until the earlier reconciliation finishes", async () => {
-    const repo = {
-      provider: "github",
-      platform_host: "github.com",
-      platform_repo_id: 1011,
-      owner: "acme",
-      name: "widgets",
-      repo_path: "acme/widgets",
-    };
     let release: ((value: unknown) => void) | undefined;
     const deferred = new Promise((resolve) => {
       release = resolve;
     });
     let firstPageReads = 0;
     const first = {
-      data: { items: [], capped: false, item_activity: [{ ...itemActivity(1), repo }], next_subject_cursor: "older" },
+      data: {
+        items: [],
+        capped: false,
+        item_activity: [{ ...itemActivity(1), repo }],
+        item_activity_capped: true,
+        next_subject_cursor: "older",
+      },
       error: null,
     };
     const client = {
@@ -631,14 +610,6 @@ describe("activity subject paging", () => {
     await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 2]));
   });
   it("keeps the current page and permits retry when the next page fails", async () => {
-    const repo = {
-      provider: "github",
-      platform_host: "github.com",
-      platform_repo_id: 1011,
-      owner: "acme",
-      name: "widgets",
-      repo_path: "acme/widgets",
-    };
     let fail = true;
     const client = {
       GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
@@ -652,6 +623,7 @@ describe("activity subject paging", () => {
             items: [],
             capped: false,
             item_activity: [{ ...itemActivity(number), repo }],
+            item_activity_capped: number === 1,
             next_subject_cursor: number === 1 ? "older" : "",
           },
           error: null,
@@ -671,14 +643,6 @@ describe("activity subject paging", () => {
     await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 2]));
   });
   it.each(["reconciliation", "reload"])("keeps a requested older page when %s overlaps it", async (operation) => {
-    const repo = {
-      provider: "github",
-      platform_host: "github.com",
-      platform_repo_id: 1011,
-      owner: "acme",
-      name: "widgets",
-      repo_path: "acme/widgets",
-    };
     let release: ((value: unknown) => void) | undefined;
     const deferred = new Promise((resolve) => {
       release = resolve;
@@ -698,6 +662,7 @@ describe("activity subject paging", () => {
             items: [],
             capped: false,
             item_activity: [{ ...itemActivity(1), repo }],
+            item_activity_capped: true,
             next_subject_cursor: "older",
           },
           error: null,
@@ -761,14 +726,6 @@ describe("activity subject paging", () => {
     clock.mockRestore();
   });
   it("does not append a page after the search changes", async () => {
-    const repo = {
-      provider: "github",
-      platform_host: "github.com",
-      platform_repo_id: 1011,
-      owner: "acme",
-      name: "widgets",
-      repo_path: "acme/widgets",
-    };
     let release: ((value: unknown) => void) | undefined;
     let olderSignal: AbortSignal | undefined;
     const older = new Promise((resolve) => {
@@ -793,6 +750,7 @@ describe("activity subject paging", () => {
               items: [],
               capped: false,
               item_activity: [{ ...itemActivity(number), repo }],
+              item_activity_capped: !query?.search,
               next_subject_cursor: query?.search ? "" : "older",
             },
             error: null,
@@ -816,14 +774,6 @@ describe("activity subject paging", () => {
     expect(store.canLoadOlderItems()).toBe(false);
   });
   it("loads older subjects and refreshes the loaded pages with the same filters", async () => {
-    const repo = {
-      provider: "github",
-      platform_host: "github.com",
-      platform_repo_id: 1011,
-      owner: "acme",
-      name: "widgets",
-      repo_path: "acme/widgets",
-    };
     const calls: Array<{ since?: string; search?: string; subject_before?: string }> = [];
     const refreshCalls: typeof calls = [];
     let refreshed = false;
@@ -1029,6 +979,10 @@ describe("flat activity paging", () => {
       page.resolve(response);
     }
     await vi.waitFor(() => expect(requests).toBe(3));
+    if (failed) {
+      expect(store.isActivityLoading()).toBe(false);
+      expect(store.getActivityError()).toBe("unavailable");
+    }
     reconciliation.resolve(response);
     await reconciled;
     expect(store.isLoadingMoreActivity()).toBe(false);

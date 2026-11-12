@@ -2779,7 +2779,7 @@ func TestMigration92ActivitySignalRoundTrip(t *testing.T) {
 		case "close":
 			mr.ClosedAt, issue.ClosedAt = &recent, &recent
 		}
-		mrID := insertTestMRWithOptions(t, d, mr)
+		mrID := insertHistoricalTestMR(t, d, mr)
 		issueID := insertTestIssueWithOptions(t, d, issue)
 		if signal == "event" {
 			require.NoError(d.UpsertMREvents(ctx, []MREvent{{MergeRequestID: mrID, EventType: "assigned", CreatedAt: recent, DedupeKey: "migration"}}))

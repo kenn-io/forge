@@ -43,7 +43,19 @@ export type ListActivityParams = {
   hide_merge_queued?: boolean;
   /** Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued. */
   merge_queued?: boolean;
-  /** Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts. */
+  /** Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, has_workspace, no_workspace, fork, not_fork. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts. */
   attributes?: string;
   hide_default_branch?: boolean;
+  /** Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches. */
+  labels?: string[];
+  /** Drop activity whose pull request or issue carries any named label. Names match without case across repositories. */
+  exclude_labels?: string[];
+  /** Drop issue activity on issues a bot account opened. Pull request and repository activity always passes. */
+  hide_bot_authored_issues?: boolean;
+  /** Keep only activity whose pull request or issue is starred. */
+  starred?: boolean;
+  /** Keep only issue activity on issues a pull request references. Pull request and repository activity always passes. */
+  referenced_by_pr?: boolean;
+  /** Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies. */
+  not_referenced_by_pr?: boolean;
 };

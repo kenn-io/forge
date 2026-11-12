@@ -78,6 +78,24 @@ func insertTestMRWithOptions(t *testing.T, d *DB, mr *MergeRequest) int64 {
 	return id
 }
 
+// insertHistoricalTestMR inserts a merge request into a schema older than the current one,
+// whose columns the current upsert no longer matches.
+func insertHistoricalTestMR(t *testing.T, d *DB, mr *MergeRequest) int64 {
+	t.Helper()
+	canonicalizeMergeRequestTimestamps(mr)
+	result, err := d.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_merge_requests
+			(repo_id, platform_id, number, url, title, author, state, is_draft, head_branch, base_branch,
+			 head_repo_clone_url, created_at, updated_at, last_activity_at, merged_at, closed_at, auto_merge_enabled)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		mr.RepoID, mr.PlatformID, mr.Number, mr.URL, mr.Title, mr.Author, mr.State, mr.IsDraft, mr.HeadBranch, mr.BaseBranch,
+		mr.HeadRepoCloneURL, mr.CreatedAt, mr.UpdatedAt, mr.LastActivityAt, mr.MergedAt, mr.ClosedAt, mr.AutoMergeEnabled)
+	require.NoErrorf(t, err, "insert historical merge request %d", mr.Number)
+	id, err := result.LastInsertId()
+	require.NoError(t, err)
+	return id
+}
+
 func insertTestMR(t *testing.T, d *DB, repoID int64, number int, title string, activity time.Time) int64 {
 	t.Helper()
 	return insertTestMRWithOptions(t, d, testMR(repoID, number, withMRTitle(title), withMRActivity(activity)))

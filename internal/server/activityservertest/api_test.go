@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -724,6 +725,117 @@ func TestAPIListActivityPullFiltersKeepIssuesAndReportHeadRepository(t *testing.
 		parents(list("&attributes=not_approved")))
 
 	invalid := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?attributes=ready", nil)
+	assert.Equal(http.StatusBadRequest, invalid.Code, invalid.Body.String())
+}
+
+// Activity's server filters reach every projection and the thread-events route. PR attributes
+// narrow only pull request activity; issue filters narrow only issue activity.
+func TestAPIListActivityServerItemFilters(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	at := func(number int) time.Time { return now.Add(time.Duration(number-100) * time.Minute) }
+	labelled := func(names ...string) []db.Label {
+		set := []db.Label{}
+		for _, name := range names {
+			set = append(set, db.Label{Name: name, Color: "ffffff"})
+		}
+		return set
+	}
+	serverfake.SeedPR(t, database, "acme", "widget", 91, serverfake.WithSeedPRTimes(at(91), at(91), at(91)),
+		func(pr *db.MergeRequest) {
+			pr.HeadRepoCloneURL = "https://github.com/contributor/widget.git"
+			pr.Labels = labelled("Bug")
+		})
+	serverfake.SeedPR(t, database, "acme", "widget", 92, serverfake.WithSeedPRTimes(at(92), at(92), at(92)),
+		func(pr *db.MergeRequest) { pr.Labels = labelled("bug", "wontfix") })
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	issue := func(number int, author string, labels ...string) int64 {
+		id := serverfake.SeedIssue(t, database, "acme", "widget", number, "open")
+		_, err := database.WriteDB().ExecContext(ctx,
+			`UPDATE forge_issues SET author = ?, created_at = ?, last_activity_at = ? WHERE id = ?`,
+			author, at(number), at(number), id)
+		require.NoError(err)
+		require.NoError(database.ReplaceIssueLabels(ctx, repo.ID, id, labelled(labels...)))
+		return id
+	}
+	issue(93, "renovate[bot]", "BUG")
+	referencedID := issue(94, "testuser")
+	issue(95, "testuser")
+	require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{{
+		IssueID: referencedID, EventType: "cross_referenced", CreatedAt: at(94), DedupeKey: "cross-reference-94",
+		MetadataJSON: `{"source_type":"PullRequest","source_owner":"acme","source_repo":"client","source_number":42,"source_url":"https://github.com/acme/client/pull/42"}`,
+	}}))
+	require.NoError(database.SetStarred(ctx, db.ItemTypePR, repo.ID, 91))
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "ws-pull-91", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypePullRequest,
+		ItemNumber: 91, WorktreePath: t.TempDir(), Status: "ready",
+	}))
+
+	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
+	get := func(path string) itemapi.ActivityResponse {
+		rr := testutil.DoJSON(t, srv, http.MethodGet, path, nil)
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+		var body itemapi.ActivityResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+		return body
+	}
+	parents := func(query string) []int {
+		numbers := []int{}
+		for _, subject := range get("/api/v1/activity?since=" + since + query).ItemActivity {
+			numbers = append(numbers, subject.ItemNumber)
+		}
+		return numbers
+	}
+	events := func(query string) []int {
+		numbers := []int{}
+		for _, item := range get("/api/v1/activity?since=" + since + "&projection=events&limit=50" + query).Items {
+			if !slices.Contains(numbers, item.ItemNumber) {
+				numbers = append(numbers, item.ItemNumber)
+			}
+		}
+		return numbers
+	}
+
+	for _, tc := range []struct {
+		query string
+		want  []int
+	}{
+		{"&attributes=fork", []int{95, 94, 93, 91}},
+		{"&attributes=not_fork", []int{95, 94, 93, 92}},
+		{"&attributes=has_workspace", []int{95, 94, 93, 91}},
+		{"&attributes=no_workspace", []int{95, 94, 93, 92}},
+		{"&labels=bUG", []int{93, 92, 91}},
+		{"&labels=bug&exclude_labels=WONTFIX", []int{93, 91}},
+		{"&hide_bot_authored_issues=true", []int{95, 94, 92, 91}},
+		{"&starred=true", []int{91}},
+		{"&referenced_by_pr=true", []int{94, 92, 91}},
+		{"&not_referenced_by_pr=true", []int{95, 93, 92, 91}},
+	} {
+		assert.Equal(tc.want, parents(tc.query), "full projection %s", tc.query)
+		assert.Equal(tc.want, parents("&projection=collapsed"+tc.query), "collapsed projection %s", tc.query)
+		assert.Equal(tc.want, events(tc.query), "events projection %s", tc.query)
+	}
+	assert.Equal([]int{91}, parents("&projection=collapsed&limit=1&attributes=fork&item_types=pr"),
+		"the filter applies before the limit")
+	assert.Equal([]int{94}, parents("&projection=collapsed&limit=1&referenced_by_pr=true&item_types=issue"))
+
+	thread := func(number int, query string) int {
+		return len(get(fmt.Sprintf("/api/v1/activity/thread-events?provider=github&platform_host=github.com"+
+			"&platform_repo_id=%d&item_type=pr&item_number=%d%s", testutil.FixtureRepoID("acme", "widget"), number, query)).Items)
+	}
+	assert.NotZero(thread(92, "&labels=WontFix"))
+	assert.Zero(thread(92, "&exclude_labels=WontFix"))
+	assert.Zero(thread(92, "&attributes=fork"))
+	assert.Zero(thread(92, "&starred=true"))
+
+	invalid := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?attributes=forked", nil)
 	assert.Equal(http.StatusBadRequest, invalid.Code, invalid.Body.String())
 }
 

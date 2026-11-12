@@ -3763,39 +3763,3 @@ func TestActivityPullFiltersLeaveIssuesAndOnlyDirectionsMirrorHide(t *testing.T)
 	}
 	assert.Equal([]string{"pr:1:dependabot[bot]"}, direct, "a bot event on a hidden human parent stays direct")
 }
-
-// Workspace activity subjects take the same PR filters through a key lookup, and
-// the head clone URL lookup lets the server classify forks for Activity rows.
-func TestListPullsMatchingAttributesAndHeadRepoCloneURLs(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-	repoID := insertTestRepo(t, d, "acme", "widget")
-	insertTestMRWithOptions(t, d, testMR(repoID, 1, func(mr *MergeRequest) {
-		mr.ReviewDecision = "APPROVED"
-		mr.HeadRepoCloneURL = "https://github.com/contributor/widget.git"
-	}))
-	insertTestMRWithOptions(t, d, testMR(repoID, 2, func(mr *MergeRequest) { mr.IsDraft = true }))
-	insertTestIssue(t, d, repoID, 3, "Issue", baseTime())
-	keys := []WorkspaceSubjectKey{
-		{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 1},
-		{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 2},
-		{RepoID: repoID, ItemType: WorkspaceItemTypeIssue, ItemNumber: 3},
-	}
-
-	approved, err := d.ListPullsMatchingAttributes(ctx, keys, []string{"approved"}, nil)
-	require.NoError(err)
-	assert.Equal(map[WorkspaceSubjectKey]struct{}{keys[0]: {}}, approved)
-	notDraft, err := d.ListPullsMatchingAttributes(ctx, keys, []string{"not_draft"}, nil)
-	require.NoError(err)
-	assert.Equal(map[WorkspaceSubjectKey]struct{}{keys[0]: {}}, notDraft, "issues are never returned")
-
-	cloneURLs, err := d.ListPullHeadRepoCloneURLs(ctx, keys)
-	require.NoError(err)
-	assert.Equal(map[WorkspaceSubjectKey]string{
-		keys[0]: "https://github.com/contributor/widget.git",
-		keys[1]: "",
-	}, cloneURLs)
-}

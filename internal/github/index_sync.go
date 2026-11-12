@@ -14,7 +14,6 @@ import (
 
 	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -823,7 +822,7 @@ func (s *Syncer) reclassifyWorkspaceHeadRepoTrust(
 			}
 		}
 
-		refreshed := workspace.WorkspaceHeadRepo(
+		refreshed := platform.HeadRepo(
 			ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName, cloneURL,
 		)
 		if s.afterHeadRepoSnapshotRead != nil {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
+	"strings"
 	"sync"
 
 	"go.kenn.io/forge/internal/db"
@@ -24,18 +26,20 @@ type ProviderSource interface {
 }
 
 type ListQuery struct {
-	Numbers    []int64
-	Attributes string
-	Label      string
-	Repo       string
-	State      string
-	Starred    bool
-	InvolvesMe bool
-	Unassigned bool
-	Text       string
-	Semantic   bool
-	Limit      int
-	Offset     int
+	Numbers       []int64
+	Attributes    string
+	Label         string
+	Labels        []string
+	ExcludeLabels []string
+	Repo          string
+	State         string
+	Starred       bool
+	InvolvesMe    bool
+	Unassigned    bool
+	Text          string
+	Semantic      bool
+	Limit         int
+	Offset        int
 	// NotInvolvesMe and Assigned are the opposites of InvolvesMe and Unassigned.
 	NotInvolvesMe bool
 	Assigned      bool
@@ -90,14 +94,48 @@ func (s *Handler) ListService(ctx context.Context, req ListQuery) ([]MergeReques
 	var rows []MergeRequestResponse
 	var err error
 	if s.providerSource != nil {
+		// The hub cannot see this server's workspaces, so has_workspace and no_workspace
+		// apply to its rows here, after its limit.
+		var workspaceAttributes []string
+		req.Attributes, workspaceAttributes = SplitWorkspaceAttributes(req.Attributes)
 		rows, err = s.providerSource.ListPulls(ctx, req)
-	} else {
-		rows, err = s.ListProviderService(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		rows, err = s.overlayLocalWorkspaces(rows, subjects)
+		if err != nil || len(workspaceAttributes) == 0 {
+			return rows, err
+		}
+		return slices.DeleteFunc(rows, func(row MergeRequestResponse) bool {
+			matches := "no_workspace"
+			if row.Workspace != nil {
+				matches = "has_workspace"
+			}
+			return !slices.Contains(workspaceAttributes, matches)
+		}), nil
 	}
+	rows, err = s.ListProviderService(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 	return s.overlayLocalWorkspaces(rows, subjects)
+}
+
+// SplitWorkspaceAttributes removes has_workspace and no_workspace from comma-separated
+// attributes and returns them separately.
+func SplitWorkspaceAttributes(attributes string) (string, []string) {
+	if attributes == "" {
+		return "", nil
+	}
+	var forwarded, workspace []string
+	for attribute := range strings.SplitSeq(attributes, ",") {
+		if attribute == "has_workspace" || attribute == "no_workspace" {
+			workspace = append(workspace, attribute)
+		} else {
+			forwarded = append(forwarded, attribute)
+		}
+	}
+	return strings.Join(forwarded, ","), workspace
 }
 
 // ListProviderService returns provider-owned rows in hub order. It
@@ -109,7 +147,8 @@ func (s *Handler) ListProviderService(
 		Repo: req.Repo, State: req.State,
 		Starred: req.Starred, InvolvesMe: req.InvolvesMe, Unassigned: req.Unassigned,
 		NotInvolvesMe: req.NotInvolvesMe, Assigned: req.Assigned,
-		Numbers: req.Numbers, Q: req.Text, Semantic: req.Semantic, Label: req.Label, Attributes: req.Attributes, Limit: req.Limit, Offset: req.Offset,
+		Numbers: req.Numbers, Q: req.Text, Semantic: req.Semantic, Label: req.Label, Labels: req.Labels, ExcludeLabels: req.ExcludeLabels,
+		Attributes: req.Attributes, Limit: req.Limit, Offset: req.Offset,
 	}, nil)
 	if err != nil {
 		return nil, err

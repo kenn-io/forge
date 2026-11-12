@@ -17,7 +17,7 @@ import (
 // Issue, repository, and other non-PR rows always pass. A pull request that has not synced
 // cannot be shown to match, so only a selection made purely of exclusions keeps it.
 func activityPullAttributeClause(
-	attributes []string, hideDrafts, hideMergeQueued, onlyMergeQueued bool, held []RepoItemNumber, args *[]any,
+	attributes []string, hideDrafts, hideMergeQueued, onlyMergeQueued bool, held, workspaces []RepoItemNumber, args *[]any,
 ) string {
 	selected := slices.Clone(attributes)
 	// A required choice wins over the saved hide choice in the same section.
@@ -29,13 +29,13 @@ func activityPullAttributeClause(
 	} else if hideMergeQueued {
 		selected = append(selected, "not_merge_queued")
 	}
-	cond := filterSectionsCondition(pullAttributeSections(selected, held, args)...)
+	cond := filterSectionsCondition(pullAttributeSections(selected, held, workspaces, args)...)
 	if cond == "" {
 		return ""
 	}
 	matched := "(repo_id, item_number) IN (SELECT p.repo_id, p.number FROM forge_merge_requests p WHERE " + cond + ")"
 	onlyExclusions := !slices.ContainsFunc(selected, func(attribute string) bool {
-		return !slices.Contains([]string{"not_draft", "not_approved", "no_merge_conflicts", "not_merge_queued"}, attribute)
+		return !slices.Contains([]string{"not_draft", "not_approved", "no_merge_conflicts", "not_merge_queued", "no_workspace", "not_fork"}, attribute)
 	})
 	if onlyExclusions {
 		matched += " OR (repo_id, item_number) NOT IN (SELECT p.repo_id, p.number FROM forge_merge_requests p)"
@@ -235,10 +235,11 @@ func activityEventsFrom(opts ListActivityOpts) (string, []any) {
 		whereClauses = append(whereClauses, activityNotBotCondition("author"))
 	}
 	if cond := activityPullAttributeClause(
-		opts.PullAttributes, opts.HideDrafts, opts.HideMergeQueued, opts.OnlyMergeQueued, opts.DeferredMergeItems, &args,
+		opts.PullAttributes, opts.HideDrafts, opts.HideMergeQueued, opts.OnlyMergeQueued, opts.DeferredMergeItems, opts.WorkspaceItems, &args,
 	); cond != "" {
 		whereClauses = append(whereClauses, cond)
 	}
+	whereClauses = append(whereClauses, opts.clauses(&args)...)
 	if opts.HideDefaultBranch {
 		whereClauses = append(whereClauses,
 			"activity_type NOT IN ('default_branch_commit', 'default_branch_force_push')")
@@ -828,10 +829,11 @@ func listActivitySubjectsWithQueryer(
 		whereClauses = append(whereClauses, activityNotBotCondition("item_author"))
 	}
 	if cond := activityPullAttributeClause(
-		opts.PullAttributes, opts.HideDrafts, opts.HideMergeQueued, opts.OnlyMergeQueued, opts.DeferredMergeItems, &args,
+		opts.PullAttributes, opts.HideDrafts, opts.HideMergeQueued, opts.OnlyMergeQueued, opts.DeferredMergeItems, opts.WorkspaceItems, &args,
 	); cond != "" {
 		whereClauses = append(whereClauses, cond)
 	}
+	whereClauses = append(whereClauses, opts.clauses(&args)...)
 	if opts.Unassigned {
 		whereClauses = append(whereClauses, activityUnassignedCondition())
 	}

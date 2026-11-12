@@ -38,4 +38,16 @@ export type ListActivityThreadEventsParams = {
   /** Comma-separated pull request filters, as on the activity list. */
   attributes?: string;
   hide_default_branch?: boolean;
+  /** Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches. */
+  labels?: string[];
+  /** Drop activity whose pull request or issue carries any named label. Names match without case across repositories. */
+  exclude_labels?: string[];
+  /** Drop issue activity on issues a bot account opened. Pull request and repository activity always passes. */
+  hide_bot_authored_issues?: boolean;
+  /** Keep only activity whose pull request or issue is starred. */
+  starred?: boolean;
+  /** Keep only issue activity on issues a pull request references. Pull request and repository activity always passes. */
+  referenced_by_pr?: boolean;
+  /** Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies. */
+  not_referenced_by_pr?: boolean;
 };

@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net"
-	"net/url"
 	"strings"
 
 	"go.kenn.io/forge/internal/db"
@@ -273,7 +271,7 @@ func selectPRByUpstream(
 		return 0, false
 	}
 
-	remoteRepo := normalizeCloneRepoIdentity(provider, platformHost, upstream.remoteURL)
+	remoteRepo := platform.CloneRepoIdentity(provider, platformHost, upstream.remoteURL)
 	if strings.TrimSpace(upstream.remoteURL) != "" && remoteRepo == "" {
 		return 0, false
 	}
@@ -283,7 +281,7 @@ func selectPRByUpstream(
 		if candidate.HeadBranch != upstream.branchName {
 			continue
 		}
-		candidateRepo := normalizeCloneRepoIdentity(provider, platformHost, candidate.HeadRepoCloneURL)
+		candidateRepo := platform.CloneRepoIdentity(provider, platformHost, candidate.HeadRepoCloneURL)
 		if remoteRepo != "" {
 			if candidateRepo == "" || candidateRepo != remoteRepo {
 				continue
@@ -331,8 +329,8 @@ func localBranchCandidateMatchesUpstream(
 	if !upstream.hasTracking {
 		return true
 	}
-	remoteRepo := normalizeCloneRepoIdentity(provider, platformHost, upstream.remoteURL)
-	candidateRepo := normalizeCloneRepoIdentity(provider, platformHost, candidate.HeadRepoCloneURL)
+	remoteRepo := platform.CloneRepoIdentity(provider, platformHost, upstream.remoteURL)
+	candidateRepo := platform.CloneRepoIdentity(provider, platformHost, candidate.HeadRepoCloneURL)
 	return remoteRepo == "" ||
 		candidateRepo == "" ||
 		candidateRepo == remoteRepo
@@ -418,124 +416,4 @@ func gitOutput(
 		return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
-}
-
-func normalizeCloneRepoIdentity(provider, platformHost, cloneURL string) string {
-	provider = strings.ToLower(strings.TrimSpace(provider))
-	cloneURL = strings.TrimSpace(cloneURL)
-	if provider == "" || cloneURL == "" {
-		return ""
-	}
-	if !strings.Contains(cloneURL, "://") && !strings.Contains(cloneURL, "@") {
-		return ""
-	}
-	host := normalizeCloneURLHost(cloneURL)
-	if host == "" {
-		return ""
-	}
-	repoPath := cloneRepoPath(cloneURL)
-	if provider == string(platform.KindBitbucket) && platformHost != platform.DefaultBitbucketHost {
-		if platform.ValidateRemoteHost(platform.KindBitbucket, platformHost, cloneURL) != nil {
-			return ""
-		}
-		host = normalizePlatformHostIdentity(platformHost)
-		repoPath = platform.RemoteRepoPath(platform.KindBitbucket, platformHost, cloneURL)
-	}
-	if repoPath == "" {
-		return ""
-	}
-	return strings.ToLower(provider + "/" + host + "/" + repoPath)
-}
-
-func cloneRepoPath(cloneURL string) string {
-	var repoPath string
-	if strings.Contains(cloneURL, "://") {
-		parsed, err := url.Parse(cloneURL)
-		if err != nil {
-			return ""
-		}
-		repoPath = parsed.Path
-	} else {
-		beforePath, path, ok := strings.Cut(cloneURL, ":")
-		if !ok || !strings.Contains(beforePath, "@") {
-			return ""
-		}
-		repoPath = path
-	}
-	unescaped, err := url.PathUnescape(repoPath)
-	if err != nil {
-		return ""
-	}
-	repoPath = strings.Trim(strings.TrimSpace(unescaped), "/")
-	repoPath = strings.TrimSuffix(repoPath, ".git")
-	if strings.Count(repoPath, "/") < 1 {
-		return ""
-	}
-	return repoPath
-}
-
-func normalizeCloneURLHost(cloneURL string) string {
-	if strings.Contains(cloneURL, "://") {
-		parsed, err := url.Parse(cloneURL)
-		if err != nil {
-			return ""
-		}
-		return normalizeHostPortIdentity(
-			parsed.Scheme, parsed.Hostname(), parsed.Port(),
-		)
-	}
-	beforePath, _, ok := strings.Cut(cloneURL, ":")
-	if !ok {
-		return ""
-	}
-	_, host, ok := strings.Cut(beforePath, "@")
-	if !ok {
-		return ""
-	}
-	return strings.ToLower(host)
-}
-
-func normalizePlatformHostIdentity(platformHost string) string {
-	platformHost = strings.TrimSpace(platformHost)
-	if platformHost == "" {
-		return ""
-	}
-	if strings.Contains(platformHost, "://") {
-		parsed, err := url.Parse(platformHost)
-		if err != nil {
-			return ""
-		}
-		return normalizeHostPortIdentity(
-			parsed.Scheme, parsed.Hostname(), parsed.Port(),
-		)
-	}
-	host, port, err := net.SplitHostPort(platformHost)
-	if err == nil {
-		return normalizeHostPortIdentity("https", host, port)
-	}
-	return strings.ToLower(platformHost)
-}
-
-func normalizeHostPortIdentity(scheme, host, port string) string {
-	host = strings.ToLower(strings.TrimSpace(host))
-	if host == "" {
-		return ""
-	}
-	if port == "" || isDefaultCloneURLPort(scheme, port) {
-		return host
-	}
-	return strings.ToLower(net.JoinHostPort(host, port))
-}
-
-func isDefaultCloneURLPort(scheme, port string) bool {
-	switch strings.ToLower(scheme) {
-	case "http":
-		return port == "80"
-	case "https":
-		return port == "443"
-	case "ssh":
-		return port == "22"
-	default:
-		return false
-	}
 }

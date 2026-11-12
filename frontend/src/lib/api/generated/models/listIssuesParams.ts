@@ -27,4 +27,10 @@ export type ListIssuesParams = {
   assigned?: boolean;
   /** Only include issues no pull request references. With referenced_by_pr, neither filter applies. */
   not_referenced_by_pr?: boolean;
+  /** Only include issues carrying every named label. Names match without case across repositories; applied before pagination. */
+  labels?: string[];
+  /** Drop issues carrying any named label. Names match without case across repositories; applied before pagination. */
+  exclude_labels?: string[];
+  /** Drop issues a bot account opened: a -bot login suffix on any provider, [bot] on GitHub, and project or group access token users on GitLab. */
+  hide_bots?: boolean;
 };

@@ -128,6 +128,54 @@ func TestAPIListPullsClassifiesHeadRepository(t *testing.T) {
 	}, kinds)
 }
 
+// Workspace, fork, and label filters reach the pull request query and apply before the limit.
+func TestAPIListPullsServerFilters(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	srv, database := servertest.SetupTestServer(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	seed := func(number int, head string, labels ...string) {
+		at := now.Add(time.Duration(number) * time.Minute)
+		serverfake.SeedPR(t, database, "acme", "widget", number, serverfake.WithSeedPRTimes(at, at, at),
+			func(pr *db.MergeRequest) {
+				pr.HeadRepoCloneURL = head
+				for _, name := range labels {
+					pr.Labels = append(pr.Labels, db.Label{Name: name, Color: "ffffff"})
+				}
+			})
+	}
+	seed(1, "https://github.com/acme/widget.git")
+	seed(2, "https://github.com/contributor/widget.git", "Bug")
+	seed(3, "", "bug", "wontfix")
+	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID: "ws-pull-1", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypePullRequest,
+		ItemNumber: 1, WorktreePath: t.TempDir(), Status: "ready",
+	}))
+	list := func(query string) []int {
+		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?"+query, nil)
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+		var rows []pullapi.MergeRequestResponse
+		require.NoError(json.Unmarshal(rr.Body.Bytes(), &rows))
+		numbers := []int{}
+		for _, row := range rows {
+			numbers = append(numbers, row.Number)
+		}
+		return numbers
+	}
+
+	assert.Equal(t, []int{2}, list("attributes=fork"))
+	assert.Equal(t, []int{3, 1}, list("attributes=not_fork"), "an unknown head repository is not a known fork")
+	assert.Equal(t, []int{1}, list("attributes=has_workspace&limit=1"))
+	assert.Equal(t, []int{3, 2}, list("attributes=no_workspace"))
+	assert.Equal(t, []int{3, 2}, list("labels=BUG"))
+	assert.Equal(t, []int{2}, list("labels=bug&exclude_labels=WontFix&limit=1"))
+	assert.Equal(t, []int{1}, list("exclude_labels=bug"))
+	assert.Equal(t, []int{3}, list("label=bug"), "the exact label filter stays case-sensitive")
+	invalid := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?attributes=forked", nil)
+	assert.Equal(t, http.StatusBadRequest, invalid.Code, invalid.Body.String())
+}
+
 func TestAPIListPullsReportsRepositoryPrivacy(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

@@ -1269,29 +1269,6 @@ func (m *Manager) workspaceBranchConflict(
 	}
 }
 
-// WorkspaceHeadRepo classifies a pull-request head repository against its
-// base repository identity: nil means confirmed same-repo, a non-nil empty
-// string means the head repository identity could not be determined from
-// cloneURL, and a non-nil clone URL means the head lives in a fork. Exported
-// so the sync engine can reclassify workspace trust rows when a later sync
-// changes an MR's head_repo_clone_url, without duplicating this logic.
-func WorkspaceHeadRepo(provider, platformHost, owner, name, cloneURL string) *string {
-	// MRHeadRepo means "this PR head must be resolved through fork-safe refs"
-	// in setup. GitHub also fills head.repo.clone_url for same-repo PRs, so
-	// compare clone identities before treating a non-empty URL as fork metadata.
-	headRepo := normalizeCloneRepoIdentity(provider, platformHost, cloneURL)
-	if headRepo == "" {
-		unknown := ""
-		return &unknown
-	}
-	baseRepo := strings.ToLower(strings.Join([]string{strings.TrimSpace(provider), normalizePlatformHostIdentity(platformHost), strings.TrimSpace(owner), strings.TrimSpace(name)}, "/"))
-	if headRepo == baseRepo {
-		return nil
-	}
-	s := cloneURL
-	return &s
-}
-
 // Setup clones/fetches the repo, creates the git worktree, starts
 // a tmux session, and marks the workspace "ready". On failure it
 // rolls back the worktree and sets status to "error".
@@ -1701,7 +1678,7 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 			if ws.RepoID != 0 {
 				return nil, ErrWorkspaceRepositoryUnresolved
 			}
-			refreshed := WorkspaceHeadRepo(
+			refreshed := platform.HeadRepo(
 				ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName, "",
 			)
 			if m.afterHeadRepoSnapshotRead != nil {
@@ -1740,7 +1717,7 @@ func (m *Manager) RefreshWorkspaceHeadRepoSnapshot(
 				}, nil
 			}
 		}
-		refreshed := WorkspaceHeadRepo(
+		refreshed := platform.HeadRepo(
 			ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName, cloneURL,
 		)
 		if m.afterHeadRepoSnapshotRead != nil {

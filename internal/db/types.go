@@ -835,13 +835,20 @@ type ListMergeRequestsOpts struct {
 	// DeferredMergeItems are the pull requests this server's own worker holds for a merge after CI.
 	// Only merge_queued and not_merge_queued read them.
 	DeferredMergeItems []RepoItemNumber
+	// WorkspaceItems are the pull requests with a workspace on this server. Only has_workspace
+	// and no_workspace read them.
+	WorkspaceItems []RepoItemNumber
 	// AllowedRepoIDs scopes repositories before pagination. nil is unrestricted; empty matches none.
 	AllowedRepoIDs []int64
 	// Numbers filters item numbers before pagination. nil is unrestricted; empty matches none.
 	Numbers []int64
 	// Items limits results to the named items before pagination. nil is unrestricted; empty matches none.
-	Items             []RepoItemNumber
-	Label             string
+	Items []RepoItemNumber
+	// Label is an exact, case-sensitive label name.
+	Label string
+	// Labels must all be present and ExcludeLabels absent, comparing names without case.
+	Labels            []string
+	ExcludeLabels     []string
 	RepoID            int64
 	PlatformHost      string
 	RepoOwner         string
@@ -1002,6 +1009,11 @@ type ListIssuesOpts struct {
 	Assigned          bool
 	ViewerUninvolved  bool
 	NotReferencedByPR bool
+	// Labels must all be present and ExcludeLabels absent, comparing names without case.
+	Labels        []string
+	ExcludeLabels []string
+	// HideBots drops issues a bot account opened.
+	HideBots bool
 }
 
 type Notification struct {
@@ -1697,12 +1709,16 @@ type ListActivityOpts struct {
 	// PullAttributes are PR inclusion filters with ListMergeRequestsOpts.Attributes semantics.
 	// They apply only to pull request rows; issue and repository rows always pass.
 	PullAttributes []string
+	ActivityItemFilters
 	// DeferredMergeItems are the pull requests this server's worker holds for a merge after CI.
 	DeferredMergeItems []RepoItemNumber
-	HideDefaultBranch  bool
-	ParentRepoID       int64
-	ParentItemType     string
-	ParentItemNumber   int
+	// WorkspaceItems are the pull requests with a workspace on this server, for has_workspace
+	// and no_workspace.
+	WorkspaceItems    []RepoItemNumber
+	HideDefaultBranch bool
+	ParentRepoID      int64
+	ParentItemType    string
+	ParentItemNumber  int
 	// DirectProjectionOnly selects rows that cannot be represented by the
 	// filtered parent projection, including repository/unparented rows and
 	// visible human events whose bot-authored parent is hidden.
@@ -1750,10 +1766,12 @@ type ListActivitySubjectsOpts struct {
 	HideMergeQueued            bool
 	OnlyMergeQueued            bool
 	PullAttributes             []string
-	DeferredMergeItems         []RepoItemNumber
-	Limit                      int
-	Since                      *time.Time
-	Before                     *ActivitySubjectCursor
+	ActivityItemFilters
+	DeferredMergeItems []RepoItemNumber
+	WorkspaceItems     []RepoItemNumber
+	Limit              int
+	Since              *time.Time
+	Before             *ActivitySubjectCursor
 	// Keys, when non-nil, restricts subjects to these activity-typed keys.
 	Keys []WorkspaceSubjectKey
 	// Assigned and ViewerUninvolved invert Unassigned and ViewerLogins, as in ListActivityOpts.

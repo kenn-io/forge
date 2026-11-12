@@ -24,7 +24,7 @@ func TestManualWorkflowRemovalPreservesUnrelatedData(t *testing.T) {
 	repoID := insertTestRepo(t, previous, "example", "widget")
 	pull := testMR(repoID, 7)
 	pull.AutoMergeEnabled = true
-	mrID := insertTestMRWithOptions(t, previous, pull)
+	mrID := insertHistoricalTestMR(t, previous, pull)
 	issue := testIssue(repoID, 9)
 	issue.State = "closed"
 	insertTestIssueWithOptions(t, previous, issue)

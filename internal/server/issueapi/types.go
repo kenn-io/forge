@@ -45,9 +45,12 @@ type listIssuesInput struct {
 	Limit          int     `query:"limit"`
 	Offset         int     `query:"offset"`
 	// The opposites of involves_me, unassigned, and referenced_by_pr.
-	NotInvolvesMe     bool `query:"not_involves_me" doc:"Only include issues that do not involve the authenticated viewer. With involves_me, neither filter applies."`
-	Assigned          bool `query:"assigned" doc:"Drop issues with no assignees. With unassigned, neither filter applies."`
-	NotReferencedByPR bool `query:"not_referenced_by_pr" doc:"Only include issues no pull request references. With referenced_by_pr, neither filter applies."`
+	NotInvolvesMe     bool     `query:"not_involves_me" doc:"Only include issues that do not involve the authenticated viewer. With involves_me, neither filter applies."`
+	Assigned          bool     `query:"assigned" doc:"Drop issues with no assignees. With unassigned, neither filter applies."`
+	NotReferencedByPR bool     `query:"not_referenced_by_pr" doc:"Only include issues no pull request references. With referenced_by_pr, neither filter applies."`
+	Labels            []string `query:"labels" doc:"Only include issues carrying every named label. Names match without case across repositories; applied before pagination."`
+	ExcludeLabels     []string `query:"exclude_labels" doc:"Drop issues carrying any named label. Names match without case across repositories; applied before pagination."`
+	HideBots          bool     `query:"hide_bots" doc:"Drop issues a bot account opened: a -bot login suffix on any provider, [bot] on GitHub, and project or group access token users on GitLab."`
 }
 
 type listIssuesOutput = httpapi.BodyOutput[[]IssueResponse]

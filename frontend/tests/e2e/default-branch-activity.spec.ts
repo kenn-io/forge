@@ -171,10 +171,7 @@ function sparseCommitPatch(): string {
   ].join("\n");
 }
 
-async function mockDefaultBranchActivity(
-  page: Page,
-  options: { readonly itemActivityCapped?: boolean } = {},
-): Promise<void> {
+async function mockDefaultBranchActivity(page: Page): Promise<void> {
   await page.addInitScript(() => {
     Object.defineProperty(window, "__kenn_forgeOpenedURL", {
       configurable: true,
@@ -231,7 +228,7 @@ async function mockDefaultBranchActivity(
       contentType: "application/json",
       body: JSON.stringify({
         capped: false,
-        item_activity_capped: options.itemActivityCapped ?? false,
+        item_activity_capped: false,
         items,
       }),
     });

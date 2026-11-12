@@ -447,6 +447,7 @@ describe("MobileActivityView branch activity", () => {
   it("loads older items after reaching the phone page limit", async () => {
     rememberMobileListPosition("activity", { scrollTop: 0, pageLimit: 500 });
     olderItemsAvailable.value = true;
+    itemActivityCapped.value = true;
     items.value = Array.from({ length: 501 }, (_, index) =>
       branchActivityItem(`branch-${index}`, { branch_name: `branch-${index}` }),
     );

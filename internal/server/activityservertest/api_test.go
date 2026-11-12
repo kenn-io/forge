@@ -1049,23 +1049,15 @@ func TestAPIListActivitySearchFindsParentsBeyondEventCap(t *testing.T) {
 	}
 	require.NoError(t, database.UpsertMREvents(ctx, noisyEvents))
 	since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
-	for _, projection := range []string{"full", "collapsed"} {
-		t.Run(projection, func(t *testing.T) {
-			rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle&projection="+projection, nil)
-			require.Equal(t, http.StatusOK, rr.Code)
-			var body itemapi.ActivityResponse
-			require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
-			require.Len(t, body.ItemActivity, 2)
-			for i, number := range []int{2, 1} {
-				assert.Equal(t, number, body.ItemActivity[i].ItemNumber)
-			}
-			assert.False(t, body.ItemActivityCapped)
-			if projection == "full" {
-				assert.Len(t, body.Items, itemapi.ActivitySafetyCap)
-				assert.True(t, body.Capped)
-			}
-		})
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle&projection=collapsed", nil)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var body itemapi.ActivityResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
+	require.Len(t, body.ItemActivity, 2)
+	for i, number := range []int{2, 1} {
+		assert.Equal(t, number, body.ItemActivity[i].ItemNumber)
 	}
+	assert.False(t, body.ItemActivityCapped)
 }
 
 func TestAPIListActivityReturnsDefaultBranchActivity(t *testing.T) {

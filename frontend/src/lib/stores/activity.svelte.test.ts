@@ -380,10 +380,12 @@ describe("activity subject paging", () => {
     if (collapsed) await vi.waitFor(() => expect(threadReads).toBe(1));
     else expect(threadReads).toBe(0);
   });
-  it("interrupts a queued page and background refresh when the search changes", async () => {
+  it.each(["queued", "in flight"])("interrupts an older page %s when the search changes", async (state) => {
     let refreshSignal: AbortSignal | undefined;
+    let olderSignal: AbortSignal | undefined;
     let calls = 0;
     let pageCalls = 0;
+    const older = Promise.withResolvers<unknown>();
     const get = vi.fn(
       (
         path: string,
@@ -392,7 +394,8 @@ describe("activity subject paging", () => {
         if (path === "/activity/authors") return Promise.resolve({ data: { authors: [] }, error: null });
         if (options?.params?.query?.subject_before) {
           pageCalls++;
-          return Promise.resolve({ data: { items: [], capped: false }, error: null });
+          olderSignal = options.signal;
+          return older.promise;
         }
         if (options?.params?.query?.search)
           return Promise.resolve({
@@ -418,21 +421,33 @@ describe("activity subject paging", () => {
     store.loadActivity();
     await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
     if (runtime === undefined) throw new Error("test runtime was not created");
-    const refresh = runtime.runCommand(store.reconcileActivityEffect(), {
-      operation: "refresh activity",
-      safeContext: {},
-      onFailure: () => {},
-    });
-    await vi.waitFor(() => expect(refreshSignal).toBeDefined());
+    const refresh =
+      state === "queued"
+        ? runtime.runCommand(store.reconcileActivityEffect(), {
+            operation: "refresh activity",
+            safeContext: {},
+            onFailure: () => {},
+          })
+        : undefined;
+    if (refresh) await vi.waitFor(() => expect(refreshSignal).toBeDefined());
     store.loadOlderItems();
+    if (!refresh) await vi.waitFor(() => expect(olderSignal).toBeDefined());
     store.setActivitySearch("new");
     store.loadActivity();
     await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([3]));
-    expect(refreshSignal?.aborted).toBe(true);
-    expect(pageCalls).toBe(0);
-    await refresh.exit;
+    if (refresh) {
+      expect(refreshSignal?.aborted).toBe(true);
+      expect(pageCalls).toBe(0);
+      await refresh.exit;
+    } else {
+      expect(olderSignal?.aborted).toBe(true);
+      older.resolve({ data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] }, error: null });
+      await Promise.resolve();
+      expect(store.getItemActivity().map((item) => item.item_number)).toEqual([3]);
+      expect(store.canLoadOlderItems()).toBe(false);
+    }
   });
-  it("finishes a pending reload before loading from its new cursor", async () => {
+  it.each(["reload", "reconciliation"])("finishes a pending %s before loading from its cursor", async (operation) => {
     let releaseReload: ((value: unknown) => void) | undefined;
     let reloadSignal: AbortSignal | undefined;
     let firstReads = 0;
@@ -445,7 +460,11 @@ describe("activity subject paging", () => {
           if (cursor) {
             cursors.push(cursor);
             return Promise.resolve({
-              data: { items: [], item_activity: [{ ...itemActivity(3), repo }], capped: false },
+              data: {
+                items: [],
+                item_activity: [{ ...itemActivity(operation === "reload" ? 3 : 2), repo }],
+                capped: false,
+              },
               error: null,
             });
           }
@@ -470,7 +489,16 @@ describe("activity subject paging", () => {
     const store = createActivityStore({ client });
     store.loadActivity();
     await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
-    store.loadActivity();
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    const reconciliation =
+      operation === "reconciliation"
+        ? runtime.runCommand(store.reconcileActivityEffect(), {
+            operation: "refresh activity",
+            safeContext: {},
+            onFailure: () => {},
+          })
+        : undefined;
+    if (operation === "reload") store.loadActivity();
     await vi.waitFor(() => expect(releaseReload).toBeDefined());
     store.loadOlderItems();
     await Promise.resolve();
@@ -479,20 +507,24 @@ describe("activity subject paging", () => {
     releaseReload?.({
       data: {
         items: [],
-        item_activity: [{ ...itemActivity(2), repo }],
+        item_activity: [{ ...itemActivity(operation === "reload" ? 2 : 1), repo }],
         item_activity_capped: true,
-        next_subject_cursor: "new",
+        next_subject_cursor: operation === "reload" ? "new" : "old",
         capped: false,
       },
       error: null,
     });
-    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([2, 3]));
+    if (reconciliation) await reconciliation.exit;
+    await vi.waitFor(() =>
+      expect(store.getItemActivity().map((item) => item.item_number)).toEqual(operation === "reload" ? [2, 3] : [1, 2]),
+    );
     expect(store.isActivityLoading()).toBe(false);
-    expect(cursors).toEqual(["new"]);
+    expect(cursors).toEqual([operation === "reload" ? "new" : "old"]);
     expect(store.canLoadOlderItems()).toBe(false);
   });
-  it.each([true, false])("preserves an in-flight thread when an older page succeeds: %s", async (succeeds) => {
+  it.each(["loaded", "success", "failure"])("preserves a thread when loading an older page: %s", async (scenario) => {
     const comment = { ...notificationItem("ntf:pending", "read"), item_number: 7, repo } as ActivityItem;
+    let threadReads = 0;
     let release: ((value: unknown) => void) | undefined;
     const pending = new Promise((resolve) => {
       release = resolve;
@@ -500,9 +532,12 @@ describe("activity subject paging", () => {
     const client = {
       GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
         if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-        if (path === "/activity/thread-events") return pending;
+        if (path === "/activity/thread-events") {
+          threadReads++;
+          return pending;
+        }
         if (options?.params?.query?.subject_before)
-          return succeeds
+          return scenario !== "failure"
             ? { data: { items: [], item_activity: [{ ...itemActivity(8), repo }], capped: false }, error: null }
             : { error: { detail: "page unavailable" }, response: new Response(null, { status: 422 }) };
         return {
@@ -525,89 +560,15 @@ describe("activity subject paging", () => {
     await vi.waitFor(() =>
       expect(vi.mocked(client.GET).mock.calls.some(([path]) => path === "/activity/thread-events")).toBe(true),
     );
+    if (scenario === "loaded") {
+      release?.({ data: { items: [comment], capped: false }, error: null });
+      await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id));
+    }
     store.loadOlderItems();
     await vi.waitFor(() => expect(store.isLoadingOlderItems()).toBe(false));
-    release?.({ data: { items: [comment], capped: false }, error: null });
+    if (scenario !== "loaded") release?.({ data: { items: [comment], capped: false }, error: null });
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id));
-  });
-  it("keeps an expanded comment when loading older items", async () => {
-    const subject = { ...itemActivity(7), repo } satisfies ActivitySubject;
-    const comment = { ...notificationItem("ntf:visible", "read"), item_number: 7, repo } as ActivityItem;
-    let threadReads = 0;
-    const client = {
-      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
-        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-        if (path === "/activity/thread-events") {
-          threadReads++;
-          return { data: { items: [comment], capped: false }, error: null };
-        }
-        return {
-          data: {
-            items: [],
-            item_activity: options?.params?.query?.subject_before ? [] : [subject],
-            item_activity_capped: !options?.params?.query?.subject_before,
-            next_subject_cursor: options?.params?.query?.subject_before ? "" : "older",
-            capped: false,
-            event_cursor: "snapshot",
-          },
-          error: null,
-        };
-      }),
-    } as unknown as GeneratedClient;
-    const store = createActivityStore({ client });
-    store.hydrateDefaults(settings(true));
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
-    store.toggleThreadItem("github|github.com|id|1007:pr:7");
-    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id));
-    store.loadOlderItems();
-    await vi.waitFor(() => expect(store.isLoadingOlderItems()).toBe(false));
-    expect(store.getActivityItems().map((item) => item.id)).toContain(comment.id);
     expect(threadReads).toBe(1);
-  });
-  it("queues an older page until the earlier reconciliation finishes", async () => {
-    let release: ((value: unknown) => void) | undefined;
-    const deferred = new Promise((resolve) => {
-      release = resolve;
-    });
-    let firstPageReads = 0;
-    const first = {
-      data: {
-        items: [],
-        capped: false,
-        item_activity: [{ ...itemActivity(1), repo }],
-        item_activity_capped: true,
-        next_subject_cursor: "older",
-      },
-      error: null,
-    };
-    const client = {
-      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
-        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-        if (path !== "/activity") return { data: { items: [], capped: false }, error: null };
-        if (options?.params?.query?.subject_before)
-          return { data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] }, error: null };
-        firstPageReads++;
-        if (firstPageReads === 2) return deferred;
-        return first;
-      }),
-    } as unknown as GeneratedClient;
-    const store = createActivityStore({ client });
-    store.setViewMode("threaded");
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
-    if (runtime === undefined) throw new Error("test runtime was not created");
-    const reconciliation = runtime.runCommand(store.reconcileActivityEffect(), {
-      operation: "reconcile activity",
-      safeContext: {},
-      onFailure: () => {},
-    });
-    await vi.waitFor(() => expect(firstPageReads).toBe(2));
-    store.loadOlderItems();
-    expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1]);
-    release?.(first);
-    await reconciliation.exit;
-    await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 2]));
   });
   it("keeps the current page and permits retry when the next page fails", async () => {
     let fail = true;
@@ -724,54 +685,6 @@ describe("activity subject paging", () => {
     }).exit;
     expect(Date.parse(since[2]!) - Date.parse(since[1]!)).toBe(60_000);
     clock.mockRestore();
-  });
-  it("does not append a page after the search changes", async () => {
-    let release: ((value: unknown) => void) | undefined;
-    let olderSignal: AbortSignal | undefined;
-    const older = new Promise((resolve) => {
-      release = resolve;
-    });
-    const client = {
-      GET: vi.fn(
-        async (
-          path: string,
-          options?: { signal?: AbortSignal; params?: { query?: { subject_before?: string; search?: string } } },
-        ) => {
-          if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-          if (path !== "/activity") return { data: { items: [], capped: false }, error: null };
-          const query = options?.params?.query;
-          if (query?.subject_before) {
-            olderSignal = options?.signal;
-            return older;
-          }
-          const number = query?.search ? 3 : 1;
-          return {
-            data: {
-              items: [],
-              capped: false,
-              item_activity: [{ ...itemActivity(number), repo }],
-              item_activity_capped: !query?.search,
-              next_subject_cursor: query?.search ? "" : "older",
-            },
-            error: null,
-          };
-        },
-      ),
-    } as unknown as GeneratedClient;
-    const store = createActivityStore({ client });
-    store.setViewMode("threaded");
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
-    store.loadOlderItems();
-    await vi.waitFor(() => expect(olderSignal).toBeDefined());
-    store.setActivitySearch("new search");
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([3]));
-    expect(olderSignal?.aborted).toBe(true);
-    release?.({ data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] }, error: null });
-    await Promise.resolve();
-    expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([3]);
-    expect(store.canLoadOlderItems()).toBe(false);
   });
   it("loads older subjects and refreshes the loaded pages with the same filters", async () => {
     const calls: Array<{ since?: string; search?: string; subject_before?: string }> = [];

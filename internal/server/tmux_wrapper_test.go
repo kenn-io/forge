@@ -526,6 +526,58 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	assert.EqualValues(1, authorWorkspace.ItemNumber)
 	require.NotNil(authorWorkspace.Workspace)
 	assert.Equal(workspaceID, authorWorkspace.Workspace.ID)
+}
+
+func TestWorkspaceActivitySearchPagesBySubjectCursor(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	script, record := writeTmuxRecorder(t)
+	setTmuxRecorderPaneOutput(t, record, "baseline output")
+	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	srv.cfgMu.Lock()
+	srv.cfg.Activity.UseWorkspaceActivityForRecency = true
+	srv.cfgMu.Unlock()
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: mr.ID,
+		EventType:      "issue_comment",
+		Author:         "search-reviewer",
+		Body:           "matches only provider event fields",
+		CreatedAt:      now,
+		DedupeKey:      "searched-workspace-comment",
+	}}))
+
+	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+		Provider: "github", PlatformHost: "github.com",
+		Owner: "acme", Name: "widget", MrNumber: 1,
+	}})
+	require.NoError(err)
+	require.Equal(http.StatusAccepted, createResp.StatusCode)
+	require.NotNil(createResp.JSON202)
+	workspaceID := createResp.JSON202.ID
+	waitForWorkspaceReady(t, ctx, client, workspaceID)
+	waitForWorkspaceActivity(t, client, ctx, workspaceID, func(activity workspaceActivityResponse) bool {
+		return activity.TmuxActivitySource == "none" && activity.TmuxLastOutputAt == nil
+	})
+	setTmuxRecorderPaneOutput(t, record, "changed output")
+
+	search := "search-reviewer"
+	since := now.Add(-time.Hour).Format(time.RFC3339)
+	require.Eventually(func() bool {
+		response, requestErr := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Search: &search, Since: &since}})
+		return requestErr == nil && response.JSON200 != nil && len(response.JSON200.WorkspaceActivity) == 1
+	}, 8*time.Second, 100*time.Millisecond)
 
 	newer := now.Add(time.Minute)
 	newerPR := serverfake.SeedPR(t, database, "acme", "widget", 2,

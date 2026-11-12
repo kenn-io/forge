@@ -41,7 +41,7 @@ it("reopens and filters cached search results", async () => {
   vi.stubGlobal("fetch", api.fetch);
   const { props, context } = setupSearch();
   const first = render(WorkspaceItemSearch, { props, context });
-  await screen.findByRole("option", { name: /#55.*Refactor theme system/ }, { timeout: 5000 });
+  await screen.findByRole("option", { name: /#55.*Refactor theme system/ });
   first.unmount();
   const requestCount = api.requests.length;
 
@@ -95,7 +95,40 @@ it("recovers failed open searches", async () => {
   expect(screen.queryByRole("alert")).toBeNull();
 }, 10000);
 
-it("preserves the query when retrying closed searches", async () => {
+it.each([503, 403, 504])(
+  "classifies a %s response for open searches",
+  async (status) => {
+    const api = createMockApiFetch();
+    let pulls = 0;
+    vi.stubGlobal("fetch", (...args: Parameters<typeof fetch>) => {
+      if ((args[0] instanceof Request ? args[0].url : String(args[0])).includes("/pulls")) {
+        pulls++;
+        if (status === 403 || pulls === 1) {
+          return Promise.resolve(
+            status === 504
+              ? Response.json({ code: "internalError", status: 504 }, { status })
+              : new Response("{", { status, headers: { "Content-Type": "application/json" } }),
+          );
+        }
+      }
+      return api.fetch(...args);
+    });
+    const { props, context } = setupSearch();
+    render(WorkspaceItemSearch, { props, context });
+    if (status !== 403) {
+      await screen.findByRole("option", { name: /#55.*Refactor theme system/ }, { timeout: 5000 });
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(pulls).toBe(2);
+    } else {
+      await screen.findByRole("alert", {}, { timeout: 5000 });
+      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+      expect(pulls).toBe(1);
+    }
+  },
+  10000,
+);
+
+it("preserves the query on retry and clears stale closed-search results", async () => {
   const api = createMockApiFetch();
   vi.stubGlobal("fetch", api.fetch);
   const { props, context } = setupSearch();

@@ -31,6 +31,7 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
   let branches = $state.raw<BranchWithCount[]>([]);
   let loadingBranches = $state(false);
   let branchError = $state(false);
+  let branchRequest = 0;
   let pickerRef = $state<HTMLDivElement>();
 
   const selectedRepo = $derived(
@@ -107,7 +108,9 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
   }
 
   function loadBranches(rootPath: string): void {
+    const request = ++branchRequest;
     loadingBranches = true;
+    // An interrupted read must leave the error state visible.
     branchError = true;
     if (!client) {
       loadingBranches = false;
@@ -131,13 +134,16 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
                     }),
                   )
                 : Effect.sync(() => {
-                    [branchError, branches] = [false, result.data?.branches ?? []];
+                    if (request === branchRequest) {
+                      branchError = false;
+                      branches = result.data?.branches ?? [];
+                    }
                   }),
             ),
             Effect.catch(() => Effect.void),
             Effect.ensuring(
               Effect.sync(() => {
-                if (expandedRepo === rootPath) loadingBranches = false;
+                if (request === branchRequest) loadingBranches = false;
               }),
             ),
           ),

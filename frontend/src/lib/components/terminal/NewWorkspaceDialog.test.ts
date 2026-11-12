@@ -1339,11 +1339,21 @@ describe("NewWorkspaceDialog", () => {
   it.each(["problem", "rejection"])(
     "retries a failed repository read without clearing the branch: %s",
     async (failure) => {
-      if (failure === "problem") mockGet.mockResolvedValue({ error: { detail: "repositories unavailable" } });
+      if (failure === "problem")
+        mockGet.mockResolvedValue({
+          error: { code: "validationError", status: 422, detail: "repositories unavailable" },
+          response: new Response(null, { status: 422 }),
+        });
       else mockGet.mockRejectedValue(new Error("network down"));
       await renderDialog();
       const retry = await screen.findByRole("button", { name: "Retry" }, { timeout: 5000 });
       expect(repoPicker().textContent).toContain("Could not load repositories");
+      expect(mockGet.mock.calls.filter(([path]) => path === "/repos")).toHaveLength(failure === "problem" ? 1 : 3);
+      if (failure === "problem") {
+        await fireEvent.click(repoPicker());
+        expect((await screen.findByRole("alert")).textContent).toContain("repositories unavailable");
+        await fireEvent.keyDown(screen.getByRole("combobox", { name: "Filter repositories" }), { key: "Escape" });
+      }
       expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
       expect(screen.queryByRole("button", { name: "Open Settings" })).toBeNull();
       await fireEvent.input(screen.getByRole("textbox", { name: "Branch name" }), { target: { value: "my-branch" } });

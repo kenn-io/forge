@@ -19,6 +19,7 @@ cadence loops are intentionally separate.
 - Never stack transient retry on paths that already retry, such as the
   `internal/github` REST client.
 - Frontend idempotent reads use `retryIdempotentRead`; never add custom retry loops.
+  Picker reads pass `isTransientPickerReadFailure` so auth and validation errors stop at once.
   A read that still fails shows its error and may offer a Retry control
   (`frontend/src/lib/api/retry-policy.ts`).
 - Scope upstream timeout child contexts to the upstream call; later local database

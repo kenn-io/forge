@@ -2,7 +2,8 @@ import { assert, it } from "@effect/vitest";
 import { Effect, Fiber, Ref } from "effect";
 import { TestClock } from "effect/testing";
 import { ApiProblemError, TransientTransportError } from "./effect-errors.js";
-import { InvalidGeneratedErrorResponse } from "./runtime.js";
+import { executeGeneratedRequest } from "./generated-api.js";
+import { listRepos } from "./generated/repositories/repositories.js";
 import { isTransientPickerReadFailure, retryIdempotentRead } from "./retry-policy.js";
 
 it.effect("retries a transient idempotent read at most twice", () =>
@@ -45,22 +46,72 @@ it.effect("does not retry a generated validation problem", () =>
   }),
 );
 
-it("classifies picker read failures", () => {
-  const transport = (cause: unknown) => TransientTransportError.make({ operation: "load repositories", cause });
-  for (const status of [502, 503, 504]) {
-    assert.isTrue(isTransientPickerReadFailure(transport(new InvalidGeneratedErrorResponse("unavailable", status))));
-  }
-  assert.isFalse(isTransientPickerReadFailure(transport(new InvalidGeneratedErrorResponse("denied", 403))));
-  for (const code of ["upstreamError", "serviceUnavailable", "hubUnavailable"] as const) {
-    assert.isTrue(
-      isTransientPickerReadFailure(new ApiProblemError({ operation: "load repositories", problem: { code } })),
-    );
-  }
-  assert.isFalse(
-    isTransientPickerReadFailure(
-      new ApiProblemError({ operation: "load repositories", problem: { code: "forbidden" } }),
-    ),
+const formats = [
+  { name: "problem", response: (status: number) => Response.json({ code: "serviceUnavailable", status }, { status }) },
+  { name: "text", response: (status: number) => new Response("unavailable", { status }) },
+  { name: "non-problem JSON", response: (status: number) => Response.json({ message: "unavailable" }, { status }) },
+  {
+    name: "malformed JSON",
+    response: (status: number) => new Response("{", { status, headers: { "Content-Type": "application/json" } }),
+  },
+];
+const cases = [
+  ...[502, 503, 504, 400, 401, 403, 422].flatMap((status) =>
+    formats.map((format) => ({
+      name: `${status} ${format.name}`,
+      response: () => format.response(status),
+      attempts: status >= 500 ? 2 : 1,
+    })),
+  ),
+  {
+    name: "missing body status",
+    response: () => Response.json({ code: "internalError" }, { status: 504 }),
+    attempts: 2,
+  },
+  {
+    name: "conflicting body status",
+    response: () => Response.json({ code: "internalError", status: 403 }, { status: 504 }),
+    attempts: 2,
+  },
+  {
+    name: "transport failure",
+    response: () => {
+      throw new TypeError("offline");
+    },
+    attempts: 2,
+  },
+  {
+    name: "malformed success",
+    response: () => new Response("{", { headers: { "Content-Type": "application/json" } }),
+    attempts: 1,
+  },
+  {
+    name: "exhausted gateway",
+    response: () => new Response("unavailable", { status: 503 }),
+    attempts: 3,
+    exhausted: true,
+  },
+];
+
+for (const scenario of cases) {
+  it.effect(`classifies picker reads: ${scenario.name}`, () =>
+    Effect.gen(function* () {
+      let attempts = 0;
+      const request = executeGeneratedRequest("load repositories", (signal) =>
+        listRepos({
+          signal,
+          fetch: async () => {
+            attempts++;
+            return attempts > 1 && !scenario.exhausted ? Response.json([]) : scenario.response();
+          },
+        }),
+      );
+      const fiber = yield* Effect.forkChild(Effect.exit(retryIdempotentRead(request, isTransientPickerReadFailure)));
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("5 seconds");
+      const exit = yield* Fiber.join(fiber);
+      assert.strictEqual(attempts, scenario.attempts);
+      assert.strictEqual(exit._tag, scenario.attempts === 2 ? "Success" : "Failure");
+    }),
   );
-  assert.isTrue(isTransientPickerReadFailure(transport(new TypeError("offline"))));
-  assert.isFalse(isTransientPickerReadFailure(transport(new SyntaxError("invalid JSON"))));
-});
+}

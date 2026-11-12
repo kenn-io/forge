@@ -571,8 +571,7 @@ func (s *Syncer) Status() *SyncStatus {
 	return &status
 }
 
-// stampFullSyncCounts gives every status, snapshot or event, the counters as
-// of its own publication so a client can order it against others.
+// stampFullSyncCounts records the current counters in a status snapshot or event.
 func (s *Syncer) stampFullSyncCounts(status *SyncStatus) {
 	status.AcceptedFullSyncs = s.acceptedFullSyncs.Load()
 	status.CompletedFullSyncs = s.completedFullSyncs.Load()

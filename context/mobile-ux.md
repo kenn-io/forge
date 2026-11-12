@@ -176,7 +176,8 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
   selection first; Activity owns its filter content.
 - Phone PR and issue filters must equal desktop's, including Group and View, and
   narrow rows the same way; every surface renders the one shared menu, never a
-  phone copy. A parity browser test fails CI on drift (`frontend/src/lib/components/shared/list-filter-menus.ts::pullListFilterMenu`).
+  phone copy (`frontend/src/lib/components/shared/list-filter-menus.ts`). A parity browser
+  test fails CI on drift (`frontend/src/App.list-filter-parity.browser.svelte.ts`).
 
 ## Routing expectations
 

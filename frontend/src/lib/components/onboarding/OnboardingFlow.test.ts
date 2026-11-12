@@ -777,7 +777,7 @@ describe("OnboardingFlow", () => {
     renderFlow(fixture.stores);
     await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy());
     expect(posts).toBe(1);
-    expect(screen.getByRole("alert").textContent).toContain("Sync was accepted without a receipt. Retry sync.");
+    expect(screen.getByRole("alert").textContent).toContain("Could not confirm sync status.");
     expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
   });
 

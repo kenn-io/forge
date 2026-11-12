@@ -366,7 +366,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
       return yield* Effect.gen(function* () {
         const accepted = yield* triggeredSyncProgram(fullSyncRequest(), true);
         if (!isSyncReceipt(accepted)) {
-          return yield* waitFailure("Sync was accepted without a receipt. Retry sync.");
+          return yield* waitFailure("Could not confirm sync status.");
         }
         receipt = { instance_id: accepted.instance_id, generation: accepted.generation };
         receiptEpoch += 1;

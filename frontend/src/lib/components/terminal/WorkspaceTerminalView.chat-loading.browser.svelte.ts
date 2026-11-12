@@ -168,7 +168,8 @@ describe("WorkspaceTerminalView chat loading", () => {
 
     try {
       await expect.element(composer, { timeout: WAIT }).toBeInTheDocument();
-      expect(chatSockets).toHaveLength(1);
+      // The pane opens its socket from an effect after it renders the composer.
+      await expect.poll(() => chatSockets, { timeout: WAIT }).toHaveLength(1);
 
       flushSync(() => {
         workspaceId = "ws-2";
@@ -187,7 +188,7 @@ describe("WorkspaceTerminalView chat loading", () => {
       failing = false;
       await expect.element(composer, { timeout: WAIT }).toBeInTheDocument();
       await expect.element(loadingSession).not.toBeInTheDocument();
-      expect(chatSockets).toHaveLength(2);
+      await expect.poll(() => chatSockets, { timeout: WAIT }).toHaveLength(2);
     } finally {
       flushSync(() => unmount(instance));
       target.remove();

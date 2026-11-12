@@ -1028,7 +1028,8 @@ func TestAPIListActivitySearchFindsParentsBeyondEventCap(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		count int
-	}{{"page limit", 201}, {"safety cap", itemapi.ActivitySafetyCap + 1}} {
+		limit string
+	}{{"page limit", 201, "&limit=200"}, {"safety cap", itemapi.ActivitySafetyCap + 1, ""}} {
 		t.Run(tc.name, func(t *testing.T) {
 			serverfake.RunParallelServerTest(t)
 			srv, database, _ := setupTestServer(t)
@@ -1056,7 +1057,7 @@ func TestAPIListActivitySearchFindsParentsBeyondEventCap(t *testing.T) {
 			since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
 			for _, projection := range []string{"full", "collapsed"} {
 				t.Run(projection, func(t *testing.T) {
-					rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle&limit=200&projection="+projection, nil)
+					rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle"+tc.limit+"&projection="+projection, nil)
 					require.Equal(t, http.StatusOK, rr.Code)
 					var body itemapi.ActivityResponse
 					require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))

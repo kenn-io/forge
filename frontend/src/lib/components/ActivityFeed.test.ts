@@ -354,26 +354,23 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.getByText(/most recent 5,000 events/)).toBeTruthy();
   });
 
-  it.each([
-    { view: "threaded" as const, visible: true },
-    { view: "flat" as const, visible: false },
-  ])("shows the older item control in $view view: $visible", ({ view, visible }) => {
+  it("shows the older item control in threaded view", async () => {
     itemActivityCapped.value = true;
-    olderItemsAvailable.value = true;
-    viewMode.value = view;
-    render(ActivityFeed);
-    expect(screen.queryByText(/Item totals cover loaded items only/) !== null).toBe(visible);
-    expect(screen.queryByRole("button", { name: "Load older items" }) !== null).toBe(visible);
-    expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
-  });
-
-  it("uses older item availability for the paging control", async () => {
     olderItemsAvailable.value = true;
     viewMode.value = "threaded";
     render(ActivityFeed);
+    expect(screen.getByText(/Item totals cover loaded items only/)).toBeTruthy();
     await fireEvent.click(screen.getByRole("button", { name: "Load older items" }));
     expect(loadOlderItems).toHaveBeenCalledOnce();
+  });
+
+  it("hides the older item control in flat view", () => {
+    itemActivityCapped.value = true;
+    olderItemsAvailable.value = true;
+    viewMode.value = "flat";
+    render(ActivityFeed);
     expect(screen.queryByText(/Item totals cover loaded items only/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load older items" })).toBeNull();
   });
 
   it("offers to retry a failed thread history load", async () => {

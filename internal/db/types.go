@@ -1165,6 +1165,7 @@ type ActivityItem struct {
 // ActivitySubject is the authoritative parent projection for one pull request
 // or issue in the Activity time range. It is independent of event visibility.
 type ActivitySubject struct {
+	activityAtRaw       string // Preserves the SQLite sort key for pagination.
 	Subject             WorkspaceSubjectMetadata
 	ActivityAt          time.Time
 	EventLedgerRevision string
@@ -1749,7 +1750,7 @@ type ListActivitySubjectsOpts struct {
 }
 
 type ActivitySubjectCursor struct {
-	ActivityAt time.Time
+	ActivityAt string
 	RepoID     int64
 	ItemType   string
 	ItemNumber int

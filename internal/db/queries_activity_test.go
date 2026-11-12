@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"slices"
 	"strings"
@@ -1818,7 +1819,7 @@ func TestListActivitySubjectsPagesEqualTimestamps(t *testing.T) {
 	assert.Equal(t, 2, first[1].Subject.Key.ItemNumber)
 	last := first[1]
 	second, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 2, Before: &ActivitySubjectCursor{
-		ActivityAt: last.ActivityAt, RepoID: last.Subject.Key.RepoID, ItemType: last.Subject.Key.ItemType, ItemNumber: last.Subject.Key.ItemNumber,
+		ActivityAt: last.activityAtRaw, RepoID: last.Subject.Key.RepoID, ItemType: last.Subject.Key.ItemType, ItemNumber: last.Subject.Key.ItemNumber,
 	}})
 	require.NoError(t, err)
 	require.Len(t, second, 2)
@@ -1827,25 +1828,53 @@ func TestListActivitySubjectsPagesEqualTimestamps(t *testing.T) {
 	assert.Equal(t, 1, second[1].Subject.Key.ItemNumber)
 	last = second[1]
 	third, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 2, Before: &ActivitySubjectCursor{
-		ActivityAt: last.ActivityAt, RepoID: last.Subject.Key.RepoID, ItemType: last.Subject.Key.ItemType, ItemNumber: last.Subject.Key.ItemNumber,
+		ActivityAt: last.activityAtRaw, RepoID: last.Subject.Key.RepoID, ItemType: last.Subject.Key.ItemType, ItemNumber: last.Subject.Key.ItemNumber,
 	}})
 	require.NoError(t, err)
 	assert.Empty(t, third)
 }
 
+func TestListActivitySubjectsPagesStoredTimestampEncodings(t *testing.T) {
+	t.Parallel()
+	for _, stored := range []string{"2024-01-15T12:00:00Z", "2024-01-15T12:00:00.123456789Z", "2024-01-15 12:00:00 +0000 UTC"} {
+		t.Run(stored, func(t *testing.T) {
+			t.Parallel()
+			d := openTestDB(t)
+			repo := insertTestRepo(t, d, "alice", "alpha")
+			insertTestMRWithOptions(t, d, testMR(repo, 1))
+			insertTestMRWithOptions(t, d, testMR(repo, 2))
+			_, err := d.WriteDB().ExecContext(t.Context(), `UPDATE forge_merge_requests SET created_at = ? WHERE repo_id = ?`, stored, repo)
+			require.NoError(t, err)
+
+			first, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 1})
+			require.NoError(t, err)
+			require.Len(t, first, 1)
+			assert.Equal(t, 2, first[0].Subject.Key.ItemNumber)
+			cursor, err := DecodeActivitySubjectCursor(EncodeActivitySubjectCursor(first[0]))
+			require.NoError(t, err)
+			second, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 1, Before: &cursor})
+			require.NoError(t, err)
+			require.Len(t, second, 1)
+			assert.Equal(t, 1, second[0].Subject.Key.ItemNumber)
+		})
+	}
+}
+
 func TestActivitySubjectCursorValidation(t *testing.T) {
 	stamp := time.Date(2400, 1, 2, 3, 4, 5, 123456789, time.UTC)
-	subject := ActivitySubject{ActivityAt: stamp, Subject: WorkspaceSubjectMetadata{Key: WorkspaceSubjectKey{RepoID: 7, ItemType: "issue", ItemNumber: 9}}}
+	subject := ActivitySubject{activityAtRaw: stamp.Format(time.RFC3339Nano), ActivityAt: stamp, Subject: WorkspaceSubjectMetadata{Key: WorkspaceSubjectKey{RepoID: 7, ItemType: "issue", ItemNumber: 9}}}
 	cursor, err := DecodeActivitySubjectCursor(EncodeActivitySubjectCursor(subject))
 	require.NoError(t, err)
-	assert.Equal(t, stamp, cursor.ActivityAt)
+	assert.Equal(t, stamp.Format(time.RFC3339Nano), cursor.ActivityAt)
 	assert.Equal(t, int64(7), cursor.RepoID)
 	assert.Equal(t, "issue", cursor.ItemType)
 	assert.Equal(t, 9, cursor.ItemNumber)
-	for _, raw := range []string{"invalid", "MTowOjA6cHI6MQ", "MToxMDAwMDAwMDAwOjE6cHI6MQ", "MTowOjE6b3RoZXI6MQ", "MTowOjE6cHI6MA"} {
-		_, err := DecodeActivitySubjectCursor(raw)
-		assert.Error(t, err, raw)
+	for _, raw := range []string{"bad|1|pr|1", "2024-01-15T12:00:00Z|0|pr|1", "2024-01-15T12:00:00Z|1|other|1", "2024-01-15T12:00:00Z|1|pr|0"} {
+		_, err := DecodeActivitySubjectCursor(base64.RawURLEncoding.EncodeToString([]byte(raw)))
+		require.Error(t, err, raw)
 	}
+	_, err = DecodeActivitySubjectCursor("invalid=")
+	require.Error(t, err)
 }
 
 func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T) {

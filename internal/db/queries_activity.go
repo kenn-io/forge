@@ -940,6 +940,7 @@ func listActivitySubjectsWithQueryer(
 		); err != nil {
 			return nil, fmt.Errorf("scan activity subject: %w", err)
 		}
+		subject.activityAtRaw = activityAt
 		subject.ActivityAt, err = parseDBTime(activityAt)
 		if err != nil {
 			return nil, fmt.Errorf("parse activity subject activity_at %q: %w", activityAt, err)
@@ -1262,7 +1263,7 @@ func EncodeCursor(
 // EncodeActivitySubjectCursor identifies the last subject in a page.
 func EncodeActivitySubjectCursor(subject ActivitySubject) string {
 	key := subject.Subject.Key
-	raw := fmt.Sprintf("%d:%d:%d:%s:%d", subject.ActivityAt.Unix(), subject.ActivityAt.Nanosecond(), key.RepoID, key.ItemType, key.ItemNumber)
+	raw := fmt.Sprintf("%s|%d|%s|%d", subject.activityAtRaw, key.RepoID, key.ItemType, key.ItemNumber)
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
 }
 
@@ -1271,27 +1272,22 @@ func DecodeActivitySubjectCursor(cursor string) (ActivitySubjectCursor, error) {
 	if err != nil {
 		return ActivitySubjectCursor{}, fmt.Errorf("decode subject cursor: %w", err)
 	}
-	parts := strings.Split(string(raw), ":")
-	if len(parts) != 5 {
+	parts := strings.Split(string(raw), "|")
+	if len(parts) != 4 {
 		return ActivitySubjectCursor{}, errors.New("invalid subject cursor")
 	}
-	seconds, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
+	if _, err := parseDBTime(parts[0]); err != nil {
 		return ActivitySubjectCursor{}, errors.New("invalid subject cursor timestamp")
 	}
-	nanos, err := strconv.ParseInt(parts[1], 10, 64)
-	if err != nil || nanos < 0 || nanos >= int64(time.Second) {
-		return ActivitySubjectCursor{}, errors.New("invalid subject cursor nanoseconds")
-	}
-	repoID, err := strconv.ParseInt(parts[2], 10, 64)
-	if err != nil || repoID <= 0 || (parts[3] != "pr" && parts[3] != "issue") {
+	repoID, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil || repoID <= 0 || (parts[2] != "pr" && parts[2] != "issue") {
 		return ActivitySubjectCursor{}, errors.New("invalid subject cursor identity")
 	}
-	number, err := strconv.Atoi(parts[4])
+	number, err := strconv.Atoi(parts[3])
 	if err != nil || number <= 0 {
 		return ActivitySubjectCursor{}, errors.New("invalid subject cursor item number")
 	}
-	return ActivitySubjectCursor{ActivityAt: time.Unix(seconds, nanos).UTC(), RepoID: repoID, ItemType: parts[3], ItemNumber: number}, nil
+	return ActivitySubjectCursor{ActivityAt: parts[0], RepoID: repoID, ItemType: parts[2], ItemNumber: number}, nil
 }
 
 // DecodeCursor parses an opaque cursor string into its components.

@@ -640,7 +640,7 @@ exit 0
 	}, records[3])
 	assert.Equal([]string{
 		"-L", "kenn-forge", "set-option", "-q", "-g", "mouse", "off",
-	}, records[5])
+	}, records[4])
 }
 
 func TestManagerLaunchPlainShellWrapsInTmuxWhenAvailable(t *testing.T) {

@@ -5979,17 +5979,21 @@ func TestManagerEnsureTmuxHasSessionPrefix(t *testing.T) {
 	require.NoError(t, mgr.EnsureTmux(t.Context(), "sess-A", t.TempDir()))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(t, argvs, 2)
+	require.Len(t, argvs, 3)
 	assert.Equal(
 		[]string{"wrap", "has-session", "-t", "=sess-A"},
 		argvs[0],
+	)
+	assert.Equal(
+		[]string{"wrap", "list-sessions", "-F", tmuxSessionListFormat},
+		argvs[1],
 	)
 	assert.Equal(
 		[]string{
 			"wrap", "set-option", "-q", "-p", "-t", "sess-A",
 			"allow-passthrough", "on",
 		},
-		argvs[1],
+		argvs[2],
 	)
 }
 
@@ -6114,7 +6118,6 @@ func TestManagerApplyTmuxMouseDoesNotMutateCustomServer(t *testing.T) {
 	mgr.SetTmuxMouse(true)
 
 	require.NoError(mgr.ApplyTmuxMouse(t.Context()))
-	require.NoError(mgr.ApplyTmuxClipboard(t.Context()))
 	require.NoFileExists(record)
 }
 
@@ -7580,7 +7583,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	require.NoError(mgr.EnsureTmux(t.Context(), "sess-B", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 5)
+	require.Len(argvs, 6)
 	assert.Equal(
 		[]string{"has-session", "-t", "=sess-B"},
 		argvs[0],
@@ -7604,15 +7607,19 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 		argvs[2],
 	)
 	assert.Equal(
+		[]string{"list-sessions", "-F", tmuxSessionListFormat},
+		argvs[3],
+	)
+	assert.Equal(
 		[]string{
 			"set-option", "-q", "-p", "-t", "sess-B",
 			"allow-passthrough", "on",
 		},
-		argvs[3],
+		argvs[4],
 	)
 	assert.Equal(
 		[]string{"set-option", "-q", "-t", "sess-B", "status", "off"},
-		argvs[4],
+		argvs[5],
 	)
 }
 
@@ -7644,7 +7651,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 	require.NoError(mgr.EnsureTmux(t.Context(), "sess-macos", "/tmp/cwd"))
 
 	argvs := readRecorderArgv(t, record)
-	require.Len(argvs, 4)
+	require.Len(argvs, 5)
 	assert.Equal(
 		[]string{"has-session", "-t", "=sess-macos"},
 		argvs[0],
@@ -7659,11 +7666,15 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 		argvs[2],
 	)
 	assert.Equal(
+		[]string{"list-sessions", "-F", tmuxSessionListFormat},
+		argvs[3],
+	)
+	assert.Equal(
 		[]string{
 			"set-option", "-q", "-p", "-t", "sess-macos",
 			"allow-passthrough", "on",
 		},
-		argvs[3],
+		argvs[4],
 	)
 }
 

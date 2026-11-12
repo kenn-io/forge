@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -233,16 +234,14 @@ func (l tmuxLauncher) prepare(ctx context.Context) (tmuxLaunchResult, error) {
 				ctx, "configure tmux SIXEL", err,
 			)
 		}
-		if err := l.run(ctx, l.clipboardCommand()); err != nil {
-			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
-				ctx, "configure tmux clipboard", err,
-			)
-		}
 		if err := l.run(ctx, l.tmuxMouseCommand()); err != nil {
 			return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(
 				ctx, "configure tmux mouse", err,
 			)
 		}
+	}
+	if err := l.run(ctx, l.clipboardCommand()); err != nil {
+		return tmuxLaunchResult{}, l.cleanupNewSessionAfterError(ctx, "configure tmux clipboard", err)
 	}
 	if l.Graphics && !l.ConfigureServer {
 		if err := l.run(ctx, l.passthroughCommand()); err != nil {
@@ -279,12 +278,12 @@ func (l tmuxLauncher) prepareExisting(ctx context.Context) (tmuxLaunchResult, er
 		if err := l.run(ctx, l.sixelCommand()); err != nil {
 			return tmuxLaunchResult{}, fmt.Errorf("configure tmux SIXEL: %w", err)
 		}
-		if err := l.run(ctx, l.clipboardCommand()); err != nil {
-			return tmuxLaunchResult{}, fmt.Errorf("configure tmux clipboard: %w", err)
-		}
 		if err := l.run(ctx, l.tmuxMouseCommand()); err != nil {
 			return tmuxLaunchResult{}, fmt.Errorf("configure tmux mouse: %w", err)
 		}
+	}
+	if err := l.run(ctx, l.clipboardCommand()); err != nil {
+		return tmuxLaunchResult{}, fmt.Errorf("configure tmux clipboard: %w", err)
 	}
 	if l.Graphics && !l.ConfigureServer {
 		if err := l.run(ctx, l.passthroughCommand()); err != nil {
@@ -635,7 +634,36 @@ func (l tmuxLauncher) sixelCommand() []string {
 
 // Applications need "on": tmux's default "external" drops their OSC 52 writes.
 func (l tmuxLauncher) clipboardCommand() []string {
-	return append(slices.Clone(l.TmuxCommand), "set-option", "-s", "set-clipboard", "on")
+	return append(slices.Clone(l.TmuxCommand), TmuxClipboardArgs(l.TmuxCommand, l.ConfigureServer)...)
+}
+
+// TmuxClipboardArgs repairs stock drag bindings for Forge-owned sessions.
+// Shared servers keep their clipboard setting and customized bindings.
+func TmuxClipboardArgs(command []string, configureServer bool) []string {
+	if len(command) == 0 {
+		command = config.DefaultTmuxCommand()
+	}
+	client := shellquote.Join(command...) + " -S #{q:socket_path}"
+	args := []string{}
+	if configureServer {
+		args = append(args, "set-option", "-s", "set-clipboard", "on", ";")
+	}
+	for _, table := range []string{"copy-mode", "copy-mode-vi"} {
+		// Native copy output can be discarded while tmux redraws the pane.
+		// load-buffer -w writes directly to the client that made the selection.
+		// copy-pipe owns the selection buffer on older tmux versions; pipe leaks it.
+		// Remove the temporary delivery buffer to preserve normal paste history.
+		pipe := client + ` load-buffer -w -t #{q:client_name} -b "forge-clipboard-$$" -; ` +
+			`if [ -n #{q:copy-command} ]; then ` + client + ` save-buffer -b "forge-clipboard-$$" - | /bin/sh -c #{q:copy-command}; fi; ` +
+			client + ` delete-buffer -b "forge-clipboard-$$"`
+		native := "send-keys -X copy-pipe-and-cancel"
+		binding := "bind-key -T " + table + " MouseDragEnd1Pane "
+		stock := `[ "$(` + client + ` list-keys -T ` + table + ` MouseDragEnd1Pane)" = ` + shellquote.Join(binding+native) + ` ]`
+		reliable := "send-keys -X copy-pipe-and-cancel " + strconv.Quote(pipe)
+		guarded := binding + "if-shell -F " + strconv.Quote("#{&&:#{@forge_owner},#{!=:#{set-clipboard},off}}") + " " + strconv.Quote(reliable) + " " + strconv.Quote(native)
+		args = append(args, "if-shell", stock, guarded, ";")
+	}
+	return args[:len(args)-1]
 }
 
 func (l tmuxLauncher) tmuxMouseCommand() []string {

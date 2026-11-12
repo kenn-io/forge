@@ -375,7 +375,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
         const full = next.full_sync;
         if (!full) return;
         if (receipt && full.instance_id !== receipt.instance_id) {
-          if (fresh) outcome = waitFailure("Sync service restarted. Retry sync.");
+          if (fresh) outcome = waitFailure("Sync service restarted.");
         } else {
           const previous = observed.get(full.instance_id);
           if (!previous || full.settled_generation >= previous.settled_generation) observed.set(full.instance_id, full);

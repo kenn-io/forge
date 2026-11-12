@@ -897,6 +897,7 @@ describe("OnboardingFlow", () => {
       onFailure: () => {},
     });
     await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy());
+    expect(screen.getByRole("alert").textContent).toContain("Sync service restarted.");
     expect(posts).toBe(1);
     expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
   });

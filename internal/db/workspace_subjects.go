@@ -6,6 +6,11 @@ import (
 	"fmt"
 )
 
+const workspaceSubjectKeysSQL = `SELECT CAST(json_extract(value, '$.repo_id') AS INTEGER),
+	json_extract(value, '$.item_type'),
+	CAST(json_extract(value, '$.item_number') AS INTEGER)
+	FROM json_each(?)`
+
 func (d *DB) ListWorkspaceSubjectMetadata(
 	ctx context.Context,
 	keys []WorkspaceSubjectKey,
@@ -35,12 +40,7 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 	}
 	// No held pull requests, so the condition binds no arguments.
 	var noArgs []any
-	query := `WITH requested(repo_id, item_type, item_number) AS (
-			SELECT CAST(json_extract(value, '$.repo_id') AS INTEGER),
-			       json_extract(value, '$.item_type'),
-			       CAST(json_extract(value, '$.item_number') AS INTEGER)
-			FROM json_each(?)
-		)
+	query := `WITH requested(repo_id, item_type, item_number) AS (` + workspaceSubjectKeysSQL + `)
 		SELECT q.repo_id, q.item_type, q.item_number,
 		       r.platform, r.platform_host, r.platform_repo_id, r.bitbucket_repository_uuid, r.owner, r.name, r.repo_path, r.is_private,
 		       p.title, p.state, p.url, p.author, p.is_draft,

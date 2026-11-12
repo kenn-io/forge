@@ -979,8 +979,7 @@ func activitySubjectKeysCondition(keys []WorkspaceSubjectKey, args *[]any) (stri
 		return "", fmt.Errorf("encode activity subject keys: %w", err)
 	}
 	*args = append(*args, string(payload))
-	return "(repo_id, item_type, item_number) IN (" +
-		"SELECT json_extract(value, '$.repo_id'), json_extract(value, '$.item_type'), json_extract(value, '$.item_number') FROM json_each(?))", nil
+	return "(repo_id, item_type, item_number) IN (" + workspaceSubjectKeysSQL + ")", nil
 }
 
 // ListActivityAuthors returns the distinct, non-empty PR and issue authors

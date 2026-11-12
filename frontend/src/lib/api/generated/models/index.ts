@@ -888,6 +888,7 @@ export * from "./setWorktreeLinksPathParameters.ts";
 export * from "./setWorktreeSessionBackendInputBody.ts";
 export * from "./setWorktreeSessionBackendPathParameters.ts";
 export * from "./snapshot.ts";
+export * from "./snapshotActivity.ts";
 export * from "./snapshotCheck.ts";
 export * from "./snapshotComment.ts";
 export * from "./snapshotCoverage.ts";

@@ -135,6 +135,20 @@ const archiveSnapshotScope = archiveSnapshotPullScope + `, ` + archiveSnapshotLi
  AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=i.repo_id AND a.item_type='issue' AND a.item_number=i.number AND a.lifecycle_state='removed_upstream')
  )`
 
+const archiveSnapshotActivity = `activity_candidates AS (
+ SELECT e.id,e.merge_request_id,e.author,e.author_association,e.created_at,
+ CASE e.event_type WHEN 'issue_comment' THEN 'comment' ELSE e.event_type END AS kind,
+ json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.actor_account_type') AS actor_type,
+ COALESCE(json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.subject'),json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.assignee'),'') AS subject,
+ json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.subject_type') AS subject_type,
+ CASE WHEN e.event_type IN ('assigned','unassigned') THEN 'assignment' WHEN e.event_type IN ('review_requested','review_request_removed') THEN 'review_request' ELSE e.event_type END AS family
+ FROM forge_mr_events e JOIN pulls selected ON selected.id=e.merge_request_id JOIN forge_merge_requests p ON p.id=selected.id
+ WHERE e.event_type IN ('issue_comment','review','assigned','unassigned','review_requested','review_request_removed','push')
+ AND (e.event_type NOT IN ('issue_comment','review') OR ` + archiveSnapshotCommentFilter + `)
+ ), activity AS (
+ SELECT * FROM (SELECT *,row_number() OVER (PARTITION BY merge_request_id,author,family,subject ORDER BY created_at DESC,id DESC) AS activity_rank FROM activity_candidates) WHERE activity_rank=1
+ )`
+
 // MeasureArchiveSnapshot bounds records and projected text without loading bodies
 // into Go. Include all variable text, including checks, labels and review metadata.
 func MeasureArchiveSnapshot(ctx context.Context, tx *sql.Tx, repoIDs []int64, start, end time.Time, openIssuesOnly, recentPulls bool, observedAt time.Time) (ArchiveReportMeasurement, error) {
@@ -143,7 +157,7 @@ func MeasureArchiveSnapshot(ctx context.Context, tx *sql.Tx, repoIDs []int64, st
 		return ArchiveReportMeasurement{}, err
 	}
 	var result ArchiveReportMeasurement
-	err = tx.QueryRowContext(ctx, archiveSnapshotScope+`, texts AS (
+	err = tx.QueryRowContext(ctx, archiveSnapshotScope+`, `+archiveSnapshotActivity+`, texts AS (
  SELECT length(CAST(json_array(p.url,p.title,p.author,p.author_association,p.state,
  COALESCE(CAST(substr(CAST(COALESCE(p.body,'') AS BLOB),1,8193) AS TEXT),''),p.platform_head_sha,p.head_branch,p.base_branch,p.head_repo_clone_url,
  p.review_decision,p.ci_status,p.ci_checks_json,p.mergeable_state,p.assignees_json,p.reviewers_json,
@@ -164,7 +178,9 @@ func MeasureArchiveSnapshot(ctx context.Context, tx *sql.Tx, repoIDs []int64, st
  WHERE ? AND p.state IN ('closed','merged') AND e.event_type='issue_comment' AND `+archiveSnapshotCommentFilter+`
  UNION ALL
  SELECT length(CAST(json_array(source_url,dedupe_key) AS BLOB)) FROM pull_links WHERE ?
- ) SELECT count(*),COALESCE(sum(bytes),0) FROM texts`, string(ids), recentPulls, observedAt.Add(-30*24*time.Hour).UTC(), observedAt.UTC(), recentPulls, openIssuesOnly, start.UTC(), end.UTC(), recentPulls, recentPulls, recentPulls).Scan(&result.Records, &result.TextBytes)
+ UNION ALL
+ SELECT length(CAST(json_array(kind,author,author_association,actor_type,subject,subject_type) AS BLOB)) FROM activity WHERE ?
+ ) SELECT count(*),COALESCE(sum(bytes),0) FROM texts`, string(ids), recentPulls, observedAt.Add(-30*24*time.Hour).UTC(), observedAt.UTC(), recentPulls, openIssuesOnly, start.UTC(), end.UTC(), recentPulls, recentPulls, recentPulls, recentPulls).Scan(&result.Records, &result.TextBytes)
 	if err != nil {
 		return result, fmt.Errorf("measure archive snapshot: %w", err)
 	}
@@ -301,4 +317,53 @@ type ArchiveSnapshotPullReference struct {
 	TargetID   int64
 	URL, Key   string
 	ObservedAt time.Time
+}
+
+type ArchiveSnapshotActivity struct {
+	MergeRequestID                           int64
+	Kind, Actor, Subject                     string
+	ActorAssociation, ActorType, SubjectType *string
+	OccurredAt                               time.Time
+}
+
+func LoadArchiveSnapshotActivity(ctx context.Context, tx *sql.Tx, mrIDs []int64) ([]ArchiveSnapshotActivity, error) {
+	ids, err := json.Marshal(mrIDs)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `WITH pulls AS (SELECT id FROM forge_merge_requests WHERE id IN (SELECT value FROM json_each(?))), `+archiveSnapshotActivity+` SELECT merge_request_id,kind,author,author_association,actor_type,subject,subject_type,created_at FROM activity ORDER BY merge_request_id,created_at,id`, string(ids))
+	if err != nil {
+		return nil, fmt.Errorf("load snapshot activity: %w", err)
+	}
+	defer rows.Close()
+	var result []ArchiveSnapshotActivity
+	for rows.Next() {
+		var a ArchiveSnapshotActivity
+		if err := rows.Scan(&a.MergeRequestID, &a.Kind, &a.Actor, &a.ActorAssociation, &a.ActorType, &a.Subject, &a.SubjectType, &a.OccurredAt); err != nil {
+			return nil, err
+		}
+		result = append(result, a)
+	}
+	return result, rows.Err()
+}
+
+func LoadArchiveSnapshotLifecycle(ctx context.Context, tx *sql.Tx, mrIDs []int64) ([]ArchiveSnapshotActivity, error) {
+	ids, err := json.Marshal(mrIDs)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT merge_request_id,event_type,author,created_at FROM forge_mr_events WHERE merge_request_id IN (SELECT value FROM json_each(?)) AND event_type IN ('closed','merged','reopened') ORDER BY created_at,id`, string(ids))
+	if err != nil {
+		return nil, fmt.Errorf("load snapshot lifecycle: %w", err)
+	}
+	defer rows.Close()
+	var result []ArchiveSnapshotActivity
+	for rows.Next() {
+		var a ArchiveSnapshotActivity
+		if err := rows.Scan(&a.MergeRequestID, &a.Kind, &a.Actor, &a.OccurredAt); err != nil {
+			return nil, err
+		}
+		result = append(result, a)
+	}
+	return result, rows.Err()
 }

@@ -135,6 +135,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 	}
 	mrIDs := []int64{}
 	pullPositions := map[int64]int{}
+	terminalTimes := map[int64]*time.Time{}
 	issueIDs := map[int64]string{}
 	for _, row := range items {
 		repo := repos[row.RepoID]
@@ -160,6 +161,10 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		mrIDs = append(mrIDs, row.ID)
 		pullPositions[row.ID] = len(result.PullRequests)
+		terminalTimes[row.ID] = row.ClosedAt
+		if row.State == "merged" {
+			terminalTimes[row.ID] = row.MergedAt
+		}
 		mergeStatusTimes := []*time.Time{row.CIObservedAt, row.MergeableStateObservedAt}
 		if repo.Platform == string(platform.KindGitHub) {
 			mergeStatusTimes = append(mergeStatusTimes, row.ReviewDecisionObservedAt)
@@ -226,6 +231,32 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		result.Relations = append(result.Relations, snapshot.SnapshotRelation{SourceID: pull.ID, TargetID: issueID, Kind: "linked_issue", EvidenceID: issueID + "/reference/" + url.QueryEscape(link.EventKey), URL: link.URL, ObservedAt: link.ObservedAt.UTC()})
 	}
 	if opts.PullRequestScope == "recently_closed" {
+		lifecycle, err := db.LoadArchiveSnapshotLifecycle(ctx, tx, mrIDs)
+		if err != nil {
+			return result, err
+		}
+		for _, row := range lifecycle {
+			pull := &result.PullRequests[pullPositions[row.MergeRequestID]]
+			if row.Kind == "reopened" {
+				pull.ClosedBy = nil
+			} else if terminal := terminalTimes[row.MergeRequestID]; row.Kind == pull.State && terminal != nil && row.OccurredAt.Equal(*terminal) && row.Actor != "" {
+				pull.ClosedBy = new(row.Actor)
+			}
+		}
+		for i := range result.PullRequests {
+			pull := &result.PullRequests[i]
+			if pull.DetailFetchedAt == nil || (pull.State != "open" && pull.ClosedBy == nil) {
+				pull.Gaps = append(pull.Gaps, "activity_incomplete")
+			}
+		}
+		activity, err := db.LoadArchiveSnapshotActivity(ctx, tx, mrIDs)
+		if err != nil {
+			return result, err
+		}
+		for _, row := range activity {
+			pull := &result.PullRequests[pullPositions[row.MergeRequestID]]
+			pull.Activity = append(pull.Activity, snapshot.SnapshotActivity{Kind: row.Kind, Actor: row.Actor, ActorAccountType: row.ActorType, ActorAssociation: row.ActorAssociation, Subject: row.Subject, SubjectType: row.SubjectType, OccurredAt: row.OccurredAt.UTC()})
+		}
 		comments, refs, err := db.LoadArchiveSnapshotPullEvidence(ctx, tx, repoIDs, mrIDs, result.ObservedAt)
 		if err != nil {
 			return result, err

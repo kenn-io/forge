@@ -50,6 +50,8 @@ INSERT INTO forge_archive_dataset_progress (repo_id,item_type,item_number,datase
  (1,'merge_request',8,'lookup',3,'complete',datetime('now'));
 UPDATE forge_archive_dataset_progress SET next_cursor='cursor',page_count=7,observed_count=8,attempt_count=2 WHERE repo_id=3;`)
 		require.NoError(t, err)
+		_, err = raw.ExecContext(t.Context(), `UPDATE forge_merge_requests SET detail_fetched_at=?`, time.Now().UTC())
+		require.NoError(t, err)
 		_, err = raw.ExecContext(t.Context(), `UPDATE forge_merge_requests SET closed_at=? WHERE id=1`, time.Now().UTC().Add(-15*24*time.Hour))
 		require.NoError(t, err)
 		_, err = raw.ExecContext(t.Context(), `UPDATE forge_merge_requests SET closed_at=? WHERE id=2`, time.Now().UTC().Add(-45*24*time.Hour))
@@ -72,6 +74,13 @@ UPDATE forge_archive_dataset_progress SET next_cursor='cursor',page_count=7,obse
 		require.NoError(t, d.ReadDB().QueryRowContext(t.Context(), `SELECT status,scan_generation FROM forge_archive_dataset_progress WHERE repo_id=? AND item_number=? AND dataset='lookup'`, tc.repo, tc.number).Scan(&status, &generation))
 		require.Equal(t, tc.status, status)
 		require.Equal(t, tc.generation, generation)
+		var fetched *time.Time
+		require.NoError(t, d.ReadDB().QueryRowContext(t.Context(), `SELECT detail_fetched_at FROM forge_merge_requests WHERE repo_id=? AND number=?`, tc.repo, tc.number).Scan(&fetched))
+		if tc.status == "pending" {
+			require.Nil(t, fetched)
+		} else {
+			require.NotNil(t, fetched)
+		}
 	}
 	var preserved string
 	require.NoError(t, d.ReadDB().QueryRowContext(t.Context(), `SELECT next_cursor||'/'||page_count||'/'||observed_count||'/'||attempt_count FROM forge_archive_dataset_progress WHERE repo_id=3`).Scan(&preserved))

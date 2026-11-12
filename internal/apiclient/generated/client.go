@@ -71223,6 +71223,16 @@ type Snapshot struct {
 	Worktrees             []WorktreeSummary  `json:"worktrees"`
 }
 
+type SnapshotActivity struct {
+	Actor            string    `json:"actor"`
+	ActorAccountType *string   `json:"actor_account_type,omitempty"`
+	ActorAssociation *string   `json:"actor_association,omitempty"`
+	Kind             string    `json:"kind"`
+	OccurredAt       time.Time `json:"occurred_at"`
+	Subject          *string   `json:"subject,omitempty"`
+	SubjectType      *string   `json:"subject_type,omitempty"`
+}
+
 type SnapshotCheck struct {
 	Conclusion string `json:"conclusion"`
 	Name       string `json:"name"`
@@ -71283,9 +71293,10 @@ type SnapshotItem struct {
 }
 
 type SnapshotPullRequest struct {
-	Additions *int64   `json:"additions"`
-	Assignees []string `json:"assignees,omitempty"`
-	Author    string   `json:"author"`
+	Activity  []SnapshotActivity `json:"activity,omitempty"`
+	Additions *int64             `json:"additions"`
+	Assignees []string           `json:"assignees,omitempty"`
+	Author    string             `json:"author"`
 
 	// AuthorAccountType Included for GitHub when reported; absent for other providers.
 	AuthorAccountType *string         `json:"author_account_type,omitempty"`
@@ -71297,6 +71308,7 @@ type SnapshotPullRequest struct {
 	CheckState        string          `json:"check_state"`
 	Checks            []SnapshotCheck `json:"checks"`
 	ClosedAt          *time.Time      `json:"closed_at,omitempty"`
+	ClosedBy          *string         `json:"closed_by,omitempty"`
 
 	// Comments For terminal pull requests, comments by the author or MEMBER/OWNER/COLLABORATOR accounts.
 	Comments  []SnapshotComment `json:"comments,omitempty"`

@@ -105,6 +105,6 @@ func TestSnapshotMeasurementCountsAuthorTypeOnlyForExpandedScope(t *testing.T) {
 		{MergeRequestID: original, EventType: "cross_referenced", DedupeKey: "reference", MetadataJSON: `{"source_type":"PullRequest","source_number":4,"is_cross_repository":false}`, CreatedAt: now},
 	}))
 	defaultSize, expandedSize := measure(false), measure(true)
-	assert.Equal(t, defaultSize.Records+9, expandedSize.Records)
+	assert.Equal(t, defaultSize.Records+14, expandedSize.Records)
 	assert.Greater(t, expandedSize.TextBytes, defaultSize.TextBytes)
 }

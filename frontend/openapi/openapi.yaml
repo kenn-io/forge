@@ -10094,6 +10094,29 @@ components:
         - sessions
         - workspaces
       type: object
+    SnapshotActivity:
+      additionalProperties: false
+      properties:
+        actor:
+          type: string
+        actor_account_type:
+          type: string
+        actor_association:
+          type: string
+        kind:
+          type: string
+        occurred_at:
+          format: date-time
+          type: string
+        subject:
+          type: string
+        subject_type:
+          type: string
+      required:
+        - kind
+        - actor
+        - occurred_at
+      type: object
     SnapshotCheck:
       additionalProperties: false
       properties:
@@ -10274,6 +10297,10 @@ components:
     SnapshotPullRequest:
       additionalProperties: false
       properties:
+        activity:
+          items:
+            $ref: "#/components/schemas/SnapshotActivity"
+          type: array
         additions:
           format: int64
           type:
@@ -10314,6 +10341,8 @@ components:
           type:
             - string
             - "null"
+        closed_by:
+          type: string
         comments:
           description: For terminal pull requests, comments by the author or MEMBER/OWNER/COLLABORATOR accounts.
           items:

@@ -506,6 +506,63 @@ func TestSnapshotResponseByteBoundary(t *testing.T) {
 	require.ErrorIs(err, snapshot.ErrTooLarge, "one byte above the response budget must fail")
 }
 
+func TestSnapshotPullActivity(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	mrID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", State: db.MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{
+		{MergeRequestID: mrID, EventType: "issue_comment", Author: "author", DedupeKey: "old-comment", CreatedAt: now.Add(-time.Minute)},
+		{MergeRequestID: mrID, EventType: "issue_comment", Author: "author", DedupeKey: "new-comment", CreatedAt: now},
+		{MergeRequestID: mrID, EventType: "review", Author: "maintainer", AuthorAssociation: new("MEMBER"), DedupeKey: "review", CreatedAt: now.Add(-time.Second)},
+	}))
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	encoded, err := json.Marshal(result.PullRequests[0])
+	require.NoError(t, err)
+	var pull struct {
+		Activity []struct {
+			Kind       string    `json:"kind"`
+			Actor      string    `json:"actor"`
+			OccurredAt time.Time `json:"occurred_at"`
+		} `json:"activity"`
+	}
+	require.NoError(t, json.Unmarshal(encoded, &pull))
+	require.Len(t, pull.Activity, 2)
+	assert.Contains(t, pull.Activity, struct {
+		Kind       string    `json:"kind"`
+		Actor      string    `json:"actor"`
+		OccurredAt time.Time `json:"occurred_at"`
+	}{"comment", "author", now})
+	assert.Contains(t, pull.Activity, struct {
+		Kind       string    `json:"kind"`
+		Actor      string    `json:"actor"`
+		OccurredAt time.Time `json:"occurred_at"`
+	}{"review", "maintainer", now.Add(-time.Second)})
+}
+
+func TestSnapshotCurrentCloser(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	closedAt := now.Add(-time.Minute)
+	id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, State: db.MergeRequestStateClosed, CreatedAt: now.Add(-time.Hour), UpdatedAt: now, ClosedAt: &closedAt, DetailFetchedAt: &now})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{
+		{MergeRequestID: id, EventType: "closed", Author: "old-closer", DedupeKey: "old-close", CreatedAt: now.Add(-3 * time.Minute)},
+		{MergeRequestID: id, EventType: "reopened", Author: "author", DedupeKey: "reopen", CreatedAt: now.Add(-2 * time.Minute)},
+		{MergeRequestID: id, EventType: "closed", Author: "current-closer", DedupeKey: "current-close", CreatedAt: closedAt},
+	}))
+	opts := SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"}
+	result, err := service.Snapshot(t.Context(), opts)
+	require.NoError(t, err)
+	require.Equal(t, new("current-closer"), result.PullRequests[0].ClosedBy)
+	_, err = database.WriteDB().ExecContext(t.Context(), `DELETE FROM forge_mr_events WHERE merge_request_id=? AND dedupe_key='current-close'`, id)
+	require.NoError(t, err)
+	result, err = service.Snapshot(t.Context(), opts)
+	require.NoError(t, err)
+	require.Nil(t, result.PullRequests[0].ClosedBy)
+	require.Contains(t, result.PullRequests[0].Gaps, "activity_incomplete")
+}
+
 func TestSnapshotRecentlyClosedPullRequests(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

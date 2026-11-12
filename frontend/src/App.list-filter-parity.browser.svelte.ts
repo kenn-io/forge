@@ -2,27 +2,42 @@
 // group, and stack rows the same way. Each surface is driven through its own UI
 // against the same fixture: the menus must list the same sections and items,
 // and every item must leave both surfaces showing the same rows and sending the
-// same list query. A filter added to one surface only, or one a surface offers
-// but ignores, fails here.
+// same list query. A filter added to one surface only, one a surface offers but
+// ignores, one Reset leaves on, or one the fixture does not exercise fails here.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
 import type { Issue, PullRequest } from "./lib/api/types.js";
 import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
-import { jsonResponse, mockIssueFixture, mockPullFixture, type MockRequest } from "./test/mockApiFetch.js";
+import {
+  jsonResponse,
+  mockIssueFixture,
+  mockPullFixture,
+  mockSettings,
+  type MockRequest,
+  type MockRouteOverride,
+} from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
 
 type MenuSection = { title: string; items: string[] };
+type ItemState = "on" | "excluded" | "off";
+
+function itemState(node: Element, on: string, excluded: string): ItemState {
+  if (node.classList.contains(excluded)) return "excluded";
+  return node.classList.contains(on) ? "on" : "off";
+}
 
 interface Surface {
   /** Root element of the list on this surface. */
   list(): HTMLElement;
   open(): Promise<void>;
   menu(): MenuSection[];
+  /** Each item's tick or cross, by label. */
+  itemStates(): Record<string, ItemState>;
   item(label: string): HTMLElement;
-  /** Opens the Labels row and returns its first label choice. */
-  firstLabel(): Promise<HTMLElement>;
+  /** The open submenu of a row that has one, or null for a plain row. */
+  submenu(label: string): Promise<HTMLElement | null>;
   reset(): Promise<void>;
 }
 
@@ -48,14 +63,24 @@ const desktop = (container: string): Surface => {
       }
       return sections;
     },
+    itemStates() {
+      return Object.fromEntries(
+        [...panel()!.querySelectorAll(".kit-filter-dropdown__item")].map((node) => [
+          node.querySelector(".kit-filter-dropdown__label")!.textContent!.trim(),
+          itemState(node, "active", "excluded"),
+        ]),
+      );
+    },
     item(label) {
       return [...panel()!.querySelectorAll<HTMLElement>(".kit-filter-dropdown__item")].find(
         (node) => node.querySelector(".kit-filter-dropdown__label")!.textContent!.trim() === label,
       )!;
     },
-    async firstLabel() {
-      const flyout = () => document.querySelector<HTMLElement>(".kit-filter-dropdown__submenu .label-filter__row");
-      if (!flyout()) await page.elementLocator(this.item("Labels")).click();
+    async submenu(label) {
+      const row = this.item(label);
+      if (!row.classList.contains("submenu")) return null;
+      const flyout = () => document.querySelector<HTMLElement>(".kit-filter-dropdown__submenu");
+      if (row.getAttribute("aria-expanded") !== "true") await page.elementLocator(row).click();
       await vi.waitFor(() => expect(flyout()).not.toBeNull());
       return flyout()!;
     },
@@ -83,16 +108,26 @@ const phone = (): Surface => {
         items: [...section.querySelectorAll(".filter-sections-panel__label")].map((label) => label.textContent!.trim()),
       }));
     },
+    itemStates() {
+      return Object.fromEntries(
+        [...panel()!.querySelectorAll(".filter-sections-panel__item")].map((node) => [
+          node.querySelector(".filter-sections-panel__label")!.textContent!.trim(),
+          itemState(node, "filter-sections-panel__item--active", "filter-sections-panel__item--excluded"),
+        ]),
+      );
+    },
     item(label) {
       return [...panel()!.querySelectorAll<HTMLElement>(".filter-sections-panel__item")].find(
         (node) => node.querySelector(".filter-sections-panel__label")!.textContent!.trim() === label,
       )!;
     },
-    async firstLabel() {
-      const choice = () => panel()!.querySelector<HTMLElement>(".filter-sections-panel__submenu .label-filter__row");
-      if (!choice()) await page.elementLocator(this.item("Labels")).click();
-      await vi.waitFor(() => expect(choice()).not.toBeNull());
-      return choice()!;
+    async submenu(label) {
+      const row = this.item(label);
+      if (!row.hasAttribute("aria-expanded")) return null;
+      const content = () => panel()!.querySelector<HTMLElement>(".filter-sections-panel__submenu");
+      if (row.getAttribute("aria-expanded") !== "true") await page.elementLocator(row).click();
+      await vi.waitFor(() => expect(content()).not.toBeNull());
+      return content()!;
     },
     async reset() {
       await open();
@@ -101,11 +136,10 @@ const phone = (): Surface => {
   };
 };
 
-/** Repo group headings and item numbers in on-screen order. */
+/** Repo group headings, item numbers, and row repo names in on-screen order. */
 function visibleRows(list: HTMLElement): string[] {
-  return [...list.querySelectorAll(".list-body .sidebar-group-header__name, .list-body .item-number")].map((node) =>
-    node.textContent!.trim(),
-  );
+  const selector = [".sidebar-group-header__name", ".item-number", ".repo-name"].map((name) => `.list-body ${name}`);
+  return [...list.querySelectorAll(selector.join(", "))].map((node) => node.textContent!.trim());
 }
 
 /** The last list request's filters; paging differs by surface and is not a filter. */
@@ -119,50 +153,116 @@ function lastListQuery(requests: MockRequest[], pathname: string): string {
   return params.toString();
 }
 
-async function settled(mounted: MountedBrowserApp, surface: Surface, pathname: string) {
+interface Outcome {
+  rows: string[];
+  query: string;
+  items: Record<string, ItemState>;
+}
+
+async function settled(mounted: MountedBrowserApp, surface: Surface, pathname: string): Promise<Outcome> {
   // Wait until the list stops requesting and re-rendering.
   let previous = "";
-  for (;;) {
+  for (let frame = 0; ; frame++) {
+    if (frame === 50) throw new Error(`list never settled: ${previous}`);
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const current = JSON.stringify([mounted.api.requests.length, visibleRows(surface.list())]);
     if (current === previous) break;
     previous = current;
   }
-  return { rows: visibleRows(surface.list()), query: lastListQuery(mounted.api.requests, pathname) };
+  await surface.open();
+  return {
+    rows: visibleRows(surface.list()),
+    query: lastListQuery(mounted.api.requests, pathname),
+    items: surface.itemStates(),
+  };
 }
 
 async function click(surface: Surface, label: string): Promise<void> {
   await surface.open();
-  const target = label === "Labels" ? await surface.firstLabel() : surface.item(label);
-  await page.elementLocator(target).click();
+  await page.elementLocator(surface.item(label)).click();
+}
+
+// Submenus this test can drive. A row whose submenu holds anything else fails
+// until the test learns to exercise its choices on both surfaces.
+const SUBMENU_CHOICE = ".label-filter__row";
+const SUBMENU_CHOICE_NAME = ".label-filter__name";
+
+async function submenuChoices(surface: Surface, label: string): Promise<string[] | null> {
+  await surface.open();
+  const submenu = await surface.submenu(label);
+  if (!submenu) return null;
+  const names = [...submenu.querySelectorAll(`${SUBMENU_CHOICE} ${SUBMENU_CHOICE_NAME}`)].map((node) =>
+    node.textContent!.trim(),
+  );
+  if (names.length === 0) throw new Error(`no choices this test can drive in the "${label}" submenu`);
+  return names;
+}
+
+async function clickChoice(surface: Surface, label: string, name: string): Promise<void> {
+  const submenu = (await surface.submenu(label))!;
+  const choice = [...submenu.querySelectorAll<HTMLElement>(SUBMENU_CHOICE)].find(
+    (node) => node.querySelector(SUBMENU_CHOICE_NAME)!.textContent!.trim() === name,
+  )!;
+  await page.elementLocator(choice).click();
 }
 
 /**
  * Applies every menu item twice (on, then its next state), resetting between
  * items. Grouping picks the list's render path, so every item runs under each
- * Group choice.
+ * Group choice. Each Reset must restore the starting view, and every item that
+ * starts off must change the rows or the query under some grouping, so a filter
+ * the fixture cannot tell apart fails instead of passing vacuously.
  */
 async function exercise(mounted: MountedBrowserApp, surface: Surface, pathname: string) {
   await vi.waitFor(() => expect(visibleRows(surface.list()).length).toBeGreaterThan(0), WAIT);
   await surface.open();
   const menu = surface.menu();
+  const initial = await settled(mounted, surface, pathname);
   const groupings = menu.find((section) => section.title === "Group")!.items;
-  const outcomes: Record<string, unknown> = { initial: await settled(mounted, surface, pathname) };
-  for (const grouping of groupings) {
-    for (const section of menu) {
-      for (const label of section.items) {
-        await click(surface, grouping);
-        const states = [];
-        for (let round = 0; round < 2; round++) {
-          await click(surface, label);
-          states.push(await settled(mounted, surface, pathname));
-        }
-        await surface.reset();
-        outcomes[`${grouping}: ${section.title} / ${label}`] = states;
+  const outcomes: Record<string, unknown> = { initial };
+  // Every plain row is one target; a row with a submenu is one target per choice.
+  const submenus: Record<string, string[]> = {};
+  const targets: { key: string; label: string; apply: () => Promise<void> }[] = [];
+  for (const section of menu) {
+    for (const label of section.items) {
+      const choices = await submenuChoices(surface, label);
+      if (choices) submenus[label] = choices;
+      for (const name of choices ?? [null]) {
+        targets.push({
+          key: `${section.title} / ${label}${name === null ? "" : ` / ${name}`}`,
+          label,
+          apply: () => (name === null ? click(surface, label) : clickChoice(surface, label, name)),
+        });
       }
     }
   }
-  return { menu, outcomes };
+  await surface.reset();
+  const narrowed = new Set<string>();
+  for (const grouping of groupings) {
+    for (const { key, label, apply } of targets) {
+      await click(surface, grouping);
+      const base = await settled(mounted, surface, pathname);
+      const states = [];
+      for (let round = 0; round < 2; round++) {
+        await surface.open();
+        await apply();
+        states.push(await settled(mounted, surface, pathname));
+      }
+      if (
+        states.some((state) => state.query !== base.query || JSON.stringify(state.rows) !== JSON.stringify(base.rows))
+      ) {
+        narrowed.add(label);
+      }
+      await surface.reset();
+      expect(await settled(mounted, surface, pathname), `Reset after ${grouping}: ${key}`).toEqual(initial);
+      outcomes[`${grouping}: ${key}`] = states;
+    }
+  }
+  const unexercised = menu
+    .flatMap((section) => section.items)
+    .filter((label) => initial.items[label] === "off" && !narrowed.has(label));
+  expect(unexercised, "menu items the fixture does not tell apart").toEqual([]);
+  return { menu, submenus, outcomes };
 }
 
 function label(name: string) {
@@ -222,6 +322,18 @@ function issueFixtures(): Issue[] {
   ];
 }
 
+/** Echoes saved settings, so a filter stored as a setting (Hide bots) stays on. */
+function savedSettings(): MockRouteOverride {
+  let hideBots: boolean = mockSettings.issues.hide_bots;
+  return (req) => {
+    if (req.url.pathname !== "/api/v1/settings" || (req.method !== "GET" && req.method !== "PUT")) return null;
+    if (req.method === "PUT") {
+      hideBots = (JSON.parse(req.bodyText) as { issues?: { hide_bots?: boolean } }).issues?.hide_bots ?? hideBots;
+    }
+    return jsonResponse({ ...mockSettings, issues: { ...mockSettings.issues, hide_bots: hideBots } });
+  };
+}
+
 describe("phone and desktop list filters", () => {
   vi.setConfig({ testTimeout: 120_000 });
 
@@ -244,7 +356,10 @@ describe("phone and desktop list filters", () => {
     window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = phoneRoute;
     await page.viewport(phoneRoute ? 390 : 1280, phoneRoute ? 844 : 900);
     mounted = await mountBrowserApp(path, {
-      overrides: [(req) => (req.method === "GET" && req.url.pathname === pathname ? jsonResponse(body) : null)],
+      overrides: [
+        (req) => (req.method === "GET" && req.url.pathname === pathname ? jsonResponse(body) : null),
+        savedSettings(),
+      ],
     });
     const result = await exercise(mounted, surface(), pathname);
     mounted.unmount();
@@ -274,6 +389,35 @@ describe("phone and desktop list filters", () => {
     const onPhone = await run(list.phonePath, list.pathname, list.body(), phone, true);
 
     expect(onPhone.menu).toEqual(onDesktop.menu);
+    expect(onPhone.submenus).toEqual(onDesktop.submenus);
     expect(onPhone.outcomes).toEqual(onDesktop.outcomes);
+  });
+
+  it("keeps every phone filter reachable and touch-sized in a short landscape viewport", async () => {
+    window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = true;
+    await page.viewport(740, 360);
+    mounted = await mountBrowserApp("/m/pulls", {
+      overrides: [
+        (req) => (req.method === "GET" && req.url.pathname === "/api/v1/pulls" ? jsonResponse(pullFixtures()) : null),
+      ],
+    });
+    const surface = phone();
+    await vi.waitFor(() => expect(visibleRows(surface.list()).length).toBeGreaterThan(0), WAIT);
+    await surface.open();
+    await surface.submenu("Labels");
+
+    const reset = surface.list().querySelector<HTMLElement>(".filter-sections-panel__reset")!;
+    reset.scrollIntoView({ block: "end" });
+    const resetRect = reset.getBoundingClientRect();
+    expect(resetRect.bottom).toBeLessThanOrEqual(window.innerHeight);
+    expect(resetRect.top).toBeGreaterThanOrEqual(0);
+
+    const targets = surface
+      .list()
+      .querySelectorAll(".label-filter__row, .sidebar-group-header, .filter-sections-panel__item");
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) {
+      expect(target.getBoundingClientRect().height, target.textContent!.trim()).toBeGreaterThanOrEqual(40);
+    }
   });
 });

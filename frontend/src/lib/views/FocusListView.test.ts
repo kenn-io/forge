@@ -377,10 +377,14 @@ describe("FocusListView search", () => {
 
     expect(screen.queryByText("No issues found.")).toBeNull();
     expect(container.querySelector(".focus-list-loading-sentinel")).toBeTruthy();
+    loadMoreIssues.mockClear();
+    await fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(loadMoreIssues).toHaveBeenCalledTimes(1);
 
     issueListCapped.state!.set("capped", false);
     await vi.advanceTimersByTimeAsync(0);
     expect(screen.getByText("No issues found.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
   it.each(["mrs", "issues"] as const)("discloses %s filters from an icon-only control", async (listType) => {

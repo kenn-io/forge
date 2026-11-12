@@ -20,6 +20,8 @@ export interface ToolbarSection extends FilterDropdownSection {
 export interface ListFilterMenu {
   state: ToolbarSection;
   group: ToolbarSection;
+  /** The Starred row, which the desktop search bar also shows as a star button. */
+  starred: FilterDropdownItem;
   /** State and group. */
   listSections: ToolbarSection[];
   /** Every other filter and view option. */
@@ -74,7 +76,7 @@ function labelsItem(filters: LabelFilters, labelMenu: Snippet) {
   };
 }
 
-function starredItem(starred: boolean, set: (value: boolean) => void, reload: () => void) {
+function starredItem(starred: boolean, set: (value: boolean) => void, reload: () => void): FilterDropdownItem {
   return {
     id: "starred",
     label: "Starred",
@@ -159,12 +161,13 @@ export function pullListFilterMenu({
     })),
   };
   const listSections = [state, group];
+  const starred = starredItem(pulls.getFilterStarred(), pulls.setFilterStarred, reload);
   const filterSections: FilterDropdownSection[] = [
     {
       title: "PR",
       items: [
         labelsItem(pulls.getLabelFilters(), labelMenu),
-        starredItem(pulls.getFilterStarred(), pulls.setFilterStarred, reload),
+        starred,
         triItem("involves-me", "Involves me", pulls.getInvolvesMe(), pulls.setInvolvesMe, reload),
         triItem("unassigned", "Unassigned", pulls.getUnassigned(), pulls.setUnassigned, reload),
         ...PULL_CONDITIONS.map((condition) => ({
@@ -214,6 +217,7 @@ export function pullListFilterMenu({
   return {
     state,
     group,
+    starred,
     listSections,
     filterSections,
     sections: [...listSections, ...filterSections],
@@ -253,12 +257,13 @@ export function issueListFilterMenu({
     })),
   };
   const listSections = [state, group];
+  const starred = starredItem(issues.getIssueFilterStarred(), issues.setIssueFilterStarred, reload);
   const filterSections: FilterDropdownSection[] = [
     {
       title: "Issue",
       items: [
         labelsItem(issues.getLabelFilters(), labelMenu),
-        starredItem(issues.getIssueFilterStarred(), issues.setIssueFilterStarred, reload),
+        starred,
         triItem("involves-me", "Involves me", issues.getInvolvesMe(), issues.setInvolvesMe, reload),
         triItem("unassigned", "Unassigned", issues.getUnassigned(), issues.setUnassigned, reload),
         ...(issues.canFilterReferencedByPR()
@@ -292,6 +297,7 @@ export function issueListFilterMenu({
     issues.setInvolvesMe(undefined);
     issues.setUnassigned(undefined);
     issues.setReferencedByPR(undefined);
+    // Hide bots is a saved server setting; skip the write when it is already off.
     if (issues.getHideBots()) issues.setHideBots(false);
     grouping.setHideOrgName(false);
     reload();
@@ -308,6 +314,7 @@ export function issueListFilterMenu({
   return {
     state,
     group,
+    starred,
     listSections,
     filterSections,
     sections: [...listSections, ...filterSections],

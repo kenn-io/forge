@@ -134,8 +134,6 @@
 
   .filter-sections-panel__submenu {
     flex: 1 0 100%;
-    max-height: 50vh;
-    overflow-y: auto;
     border: thin solid var(--border-muted);
     border-radius: var(--focus-mobile-radius-sm);
   }

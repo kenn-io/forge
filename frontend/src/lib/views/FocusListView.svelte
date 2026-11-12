@@ -20,6 +20,7 @@
   import { repoGroups, repoItemLabel } from "../components/shared/repo-groups.js";
   import { labelFilterChoices } from "../utils/label-filter.js";
   import IssueItem from "../components/sidebar/IssueItem.svelte";
+  import ListLoadMore from "../components/sidebar/ListLoadMore.svelte";
   import ItemActionsMenu from "../components/sidebar/ItemActionsMenu.svelte";
   import type { ListItemTarget } from "../stores/item-actions.js";
   import { createRangeSelection, isSelectAllShortcut } from "../utils/range-selection.svelte.js";
@@ -557,7 +558,7 @@
         <p class="state-message">Waiting for first sync...</p>
       {:else if prLoaded.length === 0}
         <p class="state-message">No pull requests found.</p>
-      {:else if prItems.length === 0}
+      {:else if prItems.length === 0 && !listCapped}
         <p class="state-message">No pull requests match these filters.</p>
       {:else if prGroups !== null}
         {#each prGroups as group (group.key)}
@@ -609,6 +610,10 @@
       {/if}
     {/if}
     {#if listCapped && (!chunked || pageLimit < 500)}
+      {#if itemCount === 0}
+        <!-- Local filters can hide every loaded row, leaving no list to scroll for the next chunk. -->
+        <ListLoadMore loading={prLoading || issueLoading} onclick={loadMore} />
+      {/if}
       <div
         class="focus-list-loading-sentinel"
         aria-live="polite"
@@ -746,6 +751,15 @@
 
   .filter-bar--expanded {
     display: flex;
+    /* Short phone viewports must still reach the last filters and Reset. */
+    max-height: 60%;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  :global(.mobile-main) .focus-list :global(.label-filter__row),
+  :global(.mobile-main) .focus-list :global(.sidebar-group-header) {
+    min-height: var(--mobile-chrome-hit-target);
   }
 
   :global(.mobile-main) .mobile-repo-filter {

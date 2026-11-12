@@ -848,7 +848,11 @@ test.describe("phone routes", () => {
     const server = await startIsolatedE2EServerWithOptions({ providerCollision: true });
     const page = await browser.newPage();
     try {
-      await page.addInitScript(() => localStorage.setItem("kenn-forge:hideOrgName", "1"));
+      // Grouped lists name the repo in the heading; a flat list names it on every row.
+      await page.addInitScript(() => {
+        localStorage.setItem("kenn-forge:hideOrgName", "1");
+        localStorage.setItem("kenn-forge:groupingMode", "flat");
+      });
 
       await page.goto(`${server.info.base_url}/m/pulls`);
       await expect(page.locator(".pull-item .repo-name", { hasText: "github/github.com/acme/widgets" })).toHaveCount(4);

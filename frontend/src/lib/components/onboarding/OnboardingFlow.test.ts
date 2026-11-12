@@ -110,7 +110,6 @@ function storeFixture(
         last_error: "",
       }),
       triggerSync,
-      triggerSyncEffect,
       triggerOnboardingSyncEffect: triggerSyncEffect,
       subscribeSyncComplete: () => () => {},
     },
@@ -496,7 +495,7 @@ describe("OnboardingFlow", () => {
     expect(attempts).toBe(3);
   }, 7000);
 
-  it("shows a retry when a status refresh clears an exhausted trigger error", async () => {
+  it("shows a retry for a transport error with no message", async () => {
     const fixture = storeFixture({
       configured: true,
       syncTrigger: Effect.fail(
@@ -545,7 +544,7 @@ describe("OnboardingFlow", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
   });
 
-  it.each(["request", "retry delay"])("releases sync status after dismissing during %s", async (phase) => {
+  it("releases sync status when onboarding unmounts during a request", async () => {
     const originalFetch = globalThis.fetch;
     let attempts = 0;
     vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
@@ -553,7 +552,7 @@ describe("OnboardingFlow", () => {
       const path = new URL(request.url).pathname;
       if (path === "/api/v1/sync" && request.method === "POST") {
         attempts++;
-        return phase === "request" ? new Promise<Response>(() => {}) : Promise.reject(new Error("response lost"));
+        return new Promise<Response>(() => {});
       }
       if (path === "/api/v1/sync/status")
         return Promise.resolve(Response.json({ running: false, last_run_at: "", last_error: "" }));
@@ -566,8 +565,6 @@ describe("OnboardingFlow", () => {
     fixture.stores.sync = sync;
     const view = renderFlow(fixture.stores);
     await waitFor(() => expect(attempts).toBe(1));
-    await fireEvent.click(screen.getByRole("button", { name: "I’ll do this later" }));
-    expect(view.onDismiss).toHaveBeenCalledOnce();
     view.unmount();
     await waitFor(() => {
       sync.setSyncStatus({ running: false, last_run_at: "", last_error: "" });

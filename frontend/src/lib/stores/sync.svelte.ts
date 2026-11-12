@@ -2,7 +2,7 @@ import { Deferred, Duration, Effect, Option } from "effect";
 import { pollWhileVisible } from "../effect/poll-while-visible.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
-import { isTransientPickerReadFailure, retryIdempotentRead, transientRetrySchedule } from "../api/retry-policy.js";
+import { isTransientPickerReadFailure, retryIdempotentRead } from "../api/retry-policy.js";
 import { ApiProblemError } from "../api/effect-errors.js";
 import { ProblemCodes } from "../api/problems.js";
 import type { RateLimitsResponse, SyncStatus } from "../api/types.js";
@@ -197,7 +197,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
       if (pendingTrigger?.observedRunAt) pendingTrigger.lastRunAt = pendingTrigger.observedRunAt;
       return request;
     });
-    return attempt.pipe(Effect.retry({ schedule: transientRetrySchedule, while: isRetryable }));
+    return retryIdempotentRead(attempt, isRetryable);
   }
 
   function lastRunAdvanced(previous: string, next: string): boolean {
@@ -255,10 +255,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
       ),
       Effect.onInterrupt(() =>
         Effect.sync(() => {
-          if (pendingTrigger === pending) {
-            pendingTrigger = undefined;
-            refreshGeneration += 1;
-          }
+          if (pendingTrigger === pending) pendingTrigger = undefined;
         }),
       ),
       Effect.asVoid,

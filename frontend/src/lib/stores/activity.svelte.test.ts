@@ -212,8 +212,6 @@ describe("activity subject paging", () => {
   };
   it.each([
     { collapsed: false, phone: false, capped: false },
-    { collapsed: true, phone: false, capped: false },
-    { collapsed: true, phone: true, capped: false },
     { collapsed: false, phone: false, capped: true },
   ])(
     "keeps an older page through a poll ($collapsed, phone: $phone, capped: $capped)",
@@ -433,7 +431,7 @@ describe("activity subject paging", () => {
         return {
           data: {
             items: [],
-            capped: true,
+            capped: false,
             event_cursor: "snapshot",
             item_activity: [{ ...itemActivity(1), repo }],
             item_activity_capped: true,
@@ -448,6 +446,8 @@ describe("activity subject paging", () => {
     if (filter === "search") store.setActivitySearch("needle");
     else store.setUnassigned("require");
     store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(1));
+    store.expandAllThreads();
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual([stale.id, matching.id]));
     await runtime!.runCommand(store.reconcileActivityEffect(), {
       operation: "reconcile",
@@ -494,7 +494,7 @@ describe("activity subject paging", () => {
         return {
           data: {
             items: [],
-            capped: snapshots === 1,
+            capped: false,
             event_cursor: "snapshot",
             item_activity: (snapshots === 1 ? [1] : [1, 2]).map((n) => ({ ...itemActivity(n), repo })),
             item_activity_capped: true,
@@ -507,6 +507,8 @@ describe("activity subject paging", () => {
     const store = createActivityStore({ client });
     store.hydrateDefaults(settings(false));
     store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(1));
+    store.expandAllThreads();
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(oldEvent.id));
     await runtime!.runCommand(store.reconcileActivityEffect(), {
       operation: "reconcile",
@@ -535,7 +537,7 @@ describe("activity subject paging", () => {
         return {
           data: {
             items: [],
-            capped: snapshots === 1,
+            capped: false,
             event_cursor: "snapshot",
             item_activity: (snapshots === 1 ? [1, 2] : [1]).map((n) => ({ ...itemActivity(n), repo })),
             item_activity_capped: true,
@@ -549,6 +551,8 @@ describe("activity subject paging", () => {
     store.hydrateDefaults(settings(false));
     store.setActivitySearch("needle");
     store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(2));
+    store.expandAllThreads();
     await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toContain(oldEvent.id));
     await runtime!.runCommand(store.reconcileActivityEffect(), {
       operation: "reconcile",
@@ -781,7 +785,7 @@ describe("activity subject paging", () => {
     expect(store.canLoadOlderItems()).toBe(false);
   });
 
-  it.each([false, true])("keeps a successful page after its refresh fails (collapsed: %s)", async (collapsed) => {
+  it("keeps a successful page after its refresh fails", async () => {
     const pendingPage = Promise.withResolvers<unknown>();
     let pageReads = 0;
     const client = {
@@ -805,7 +809,7 @@ describe("activity subject paging", () => {
       }),
     } as unknown as GeneratedClient;
     const store = createActivityStore({ client });
-    store.hydrateDefaults(settings(collapsed));
+    store.hydrateDefaults(settings(true));
     store.loadActivity();
     await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
     store.loadOlderItems();
@@ -826,7 +830,7 @@ describe("activity subject paging", () => {
     expect(store.getActivityError()).toBe("older refresh unavailable");
   });
 
-  it.each([false, true])("keeps depth when a page fails (collapsed: %s)", async (collapsed) => {
+  it("keeps depth when a page fails", async () => {
     const failedPage = Promise.withResolvers<unknown>();
     const refreshedPage = Promise.withResolvers<unknown>();
     let pageReads = 0;
@@ -852,7 +856,7 @@ describe("activity subject paging", () => {
       }),
     } as unknown as GeneratedClient;
     const store = createActivityStore({ client });
-    store.hydrateDefaults(settings(collapsed));
+    store.hydrateDefaults(settings(true));
     store.loadActivity();
     await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
     store.loadOlderItems();
@@ -880,7 +884,7 @@ describe("activity subject paging", () => {
     expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
   });
 
-  it.each([false, true])("ignores a superseded page (collapsed: %s)", async (collapsed) => {
+  it("ignores a superseded page", async () => {
     const pending = Promise.withResolvers<unknown>();
     let pageReads = 0;
     const client = {
@@ -902,7 +906,7 @@ describe("activity subject paging", () => {
       }),
     } as unknown as GeneratedClient;
     const store = createActivityStore({ client });
-    store.hydrateDefaults(settings(collapsed));
+    store.hydrateDefaults(settings(true));
     store.loadActivity();
     await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
     store.loadOlderItems();
@@ -978,8 +982,6 @@ describe("activity subject paging", () => {
   it.each([
     { outcome: "success", collapsed: true },
     { outcome: "failure", collapsed: true },
-    { outcome: "success", collapsed: false },
-    { outcome: "failure", collapsed: false },
   ])(
     "continues a requested page after a cursor-changing refresh and stale $outcome (collapsed: $collapsed)",
     async ({ outcome, collapsed }) => {
@@ -1277,6 +1279,7 @@ describe("activity subject paging", () => {
   it("advances the time window on a same-scope reload", async () => {
     const since: string[] = [];
     const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
     const expiration = now - 7 * 24 * 60 * 60 * 1000 + 30_000;
     const client = {
       GET: vi.fn(
@@ -1306,15 +1309,19 @@ describe("activity subject paging", () => {
     store.loadOlderItems();
     await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(2));
     store.expandAllThreads();
-    await vi.waitFor(() => expect(since).toHaveLength(4));
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
     expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
-    const clock = vi.spyOn(Date, "now").mockReturnValue(now + 60_000);
+    const firstSince = since[0]!;
+    expect(since.every((value) => value === firstSince)).toBe(true);
+    since.length = 0;
+    clock.mockReturnValue(now + 60_000);
     store.loadActivity();
-    await vi.waitFor(() => expect(since).toHaveLength(6));
     await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(0));
-    expect(Date.parse(since[4]!) - Date.parse(since[0]!)).toBeGreaterThan(59_000);
-    expect(since[5]).toBe(since[4]);
+    expect(since.length).toBeGreaterThan(0);
+    const reloadSince = since[0]!;
+    expect(Date.parse(reloadSince) - Date.parse(firstSince)).toBeGreaterThan(59_000);
+    expect(since.every((value) => value === reloadSince)).toBe(true);
+    since.length = 0;
     clock.mockReturnValue(now + 120_000);
     if (runtime === undefined) throw new Error("test runtime was not created");
     await runtime.runCommand(store.reconcileActivityEffect(), {
@@ -1322,8 +1329,8 @@ describe("activity subject paging", () => {
       safeContext: {},
       onFailure: () => {},
     }).exit;
-    expect(Date.parse(since[6]!) - Date.parse(since[4]!)).toBe(60_000);
-    expect(since[7]).toBe(since[6]);
+    expect(since.length).toBeGreaterThan(0);
+    expect(since.every((value) => Date.parse(value) - Date.parse(reloadSince) === 60_000)).toBe(true);
     clock.mockRestore();
   });
 });

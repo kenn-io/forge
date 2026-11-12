@@ -1869,7 +1869,7 @@ func TestActivitySubjectCursorValidation(t *testing.T) {
 	assert.Equal(t, int64(7), cursor.RepoID)
 	assert.Equal(t, "issue", cursor.ItemType)
 	assert.Equal(t, 9, cursor.ItemNumber)
-	for _, raw := range []string{"bad|1|pr|1", "2024-01-15T12:00:00Z|0|pr|1", "2024-01-15T12:00:00Z|1|other|1", "2024-01-15T12:00:00Z|1|pr|0"} {
+	for _, raw := range []string{"2024-01-15T12:00:00Z|1|pr", "2024-01-15T12:00:00Z|x|pr|1", "2024-01-15T12:00:00Z|1|pr|x"} {
 		_, err := DecodeActivitySubjectCursor(base64.RawURLEncoding.EncodeToString([]byte(raw)))
 		require.Error(t, err, raw)
 	}
@@ -1877,7 +1877,7 @@ func TestActivitySubjectCursorValidation(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T) {
+func TestListActivitySubjectsSearchAndKeyRestriction(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)

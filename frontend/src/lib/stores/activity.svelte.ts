@@ -1242,8 +1242,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const scope = pagedActivityScopeKey();
       const read = Effect.suspend(() =>
         page
-          ? activityRead({ ...params, since: computeSince(), subject_before: page.cursor })
-          : activityReadPages({ ...params, since: computeSince() }, requestedSubjectDepth),
+          ? activityRead({ ...params, subject_before: page.cursor })
+          : activityReadPages(params, requestedSubjectDepth),
       );
       const project = (result: ActivityReadResponse) =>
         Effect.suspend(() => {
@@ -1311,7 +1311,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const params = buildParams();
       const scope = pagedActivityScopeKey();
       if (shouldUseCollapsedAuthoritativeProjection()) params.projection = "collapsed";
-      const read = Effect.suspend(() => activityReadPages({ ...params, since: computeSince() }, requestedSubjectDepth));
+      const read = Effect.suspend(() => activityReadPages(params, requestedSubjectDepth));
       const project = (result: ActivityReadResponse) => projectReadSnapshot(result, params, true);
       return Effect.gen(function* () {
         const workflow = yield* ActivityWorkflow;
@@ -1574,7 +1574,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const workflow = yield* ActivityWorkflow;
       yield* workflow.pollSnapshotRead(
         scope,
-        Effect.suspend(() => activityReadPages({ ...params, since: computeSince() }, requestedSubjectDepth)),
+        Effect.suspend(() => activityReadPages(params, requestedSubjectDepth)),
         (result) => projectReadSnapshot(result, params, true),
         Effect.sync(() => {
           loading = false;
@@ -1695,9 +1695,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           if (shouldUseCollapsedAuthoritativeProjection()) replacementParams.projection = "collapsed";
           return workflow.pollSnapshotRead(
             replacementScope,
-            Effect.suspend(() =>
-              activityReadPages({ ...replacementParams, since: computeSince() }, requestedSubjectDepth),
-            ),
+            Effect.suspend(() => activityReadPages(replacementParams, requestedSubjectDepth)),
             (replacement) => projectPoll({ mode: "replace", result: replacement }),
           );
         },

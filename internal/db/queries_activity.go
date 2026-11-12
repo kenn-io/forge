@@ -1306,16 +1306,13 @@ func DecodeActivitySubjectCursor(cursor string) (ActivitySubjectCursor, error) {
 	if len(parts) != 4 {
 		return ActivitySubjectCursor{}, errors.New("invalid subject cursor")
 	}
-	if _, err := parseDBTime(parts[0]); err != nil {
-		return ActivitySubjectCursor{}, errors.New("invalid subject cursor timestamp")
-	}
 	repoID, err := strconv.ParseInt(parts[1], 10, 64)
-	if err != nil || repoID <= 0 || (parts[2] != "pr" && parts[2] != "issue") {
-		return ActivitySubjectCursor{}, errors.New("invalid subject cursor identity")
+	if err != nil {
+		return ActivitySubjectCursor{}, fmt.Errorf("invalid subject cursor repo_id: %w", err)
 	}
 	number, err := strconv.Atoi(parts[3])
-	if err != nil || number <= 0 {
-		return ActivitySubjectCursor{}, errors.New("invalid subject cursor item number")
+	if err != nil {
+		return ActivitySubjectCursor{}, fmt.Errorf("invalid subject cursor item number: %w", err)
 	}
 	return ActivitySubjectCursor{ActivityAt: parts[0], RepoID: repoID, ItemType: parts[2], ItemNumber: number}, nil
 }

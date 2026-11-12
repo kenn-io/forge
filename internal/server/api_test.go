@@ -7867,7 +7867,7 @@ case "$cmd" in
     [ -n "$session" ] && rm -f "$state_dir/$session.owner"
     [ -n "$session" ] && rm -f "$state_dir/$session.launch"
     ;;
-  capture-pane|list-clients|refresh-client|wait-for)
+  capture-pane|list-clients|refresh-client|wait-for|if-shell)
     ;;
   *)
     printf 'unsupported fake tmux command: %s\n' "$cmd" >&2

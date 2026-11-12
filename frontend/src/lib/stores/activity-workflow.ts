@@ -66,7 +66,7 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
       );
     }
 
-    function claimRead(owner: "foreground" | "poll" | "poll-snapshot" | "reconcile", scope: string) {
+    function claimRead(owner: "foreground" | "poll" | "page" | "poll-snapshot" | "reconcile", scope: string) {
       return Ref.modify(projectionState, (current) => {
         const requestStart = current.requestStart + 1;
         if (owner === "foreground") {
@@ -91,14 +91,14 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
     }
 
     function claimProjection(
-      owner: "foreground" | "poll" | "poll-snapshot",
+      owner: "foreground" | "poll" | "page" | "poll-snapshot",
       scope: string,
       requestStart: number,
     ): Effect.Effect<boolean> {
-      return Ref.modify(projectionState, (current) => {
-        if (current.scope !== scope || current.successfulSnapshotStart >= requestStart) return [false, current];
-        if (owner === "poll") return [true, current];
-        return [true, { ...current, successfulSnapshotStart: requestStart }];
+      return Ref.modify(projectionState, (state) => {
+        const stale = state.successfulSnapshotStart >= requestStart;
+        if (state.scope !== scope || (stale && owner !== "page")) return [false, state];
+        return [true, ["poll", "page"].includes(owner) ? state : { ...state, successfulSnapshotStart: requestStart }];
       });
     }
 
@@ -128,7 +128,7 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
     // @effect-diagnostics effect/missingEffectContext:off
     // @effect-diagnostics effect/missingEffectError:off
     function projectRead<A, E, R, ProjectError, ProjectRequirements>(
-      owner: "foreground" | "poll" | "poll-snapshot",
+      owner: "foreground" | "poll" | "page" | "poll-snapshot",
       scope: string,
       read: Effect.Effect<A, E, R>,
       project: ProjectActivityResult<A, ProjectError, ProjectRequirements>,
@@ -141,7 +141,7 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
       project: ProjectActivityResult<A, ProjectError, ProjectRequirements>,
     ): Effect.Effect<void, E | ProjectError | TransientTransportError, R | ProjectRequirements>;
     function projectRead<A, E, R, ProjectError, ProjectRequirements>(
-      owner: "foreground" | "poll" | "poll-snapshot" | "reconcile",
+      owner: "foreground" | "poll" | "page" | "poll-snapshot" | "reconcile",
       scope: string,
       read: Effect.Effect<A, E, R>,
       project: ProjectActivityResult<A, ProjectError, ProjectRequirements>,
@@ -229,7 +229,7 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
     }
 
     const pageRead: ActivityWorkflowShape["pageRead"] = (scope, read, project, onFailure) =>
-      pollRead(scope, FiberHandle.run(pageHandle, read).pipe(Effect.flatMap(Fiber.join)), project, onFailure);
+      projectRead("page", scope, Effect.flatMap(FiberHandle.run(pageHandle, read), Fiber.join), project, onFailure);
 
     function reconcileRead<A, E, R, ProjectError, ProjectRequirements>(
       scope: string,

@@ -1223,7 +1223,6 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     itemActivityCapped = result.response.item_activity_capped ?? false;
     subjectCursor = result.response.next_subject_cursor ?? "";
     displayedSubjectDepth = depth;
-    storeError = null;
     if (params.projection === "collapsed" && activityPageLimit === undefined) {
       for (const subject of added) {
         const key = stableParentKey(subject);

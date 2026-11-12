@@ -781,6 +781,51 @@ describe("activity subject paging", () => {
     expect(store.canLoadOlderItems()).toBe(false);
   });
 
+  it.each([false, true])("keeps a successful page after its refresh fails (collapsed: %s)", async (collapsed) => {
+    const pendingPage = Promise.withResolvers<unknown>();
+    let pageReads = 0;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        if (options?.params?.query?.subject_before) {
+          pageReads++;
+          if (pageReads === 1) return pendingPage.promise;
+          return { error: { detail: "older refresh unavailable" }, response: new Response(null, { status: 422 }) };
+        }
+        return {
+          data: {
+            items: [],
+            capped: false,
+            item_activity: [{ ...itemActivity(1), repo }],
+            item_activity_capped: true,
+            next_subject_cursor: "older",
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(collapsed));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(pageReads).toBe(1));
+    await runtime!.runCommand(store.reconcileActivityEffect(), {
+      operation: "refresh while page is pending",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(pageReads).toBe(2);
+    expect(store.getActivityError()).toBe("older refresh unavailable");
+    pendingPage.resolve({
+      data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] },
+      error: null,
+    });
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
+    expect(store.isLoadingOlderItems()).toBe(false);
+    expect(store.getActivityError()).toBe("older refresh unavailable");
+  });
+
   it.each([false, true])("keeps depth when a page fails (collapsed: %s)", async (collapsed) => {
     const failedPage = Promise.withResolvers<unknown>();
     const refreshedPage = Promise.withResolvers<unknown>();

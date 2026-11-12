@@ -1,5 +1,6 @@
 import { Duration, Effect, Schedule } from "effect";
 import { ApiProblemError, TransientTransportError } from "./effect-errors.js";
+import { ProblemCodes } from "./problems.js";
 import { InvalidGeneratedErrorResponse } from "./runtime.js";
 
 export const transientRetrySchedule = Schedule.exponential("500 millis").pipe(
@@ -24,7 +25,9 @@ export function isTransientPickerReadFailure(failure: unknown): boolean {
   }
   return (
     failure instanceof ApiProblemError &&
-    ["serviceUnavailable", "hubUnavailable", "upstreamError"].includes(failure.problem.code)
+    ([ProblemCodes.serviceUnavailable, ProblemCodes.hubUnavailable, ProblemCodes.upstreamError] as string[]).includes(
+      failure.problem.code,
+    )
   );
 }
 

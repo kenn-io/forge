@@ -63,15 +63,12 @@ export async function orvalFetch<A>(url: string, options: OrvalRequestOptions = 
     (contentType === "application/octet-stream" ||
       contentType?.startsWith("image/") ||
       contentType?.startsWith("video/"));
-  let body: string | Blob = "";
-  let value: unknown;
-  try {
-    body = [204, 205, 304].includes(response.status) ? "" : binary ? await response.blob() : await response.text();
-    value = body ? (typeof body === "string" && contentType?.includes("json") ? JSON.parse(body) : body) : undefined;
-  } catch (error) {
-    if (response.ok) throw error;
-    throw new InvalidGeneratedErrorResponse(body, response.status);
-  }
+  const body = [204, 205, 304].includes(response.status) ? "" : binary ? await response.blob() : await response.text();
+  const value: unknown = body
+    ? typeof body === "string" && contentType?.includes("json")
+      ? JSON.parse(body)
+      : body
+    : undefined;
   if (response.ok) return value as A;
   if (!isProblem(value)) throw new InvalidGeneratedErrorResponse(value, response.status);
   throw new GeneratedProblemResponse(value, response);

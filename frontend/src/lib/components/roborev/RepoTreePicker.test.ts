@@ -82,9 +82,14 @@ describe("RepoTreePicker", () => {
     expect(screen.queryByPlaceholderText("Filter repos...")).toBeNull();
   });
 
-  it.each(["rejected", "interrupted"])("offers a retry when a branch read is %s", async (failure) => {
+  it.each(["rejected", "interrupted", "replaced"])("offers a retry when a branch read is %s", async (failure) => {
     client.GET.mockResolvedValueOnce({ data: { repos: [{ root_path: "/work/example", name: "example", count: 4 }] } });
-    if (failure === "interrupted") {
+    const first = Promise.withResolvers<unknown>();
+    const second = Promise.withResolvers<unknown>();
+    if (failure === "replaced") {
+      client.GET.mockImplementationOnce(() => first.promise);
+      client.GET.mockImplementationOnce(() => second.promise);
+    } else if (failure === "interrupted") {
       client.GET.mockImplementationOnce(() => new Promise(() => {}));
       client.GET.mockResolvedValueOnce({
         data: { repos: [{ root_path: "/work/example", name: "example", count: 4 }] },
@@ -102,9 +107,20 @@ describe("RepoTreePicker", () => {
       await fireEvent.click(screen.getByTitle("Filter by repository"));
       await fireEvent.click(screen.getByTitle("Filter by repository"));
     }
+    if (failure === "replaced") {
+      await screen.findByText("Loading...");
+      await fireEvent.click(screen.getByTitle("Show branches"));
+      await fireEvent.click(screen.getByTitle("Show branches"));
+      first.resolve({ data: { branches: [{ name: "stale", count: 1 }] } });
+      await vi.waitFor(() => expect(client.GET).toHaveBeenCalledTimes(3));
+      expect(screen.getByText("Loading...")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+      second.reject(new Error("offline"));
+    }
     const retry = await screen.findByRole("button", { name: "Retry" });
-    expect(client.GET).toHaveBeenCalledTimes(failure === "interrupted" ? 3 : 2);
+    expect(client.GET).toHaveBeenCalledTimes(failure === "rejected" ? 2 : 3);
     expect(screen.queryByText("No branches")).toBeNull();
+    expect(screen.queryByText("stale")).toBeNull();
     await fireEvent.click(retry);
     expect(await screen.findByText("main")).toBeTruthy();
   });

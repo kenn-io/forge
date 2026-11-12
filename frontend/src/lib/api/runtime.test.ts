@@ -46,12 +46,6 @@ describe("runtime", () => {
   });
 
   it.each([
-    [
-      "malformed JSON",
-      () => new Response("{", { status: 502, headers: { "Content-Type": "application/json" } }),
-      502,
-      "{",
-    ],
     ["text", () => new Response("unavailable", { status: 503 }), 503, "unavailable"],
     [
       "non-problem JSON",
@@ -63,24 +57,6 @@ describe("runtime", () => {
     const result = listRepos({ fetch: async () => response() });
     await expect(result).rejects.toBeInstanceOf(InvalidGeneratedErrorResponse);
     await expect(result).rejects.toMatchObject({ status, body });
-  });
-
-  it("rethrows malformed successful JSON", async () => {
-    const result = orvalFetch("/repos", {
-      fetch: async () => new Response("{", { headers: { "Content-Type": "application/json" } }),
-    });
-    await expect(result).rejects.toBeInstanceOf(SyntaxError);
-  });
-
-  it("preserves the status when an error body cannot be read", async () => {
-    const body = new ReadableStream({
-      start(controller) {
-        controller.error(new Error("interrupted"));
-      },
-    });
-    const result = orvalFetch("/repos", { fetch: async () => new Response(body, { status: 502 }) });
-    await expect(result).rejects.toBeInstanceOf(InvalidGeneratedErrorResponse);
-    await expect(result).rejects.toMatchObject({ status: 502, body: "" });
   });
 
   it("serializes array query parameters as comma-separated values for Huma", () => {

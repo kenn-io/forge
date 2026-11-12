@@ -604,6 +604,181 @@ describe("activity subject paging", () => {
     expect(store.isLoadingOlderItems()).toBe(false);
   });
 
+  it("keeps loaded subjects when a newer item shifts a page boundary", async () => {
+    let refreshed = false;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        const cursor = options?.params?.query?.subject_before;
+        const numbers = refreshed ? (cursor === "page-3" ? [4] : cursor ? [2, 3] : [5, 1]) : cursor ? [3, 4] : [1, 2];
+        const next = !cursor ? "page-2" : refreshed && cursor === "page-2" ? "page-3" : "";
+        return {
+          data: {
+            items: [],
+            capped: false,
+            item_activity: numbers.map((number) => ({ ...itemActivity(number), repo })),
+            item_activity_capped: Boolean(next),
+            next_subject_cursor: next,
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2, 3, 4]));
+    refreshed = true;
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "refresh activity",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([5, 1, 2, 3, 4]);
+  });
+
+  it("keeps a shifted loaded subject that also has workspace activity", async () => {
+    let refreshed = false;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        const cursor = options?.params?.query?.subject_before;
+        const numbers = refreshed ? (cursor === "page-3" ? [4] : cursor ? [2, 3] : [5, 1]) : cursor ? [3, 4] : [1, 2];
+        const next = !cursor ? "page-2" : refreshed && cursor === "page-2" ? "page-3" : "";
+        return {
+          data: {
+            items: [],
+            capped: false,
+            item_activity: numbers.map((number) => ({ ...itemActivity(number), repo })),
+            workspace_activity: [{ ...workspaceActivity(4), repo }],
+            item_activity_capped: Boolean(next),
+            next_subject_cursor: next,
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true, true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2, 3, 4]));
+    refreshed = true;
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "refresh activity",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([5, 1, 2, 3, 4]);
+  });
+
+  it("removes a deleted loaded subject when a newer item shifts the page boundary", async () => {
+    let refreshed = false;
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        const cursor = options?.params?.query?.subject_before;
+        const numbers = refreshed ? (cursor === "page-3" ? [6] : cursor ? [2, 3] : [5, 1]) : cursor ? [3, 4] : [1, 2];
+        const next = !cursor ? "page-2" : cursor === "page-2" ? "page-3" : "";
+        return {
+          data: {
+            items: [],
+            capped: false,
+            item_activity: numbers.map((number) => ({ ...itemActivity(number), repo })),
+            item_activity_capped: Boolean(next),
+            next_subject_cursor: next,
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2, 3, 4]));
+    refreshed = true;
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "refresh activity",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([5, 1, 2, 3]);
+  });
+
+  it("stops refreshing after finding a loaded workspace-only subject", async () => {
+    const cursors: string[] = [];
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        const cursor = options?.params?.query?.subject_before ?? "";
+        cursors.push(cursor);
+        const number = cursor === "" ? 1 : cursor === "page-2" ? 2 : 3;
+        return {
+          data: {
+            items: [],
+            capped: false,
+            item_activity: [{ ...itemActivity(number), repo }],
+            workspace_activity: [{ ...workspaceActivity(9), repo }],
+            item_activity_capped: number < 3,
+            next_subject_cursor: number < 3 ? `page-${number + 1}` : "",
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true, true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(2));
+    expect(store.getWorkspaceActivity().map((item) => item.item_number)).toEqual([9]);
+    cursors.length = 0;
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(store.reconcileActivityEffect(), {
+      operation: "refresh activity",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(cursors).toEqual(["", "page-2"]);
+  });
+
+  it("keeps loaded subjects when expanding all threads", async () => {
+    const client = {
+      GET: vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+        if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+        const older = Boolean(options?.params?.query?.subject_before);
+        return {
+          data: {
+            items: [],
+            capped: false,
+            item_activity: [{ ...itemActivity(older ? 2 : 1), repo }],
+            item_activity_capped: !older,
+            next_subject_cursor: older ? "" : "page-2",
+          },
+          error: null,
+        };
+      }),
+    } as unknown as GeneratedClient;
+    const store = createActivityStore({ client });
+    store.hydrateDefaults(settings(true));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.canLoadOlderItems()).toBe(true));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]));
+    store.expandAllThreads();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+    expect(store.getItemActivity().map((item) => item.item_number)).toEqual([1, 2]);
+  });
+
   it("advances the time window on a same-scope reload", async () => {
     const since: string[] = [];
     const now = Date.now();

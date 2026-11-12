@@ -750,8 +750,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function invalidatePagedActivityRequests(): void {
     pagedActivityGeneration += 1;
     childProjectionInvalidationGeneration += 1;
-    const params = buildParams();
-    const scope = activityProjectionScope(params);
+    const scope = activityProjectionScope({ ...buildParams(), projection: "full" });
     if (subjectPageScope !== scope) {
       requestedSubjectDepth = 1;
       displayedSubjectDepth = 1;
@@ -842,30 +841,48 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     );
   }
 
+  function appendUnseen<T extends ActivitySubject | WorkspaceActivitySubject>(
+    into: T[],
+    seen: Set<string | undefined>,
+    incoming: readonly T[] | undefined,
+    inWindow: boolean,
+    loaded: ReadonlySet<string | undefined>,
+  ): void {
+    for (const subject of incoming ?? []) {
+      const key = stableParentKey(subject);
+      if (seen.has(key) || !(inWindow || loaded.has(key))) continue;
+      seen.add(key);
+      into.push(subject);
+    }
+  }
+
+  function hasUnseen(loaded: ReadonlySet<string | undefined>, seen: ReadonlySet<string | undefined>): boolean {
+    return [...loaded].some((key) => !seen.has(key));
+  }
+
+  // Pages past `depth` are read only to find loaded subjects a newer item pushed
+  // out of the window; a loaded subject missing from every page is gone.
   function activityReadPages(params: ActivityParams, depth: number) {
     return Effect.gen(function* () {
       const first = yield* activityRead(params);
+      const loadedItems = new Set(depth > 1 ? itemActivity.map(stableParentKey) : []);
+      const loadedWorkspaces = new Set(depth > 1 ? workspaceActivity.map(stableParentKey) : []);
       const subjects = [...(first.response.item_activity ?? [])];
       const seen = new Set(subjects.map(stableParentKey));
       const workspaces = [...(first.response.workspace_activity ?? [])];
       const seenWorkspaces = new Set(workspaces.map(stableParentKey));
       let cursor = first.response.next_subject_cursor ?? "";
+      let windowCursor = cursor;
       let subjectsCapped = first.response.item_activity_capped ?? false;
-      for (let page = 1; page < depth && cursor; page++) {
+      const missing = () => hasUnseen(loadedItems, seen) || hasUnseen(loadedWorkspaces, seenWorkspaces);
+      for (let page = 1; cursor && (page < depth || missing()); page++) {
         const next = yield* activityRead({ ...params, subject_before: cursor });
-        for (const subject of next.response.item_activity ?? []) {
-          const key = stableParentKey(subject);
-          if (seen.has(key)) continue;
-          seen.add(key);
-          subjects.push(subject);
-        }
-        for (const workspace of next.response.workspace_activity ?? []) {
-          const key = stableParentKey(workspace);
-          if (seenWorkspaces.has(key)) continue;
-          seenWorkspaces.add(key);
-          workspaces.push(workspace);
-        }
+        const inWindow = page < depth;
+        appendUnseen(subjects, seen, next.response.item_activity, inWindow, loadedItems);
+        appendUnseen(workspaces, seenWorkspaces, next.response.workspace_activity, inWindow, loadedWorkspaces);
         cursor = next.response.next_subject_cursor ?? "";
+        if (!inWindow) continue;
+        windowCursor = cursor;
         subjectsCapped = next.response.item_activity_capped ?? false;
       }
       return {
@@ -875,7 +892,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           ...first.response,
           item_activity: subjects,
           workspace_activity: workspaces,
-          next_subject_cursor: cursor,
+          next_subject_cursor: windowCursor,
           item_activity_capped: subjectsCapped,
         },
       };

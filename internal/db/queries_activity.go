@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -790,30 +791,11 @@ func listActivitySubjectsWithQueryer(
 			whereClauses = append(whereClauses, "("+strings.Join(itemTypeClauses, " OR ")+")")
 		}
 	}
-	// Included terms match the subject's own fields or any of its events
-	// in the filtered event union; excluded terms reject the subject by its own
-	// fields so one unrelated comment cannot resurface an excluded item.
-	searchQuery := ParseSearchQuery(opts.Search)
-	const subjectSearchTerm = "LOWER('#' || item_number || ' ' || item_title) LIKE ? OR " +
-		"LOWER(item_title) LIKE ? OR LOWER(item_author) LIKE ?"
-	if len(searchQuery.Include) > 0 {
-		includeCond, includeArgs := SearchQuery{Include: searchQuery.Include}.sqlCondition(
-			subjectSearchTerm, 3, lowerLikePattern)
-		searchClauses := []string{includeCond}
-		args = append(args, includeArgs...)
-		if opts.SearchEventOpts != nil {
-			from, eventArgs := activityEventsFrom(*opts.SearchEventOpts)
-			searchClauses = append(searchClauses, "(repo_id, item_type, item_number) IN (SELECT repo_id, item_type, item_number "+from+")")
-			args = append(args, eventArgs...)
-		}
-		whereClauses = append(whereClauses, "("+strings.Join(searchClauses, " OR ")+")")
+	searchClauses, err := activitySubjectSearchClauses(opts, &args)
+	if err != nil {
+		return nil, err
 	}
-	if len(searchQuery.Exclude) > 0 {
-		excludeCond, excludeArgs := SearchQuery{Exclude: searchQuery.Exclude}.sqlCondition(
-			subjectSearchTerm, 3, lowerLikePattern)
-		whereClauses = append(whereClauses, excludeCond)
-		args = append(args, excludeArgs...)
-	}
+	whereClauses = append(whereClauses, searchClauses...)
 	if opts.Author != "" {
 		whereClauses = append(whereClauses, "LOWER(item_author) = LOWER(?)")
 		args = append(args, opts.Author)
@@ -951,6 +933,54 @@ func listActivitySubjectsWithQueryer(
 		return nil, fmt.Errorf("list activity subjects rows: %w", err)
 	}
 	return subjects, nil
+}
+
+// activitySubjectSearchClauses restricts subjects to opts.Keys and to the
+// search. Included terms match the subject's own fields or any of its events
+// in the filtered event union; excluded terms reject the subject by its own
+// fields so one unrelated comment cannot resurface an excluded item.
+func activitySubjectSearchClauses(opts ListActivitySubjectsOpts, args *[]any) ([]string, error) {
+	var clauses []string
+	if opts.Keys != nil {
+		cond, err := activitySubjectKeysCondition(opts.Keys, args)
+		if err != nil {
+			return nil, err
+		}
+		clauses = append(clauses, cond)
+	}
+	searchQuery := ParseSearchQuery(opts.Search)
+	const subjectSearchTerm = "LOWER('#' || item_number || ' ' || item_title) LIKE ? OR " +
+		"LOWER(item_title) LIKE ? OR LOWER(item_author) LIKE ?"
+	if len(searchQuery.Include) > 0 {
+		includeCond, includeArgs := SearchQuery{Include: searchQuery.Include}.sqlCondition(
+			subjectSearchTerm, 3, lowerLikePattern)
+		searchClauses := []string{includeCond}
+		*args = append(*args, includeArgs...)
+		if opts.SearchEventOpts != nil {
+			from, eventArgs := activityEventsFrom(*opts.SearchEventOpts)
+			searchClauses = append(searchClauses, "(repo_id, item_type, item_number) IN (SELECT repo_id, item_type, item_number "+from+")")
+			*args = append(*args, eventArgs...)
+		}
+		clauses = append(clauses, "("+strings.Join(searchClauses, " OR ")+")")
+	}
+	if len(searchQuery.Exclude) > 0 {
+		excludeCond, excludeArgs := SearchQuery{Exclude: searchQuery.Exclude}.sqlCondition(
+			subjectSearchTerm, 3, lowerLikePattern)
+		clauses = append(clauses, excludeCond)
+		*args = append(*args, excludeArgs...)
+	}
+	return clauses, nil
+}
+
+// activitySubjectKeysCondition matches the outer subject columns against keys.
+func activitySubjectKeysCondition(keys []WorkspaceSubjectKey, args *[]any) (string, error) {
+	payload, err := json.Marshal(keys)
+	if err != nil {
+		return "", fmt.Errorf("encode activity subject keys: %w", err)
+	}
+	*args = append(*args, string(payload))
+	return "(repo_id, item_type, item_number) IN (" +
+		"SELECT json_extract(value, '$.repo_id'), json_extract(value, '$.item_type'), json_extract(value, '$.item_number') FROM json_each(?))", nil
 }
 
 // ListActivityAuthors returns the distinct, non-empty PR and issue authors

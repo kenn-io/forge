@@ -1907,6 +1907,21 @@ func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T)
 		subjects[0].Subject.Key.ItemNumber,
 		subjects[1].Subject.Key.ItemNumber,
 	})
+
+	subjects, err = d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{
+		Search: "needle", SearchEventOpts: &ListActivityOpts{Search: "needle"}, Limit: 50,
+		Keys: []WorkspaceSubjectKey{{RepoID: repoID, ItemType: "pr", ItemNumber: 1}, {RepoID: repoID, ItemType: "issue", ItemNumber: 2}},
+	})
+	require.NoError(err)
+	require.Len(subjects, 1)
+	assert.Equal(1, subjects[0].Subject.Key.ItemNumber)
+
+	subjects, err = d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{
+		Search: "needle", SearchEventOpts: &ListActivityOpts{Search: "needle"}, Limit: 50,
+		Keys: []WorkspaceSubjectKey{},
+	})
+	require.NoError(err)
+	assert.Empty(subjects)
 }
 
 func TestListActivitySearchExcludesNegatedItemAuthor(t *testing.T) {

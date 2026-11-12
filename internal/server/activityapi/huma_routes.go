@@ -969,6 +969,67 @@ func activityWorkspaceOverlays(
 	return overlays
 }
 
+// activitySubjectsOpts builds the parent-level filters for one subjects read
+// of newest-first subjects from before.
+func activitySubjectsOpts(
+	opts db.ListActivityOpts, before *db.ActivitySubjectCursor, limit int,
+) db.ListActivitySubjectsOpts {
+	searchOpts := opts
+	searchOpts.AfterTime, searchOpts.BeforeTime, searchOpts.AtOrBeforeTime = nil, nil, nil
+	return db.ListActivitySubjectsOpts{
+		Repo:           opts.Repo,
+		RepoFilters:    opts.RepoFilters,
+		AllowedRepoIDs: opts.AllowedRepoIDs,
+		ItemTypes:      opts.ItemTypes,
+		ExcludeNotificationRecency: opts.ExcludeNotifications ||
+			(len(opts.Types) > 0 && !slices.Contains(opts.Types, "notification")),
+		Search:             opts.Search,
+		SearchEventOpts:    &searchOpts,
+		Author:             opts.Author,
+		Unassigned:         opts.Unassigned,
+		Assigned:           opts.Assigned,
+		ViewerLogins:       opts.ViewerLogins,
+		ViewerUninvolved:   opts.ViewerUninvolved,
+		HideClosedMerged:   opts.HideClosedMerged,
+		HideBots:           opts.HideBots,
+		HideDrafts:         opts.HideDrafts,
+		HideMergeQueued:    opts.HideMergeQueued,
+		OnlyMergeQueued:    opts.OnlyMergeQueued,
+		DeferredMergeItems: opts.DeferredMergeItems,
+		Limit:              limit,
+		Since:              opts.Since,
+		Before:             before,
+	}
+}
+
+// workspaceSearchSubjects reads, in SQL, which workspace subjects the
+// search's included terms match, whatever page or event cap the feed read
+// stopped at.
+func (s *Handlers) workspaceSearchSubjects(
+	ctx context.Context, opts db.ListActivityOpts, snapshot workspaceapi.WorkspaceSubjectSnapshot,
+) ([]db.ActivitySubject, error) {
+	if len(db.ParseSearchQuery(opts.Search).Include) == 0 {
+		return nil, nil
+	}
+	keys := workspaceSnapshotSubjectKeys(snapshot)
+	for i := range keys {
+		keys[i].ItemType = activityItemTypeFromWorkspace(keys[i].ItemType)
+	}
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	subjectOpts := activitySubjectsOpts(opts, nil, len(keys))
+	subjectOpts.Keys = keys
+	return s.Db.ListActivitySubjects(ctx, subjectOpts)
+}
+
+func activityItemTypeFromWorkspace(itemType string) string {
+	if itemType == db.WorkspaceItemTypePullRequest {
+		return db.ItemTypePR
+	}
+	return itemType
+}
+
 func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.ListActivityInput) (*listActivityOutput, error) {
 	if itemapi.HasInvalidRepoFilter(input.Repo) {
 		return nil, httpapi.Validation("query.repo", "repo filter must be provider|platform_host/repo_path")
@@ -1134,33 +1195,8 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			return nil, httpapi.Internal("list activity failed")
 		}
 	}
-	searchOpts := opts
-	searchOpts.AfterTime, searchOpts.BeforeTime, searchOpts.AtOrBeforeTime = nil, nil, nil
 	if projection == "full" {
-		itemActivity, err = s.Db.ListActivitySubjects(ctx, db.ListActivitySubjectsOpts{
-			Repo:           opts.Repo,
-			RepoFilters:    opts.RepoFilters,
-			AllowedRepoIDs: opts.AllowedRepoIDs,
-			ItemTypes:      opts.ItemTypes,
-			ExcludeNotificationRecency: opts.ExcludeNotifications ||
-				(len(opts.Types) > 0 && !slices.Contains(opts.Types, "notification")),
-			Search:             opts.Search,
-			SearchEventOpts:    &searchOpts,
-			Author:             opts.Author,
-			Unassigned:         opts.Unassigned,
-			Assigned:           opts.Assigned,
-			ViewerLogins:       opts.ViewerLogins,
-			ViewerUninvolved:   opts.ViewerUninvolved,
-			HideClosedMerged:   opts.HideClosedMerged,
-			HideBots:           opts.HideBots,
-			HideDrafts:         opts.HideDrafts,
-			HideMergeQueued:    opts.HideMergeQueued,
-			OnlyMergeQueued:    opts.OnlyMergeQueued,
-			DeferredMergeItems: opts.DeferredMergeItems,
-			Limit:              pageLimit + 1,
-			Since:              opts.Since,
-			Before:             subjectBefore,
-		})
+		itemActivity, err = s.Db.ListActivitySubjects(ctx, activitySubjectsOpts(opts, subjectBefore, pageLimit+1))
 		if err != nil {
 			slog.Error("list activity subjects failed", "err", err)
 			return nil, httpapi.Internal("list activity failed")
@@ -1196,6 +1232,12 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 				delete(workspaceSnapshot.OwnReferences, key)
 			}
 		}
+	}
+
+	workspaceSubjects, err := s.workspaceSearchSubjects(ctx, opts, workspaceSnapshot)
+	if err != nil {
+		slog.Error("list workspace search subjects failed", "err", err)
+		return nil, httpapi.Internal("list workspace activity failed")
 	}
 
 	eventsCapped := len(items) > pageLimit
@@ -1314,7 +1356,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 	useWorkspaceActivityForRecency := s.useWorkspaceActivityForRecency()
 	workspaceActivity := s.WorkspaceActivityResponse(
 		input, opts, workspaceSnapshot, workspaceEventItems, labels,
-		useWorkspaceActivityForRecency, itemActivity,
+		useWorkspaceActivityForRecency, slices.Concat(itemActivity, workspaceSubjects),
 	)
 	if projection == "events" {
 		workspaceActivity = []itemapi.WorkspaceActivitySubjectResponse{}

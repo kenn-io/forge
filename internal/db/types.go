@@ -1744,6 +1744,8 @@ type ListActivitySubjectsOpts struct {
 	Limit                      int
 	Since                      *time.Time
 	Before                     *ActivitySubjectCursor
+	// Keys, when non-nil, restricts subjects to these activity-typed keys.
+	Keys []WorkspaceSubjectKey
 	// Assigned and ViewerUninvolved invert Unassigned and ViewerLogins, as in ListActivityOpts.
 	Assigned         bool
 	ViewerUninvolved bool

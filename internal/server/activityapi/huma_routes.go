@@ -980,7 +980,7 @@ func (s *Handlers) workspaceSearchSubjects(
 	}
 	keys := workspaceSnapshotSubjectKeys(snapshot)
 	for i := range keys {
-		keys[i].ItemType = activityItemTypeFromWorkspace(keys[i].ItemType)
+		keys[i].ItemType = itemapi.ActivityItemTypeFromWorkspace(keys[i].ItemType)
 	}
 	if len(keys) == 0 {
 		return nil, nil
@@ -988,13 +988,6 @@ func (s *Handlers) workspaceSearchSubjects(
 	subjectOpts := db.ActivitySubjectsOpts(opts, nil, len(keys))
 	subjectOpts.Keys = keys
 	return s.Db.ListActivitySubjects(ctx, subjectOpts)
-}
-
-func activityItemTypeFromWorkspace(itemType string) string {
-	if itemType == db.WorkspaceItemTypePullRequest {
-		return db.ItemTypePR
-	}
-	return itemType
 }
 
 func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.ListActivityInput) (*listActivityOutput, error) {
@@ -1201,10 +1194,13 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 
-	workspaceSubjects, err := s.workspaceSearchSubjects(ctx, opts, workspaceSnapshot)
-	if err != nil {
-		slog.Error("list workspace search subjects failed", "err", err)
-		return nil, httpapi.Internal("list workspace activity failed")
+	var workspaceSubjects []db.ActivitySubject
+	if projection != "events" {
+		workspaceSubjects, err = s.workspaceSearchSubjects(ctx, opts, workspaceSnapshot)
+		if err != nil {
+			slog.Error("list workspace search subjects failed", "err", err)
+			return nil, httpapi.Internal("list workspace activity failed")
+		}
 	}
 
 	eventsCapped := len(items) > pageLimit

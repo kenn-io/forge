@@ -138,6 +138,7 @@ const enabledEvents = vi.hoisted(() => ({
 const showNotifications = vi.hoisted(() => ({ value: true }));
 const activityCapped = vi.hoisted(() => ({ value: false }));
 const itemActivityCapped = vi.hoisted(() => ({ value: false }));
+const olderItemsAvailable = vi.hoisted(() => ({ value: false }));
 const canLoadMore = vi.hoisted(() => ({ value: false }));
 const loadingMore = vi.hoisted(() => ({ value: false }));
 const loadMoreActivity = vi.hoisted(() => vi.fn());
@@ -196,7 +197,7 @@ vi.mock("../context.js", () => ({
       isActivityLoading: () => false,
       isActivityCapped: () => activityCapped.value,
       isItemActivityCapped: () => itemActivityCapped.value,
-      canLoadOlderItems: () => itemActivityCapped.value,
+      canLoadOlderItems: () => olderItemsAvailable.value,
       isLoadingOlderItems: () => false,
       loadOlderItems,
       canLoadMoreActivity: () => canLoadMore.value,
@@ -278,6 +279,7 @@ describe("ActivityFeed compact mode", () => {
     unassigned.value = undefined;
     activityCapped.value = false;
     itemActivityCapped.value = false;
+    olderItemsAvailable.value = false;
     canLoadMore.value = false;
     loadingMore.value = false;
     loadMoreActivity.mockClear();
@@ -345,41 +347,33 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
   });
 
+  it("shows the event ceiling notice after paging ends", () => {
+    activityCapped.value = true;
+    viewMode.value = "threaded";
+    render(ActivityFeed);
+    expect(screen.getByText(/most recent 5,000 events/)).toBeTruthy();
+  });
+
   it.each([
-    {
-      kind: "events",
-      rule: "shows the event ceiling notice after paging ends",
-      view: "threaded" as const,
-      visible: true,
-      notice: /most recent 5,000 events/,
-    },
-    {
-      kind: "parents",
-      rule: "shows older item control in threaded view",
-      view: "threaded" as const,
-      visible: true,
-      notice: /Item totals cover loaded items only/,
-      otherNotice: /most recent 5,000 events/,
-    },
-    {
-      kind: "parents",
-      rule: "hides older item control in flat view",
-      view: "flat" as const,
-      visible: false,
-      notice: /Item totals cover loaded items only/,
-      otherNotice: /most recent 5,000 events/,
-    },
-  ])("$rule", async ({ kind, view, visible, notice, otherNotice }) => {
-    activityCapped.value = kind === "events";
-    itemActivityCapped.value = kind === "parents";
+    { view: "threaded" as const, visible: true },
+    { view: "flat" as const, visible: false },
+  ])("shows the older item control in $view view: $visible", ({ view, visible }) => {
+    itemActivityCapped.value = true;
+    olderItemsAvailable.value = true;
     viewMode.value = view;
     render(ActivityFeed);
-    expect(screen.queryByText(notice) !== null).toBe(visible);
-    if (otherNotice) expect(screen.queryByText(otherNotice)).toBeNull();
-    if (kind === "parents" && visible) {
-      await fireEvent.click(screen.getByRole("button", { name: "Load older items" }));
-      expect(loadOlderItems).toHaveBeenCalledOnce();
-    }
+    expect(screen.queryByText(/Item totals cover loaded items only/) !== null).toBe(visible);
+    expect(screen.queryByRole("button", { name: "Load older items" }) !== null).toBe(visible);
+    expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
+  });
+
+  it("uses older item availability for the paging control", async () => {
+    olderItemsAvailable.value = true;
+    viewMode.value = "threaded";
+    render(ActivityFeed);
+    await fireEvent.click(screen.getByRole("button", { name: "Load older items" }));
+    expect(loadOlderItems).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/Item totals cover loaded items only/)).toBeNull();
   });
 
   it("offers to retry a failed thread history load", async () => {

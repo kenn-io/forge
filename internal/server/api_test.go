@@ -4393,6 +4393,17 @@ func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testi
 	assert.Equal(matchedKey.ItemNumber, got[0].ItemNumber)
 	require.NotNil(got[0].Workspace)
 	assert.Equal("ws-41", got[0].Workspace.ID)
+
+	// The matching event may be outside the event page while its parent is in the subject page.
+	got = srv.itemapi.WorkspaceActivityResponse(
+		&itemapi.ListActivityInput{},
+		db.ListActivityOpts{Search: "reviewer", Since: &since},
+		snapshot,
+		[]db.ActivityItem{{RepoID: repoID, ItemType: "pr", ItemNumber: 99}},
+		nil, true, []db.ActivitySubject{{Subject: db.WorkspaceSubjectMetadata{Key: db.WorkspaceSubjectKey{RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber}}}},
+	)
+	require.Len(got, 1)
+	assert.Equal(matchedKey.ItemNumber, got[0].ItemNumber)
 }
 
 func TestWorkspaceActivitySearchExcludedTermOverridesMatchingProviderEvents(t *testing.T) {

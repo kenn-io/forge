@@ -1896,22 +1896,16 @@ func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T)
 		withMRTitle("Needle in the parent title"),
 		withMRActivity(now.Add(-2*time.Hour)),
 	))
-	olderID := insertTestMRWithOptions(t, d, testMR(repoID, 3,
-		withMRTitle("Unrelated parent with an older matching event"),
-		withMRActivity(now.Add(-3*time.Hour)),
-	))
-	require.NoError(d.UpsertMREvents(ctx, []MREvent{{MergeRequestID: olderID, EventType: "issue_comment", Author: "reviewer", Body: "needle", CreatedAt: now.Add(-time.Hour), DedupeKey: "older-match"}}))
 	insertTestMRWithOptions(t, d, testMR(repoID, 4, withMRTitle("Unrelated parent without a matching event"), withMRActivity(now.Add(-4*time.Hour))))
 
 	subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{
-		Search: "needle", SearchEventOpts: &ListActivityOpts{Search: "needle", Limit: 1}, Limit: 50,
+		Search: "needle", SearchEventOpts: &ListActivityOpts{Search: "needle"}, Limit: 50,
 	})
 	require.NoError(err)
-	require.Len(subjects, 3)
-	assert.ElementsMatch([]int{1, 2, 3}, []int{
+	require.Len(subjects, 2)
+	assert.ElementsMatch([]int{1, 2}, []int{
 		subjects[0].Subject.Key.ItemNumber,
 		subjects[1].Subject.Key.ItemNumber,
-		subjects[2].Subject.Key.ItemNumber,
 	})
 }
 

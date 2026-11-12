@@ -1,6 +1,7 @@
 <script lang="ts">
   // Renders FilterDropdown sections inline for the phone shell, where a
   // trigger-anchored popover does not fit. A row with a submenu expands it in place.
+  // Mount it inside .mobile-shell, which defines the --mobile-chrome-space-* tokens.
   import CheckIcon from "@lucide/svelte/icons/check";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import XIcon from "@lucide/svelte/icons/x";
@@ -23,6 +24,12 @@
   {#if item.detail}<span class="filter-sections-panel__detail">{item.detail}</span>{/if}
 {/snippet}
 
+{#snippet description(item: FilterDropdownItem)}
+  {#if item.description}
+    <span id="{panelId}-{item.id}-description" class="kit-sr-only">{item.description}</span>
+  {/if}
+{/snippet}
+
 <div class="filter-sections-panel">
   {#each sections as section, index (section.title ?? index)}
     <section class="filter-sections-panel__section" aria-label={section.title}>
@@ -38,6 +45,7 @@
               class="filter-sections-panel__item"
               class:filter-sections-panel__item--active={item.active}
               title={item.description}
+              aria-describedby={item.description ? `${panelId}-${item.id}-description` : undefined}
               aria-expanded={expanded}
               aria-controls="{panelId}-{item.id}"
               onclick={() => (openSubmenu = expanded ? null : item.id)}
@@ -46,6 +54,7 @@
               {@render values(item)}
               <ChevronDownIcon size={14} class={expanded ? "filter-sections-panel__chevron--open" : ""} aria-hidden="true" />
             </button>
+            {@render description(item)}
             {#if expanded}
               <div id="{panelId}-{item.id}" class="filter-sections-panel__submenu" role="group" aria-label={item.label}>
                 {@render item.submenu()}
@@ -58,6 +67,7 @@
               class:filter-sections-panel__item--active={item.active}
               class:filter-sections-panel__item--excluded={item.excluded}
               title={item.description}
+              aria-describedby={item.description ? `${panelId}-${item.id}-description` : undefined}
               aria-pressed={item.active || item.excluded === true}
               disabled={item.disabled}
               onclick={item.onSelect}
@@ -70,6 +80,7 @@
               <span class="filter-sections-panel__label">{item.label}</span>{#if item.excluded}<span class="kit-sr-only">, excluded</span>{/if}
               {@render values(item)}
             </button>
+            {@render description(item)}
           {/if}
         {/each}
       </div>

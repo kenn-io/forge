@@ -147,9 +147,11 @@ const phone = (): Surface => {
   };
 };
 
-/** Repo group headings, item numbers, and row repo names in on-screen order. */
+/** Repo group headings, item numbers, titles, and row repo names in on-screen order. */
 function visibleRows(list: HTMLElement): string[] {
-  const selector = [".sidebar-group-header__name", ".item-number", ".repo-name"].map((name) => `.list-body ${name}`);
+  const selector = [".sidebar-group-header__name", ".item-number", ".title-text", ".repo-name"].map(
+    (name) => `.list-body ${name}`,
+  );
   return [...list.querySelectorAll(selector.join(", "))].map((node) => node.textContent!.trim());
 }
 
@@ -336,19 +338,15 @@ function issueFixtures(): Issue[] {
 }
 
 /**
- * Answers each list query with the fixture in a different order, so a surface
- * that sends the right query but keeps showing the previous rows fails. Every
- * row stays in the answer, so each filter still has its rows to narrow.
+ * Stamps each list query into the row titles, so a surface that sends the right
+ * query but keeps showing the previous rows renders different titles and fails.
  */
-function answerFor<T>(req: MockRequest, rows: T[]): T[] {
+function answerFor<T extends { Title: string }>(req: MockRequest, rows: T[]): T[] {
   const params = new URLSearchParams(req.url.search);
   params.delete("limit");
   params.delete("offset");
   params.sort();
-  let hash = 7;
-  for (const char of params.toString()) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  const shift = hash % rows.length;
-  return [...rows.slice(shift), ...rows.slice(0, shift)];
+  return rows.map((row) => ({ ...row, Title: `${row.Title} [${params.toString()}]` }));
 }
 
 /** Echoes saved settings, so a filter stored as a setting (Hide bots) stays on. */
@@ -380,7 +378,13 @@ describe("phone and desktop list filters", () => {
     await resetKeyboardModuleState();
   });
 
-  async function run(path: string, pathname: string, body: unknown[], surface: () => Surface, phoneRoute: boolean) {
+  async function run(
+    path: string,
+    pathname: string,
+    body: { Title: string }[],
+    surface: () => Surface,
+    phoneRoute: boolean,
+  ) {
     localStorage.clear();
     window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = phoneRoute;
     await page.viewport(phoneRoute ? 390 : 1280, phoneRoute ? 844 : 900);
@@ -448,5 +452,39 @@ describe("phone and desktop list filters", () => {
     for (const target of targets) {
       expect(target.getBoundingClientRect().height, target.textContent!.trim()).toBeGreaterThanOrEqual(40);
     }
+  });
+
+  it("offers a touch-sized Load more when phone filters hide every loaded row of a capped list", async () => {
+    window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = true;
+    await page.viewport(390, 844);
+    const [base] = pullFixtures();
+    mounted = await mountBrowserApp("/m/pulls", {
+      overrides: [
+        (req) => {
+          if (req.method !== "GET" || req.url.pathname !== "/api/v1/pulls") return null;
+          // A full page of open, non-draft PRs: the list is capped and Draft hides all of it.
+          const limit = Number(req.url.searchParams.get("limit"));
+          return jsonResponse(
+            Array.from({ length: limit }, (_, index) => ({
+              ...base!,
+              ID: 3000 + index,
+              Number: 100 + index,
+              IsDraft: false,
+            })),
+          );
+        },
+      ],
+    });
+    const surface = phone();
+    await vi.waitFor(() => expect(visibleRows(surface.list()).length).toBeGreaterThan(0), WAIT);
+    await click(surface, "Draft");
+
+    const loadMore = await vi.waitFor(() => {
+      const button = surface.list().querySelector<HTMLElement>(".list-pagination button");
+      expect(button).not.toBeNull();
+      return button!;
+    }, WAIT);
+    expect(loadMore.getBoundingClientRect().height).toBeGreaterThanOrEqual(40);
+    expect(surface.list().textContent).not.toContain("No pull requests match these filters.");
   });
 });

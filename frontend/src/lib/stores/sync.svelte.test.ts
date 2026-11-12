@@ -126,6 +126,34 @@ describe("sync store", () => {
       expect(complete).toHaveBeenCalledOnce();
     });
 
+    it("publishes a fast completion received before the sync receipt", async () => {
+      const accepted = Promise.withResolvers<{ instance_id: string; generation: number }>();
+      const getStatus = vi.fn().mockRejectedValue(problem("forbidden", 403));
+      const post = vi.fn(() => accepted.promise);
+      const store = createSyncStore(
+        makeGeneratedClient({ SyncService: { triggerSync: post, getSyncStatus: getStatus } }),
+      );
+      const complete = vi.fn();
+      store.subscribeSyncComplete(complete);
+      if (!runtime) throw new Error("test runtime was not initialized");
+      const execution = runtime.runCommand(store.triggerOnboardingSyncEffect(), {
+        operation: "first sync",
+        safeContext: {},
+        onFailure: () => {},
+      });
+      await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+      const completed = {
+        running: false,
+        last_run_at: "2026-08-02T12:01:00Z",
+        full_sync: { instance_id: "instance", settled_generation: 1, successful_generation: 1 },
+      };
+      store.setSyncStatus(completed);
+      accepted.resolve({ instance_id: "instance", generation: 1 });
+      await Effect.runPromise(execution.await);
+      expect(store.getSyncState()).toMatchObject(completed);
+      expect(complete).toHaveBeenCalledOnce();
+    });
+
     it("keeps live progress when an older onboarding status read finishes", async () => {
       const stale = Promise.withResolvers<{ running: boolean; last_run_at: string }>();
       const getStatus = vi.fn(() => stale.promise);

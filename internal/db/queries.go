@@ -1553,7 +1553,7 @@ func upsertMergeRequestSnapshot(
 ) (int64, int64, bool, error) {
 	result, err := executor.ExecContext(ctx, `
 		INSERT INTO forge_merge_requests
-		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_association, author_display_name,
+		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_account_type, author_association, author_display_name,
 		     state, is_draft, is_locked, body, head_branch, base_branch,
 		     platform_head_sha, platform_base_sha, head_repo_clone_url,
 		     additions, deletions, files_changed, merge_commit_sha, comment_count,
@@ -1564,13 +1564,14 @@ func upsertMergeRequestSnapshot(
 		     last_activity_at, merged_at, closed_at, mergeable_state, mergeable_state_observed_at,
 		     assignees_json, reviewers_json, auto_merge_enabled, head_repo_identity_stale,
 		     snapshot_revision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id          = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), forge_merge_requests.platform_external_id),
 		    url                  = excluded.url,
 		    title                = excluded.title,
 		    author               = excluded.author,
+		    author_account_type = CASE WHEN forge_merge_requests.author = excluded.author AND (excluded.author_account_type IS NULL OR excluded.author_account_type = 'unknown') THEN forge_merge_requests.author_account_type ELSE excluded.author_account_type END,
 		    author_association = CASE WHEN forge_merge_requests.author = excluded.author THEN COALESCE(excluded.author_association, forge_merge_requests.author_association) ELSE excluded.author_association END,
 		    author_display_name  = excluded.author_display_name,
 		    state                = excluded.state,
@@ -1622,7 +1623,7 @@ func upsertMergeRequestSnapshot(
 		    snapshot_revision    = forge_merge_requests.snapshot_revision + 1
 		WHERE excluded.updated_at >= forge_merge_requests.updated_at`,
 		mr.RepoID, mr.PlatformID, mr.PlatformExternalID, mr.Number, mr.URL, mr.Title,
-		mr.Author, mr.AuthorAssociation, mr.AuthorDisplayName,
+		mr.Author, mr.AuthorAccountType, mr.AuthorAssociation, mr.AuthorDisplayName,
 		mr.State, mr.IsDraft, mr.IsLocked, mr.Body, mr.HeadBranch, mr.BaseBranch,
 		mr.PlatformHeadSHA, mr.PlatformBaseSHA, mr.HeadRepoCloneURL,
 		mr.Additions, mr.Deletions, mr.FilesChanged, mr.MergeCommitSHA,
@@ -2326,8 +2327,8 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 	stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO forge_mr_events
 			    (merge_request_id, platform_id, platform_external_id, event_type, author, author_association, summary, body,
-			     metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved, commit_author, repo_id)
-			VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, `+mrEventCommitAuthorSQL("?4", "?9")+`, (SELECT repo_id FROM forge_merge_requests WHERE id = ?1))
+			     metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved, commit_author, repo_id, source_repo_id)
+			VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, `+mrEventCommitAuthorSQL("?4", "?9")+`, (SELECT repo_id FROM forge_merge_requests WHERE id = ?1), ?17)
 			ON CONFLICT(merge_request_id, dedupe_key) DO UPDATE SET
 			    platform_id   = excluded.platform_id,
 			    platform_external_id = excluded.platform_external_id,
@@ -2342,7 +2343,8 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 			    summary       = excluded.summary,
 		    author_association = CASE WHEN forge_mr_events.author = excluded.author THEN COALESCE(excluded.author_association, forge_mr_events.author_association) ELSE excluded.author_association END,
 			    body          = excluded.body,
-			    metadata_json = excluded.metadata_json,
+			    metadata_json = CASE WHEN forge_mr_events.event_type = 'cross_referenced' AND excluded.event_type = 'cross_referenced' AND excluded.source_repo_id IS NULL AND forge_mr_events.source_repo_id IS NOT NULL THEN forge_mr_events.metadata_json ELSE excluded.metadata_json END,
+                source_repo_id = COALESCE(forge_mr_events.source_repo_id, excluded.source_repo_id),
 			    commit_author = excluded.commit_author,
 			    created_at    = excluded.created_at,
 			    direct_url    = COALESCE(NULLIF(excluded.direct_url, ''), direct_url),
@@ -2394,9 +2396,17 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 				return fmt.Errorf("find canonical authored merged event: %w", err)
 			}
 		}
+		var sourceRepoID *int64
+		ref, valid := issuePRReferenceFromEvent(IssueEvent{EventType: e.EventType, MetadataJSON: e.MetadataJSON})
+		if valid {
+			err := tx.QueryRowContext(ctx, `SELECT CASE WHEN json_extract(?, '$.is_cross_repository') = 0 THEN target.id ELSE (SELECT MIN(source.id) FROM forge_repos source WHERE source.platform=target.platform AND source.platform_host=target.platform_host AND source.repo_path_key=lower(? || '/' || ?) HAVING count(DISTINCT source.id)=1) END FROM forge_merge_requests p JOIN forge_repos target ON target.id=p.repo_id WHERE p.id=?`, e.MetadataJSON, ref.SourceOwner, ref.SourceRepo, e.MergeRequestID).Scan(&sourceRepoID)
+			if err != nil {
+				return fmt.Errorf("resolve mr reference repository: %w", err)
+			}
+		}
 		if _, err := stmt.ExecContext(ctx,
 			e.MergeRequestID, e.PlatformID, e.PlatformExternalID, e.EventType, e.Author, e.AuthorAssociation, e.Summary, e.Body,
-			e.MetadataJSON, e.CreatedAt, e.DedupeKey, e.DirectURL, e.ThreadID, e.PositionJSON, e.Resolvable, e.Resolved,
+			e.MetadataJSON, e.CreatedAt, e.DedupeKey, e.DirectURL, e.ThreadID, e.PositionJSON, e.Resolvable, e.Resolved, sourceRepoID,
 		); err != nil {
 			return fmt.Errorf("insert mr event (dedupe_key=%s): %w", e.DedupeKey, err)
 		}

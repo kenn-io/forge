@@ -51,6 +51,7 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) (*db.MergeRequest, error) {
 		URL:                platformMR.URL,
 		Title:              platformMR.Title,
 		Author:             platformMR.Author,
+		AuthorAccountType:  platformMR.AuthorAccountType,
 		AuthorAssociation:  platformMR.AuthorAssociation,
 		AuthorDisplayName:  platformMR.AuthorDisplayName,
 		State:              db.MergeRequestState(platformMR.State),

@@ -20,9 +20,10 @@ import (
 )
 
 type SnapshotOptions struct {
-	Start, End   time.Time
-	Repositories []platform.RepoRef
-	IssueScope   string
+	Start, End       time.Time
+	Repositories     []platform.RepoRef
+	IssueScope       string
+	PullRequestScope string
 }
 
 var ErrSnapshotScope = errors.New("snapshot repositories must belong to the configured cached inventory")
@@ -35,7 +36,10 @@ func (s *Service) Snapshot(ctx context.Context, opts SnapshotOptions) (snapshot.
 
 func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCoverage func() error) (snapshot.ArchiveSnapshot, error) {
 	start, end := opts.Start, opts.End
-	result := snapshot.ArchiveSnapshot{ExportSchema: snapshot.Schema, ObservedAt: s.now().UTC(), Start: start.UTC(), End: end.UTC(), IssueScope: opts.IssueScope, Repositories: []snapshot.SnapshotRepository{}, PullRequests: []snapshot.SnapshotPullRequest{}, Issues: []snapshot.SnapshotItem{}, Relations: []snapshot.SnapshotRelation{}}
+	result := snapshot.ArchiveSnapshot{ExportSchema: snapshot.Schema, ObservedAt: s.now().UTC(), Start: start.UTC(), End: end.UTC(), IssueScope: opts.IssueScope, PullRequestScope: opts.PullRequestScope, Repositories: []snapshot.SnapshotRepository{}, PullRequests: []snapshot.SnapshotPullRequest{}, Issues: []snapshot.SnapshotItem{}, Relations: []snapshot.SnapshotRelation{}}
+	if opts.PullRequestScope != "" && opts.PullRequestScope != "recently_closed" {
+		return result, errors.New("unsupported snapshot pull request scope")
+	}
 	if opts.IssueScope != "" && opts.IssueScope != "open" {
 		return result, errors.New("unsupported snapshot issue scope")
 	}
@@ -118,14 +122,14 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			return result, err
 		}
 	}
-	measurement, err := db.MeasureArchiveSnapshot(ctx, tx, repoIDs, start, end, opts.IssueScope == "open")
+	measurement, err := db.MeasureArchiveSnapshot(ctx, tx, repoIDs, start, end, opts.IssueScope == "open", opts.PullRequestScope == "recently_closed", result.ObservedAt)
 	if err != nil {
 		return result, err
 	}
 	if measurement.Records > snapshot.MaxRecords || measurement.TextBytes > snapshot.MaxBytes {
 		return snapshot.ArchiveSnapshot{}, snapshot.ErrTooLarge
 	}
-	items, err := db.LoadArchiveSnapshotItems(ctx, tx, repoIDs, start, end, opts.IssueScope == "open")
+	items, err := db.LoadArchiveSnapshotItems(ctx, tx, repoIDs, start, end, opts.IssueScope == "open", opts.PullRequestScope == "recently_closed", result.ObservedAt)
 	if err != nil {
 		return result, err
 	}
@@ -142,12 +146,17 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		slices.Sort(labels)
 		item := snapshot.SnapshotItem{ID: snapshotRepositoryID(repo) + ":" + row.Kind + ":" + strconv.Itoa(row.Number), RepositoryID: snapshotRepositoryID(repo), Number: row.Number, URL: row.URL, Title: row.Title, Author: row.Author, AuthorAssociation: row.AuthorAssociation, Body: body, BodyTruncated: cut, State: row.State, Labels: labels, CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), DetailFetchedAt: row.DetailFetchedAt, Assignees: db.ParseUserNamesJSON(row.AssigneesJSON), LastActivityAt: new(row.LastActivityAt.UTC())}
 		if row.Kind == "issue" {
-			// Exported pull requests are open and may keep a stale close time from
-			// before a reopen, so only issues export one.
+			// Issues retain their cached close time.
 			item.ClosedAt = row.ClosedAt
 			issueIDs[row.ID] = item.ID
 			result.Issues = append(result.Issues, item)
 			continue
+		}
+		if row.State != "open" {
+			item.ClosedAt = row.ClosedAt
+			if item.ClosedAt == nil {
+				item.ClosedAt = row.MergedAt
+			}
 		}
 		mrIDs = append(mrIDs, row.ID)
 		pullPositions[row.ID] = len(result.PullRequests)
@@ -157,6 +166,12 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		mergeStatusObservedAt := minObservedAt(mergeStatusTimes)
 		pull := snapshot.SnapshotPullRequest{SnapshotItem: item, Draft: row.Draft, HeadSHA: row.HeadSHA, HeadBranch: row.HeadBranch, BaseBranch: row.BaseBranch, ChangedFiles: row.FilesChanged, ReviewState: row.ReviewDecision, CheckState: row.CIStatus, MergeableState: row.MergeableState, RequestedReviewers: db.ParseUserNamesJSON(row.ReviewersJSON), MergeStatusObservedAt: mergeStatusObservedAt, Checks: []snapshot.SnapshotCheck{}, Reviews: []snapshot.SnapshotReview{}, Gaps: []string{}}
+		if opts.PullRequestScope == "recently_closed" {
+			pull.AuthorAccountType = row.AuthorAccountType
+			if pull.AuthorAccountType == nil {
+				pull.AuthorAccountType = new("unknown")
+			}
+		}
 		if mergeStatusObservedAt == nil {
 			pull.Gaps = append(pull.Gaps, "merge_status_observation_time_unknown")
 		}
@@ -206,6 +221,28 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			continue
 		}
 		result.Relations = append(result.Relations, snapshot.SnapshotRelation{SourceID: pull.ID, TargetID: issueID, Kind: "linked_issue", EvidenceID: issueID + "/reference/" + url.QueryEscape(link.EventKey), URL: link.URL, ObservedAt: link.ObservedAt.UTC()})
+	}
+	if opts.PullRequestScope == "recently_closed" {
+		comments, refs, err := db.LoadArchiveSnapshotPullEvidence(ctx, tx, mrIDs)
+		if err != nil {
+			return result, err
+		}
+		for _, row := range comments {
+			pull := &result.PullRequests[pullPositions[row.MergeRequestID]]
+			body, cut := snapshotText(row.Body, 2048)
+			pull.Comments = append(pull.Comments, snapshot.SnapshotComment{ID: pull.ID + "/comment/" + url.QueryEscape(row.Key), Author: row.Author, AuthorAssociation: row.AuthorAssociation, Body: body, BodyTruncated: cut, URL: row.URL, CreatedAt: row.CreatedAt.UTC()})
+		}
+		for _, ref := range refs {
+			target := &result.PullRequests[pullPositions[ref.TargetID]]
+			if ref.SourceID == nil {
+				if !slices.Contains(target.Gaps, "unresolved_pull_request_reference") {
+					target.Gaps = append(target.Gaps, "unresolved_pull_request_reference")
+				}
+				continue
+			}
+			source := result.PullRequests[pullPositions[*ref.SourceID]]
+			result.Relations = append(result.Relations, snapshot.SnapshotRelation{SourceID: source.ID, TargetID: target.ID, Kind: "pull_request_reference", EvidenceID: target.ID + "/reference/" + url.QueryEscape(ref.Key), URL: ref.URL, ObservedAt: ref.ObservedAt.UTC()})
+		}
 	}
 	encoded, err := json.Marshal(result)
 	if err != nil {

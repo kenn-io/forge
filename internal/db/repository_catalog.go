@@ -627,6 +627,7 @@ var repositoryOwnedColumns = []struct{ table, column string }{
 	{"forge_merge_requests", "repo_id"},
 	{"forge_merge_workspace_cleanups", "repo_id"},
 	{"forge_mr_events", "repo_id"},
+	{"forge_mr_events", "source_repo_id"},
 	{"forge_notification_items", "repo_id"},
 	{"forge_projects", "repo_id"},
 	{"forge_repo_overviews", "repo_id"},

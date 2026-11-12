@@ -19,15 +19,16 @@ const (
 var ErrTooLarge = errors.New("cached archive snapshot exceeds the 10,000-record or 32 MiB text/response budget; narrow the repo scope; no items were dropped")
 
 type ArchiveSnapshot struct {
-	IssueScope   string                `json:"issue_scope,omitempty" enum:"open" doc:"When open, includes all cached open issues and linked closed context regardless of creation time."`
-	ExportSchema string                `json:"schema"`
-	ObservedAt   time.Time             `json:"observed_at"`
-	Start        time.Time             `json:"start"`
-	End          time.Time             `json:"end"`
-	Repositories []SnapshotRepository  `json:"repositories"`
-	PullRequests []SnapshotPullRequest `json:"pull_requests"`
-	Issues       []SnapshotItem        `json:"issues"`
-	Relations    []SnapshotRelation    `json:"relations"`
+	PullRequestScope string                `json:"pull_request_scope,omitempty" enum:"recently_closed"`
+	IssueScope       string                `json:"issue_scope,omitempty" enum:"open" doc:"When open, includes all cached open issues and linked closed context regardless of creation time."`
+	ExportSchema     string                `json:"schema"`
+	ObservedAt       time.Time             `json:"observed_at"`
+	Start            time.Time             `json:"start"`
+	End              time.Time             `json:"end"`
+	Repositories     []SnapshotRepository  `json:"repositories"`
+	PullRequests     []SnapshotPullRequest `json:"pull_requests"`
+	Issues           []SnapshotItem        `json:"issues"`
+	Relations        []SnapshotRelation    `json:"relations"`
 }
 
 type SnapshotRepository struct {
@@ -64,24 +65,25 @@ type SnapshotItem struct {
 	// "[]" when it confirmed an empty one.
 	Assignees      []string   `json:"assignees,omitzero"`
 	LastActivityAt *time.Time `json:"last_activity_at"`
-	// ClosedAt is omitted for open items, and for pull requests, which are
-	// always open in this snapshot's scope.
+	// ClosedAt is omitted for open pull requests.
 	ClosedAt *time.Time `json:"closed_at,omitzero"`
 }
 
 type SnapshotPullRequest struct {
 	SnapshotItem
-	Draft                bool   `json:"draft"`
-	HeadSHA              string `json:"head_sha"`
-	HeadBranch           string `json:"head_branch"`
-	BaseBranch           string `json:"base_branch"`
-	HeadInSameRepository *bool  `json:"head_in_same_repository" doc:"Null when either repository identity is unavailable or the head identity is stale; false means a known different repository."`
-	Additions            *int   `json:"additions"`
-	Deletions            *int   `json:"deletions"`
-	ChangedFiles         *int   `json:"changed_files"`
-	ReviewState          string `json:"review_state"`
-	CheckState           string `json:"check_state"`
-	MergeableState       string `json:"mergeable_state"`
+	AuthorAccountType    *string           `json:"author_account_type,omitempty"`
+	Comments             []SnapshotComment `json:"comments,omitzero"`
+	Draft                bool              `json:"draft"`
+	HeadSHA              string            `json:"head_sha"`
+	HeadBranch           string            `json:"head_branch"`
+	BaseBranch           string            `json:"base_branch"`
+	HeadInSameRepository *bool             `json:"head_in_same_repository" doc:"Null when either repository identity is unavailable or the head identity is stale; false means a known different repository."`
+	Additions            *int              `json:"additions"`
+	Deletions            *int              `json:"deletions"`
+	ChangedFiles         *int              `json:"changed_files"`
+	ReviewState          string            `json:"review_state"`
+	CheckState           string            `json:"check_state"`
+	MergeableState       string            `json:"mergeable_state"`
 	// RequestedReviewers is omitted when the provider never reported the
 	// list, and "[]" when it confirmed an empty one.
 	RequestedReviewers []string `json:"requested_reviewers,omitzero"`
@@ -112,6 +114,16 @@ type SnapshotReview struct {
 	Body              string    `json:"body"`
 	BodyTruncated     bool      `json:"body_truncated"`
 	State             string    `json:"state"`
+	URL               string    `json:"url"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+type SnapshotComment struct {
+	ID                string    `json:"id"`
+	Author            string    `json:"author"`
+	AuthorAssociation *string   `json:"author_association"`
+	Body              string    `json:"body"`
+	BodyTruncated     bool      `json:"body_truncated"`
 	URL               string    `json:"url"`
 	CreatedAt         time.Time `json:"created_at"`
 }

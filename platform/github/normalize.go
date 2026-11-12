@@ -27,6 +27,7 @@ func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform
 		URL:                ghPR.GetHTMLURL(),
 		Title:              ghPR.GetTitle(),
 		Author:             loginOrEmpty(ghPR.GetUser()),
+		AuthorAccountType:  new(string(accountType(ghPR.GetUser().GetType()))),
 		AuthorAssociation:  ghPR.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		AuthorDisplayName:  nameOrEmpty(ghPR.GetUser()),
 		State:              ghPR.GetState(),

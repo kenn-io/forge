@@ -1369,6 +1369,10 @@ components:
         observed_at:
           format: date-time
           type: string
+        pull_request_scope:
+          enum:
+            - recently_closed
+          type: string
         pull_requests:
           items:
             $ref: "#/components/schemas/SnapshotPullRequest"
@@ -10107,6 +10111,35 @@ components:
         - conclusion
         - url
       type: object
+    SnapshotComment:
+      additionalProperties: false
+      properties:
+        author:
+          type: string
+        author_association:
+          type:
+            - string
+            - "null"
+        body:
+          type: string
+        body_truncated:
+          type: boolean
+        created_at:
+          format: date-time
+          type: string
+        id:
+          type: string
+        url:
+          type: string
+      required:
+        - id
+        - author
+        - author_association
+        - body
+        - body_truncated
+        - url
+        - created_at
+      type: object
     SnapshotCoverage:
       additionalProperties: false
       properties:
@@ -10251,6 +10284,8 @@ components:
           type: array
         author:
           type: string
+        author_account_type:
+          type: string
         author_association:
           type:
             - string
@@ -10277,6 +10312,10 @@ components:
           type:
             - string
             - "null"
+        comments:
+          items:
+            $ref: "#/components/schemas/SnapshotComment"
+          type: array
         created_at:
           format: date-time
           type: string
@@ -14244,6 +14283,15 @@ paths:
     get:
       operationId: get-archive-snapshot
       parameters:
+        - description: Include pull requests closed or merged in the last 30 days.
+          explode: false
+          in: query
+          name: pull_request_scope
+          schema:
+            description: Include pull requests closed or merged in the last 30 days.
+            enum:
+              - recently_closed
+            type: string
         - description: "Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window."
           explode: false
           in: query

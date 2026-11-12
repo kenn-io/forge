@@ -18,7 +18,7 @@ type GraphQLPR struct {
 	Locked            bool
 	Body              string
 	URL               string
-	Author            struct{ Login string }
+	Author            GraphQLIssueAuthor
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	MergedAt          *time.Time
@@ -434,7 +434,7 @@ func AdaptPR(gql *GraphQLPR) *gh.PullRequest {
 		HTMLURL:           new(gql.URL),
 		Additions:         new(gql.Additions),
 		Deletions:         new(gql.Deletions),
-		User:              &gh.User{Login: new(gql.Author.Login)},
+		User:              &gh.User{Login: new(gql.Author.Login), Type: new(gql.Author.Typename)},
 		AuthorAssociation: gql.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		Head: &gh.PullRequestBranch{
 			Ref: new(gql.HeadRefName),

@@ -131,6 +131,7 @@ func DBMergeRequest(repoID int64, mr platform.MergeRequest) *db.MergeRequest {
 		URL:                     mr.URL,
 		Title:                   mr.Title,
 		Author:                  mr.Author,
+		AuthorAccountType:       mr.AuthorAccountType,
 		AuthorAssociation:       mr.AuthorAssociation,
 		AuthorDisplayName:       mr.AuthorDisplayName,
 		State:                   db.MergeRequestState(mr.State),

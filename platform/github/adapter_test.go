@@ -224,3 +224,20 @@ func TestNormalizeCIChecksMatchesPersistedDBBehavior(t *testing.T) {
 		State:      new("pending"),
 	}))
 }
+
+func TestPullRequestAuthorAccountType(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		want  string
+	}{{"Bot", "bot"}, {"User", "user"}, {"Organization", "organization"}, {"", "unknown"}} {
+		t.Run(tc.input, func(t *testing.T) {
+			rest, err := NormalizePullRequest(testRepoRef(), &gh.PullRequest{User: &gh.User{Type: new(tc.input)}})
+			require.NoError(t, err)
+			assert.Equal(t, new(tc.want), rest.AuthorAccountType)
+			gql := &GraphQLPR{Author: GraphQLIssueAuthor{Typename: tc.input}}
+			fromGraphQL, err := NormalizePullRequest(testRepoRef(), AdaptPR(gql))
+			require.NoError(t, err)
+			assert.Equal(t, new(tc.want), fromGraphQL.AuthorAccountType)
+		})
+	}
+}

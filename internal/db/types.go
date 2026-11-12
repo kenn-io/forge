@@ -636,6 +636,7 @@ type MergeRequest struct {
 	URL                string
 	Title              string
 	Author             string
+	AuthorAccountType  *string `json:"-"`
 	AuthorAssociation  *string `json:"-"`
 	AuthorDisplayName  string
 	State              MergeRequestState `enum:"open,closed,merged"`

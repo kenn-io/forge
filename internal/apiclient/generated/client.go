@@ -14421,9 +14421,10 @@ func (c *Client) GetArchiveSnapshotWithResponse(ctx context.Context, options *Ge
 	var err error
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":         {Style: "form", Explode: &[]bool{false}[0]},
-		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
-		"start":       {Style: "form", Explode: &[]bool{false}[0]},
+		"end":                {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope":        {Style: "form", Explode: &[]bool{false}[0]},
+		"pull_request_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":              {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -42870,9 +42871,10 @@ func (c *Client) GetArchiveReportRaw(ctx context.Context, httpClient *http.Clien
 func (c *Client) GetArchiveSnapshotRaw(ctx context.Context, httpClient *http.Client, options *GetArchiveSnapshotRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":         {Style: "form", Explode: &[]bool{false}[0]},
-		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
-		"start":       {Style: "form", Explode: &[]bool{false}[0]},
+		"end":                {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope":        {Style: "form", Explode: &[]bool{false}[0]},
+		"pull_request_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":              {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -50227,9 +50229,10 @@ func NewGetArchiveSnapshotRequest(ctx context.Context, baseURL string, options *
 	c := NewClient(apiClient)
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":         {Style: "form", Explode: &[]bool{false}[0]},
-		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
-		"start":       {Style: "form", Explode: &[]bool{false}[0]},
+		"end":                {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope":        {Style: "form", Explode: &[]bool{false}[0]},
+		"pull_request_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":              {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -57931,6 +57934,12 @@ const (
 	ArchiveSnapshotIssueScopeOpen ArchiveSnapshotIssueScope = "open"
 )
 
+type ArchiveSnapshotPullRequestScope string
+
+const (
+	ArchiveSnapshotPullRequestScopeRecentlyClosed ArchiveSnapshotPullRequestScope = "recently_closed"
+)
+
 type ArchiveStatusResponseCollectionMode string
 
 const (
@@ -58333,6 +58342,13 @@ type ListActivityThreadEventsQueryItemType string
 const (
 	ListActivityThreadEventsQueryItemTypeIssue ListActivityThreadEventsQueryItemType = "issue"
 	ListActivityThreadEventsQueryItemTypePr    ListActivityThreadEventsQueryItemType = "pr"
+)
+
+// GetArchiveSnapshotQueryPullRequestScope Include pull requests closed or merged in the last 30 days.
+type GetArchiveSnapshotQueryPullRequestScope string
+
+const (
+	GetArchiveSnapshotQueryPullRequestScopeRecentlyClosed GetArchiveSnapshotQueryPullRequestScope = "recently_closed"
 )
 
 // GetArchiveSnapshotQueryIssueScope Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window.
@@ -61038,6 +61054,9 @@ type GetArchiveReportQuery struct {
 }
 
 type GetArchiveSnapshotQuery struct {
+	// PullRequestScope Include pull requests closed or merged in the last 30 days.
+	PullRequestScope *GetArchiveSnapshotQueryPullRequestScope `json:"pull_request_scope,omitempty"`
+
 	// IssueScope Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window.
 	IssueScope *GetArchiveSnapshotQueryIssueScope `json:"issue_scope,omitempty"`
 
@@ -67730,14 +67749,15 @@ type ArchiveSnapshot struct {
 	End    time.Time `json:"end"`
 
 	// IssueScope When open, includes all cached open issues and linked closed context regardless of creation time.
-	IssueScope   *ArchiveSnapshotIssueScope `json:"issue_scope,omitempty"`
-	Issues       []SnapshotItem             `json:"issues"`
-	ObservedAt   time.Time                  `json:"observed_at"`
-	PullRequests []SnapshotPullRequest      `json:"pull_requests"`
-	Relations    []SnapshotRelation         `json:"relations"`
-	Repositories []SnapshotRepository       `json:"repositories"`
-	Schema1      string                     `json:"schema"`
-	Start        time.Time                  `json:"start"`
+	IssueScope       *ArchiveSnapshotIssueScope       `json:"issue_scope,omitempty"`
+	Issues           []SnapshotItem                   `json:"issues"`
+	ObservedAt       time.Time                        `json:"observed_at"`
+	PullRequestScope *ArchiveSnapshotPullRequestScope `json:"pull_request_scope,omitempty"`
+	PullRequests     []SnapshotPullRequest            `json:"pull_requests"`
+	Relations        []SnapshotRelation               `json:"relations"`
+	Repositories     []SnapshotRepository             `json:"repositories"`
+	Schema1          string                           `json:"schema"`
+	Start            time.Time                        `json:"start"`
 }
 
 type ArchiveStatusResponse struct {
@@ -71210,6 +71230,16 @@ type SnapshotCheck struct {
 	URL        string `json:"url"`
 }
 
+type SnapshotComment struct {
+	Author            string    `json:"author"`
+	AuthorAssociation *string   `json:"author_association"`
+	Body              string    `json:"body"`
+	BodyTruncated     bool      `json:"body_truncated"`
+	CreatedAt         time.Time `json:"created_at"`
+	ID                string    `json:"id"`
+	URL               string    `json:"url"`
+}
+
 type SnapshotCoverage struct {
 	ActivePhases           []string   `json:"active_phases"`
 	ArchivedItems          int64      `json:"archived_items"`
@@ -71251,19 +71281,21 @@ type SnapshotItem struct {
 }
 
 type SnapshotPullRequest struct {
-	Additions         *int64          `json:"additions"`
-	Assignees         []string        `json:"assignees,omitempty"`
-	Author            string          `json:"author"`
-	AuthorAssociation *string         `json:"author_association"`
-	BaseBranch        string          `json:"base_branch"`
-	Body              string          `json:"body"`
-	BodyTruncated     bool            `json:"body_truncated"`
-	ChangedFiles      *int64          `json:"changed_files"`
-	CheckState        string          `json:"check_state"`
-	Checks            []SnapshotCheck `json:"checks"`
-	ClosedAt          *time.Time      `json:"closed_at,omitempty"`
-	CreatedAt         time.Time       `json:"created_at"`
-	Deletions         *int64          `json:"deletions"`
+	Additions         *int64            `json:"additions"`
+	Assignees         []string          `json:"assignees,omitempty"`
+	Author            string            `json:"author"`
+	AuthorAccountType *string           `json:"author_account_type,omitempty"`
+	AuthorAssociation *string           `json:"author_association"`
+	BaseBranch        string            `json:"base_branch"`
+	Body              string            `json:"body"`
+	BodyTruncated     bool              `json:"body_truncated"`
+	ChangedFiles      *int64            `json:"changed_files"`
+	CheckState        string            `json:"check_state"`
+	Checks            []SnapshotCheck   `json:"checks"`
+	ClosedAt          *time.Time        `json:"closed_at,omitempty"`
+	Comments          []SnapshotComment `json:"comments,omitempty"`
+	CreatedAt         time.Time         `json:"created_at"`
+	Deletions         *int64            `json:"deletions"`
 
 	// DetailFetchedAt Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
 	DetailFetchedAt *time.Time `json:"detail_fetched_at"`

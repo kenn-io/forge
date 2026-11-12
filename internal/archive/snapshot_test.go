@@ -1,6 +1,7 @@
 package archive
 
 import (
+	"database/sql"
 	"encoding/json/v2"
 	"strings"
 	"testing"
@@ -503,4 +504,115 @@ func TestSnapshotResponseByteBoundary(t *testing.T) {
 	require.NoError(err)
 	_, err = service.Snapshot(t.Context(), opts)
 	require.ErrorIs(err, snapshot.ErrTooLarge, "one byte above the response budget must fail")
+}
+
+func TestSnapshotRecentlyClosedPullRequests(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "project")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	registry, err := platform.NewRegistry(newArchiveServiceProvider(ref.Platform, ref.Host))
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	closed := now.Add(-30 * 24 * time.Hour)
+	old := closed.Add(-time.Second)
+	original, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Title: "Original", Author: "contributor", AuthorAccountType: new("user"), State: db.MergeRequestStateClosed, CreatedAt: old, UpdatedAt: now, ClosedAt: &closed})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 2, Number: 2, Title: "Rebuild", Author: "bot", AuthorAccountType: new("bot"), State: db.MergeRequestStateOpen, CreatedAt: now, UpdatedAt: now})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 3, Number: 3, Title: "Old", State: db.MergeRequestStateClosed, CreatedAt: old, UpdatedAt: now, ClosedAt: &old})
+	require.NoError(err)
+	mergedAt := now.Add(-time.Hour)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 4, Number: 4, Title: "Merged", State: db.MergeRequestStateMerged, CreatedAt: old, UpdatedAt: now, MergedAt: &mergedAt})
+	require.NoError(err)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{
+		{MergeRequestID: original, EventType: "issue_comment", Author: "contributor", Body: "Closing", DedupeKey: "author", CreatedAt: now},
+		{MergeRequestID: original, EventType: "issue_comment", Author: "maintainer", AuthorAssociation: new("MEMBER"), Body: "Thanks", DedupeKey: "member", CreatedAt: now},
+		{MergeRequestID: original, EventType: "issue_comment", Author: "owner", AuthorAssociation: new("OWNER"), Body: "Approved", DedupeKey: "owner", CreatedAt: now},
+		{MergeRequestID: original, EventType: "issue_comment", Author: "other", AuthorAssociation: new("CONTRIBUTOR"), Body: "Other", DedupeKey: "other", CreatedAt: now},
+		{MergeRequestID: original, EventType: "cross_referenced", MetadataJSON: `{"source_type":"PullRequest","source_owner":"owner","source_repo":"project","source_number":2,"source_url":"https://github.test/pull/2","is_cross_repository":false}`, DedupeKey: "reference", CreatedAt: now},
+		{MergeRequestID: original, EventType: "cross_referenced", MetadataJSON: `{"source_type":"PullRequest","source_owner":"owner","source_repo":"project","source_number":2,"is_cross_repository":true}`, DedupeKey: "cross", CreatedAt: now},
+	}))
+	tx, err := database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
+	require.NoError(err)
+	defer func() { _ = tx.Rollback() }()
+	normalSize, err := db.MeasureArchiveSnapshot(t.Context(), tx, []int64{repoID}, now.Add(-time.Hour), now, false, false, now)
+	require.NoError(err)
+	expandedSize, err := db.MeasureArchiveSnapshot(t.Context(), tx, []int64{repoID}, now.Add(-time.Hour), now, false, true, now)
+	require.NoError(err)
+	require.Equal(normalSize.Records+6, expandedSize.Records)
+	require.Greater(expandedSize.TextBytes, normalSize.TextBytes)
+	options := SnapshotOptions{Start: now.Add(-time.Hour), End: now}
+	normal, err := service.Snapshot(t.Context(), options)
+	require.NoError(err)
+	require.Len(normal.PullRequests, 1)
+	require.Nil(normal.PullRequests[0].AuthorAccountType)
+	require.Empty(normal.Relations)
+	options.PullRequestScope = "recently_closed"
+	result, err := service.Snapshot(t.Context(), options)
+	require.NoError(err)
+	require.Equal("recently_closed", result.PullRequestScope)
+	require.Len(result.PullRequests, 3)
+	require.Equal(&mergedAt, result.PullRequests[2].ClosedAt)
+	require.Equal(db.MergeRequestStateClosed, db.MergeRequestState(result.PullRequests[0].State))
+	require.Equal(&closed, result.PullRequests[0].ClosedAt)
+	require.Len(result.PullRequests[0].Comments, 3)
+	require.Equal(new("bot"), result.PullRequests[1].AuthorAccountType)
+	require.Len(result.Relations, 1)
+	require.Equal("pull_request_reference", result.Relations[0].Kind)
+	require.Equal(result.PullRequests[1].ID, result.Relations[0].SourceID)
+	require.Equal(result.PullRequests[0].ID, result.Relations[0].TargetID)
+}
+
+func TestSnapshotCrossRepositoryPullReferenceKeepsPinnedIdentity(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	targetRef := archiveServiceRef(platform.KindGitHub, "github.test", "target")
+	sourceRef := archiveServiceRef(platform.KindGitHub, "github.test", "source")
+	targetRepo := archiveServiceSeedRepo(t, database, targetRef)
+	sourceRepo := archiveServiceSeedRepo(t, database, sourceRef)
+	registry, err := platform.NewRegistry(newArchiveServiceProvider(targetRef.Platform, targetRef.Host))
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{targetRef, sourceRef}, nil, now)
+	closed := now.Add(-time.Hour)
+	targetID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: targetRepo, PlatformID: 1, Number: 1, Title: "Original", Author: "author", State: db.MergeRequestStateClosed, CreatedAt: closed, UpdatedAt: now, ClosedAt: &closed})
+	require.NoError(err)
+	sourceID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: sourceRepo, PlatformID: 2, Number: 2, Title: "Rebuild", State: db.MergeRequestStateOpen, CreatedAt: closed, UpdatedAt: now})
+	require.NoError(err)
+	event := db.MREvent{MergeRequestID: targetID, EventType: "cross_referenced", DedupeKey: "cross", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_owner":"owner","source_repo":"source","source_number":2,"source_url":"https://github.test/source/2","is_cross_repository":true}`}
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{event}))
+	measure := func() db.ArchiveReportMeasurement {
+		tx, err := database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
+		require.NoError(err)
+		defer func() { _ = tx.Rollback() }()
+		value, err := db.MeasureArchiveSnapshot(t.Context(), tx, []int64{targetRepo, sourceRepo}, now.Add(-time.Hour), now, false, true, now)
+		require.NoError(err)
+		return value
+	}
+	beforeComment := measure()
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: sourceID, EventType: "issue_comment", Author: "owner", AuthorAssociation: new("OWNER"), Body: strings.Repeat("x", 4096), DedupeKey: "open-comment", CreatedAt: now}}))
+	require.Equal(beforeComment, measure())
+	// Partial event refreshes and repository renames retain the source pin.
+	event.MetadataJSON = `{}`
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{event}))
+	_, err = database.WriteDB().ExecContext(t.Context(), `UPDATE forge_repos SET name='renamed',name_key='renamed',repo_path='owner/renamed',repo_path_key='owner/renamed' WHERE id=?`, sourceRepo)
+	require.NoError(err)
+	options := SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"}
+	result, err := service.Snapshot(t.Context(), options)
+	require.NoError(err)
+	require.Len(result.PullRequests, 2)
+	require.Empty(result.PullRequests[0].Comments)
+	require.Empty(result.PullRequests[1].Comments)
+	require.Len(result.Relations, 1)
+	require.Equal(result.PullRequests[1].ID, result.Relations[0].SourceID)
+	require.Equal(result.PullRequests[0].ID, result.Relations[0].TargetID)
+	options.Repositories = []platform.RepoRef{targetRef}
+	result, err = service.Snapshot(t.Context(), options)
+	require.NoError(err)
+	require.Empty(result.Relations)
+	require.Contains(result.PullRequests[0].Gaps, "unresolved_pull_request_reference")
 }

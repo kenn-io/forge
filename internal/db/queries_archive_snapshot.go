@@ -21,6 +21,7 @@ type ArchiveSnapshotItem struct {
 	Draft                                                bool
 	HeadRepoIdentityStale                                bool
 	CommentAuthorAssociationUnknown                      bool
+	UnresolvedPullRequestReference                       bool
 	HeadSHA, HeadBranch, BaseBranch, HeadRepoCloneURL    string
 	Additions, Deletions                                 int
 	FilesChanged                                         *int
@@ -109,14 +110,18 @@ const archiveSnapshotPullScope = `WITH scoped_repos AS (SELECT value AS id FROM 
  FROM forge_mr_events e
  JOIN forge_merge_requests target ON target.id=e.merge_request_id AND target.repo_id=e.repo_id
  JOIN scoped_repos r ON r.id=target.repo_id
- JOIN forge_merge_requests source ON source.repo_id=e.repo_id AND source.number=json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number')
+ LEFT JOIN forge_merge_requests source ON source.repo_id=e.repo_id AND source.number=json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number')
  WHERE e.event_type='cross_referenced' AND json_valid(e.metadata_json)
  AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_type')='PullRequest'
  AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.is_cross_repository')=0
+ AND json_type(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number')='integer'
+ AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number')>0
  AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=target.repo_id AND a.item_type='merge_request' AND a.item_number=target.number AND a.lifecycle_state='removed_upstream')
- AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=source.repo_id AND a.item_type='merge_request' AND a.item_number=source.number AND a.lifecycle_state='removed_upstream')
+ AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=e.repo_id AND a.item_type='merge_request' AND a.item_number=json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number') AND a.lifecycle_state='removed_upstream')
  ), pull_links AS (
- SELECT * FROM reference_candidates c WHERE ? AND (c.source_id IN (SELECT id FROM roots) OR c.target_id IN (SELECT id FROM roots))
+ SELECT * FROM reference_candidates c WHERE ? AND c.source_id IS NOT NULL AND (c.source_id IN (SELECT id FROM roots) OR c.target_id IN (SELECT id FROM roots))
+ ), unresolved_targets AS (
+ SELECT DISTINCT target_id FROM reference_candidates WHERE source_id IS NULL AND target_id IN (SELECT id FROM roots)
  ), pulls AS (
  SELECT * FROM roots
  UNION SELECT p.id,p.repo_id,p.number FROM forge_merge_requests p JOIN pull_links l ON p.id=l.source_id
@@ -176,13 +181,14 @@ func LoadArchiveSnapshotItems(ctx context.Context, tx *sql.Tx, repoIDs []int64, 
  (SELECT json_group_array(l.name) FROM forge_merge_request_labels ml JOIN forge_labels l ON l.id=ml.label_id WHERE ml.merge_request_id=p.id),
  p.is_draft,COALESCE(p.platform_head_sha,''),COALESCE(p.head_branch,''),COALESCE(p.base_branch,''),COALESCE(p.head_repo_clone_url,''),p.head_repo_identity_stale,p.additions,p.deletions,p.files_changed,COALESCE(p.review_decision,''),COALESCE(p.ci_status,''),COALESCE(p.ci_checks_json,''),COALESCE(p.mergeable_state,''),
  p.assignees_json,p.reviewers_json,p.last_activity_at,p.closed_at,p.merged_at,p.ci_observed_at,p.review_decision_observed_at,p.mergeable_state_observed_at,
- EXISTS (SELECT 1 FROM forge_mr_events e WHERE e.merge_request_id=p.id AND p.state IN ('closed','merged') AND e.event_type='issue_comment' AND (p.author = '' OR e.author != p.author) AND e.author_association IS NULL)
+ EXISTS (SELECT 1 FROM forge_mr_events e WHERE e.merge_request_id=p.id AND p.state IN ('closed','merged') AND e.event_type='issue_comment' AND (p.author = '' OR e.author != p.author) AND e.author_association IS NULL),
+ EXISTS (SELECT 1 FROM unresolved_targets u WHERE u.target_id=p.id)
  FROM forge_merge_requests p JOIN pulls selected ON selected.id=p.id
  UNION ALL
  SELECT i.id,i.repo_id,'issue',i.number,COALESCE(i.url,''),i.title,i.author,i.state,COALESCE(CAST(substr(CAST(COALESCE(i.body,'') AS BLOB),1,8193) AS TEXT),''),NULL,i.author_association,i.created_at,i.updated_at,i.detail_fetched_at,
  (SELECT json_group_array(l.name) FROM forge_issue_labels il JOIN forge_labels l ON l.id=il.label_id WHERE il.issue_id=i.id),
  0,'','','','',0,0,0,NULL,'','','','',
- i.assignees_json,'',i.last_activity_at,i.closed_at,NULL,NULL,NULL,NULL,0
+ i.assignees_json,'',i.last_activity_at,i.closed_at,NULL,NULL,NULL,NULL,0,0
  FROM forge_issues i JOIN issues selected ON selected.id=i.id
  ORDER BY 2,3,4`, string(ids), recentPulls, observedAt.Add(-30*24*time.Hour).UTC(), observedAt.UTC(), recentPulls, openIssuesOnly, start.UTC(), end.UTC())
 	if err != nil {
@@ -192,7 +198,7 @@ func LoadArchiveSnapshotItems(ctx context.Context, tx *sql.Tx, repoIDs []int64, 
 	result := []ArchiveSnapshotItem{}
 	for rows.Next() {
 		var item ArchiveSnapshotItem
-		if err := rows.Scan(&item.ID, &item.RepoID, &item.Kind, &item.Number, &item.URL, &item.Title, &item.Author, &item.State, &item.Body, &item.AuthorAccountType, &item.AuthorAssociation, &item.CreatedAt, &item.UpdatedAt, &item.DetailFetchedAt, &item.LabelsJSON, &item.Draft, &item.HeadSHA, &item.HeadBranch, &item.BaseBranch, &item.HeadRepoCloneURL, &item.HeadRepoIdentityStale, &item.Additions, &item.Deletions, &item.FilesChanged, &item.ReviewDecision, &item.CIStatus, &item.ChecksJSON, &item.MergeableState, &item.AssigneesJSON, &item.ReviewersJSON, &item.LastActivityAt, &item.ClosedAt, &item.MergedAt, &item.CIObservedAt, &item.ReviewDecisionObservedAt, &item.MergeableStateObservedAt, &item.CommentAuthorAssociationUnknown); err != nil {
+		if err := rows.Scan(&item.ID, &item.RepoID, &item.Kind, &item.Number, &item.URL, &item.Title, &item.Author, &item.State, &item.Body, &item.AuthorAccountType, &item.AuthorAssociation, &item.CreatedAt, &item.UpdatedAt, &item.DetailFetchedAt, &item.LabelsJSON, &item.Draft, &item.HeadSHA, &item.HeadBranch, &item.BaseBranch, &item.HeadRepoCloneURL, &item.HeadRepoIdentityStale, &item.Additions, &item.Deletions, &item.FilesChanged, &item.ReviewDecision, &item.CIStatus, &item.ChecksJSON, &item.MergeableState, &item.AssigneesJSON, &item.ReviewersJSON, &item.LastActivityAt, &item.ClosedAt, &item.MergedAt, &item.CIObservedAt, &item.ReviewDecisionObservedAt, &item.MergeableStateObservedAt, &item.CommentAuthorAssociationUnknown, &item.UnresolvedPullRequestReference); err != nil {
 			return nil, fmt.Errorf("scan snapshot item: %w", err)
 		}
 		result = append(result, item)

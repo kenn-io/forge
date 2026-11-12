@@ -681,3 +681,67 @@ func TestSnapshotEmptyAuthorsDoNotMatch(t *testing.T) {
 	require.Equal(t, "Member", result.PullRequests[0].Comments[0].Body)
 	require.Contains(t, result.PullRequests[0].Gaps, "comment_author_association_unknown")
 }
+
+func TestSnapshotUnresolvedPullReference(t *testing.T) {
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "project")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	registry, err := platform.NewRegistry(newArchiveServiceProvider(ref.Platform, ref.Host))
+	require.NoError(t, err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	old, recent := now.Add(-45*24*time.Hour), now.Add(-time.Hour)
+	original, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, State: db.MergeRequestStateClosed, CreatedAt: old, UpdatedAt: now, ClosedAt: &recent})
+	require.NoError(t, err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 2, Number: 2, State: db.MergeRequestStateOpen, CreatedAt: old, UpdatedAt: now})
+	require.NoError(t, err)
+	contextID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 3, Number: 3, State: db.MergeRequestStateClosed, CreatedAt: old, UpdatedAt: now, ClosedAt: &old})
+	require.NoError(t, err)
+	exclusions, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 4, Number: 4, State: db.MergeRequestStateClosed, CreatedAt: old, UpdatedAt: now, ClosedAt: &recent})
+	require.NoError(t, err)
+	unselected, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 5, Number: 5, State: db.MergeRequestStateClosed, CreatedAt: old, UpdatedAt: now, ClosedAt: &old})
+	require.NoError(t, err)
+	_, err = database.WriteDB().ExecContext(t.Context(), `INSERT INTO forge_archive_items (repo_id,item_type,item_number,provider_item_id,provider_created_at,provider_updated_at,lifecycle_state) VALUES (?,'merge_request',8,'8',?,?,'removed_upstream')`, repoID, old, now)
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{
+		{MergeRequestID: original, EventType: "cross_referenced", DedupeKey: "missing-a", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_number":7,"is_cross_repository":false}`},
+		{MergeRequestID: original, EventType: "cross_referenced", DedupeKey: "missing-b", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_number":7,"is_cross_repository":false}`},
+		{MergeRequestID: contextID, EventType: "cross_referenced", DedupeKey: "root", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_number":2,"is_cross_repository":false}`},
+		{MergeRequestID: contextID, EventType: "cross_referenced", DedupeKey: "second-hop", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_number":9,"is_cross_repository":false}`},
+		{MergeRequestID: unselected, EventType: "cross_referenced", DedupeKey: "unselected", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_number":10,"is_cross_repository":false}`},
+		{MergeRequestID: exclusions, EventType: "cross_referenced", DedupeKey: "removed", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_number":8,"is_cross_repository":false}`},
+		{MergeRequestID: exclusions, EventType: "cross_referenced", DedupeKey: "cross", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_number":11,"is_cross_repository":true}`},
+		{MergeRequestID: exclusions, EventType: "cross_referenced", DedupeKey: "issue", CreatedAt: now, MetadataJSON: `{"source_type":"Issue","source_number":11,"is_cross_repository":false}`},
+		{MergeRequestID: exclusions, EventType: "cross_referenced", DedupeKey: "invalid", CreatedAt: now, MetadataJSON: `{`},
+		{MergeRequestID: exclusions, EventType: "cross_referenced", DedupeKey: "absent", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","is_cross_repository":false}`},
+		{MergeRequestID: exclusions, EventType: "cross_referenced", DedupeKey: "zero", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_number":0,"is_cross_repository":false}`},
+		{MergeRequestID: exclusions, EventType: "cross_referenced", DedupeKey: "string", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_number":"12","is_cross_repository":false}`},
+	}))
+	opts := SnapshotOptions{Start: recent, End: now}
+	normal, err := service.Snapshot(t.Context(), opts)
+	require.NoError(t, err)
+	require.Len(t, normal.PullRequests, 1)
+	require.NotContains(t, normal.PullRequests[0].Gaps, "unresolved_pull_request_reference")
+	require.Empty(t, normal.Relations)
+	opts.PullRequestScope = "recently_closed"
+	result, err := service.Snapshot(t.Context(), opts)
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 4)
+	require.Equal(t, 1, strings.Count(strings.Join(result.PullRequests[0].Gaps, ","), "unresolved_pull_request_reference"))
+	require.NotContains(t, result.PullRequests[2].Gaps, "unresolved_pull_request_reference")
+	require.NotContains(t, result.PullRequests[3].Gaps, "unresolved_pull_request_reference")
+	require.Len(t, result.Relations, 1)
+	for _, number := range []int{7, 9} {
+		_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: int64(number), Number: number, State: db.MergeRequestStateClosed, CreatedAt: old, UpdatedAt: now, ClosedAt: &old})
+		require.NoError(t, err)
+	}
+	result, err = service.Snapshot(t.Context(), opts)
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 5)
+	require.NotContains(t, result.PullRequests[0].Gaps, "unresolved_pull_request_reference")
+	require.NotContains(t, result.PullRequests[2].Gaps, "unresolved_pull_request_reference")
+	require.Equal(t, 7, result.PullRequests[4].Number)
+	require.Len(t, result.Relations, 3)
+	require.Equal(t, result.PullRequests[4].ID, result.Relations[0].SourceID)
+	require.Equal(t, result.PullRequests[0].ID, result.Relations[0].TargetID)
+}

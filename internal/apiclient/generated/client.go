@@ -71307,7 +71307,7 @@ type SnapshotPullRequest struct {
 	DetailFetchedAt *time.Time `json:"detail_fetched_at"`
 	Draft           bool       `json:"draft"`
 
-	// Gaps Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author.
+	// Gaps Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author. Includes unresolved_pull_request_reference when a same-repository reference to a root has an uncached source; the relation appears once the source is cached.
 	Gaps       []string `json:"gaps"`
 	HeadBranch string   `json:"head_branch"`
 

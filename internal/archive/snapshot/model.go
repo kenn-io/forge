@@ -97,7 +97,7 @@ type SnapshotPullRequest struct {
 	Reviews               []SnapshotReview `json:"reviews"`
 	// Gaps includes merge_status_observation_time_unknown when
 	// MergeStatusObservedAt is null.
-	Gaps []string `json:"gaps" doc:"Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author."`
+	Gaps []string `json:"gaps" doc:"Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author. Includes unresolved_pull_request_reference when a same-repository reference to a root has an uncached source; the relation appears once the source is cached."`
 }
 
 type SnapshotCheck struct {

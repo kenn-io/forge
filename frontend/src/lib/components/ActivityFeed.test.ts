@@ -177,6 +177,14 @@ vi.mock("../context.js", () => ({
       getActivityAuthorsError: () => null,
       getEnabledEvents: () => enabledEvents.value,
       getShowNotifications: () => showNotifications.value,
+      getStarred: () => false,
+      setStarred: vi.fn(),
+      getReferencedByPR: () => undefined,
+      setReferencedByPR: vi.fn(),
+      getHideBotAuthoredIssues: () => false,
+      setHideBotAuthoredIssues: vi.fn(),
+      getTimeRangeDefault: () => "7d",
+      getViewModeDefault: () => "flat",
       getInvolvesMe: () => involvesMe.value,
       getUnassigned: () => unassigned.value,
       getHideClosedMerged: () => hideClosedMerged.value,
@@ -268,6 +276,7 @@ vi.mock("../context.js", () => ({
       setViewMode: vi.fn(),
       syncToURL: vi.fn(),
     },
+    issues: { canFilterReferencedByPR: () => true },
     settings: {
       getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }),
       isSettingsLoaded: () => true,
@@ -762,7 +771,7 @@ describe("ActivityFeed compact mode", () => {
     await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
 
     expect(screen.getByRole("button", { name: "By repo" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "Flat list" }).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("independently toggles PR and issue visibility", async () => {

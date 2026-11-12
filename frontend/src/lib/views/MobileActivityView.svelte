@@ -3,6 +3,7 @@
   import { activityFilterMenu, activityItemVisible, activitySubjectVisible } from "../components/activityFilters.js";
   import FilterSectionsPanel from "../components/shared/FilterSectionsPanel.svelte";
   import LabelFilterMenu from "../components/shared/LabelFilterMenu.svelte";
+  import ListLoadMore from "../components/sidebar/ListLoadMore.svelte";
   import AuthorFilterMenu from "../components/shared/AuthorFilterMenu.svelte";
   import { rememberedLabelChoices } from "../utils/label-filter.js";
   import { Effect } from "effect";

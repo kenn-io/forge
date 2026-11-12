@@ -969,39 +969,6 @@ func activityWorkspaceOverlays(
 	return overlays
 }
 
-// activitySubjectsOpts builds the parent-level filters for one subjects read
-// of newest-first subjects from before.
-func activitySubjectsOpts(
-	opts db.ListActivityOpts, before *db.ActivitySubjectCursor, limit int,
-) db.ListActivitySubjectsOpts {
-	searchOpts := opts
-	searchOpts.AfterTime, searchOpts.BeforeTime, searchOpts.AtOrBeforeTime = nil, nil, nil
-	return db.ListActivitySubjectsOpts{
-		Repo:           opts.Repo,
-		RepoFilters:    opts.RepoFilters,
-		AllowedRepoIDs: opts.AllowedRepoIDs,
-		ItemTypes:      opts.ItemTypes,
-		ExcludeNotificationRecency: opts.ExcludeNotifications ||
-			(len(opts.Types) > 0 && !slices.Contains(opts.Types, "notification")),
-		Search:             opts.Search,
-		SearchEventOpts:    &searchOpts,
-		Author:             opts.Author,
-		Unassigned:         opts.Unassigned,
-		Assigned:           opts.Assigned,
-		ViewerLogins:       opts.ViewerLogins,
-		ViewerUninvolved:   opts.ViewerUninvolved,
-		HideClosedMerged:   opts.HideClosedMerged,
-		HideBots:           opts.HideBots,
-		HideDrafts:         opts.HideDrafts,
-		HideMergeQueued:    opts.HideMergeQueued,
-		OnlyMergeQueued:    opts.OnlyMergeQueued,
-		DeferredMergeItems: opts.DeferredMergeItems,
-		Limit:              limit,
-		Since:              opts.Since,
-		Before:             before,
-	}
-}
-
 // workspaceSearchSubjects reads, in SQL, which workspace subjects the
 // search's included terms match, whatever page or event cap the feed read
 // stopped at.
@@ -1018,7 +985,7 @@ func (s *Handlers) workspaceSearchSubjects(
 	if len(keys) == 0 {
 		return nil, nil
 	}
-	subjectOpts := activitySubjectsOpts(opts, nil, len(keys))
+	subjectOpts := db.ActivitySubjectsOpts(opts, nil, len(keys))
 	subjectOpts.Keys = keys
 	return s.Db.ListActivitySubjects(ctx, subjectOpts)
 }
@@ -1196,7 +1163,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 	if projection == "full" {
-		itemActivity, err = s.Db.ListActivitySubjects(ctx, activitySubjectsOpts(opts, subjectBefore, pageLimit+1))
+		itemActivity, err = s.Db.ListActivitySubjects(ctx, db.ActivitySubjectsOpts(opts, subjectBefore, pageLimit+1))
 		if err != nil {
 			slog.Error("list activity subjects failed", "err", err)
 			return nil, httpapi.Internal("list activity failed")

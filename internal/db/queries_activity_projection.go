@@ -35,9 +35,32 @@ func (d *DB) ListCollapsedActivityProjection(
 	if subjectLimit <= 0 {
 		subjectLimit = opts.Limit
 	}
-	searchOpts := opts.ListActivityOpts
+	subjects, err := listActivitySubjectsWithQueryer(ctx, tx, ActivitySubjectsOpts(opts.ListActivityOpts, opts.SubjectBefore, subjectLimit))
+	if err != nil {
+		return ActivityProjection{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return ActivityProjection{}, fmt.Errorf("commit collapsed activity projection: %w", err)
+	}
+	return ActivityProjection{
+		DirectRows:  directRows,
+		Subjects:    subjects,
+		EventCursor: eventCursor,
+	}, nil
+}
+
+func activityTypesExcludeNotification(types []string) bool {
+	return len(types) > 0 && !slices.Contains(types, "notification")
+}
+
+// ActivitySubjectsOpts builds the parent-level filters for one subjects read
+// of newest-first subjects from before.
+func ActivitySubjectsOpts(
+	opts ListActivityOpts, before *ActivitySubjectCursor, limit int,
+) ListActivitySubjectsOpts {
+	searchOpts := opts
 	searchOpts.AfterTime, searchOpts.BeforeTime, searchOpts.AtOrBeforeTime = nil, nil, nil
-	subjects, err := listActivitySubjectsWithQueryer(ctx, tx, ListActivitySubjectsOpts{
+	return ListActivitySubjectsOpts{
 		Repo:           opts.Repo,
 		RepoFilters:    opts.RepoFilters,
 		AllowedRepoIDs: opts.AllowedRepoIDs,
@@ -57,23 +80,8 @@ func (d *DB) ListCollapsedActivityProjection(
 		HideMergeQueued:    opts.HideMergeQueued,
 		OnlyMergeQueued:    opts.OnlyMergeQueued,
 		DeferredMergeItems: opts.DeferredMergeItems,
-		Limit:              subjectLimit,
+		Limit:              limit,
 		Since:              opts.Since,
-		Before:             opts.SubjectBefore,
-	})
-	if err != nil {
-		return ActivityProjection{}, err
+		Before:             before,
 	}
-	if err := tx.Commit(); err != nil {
-		return ActivityProjection{}, fmt.Errorf("commit collapsed activity projection: %w", err)
-	}
-	return ActivityProjection{
-		DirectRows:  directRows,
-		Subjects:    subjects,
-		EventCursor: eventCursor,
-	}, nil
-}
-
-func activityTypesExcludeNotification(types []string) bool {
-	return len(types) > 0 && !slices.Contains(types, "notification")
 }

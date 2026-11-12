@@ -1098,30 +1098,30 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       previousSubjectKeys.length === receivedSubjectKeys.size &&
       previousSubjectKeys.every((key) => receivedSubjectKeys.has(key));
     restartBulkActivity = refreshFilteredBulk && !unchangedBulk;
-    const retainedThreadItems =
-      childProjectionStale || noMatchingEvents
-        ? []
-        : items.filter((item) => {
-            const key = stableParentKey(item);
-            if (
-              result.response.item_activity_capped &&
-              (!collapseThreads || (!parentFilterActive && (result.subjectDepth ?? 1) === 1))
-            ) {
-              return (
-                (item.item_type === "pr" || item.item_type === "issue") &&
-                !receivedIDs.has(item.id) &&
-                (key === undefined ||
-                  (!changedThreadKeys.has(key) &&
-                    !(parentFilterActive && !refreshFilteredBulk && absentThreadKeys.has(key))))
-              );
-            }
+    const dropCachedThreads = childProjectionStale || noMatchingEvents;
+    const retainedThreadItems = dropCachedThreads
+      ? []
+      : items.filter((item) => {
+          const key = stableParentKey(item);
+          if (
+            result.response.item_activity_capped &&
+            (!collapseThreads || (!parentFilterActive && (result.subjectDepth ?? 1) === 1))
+          ) {
             return (
-              key !== undefined &&
-              receivedSubjectKeys.has(key) &&
+              (item.item_type === "pr" || item.item_type === "issue") &&
               !receivedIDs.has(item.id) &&
-              !changedThreadKeys.has(key)
+              (key === undefined ||
+                (!changedThreadKeys.has(key) &&
+                  !(parentFilterActive && !refreshFilteredBulk && absentThreadKeys.has(key))))
             );
-          });
+          }
+          return (
+            key !== undefined &&
+            receivedSubjectKeys.has(key) &&
+            !receivedIDs.has(item.id) &&
+            !changedThreadKeys.has(key)
+          );
+        });
     items = [...received, ...retainedThreadItems];
     projectActivitySubjects(result.response, params, result.subjectDepth ?? 1);
     capped = result.response.capped;
@@ -1688,17 +1688,17 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
       const projectPoll = ({ mode, result }: ActivityPollProjection) =>
-        mode === "replace"
-          ? projectReadSnapshot(result, authoritativeParams, true)
-          : Effect.sync(() => {
-              const existingIds = new Set(items.map((item) => item.id));
-              const newItems = projectOwnedNotificationStates(result, false).filter(
-                (item) => !existingIds.has(item.id),
-              );
-              activityEventCursor = result.response.event_cursor ?? activityEventCursor;
-              const nextItems = liveActivityPage(newItems.length > 0 ? [...newItems, ...items] : items);
-              if (newItems.length > 0 || nextItems.length !== items.length) items = nextItems;
-            });
+        Effect.suspend(() => {
+          if (mode === "replace") {
+            return projectReadSnapshot(result, authoritativeParams, true);
+          }
+          const existingIds = new Set(items.map((item) => item.id));
+          const newItems = projectOwnedNotificationStates(result, false).filter((item) => !existingIds.has(item.id));
+          activityEventCursor = result.response.event_cursor ?? activityEventCursor;
+          const nextItems = liveActivityPage(newItems.length > 0 ? [...newItems, ...items] : items);
+          if (newItems.length > 0 || nextItems.length !== items.length) items = nextItems;
+          return Effect.void;
+        });
       yield* workflow.pollRead(
         scope,
         activityRead(params),

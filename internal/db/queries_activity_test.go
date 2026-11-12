@@ -1959,13 +1959,17 @@ func TestListActivitySubjectsExcludesNegatedParentAuthor(t *testing.T) {
 	d := openTestDB(t)
 	now := baseTime()
 	repoID := insertTestRepo(t, d, "alice", "alpha")
-	insertTestMRWithOptions(t, d, testMR(repoID, 1,
-		withMRTitle("Needle work"), withMRAuthor("excluded-author"), withMRActivity(now.Add(-time.Hour))))
+	excludedID := insertTestMRWithOptions(t, d, testMR(repoID, 1,
+		withMRTitle("Other work"), withMRAuthor("excluded-author"), withMRActivity(now.Add(-time.Hour))))
+	require.NoError(d.UpsertMREvents(t.Context(), []MREvent{{
+		MergeRequestID: excludedID, EventType: "issue_comment", Author: "reviewer",
+		Body: "needle", CreatedAt: now, DedupeKey: "match",
+	}}))
 	insertTestMRWithOptions(t, d, testMR(repoID, 2,
 		withMRTitle("Needle work"), withMRAuthor("kept-author"), withMRActivity(now.Add(-2*time.Hour))))
 
 	subjects, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{
-		Search: "needle NOT excluded-author", SearchEventOpts: &ListActivityOpts{Search: "needle NOT excluded-author"}, Limit: 50,
+		Search: "needle NOT excluded-author", SearchEventOpts: &ListActivityOpts{Search: "needle"}, Limit: 50,
 	})
 	require.NoError(err)
 	require.Len(subjects, 1)

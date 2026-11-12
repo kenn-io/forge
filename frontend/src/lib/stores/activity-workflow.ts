@@ -95,10 +95,12 @@ export const ActivityWorkflowLive = Layer.effect(ActivityWorkflow)(
       scope: string,
       requestStart: number,
     ): Effect.Effect<boolean> {
-      return Ref.modify(projectionState, (state) => {
-        const stale = state.successfulSnapshotStart >= requestStart;
-        if (state.scope !== scope || (stale && owner !== "page")) return [false, state];
-        return [true, ["poll", "page"].includes(owner) ? state : { ...state, successfulSnapshotStart: requestStart }];
+      return Ref.modify(projectionState, (current) => {
+        if (current.scope !== scope) return [false, current];
+        if (owner === "page") return [true, current];
+        if (current.successfulSnapshotStart >= requestStart) return [false, current];
+        if (owner === "poll") return [true, current];
+        return [true, { ...current, successfulSnapshotStart: requestStart }];
       });
     }
 

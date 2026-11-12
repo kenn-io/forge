@@ -72,7 +72,7 @@ type SnapshotItem struct {
 type SnapshotPullRequest struct {
 	SnapshotItem
 	AuthorAccountType    *string           `json:"author_account_type,omitempty" doc:"Included for GitHub when reported; absent for other providers."`
-	Comments             []SnapshotComment `json:"comments,omitzero" doc:"For terminal pull requests, comments by the author or MEMBER/OWNER accounts."`
+	Comments             []SnapshotComment `json:"comments,omitzero" doc:"For terminal pull requests, comments by the author or MEMBER/OWNER/COLLABORATOR accounts."`
 	Draft                bool              `json:"draft"`
 	HeadSHA              string            `json:"head_sha"`
 	HeadBranch           string            `json:"head_branch"`

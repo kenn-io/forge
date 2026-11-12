@@ -530,7 +530,7 @@ func TestSnapshotRecentlyClosedPullRequests(t *testing.T) {
 		{MergeRequestID: original, EventType: "issue_comment", Author: "maintainer", AuthorAssociation: new("MEMBER"), Body: "Thanks", DedupeKey: "member", CreatedAt: now},
 		{MergeRequestID: original, EventType: "issue_comment", Author: "owner", AuthorAssociation: new("OWNER"), Body: "Approved", DedupeKey: "owner", CreatedAt: now},
 		{MergeRequestID: original, EventType: "issue_comment", Author: "unknown", Body: "Reason", DedupeKey: "unknown", CreatedAt: now},
-		{MergeRequestID: original, EventType: "issue_comment", Author: "collaborator", AuthorAssociation: new("COLLABORATOR"), Body: "Other", DedupeKey: "collaborator", CreatedAt: now},
+		{MergeRequestID: original, EventType: "issue_comment", Author: "collaborator", AuthorAssociation: new("COLLABORATOR"), Body: "Closing in favor of the replacement", DedupeKey: "collaborator", CreatedAt: now},
 		{MergeRequestID: original, EventType: "issue_comment", Author: "other", AuthorAssociation: new("CONTRIBUTOR"), Body: "Other", DedupeKey: "other", CreatedAt: now},
 		{MergeRequestID: original, EventType: "cross_referenced", MetadataJSON: `{"source_type":"PullRequest","source_owner":"owner","source_repo":"project","source_number":2,"source_url":"https://github.test/pull/2","is_cross_repository":false}`, DedupeKey: "reference", CreatedAt: now},
 		{MergeRequestID: original, EventType: "cross_referenced", MetadataJSON: `{"source_type":"PullRequest","source_owner":"owner","source_repo":"project","source_number":2,"is_cross_repository":true}`, DedupeKey: "cross", CreatedAt: now},
@@ -545,7 +545,7 @@ func TestSnapshotRecentlyClosedPullRequests(t *testing.T) {
 	require.NoError(err)
 	expandedSize, err := db.MeasureArchiveSnapshot(t.Context(), tx, []int64{repoID}, now.Add(-time.Hour), now, false, true, now)
 	require.NoError(err)
-	require.Equal(normalSize.Records+8, expandedSize.Records)
+	require.Equal(normalSize.Records+9, expandedSize.Records)
 	require.Greater(expandedSize.TextBytes, normalSize.TextBytes)
 	options := SnapshotOptions{Start: now.Add(-time.Hour), End: now}
 	normal, err := service.Snapshot(t.Context(), options)
@@ -564,7 +564,9 @@ func TestSnapshotRecentlyClosedPullRequests(t *testing.T) {
 	require.Contains(result.PullRequests[2].Gaps, "comment_author_association_unknown")
 	require.Equal(db.MergeRequestStateClosed, db.MergeRequestState(result.PullRequests[0].State))
 	require.Equal(&closed, result.PullRequests[0].ClosedAt)
-	require.Len(result.PullRequests[0].Comments, 3)
+	require.Len(result.PullRequests[0].Comments, 4)
+	require.Equal("Closing in favor of the replacement", result.PullRequests[0].Comments[3].Body)
+	require.Equal(new("COLLABORATOR"), result.PullRequests[0].Comments[3].AuthorAssociation)
 	require.Equal(strings.Repeat("界", 682), result.PullRequests[0].Comments[0].Body)
 	require.True(result.PullRequests[0].Comments[0].BodyTruncated)
 	require.Contains(result.PullRequests[0].Gaps, "comment_author_association_unknown")

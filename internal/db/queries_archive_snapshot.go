@@ -96,7 +96,7 @@ const archiveSnapshotLinks = `link_candidates AS (
 
 const (
 	archiveSnapshotCommentBody   = `COALESCE(CAST(substr(CAST(COALESCE(e.body,'') AS BLOB),1,2049) AS TEXT),'')`
-	archiveSnapshotCommentFilter = `((p.author <> '' AND e.author=p.author) OR upper(e.author_association) IN ('MEMBER','OWNER'))`
+	archiveSnapshotCommentFilter = `((p.author <> '' AND e.author=p.author) OR upper(e.author_association) IN ('MEMBER','OWNER','COLLABORATOR'))`
 )
 
 // All three snapshot queries share the root-anchored pull and relation set.

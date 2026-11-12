@@ -54,7 +54,7 @@ Archive snapshot consumers use `pull_request_scope=recently_closed` to include o
 
 A root with a recorded same-repository PR reference whose source is absent from the cache has an `unresolved_pull_request_reference` gap. The relation appears once the source is cached.
 
-Terminal pull requests include comments by their author and MEMBER/OWNER accounts. Omitted comments with unknown roles add `comment_author_association_unknown` to gaps. Comment bodies are limited to 2,048 bytes at a valid UTF-8 boundary. GitHub account type is included when reported; it remains absent for other providers.
+Terminal pull requests include comments by their author and MEMBER/OWNER/COLLABORATOR accounts. Omitted comments with unknown roles add `comment_author_association_unknown` to gaps. Comment bodies are limited to 2,048 bytes at a valid UTF-8 boundary. GitHub account type is included when reported; it remains absent for other providers.
 
 Responses contain `card`, with null meaning not applicable. A card has
 `status` (`neutral`, `pending`, `success`, `warning`, `error`) and `summary`.

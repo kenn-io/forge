@@ -69,6 +69,32 @@ describe("sync store", () => {
       },
     );
 
+    it("advances after a running sync finishes before the response despite a failed baseline read", async () => {
+      const accepted = Promise.withResolvers<void>();
+      const completed = { ...idle, last_run_at: "2026-08-05T12:01:00Z" };
+      const post = vi.fn(() => accepted.promise);
+      const getStatus = vi.fn().mockRejectedValueOnce(problem("forbidden", 403)).mockResolvedValue(completed);
+      const store = createSyncStore(
+        makeGeneratedClient({ SyncService: { triggerSync: post, getSyncStatus: getStatus } }),
+      );
+      const complete = vi.fn();
+      store.subscribeSyncComplete(complete);
+      if (!runtime) throw new Error("test runtime was not initialized");
+      const execution = runtime.runCommand(store.triggerOnboardingSyncEffect(), {
+        operation: "first sync",
+        safeContext: {},
+        onFailure: () => {},
+      });
+      await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+      store.setSyncStatus({ ...idle, running: true });
+      store.setSyncStatus(completed);
+      expect(complete).not.toHaveBeenCalled();
+      accepted.resolve();
+      await Effect.runPromise(execution.await);
+      expect(store.getSyncState()?.running).toBe(false);
+      expect(complete).toHaveBeenCalledOnce();
+    });
+
     it("advances when the accepted sync finishes before its response arrives", async () => {
       const accepted = Promise.withResolvers<void>();
       const completed = { ...idle, last_run_at: "2026-08-05T12:01:00Z" };

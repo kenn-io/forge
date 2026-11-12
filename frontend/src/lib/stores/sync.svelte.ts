@@ -188,7 +188,11 @@ export function createSyncStore(opts: SyncStoreOptions) {
     applySyncStatus(next);
   }
 
-  function recordObservedRun(pending: { observedRunAt?: string | undefined }, next: SyncStatus | null): void {
+  function recordObservedRun(
+    pending: { lastRunAt: string | null; observedRunAt?: string | undefined },
+    next: SyncStatus | null,
+  ): void {
+    if (next?.running && pending.lastRunAt === null) pending.lastRunAt = next.last_run_at ?? "";
     if (!next?.running && next?.last_run_at) pending.observedRunAt = next.last_run_at;
   }
 

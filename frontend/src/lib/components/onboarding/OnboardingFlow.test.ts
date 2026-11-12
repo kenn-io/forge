@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
+import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../../api/types.js";
 import { TransientTransportError } from "../../api/effect-errors.js";
@@ -536,6 +537,7 @@ describe("OnboardingFlow", () => {
     await waitFor(() => expect(attempts).toBe(2));
     sync.setSyncStatus({ running: true, last_run_at: "", last_error: "" });
     sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:00:30Z", last_error: "" });
+    await tick();
     expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
     accepted.resolve(Response.json({}));
     await waitFor(() => expect(statusReads).toBe(1));

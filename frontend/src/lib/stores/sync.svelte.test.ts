@@ -216,46 +216,22 @@ describe("sync store", () => {
 
     it("finishes from an event while the status refresh is delayed", async () => {
       const getStatus = vi.fn(() => new Promise<never>(() => {}));
-      const post = vi.fn().mockResolvedValue({ instance_id: "instance", generation: 1 });
-      const store = createSyncStore(
-        makeGeneratedClient({ SyncService: { triggerSync: post, getSyncStatus: getStatus } }),
-      );
-      store.setSyncStatus(idle);
-      if (!runtime) throw new Error("test runtime was not initialized");
+      const store = syncStore({ triggerSync: vi.fn().mockResolvedValue(receipt), getSyncStatus: getStatus }, idle);
       const finished = vi.fn();
-      const execution = runtime.runCommand(
-        store.triggerOnboardingSyncEffect().pipe(Effect.tap(() => Effect.sync(finished))),
-        {
-          operation: "first sync",
-          safeContext: {},
-          onFailure: () => {},
-        },
-      );
+      const execution = firstSync(store, undefined, finished);
       await vi.waitFor(() => expect(getStatus).toHaveBeenCalledOnce());
-      store.setSyncStatus({
-        running: true,
-        full_sync: { instance_id: "instance", settled_generation: 1, successful_generation: 1 },
-      });
+      store.setSyncStatus({ running: true, full_sync: succeeded });
       await Effect.runPromise(execution.await);
       expect(finished).toHaveBeenCalledOnce();
     });
 
     it("keeps observed status when the accepted wait is interrupted", async () => {
-      const getStatus = vi.fn().mockResolvedValue({
-        ...idle,
-        full_sync: { instance_id: "instance", settled_generation: 0, successful_generation: 0 },
-      });
-      const post = vi.fn().mockResolvedValue({ instance_id: "instance", generation: 1 });
-      const store = createSyncStore(
-        makeGeneratedClient({ SyncService: { triggerSync: post, getSyncStatus: getStatus } }),
-      );
-      store.setSyncStatus(idle);
-      if (!runtime) throw new Error("test runtime was not initialized");
-      const execution = runtime.runCommand(store.triggerOnboardingSyncEffect(), {
-        operation: "first sync",
-        safeContext: {},
-        onFailure: () => {},
-      });
+      const getStatus = vi
+        .fn()
+        .mockResolvedValue({ ...idle, full_sync: { ...succeeded, settled_generation: 0, successful_generation: 0 } });
+      const post = vi.fn().mockResolvedValue(receipt);
+      const store = syncStore({ triggerSync: post, getSyncStatus: getStatus }, idle);
+      const execution = firstSync(store);
       await vi.waitFor(() => expect(getStatus).toHaveBeenCalledOnce());
       const running = { ...idle, running: true, progress: "Syncing" };
       store.setSyncStatus(running);
@@ -280,22 +256,15 @@ describe("sync store", () => {
       await Effect.runPromise(execution.await);
       expect(store.getSyncState()).toEqual(completed);
     });
+
     it("shows sync progress while a retry response is delayed", async () => {
       const accepted = Promise.withResolvers<void>();
       const post = vi
         .fn()
         .mockRejectedValueOnce(new Error("response lost"))
         .mockImplementation(() => accepted.promise);
-      const store = createSyncStore(
-        makeGeneratedClient({ SyncService: { triggerSync: post, getSyncStatus: vi.fn().mockResolvedValue(idle) } }),
-      );
-      store.setSyncStatus(idle);
-      if (!runtime) throw new Error("test runtime was not initialized");
-      const execution = runtime.runCommand(store.triggerOnboardingSyncEffect(), {
-        operation: "first sync",
-        safeContext: {},
-        onFailure: () => {},
-      });
+      const store = syncStore({ triggerSync: post, getSyncStatus: vi.fn().mockResolvedValue(idle) }, idle);
+      const execution = firstSync(store);
       await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(2));
       store.setSyncStatus({ ...idle, running: true, current_repo: "acme/project", progress: "Syncing pull requests" });
       expect(store.getSyncState()).toMatchObject({

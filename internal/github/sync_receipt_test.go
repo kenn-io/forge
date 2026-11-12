@@ -135,7 +135,7 @@ func TestFullSyncReceiptsPromoteQueuedScopedWork(t *testing.T) {
 	require.Eventually(t, func() bool { return syncer.Status().FullSync.SuccessfulGeneration == receipt.Generation }, 5*time.Second, time.Millisecond)
 }
 
-func TestFullSyncReceiptsReportThrottledRepositories(t *testing.T) {
+func TestFullSyncReceiptsSettleWithThrottledRepositories(t *testing.T) {
 	database := openTestDB(t)
 	host := "github.example.com"
 	tracker := NewRateTracker(database, host, "host", "rest")
@@ -149,6 +149,7 @@ func TestFullSyncReceiptsReportThrottledRepositories(t *testing.T) {
 	require.True(t, ok)
 	require.Eventually(t, func() bool { return syncer.Status().FullSync.SettledGeneration == receipt.Generation }, 5*time.Second, time.Millisecond)
 	status := syncer.Status().FullSync
-	require.Less(t, status.SuccessfulGeneration, receipt.Generation)
-	require.Contains(t, status.LastError, "rate limit throttled")
+	require.Equal(t, receipt.Generation, status.SuccessfulGeneration)
+	require.Empty(t, status.LastError)
+	require.Empty(t, syncer.Status().LastError)
 }

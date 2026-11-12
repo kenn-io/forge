@@ -79,6 +79,8 @@
   let phaseExecution: AppExecution<void, never> | undefined;
   let syncExecution: AppExecution<void, never> | undefined;
   let pullsExecution: AppExecution<void, never> | undefined;
+  let unsubscribeSync: (() => void) | undefined;
+  let lastPullSync = "";
   let workspaceExecution: AppExecution<void, never> | undefined;
   let componentDestroyed = false;
 
@@ -117,6 +119,17 @@
     hasConfiguredRepos || providerConfirmed ? phase : "auth",
   );
   const syncState = $derived(stores.sync.getSyncState());
+  const airplaneMode = $derived(stores.settings.getAirplaneMode());
+  const quotaWaits = $derived.by(() => {
+    const now = Date.now();
+    const lastRun = Date.parse(syncState?.last_run_at ?? "") || 0;
+    // Archive reservations can reduce the scheduler's available quota further.
+    return Object.entries(stores.sync.getRateLimits().provider_pools).filter(([, pool]) => {
+      const reset = Date.parse(pool.rest.reset_at);
+      return pool.provider === "github" && pool.rest.known && Number.isFinite(reset) &&
+        pool.rest.remaining - 3 < pool.reserve_buffer && (reset > now || lastRun <= reset);
+    });
+  });
   const visibleRepositories = $derived.by(() => {
     const query = repositoryFilter.trim().toLowerCase();
     if (!query) return repositories;
@@ -327,15 +340,18 @@
     startSync();
   }
 
-  function loadAvailablePullsProgram(): Effect.Effect<void, never, AppServices> {
+  function loadAvailablePullsProgram(quiet = false): Effect.Effect<void, never, AppServices> {
     return Effect.sync(() => {
-      pullsLoading = true;
-      pullsError = null;
+      if (!quiet) {
+        pullsLoading = true;
+        pullsError = null;
+      }
     }).pipe(
       Effect.andThen(stores.pulls.loadPullsEffect()),
       Effect.matchEffect({
         onFailure: (failure) =>
           Effect.sync(() => {
+            if (quiet) return;
             pullsError = stores.pulls.getError() ?? errorMessage(failure);
             availablePulls = [];
             selectedPull = null;
@@ -344,6 +360,7 @@
           Effect.sync(() => {
             const loadError = stores.pulls.getError();
             if (loadError) {
+              if (quiet) return;
               pullsError = loadError;
               availablePulls = [];
               selectedPull = null;
@@ -353,12 +370,12 @@
               .getPulls()
               .filter((pull) => pull.State === "open")
               .slice(0, 8);
-            selectedPull = availablePulls[0] ?? null;
+            selectedPull = availablePulls.find((pull) => pull.ID === selectedPull?.ID) ?? availablePulls[0] ?? null;
           }),
       }),
       Effect.ensuring(
         Effect.sync(() => {
-          if (!componentDestroyed) pullsLoading = false;
+          if (!quiet && !componentDestroyed) pullsLoading = false;
         }),
       ),
     );
@@ -369,10 +386,12 @@
     return Effect.sync(() => {
       syncFinishing = true;
     }).pipe(
+      Effect.andThen(stores.sync.refreshSyncStatusEffect),
       Effect.andThen(loadAvailablePullsProgram()),
       Effect.andThen(
         Effect.sync(() => {
           syncFinishing = false;
+          lastPullSync = stores.sync.getSyncState()?.last_run_at ?? "";
         }),
       ),
       Effect.andThen(moveToProgram("pulls")),
@@ -388,6 +407,15 @@
     pullsExecution?.interrupt();
     pullsExecution = runtime.runCommand(loadAvailablePullsProgram(), {
       operation: "retry onboarding pull request load",
+      safeContext: {},
+      onFailure: () => {},
+    });
+  }
+
+  function reloadPulls(): void {
+    pullsExecution?.interrupt();
+    pullsExecution = runtime.runCommand(loadAvailablePullsProgram(true), {
+      operation: "refresh onboarding pull requests",
       safeContext: {},
       onFailure: () => {},
     });
@@ -539,11 +567,25 @@
 
   onMount(() => {
     onStart();
+    unsubscribeSync = stores.sync.subscribeSyncComplete(() => {
+      if (phase !== "pulls") return;
+      lastPullSync = stores.sync.getSyncState()?.last_run_at ?? "";
+      reloadPulls();
+    });
     if (phase === "sync") startSync();
+  });
+
+  $effect(() => {
+    const lastRun = syncState?.last_run_at ?? "";
+    if (phase === "pulls" && lastRun && Date.parse(lastRun) > (Date.parse(lastPullSync) || 0)) {
+      lastPullSync = lastRun;
+      untrack(reloadPulls);
+    }
   });
 
   onDestroy(() => {
     componentDestroyed = true;
+    unsubscribeSync?.();
     repositoryExecution?.interrupt();
     configureExecution?.interrupt();
     phaseExecution?.interrupt();
@@ -789,12 +831,22 @@
             {#if availablePulls.length === 0}
               <div class="center-state empty-pulls">
                 <GitPullRequestIcon size={20} aria-hidden="true" />
-                <strong>No open pull requests yet</strong>
-                <span>The repositories are configured and will keep syncing in the background.</span>
+                <strong>{quotaWaits.length ? "Waiting for repository sync" : "No open pull requests yet"}</strong>
               </div>
             {/if}
           {/if}
         </div>
+
+        {#each quotaWaits as [key, pool] (key)}
+          <p class="sync-note">
+            Quota for {pool.principal_label} on {pool.platform_host} resets at {new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(pool.rest.reset_at))}.
+            {#if !airplaneMode}{Date.parse(pool.rest.reset_at) > Date.now() ? "Sync resumes on a later scheduled pass." : "Sync resumes on the next scheduled pass."}{/if}
+          </p>
+        {/each}
+        {#if airplaneMode}
+          <p class="sync-note">Airplane mode pauses automatic sync. Turn it off in Sync settings.</p>
+          <Button size="sm" onclick={() => navigate("/settings?section=settings-sync")}>Sync settings</Button>
+        {/if}
 
         <div class="step-actions step-actions--end">
           {#if selectedPull}
@@ -1153,11 +1205,6 @@
 
   .empty-pulls strong {
     color: var(--text-primary);
-  }
-
-  .empty-pulls span {
-    max-width: 48ch;
-    font-size: var(--font-size-sm);
   }
 
   .no-results {

@@ -671,6 +671,7 @@ dispatch:
 	for i, r := range repos {
 		bucket, err := s.bucketKeyForRepo(r, false)
 		if err != nil {
+			s.recordRunError(state, r, err, err.Error())
 			s.observeRepoFailure(ctx, r, err)
 			s.recordRepoSync(r, err)
 			results[i].Error = err.Error()
@@ -777,14 +778,6 @@ dispatch:
 		s.advanceNextSync(advance, s.nextSyncAfter, s.interval, startedAt)
 	}
 
-	if fullGeneration > 0 && lastErr == "" {
-		for _, result := range results {
-			if result.Error != "" {
-				lastErr = result.Error
-				break
-			}
-		}
-	}
 	slog.Info("sync complete", "repos", total)
 
 	if s.onSyncCompleted != nil {

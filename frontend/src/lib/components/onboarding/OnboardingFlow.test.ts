@@ -112,6 +112,9 @@ function storeFixture(
       }),
       triggerSync,
       triggerOnboardingSyncEffect: triggerSyncEffect,
+      refreshSyncStatusEffect: Effect.void,
+      getRateLimits: () => ({ provider_pools: {}, local_ceilings: {} }),
+      subscribeSyncComplete: () => () => {},
     },
     pulls: {
       loadPulls,
@@ -156,6 +159,9 @@ describe("OnboardingFlow", () => {
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init);
       const path = new URL(request.url).pathname;
+      if (path === "/api/v1/rate-limits") {
+        return Response.json({ provider_pools: {}, local_ceilings: {} });
+      }
       if (request.method === "GET" && path === "/api/v1/snapshot") {
         return Response.json({ hosts: snapshotHosts });
       }
@@ -342,6 +348,45 @@ describe("OnboardingFlow", () => {
     expect(observedWorkspaceRequests).toEqual([]);
   });
 
+  it.each([true, false])("keeps the quota notice after reset with airplane mode %s", async (airplaneMode) => {
+    const fixture = storeFixture({ configured: true, pulls: [] });
+    fixture.stores.settings.setAirplaneMode(airplaneMode);
+    const reset = new Date(Date.now() - 60000).toISOString();
+    vi.spyOn(fixture.stores.sync, "getSyncState").mockReturnValue({
+      running: false,
+      last_run_at: new Date(Date.now() - 120000).toISOString(),
+    });
+    vi.spyOn(fixture.stores.sync, "getRateLimits").mockReturnValue({
+      local_ceilings: {},
+      provider_pools: {
+        pool: {
+          provider: "github",
+          platform_host: "github.example.com",
+          principal_label: "account",
+          rate_principal: "user:1",
+          reserve_buffer: 200,
+          sync_paused: false,
+          sync_throttle_factor: 1,
+          rest: { known: true, remaining: 100, limit: 5000, requests: 0, reset_at: reset },
+          graphql: { known: true, remaining: 5000, limit: 5000, requests: 0, reset_at: reset },
+        },
+      },
+    });
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByText("Waiting for repository sync")).toBeTruthy());
+    expect(screen.getByText(/Quota for account/).textContent).toContain(
+      new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(reset)),
+    );
+    if (airplaneMode) {
+      expect(screen.getByText(/Airplane mode pauses automatic sync/)).toBeTruthy();
+      expect(screen.queryByText(/Sync resumes/)).toBeNull();
+      await fireEvent.click(screen.getByRole("button", { name: "Sync settings" }));
+      expect(mocks.navigate).toHaveBeenCalledWith("/settings?section=settings-sync");
+    } else {
+      expect(screen.getByText(/Sync resumes on the next scheduled pass/)).toBeTruthy();
+    }
+  });
+
   it("verifies a newly authenticated gh session through repository discovery", async () => {
     mocks.tooling.value = {
       git: { available: true, version: "2.50" },
@@ -498,6 +543,142 @@ describe("OnboardingFlow", () => {
       });
       expect(attempts).toBe(2);
       expect(recoveryReads).toBe(0);
+    },
+  );
+
+  it("refreshes the pull picker after later syncs without losing the selection", async () => {
+    const originalFetch = globalThis.fetch;
+    let posts = 0;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/sync" && request.method === "POST") {
+        posts++;
+        return posts === 1
+          ? Promise.reject(new Error("response lost"))
+          : Promise.resolve(Response.json({ instance_id: "instance", generation: 1 }));
+      }
+      if (path === "/api/v1/sync/status")
+        return Promise.resolve(
+          Response.json({
+            running: false,
+            last_run_at: "2026-08-02T12:01:00Z",
+            full_sync: { instance_id: "instance", settled_generation: 1, successful_generation: 1 },
+          }),
+        );
+      return originalFetch(input, init);
+    });
+    const fixture = storeFixture({ configured: true });
+    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+    const sync = createSyncStore({ runtime: runtimeCapture.current });
+    fixture.stores.sync = sync;
+    const first = pullRequest();
+    const second = { ...first, ID: 10, Number: 43, Title: "Deferred repository pull" };
+    let pulls = [first];
+    vi.spyOn(fixture.stores.pulls, "getPulls").mockImplementation(() => pulls);
+    const pending = Promise.withResolvers<void>();
+    const load = vi.spyOn(fixture.stores.pulls, "loadPullsEffect");
+    const view = renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Continue with PR #42" })).toBeTruthy(), {
+      timeout: 5000,
+    });
+    expect(posts).toBe(2);
+    load.mockImplementationOnce(() => Effect.promise(() => pending.promise));
+    sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:01:00Z" });
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:02:00Z" });
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: "Continue with PR #42" })).toBeTruthy();
+    pulls = [second, first];
+    pending.resolve();
+    await waitFor(() => expect(screen.getByText("Deferred repository pull")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Continue with PR #42" })).toBeTruthy();
+    load.mockImplementationOnce(() => Effect.fail(new Error("load failed")));
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:02:00.500Z" });
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(3));
+    expect(screen.getByText("Deferred repository pull")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Continue with PR #42" })).toBeTruthy();
+    expect(posts).toBe(2);
+    view.unmount();
+    sync.setSyncStatus({ running: true });
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:04:00Z" });
+    expect(load).toHaveBeenCalledTimes(3);
+  });
+
+  it("shows the credential action when the accepted sync cannot route a repository", async () => {
+    const originalFetch = globalThis.fetch;
+    let posts = 0;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/sync" && request.method === "POST") {
+        posts++;
+        return Promise.resolve(Response.json({ instance_id: "instance", generation: 1 }));
+      }
+      if (path === "/api/v1/sync/status")
+        return Promise.resolve(
+          Response.json({
+            running: false,
+            full_sync: {
+              instance_id: "instance",
+              settled_generation: 1,
+              successful_generation: 0,
+              last_error:
+                "no GitHub credential route for missing/repo on github.com. Configure a GitHub token for this repository or owner in Forge's config.toml and restart Forge.",
+            },
+          }),
+        );
+      return originalFetch(input, init);
+    });
+    const fixture = storeFixture({ configured: true });
+    if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+    fixture.stores.sync = createSyncStore({ runtime: runtimeCapture.current });
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("config.toml and restart Forge"));
+    expect(screen.getByRole("alert").textContent).toContain("missing/repo on github.com");
+    expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy();
+    expect(posts).toBe(1);
+  });
+
+  it.each([
+    { remaining: 202, known: true, graphql: 5000, waiting: true, populated: false },
+    { remaining: 202, known: true, graphql: 5000, waiting: true, populated: true },
+    { remaining: 203, known: true, graphql: 5000, waiting: false, populated: false },
+    { remaining: 0, known: false, graphql: 5000, waiting: false, populated: false },
+    { remaining: 5000, known: true, graphql: 0, waiting: false, populated: false },
+  ])(
+    "shows quota waits only when REST admission is blocked: $remaining/$known/$graphql",
+    async ({ remaining, known, graphql, waiting, populated }) => {
+      const fixture = storeFixture({ configured: true, pulls: populated ? [pullRequest()] : [] });
+      const reset = new Date(Date.now() + 3600000).toISOString();
+      vi.spyOn(fixture.stores.sync, "getRateLimits").mockReturnValue({
+        local_ceilings: {},
+        provider_pools: {
+          pool: {
+            provider: "github",
+            platform_host: "github.example.com",
+            principal_label: "account",
+            rate_principal: "user:1",
+            reserve_buffer: 200,
+            sync_paused: false,
+            sync_throttle_factor: 1,
+            rest: { known, remaining, limit: 5000, requests: 0, reset_at: reset },
+            graphql: { known: true, remaining: graphql, limit: 5000, requests: 0, reset_at: reset },
+          },
+        },
+      });
+      renderFlow(fixture.stores);
+      await waitFor(() =>
+        expect(
+          populated
+            ? screen.getByRole("button", { name: "Continue with PR #42" })
+            : screen.getByText(waiting ? "Waiting for repository sync" : "No open pull requests yet"),
+        ).toBeTruthy(),
+      );
+      if (waiting) {
+        expect(screen.getByText(/Quota for account on github.example.com/).textContent).toContain(
+          new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(reset)),
+        );
+      } else expect(screen.queryByText(/Quota for account/)).toBeNull();
     },
   );
 
@@ -677,6 +858,14 @@ describe("OnboardingFlow", () => {
     );
     await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
     expect(fixture.loadPulls).toHaveBeenCalledTimes(1);
+    source?.dispatchEvent(
+      new MessageEvent("sync_status", {
+        data: JSON.stringify({ running: false, last_run_at: "2026-08-02T12:02:00Z" }),
+        lastEventId: "3",
+      }),
+    );
+    await waitFor(() => expect(fixture.loadPulls).toHaveBeenCalledTimes(2));
+    expect(attempts).toBe(2);
   });
 
   it("advances when the retried sync finishes before its response", async () => {

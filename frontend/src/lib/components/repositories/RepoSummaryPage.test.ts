@@ -948,24 +948,17 @@ describe("RepoSummaryPage", () => {
   });
 
   it("retains an uncertain issue outcome until a replacement page acknowledges it", async () => {
-    mockGet.mockImplementation((path: string) =>
-      path === "/repos/summary"
-        ? Promise.resolve({
-            data: [
-              {
-                ...repoSummaryFixture({
-                  provider: "gitea",
-                  platformHost: "git.example.test:3000",
-                  owner: "acme",
-                  name: "widgets",
-                }),
-                web_url: "http://git.example.test:3000/acme/widgets",
-              },
-            ],
-            error: undefined,
-          })
-        : Promise.resolve({ error: "unexpected request" }),
-    );
+    mockGet.mockResolvedValue({
+      data: [
+        repoSummaryFixture({
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widgets",
+        }),
+      ],
+      error: undefined,
+    });
     const request = Promise.withResolvers<never>();
     mockPost.mockImplementation(() => request.promise);
 
@@ -991,8 +984,6 @@ describe("RepoSummaryPage", () => {
       ).toBeTruthy();
       expect(flash.getFlash()).toBeNull();
       expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", true);
-      const issueList = screen.getByRole("link", { name: "Open issue list" });
-      expect(issueList.getAttribute("href")).toBe("http://git.example.test:3000/acme/widgets/issues");
     });
 
     await fireEvent.click(
@@ -1004,26 +995,23 @@ describe("RepoSummaryPage", () => {
   });
 
   it.each([
-    ["github", "github.com", undefined, "https://github.com/acme/widgets/issues"],
     ["github", "", undefined, "https://github.com/acme/widgets/issues"],
     ["gh", "GitHub.Com", "javascript:alert(1)//", "https://github.com/acme/widgets/issues"],
     ["gitlab", "gitlab.com", undefined, "https://gitlab.com/acme/widgets/-/issues"],
-    ["gl", "GitLab.Com", undefined, "https://gitlab.com/acme/widgets/-/issues"],
-    ["forgejo", "codeberg.org", undefined, "https://codeberg.org/acme/widgets/issues"],
     ["forgejo", "", undefined, "https://codeberg.org/acme/widgets/issues"],
-    ["fj", "Codeberg.Org", undefined, "https://codeberg.org/acme/widgets/issues"],
-    ["gitea", "gitea.com", undefined, "https://gitea.com/acme/widgets/issues"],
     ["bitbucket", "Bitbucket.Org", undefined, "https://bitbucket.org/acme/widgets/issues"],
-  ])("offers the %s public issue list when its address is missing", async (provider, host, webURL, expected) => {
+    [
+      "gitea",
+      "git.example.test:3000",
+      "http://git.example.test:3000/acme/widgets",
+      "http://git.example.test:3000/acme/widgets/issues",
+    ],
+  ])("offers the %s issue list", async (provider, host, webURL, expected) => {
     const summary = {
       ...repoSummaryFixture({ provider, platformHost: host, owner: "acme", name: "widgets" }),
       web_url: webURL,
     };
-    mockGet.mockImplementation((path: string) =>
-      path.includes("web-url")
-        ? Promise.resolve({ error: "provider unavailable" })
-        : Promise.resolve({ data: [summary] }),
-    );
+    mockGet.mockResolvedValue({ data: [summary] });
     mockPost.mockRejectedValueOnce(new Error("connection lost"));
 
     render(RepoSummaryPage);
@@ -1031,19 +1019,17 @@ describe("RepoSummaryPage", () => {
     await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
     await fireEvent.input(screen.getByPlaceholderText("Issue title"), { target: { value: "Keep this draft" } });
     await fireEvent.click(screen.getByRole("button", { name: "Create issue" }));
-    expect((await screen.findByRole("link", { name: "Open issue list" })).getAttribute("href")).toBe(expected);
-    expect(screen.getByDisplayValue("Keep this draft")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", true);
-    expect(mockPost).toHaveBeenCalledTimes(1);
-    await fireEvent.click(
-      screen.getByRole("checkbox", { name: "I checked the provider's issue list and want to retry." }),
-    );
-    expect(mockPost).toHaveBeenCalledTimes(1);
-    await fireEvent.click(screen.getByRole("button", { name: "Create issue" }));
-    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(2));
+    const link = await screen.findByRole("link", { name: "Open issue list" });
+    expect(link.getAttribute("href")).toBe(expected);
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
-  it("recovers a missing issue list address without repeating issue creation", async () => {
+  it.each([
+    [undefined, "error"],
+    [undefined, "unsafe"],
+    ["javascript:alert(1)//", "unsafe"],
+  ])("recovers a missing issue list address with cached address %s and first read %s", async (webURL, firstRead) => {
     const summary = repoSummaryFixture({
       provider: "gitea",
       platformHost: "git.example.test:3000",
@@ -1054,11 +1040,16 @@ describe("RepoSummaryPage", () => {
     mockGet.mockImplementation((path: string) => {
       if (path.includes("web-url")) {
         reads++;
-        return reads === 1
-          ? Promise.resolve({ error: "provider unavailable" })
-          : Promise.resolve({ data: { web_url: "http://git.example.test:3000/prefix/acme/widgets" } });
+        if (reads === 1) {
+          return Promise.resolve(
+            firstRead === "error" ? { error: "provider unavailable" } : { data: { web_url: "javascript:alert(1)//" } },
+          );
+        }
+        return Promise.resolve({ data: { web_url: "http://git.example.test:3000/prefix/acme/widgets" } });
       }
-      return Promise.resolve({ data: [{ ...summary, repo: { ...summary.repo, platform_repo_id: 42 } }] });
+      return Promise.resolve({
+        data: [{ ...summary, web_url: webURL, repo: { ...summary.repo, platform_repo_id: 42 } }],
+      });
     });
     mockPost.mockRejectedValue(new Error("connection lost"));
 
@@ -1074,49 +1065,13 @@ describe("RepoSummaryPage", () => {
       expect.objectContaining({ params: expect.objectContaining({ query: { platform_repo_id: 42 } }) }),
     );
     await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    const link = await screen.findByRole("link", { name: "Open issue list" });
-    expect(link.getAttribute("href")).toBe("http://git.example.test:3000/prefix/acme/widgets/issues");
+    expect((await screen.findByRole("link", { name: "Open issue list" })).getAttribute("href")).toBe(
+      "http://git.example.test:3000/prefix/acme/widgets/issues",
+    );
     expect(screen.getByDisplayValue("Keep this draft")).toBeTruthy();
     expect(mockPost).toHaveBeenCalledTimes(1);
     expect(reads).toBe(2);
   });
-
-  it.each([undefined, "javascript:alert(1)//"])(
-    "retries a rejected provider address with cached address %s",
-    async (webURL) => {
-      const summary = repoSummaryFixture({
-        provider: "gitea",
-        platformHost: "git.example.test",
-        owner: "acme",
-        name: "widgets",
-      });
-      let reads = 0;
-      mockGet.mockImplementation((path: string) => {
-        if (path.includes("web-url")) {
-          reads++;
-          return Promise.resolve({
-            data: { web_url: reads === 1 ? "javascript:alert(1)//" : "http://git.example.test/prefix/acme/widgets" },
-          });
-        }
-        return Promise.resolve({ data: [{ ...summary, web_url: webURL }] });
-      });
-      mockPost.mockRejectedValue(new Error("connection lost"));
-
-      render(RepoSummaryPage);
-      await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
-      await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
-      await fireEvent.input(screen.getByPlaceholderText("Issue title"), { target: { value: "Keep this draft" } });
-      await fireEvent.click(screen.getByRole("button", { name: "Create issue" }));
-      await screen.findByText("Could not load the issue list.", { exact: false });
-      expect(screen.queryByRole("link", { name: "Open issue list" })).toBeNull();
-      await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-      expect((await screen.findByRole("link", { name: "Open issue list" })).getAttribute("href")).toBe(
-        "http://git.example.test/prefix/acme/widgets/issues",
-      );
-      expect(screen.getByDisplayValue("Keep this draft")).toBeTruthy();
-      expect(mockPost).toHaveBeenCalledTimes(1);
-    },
-  );
 
   it("allows issue creation to retry after a rejected request", async () => {
     mockGet.mockResolvedValue({

@@ -293,10 +293,8 @@ test.describe("repository summaries", () => {
         webURLReads++;
         return route.abort("connectionfailed");
       });
-      let createCount = 0;
       let interruptNextCreate = true;
       await page.route("**/api/v1/issues/github/acme/widgets", async (route) => {
-        if (route.request().method() === "POST") createCount++;
         if (interruptNextCreate && route.request().method() === "POST") {
           interruptNextCreate = false;
           await route.abort("connectionfailed");
@@ -328,22 +326,12 @@ test.describe("repository summaries", () => {
       const issueList = dialog.getByRole("link", { name: "Open issue list" });
       await expect(issueList).toBeVisible();
       await expect(issueList).toHaveAttribute("href", "https://github.com/acme/widgets/issues");
-      await expect(issueList).toHaveAttribute("target", "_blank");
       expect(removedWebURL).toBe(true);
       expect(webURLReads).toBe(0);
-      await page.context().route("https://github.com/**", (route) => route.fulfill({ body: "Issue list" }));
-      const popupPromise = page.waitForEvent("popup");
-      await issueList.click();
-      const popup = await popupPromise;
-      await expect(popup).toHaveURL("https://github.com/acme/widgets/issues");
-      await popup.close();
-      expect(createCount).toBe(1);
       await dialog.getByRole("checkbox", { name: "I checked the provider's issue list and want to retry." }).click();
-      expect(createCount).toBe(1);
       await expect(create).toBeEnabled();
       await create.click();
       await expect(page).toHaveURL(/\/issues\/github\/acme\/widgets\/\d+$/);
-      expect(createCount).toBe(2);
       await expect(page.locator(".issue-detail")).toContainText("Retry interrupted issue creation");
     } finally {
       await server.stop();

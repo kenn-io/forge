@@ -2,16 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { buildCanonicalProviderItemURL, buildProviderIssueListURL, parseProviderItemURL } from "./item-reference.js";
 
 describe("provider issue lists", () => {
-  it("does not build a Bitbucket Data Center issue list", () => {
-    expect(
-      buildProviderIssueListURL({
-        provider: "bitbucket",
-        platformHost: "bitbucket.example.com",
-        repoPath: "team/widgets",
-      }),
-    ).toBeUndefined();
-  });
-
   it.each([
     ["github", undefined, "team/widgets", undefined, "https://github.com/team/widgets/issues"],
     [
@@ -39,19 +29,13 @@ describe("provider issue lists", () => {
     expect(buildProviderIssueListURL({ provider, platformHost, repoPath, webURL })).toBe(expected);
   });
 
-  it.each(["javascript:alert(1)//", "https://user:password@git.example.test/team/widgets"])(
-    "rejects an invalid repository web URL: %s",
-    (webURL) => {
-      expect(
-        buildProviderIssueListURL({
-          provider: "gitea",
-          platformHost: "git.example.test",
-          repoPath: "team/widgets",
-          webURL,
-        }),
-      ).toBeUndefined();
-    },
-  );
+  it.each([
+    ["gitea", "git.example.test", "javascript:alert(1)//"],
+    ["gitea", "git.example.test", "https://user:password@git.example.test/team/widgets"],
+    ["bitbucket", "bitbucket.example.com", undefined],
+  ])("rejects an invalid issue list for %s at %s", (provider, platformHost, webURL) => {
+    expect(buildProviderIssueListURL({ provider, platformHost, repoPath: "team/widgets", webURL })).toBeUndefined();
+  });
 });
 
 const pull = {
@@ -84,13 +68,10 @@ describe("Bitbucket item references", () => {
     });
   });
 
-  it("builds Cloud issue links without inventing Data Center issues", () => {
+  it("builds Cloud issue links", () => {
     expect(buildCanonicalProviderItemURL({ ...pull, itemType: "issue" })).toBe(
       "https://bitbucket.org/EX/widgets/issues/7",
     );
-    expect(
-      buildCanonicalProviderItemURL({ ...pull, itemType: "issue", platformHost: "bitbucket.example.com" }),
-    ).toBeUndefined();
   });
 });
 

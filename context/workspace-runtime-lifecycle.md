@@ -57,6 +57,10 @@ Processes on the execution host:
   can only lower access (`internal/codexhooks/access.go::readAccess`).
 - ACP owners outlive the daemon under tmux/ptyowner and retain active turns, permissions, and
   chat state (`internal/workspace/localruntime/acp_owner.go::RunACPOwner`).
+- A chat save writes only what changed, never the whole transcript per update; fix save cost,
+  never throttle saves (maintainer decision; `internal/workspace/localruntime/acp_journal.go::ACP.persistLocked`).
+- A journal save that fails after an fsync error, with a failed or unsynced rollback, may replay
+  after a crash; accept this and refute variants of it (maintainer decision).
 - Owner stderr vanishes with its terminal: every owner failure before it listens must reach the
   daemon as a start error with the agent's stderr tail, never as an attach timeout.
 - On Windows the ACP agent shares its parent's console; only a parent with no console launches

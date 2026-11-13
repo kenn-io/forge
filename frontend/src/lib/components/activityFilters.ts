@@ -294,18 +294,18 @@ export function activityFilterMenu({
         ),
       ],
     },
-    { title: "View", items: [hideOrgNameChoice(grouping)] },
   ];
+  const view: FilterSection = { title: "View", items: [hideOrgNameChoice(grouping)] };
 
-  const [view, ...afterView] = desktopLayout;
   return {
     itemTypes,
-    sections: [items, timeRange, ...filterSections],
+    // The filters come first, then layout and the time range, then View, as in the PR list menu.
+    sections: [items, ...filterSections, timeRange, view],
     // Desktop shows the item types as toolbar toggles, so its menu leaves them out.
-    desktopSections: [view!, timeRange, ...afterView, ...filterSections],
-    filterCount: countFilters(filterSections),
+    desktopSections: [...filterSections, ...desktopLayout, timeRange, view],
+    filterCount: countFilters([...filterSections, view]),
     reset: () => {
-      resetSections(filterSections);
+      resetSections([...filterSections, view]);
       applyTypes();
     },
   };

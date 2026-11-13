@@ -52,7 +52,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
           node {
             id isResolved isOutdated path line originalLine startLine originalStartLine diffSide
             comments(first: 100) {
-              nodes { id databaseId fullDatabaseId pullRequestReview { databaseId } subjectType body author { login } authorAssociation path line originalLine diffHunk url commit { oid } originalCommit { oid } isMinimized minimizedReason createdAt updatedAt }
+              nodes { id databaseId fullDatabaseId pullRequestReview { databaseId } subjectType body author { login __typename } authorAssociation path line originalLine diffHunk url commit { oid } originalCommit { oid } isMinimized minimizedReason createdAt updatedAt }
               pageInfo { hasNextPage endCursor }
             }
           }
@@ -69,7 +69,7 @@ query($owner: String!, $repo: String!, $cursor: String, $orderField: IssueOrderF
     issues(first: 100, after: $cursor, states: [OPEN, CLOSED], filterBy: {since: $since}, orderBy: {field: $orderField, direction: ASC}) {
       nodes {
         id databaseId number title state body url createdAt updatedAt closedAt
-        author { login } authorAssociation
+        author { login __typename } authorAssociation
         comments { totalCount }
         labels(first: 100) { nodes { name color description isDefault } }
         assignees(first: 100) { nodes { login } }

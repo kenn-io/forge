@@ -95,7 +95,7 @@ func MarshalUserNamesJSON(names []string) string {
 // confirmed hidden marker until a subsequent GraphQL sync explicitly observes
 // the comment as visible.
 func PreserveProviderHiddenMetadata(existingMetadata, incomingMetadata string) string {
-	if incomingMetadata != "" || existingMetadata == "" {
+	if existingMetadata == "" {
 		return incomingMetadata
 	}
 	var existing struct {
@@ -104,7 +104,25 @@ func PreserveProviderHiddenMetadata(existingMetadata, incomingMetadata string) s
 	if err := json.Unmarshal([]byte(existingMetadata), &existing); err != nil || !existing.Hidden {
 		return incomingMetadata
 	}
-	return existingMetadata
+	if incomingMetadata == "" {
+		return existingMetadata
+	}
+	var incoming, stored map[string]any
+	if json.Unmarshal([]byte(incomingMetadata), &incoming) != nil || incoming == nil || json.Unmarshal([]byte(existingMetadata), &stored) != nil {
+		return incomingMetadata
+	}
+	if _, ok := incoming["provider_hidden"]; ok {
+		return incomingMetadata
+	}
+	incoming["provider_hidden"] = stored["provider_hidden"]
+	if reason, ok := stored["provider_hidden_reason"]; ok {
+		incoming["provider_hidden_reason"] = reason
+	}
+	merged, err := json.Marshal(incoming)
+	if err != nil {
+		return incomingMetadata
+	}
+	return string(merged)
 }
 
 func DBRepoIdentity(ref platform.RepoRef) db.RepoIdentity {
@@ -131,6 +149,7 @@ func DBMergeRequest(repoID int64, mr platform.MergeRequest) *db.MergeRequest {
 		URL:                     mr.URL,
 		Title:                   mr.Title,
 		Author:                  mr.Author,
+		AuthorAccountType:       mr.AuthorAccountType,
 		AuthorAssociation:       mr.AuthorAssociation,
 		AuthorDisplayName:       mr.AuthorDisplayName,
 		State:                   db.MergeRequestState(mr.State),

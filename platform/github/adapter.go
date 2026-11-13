@@ -22,6 +22,7 @@ type PullRequestTimelineEvent struct {
 	NodeID               string
 	EventType            string
 	Actor                string
+	ActorAccountType     string
 	Assignee             string
 	CreatedAt            time.Time
 	DeletedCommentAuthor string
@@ -35,6 +36,7 @@ type PullRequestTimelineEvent struct {
 	SourceType           string
 	SourceOwner          string
 	SourceRepo           string
+	SourceRepoID         int64
 	SourceNumber         int
 	SourceTitle          string
 	SourceURL            string

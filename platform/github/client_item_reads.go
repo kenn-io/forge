@@ -218,6 +218,7 @@ func githubReviewThreadCommentFromGraphQL(
 	}
 	if comment.Author != nil {
 		next.AuthorLogin = comment.Author.Login
+		next.AuthorAccountType = comment.Author.TypeName
 	}
 	if comment.Commit != nil {
 		next.CommitID = comment.Commit.OID

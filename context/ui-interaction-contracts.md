@@ -269,8 +269,9 @@ and back.
   `Merge queued`, `Has workspace`, `From fork`, and Activity `Bots` wherever they are one row; a pair already
   shown as a pick-one section (CI) stays on/off (maintainer decision; `frontend/src/lib/utils/tri-filter.ts`).
   Server-matched conditions send their opposite as its own query (`not_draft`, `not_approved`, ...), so both
-  directions apply before limits. `From fork` reads a classification stored on each PR at sync
-  (`internal/db/migrations/000096_merge_request_head_repo_kind.up.sql`).
+  directions apply before limits. `From fork` classifies each PR at query time through a Go SQL
+  function, not a stored column, so a repository rename never leaves a stale answer
+  (maintainer decision; `internal/db/head_repo_kind.go::mergeRequestIsForkSQL`).
 - In Activity, PR conditions decide only which pull request activity shows; issue and repository
   rows always pass (maintainer decision; `internal/db/queries_activity.go::activityPullAttributeClause`).
 - Phones show a three-state filter as an Any/Yes/No choice, since a switch has no third state, and a

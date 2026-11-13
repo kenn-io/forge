@@ -8,8 +8,8 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-// headRepoKindSQLFunction is platform.ClassifyHeadRepo as a SQL function, so migrations and
-// upserts store each pull request's head_repo_kind with the classifier the API reports:
+// headRepoKindSQLFunction is platform.ClassifyHeadRepo as a SQL function, so From fork filters
+// in SQL with the classifier the API reports:
 // forge_head_repo_kind(platform, platform_host, owner, name, head_repo_clone_url).
 const headRepoKindSQLFunction = "forge_head_repo_kind"
 
@@ -29,7 +29,8 @@ func init() {
 		})
 }
 
-// mergeRequestHeadRepoKindSQL classifies a merge request's head clone URL, bound by the
-// caller, against the repository whose id the caller binds next.
-const mergeRequestHeadRepoKindSQL = `(SELECT ` + headRepoKindSQLFunction + `(r.platform, r.platform_host, r.owner, r.name, ?)
-	FROM forge_repos r WHERE r.id = ?)`
+// mergeRequestIsForkSQL matches a merge request aliased p whose head branch lives in a fork. It
+// classifies at query time against the repository's current identity, so a rename never leaves
+// a stale answer and no stored column needs a migration.
+const mergeRequestIsForkSQL = `(SELECT ` + headRepoKindSQLFunction + `(r.platform, r.platform_host, r.owner, r.name, p.head_repo_clone_url)
+	FROM forge_repos r WHERE r.id = p.repo_id) = 'fork'`

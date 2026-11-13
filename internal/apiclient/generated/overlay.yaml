@@ -11,19 +11,24 @@ actions:
       x-go-type: any
   - target: $.components.schemas.ProblemError.properties.details
     update:
-      x-go-type: map[string]any
+      additionalProperties:
+        x-go-type: any
   - target: $.components.schemas.TelemetryEventInputBody.properties.properties
     update:
-      x-go-type: map[string]any
+      additionalProperties:
+        x-go-type: any
   - target: $.components.schemas.WorkflowDispatchBody.properties.inputs
     update:
-      x-go-type: map[string]any
+      additionalProperties:
+        x-go-type: any
   - target: $.components.schemas.WorkspaceChatCommand.properties.content
     update:
-      x-go-type: map[string]any
+      additionalProperties:
+        x-go-type: any
   - target: $.components.schemas.ACPElicitationSchema.properties.properties
     update:
-      x-go-type: map[string]any
+      additionalProperties:
+        x-go-type: any
   - target: $.components.schemas.ErrorDetail.properties.value
     update:
       x-go-type: any

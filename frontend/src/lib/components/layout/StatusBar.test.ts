@@ -1,13 +1,16 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../../api/types.js";
+import { type LabelFilters } from "../../utils/label-filter.js";
 
 const activityState = vi.hoisted(() => ({
   items: [] as ActivityItem[],
   itemActivity: [] as ActivitySubject[],
   workspaceActivity: [] as WorkspaceActivitySubject[],
   enabledItemTypes: new Set<"pr" | "issue">(["pr", "issue"]),
-  hideBots: false,
+  bots: undefined as "require" | "exclude" | undefined,
+  pullAttributeFilters: [] as string[],
+  labelFilters: new Map() as LabelFilters,
   itemActivityCapped: false,
   activityCapped: false,
   providerAvailable: true,
@@ -37,13 +40,18 @@ vi.mock("../../context.js", () => ({
       getItemActivity: () => activityState.itemActivity,
       getWorkspaceActivity: () => activityState.workspaceActivity,
       getEnabledItemTypes: () => activityState.enabledItemTypes,
-      getHideBots: () => activityState.hideBots,
+      getActivityState: () => "all",
+      getBots: () => activityState.bots,
+      getPullAttributeFilters: () => activityState.pullAttributeFilters,
+      getHideDefaultBranchActivity: () => false,
+      getHideBotAuthoredIssues: () => false,
+      getLabelFilters: () => activityState.labelFilters,
       getViewMode: () => "flat",
       isActivityCapped: () => activityState.activityCapped,
       isItemActivityCapped: () => activityState.itemActivityCapped,
     },
-    pulls: { getPulls: () => [] },
-    issues: { getIssues: () => [] },
+    pulls: { getFilteredPulls: () => [] },
+    issues: { getFilteredIssues: () => [] },
     settings: { getAirplaneMode: () => false },
     sync: {
       getSyncState: () => ({
@@ -113,7 +121,9 @@ describe("StatusBar Activity counts", () => {
     activityState.itemActivity = [];
     activityState.workspaceActivity = [];
     activityState.enabledItemTypes = new Set(["pr", "issue"]);
-    activityState.hideBots = false;
+    activityState.bots = undefined;
+    activityState.pullAttributeFilters = [];
+    activityState.labelFilters = new Map();
     activityState.itemActivityCapped = false;
     activityState.activityCapped = false;
     activityState.providerAvailable = true;
@@ -170,7 +180,7 @@ describe("StatusBar Activity counts", () => {
   });
 
   it("excludes bot-authored parent and workspace-only subjects", () => {
-    activityState.hideBots = true;
+    activityState.bots = "exclude";
     activityState.itemActivity = [
       { ...parentSubject("pr", 7), item_author: "renovate[bot]" },
       { ...parentSubject("pr", 9), item_author: "alice" },
@@ -182,6 +192,28 @@ describe("StatusBar Activity counts", () => {
     expect(screen.getByText("1 PRs")).toBeTruthy();
     expect(screen.getByText("0 issues")).toBeTruthy();
     expect(screen.getByText("1 repos")).toBeTruthy();
+  });
+
+  it("counts only pull requests the From fork and Has workspace filters keep", () => {
+    activityState.itemActivity = [
+      { ...parentSubject("pr", 7), head_repo_kind: "fork" },
+      { ...parentSubject("pr", 9), head_repo_kind: "same_repo" },
+      parentSubject("issue", 10),
+    ];
+    activityState.workspaceActivity = [{ ...workspaceSubject("pr", 11), head_repo_kind: "fork" }];
+    activityState.pullAttributeFilters = ["not_fork"];
+
+    render(StatusBar);
+
+    expect(screen.getByText("1 PRs")).toBeTruthy();
+    expect(screen.getByText("1 issues")).toBeTruthy();
+
+    cleanup();
+    activityState.pullAttributeFilters = ["has_workspace"];
+    render(StatusBar);
+
+    expect(screen.getByText("1 PRs")).toBeTruthy();
+    expect(screen.getByText("1 issues")).toBeTruthy();
   });
 
   it("shows hub outage separately from the local event stream", () => {

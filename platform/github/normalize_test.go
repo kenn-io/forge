@@ -79,7 +79,7 @@ func TestNormalizeCommitEventUsesCommitterForRebasedCommit(t *testing.T) {
 func TestNormalizeCommitEventFallbacks(t *testing.T) {
 	authoredAt := time.Date(2026, 9, 3, 2, 21, 43, 0, time.UTC)
 	committedAt := time.Date(2026, 9, 3, 4, 52, 4, 0, time.UTC)
-	user := func(login string) *gh.User { return &gh.User{Login: new(login)} }
+	user := func(login, accountType string) *gh.User { return &gh.User{Login: new(login), Type: new(accountType)} }
 	signature := func(name string, date time.Time) *gh.CommitAuthor {
 		return &gh.CommitAuthor{Name: new(name), Date: &gh.Timestamp{Time: date}}
 	}
@@ -96,18 +96,18 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 	}{
 		{
 			name:            "associated committer login is preferred",
-			author:          user("original-author"),
-			committer:       user("rebase-committer"),
+			author:          user("original-author", ""),
+			committer:       user("rebase-committer", "Bot"),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: signature("rebase-name", committedAt),
 			wantAuthor:      "rebase-committer",
 			wantCreatedAt:   committedAt,
-			wantMetadata:    `{"commit_author":"original-author"}`,
+			wantMetadata:    `{"actor_account_type":"bot","commit_author":"original-author"}`,
 		},
 		{
 			name:            "web-flow committer is displayed as reported",
-			author:          user("original-author"),
-			committer:       user("web-flow"),
+			author:          user("original-author", ""),
+			committer:       user("web-flow", ""),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: signature("web-flow", committedAt),
 			wantAuthor:      "web-flow",
@@ -115,8 +115,9 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 			wantMetadata:    `{"commit_author":"original-author"}`,
 		},
 		{
-			name:            "nested committer name is used without associated user",
-			author:          user("original-author"),
+			name:            "committer signature is preferred over linked author",
+			author:          user("original-author", "User"),
+			committer:       user("", "Bot"),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: signature("rebase-committer", committedAt),
 			wantAuthor:      "rebase-committer",
@@ -125,11 +126,11 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 		},
 		{
 			name:          "author login is used when committer identity is absent",
-			author:        user("original-author"),
+			author:        user("original-author", "Bot"),
 			commitAuthor:  signature("original-name", authoredAt),
 			wantAuthor:    "original-author",
 			wantCreatedAt: authoredAt,
-			wantMetadata:  `{"commit_author":"original-author"}`,
+			wantMetadata:  `{"actor_account_type":"bot","commit_author":"original-author"}`,
 		},
 		{
 			name:          "nested author name is used without associated users",
@@ -140,8 +141,8 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 		},
 		{
 			name:            "author date is used when committer date is absent",
-			author:          user("original-author"),
-			committer:       user("rebase-committer"),
+			author:          user("original-author", ""),
+			committer:       user("rebase-committer", ""),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: &gh.CommitAuthor{Name: new("rebase-name")},
 			wantAuthor:      "rebase-committer",
@@ -150,7 +151,7 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 		},
 		{
 			name:            "committer date is used without committer identity",
-			author:          user("original-author"),
+			author:          user("original-author", ""),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: &gh.CommitAuthor{Date: &gh.Timestamp{Time: committedAt}},
 			wantAuthor:      "original-author",
@@ -158,9 +159,17 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 			wantMetadata:    `{"commit_author":"original-author"}`,
 		},
 		{
+			name:            "committer signature is preferred without linked users",
+			commitAuthor:    signature("original-name", authoredAt),
+			commitCommitter: signature("committer-name", committedAt),
+			wantAuthor:      "committer-name",
+			wantCreatedAt:   committedAt,
+			wantMetadata:    `{"commit_author":"original-name"}`,
+		},
+		{
 			name:            "same normalized identity preserves known author",
-			author:          user("alice"),
-			committer:       user("alice"),
+			author:          user("alice", ""),
+			committer:       user("alice", ""),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: signature("committer-name", committedAt),
 			wantAuthor:      "alice",
@@ -186,7 +195,11 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 			assert := assert.New(t)
 			assert.Equal(tc.wantAuthor, event.Author)
 			assert.Equal(tc.wantCreatedAt, event.CreatedAt)
-			assert.Equal(tc.wantMetadata, event.MetadataJSON)
+			if tc.wantMetadata == "" {
+				assert.Empty(event.MetadataJSON)
+			} else {
+				assert.JSONEq(tc.wantMetadata, event.MetadataJSON)
+			}
 		})
 	}
 }
@@ -226,6 +239,7 @@ func TestNormalizeIssueTimelineEventCrossReferenced(t *testing.T) {
 		SourceType:        "PullRequest",
 		SourceOwner:       "kenn-io",
 		SourceRepo:        "roborev",
+		SourceRepoID:      9876543210,
 		SourceNumber:      860,
 		SourceTitle:       "Add global review guidelines",
 		SourceURL:         "https://github.com/kenn-io/roborev/pull/860",
@@ -239,6 +253,7 @@ func TestNormalizeIssueTimelineEventCrossReferenced(t *testing.T) {
 	assert.Equal("Referenced from kenn-io/roborev#860", event.Summary)
 	assert.Equal(createdAt, event.CreatedAt)
 	assert.Equal("timeline-CRE_1", event.DedupeKey)
+	assert.Contains(event.MetadataJSON, `"source_repo_id":9876543210`)
 	assert.Contains(event.MetadataJSON, `"source_type":"PullRequest"`)
 	assert.Contains(event.MetadataJSON, `"source_title":"Add global review guidelines"`)
 	assert.Contains(event.MetadataJSON, `"source_url":"https://github.com/kenn-io/roborev/pull/860"`)
@@ -405,4 +420,13 @@ func TestGitHubPlatformRepositoryReportsPrivacy(t *testing.T) {
 			assert.Equal(t, tt.want, repo.Private)
 		})
 	}
+}
+
+func TestNormalizeCommentAndReviewRetainActorType(t *testing.T) {
+	comment := NormalizeCommentEvent(platform.RepoRef{}, 1, &gh.IssueComment{User: &gh.User{Login: new("robot"), Type: new("Bot")}})
+	assert.Contains(t, comment.MetadataJSON, `"actor_account_type":"bot"`)
+	review := NormalizeReviewEvent(platform.RepoRef{}, 1, &gh.PullRequestReview{User: &gh.User{Login: new("maintainer"), Type: new("User")}})
+	assert.Contains(t, review.MetadataJSON, `"actor_account_type":"user"`)
+	reviewComment := NormalizeReviewCommentEvent(platform.RepoRef{}, 1, &gh.PullRequestComment{User: &gh.User{Type: new("User")}})
+	assert.JSONEq(t, `{"actor_account_type":"user"}`, reviewComment.MetadataJSON)
 }

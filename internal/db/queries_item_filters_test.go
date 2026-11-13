@@ -3,7 +3,6 @@ package db
 import (
 	"fmt"
 	"maps"
-	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -11,15 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func headRepoKindOf(t *testing.T, d *DB, repoID int64, number int) string {
-	t.Helper()
-	var kind string
-	require.NoError(t, d.ReadDB().QueryRowContext(t.Context(),
-		`SELECT head_repo_kind FROM forge_merge_requests WHERE repo_id = ? AND number = ?`, repoID, number,
-	).Scan(&kind))
-	return kind
-}
 
 func referenceIssueFromPR(t *testing.T, d *DB, issueID int64, number int, at time.Time) {
 	t.Helper()
@@ -30,70 +20,6 @@ func referenceIssueFromPR(t *testing.T, d *DB, issueID int64, number int, at tim
 		CreatedAt:    at,
 		DedupeKey:    fmt.Sprintf("cross-reference-%d", number),
 	}}))
-}
-
-// Sync stores each pull request's fork classification, so From fork runs in SQL. A snapshot
-// that does not know the head repository keeps the stored URL and its classification.
-func TestUpsertMergeRequestStoresHeadRepoKind(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	d := openTestDB(t)
-	repoID := insertTestRepo(t, d, "acme", "widget")
-	gitlabID, err := seedTestRepo(t.Context(), d, verifiedTestRepoIdentity("gitlab", "gitlab.com", "group/sub", "widget"))
-	require.NoError(t, err)
-
-	withHead := func(url string) testMROpt { return func(mr *MergeRequest) { mr.HeadRepoCloneURL = url } }
-	insertTestMRWithOptions(t, d, testMR(repoID, 1, withHead("https://github.com/contributor/widget.git")))
-	insertTestMRWithOptions(t, d, testMR(repoID, 2, withHead("git@github.com:ACME/widget.git")))
-	insertTestMRWithOptions(t, d, testMR(repoID, 3, withHead("")))
-	insertTestMRWithOptions(t, d, testMR(gitlabID, 4, withHead("https://gitlab.com/group/sub/widget.git")))
-	assert.Equal("fork", headRepoKindOf(t, d, repoID, 1))
-	assert.Equal("same_repo", headRepoKindOf(t, d, repoID, 2))
-	assert.Equal("unknown", headRepoKindOf(t, d, repoID, 3))
-	assert.Equal("same_repo", headRepoKindOf(t, d, gitlabID, 4), "nested GitLab paths name their own project")
-
-	later := func(mr *MergeRequest) { mr.UpdatedAt = mr.UpdatedAt.Add(time.Hour) }
-	insertTestMRWithOptions(t, d, testMR(repoID, 1, later, withHead(""), func(mr *MergeRequest) { mr.HeadRepoCloneURLUnknown = true }))
-	assert.Equal("fork", headRepoKindOf(t, d, repoID, 1), "an unknown head keeps the stored classification")
-	insertTestMRWithOptions(t, d, testMR(repoID, 2, later, withHead("https://github.com/contributor/widget.git")))
-	assert.Equal("fork", headRepoKindOf(t, d, repoID, 2), "a new head URL is classified again")
-}
-
-// Migration 96 classifies rows synced before it with the same Go classifier sync uses.
-func TestHeadRepoKindMigrationBackfillsExistingPulls(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	path := filepath.Join(t.TempDir(), "head-repo-kind-v95.db")
-	raw := migrateToVersionForTest(t, path, 95)
-	require.NoError(raw.Close())
-
-	previous, err := OpenPreparedForTest(path)
-	require.NoError(err)
-	t.Cleanup(func() { previous.Close() })
-	repoID := insertTestRepo(t, previous, "acme", "widget")
-	for number, url := range map[int]string{
-		1: "https://github.com/contributor/widget.git",
-		2: "https://github.com/acme/widget.git",
-		3: "",
-	} {
-		_, err := previous.WriteDB().ExecContext(ctx, `
-			INSERT INTO forge_merge_requests
-				(repo_id, platform_id, number, url, title, author, state, head_branch, base_branch,
-				 head_repo_clone_url, created_at, updated_at, last_activity_at)
-			VALUES (?, ?, ?, '', 'PR', 'author', 'open', 'feature', 'main', ?, ?, ?, ?)`,
-			repoID, number, number, url, baseTime(), baseTime(), baseTime())
-		require.NoError(err)
-	}
-	require.NoError(previous.Close())
-
-	database, err := Open(path)
-	require.NoError(err)
-	t.Cleanup(func() { database.Close() })
-	assert.Equal("fork", headRepoKindOf(t, database, repoID, 1))
-	assert.Equal("same_repo", headRepoKindOf(t, database, repoID, 2))
-	assert.Equal("unknown", headRepoKindOf(t, database, repoID, 3))
 }
 
 // Workspace, fork, and label filters on the pull request list all apply before the limit.

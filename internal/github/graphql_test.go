@@ -327,6 +327,7 @@ func TestAdaptComment(t *testing.T) {
 		UpdatedAt:      now,
 	}
 	gql.Author.Login = "bob"
+	gql.Author.Typename = "Bot"
 
 	c := adaptComment(&gql)
 
@@ -334,6 +335,7 @@ func TestAdaptComment(t *testing.T) {
 	assert.Equal("LGTM", c.GetBody())
 	assert.Equal("https://github.com/acme/widgets/issues/7#issuecomment-100", c.GetHTMLURL())
 	assert.Equal("bob", c.GetUser().GetLogin())
+	assert.Equal("Bot", c.GetUser().GetType())
 }
 
 func TestAdaptReview(t *testing.T) {
@@ -349,6 +351,7 @@ func TestAdaptReview(t *testing.T) {
 		SubmittedAt: now,
 	}
 	gql.Author.Login = "carol"
+	gql.Author.Typename = "User"
 
 	r := adaptReview(&gql)
 
@@ -356,6 +359,7 @@ func TestAdaptReview(t *testing.T) {
 	assert.Equal("Looks good", r.GetBody())
 	assert.Equal("APPROVED", r.GetState())
 	assert.Equal("carol", r.GetUser().GetLogin())
+	assert.Equal("User", r.GetUser().GetType())
 }
 
 func TestAdaptCommit(t *testing.T) {
@@ -910,7 +914,7 @@ func TestGraphQLFetcherFetchRepoIssuesUsesIssueTimelineFragments(t *testing.T) {
 					"number":22,
 					"title":"Fix issue",
 					"url":"https://github.com/owner/repo/pull/22",
-					"repository":{"owner":{"login":"owner"},"name":"repo"}
+					"repository":{"owner":{"login":"owner"},"name":"repo","databaseId":1987654321}
 				}
 			},{
 				"__typename":"ClosedEvent",
@@ -940,6 +944,7 @@ func TestGraphQLFetcherFetchRepoIssuesUsesIssueTimelineFragments(t *testing.T) {
 	assert.Equal("bob", result.Issues[0].TimelineEvents[0].Assignee)
 	assert.Equal("cross_referenced", result.Issues[0].TimelineEvents[1].EventType)
 	assert.Equal(22, result.Issues[0].TimelineEvents[1].SourceNumber)
+	assert.Equal(int64(1987654321), result.Issues[0].TimelineEvents[1].SourceRepoID)
 	assert.Equal("Fix issue", result.Issues[0].TimelineEvents[1].SourceTitle)
 	assert.Equal("closed", result.Issues[0].TimelineEvents[2].EventType)
 	assert.Equal("closer", result.Issues[0].TimelineEvents[2].Actor)
@@ -1456,4 +1461,10 @@ func TestFetchRepoPRsByIDChunksAndDropsClosedNodes(t *testing.T) {
 		numbers = append(numbers, pr.PR.GetNumber())
 	}
 	assert.Equal([]int{1, 4, 5, 6, 7, 8, 9, 10, 11}, numbers)
+}
+
+func TestClosedTimelineBotLogin(t *testing.T) {
+	event, ok := adaptPullRequestTimelineEvent(&platformgithub.GraphQLPullRequestTimelineItem{Typename: "ClosedEvent", ClosedEvent: platformgithub.GraphQLLifecycleEvent{Actor: &platformgithub.GraphQLActorRef{Login: "automation", Typename: "Bot"}}})
+	require.True(t, ok)
+	assert.Equal(t, "automation[bot]", event.Actor)
 }

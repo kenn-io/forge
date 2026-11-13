@@ -51,7 +51,7 @@ func TestSnapshotReferencesFollowRepositoryScope(t *testing.T) {
 
 			tx, err := database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
 			require.NoError(err)
-			measurement, err := db.MeasureArchiveSnapshot(t.Context(), tx, []int64{firstID}, options.Start, options.End, issueScope == "open")
+			measurement, err := db.MeasureArchiveSnapshot(t.Context(), tx, []int64{firstID}, options.Start, options.End, issueScope == "open", false, now)
 			require.NoError(err)
 			require.NoError(tx.Rollback())
 			assert.Equal(3, measurement.Records, "only the selected PR, issue, and reference consume the record budget")

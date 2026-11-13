@@ -312,10 +312,12 @@ function listMenu(
   state: ToolbarSection,
   group: ToolbarSection,
   starred: FilterChoice,
-  filterSections: FilterSection[],
+  filters: FilterSection[],
+  view: FilterSection,
   reload: () => void,
 ): ListFilterMenu {
   const listSections = [state, group];
+  const filterSections = [...filters, view];
   const clearFilters = () => {
     resetSections(filterSections);
     reload();
@@ -327,7 +329,8 @@ function listMenu(
     starred,
     listSections,
     filterSections,
-    sections: [...listSections, ...filterSections],
+    // The filters come first, then layout, then View, as in the Activity menu.
+    sections: [state, ...filters, group, view],
     changed: filterCount > 0 || countFilters(listSections) > 0,
     filterCount,
     reset: () => {
@@ -374,18 +377,15 @@ export function pullListFilterMenu({
     stateSection(target),
     groupSection(grouping),
     starred,
-    [
-      common,
-      ...pullFilterSections(target),
-      {
-        title: "View",
-        items: [
-          // Stacks arrange PR rows; Activity rows are events, so it has no stack layout.
-          toggleChoice("stack-tree", "Stack tree", { get: pulls.getStackTree, set: pulls.setStackTree }),
-          hideOrgNameChoice(grouping),
-        ],
-      },
-    ],
+    [common, ...pullFilterSections(target)],
+    {
+      title: "View",
+      items: [
+        // Stacks arrange PR rows; Activity rows are events, so it has no stack layout.
+        toggleChoice("stack-tree", "Stack tree", { get: pulls.getStackTree, set: pulls.setStackTree }),
+        hideOrgNameChoice(grouping),
+      ],
+    },
     reload,
   );
 }
@@ -415,7 +415,8 @@ export function issueListFilterMenu({
     stateSection(target),
     groupSection(grouping, { byRepo: "By Repo", flat: "All" }),
     starred,
-    [common, ...issueFilterSections(target), { title: "View", items: [hideOrgNameChoice(grouping)] }],
+    [common, ...issueFilterSections(target)],
+    { title: "View", items: [hideOrgNameChoice(grouping)] },
     reload,
   );
 }

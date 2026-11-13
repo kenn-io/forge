@@ -2761,7 +2761,7 @@ func TestMigration92ActivitySignalRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "signal.db")
 	raw := migrateToVersionForTest(t, path, 91)
 	ctx := t.Context()
-	// Populate the previous schema through the same writers used by sync.
+	// Populate the previous schema before applying the activity signal migration.
 	require.NoError(raw.Close())
 	d, err := OpenPreparedForTest(path)
 	require.NoError(err)
@@ -2779,7 +2779,7 @@ func TestMigration92ActivitySignalRoundTrip(t *testing.T) {
 		case "close":
 			mr.ClosedAt, issue.ClosedAt = &recent, &recent
 		}
-		mrID := insertHistoricalTestMR(t, d, mr)
+		mrID := insertTestMRBeforeAuthorType(t, d, mr)
 		issueID := insertTestIssueWithOptions(t, d, issue)
 		if signal == "event" {
 			require.NoError(d.UpsertMREvents(ctx, []MREvent{{MergeRequestID: mrID, EventType: "assigned", CreatedAt: recent, DedupeKey: "migration"}}))

@@ -23,6 +23,12 @@ func TestNormalizeReviewCommentEventUsesReviewThreadDedupeKey(t *testing.T) {
 	assert.Equal(t, "review_comment:222", event.DedupeKey)
 }
 
+func TestNormalizeReviewCommentEventCarriesActorAccountType(t *testing.T) {
+	comment := &gh.PullRequestComment{User: &gh.User{Type: new("User")}}
+	event := NormalizeReviewCommentEvent(platform.RepoRef{}, 7, comment)
+	assert.JSONEq(t, `{"actor_account_type":"user"}`, event.MetadataJSON)
+}
+
 func TestNormalizeCommentEventsPreserveHTMLURL(t *testing.T) {
 	assert := assert.New(t)
 	commentID := int64(123)

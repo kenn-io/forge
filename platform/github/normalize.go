@@ -203,6 +203,7 @@ func NormalizeReviewCommentEvent(
 		Body:               c.GetBody(),
 		DirectURL:          c.GetHTMLURL(),
 	}
+	event.MetadataJSON = WithActorAccountType(event.MetadataJSON, c.GetUser().GetType())
 	if c.CreatedAt != nil {
 		event.CreatedAt = c.CreatedAt.Time
 	}

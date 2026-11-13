@@ -78,10 +78,10 @@ func TestPreserveProviderHiddenMetadata(t *testing.T) {
 			want:     `{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`,
 		},
 		{
-			name:     "keeps explicit incoming metadata",
-			existing: `{"provider_hidden":true}`,
-			incoming: `{"source":"edit"}`,
-			want:     `{"source":"edit"}`,
+			name:     "merges actor type with hidden marker",
+			existing: `{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`,
+			incoming: `{"actor_account_type":"user"}`,
+			want:     `{"actor_account_type":"user","provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`,
 		},
 		{
 			name:     "does not restore visible comments",
@@ -91,7 +91,12 @@ func TestPreserveProviderHiddenMetadata(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, PreserveProviderHiddenMetadata(tt.existing, tt.incoming))
+			got := PreserveProviderHiddenMetadata(tt.existing, tt.incoming)
+			if tt.want == "" {
+				assert.Empty(t, got)
+			} else {
+				assert.JSONEq(t, tt.want, got)
+			}
 		})
 	}
 }

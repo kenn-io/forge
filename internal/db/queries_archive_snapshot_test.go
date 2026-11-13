@@ -75,7 +75,7 @@ func TestSnapshotMeasurementCountsFullContributorBodies(t *testing.T) {
 	now := time.Now().UTC()
 	repoID := insertArchiveReportRepo(t, database, RepoIdentity{Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: "widget"})
 	closed := now.Add(-time.Minute)
-	id, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", AuthorAssociation: new("CONTRIBUTOR"), AuthorAccountType: new("user"), State: MergeRequestStateClosed, ClosedAt: &closed, Body: strings.Repeat("x", 12000), CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
+	id, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", AuthorAssociation: new("CONTRIBUTOR"), AuthorAccountType: new("user"), State: MergeRequestStateClosed, ClosedAt: &closed, CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
 	require.NoError(t, err)
 	measure := func(recent bool) ArchiveReportMeasurement {
 		tx, err := database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
@@ -85,8 +85,11 @@ func TestSnapshotMeasurementCountsFullContributorBodies(t *testing.T) {
 		require.NoError(t, err)
 		return value
 	}
+	baseline := measure(true)
+	_, err = database.WriteDB().ExecContext(t.Context(), `UPDATE forge_merge_requests SET body=? WHERE id=?`, strings.Repeat("x", 12000), id)
+	require.NoError(t, err)
 	before := measure(true)
-	assert.Greater(t, before.TextBytes, measure(false).TextBytes+int64(3700))
+	assert.Equal(t, int64(12000), before.TextBytes-baseline.TextBytes)
 	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{
 		{MergeRequestID: id, EventType: "assigned", Author: "author", DedupeKey: "assigned-1", CreatedAt: now},
 		{MergeRequestID: id, EventType: "assigned", Author: "author", DedupeKey: "assigned-2", CreatedAt: now},
@@ -99,6 +102,23 @@ func TestSnapshotMeasurementCountsFullContributorBodies(t *testing.T) {
 	after := measure(true)
 	assert.Equal(t, actions.Records+1, after.Records)
 	assert.GreaterOrEqual(t, after.TextBytes-actions.TextBytes, int64(len(comment)))
+}
+
+func TestSnapshotActivityMatchesGiteaHeadCommit(t *testing.T) {
+	database := openTestDB(t)
+	now := time.Now().UTC()
+	repoID := insertArchiveReportRepo(t, database, RepoIdentity{Platform: "gitea", PlatformHost: "git.example", Owner: "acme", Name: "widget"})
+	id, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", AuthorAccountType: new("user"), State: MergeRequestStateOpen, PlatformHeadSHA: "head-sha", CreatedAt: now, UpdatedAt: now})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: id, PlatformExternalID: "head-sha", EventType: "commit", Author: "author", AuthorAssociation: new("CONTRIBUTOR"), MetadataJSON: `{"actor_account_type":"user"}`, Summary: "commit message", DedupeKey: "commit-head", CreatedAt: now}}))
+	tx, err := database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback() }()
+	activity, err := LoadArchiveSnapshotActivity(t.Context(), tx, []int64{id})
+	require.NoError(t, err)
+	require.Len(t, activity, 1)
+	assert.Equal(t, "push", activity[0].Kind)
+	assert.Equal(t, "author", activity[0].Class)
 }
 
 func TestCommentVisibilityRefreshPreservesActorType(t *testing.T) {

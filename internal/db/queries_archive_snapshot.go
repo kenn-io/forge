@@ -146,7 +146,7 @@ const archiveSnapshotActivity = `activity_candidates AS (
  CASE WHEN lower(e.author)=lower(p.author) AND lower(COALESCE(p.author_account_type,''))='bot' THEN 0 WHEN ` + archiveSnapshotHumanActor + ` THEN 1 WHEN instr(lower(e.author),'[bot]')>0 OR lower(COALESCE(json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.actor_account_type'),''))='bot' THEN 0 ELSE -1 END AS human
  FROM forge_mr_events e JOIN pulls selected ON selected.id=e.merge_request_id JOIN forge_merge_requests p ON p.id=selected.id
  WHERE e.event_type IN ('issue_comment','review','review_comment','assigned','commit','force_push')
- AND (e.event_type<>'commit' OR (p.platform_head_sha<>'' AND e.summary=p.platform_head_sha))
+ AND (e.event_type<>'commit' OR (p.platform_head_sha<>'' AND (e.summary=p.platform_head_sha OR e.platform_external_id=p.platform_head_sha)))
  ), classified_activity AS (
  SELECT *, 'author' AS class FROM activity_candidates WHERE human<>0 AND author<>'' AND lower(author)=lower(pull_author)
  UNION ALL SELECT *, 'maintainer' FROM activity_candidates WHERE human=1 AND upper(author_association) IN ('MEMBER','OWNER')

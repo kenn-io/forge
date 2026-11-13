@@ -116,6 +116,7 @@ func TestSnapshotActivitySelection(t *testing.T) {
 	githubMR, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: githubID, PlatformID: 2, Number: 2, Author: "author", State: MergeRequestStateOpen, PlatformHeadSHA: "head-sha", CreatedAt: now, UpdatedAt: now})
 	require.NoError(t, err)
 	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{
+		{MergeRequestID: githubMR, EventType: "issue_comment", Author: "maintainer", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "older-member", CreatedAt: now.Add(-3 * time.Minute)},
 		{MergeRequestID: githubMR, EventType: "issue_comment", Author: "collaborator", AuthorAssociation: new("COLLABORATOR"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "collaborator", CreatedAt: now.Add(-150 * time.Second)},
 		{MergeRequestID: githubMR, EventType: "issue_comment", Author: "author", AuthorAssociation: new("COLLABORATOR"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "collaborator-author", CreatedAt: now.Add(-130 * time.Second)},
 		{MergeRequestID: githubMR, EventType: "commit", Author: "author", MetadataJSON: `{"actor_account_type":"user"}`, Summary: "head-sha", DedupeKey: "head", CreatedAt: now.Add(-2 * time.Minute)},

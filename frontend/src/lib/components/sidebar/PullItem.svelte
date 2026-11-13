@@ -19,7 +19,6 @@
   import ArrowUpRightIcon from "@lucide/svelte/icons/arrow-up-right";
   import { Chip } from "@kenn-io/kit-ui";
   import ItemStateChip from "../shared/ItemStateChip.svelte";
-  import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
   import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import { preventShiftTextSelection } from "../../utils/range-selection.svelte.js";
   import type { PullRequest } from "../../api/types.js";
@@ -163,11 +162,10 @@
         <ItemStateChip state={pr.State} />
       {/if}
       <span class="item-ref">#{pr.Number}</span>
-      {#if pr.workspace}
-        <WorkspaceIndicator status={pr.workspace.status} size={12} />
-      {/if}
       <span class="title-text">{pr.Title}</span>
       <AgentStatusIndicator state={pr.workspace?.agent_state} />
+      <!-- The status every PR row shows: a pending merge, the merge queue, CI, review, and workspace. -->
+      <span class="row-status"><PullStatusIcons {pr} /></span>
     </span>
     <span
       class="cell cell--time"
@@ -340,6 +338,14 @@
   .cell--title .title-text {
     flex: 0 1 auto;
     max-width: none;
+  }
+
+  .row-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    margin-left: auto;
   }
 
   .cell--time {

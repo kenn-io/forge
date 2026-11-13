@@ -115,13 +115,13 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 			wantMetadata:    `{"commit_author":"original-author"}`,
 		},
 		{
-			name:            "linked author wins over unlinked committer signature",
+			name:            "committer signature is preferred over linked author",
 			author:          user("original-author", "User"),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: signature("rebase-committer", committedAt),
-			wantAuthor:      "original-author",
+			wantAuthor:      "rebase-committer",
 			wantCreatedAt:   committedAt,
-			wantMetadata:    `{"actor_account_type":"user","commit_author":"original-author"}`,
+			wantMetadata:    `{"commit_author":"original-author"}`,
 		},
 		{
 			name:          "author login is used when committer identity is absent",

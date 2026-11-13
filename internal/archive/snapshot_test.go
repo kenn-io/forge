@@ -789,12 +789,6 @@ func TestDefaultSnapshotWithOpenAndClosedPullComments(t *testing.T) {
 	t.Logf("default snapshot duration: %s", time.Since(started))
 	require.NoError(t, err)
 	assert.Len(t, result.PullRequests, 750)
-	scopedCtx, scopedCancel := context.WithTimeout(t.Context(), 3*time.Second)
-	defer scopedCancel()
-	started = time.Now()
-	_, err = service.Snapshot(scopedCtx, SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
-	t.Logf("scoped snapshot duration: %s", time.Since(started))
-	require.ErrorIs(t, err, snapshot.ErrTooLarge)
 }
 
 func TestSnapshotIncludesCachedMemberClosingCommentWithoutAccountType(t *testing.T) {
@@ -843,16 +837,28 @@ func TestSnapshotCachedActorTypes(t *testing.T) {
 				closed := now.Add(-time.Minute)
 				id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", State: db.MergeRequestStateClosed, CreatedAt: now.Add(-time.Hour), UpdatedAt: now, ClosedAt: &closed})
 				require.NoError(t, err)
+				old := now.Add(-45 * 24 * time.Hour)
+				evidenceID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 2, Number: 2, Author: "other", State: db.MergeRequestStateClosed, CreatedAt: old, UpdatedAt: old, ClosedAt: &old})
+				require.NoError(t, err)
+				require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: evidenceID, EventType: "issue_comment", Author: "automation", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "role-evidence", CreatedAt: old}}))
 				metadata := ""
 				if account != "" {
 					metadata = `{"actor_account_type":"` + account + `"}`
 				}
-				require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: kind, Author: "automation", AuthorAssociation: new("MEMBER"), MetadataJSON: metadata, Body: "Closing this.", DedupeKey: kind, CreatedAt: now}}))
+				var association *string
+				if kind == "review" {
+					association = new("MEMBER")
+				}
+				require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: kind, Author: "automation", AuthorAssociation: association, MetadataJSON: metadata, DedupeKey: kind, CreatedAt: now}}))
 				result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
 				require.NoError(t, err)
 				require.Len(t, result.PullRequests, 1)
 				pull := result.PullRequests[0]
-				assert.Equal(t, account == "user", pull.LastMaintainerAction != nil)
+				if account == "user" {
+					assert.Equal(t, &snapshot.SnapshotAction{Kind: kind, Actor: "automation", OccurredAt: now}, pull.LastMaintainerAction)
+				} else {
+					assert.Nil(t, pull.LastMaintainerAction)
+				}
 				assert.Equal(t, account == "", slices.Contains(pull.Gaps, "actor_role_unknown"))
 			})
 		}

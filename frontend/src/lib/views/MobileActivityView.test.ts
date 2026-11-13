@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
 import MobileActivityView from "./MobileActivityViewRuntimeHarness.svelte";
-import { takeMobileListPosition } from "../stores/mobile-list-return.js";
+import { rememberMobileListPosition, takeMobileListPosition } from "../stores/mobile-list-return.js";
 
 function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
   return {
@@ -65,6 +65,10 @@ const setEnabledEvents = vi.hoisted(() =>
   }),
 );
 const hideDrafts = vi.hoisted(() => ({ value: false }));
+const onlyClosedMerged = vi.hoisted(() => ({ value: false }));
+const onlyBots = vi.hoisted(() => ({ value: false }));
+const onlyDrafts = vi.hoisted(() => ({ value: false }));
+const pullAttributeFilters = vi.hoisted(() => ({ value: [] as string[] }));
 const mergeQueued = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const setMergeQueued = vi.hoisted(() =>
   vi.fn((value: "require" | "exclude" | undefined) => {
@@ -100,6 +104,8 @@ const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
 const loadActivity = vi.hoisted(() => vi.fn(async () => undefined));
 const setFullEventProjectionRequired = vi.hoisted(() => vi.fn());
 const setActivityPageLimit = vi.hoisted(() => vi.fn());
+const loadOlderItems = vi.hoisted(() => vi.fn());
+const olderItemsAvailable = vi.hoisted(() => ({ value: false }));
 const loadThreadPreview = vi.hoisted(() => vi.fn());
 const selectedAuthor = vi.hoisted(() => ({ value: undefined as string | undefined }));
 const setActivityAuthor = vi.hoisted(() =>
@@ -151,17 +157,54 @@ vi.mock("../context.js", () => ({
       getEnabledItemTypes: () => enabledItemTypes.value,
       getEnabledEvents: () => enabledEvents.value,
       getShowNotifications: () => showNotifications.value,
+      getStarred: () => false,
+      setStarred: vi.fn(),
+      getReferencedByPR: () => undefined,
+      setReferencedByPR: vi.fn(),
+      getHideBotAuthoredIssues: () => false,
+      setHideBotAuthoredIssues: vi.fn(),
+      getTimeRangeDefault: () => "7d",
+      getViewModeDefault: () => "threaded",
+      getLabelFilters: () => new Map(),
+      cycleLabelFilter: vi.fn(),
+      clearLabelFilters: vi.fn(),
+      getViewMode: () => "threaded",
+      setViewMode: vi.fn(),
+      getRollUpCommits: () => false,
+      setRollUpCommits: vi.fn(),
       getInvolvesMe: () => involvesMe.value,
       getUnassigned: () => unassigned.value,
       getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => hideBots.value,
       getHideDrafts: () => hideDrafts.value,
       getMergeQueued: () => mergeQueued.value,
+      getActivityState: () => (onlyClosedMerged.value ? "closed" : hideClosedMerged.value ? "open" : "all"),
+      getBots: () => (onlyBots.value ? "require" : hideBots.value ? "exclude" : undefined),
+      getDraft: () => (onlyDrafts.value ? "require" : hideDrafts.value ? "exclude" : undefined),
+      getPullAttributeFilters: () => pullAttributeFilters.value,
+      setActivityState: vi.fn((state: "open" | "closed" | "all") => {
+        onlyClosedMerged.value = state === "closed";
+        setHideClosedMerged(state === "open");
+      }),
+      setBots: vi.fn((value: "require" | "exclude" | undefined) => {
+        onlyBots.value = value === "require";
+        hideBots.value = value === "exclude";
+      }),
+      setDraft: vi.fn((value: "require" | "exclude" | undefined) => {
+        onlyDrafts.value = value === "require";
+        setHideDrafts(value === "exclude");
+      }),
+      setPullAttributeFilters: vi.fn((next: string[]) => {
+        pullAttributeFilters.value = next;
+      }),
       getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency.value,
       getHideDefaultBranchActivity: () => false,
       isActivityLoading: () => activityLoading.value,
       isActivityCapped: () => activityCapped.value,
       isItemActivityCapped: () => itemActivityCapped.value,
+      canLoadOlderItems: () => olderItemsAvailable.value,
+      isLoadingOlderItems: () => false,
+      loadOlderItems,
       setActivityFilterTypes: vi.fn(),
       setActivitySearch: vi.fn(),
       setActivityAuthor,
@@ -186,6 +229,7 @@ vi.mock("../context.js", () => ({
       setHideDefaultBranchActivity: vi.fn(),
       syncToURL: vi.fn(),
     },
+    issues: { canFilterReferencedByPR: () => true },
     settings: {
       getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }),
       getConfiguredRepos: () => [
@@ -221,6 +265,8 @@ vi.mock("../context.js", () => ({
       subscribeSyncCompleteWithoutLiveUpdates: vi.fn(() => () => undefined),
     },
     grouping: {
+      getGroupByRepo: () => true,
+      setGroupByRepo: vi.fn(),
       getHideOrgName: () => hideOrgName.value,
       setHideOrgName,
     },
@@ -228,6 +274,8 @@ vi.mock("../context.js", () => ({
 }));
 
 beforeEach(() => {
+  olderItemsAvailable.value = false;
+  loadOlderItems.mockClear();
   hideBots.value = false;
   involvesMe.value = undefined;
   unassigned.value = undefined;
@@ -254,6 +302,10 @@ describe("MobileActivityView branch activity", () => {
     setActivityAuthor.mockClear();
     setEnabledEvents.mockClear();
     setHideClosedMerged.mockClear();
+    onlyClosedMerged.value = false;
+    onlyBots.value = false;
+    onlyDrafts.value = false;
+    pullAttributeFilters.value = [];
     hideDrafts.value = false;
     mergeQueued.value = undefined;
     setMergeQueued.mockClear();
@@ -324,10 +376,6 @@ describe("MobileActivityView branch activity", () => {
     const repoPicker = screen.getByRole("button", { name: "Select repository: Global" });
     const filterPanel = screen.getByLabelText("Activity filters");
     expect(filterPanel.firstElementChild?.contains(repoPicker)).toBe(true);
-    const authorPicker = screen.getByRole("button", { name: "Filter authors: Anyone" });
-    const authorRow = authorPicker.closest(".mobile-author-filter");
-    expect(authorRow?.querySelector(".mobile-author-icon")).toBeTruthy();
-    expect(authorRow?.textContent).toContain("All authors");
     await fireEvent.click(repoPicker);
     loadActivity.mockClear();
     await fireEvent.mouseDown(screen.getByRole("option", { name: "Backend" }));
@@ -338,30 +386,45 @@ describe("MobileActivityView branch activity", () => {
     expect(screen.queryByRole("button", { name: "Delete preset Backend" })).toBeNull();
   });
 
-  it("exposes closed and merged visibility", async () => {
-    render(MobileActivityView, { props: { onSelectItem } });
-
-    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    const control = screen.getByRole<HTMLInputElement>("switch", { name: "Hide closed/merged" });
-    expect(control.checked).toBe(false);
-
-    await fireEvent.click(control);
-
-    expect(setHideClosedMerged).toHaveBeenCalledWith(true);
-  });
-
-  it("reloads activity when draft visibility changes", async () => {
+  it("chooses Open, Closed, or All states like the pull request list", async () => {
     render(MobileActivityView, { props: { onSelectItem } });
     const mountedReads = loadActivity.mock.calls.length;
 
     await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
-    const control = screen.getByRole<HTMLInputElement>("switch", { name: "Hide drafts" });
-    expect(control.checked).toBe(false);
+    await fireEvent.click(screen.getByRole("combobox", { name: /State/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "Open" }));
+    expect(setHideClosedMerged).toHaveBeenCalledWith(true);
 
-    await fireEvent.click(control);
+    await fireEvent.click(screen.getByRole("combobox", { name: /State/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "Closed" }));
+    expect(onlyClosedMerged.value).toBe(true);
+    expect(setHideClosedMerged).toHaveBeenLastCalledWith(false);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 2);
+  });
+
+  it("hides drafts through the Draft choice and reloads", async () => {
+    render(MobileActivityView, { props: { onSelectItem } });
+    const mountedReads = loadActivity.mock.calls.length;
+
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await fireEvent.click(screen.getByRole("combobox", { name: /Draft/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "No" }));
 
     expect(setHideDrafts).toHaveBeenCalledWith(true);
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 1);
+  });
+
+  it("offers Any, Passing, and Failed CI", async () => {
+    render(MobileActivityView, { props: { onSelectItem } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await fireEvent.click(screen.getByRole("combobox", { name: /CI/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "Failed CI" }));
+    expect(pullAttributeFilters.value).toEqual(["failed_ci"]);
+
+    await fireEvent.click(screen.getByRole("combobox", { name: /CI/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "Any" }));
+    expect(pullAttributeFilters.value).toEqual([]);
   });
 
   it("renders branch activity without a fake PR or issue number", () => {
@@ -436,6 +499,19 @@ describe("MobileActivityView branch activity", () => {
 
     await waitFor(() => expect(container.querySelectorAll("article")).toHaveLength(31));
   });
+
+  it("loads older items after reaching the phone page limit", async () => {
+    rememberMobileListPosition("activity", { scrollTop: 0, pageLimit: 500 });
+    olderItemsAvailable.value = true;
+    itemActivityCapped.value = true;
+    items.value = Array.from({ length: 501 }, (_, index) =>
+      branchActivityItem(`branch-${index}`, { branch_name: `branch-${index}` }),
+    );
+    const { container } = render(MobileActivityView, { props: { onSelectItem } });
+    expect(container.querySelectorAll("article")).toHaveLength(501);
+    await fireEvent.click(screen.getByRole("button", { name: "Load older items" }));
+    expect(loadOlderItems).toHaveBeenCalledOnce();
+  }, 20000);
 
   it("reports connection errors through the shared Kit UI warning banner", async () => {
     activityError.value = "Could not reach Kenn Forge";
@@ -546,7 +622,7 @@ describe("MobileActivityView branch activity", () => {
     });
 
     await fireEvent.click(getByRole("button", { name: /^Filters/ }));
-    const button = getByRole<HTMLInputElement>("switch", { name: "Hide org" });
+    const button = getByRole<HTMLInputElement>("switch", { name: "Hide org name" });
     expect(button.checked).toBe(false);
 
     await fireEvent.click(button);
@@ -562,8 +638,9 @@ describe("MobileActivityView branch activity", () => {
     expect(screen.getByPlaceholderText("Search activity")).toBeTruthy();
 
     await fireEvent.click(filters);
-    await fireEvent.click(screen.getByRole("button", { name: "Filter authors: Anyone" }));
-    await fireEvent.mouseDown(screen.getByRole("option", { name: "Alice" }));
+    // Author opens the same author list as desktop Activity.
+    await fireEvent.click(screen.getByRole("button", { name: /^Author/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Alice" }));
 
     expect(setActivityAuthor).toHaveBeenCalledWith("Alice");
 
@@ -574,8 +651,8 @@ describe("MobileActivityView branch activity", () => {
     expect(screen.queryByRole("button", { name: "Clear author filter Alice" })).toBeNull();
 
     await fireEvent.click(screen.getByRole("button", { name: /Filters.*Alice/ }));
-    await fireEvent.click(screen.getByRole("button", { name: "Filter authors: Alice" }));
-    await fireEvent.mouseDown(screen.getByRole("option", { name: "Anyone" }));
+    await fireEvent.click(screen.getByRole("button", { name: /^Author/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Anyone" }));
     expect(setActivityAuthor).toHaveBeenLastCalledWith(undefined);
   });
 

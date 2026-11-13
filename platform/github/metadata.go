@@ -39,3 +39,25 @@ type CommentVisibility struct {
 	Hidden bool
 	Reason string
 }
+
+func WithActorAccountType(metadataJSON, account string) string {
+	kind := accountType(account)
+	if kind == "" || kind == "unknown" {
+		return metadataJSON
+	}
+	metadata := map[string]any{}
+	if metadataJSON != "" {
+		if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil {
+			return metadataJSON
+		}
+	}
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata["actor_account_type"] = string(kind)
+	encoded, err := json.Marshal(metadata)
+	if err != nil {
+		return metadataJSON
+	}
+	return string(encoded)
+}

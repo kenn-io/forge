@@ -38,7 +38,7 @@ func migrateFleetProtocol(ctx context.Context, configPath string) (err error) {
 	if err != nil {
 		return err
 	}
-	lock, err := runtimelock.Acquire(cfg.DataDir)
+	lock, err := runtimelock.Acquire(ctx, cfg.DataDir)
 	if err != nil {
 		return fmt.Errorf("stop the Forge daemon before migrating its fleet protocol: %w", err)
 	}

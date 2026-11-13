@@ -5049,18 +5049,19 @@ func TestRefreshTimelineFetchFailureDoesNotRewriteProviderPullRequestActivity(t 
 	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 	require.NoError(err)
 	mrID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     1,
-		Number:         1,
-		URL:            "https://github.com/owner/repo/pull/1",
-		Title:          "force push activity",
-		Author:         "dev",
-		State:          "open",
-		HeadBranch:     "feature",
-		BaseBranch:     "main",
-		CreatedAt:      now.Add(-3 * time.Hour),
-		UpdatedAt:      now.Add(-2 * time.Hour),
-		LastActivityAt: forcePushAt,
+		RepoID:          repoID,
+		PlatformID:      1,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "force push activity",
+		Author:          "dev",
+		State:           "open",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		CreatedAt:       now.Add(-3 * time.Hour),
+		UpdatedAt:       now.Add(-2 * time.Hour),
+		LastActivityAt:  forcePushAt,
+		DetailFetchedAt: &now,
 	})
 	require.NoError(err)
 	require.NoError(d.UpsertMREvents(ctx, []db.MREvent{{
@@ -5087,13 +5088,14 @@ func TestRefreshTimelineFetchFailureDoesNotRewriteProviderPullRequestActivity(t 
 	}
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
-	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
-		mergeRequestSnapshotRevision(t, d, repoID, 1), 1, ""))
+	require.ErrorContains(syncer.refreshTimeline(ctx, repo, mrID,
+		mergeRequestSnapshotRevision(t, d, repoID, 1), 1, ""), "graphql unavailable")
 
 	pr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal(forcePushAt, pr.LastActivityAt)
+	assert.Nil(pr.DetailFetchedAt)
 }
 
 func TestSyncAssignsStableCommitOrderKeysAcrossForcePushReplacement(t *testing.T) {
@@ -5274,7 +5276,7 @@ func TestSyncStoresPullRequestTimelineEvents(t *testing.T) {
 	assert.Equal("deleted a comment from reviewer", byType["comment_deleted"].Summary)
 }
 
-func TestSyncIgnoresPullRequestTimelineFetchFailures(t *testing.T) {
+func TestSyncRetriesPullRequestTimelineFetchFailures(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -5302,10 +5304,16 @@ func TestSyncIgnoresPullRequestTimelineFetchFailures(t *testing.T) {
 	pr, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(pr)
+	require.Nil(pr.DetailFetchedAt)
 	events, err := d.ListMREvents(ctx, pr.ID)
 	require.NoError(err)
 	require.NotEmpty(events)
 	require.Equal("issue_comment", events[0].EventType)
+	mc.timelineEventsErr = nil
+	syncer.RunOnce(ctx)
+	pr, err = d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(pr.DetailFetchedAt)
 }
 
 func TestSyncStoresPRLabels(t *testing.T) {
@@ -8791,10 +8799,11 @@ func TestRefreshTimelineSkipsMergedEventWhenAuthoredMergedEventAlreadyExists(t *
 		reviews:  []*gh.PullRequestReview{},
 		commits:  []*gh.RepositoryCommit{},
 		timelineEvents: []platformgithub.PullRequestTimelineEvent{{
-			NodeID:    "ME_1",
-			EventType: "merged",
-			Actor:     mergedBy,
-			CreatedAt: mergedAt.Add(time.Second),
+			NodeID:           "ME_1",
+			EventType:        "merged",
+			Actor:            mergedBy,
+			ActorAccountType: "Bot",
+			CreatedAt:        mergedAt.Add(time.Second),
 		}},
 	}
 	syncer := NewSyncer(
@@ -8815,6 +8824,7 @@ func TestRefreshTimelineSkipsMergedEventWhenAuthoredMergedEventAlreadyExists(t *
 	assert.Equal("merged", events[0].EventType)
 	assert.Equal("merge-admin", events[0].Author)
 	assert.Equal("timeline-fallback", events[0].DedupeKey)
+	assert.JSONEq(`{"actor_account_type":"bot"}`, events[0].MetadataJSON)
 	assert.True(events[0].CreatedAt.Equal(mergedAt))
 }
 

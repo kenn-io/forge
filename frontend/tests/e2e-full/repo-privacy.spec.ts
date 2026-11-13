@@ -84,6 +84,8 @@ test("the phone pull list marks only the private repository", async ({ browser }
   const phone = await browser.newContext({ ...devices["iPhone 13"] });
   try {
     const page = await phone.newPage();
+    // Flat rows each name their repository; grouped rows leave that to the heading.
+    await page.addInitScript(() => localStorage.setItem("kenn-forge:groupingMode", "flat"));
     await page.goto("/m/pulls");
     const rows = page.locator(".pull-item");
 

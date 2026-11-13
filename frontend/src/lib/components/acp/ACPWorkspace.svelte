@@ -209,6 +209,11 @@
           // A refused prompt keeps its text in the conversation, marked as
           // not sent, rather than raising a chat-wide error.
           if (failed?.command === "unqueue") editing = editing.filter((prompt) => prompt.id !== failed.id);
+          // Close the tool call so it does not show as loading; opening it again retries.
+          if (failed?.command === "toolDetails") {
+            expandedTools[failed.id] = false;
+            detailsRequested.delete(failed.id);
+          }
           if (failed?.command === "prompt" && outbox.some((prompt) => prompt.id === failed.id)) {
             outbox = outbox.map((prompt) => prompt.id === failed.id ? { ...prompt, refused: message } : prompt);
             return;
@@ -216,7 +221,15 @@
           error = message;
           if (failed?.command === "config") settingPending = false;
         },
-        onConnection: (value) => { connected = value; if (value) resyncPending = true; onConnectionChange?.(value); },
+        onConnection: (value) => {
+          connected = value;
+          if (value) {
+            resyncPending = true;
+            // A new socket starts without details; open tool calls ask again.
+            detailsRequested.clear();
+          }
+          onConnectionChange?.(value);
+        },
         onStopped: () => {
           stopped = true;
           outbox = outbox.map((prompt) => prompt.refused ? prompt : { ...prompt, refused: "The chat connection stopped before the agent got this." });
@@ -274,8 +287,28 @@
       });
     });
   }
+  // Tool details stay on the host until a person expands the tool call. Ask
+  // once per version; a new state that leaves loaded details out asks again.
+  const detailsRequested = new Map<string, number>();
+  $effect(() => {
+    if (!connected || !chatState) return;
+    for (const message of chatState.messages) {
+      if (!message.detailsOmitted) {
+        detailsRequested.delete(message.id);
+        continue;
+      }
+      if (!expandedTools[message.id] || detailsRequested.get(message.id) === message.version) continue;
+      if (connection?.loadToolDetails(message.id)) detailsRequested.set(message.id, message.version);
+    }
+  });
+  // A page of messages can collapse into a single activity row, so keep
+  // paging until the reader gets this many more rows or the transcript start.
+  const EARLIER_ROWS = 30;
   function loadEarlier() {
-    if (firstLoaded > 0) connection?.loadEarlier(100);
+    if (firstLoaded <= 0) return;
+    // Count only rows above the loaded range; live replies arrive below it.
+    const start = firstLoaded;
+    connection?.loadEarlier(100, () => rows.filter((row) => row.id < start).length < EARLIER_ROWS);
   }
   function onConversationScroll() {
     if (!scroll) return;

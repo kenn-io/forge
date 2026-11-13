@@ -300,7 +300,7 @@ describe("budget display", () => {
     const popover = await openPopover(bars);
     expect(popover.textContent).not.toContain("sync paused");
     expect(popover.textContent).toContain("background refresh paused");
-    expect(popover.textContent).toContain("200 discovery requests before app sync pauses");
+    expect(popover.textContent).toContain("200 requests left before app sync pauses");
     expect(popover.textContent).not.toMatch(/\b(?:remaining|used|rem)\b/i);
     expect(popover.textContent).not.toContain("GitHub user maintainer");
     const identities = popover.querySelectorAll<HTMLElement>(".host-identity");
@@ -426,7 +426,7 @@ describe("budget display", () => {
     expect(spent?.style.color).toBe("var(--budget-red)");
     expect(popover.textContent).toContain("App sync limit");
     expect(popover.textContent).toContain("app sync paused");
-    expect(popover.textContent).toContain("discovery reserve exhausted");
+    expect(popover.textContent).toContain("request limit reached");
     expect(popover.textContent).not.toContain("background refresh paused");
   });
 
@@ -581,7 +581,7 @@ describe("budget display", () => {
     expect(popover.textContent).toContain("ghe.corp.example.com");
     // Known host shows compact ratio + abbreviated unit
     expect(popover.textContent).toMatch(/4\.5k\s*\/\s*5k\s+req\b/);
-    expect(popover.textContent).toContain("not yet observed");
+    expect(popover.textContent).toContain("quota unavailable");
 
     // Unknown host's health dot must be tagged unknown so it renders
     // with the muted color token instead of a budget color.

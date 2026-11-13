@@ -340,6 +340,7 @@ func TestNormalizeTimelineEventCrossReferenced(t *testing.T) {
 		SourceType:        "Issue",
 		SourceOwner:       "other",
 		SourceRepo:        "repo",
+		SourceRepoID:      9876543210,
 		SourceNumber:      77,
 		SourceTitle:       "Related bug",
 		SourceURL:         "https://github.com/other/repo/issues/77",
@@ -356,6 +357,11 @@ func TestNormalizeTimelineEventCrossReferenced(t *testing.T) {
 	assert.Equal("timeline-CRE_1", event.DedupeKey)
 	assert.Contains(event.MetadataJSON, `"source_title":"Related bug"`)
 	assert.Contains(event.MetadataJSON, `"is_cross_repository":true`)
+	var metadata struct {
+		SourceRepoID int64 `json:"source_repo_id"`
+	}
+	require.NoError(json.Unmarshal([]byte(event.MetadataJSON), &metadata))
+	assert.Equal(int64(9876543210), metadata.SourceRepoID)
 }
 
 func TestNormalizeTimelineEventCommentDeleted(t *testing.T) {
@@ -1404,6 +1410,7 @@ func TestNormalizePR_BotUserDisplayName(t *testing.T) {
 	pr, err := NormalizePR(1, ghPR)
 	require.NoError(t, err)
 
+	assert.Equal(new("bot"), pr.AuthorAccountType)
 	assert.Equal("renovate[bot]", pr.Author)
 	assert.Equal("renovate[bot]", pr.AuthorDisplayName,
 		"bot users should get login as display name")

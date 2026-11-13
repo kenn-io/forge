@@ -27,7 +27,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 func TestDefaultServerComesFromForgeConfig(t *testing.T) {
@@ -535,7 +535,8 @@ func TestForgectlCommandsUseRealAPIAndSQLite(t *testing.T) {
 	assert.Contains(apiListOut, `"path":"/pulls"`)
 
 	syncOut := runForge(t, ts.URL, "sync")
-	assert.Empty(syncOut)
+	assert.Contains(syncOut, `"instance_id"`)
+	assert.Contains(syncOut, `"generation"`)
 }
 
 func setupForgectlE2E(t *testing.T) *httptest.Server {

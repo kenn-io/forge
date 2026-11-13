@@ -10,37 +10,33 @@
   import { Effect } from "effect";
   import { onMount, onDestroy } from "svelte";
   import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
-  import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
+  import type { ActivityItem } from "../api/types.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getAppRuntime } from "../app/runtime-context.js";
-  import {
-    DEFAULT_EVENT_TYPES,
-    isActivityItemTypeEnabled,
-    type ActivityItemType,
-    type TimeRange,
-    type ViewMode,
-  } from "../stores/activity.svelte.js";
   import { getStores, getNavigate } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
   import ListLoadMore from "./sidebar/ListLoadMore.svelte";
-  import { activityFilterOptions } from "./activityFilters.js";
+  import {
+    activityFilterMenu,
+    activityItemVisible,
+    activityLabelIndex,
+    activitySubjectVisible,
+  } from "./activityFilters.js";
   import AuthorFilterMenu from "./shared/AuthorFilterMenu.svelte";
   import LabelFilterMenu from "./shared/LabelFilterMenu.svelte";
-  import { labelFilterChoices, labelFilterSummary, matchesLabelFilters } from "../utils/label-filter.js";
+  import { getGlobalRepo } from "../stores/filter.svelte.js";
+  import { rememberedLabelChoices } from "../utils/label-filter.js";
   import { FilterDropdown, ScrollBox } from "@kenn-io/kit-ui";
   import {
     isDefaultBranchActivity,
     isDefaultBranchCommitActivity,
     isDefaultBranchForcePushActivity,
     isCollapsedActivityRow,
-    isClosedOrMergedActivity,
     collapseActivityRuns,
     activityAuthor,
     notificationReasonLabel,
     shortSha,
-    activityItemKey,
   } from "./activityRows.js";
-  import { repositoryKeyFromWire, type RepositoryKeyWire } from "../api/repository-key.js";
   import {
     localDateLabel,
     parseAPITimestamp,
@@ -60,7 +56,7 @@
   import ChevronsDownUpIcon from "@lucide/svelte/icons/chevrons-down-up";
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
 
-  const { activity, settings, sync, grouping } = getStores();
+  const { activity, settings, sync, grouping, issues } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
 
@@ -102,20 +98,8 @@
   let searchInput = $state("");
   let debounceExecution: AppExecution<void, never> | null = null;
 
-  const filters = $derived.by(() => activityFilterOptions(activity, grouping));
-
-  const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
-
-  function isBot(author: string): boolean {
-    const lower = author.toLowerCase();
-    return BOT_SUFFIXES.some((s) => lower.endsWith(s));
-  }
-
-  const popoverFilterCount = $derived(
-    (activity.getActivityAuthor() ? 1 : 0)
-    + filters.events.filter((filter) => !filter.active).length
-    + filters.visibility.filter((filter) => filter.active || filter.excluded).length
-    + activity.getLabelFilters().size,
+  const filterMenu = $derived(
+    activityFilterMenu({ activity, grouping, issues, labelMenu: labelFilterMenu, authorMenu: authorFilterMenu }),
   );
 
   let unsubSync: (() => void) | undefined;
@@ -140,37 +124,6 @@
   });
 
 
-  function toggleItemType(itemType: ActivityItemType): void {
-    const next = new Set(activity.getEnabledItemTypes());
-    if (next.has(itemType)) next.delete(itemType);
-    else next.add(itemType);
-    activity.setEnabledItemTypes(next);
-    filters.applyFilters();
-  }
-
-  function handleTimeRangeChange(range: TimeRange): void {
-    activity.setTimeRange(range);
-    activity.syncToURL();
-    activity.loadActivity();
-  }
-
-  function handleViewModeChange(mode: ViewMode): void {
-    activity.setViewMode(mode);
-    activity.syncToURL();
-    activity.loadActivity();
-  }
-
-  function handleRollUpCommitsChange(value: boolean): void {
-    activity.setRollUpCommits(value);
-    activity.syncToURL();
-  }
-
-  const TIME_RANGES: { value: TimeRange; label: string }[] = [
-    { value: "24h", label: "24h" },
-    { value: "7d", label: "7d" },
-    { value: "30d", label: "30d" },
-    { value: "90d", label: "90d" },
-  ];
 
   function handleSearchInput(val: string): void {
     searchInput = val;
@@ -266,93 +219,21 @@
     if (url) window.open(url, "_blank", "noopener");
   }
 
-  const displayItems = $derived.by(() => {
-    let result = activity.getActivityItems().filter((item) =>
-      isActivityItemTypeEnabled(item.item_type, activity.getEnabledItemTypes())
-    );
-    if (activity.getHideClosedMerged()) {
-      result = result.filter((it) => !isClosedOrMergedActivity(it));
-    }
-    if (activity.getHideBots()) {
-      result = result.filter((it) => !isBot(it.author));
-    }
-    if (activity.getHideDefaultBranchActivity()) {
-      result = result.filter((it) => !isDefaultBranchActivity(it));
-    }
-    const labels = activity.getLabelFilters();
-    if (labels.size > 0) result = result.filter((it) => matchesLabelFilters(it.labels, labels));
-    return result;
-  });
+  const displayItems = $derived(activity.getActivityItems().filter((item) => activityItemVisible(activity, item)));
 
-  type LabeledSubject = Pick<ActivityItem, "repo_owner" | "repo_name" | "platform_host" | "item_type" | "item_number" | "labels"> & {
-    repo?: (RepositoryKeyWire & { provider?: string; platform_host?: string; repo_path?: string | undefined }) | undefined;
-  };
+  const labelIndex = $derived(activityLabelIndex(activity));
 
-  // Keyed by stable repository identity, so a workspace row still carrying a repository's old
-  // owner/name matches the hub's rows for the same item.
-  function labelSubjectKey(subject: LabeledSubject): string | undefined {
-    if (!subject.item_type) return undefined;
-    return activityItemKey({
-      provider: subject.repo?.provider ?? "",
-      platformHost: subject.repo?.platform_host ?? subject.platform_host,
-      repositoryKey: repositoryKeyFromWire(subject.repo),
-      owner: subject.repo_owner,
-      name: subject.repo_name,
-      repoPath: subject.repo?.repo_path,
-      itemType: subject.item_type,
-      itemNumber: subject.item_number,
-    });
-  }
+  const visibleWorkspaceActivity = $derived(
+    activity.getUseWorkspaceActivityForRecency()
+      ? activity
+          .getWorkspaceActivity()
+          .filter((subject) => activitySubjectVisible(activity, subject))
+      : [],
+  );
 
-  // Labels by pull request or issue from the provider rows, parents last so they win. A spoke
-  // sends workspace rows without labels, so a workspace row falls back to these.
-  const providerLabels = $derived.by(() => {
-    const labels = new Map<string, ActivityItem["labels"]>();
-    for (const subject of [...activity.getActivityItems(), ...activity.getItemActivity()]) {
-      const key = labelSubjectKey(subject);
-      if (key) labels.set(key, subject.labels);
-    }
-    return labels;
-  });
-
-  function workspaceSubjectLabels(subject: WorkspaceActivitySubject): ActivityItem["labels"] {
-    if (subject.labels) return subject.labels;
-    const key = labelSubjectKey(subject);
-    return key ? providerLabels.get(key) : undefined;
-  }
-
-  const visibleWorkspaceActivity = $derived.by(() => {
-    if (!activity.getUseWorkspaceActivityForRecency()) return [];
-    let result: WorkspaceActivitySubject[] = activity.getWorkspaceActivity().filter((subject) =>
-      isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
-    );
-    if (activity.getHideClosedMerged()) {
-      result = result.filter((subject) => subject.item_state !== "closed" && subject.item_state !== "merged");
-    }
-    if (activity.getHideBots()) {
-      result = result.filter((subject) => !isBot(subject.item_author ?? ""));
-    }
-    const labels = activity.getLabelFilters();
-    if (labels.size > 0) {
-      result = result.filter((subject) => matchesLabelFilters(workspaceSubjectLabels(subject), labels));
-    }
-    return result;
-  });
-
-  const visibleItemActivity = $derived.by(() => {
-    let result: ActivitySubject[] = activity.getItemActivity().filter((subject) =>
-      isActivityItemTypeEnabled(subject.item_type, activity.getEnabledItemTypes())
-    );
-    if (activity.getHideClosedMerged()) {
-      result = result.filter((subject) => subject.item_state !== "closed" && subject.item_state !== "merged");
-    }
-    if (activity.getHideBots()) {
-      result = result.filter((subject) => !isBot(subject.item_author ?? ""));
-    }
-    const labels = activity.getLabelFilters();
-    if (labels.size > 0) result = result.filter((subject) => matchesLabelFilters(subject.labels, labels));
-    return result;
-  });
+  const visibleItemActivity = $derived(
+    activity.getItemActivity().filter((subject) => activitySubjectVisible(activity, subject)),
+  );
 
   const flatRows = $derived.by(() => collapseActivityRuns(displayItems, {
     rollUpCommits: activity.getRollUpCommits(),
@@ -381,29 +262,12 @@
   }
 
   // One entry per pull request or issue, so a label's count is items, not events.
-  const labelChoices = $derived.by(() => {
-    const subjects = new Map<string, { labels?: ActivityItem["labels"] }>();
-    for (const [key, labels] of providerLabels) subjects.set(key, { labels });
-    for (const subject of activity.getWorkspaceActivity()) {
-      const key = labelSubjectKey(subject);
-      if (key && !subjects.has(key)) subjects.set(key, { labels: subject.labels });
-    }
-    return labelFilterChoices([...subjects.values()], activity.getLabelFilters());
-  });
-
-  function resetFilters(): void {
-    activity.setActivityAuthor(undefined);
-    activity.clearLabelFilters();
-    activity.setEnabledEvents(new Set(DEFAULT_EVENT_TYPES));
-    activity.setShowNotifications(true);
-    for (const filter of filters.visibility) filter.reset();
-    filters.applyFilters();
-  }
-
-  const activityFilterSections = $derived([
-    { title: "Event types", items: filters.events },
-    { title: "Visibility", items: filters.visibility },
-  ]);
+  const activityLabelChoices = rememberedLabelChoices(
+    () => labelIndex.subjects,
+    activity.getLabelFilters,
+    () => JSON.stringify([activity.getTimeRange(), activity.getActivityState(), activity.getActivitySearch(), getGlobalRepo()]),
+  );
+  const labelChoices = $derived(activityLabelChoices());
 
   // Compact mode has no author chip, so the trigger names the author instead.
   const compactAuthor = $derived(compact ? activity.getActivityAuthor() : undefined);
@@ -418,93 +282,6 @@
   const collapseAllLabel = $derived(
     collapseThreads ? "Expand all" : "Collapse all",
   );
-
-  const filterSections = $derived.by(() => [
-    {
-      items: [
-        {
-          id: "author",
-          label: "Author",
-          detail: activity.getActivityAuthor() || "Anyone",
-          active: Boolean(activity.getActivityAuthor()),
-          submenu: authorFilterMenu,
-          onSelect: () => {},
-        },
-        {
-          id: "labels",
-          label: "Labels",
-          detail: labelFilterSummary(activity.getLabelFilters()),
-          active: activity.getLabelFilters().size > 0,
-          submenu: labelFilterMenu,
-          onSelect: () => {},
-        },
-      ],
-    },
-    {
-      title: "View",
-      items: [
-        {
-          id: "view-flat",
-          label: "Flat",
-          active: activity.getViewMode() === "flat",
-          closeOnSelect: true,
-          onSelect: () => handleViewModeChange("flat"),
-        },
-        {
-          id: "view-threaded",
-          label: "Threaded",
-          active: activity.getViewMode() === "threaded",
-          closeOnSelect: true,
-          onSelect: () => handleViewModeChange("threaded"),
-        },
-      ],
-    },
-    {
-      title: "Time range",
-      items: TIME_RANGES.map((range) => ({
-        id: `range-${range.value}`,
-        label: range.label,
-        active: activity.getTimeRange() === range.value,
-        closeOnSelect: true,
-        onSelect: () => handleTimeRangeChange(range.value),
-      })),
-    },
-    {
-      title: "Commits",
-      items: [
-        {
-          id: "roll-up-commits",
-          label: "Roll up commits",
-          active: activity.getRollUpCommits(),
-          onSelect: () => handleRollUpCommitsChange(!activity.getRollUpCommits()),
-        },
-      ],
-    },
-    ...(activity.getViewMode() === "threaded"
-      ? [
-          {
-            title: "Grouping",
-                  items: [
-              {
-                id: "group-by-repo",
-                label: "By repo",
-                active: grouping.getGroupByRepo(),
-                closeOnSelect: true,
-                onSelect: () => grouping.setGroupByRepo(true),
-              },
-              {
-                id: "group-all",
-                label: "All",
-                active: !grouping.getGroupByRepo(),
-                closeOnSelect: true,
-                onSelect: () => grouping.setGroupByRepo(false),
-              },
-            ],
-          },
-        ]
-      : []),
-    ...activityFilterSections,
-  ]);
 
   function eventClass(type: string): string {
     switch (type) {
@@ -634,16 +411,9 @@
 >
   <div class="controls-bar">
     <div class="filter-group" aria-label="Item types">
-      <Toggle
-        checked={activity.getEnabledItemTypes().has("pr")}
-        label="PRs"
-        onchange={() => toggleItemType("pr")}
-      />
-      <Toggle
-        checked={activity.getEnabledItemTypes().has("issue")}
-        label="Issues"
-        onchange={() => toggleItemType("issue")}
-      />
+      {#each filterMenu.itemTypes as item (item.id)}
+        <Toggle checked={item.active} label={item.label} onchange={item.onSelect} />
+      {/each}
     </div>
 
     <div class="filters-wrap">
@@ -651,10 +421,10 @@
         label={compactAuthor ? `Filters · ${compactAuthor}` : "Filters"}
         title="View and filter activity"
         detail={compactAuthor ? "" : currentViewDetail}
-        badgeCount={popoverFilterCount}
-        sections={filterSections}
+        badgeCount={filterMenu.filterCount}
+        sections={filterMenu.desktopSections}
         resetLabel="Reset filters"
-        onReset={resetFilters}
+        onReset={filterMenu.reset}
         minWidth="240px"
         onOpenChange={setFiltersOpen}
       />
@@ -746,7 +516,11 @@
         {compact}
         {selectedItem}
         {selectedBranchCommit}
-      />
+      >
+        {#if activity.canLoadOlderItems()}
+          <ListLoadMore loading={activity.isLoadingOlderItems()} onclick={activity.loadOlderItems} label="Load older items" />
+        {/if}
+      </ActivityThreaded>
     {/if}
   {:else}
     <ScrollBox label="Activity feed">
@@ -1039,8 +813,8 @@
 
   {#if activity.getViewMode() === "threaded" && activity.isItemActivityCapped()}
     <div class="capped-notice item-activity-capped-notice">
-      Showing the 5,000 most recently active pull requests and issues. Item totals may be incomplete; narrow the time
-      range or item filters to see fewer results.
+      Showing the most recently active pull requests and issues. Item totals cover loaded items only; select Load older
+      items to see more.
     </div>
   {/if}
 

@@ -784,14 +784,21 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 
-	syncReachedGitHub := make(chan struct{})
-	var syncReachedGitHubOnce sync.Once
+	syncReachedGitHub := make(chan error, 1)
+	releaseSync := make(chan struct{})
+	var releaseOnce sync.Once
+	defer releaseOnce.Do(func() { close(releaseSync) })
 	mock := &serverfake.MockGH{
 		ListOpenPullRequestsFn: func(
-			_ context.Context, _, _ string,
+			ctx context.Context, _, _ string,
 		) ([]*gh.PullRequest, error) {
-			syncReachedGitHubOnce.Do(func() { close(syncReachedGitHub) })
-			return nil, nil
+			syncReachedGitHub <- ctx.Err()
+			select {
+			case <-releaseSync:
+				return nil, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		},
 	}
 	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil, []ghclient.RepoRef{{
@@ -815,13 +822,19 @@ func TestAPITriggerSyncIgnoresRequestCancellation(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+	var receipt ghclient.FullSyncReceipt
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &receipt))
+	require.Equal(syncer.Status().FullSync.InstanceID, receipt.InstanceID)
+	require.Positive(receipt.Generation)
 
 	select {
-	case <-syncReachedGitHub:
+	case err := <-syncReachedGitHub:
+		require.NoError(err)
 	case <-time.After(2 * time.Second):
 		require.Fail("expected sync to reach GitHub despite request context cancellation")
 	}
 
+	releaseOnce.Do(func() { close(releaseSync) })
 	repos, err := database.ListRepos(t.Context())
 	require.NoError(err)
 	require.Len(repos, 1)
@@ -895,6 +908,11 @@ func TestAPITriggerSyncOnlyRepoRestrictsRun(t *testing.T) {
 		nil)
 
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+	var body map[string]any
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	require.NotNil(body)
+	require.NotContains(body, "instance_id")
+	require.NotContains(body, "generation")
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
@@ -2592,3 +2610,53 @@ var (
 	_ platform.IssueReader        = (*movedLookupGitLabProvider)(nil)
 	_ platform.MergeRequestReader = (*movedLookupGitLabProvider)(nil)
 )
+
+type webURLProvider struct {
+	serverfake.ApiTestGitLabProvider
+	seen platform.RepoRef
+	err  error
+}
+
+var _ platform.RepositoryReader = (*webURLProvider)(nil)
+
+func (p *webURLProvider) GetRepository(ctx context.Context, ref platform.RepoRef) (platform.Repository, error) {
+	p.seen = ref
+	if p.err != nil {
+		return platform.Repository{}, p.err
+	}
+	return p.ApiTestGitLabProvider.GetRepository(ctx, ref)
+}
+
+func TestRepositoryWebURLUsesStableIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "git.example.test:3000", Owner: "team", Name: "service", RepoPath: "team/service", Key: platform.RepositoryIDKey(5150), WebURL: "http://git.example.test:3000/prefix/team/service"}
+	provider := &webURLProvider{}
+	provider.Ref = ref
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	_, err = reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
+	require.NoError(err)
+	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/host/git.example.test:3000/repo/gitlab/team/service/web-url?platform_repo_id=5150", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var body struct {
+		WebURL string `json:"web_url"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+	require.Equal("http://git.example.test:3000/prefix/team/service", body.WebURL)
+	require.Equal(ref.Key, provider.seen.Key)
+	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/host/git.example.test:3000/repo/gitlab/team/service/web-url?platform_repo_id=5151", nil)
+	require.Equal(http.StatusNotFound, rr.Code)
+	provider.Ref.Key = platform.RepositoryIDKey(5151)
+	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/host/git.example.test:3000/repo/gitlab/team/service/web-url?platform_repo_id=5150", nil)
+	require.Equal(http.StatusBadGateway, rr.Code)
+	provider.Ref.Key = ref.Key
+	provider.err = errors.New("provider unavailable")
+	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/host/git.example.test:3000/repo/gitlab/team/service/web-url?platform_repo_id=5150", nil)
+	require.Equal(http.StatusBadGateway, rr.Code)
+}

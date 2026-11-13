@@ -493,7 +493,7 @@ func TestDaemonStartPreservesUnauthenticatedLiveRuntimeE2E(t *testing.T) {
 	dataDir := fixture.dataDir("data")
 	fixture.writeConfig(dataDir)
 
-	lockHandle, err := runtimelock.Acquire(dataDir)
+	lockHandle, err := runtimelock.Acquire(t.Context(), dataDir)
 	require.NoError(err)
 	t.Cleanup(func() {
 		assert.NoError(lockHandle.Release())
@@ -1361,7 +1361,7 @@ func TestStartupLockCollisionAndStatus(t *testing.T) {
 	port := reserveFreePort(t)
 	writeMinimalConfig(t, cfgPath, dataDir, port)
 
-	startupLock, err := runtimelock.Acquire(dataDir)
+	startupLock, err := runtimelock.Acquire(t.Context(), dataDir)
 	require.NoError(err)
 	startupLockReleased := false
 	t.Cleanup(func() {

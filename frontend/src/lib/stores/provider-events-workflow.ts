@@ -156,6 +156,14 @@ export class DeferredMergeCompletedEvent extends Schema.Class<DeferredMergeCompl
 
 export class SyncStatusEvent extends Schema.Class<SyncStatusEvent>("SyncStatusEvent")({
   running: Schema.Boolean,
+  full_sync: Schema.optionalKey(
+    Schema.Struct({
+      instance_id: Schema.String,
+      settled_generation: Schema.Number,
+      successful_generation: Schema.Number,
+      last_error: Schema.optionalKey(Schema.String),
+    }),
+  ),
   current_repo: Schema.optionalKey(Schema.String),
   last_error: Schema.optionalKey(Schema.String),
   last_run_at: Schema.optionalKey(Schema.String),

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/db"
@@ -23,6 +24,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/itemapi"
+	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/platform"
@@ -86,11 +88,15 @@ type listActivityThreadEventsInput struct {
 	AtOrBefore              string   `query:"at_or_before"`
 	Limit                   int      `query:"limit" minimum:"10" maximum:"250" default:"100"`
 	HideClosedMerged        bool     `query:"hide_closed_merged"`
+	ClosedMerged            bool     `query:"closed_merged" doc:"Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged."`
 	HideBots                bool     `query:"hide_bots"`
+	Bots                    bool     `query:"bots" doc:"Keep only bot-authored activity. Wins over hide_bots."`
 	HideDrafts              bool     `query:"hide_drafts" doc:"Exclude activity for draft pull requests."`
 	HideMergeQueued         bool     `query:"hide_merge_queued" doc:"Exclude activity for open pull requests in a merge queue or set to merge after CI."`
 	MergeQueued             bool     `query:"merge_queued" doc:"Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued."`
+	Attributes              string   `query:"attributes" doc:"Comma-separated pull request filters, as on the activity list."`
 	HideDefaultBranch       bool     `query:"hide_default_branch"`
+	itemapi.ActivityItemFilterInput
 }
 
 type triggerSyncInput struct {
@@ -321,10 +327,20 @@ func (s *Handlers) listRepoSummariesRouteCore(
 	return &listRepoSummariesOutput{Body: out}, nil
 }
 
+type triggerSyncResponse struct {
+	InstanceID *uuid.UUID `json:"instance_id,omitempty"`
+	Generation *uint64    `json:"generation,omitempty"`
+}
+
+type triggerSyncOutput struct {
+	Status int
+	Body   triggerSyncResponse
+}
+
 func (s *Handlers) TriggerSync(
 	ctx context.Context,
 	input *triggerSyncInput,
-) (*itemapi.AcceptedOutput, error) {
+) (*triggerSyncOutput, error) {
 	if err := s.RequireSync(); err != nil {
 		return nil, err
 	}
@@ -336,12 +352,13 @@ func (s *Handlers) TriggerSync(
 		if !(*s.Syncer).TriggerRunForRepos(context.WithoutCancel(ctx), repos) {
 			return nil, httpapi.ServiceUnavailable("syncer is stopping")
 		}
-		return &itemapi.AcceptedOutput{Status: http.StatusAccepted}, nil
+		return &triggerSyncOutput{Status: http.StatusAccepted}, nil
 	}
-	if !(*s.Syncer).TriggerRunWithPriority(
+	receipt, accepted := (*s.Syncer).TriggerRunWithPriority(
 		context.WithoutCancel(ctx),
 		s.priorityReposFromFilter(input.PriorityRepos),
-	) {
+	)
+	if !accepted {
 		return nil, httpapi.ServiceUnavailable("syncer is stopping")
 	}
 	if s.NotificationsEnabled() {
@@ -351,7 +368,10 @@ func (s *Handlers) TriggerSync(
 			}
 		})
 	}
-	return &itemapi.AcceptedOutput{Status: http.StatusAccepted}, nil
+	return &triggerSyncOutput{Status: http.StatusAccepted, Body: triggerSyncResponse{
+		InstanceID: &receipt.InstanceID,
+		Generation: &receipt.Generation,
+	}}, nil
 }
 
 func (s *Handlers) RequireSync() error {
@@ -713,12 +733,15 @@ func (s *Handlers) ListActivityService(
 	ctx context.Context, input *itemapi.ListActivityInput,
 ) (itemapi.ActivityResponse, error) {
 	if (*s.ProviderSource) != nil {
+		hubInput, workspaceAttributes := hubActivityInput(input)
 		if (*s.WorkspaceAPI) == nil {
-			response, err := (*s.ProviderSource).ListActivity(ctx, input)
+			response, err := (*s.ProviderSource).ListActivity(ctx, hubInput)
 			if err != nil {
 				return itemapi.ActivityResponse{}, err
 			}
-			return providerActivityResponse(response), nil
+			response = providerActivityResponse(response)
+			keepLocalWorkspaceRows(&response, workspaceAttributes)
+			return response, nil
 		}
 		// The local overlay needs nothing from the hub response, so it is
 		// prepared while the hub call runs. The overlay can make its own hub
@@ -729,9 +752,9 @@ func (s *Handlers) ListActivityService(
 		var overlay func(itemapi.ActivityResponse) itemapi.ActivityResponse
 		var overlayErr error
 		local.Go(func() {
-			overlay, overlayErr = s.prepareLocalActivityWorkspaces(overlayCtx, input)
+			overlay, overlayErr = s.prepareLocalActivityWorkspaces(overlayCtx, hubInput)
 		})
-		response, err := (*s.ProviderSource).ListActivity(ctx, input)
+		response, err := (*s.ProviderSource).ListActivity(ctx, hubInput)
 		if err != nil {
 			cancelOverlay()
 			local.Wait()
@@ -741,7 +764,9 @@ func (s *Handlers) ListActivityService(
 		if overlayErr != nil {
 			return itemapi.ActivityResponse{}, overlayErr
 		}
-		return overlay(response), nil
+		response = overlay(response)
+		keepLocalWorkspaceRows(&response, workspaceAttributes)
+		return response, nil
 	}
 	if _, federationRequest := federationauth.PrincipalFromContext(ctx); federationRequest || (*s.FleetAPI) == nil {
 		output, err := s.listActivityRouteCore(ctx, input)
@@ -791,6 +816,43 @@ func providerActivityResponse(response itemapi.ActivityResponse) itemapi.Activit
 	return response
 }
 
+// hubActivityInput is input without has_workspace and no_workspace: they name this server's
+// workspaces, which the hub cannot see, so they are returned for keepLocalWorkspaceRows.
+func hubActivityInput(input *itemapi.ListActivityInput) (*itemapi.ListActivityInput, []string) {
+	attributes, local := pullapi.SplitWorkspaceAttributes(input.Attributes)
+	if len(local) == 0 {
+		return input, nil
+	}
+	hubInput := *input
+	hubInput.Attributes = attributes
+	return &hubInput, local
+}
+
+// keepLocalWorkspaceRows applies has_workspace and no_workspace to pull request rows once this
+// server's workspaces are on them. The hub has already limited its rows, so on a spoke these two
+// filters run after the limit.
+func keepLocalWorkspaceRows(response *itemapi.ActivityResponse, attributes []string) {
+	if len(attributes) == 0 {
+		return
+	}
+	keep := func(itemType string, workspace *workspaceapi.WorkspaceRef) bool {
+		matches := "no_workspace"
+		if workspace != nil {
+			matches = "has_workspace"
+		}
+		return itemType != "pr" || slices.Contains(attributes, matches)
+	}
+	response.Items = slices.DeleteFunc(response.Items, func(item itemapi.ActivityItemResponse) bool {
+		return !keep(item.ItemType, item.Workspace)
+	})
+	response.ItemActivity = slices.DeleteFunc(response.ItemActivity, func(item itemapi.ActivitySubjectResponse) bool {
+		return !keep(item.ItemType, item.Workspace)
+	})
+	response.WorkspaceActivity = slices.DeleteFunc(response.WorkspaceActivity, func(item itemapi.WorkspaceActivitySubjectResponse) bool {
+		return !keep(item.ItemType, item.Workspace)
+	})
+}
+
 // prepareLocalActivityWorkspaces reads the local workspace snapshot and
 // returns the overlay that applies it to a hub activity response.
 func (s *Handlers) prepareLocalActivityWorkspaces(
@@ -838,9 +900,10 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 	// Only the hub can tell whether a standalone local subject involves the viewer.
 	listWorkspaceActivity := input.Projection != "events" && input.InvolvesMe == input.NotInvolvesMe
 	var opts db.ListActivityOpts
+	var identitiesByKey map[db.WorkspaceSubjectKey]providerplane.ItemIdentity
 	if listWorkspaceActivity {
 		if (*s.ProviderSource) != nil {
-			identitiesByKey, _ := spokeapi.WorkspaceActivitySubjectIdentities(snapshot, repositories)
+			identitiesByKey, _ = spokeapi.WorkspaceActivitySubjectIdentities(snapshot, repositories)
 			if err := (*s.ProviderSource).ApplyHubActivitySubjectState(ctx, &snapshot, identitiesByKey); err != nil {
 				slog.Error("apply hub state to workspace subjects failed", "err", err)
 				return nil, httpapi.Internal("list workspace activity failed")
@@ -866,11 +929,45 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 			}
 		}
 		if listWorkspaceActivity {
-			// No labels: the hub owns provider data, and this server's label rows
-			// can be left over from before it joined. The browser takes each
-			// subject's labels from the hub's rows for the same item.
+			// The hub owns provider data: it classifies forks and matches pull request
+			// and issue filters, so its rows for the same items supply both. An item the
+			// hub's filtered response leaves out cannot be shown to match them. A pull
+			// request with only recent workspace output has no hub row, so its own
+			// workspace's head repository classification decides From fork.
+			hubItems := make(map[providerplane.ItemIdentity]pullapi.HeadRepoKind)
+			for _, item := range response.Items {
+				hubItems[itemapi.ActivityItemIdentity(item)] = item.HeadRepoKind
+			}
+			for _, subject := range response.ItemActivity {
+				hubItems[itemapi.ActivitySubjectIdentity(subject)] = subject.HeadRepoKind
+			}
+			items := input.ActivityItemFilterInput
+			parentFiltered := len(httpapi.LabelNames(items.Labels)) > 0 || len(httpapi.LabelNames(items.ExcludeLabels)) > 0 || items.Starred
+			pullsFiltered := input.Attributes != "" || parentFiltered
+			issuesFiltered := parentFiltered || items.HideBotAuthoredIssues || items.ReferencedByPR != items.NotReferencedByPR
+			listed := snapshot
+			headRepoKinds := make(map[db.WorkspaceSubjectKey]pullapi.HeadRepoKind)
+			if pullsFiltered || issuesFiltered {
+				listed.Subjects = make(map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity, len(snapshot.Subjects))
+			}
+			for key, activity := range snapshot.Subjects {
+				kind, onHub := hubItems[identitiesByKey[key]]
+				isPull := key.ItemType == db.WorkspaceItemTypePullRequest
+				if isPull {
+					if onHub && kind != "" {
+						headRepoKinds[key] = kind
+					} else if activity.HeadRepoKind != "" {
+						headRepoKinds[key] = pullapi.HeadRepoKind(activity.HeadRepoKind)
+					}
+				}
+				if (pullsFiltered || issuesFiltered) && (onHub || (isPull && !pullsFiltered) || (!isPull && !issuesFiltered)) {
+					listed.Subjects[key] = activity
+				}
+			}
+			// No labels: this server's label rows can be left over from before it
+			// joined. The browser takes each subject's labels from the hub's rows.
 			response.WorkspaceActivity = s.WorkspaceActivityResponse(
-				input, opts, snapshot, nil, nil, response.UseWorkspaceActivityForRecency,
+				input, opts, listed, nil, nil, headRepoKinds, response.UseWorkspaceActivityForRecency, nil,
 			)
 		}
 		return response
@@ -888,15 +985,15 @@ func (s *Handlers) deferredMergeItems(needed bool) []db.RepoItemNumber {
 
 func localWorkspaceActivityOptions(input *itemapi.ListActivityInput, now time.Time) (db.ListActivityOpts, error) {
 	opts := db.ListActivityOpts{
-		RepoFilters:     itemapi.ParseRepoFilters(input.Repo),
-		ItemTypes:       input.ItemTypes,
-		Search:          strings.TrimSpace(input.Search),
-		Author:          strings.TrimSpace(input.Author),
-		Unassigned:      input.Unassigned && !input.Assigned,
-		Assigned:        input.Assigned && !input.Unassigned,
-		HideDrafts:      input.HideDrafts,
-		HideMergeQueued: input.HideMergeQueued,
-		OnlyMergeQueued: input.MergeQueued,
+		RepoFilters: itemapi.ParseRepoFilters(input.Repo),
+		ItemTypes:   input.ItemTypes,
+		Search:      strings.TrimSpace(input.Search),
+		Author:      strings.TrimSpace(input.Author),
+		Unassigned:  input.Unassigned && !input.Assigned,
+		Assigned:    input.Assigned && !input.Unassigned,
+	}
+	if err := itemapi.ApplyActivityFilters(&opts, input); err != nil {
+		return db.ListActivityOpts{}, err
 	}
 	if input.Since == "" {
 		defaultSince := now.UTC().AddDate(0, 0, -7)
@@ -969,6 +1066,27 @@ func activityWorkspaceOverlays(
 	return overlays
 }
 
+// workspaceSearchSubjects reads, in SQL, which workspace subjects the
+// search's included terms match, whatever page or event cap the feed read
+// stopped at.
+func (s *Handlers) workspaceSearchSubjects(
+	ctx context.Context, opts db.ListActivityOpts, snapshot workspaceapi.WorkspaceSubjectSnapshot,
+) ([]db.ActivitySubject, error) {
+	if len(db.ParseSearchQuery(opts.Search).Include) == 0 {
+		return nil, nil
+	}
+	keys := workspaceSnapshotSubjectKeys(snapshot)
+	for i := range keys {
+		keys[i].ItemType = itemapi.ActivityItemTypeFromWorkspace(keys[i].ItemType)
+	}
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	subjectOpts := db.ActivitySubjectsOpts(opts, nil, len(keys))
+	subjectOpts.Keys = keys
+	return s.Db.ListActivitySubjects(ctx, subjectOpts)
+}
+
 func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.ListActivityInput) (*listActivityOutput, error) {
 	if itemapi.HasInvalidRepoFilter(input.Repo) {
 		return nil, httpapi.Validation("query.repo", "repo filter must be provider|platform_host/repo_path")
@@ -987,13 +1105,11 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		// SQL when no config is loaded (the nil-config safety guard), so the
 		// safety-cap window is filled by real activity, not stale notifications.
 		ExcludeNotifications: !s.NotificationsEnabled(),
-		HideClosedMerged:     input.HideClosedMerged,
-		HideBots:             input.HideBots,
-		HideDrafts:           input.HideDrafts,
-		HideMergeQueued:      input.HideMergeQueued,
-		OnlyMergeQueued:      input.MergeQueued,
 		DeferredMergeItems:   s.deferredMergeItems(input.HideMergeQueued || input.MergeQueued),
 		HideDefaultBranch:    input.HideDefaultBranch,
+	}
+	if err := itemapi.ApplyActivityFilters(&opts, input); err != nil {
+		return nil, err
 	}
 
 	projection := input.Projection
@@ -1046,6 +1162,14 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		opts.BeforeSource = source
 		opts.BeforeSourceID = sourceID
 	}
+	var subjectBefore *db.ActivitySubjectCursor
+	if input.SubjectBefore != "" {
+		cursor, err := db.DecodeActivitySubjectCursor(input.SubjectBefore)
+		if err != nil {
+			return nil, httpapi.Validation("query.subject_before", "invalid subject cursor: "+err.Error())
+		}
+		subjectBefore = &cursor
+	}
 	if input.AtOrBefore != "" {
 		t, source, sourceID, err := db.DecodeCursor(input.AtOrBefore)
 		if err != nil {
@@ -1081,6 +1205,15 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 
+	workspaceSnapshot, err := (*s.WorkspaceAPI).WorkspaceSubjectSnapshot(ctx)
+	if err != nil {
+		slog.Error("list workspace activity failed", "err", err)
+		return nil, httpapi.Internal("list workspace activity failed")
+	}
+	if slices.Contains(opts.PullAttributes, "has_workspace") || slices.Contains(opts.PullAttributes, "no_workspace") {
+		opts.WorkspaceItems = workspaceSnapshot.PullRequestItems()
+	}
+
 	// Included terms can surface parents through events beyond the returned page.
 	searchHasIncludes := len(db.ParseSearchQuery(opts.Search).Include) > 0
 	hasFullWorkspaceEventItems := projection != "events" && searchHasIncludes
@@ -1094,7 +1227,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		collapsed, projectionErr := s.Db.ListCollapsedActivityProjection(ctx, db.ListActivityProjectionOpts{
 			ListActivityOpts: opts,
 			SubjectLimit:     pageLimit + 1,
-			SearchEventLimit: itemapi.ActivitySafetyCap + 1,
+			SubjectBefore:    subjectBefore,
 		})
 		if projectionErr != nil {
 			slog.Error("list collapsed activity failed", "err", projectionErr)
@@ -1126,55 +1259,12 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			return nil, httpapi.Internal("list activity failed")
 		}
 	}
-	// Search-matched parents are derived from the bounded event read, so an
-	// event page that overflowed can hide parents whose only matches fell off
-	// it; report that as parent truncation rather than a complete snapshot.
-	searchMatchesTruncated := searchHasIncludes && len(workspaceEventItems) > itemapi.ActivitySafetyCap
-	var searchMatchedSubjectKeys []db.WorkspaceSubjectKey
-	if searchHasIncludes {
-		searchMatchedSubjectKeys = make([]db.WorkspaceSubjectKey, 0, len(workspaceEventItems))
-		for _, item := range workspaceEventItems {
-			if item.ItemType != "pr" && item.ItemType != "issue" {
-				continue
-			}
-			searchMatchedSubjectKeys = append(searchMatchedSubjectKeys, db.WorkspaceSubjectKey{
-				RepoID: item.RepoID, ItemType: item.ItemType, ItemNumber: item.ItemNumber,
-			})
-		}
-	}
 	if projection == "full" {
-		itemActivity, err = s.Db.ListActivitySubjects(ctx, db.ListActivitySubjectsOpts{
-			Repo:           opts.Repo,
-			RepoFilters:    opts.RepoFilters,
-			AllowedRepoIDs: opts.AllowedRepoIDs,
-			ItemTypes:      opts.ItemTypes,
-			ExcludeNotificationRecency: opts.ExcludeNotifications ||
-				(len(opts.Types) > 0 && !slices.Contains(opts.Types, "notification")),
-			Search:                   opts.Search,
-			SearchMatchedSubjectKeys: searchMatchedSubjectKeys,
-			Author:                   opts.Author,
-			Unassigned:               opts.Unassigned,
-			Assigned:                 opts.Assigned,
-			ViewerLogins:             opts.ViewerLogins,
-			ViewerUninvolved:         opts.ViewerUninvolved,
-			HideClosedMerged:         opts.HideClosedMerged,
-			HideBots:                 opts.HideBots,
-			HideDrafts:               opts.HideDrafts,
-			HideMergeQueued:          opts.HideMergeQueued,
-			OnlyMergeQueued:          opts.OnlyMergeQueued,
-			DeferredMergeItems:       opts.DeferredMergeItems,
-			Limit:                    pageLimit + 1,
-			Since:                    opts.Since,
-		})
+		itemActivity, err = s.Db.ListActivitySubjects(ctx, db.ActivitySubjectsOpts(opts, subjectBefore, pageLimit+1))
 		if err != nil {
 			slog.Error("list activity subjects failed", "err", err)
 			return nil, httpapi.Internal("list activity failed")
 		}
-	}
-	workspaceSnapshot, err := (*s.WorkspaceAPI).WorkspaceSubjectSnapshot(ctx)
-	if err != nil {
-		slog.Error("list workspace activity failed", "err", err)
-		return nil, httpapi.Internal("list workspace activity failed")
 	}
 	if opts.Unassigned || opts.Assigned {
 		if err := s.filterWorkspaceSubjectsByAssignment(ctx, &workspaceSnapshot, opts.Unassigned); err != nil {
@@ -1203,8 +1293,33 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 
+	matching, err := s.Db.ListWorkspaceSubjectsMatchingFilters(ctx, workspaceSnapshotSubjectKeys(workspaceSnapshot), opts)
+	if err != nil {
+		slog.Error("list workspace subjects matching filters failed", "err", err)
+		return nil, httpapi.Internal("list workspace activity failed")
+	}
+	for key := range workspaceSnapshot.Subjects {
+		if _, ok := matching[key]; !ok {
+			delete(workspaceSnapshot.Subjects, key)
+		}
+	}
+	for key := range workspaceSnapshot.OwnReferences {
+		if _, ok := matching[key]; !ok {
+			delete(workspaceSnapshot.OwnReferences, key)
+		}
+	}
+	useWorkspaceActivityForRecency := s.useWorkspaceActivityForRecency()
+	var workspaceSubjects []db.ActivitySubject
+	if useWorkspaceActivityForRecency && projection != "events" {
+		workspaceSubjects, err = s.workspaceSearchSubjects(ctx, opts, workspaceSnapshot)
+		if err != nil {
+			slog.Error("list workspace search subjects failed", "err", err)
+			return nil, httpapi.Internal("list workspace activity failed")
+		}
+	}
+
 	eventsCapped := len(items) > pageLimit
-	itemActivityCapped := len(itemActivity) > pageLimit || searchMatchesTruncated
+	itemActivityCapped := len(itemActivity) > pageLimit
 	if len(items) > pageLimit {
 		items = items[:pageLimit]
 	}
@@ -1213,8 +1328,10 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		last := items[len(items)-1]
 		nextCursor = db.EncodeCursor(last.CreatedAt, last.Source, last.SourceID)
 	}
+	nextSubjectCursor := ""
 	if len(itemActivity) > pageLimit {
 		itemActivity = itemActivity[:pageLimit]
+		nextSubjectCursor = db.EncodeActivitySubjectCursor(itemActivity[len(itemActivity)-1])
 	}
 	if hasFullWorkspaceEventItems {
 		if len(workspaceEventItems) > itemapi.ActivitySafetyCap {
@@ -1224,24 +1341,44 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		workspaceEventItems = items
 	}
 
-	labels, err := s.Db.ListLabelsForSubjects(ctx, activityLabelKeys(items, itemActivity, workspaceSnapshot))
+	subjectKeys := activityLabelKeys(items, itemActivity, workspaceSnapshot)
+	labels, err := s.Db.ListLabelsForSubjects(ctx, subjectKeys)
 	if err != nil {
 		slog.Error("list activity labels failed", "err", err)
 		return nil, httpapi.Internal("list activity failed")
 	}
+	headRepoCloneURLs, err := s.Db.ListPullHeadRepoCloneURLs(ctx, subjectKeys)
+	if err != nil {
+		slog.Error("list activity head repositories failed", "err", err)
+		return nil, httpapi.Internal("list activity failed")
+	}
+	headRepoKinds := make(map[db.WorkspaceSubjectKey]pullapi.HeadRepoKind, len(headRepoCloneURLs))
+	headRepoKind := func(key db.WorkspaceSubjectKey, repo db.Repo) pullapi.HeadRepoKind {
+		if kind, ok := headRepoKinds[key]; ok {
+			return kind
+		}
+		cloneURL, ok := headRepoCloneURLs[key]
+		if !ok {
+			return ""
+		}
+		kind := pullapi.ClassifyHeadRepoKind(repo, cloneURL)
+		headRepoKinds[key] = kind
+		return kind
+	}
 
 	out := make([]itemapi.ActivityItemResponse, len(items))
 	for i, it := range items {
+		repo := db.Repo{
+			Platform: it.Platform, PlatformHost: it.PlatformHost,
+			Key: it.RepoKey, Owner: it.RepoOwner,
+			Name: it.RepoName, RepoPath: it.RepoPath,
+			Private: it.RepoPrivate,
+		}
 		item := itemapi.ActivityItemResponse{
 			ID:           it.Source + ":" + strconv.FormatInt(it.SourceID, 10),
 			Cursor:       db.EncodeCursor(it.CreatedAt, it.Source, it.SourceID),
 			ActivityType: it.ActivityType,
-			Repo: itemapi.ActivityRepoRef(s.RepoResolver.Ref(db.Repo{
-				Platform: it.Platform, PlatformHost: it.PlatformHost,
-				Key: it.RepoKey, Owner: it.RepoOwner,
-				Name: it.RepoName, RepoPath: it.RepoPath,
-				Private: it.RepoPrivate,
-			})),
+			Repo:         itemapi.ActivityRepoRef(s.RepoResolver.Ref(repo)),
 			PlatformHost: it.PlatformHost,
 			RepoOwner:    it.RepoOwner,
 			RepoName:     it.RepoName,
@@ -1252,6 +1389,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			ItemState:    it.ItemState,
 			Labels:       labels[activityItemSubjectKey(it)],
 			Workspace:    itemapi.WorkspaceRefForActivityItem(workspaceSnapshot, it),
+			HeadRepoKind: headRepoKind(activityItemSubjectKey(it), repo),
 			Author:       it.Author,
 			ItemAuthor:   it.ItemAuthor,
 			CreatedAt:    itemapi.FormatUTCRFC3339(it.CreatedAt),
@@ -1288,13 +1426,14 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		subject := activity.Subject
 		workspaceSubjectKey := subject.Key
 		workspaceSubjectKey.ItemType = itemapi.WorkspaceItemTypeFromActivity(subject.Key.ItemType)
+		repo := db.Repo{
+			Platform: subject.Platform, PlatformHost: subject.PlatformHost,
+			Key: subject.RepoKey, Owner: subject.RepoOwner,
+			Name: subject.RepoName, RepoPath: subject.RepoPath,
+			Private: subject.RepoPrivate,
+		}
 		itemActivityOut[i] = itemapi.ActivitySubjectResponse{
-			Repo: itemapi.ActivityRepoRef(s.RepoResolver.Ref(db.Repo{
-				Platform: subject.Platform, PlatformHost: subject.PlatformHost,
-				Key: subject.RepoKey, Owner: subject.RepoOwner,
-				Name: subject.RepoName, RepoPath: subject.RepoPath,
-				Private: subject.RepoPrivate,
-			})),
+			Repo:                itemapi.ActivityRepoRef(s.RepoResolver.Ref(repo)),
 			PlatformHost:        subject.PlatformHost,
 			RepoOwner:           subject.RepoOwner,
 			RepoName:            subject.RepoName,
@@ -1306,6 +1445,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			ItemAuthor:          subject.Author,
 			Labels:              labels[workspaceSubjectKey],
 			Workspace:           itemapi.WorkspaceRefForActivitySubjectKey(workspaceSnapshot, workspaceSubjectKey),
+			HeadRepoKind:        headRepoKind(workspaceSubjectKey, repo),
 			ActivityAt:          itemapi.FormatUTCRFC3339(activity.ActivityAt),
 			EventLedgerRevision: activity.EventLedgerRevision,
 		}
@@ -1314,10 +1454,16 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		itemActivityOut = []itemapi.ActivitySubjectResponse{}
 	}
 
-	useWorkspaceActivityForRecency := s.useWorkspaceActivityForRecency()
+	for key, activity := range workspaceSnapshot.Subjects {
+		subject := activity.Subject
+		headRepoKind(key, db.Repo{
+			Platform: subject.Platform, PlatformHost: subject.PlatformHost,
+			Key: subject.RepoKey, Owner: subject.RepoOwner, Name: subject.RepoName, RepoPath: subject.RepoPath,
+		})
+	}
 	workspaceActivity := s.WorkspaceActivityResponse(
-		input, opts, workspaceSnapshot, workspaceEventItems, labels,
-		useWorkspaceActivityForRecency,
+		input, opts, workspaceSnapshot, workspaceEventItems, labels, headRepoKinds,
+		useWorkspaceActivityForRecency, slices.Concat(itemActivity, workspaceSubjects),
 	)
 	if projection == "events" {
 		workspaceActivity = []itemapi.WorkspaceActivitySubjectResponse{}
@@ -1332,6 +1478,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			ItemActivityCapped:             itemActivityCapped,
 			EventCursor:                    eventCursor,
 			NextCursor:                     nextCursor,
+			NextSubjectCursor:              nextSubjectCursor,
 		},
 	}, nil
 }
@@ -1449,25 +1596,29 @@ func (s *Handlers) ListActivityThreadEvents(
 		return nil, httpapi.Validation("query.item_number", "item number must be positive")
 	}
 	return s.ListActivity(ctx, &itemapi.ListActivityInput{
-		Types:              input.Types,
-		Search:             input.Search,
-		Unassigned:         input.Unassigned,
-		Since:              input.Since,
-		Before:             input.Before,
-		AtOrBefore:         input.AtOrBefore,
-		Projection:         "events",
-		Limit:              input.Limit,
-		HideClosedMerged:   input.HideClosedMerged,
-		HideBots:           input.HideBots,
-		HideDrafts:         input.HideDrafts,
-		HideMergeQueued:    input.HideMergeQueued,
-		MergeQueued:        input.MergeQueued,
-		HideDefaultBranch:  input.HideDefaultBranch,
-		ParentProvider:     input.Provider,
-		ParentPlatformHost: input.PlatformHost,
-		ParentRepoKey:      repoKey,
-		ParentItemType:     input.ItemType,
-		ParentItemNumber:   input.ItemNumber,
+		Types:                   input.Types,
+		Search:                  input.Search,
+		Unassigned:              input.Unassigned,
+		Since:                   input.Since,
+		Before:                  input.Before,
+		AtOrBefore:              input.AtOrBefore,
+		Projection:              "events",
+		Limit:                   input.Limit,
+		HideClosedMerged:        input.HideClosedMerged,
+		ClosedMerged:            input.ClosedMerged,
+		HideBots:                input.HideBots,
+		Bots:                    input.Bots,
+		HideDrafts:              input.HideDrafts,
+		HideMergeQueued:         input.HideMergeQueued,
+		MergeQueued:             input.MergeQueued,
+		Attributes:              input.Attributes,
+		HideDefaultBranch:       input.HideDefaultBranch,
+		ActivityItemFilterInput: input.ActivityItemFilterInput,
+		ParentProvider:          input.Provider,
+		ParentPlatformHost:      input.PlatformHost,
+		ParentRepoKey:           repoKey,
+		ParentItemType:          input.ItemType,
+		ParentItemNumber:        input.ItemNumber,
 	})
 }
 

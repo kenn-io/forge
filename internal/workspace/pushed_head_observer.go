@@ -622,7 +622,7 @@ func (o *PushedHeadObserver) configureMissingUpstream(
 	if head == "" {
 		return false, nil
 	}
-	if strings.TrimSpace(mr.HeadRepoCloneURL) == "" || WorkspaceHeadRepo(
+	if strings.TrimSpace(mr.HeadRepoCloneURL) == "" || platform.HeadRepo(
 		ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName, mr.HeadRepoCloneURL,
 	) != nil {
 		return false, nil

@@ -15,6 +15,14 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
+func pullAuthorAccountType(value string) *string {
+	account := accountType(value)
+	if account == platform.AccountTypeUnknown {
+		return nil
+	}
+	return new(string(account))
+}
+
 func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform.MergeRequest, error) {
 	if ghPR == nil {
 		return platform.MergeRequest{}, ErrNilPullRequest
@@ -27,6 +35,7 @@ func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform
 		URL:                ghPR.GetHTMLURL(),
 		Title:              ghPR.GetTitle(),
 		Author:             loginOrEmpty(ghPR.GetUser()),
+		AuthorAccountType:  pullAuthorAccountType(ghPR.GetUser().GetType()),
 		AuthorAssociation:  ghPR.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		AuthorDisplayName:  nameOrEmpty(ghPR.GetUser()),
 		State:              ghPR.GetState(),
@@ -170,6 +179,7 @@ func NormalizeReviewEvent(
 		Summary:            r.GetState(),
 		DirectURL:          r.GetHTMLURL(),
 	}
+	event.MetadataJSON = WithActorAccountType(event.MetadataJSON, r.GetUser().GetType())
 	if r.SubmittedAt != nil {
 		event.CreatedAt = r.SubmittedAt.Time
 	}
@@ -193,6 +203,7 @@ func NormalizeReviewCommentEvent(
 		Body:               c.GetBody(),
 		DirectURL:          c.GetHTMLURL(),
 	}
+	event.MetadataJSON = WithActorAccountType(event.MetadataJSON, c.GetUser().GetType())
 	if c.CreatedAt != nil {
 		event.CreatedAt = c.CreatedAt.Time
 	}
@@ -232,10 +243,15 @@ func NormalizeCommitEvent(
 		committerSignature = commit.GetCommitter()
 	}
 	author := commitIdentity(c.GetAuthor(), authorSignature)
-	committer := commitIdentity(c.GetCommitter(), committerSignature)
-	actor := committer
-	if actor == "" {
+	actor := commitIdentity(c.GetCommitter(), committerSignature)
+	actorType := ""
+	if loginOrEmpty(c.GetCommitter()) != "" {
+		actorType = c.GetCommitter().GetType()
+	} else if actor == "" {
 		actor = author
+		if loginOrEmpty(c.GetAuthor()) != "" {
+			actorType = c.GetAuthor().GetType()
+		}
 	}
 
 	event := platform.MergeRequestEvent{
@@ -250,6 +266,7 @@ func NormalizeCommitEvent(
 		metadata, _ := json.Marshal(commitEventMetadata{CommitAuthor: author})
 		event.MetadataJSON = string(metadata)
 	}
+	event.MetadataJSON = WithActorAccountType(event.MetadataJSON, actorType)
 	if commit != nil {
 		event.Body = commit.GetMessage()
 		if committerSignature != nil && committerSignature.Date != nil {
@@ -312,6 +329,7 @@ func NormalizeTimelineEvent(
 			Ref:       event.Ref,
 			CreatedAt: event.CreatedAt,
 		})
+		normalized.MetadataJSON = WithActorAccountType(normalized.MetadataJSON, event.ActorAccountType)
 		if event.NodeID != "" {
 			normalized.DedupeKey = timelineDedupeKey(event)
 		}
@@ -321,6 +339,7 @@ func NormalizeTimelineEvent(
 			SourceType:        event.SourceType,
 			SourceOwner:       event.SourceOwner,
 			SourceRepo:        event.SourceRepo,
+			SourceRepoID:      event.SourceRepoID,
 			SourceNumber:      event.SourceNumber,
 			SourceTitle:       event.SourceTitle,
 			SourceURL:         event.SourceURL,
@@ -377,7 +396,7 @@ func NormalizeTimelineEvent(
 			EventType:          event.EventType,
 			Author:             event.Actor,
 			Summary:            assignmentSummary(event.EventType, event.Actor, event.Assignee),
-			MetadataJSON:       string(metadata),
+			MetadataJSON:       WithActorAccountType(string(metadata), event.ActorAccountType),
 			CreatedAt:          event.CreatedAt,
 			DedupeKey:          timelineDedupeKey(event),
 		}
@@ -388,6 +407,7 @@ func NormalizeTimelineEvent(
 			EventType:          event.EventType,
 			Author:             event.Actor,
 			Summary:            lifecycleSummary(event.EventType),
+			MetadataJSON:       WithActorAccountType("", event.ActorAccountType),
 			CreatedAt:          event.CreatedAt,
 			DedupeKey:          timelineDedupeKey(event),
 		}
@@ -436,6 +456,7 @@ func NormalizeIssueTimelineEvent(
 			SourceType:        event.SourceType,
 			SourceOwner:       event.SourceOwner,
 			SourceRepo:        event.SourceRepo,
+			SourceRepoID:      event.SourceRepoID,
 			SourceNumber:      event.SourceNumber,
 			SourceTitle:       event.SourceTitle,
 			SourceURL:         event.SourceURL,
@@ -530,6 +551,7 @@ type crossReferenceMetadata struct {
 	SourceType        string `json:"source_type"`
 	SourceOwner       string `json:"source_owner"`
 	SourceRepo        string `json:"source_repo"`
+	SourceRepoID      int64  `json:"source_repo_id,omitempty"`
 	SourceNumber      int    `json:"source_number"`
 	SourceTitle       string `json:"source_title"`
 	SourceURL         string `json:"source_url"`
@@ -701,6 +723,7 @@ func normalizeIssueCommentBase(repo platform.RepoRef, c *gh.IssueComment) platfo
 		Body:               c.GetBody(),
 		DirectURL:          c.GetHTMLURL(),
 	}
+	event.MetadataJSON = WithActorAccountType(event.MetadataJSON, c.GetUser().GetType())
 	if c.CreatedAt != nil {
 		event.CreatedAt = c.CreatedAt.Time
 	}

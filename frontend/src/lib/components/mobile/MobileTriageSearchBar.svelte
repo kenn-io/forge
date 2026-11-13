@@ -3,7 +3,6 @@
   import MobileNavMenu from "./MobileNavMenu.svelte";
   import { IconButton } from "@kenn-io/kit-ui";
   import FunnelIcon from "@lucide/svelte/icons/funnel";
-  import type { Snippet } from "svelte";
 
   interface Props {
     value?: string;
@@ -13,7 +12,6 @@
     filterControls: string;
     filtersExpanded: boolean;
     filtersActive?: boolean;
-    filterControl?: Snippet | undefined;
     oninput: (value: string) => void;
     onsubmit?: ((value: string) => void) | undefined;
     ontoggle: () => void;
@@ -27,7 +25,6 @@
     filterControls,
     filtersExpanded,
     filtersActive = filtersExpanded,
-    filterControl,
     oninput,
     onsubmit,
     ontoggle,
@@ -48,22 +45,18 @@
   </div>
 
   <div class="mobile-triage-search-bar__filter">
-    {#if filterControl}
-      {@render filterControl()}
-    {:else}
-      <IconButton
-        size="md"
-        tone="info"
-        ariaLabel={filterAriaLabel}
-        title="Filters"
-        ariaExpanded={filtersExpanded}
-        ariaControls={filterControls}
-        ariaPressed={filtersActive}
-        onclick={ontoggle}
-      >
-        <FunnelIcon size={18} strokeWidth={2} aria-hidden="true" />
-      </IconButton>
-    {/if}
+    <IconButton
+      size="md"
+      tone="info"
+      ariaLabel={filterAriaLabel}
+      title="Filters"
+      ariaExpanded={filtersExpanded}
+      ariaControls={filterControls}
+      ariaPressed={filtersActive}
+      onclick={ontoggle}
+    >
+      <FunnelIcon size={18} strokeWidth={2} aria-hidden="true" />
+    </IconButton>
   </div>
 
   <MobileNavMenu />
@@ -110,15 +103,6 @@
     border: thin solid var(--border-default);
     border-radius: 8.5px;
     background: var(--bg-inset);
-  }
-
-  :global(.mobile-main) .mobile-triage-search-bar__filter :global(.kit-filter-dropdown__btn) {
-    width: 40px;
-    height: 100%;
-    min-width: 40px;
-    min-height: 40px;
-    justify-content: center;
-    border-radius: 8.5px;
   }
 
   :global(.mobile-main) .mobile-triage-search-bar__search :global(.kit-search-input) {

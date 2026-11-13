@@ -80,7 +80,7 @@ func assertDaemonDiscovery(t *testing.T, dir, configPath, runtimeBasePath, wantB
 		_, _ = w.Write([]byte(`{"handled":true,"output":"[{\"number\":7}]\n","reason":"served"}`))
 	}))
 	defer server.Close()
-	lock, err := runtimelock.Acquire(dir)
+	lock, err := runtimelock.Acquire(t.Context(), dir)
 	require.NoError(err)
 	defer func() { require.NoError(lock.Release()) }()
 	require.NoError(lock.WriteMetadata(runtimelock.Metadata{PID: os.Getpid(), ListenAddr: strings.TrimPrefix(server.URL, "http://"), BasePath: runtimeBasePath}))

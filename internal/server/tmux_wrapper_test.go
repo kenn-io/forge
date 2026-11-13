@@ -31,6 +31,7 @@ import (
 
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/routepolicy"
 	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/testutil"
@@ -525,6 +526,91 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	assert.EqualValues(1, authorWorkspace.ItemNumber)
 	require.NotNil(authorWorkspace.Workspace)
 	assert.Equal(workspaceID, authorWorkspace.Workspace.ID)
+}
+
+func TestWorkspaceActivitySearchFindsOlderSubjectsPastSafetyCap(t *testing.T) {
+	for _, projection := range []generated.ListActivityQueryProjection{
+		generated.ListActivityQueryProjectionFull, generated.ListActivityQueryProjectionCollapsed,
+	} {
+		t.Run(string(projection), func(t *testing.T) {
+			serverfake.RunParallelServerTest(t)
+			acquireRootWorkspaceGitSlot(t)
+
+			require := require.New(t)
+			assert := assert.New(t)
+			script, record := writeTmuxRecorder(t)
+			setTmuxRecorderPaneOutput(t, record, "baseline output")
+			client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(t, script)
+			srv.cfgMu.Lock()
+			srv.cfg.Activity.UseWorkspaceActivityForRecency = true
+			srv.cfgMu.Unlock()
+			ctx := t.Context()
+			now := time.Now().UTC().Truncate(time.Second)
+
+			repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+			require.NoError(err)
+			require.NotNil(repo)
+			mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
+			require.NoError(err)
+			require.NotNil(mr)
+			require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+				MergeRequestID: mr.ID, EventType: "issue_comment", Author: "search-reviewer",
+				Body: "matches only provider event fields", CreatedAt: now, DedupeKey: "older-workspace-comment",
+			}}))
+			createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+				Provider: "github", PlatformHost: "github.com",
+				Owner: "acme", Name: "widget", MrNumber: 1,
+			}})
+			require.NoError(err)
+			require.Equal(http.StatusAccepted, createResp.StatusCode)
+			require.NotNil(createResp.JSON202)
+			waitForWorkspaceReady(t, ctx, client, createResp.JSON202.ID)
+			waitForWorkspaceActivity(t, client, ctx, createResp.JSON202.ID, func(activity workspaceActivityResponse) bool {
+				return activity.TmuxActivitySource == "none" && activity.TmuxLastOutputAt == nil
+			})
+
+			setTmuxRecorderPaneOutput(t, record, "changed output")
+			waitForWorkspaceActivity(t, client, ctx, createResp.JSON202.ID, func(activity workspaceActivityResponse) bool {
+				return activity.TmuxLastOutputAt != nil
+			})
+
+			// More newer matching subjects, each with a newer matching event,
+			// than the safety cap reads, so only the SQL search reaches PR 1.
+			newer := now.Add(time.Minute)
+			_, err = database.WriteDB().ExecContext(ctx, `
+				WITH RECURSIVE n(i) AS (VALUES (1) UNION ALL SELECT i + 1 FROM n WHERE i < ?)
+				INSERT INTO forge_merge_requests (
+					repo_id, platform_id, number, url, title, author, state,
+					created_at, updated_at, last_activity_at
+				)
+				SELECT ?, i + 100000, i + 100, 'https://github.com/acme/widget/pull/' || (i + 100),
+				       'search-reviewer parent ' || i, 'testuser', 'open', ?, ?, ?
+				FROM n`, itemapi.ActivitySafetyCap+1, repo.ID, newer, newer, newer)
+			require.NoError(err)
+			_, err = database.WriteDB().ExecContext(ctx, `
+				INSERT INTO forge_mr_events (merge_request_id, repo_id, event_type, author, body, created_at, dedupe_key)
+				SELECT id, repo_id, 'issue_comment', 'search-reviewer', 'newer match', ?, 'newer-' || id
+				FROM forge_merge_requests WHERE number > 100`, newer)
+			require.NoError(err)
+
+			search := "search-reviewer"
+			since := now.Add(-time.Hour).Format(time.RFC3339)
+			limit := int64(1)
+			var cursor *string
+			for page := range 2 {
+				response, err := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{
+					Search: &search, Since: &since, Limit: &limit, Projection: &projection, SubjectBefore: cursor,
+				}})
+				require.NoError(err)
+				require.NotNil(response.JSON200)
+				require.NotNil(response.JSON200.NextSubjectCursor, "page %d", page)
+				assert.Len(response.JSON200.ItemActivity, 1, "page %d keeps its cursor limit", page)
+				require.Len(response.JSON200.WorkspaceActivity, 1, "page %d", page)
+				assert.EqualValues(1, response.JSON200.WorkspaceActivity[0].ItemNumber)
+				cursor = response.JSON200.NextSubjectCursor
+			}
+		})
+	}
 }
 
 func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {

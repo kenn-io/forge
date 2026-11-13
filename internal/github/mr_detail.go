@@ -187,21 +187,17 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 		}
 	}
 
-	if err := s.refreshTimeline(
+	timelineErr := s.refreshTimeline(
 		ctx, repo, mrID, revision, number,
 		livenessHeadForRound(normalized, existing),
-	); err != nil {
-		// Timeline = 4 base calls (comments + reviews + commits + force-push);
-		// provider review-thread sync is handled inside refreshTimeline.
-		calls += 4
-		if errors.Is(err, errParentSnapshotAdvanced) {
-			return calls, nil
-		}
-		return calls, err
-	}
+	)
+	// Timeline = 4 base calls; review-thread sync is handled inside it.
 	calls += 4
+	if errors.Is(timelineErr, errParentSnapshotAdvanced) {
+		return calls, nil
+	}
 	if _, err := s.persistMergedTransitionEvent(ctx, mrID, revision, fullPR, normalized.MergedAt); err != nil {
-		return calls, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
+		return calls, errors.Join(timelineErr, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err))
 	}
 
 	ciHeadSHA := ""
@@ -213,10 +209,10 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 	)
 	calls += ciRefreshCalls
 	if err != nil {
-		return calls, err
+		return calls, errors.Join(timelineErr, err)
 	}
 	if !ciApplied {
-		return calls, nil
+		return calls, timelineErr
 	}
 
 	// Refresh workflow approval state so the DB-only detail GET
@@ -227,8 +223,8 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 		ctx, repo, repoID, number, ciHeadSHA, fullPR, normalized,
 	)
 	calls += approvalCalls
-	if !approvalApplied {
-		return calls, nil
+	if !approvalApplied || timelineErr != nil {
+		return calls, timelineErr
 	}
 
 	// Determine whether CI had pending checks for scoring by
@@ -325,47 +321,55 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	existing *db.MergeRequest,
 	calls int,
 ) (int, error) {
-	// A parent 304 does not cover edited/deleted comments. Once a detail
-	// check is admitted, check comments too before advancing freshness.
-	if existing.State == "open" {
-		client, err := s.clientFor(repo)
-		if err != nil {
-			return calls, err
-		}
-		comments, err := s.listCommentsForRefresh(ctx, client, repo, number, existing.CommentCount)
-		calls++
-		if err != nil && !platformgithub.IsNotModified(err) {
-			return calls, err
-		}
-		if err == nil {
-			if err := s.persistPRComments(ctx, repo, existing, comments); err != nil {
-				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
-				return calls, err
-			}
-		}
-	}
-	if err := s.refreshStoredPRCommentVisibility(
-		ctx, repo, existing.ID, existing.SnapshotRevision, number,
-	); err != nil {
-		if errors.Is(err, errParentSnapshotAdvanced) ||
-			errors.Is(err, db.ErrRepositoryIdentityChanged) {
+	var timelineErr error
+	if existing.DetailFetchedAt == nil {
+		timelineErr = s.refreshTimeline(ctx, repo, existing.ID, existing.SnapshotRevision, number, livenessHeadForRound(existing, existing))
+		calls += 4
+		if errors.Is(timelineErr, errParentSnapshotAdvanced) {
 			return calls, nil
 		}
-		return calls, err
-	}
-	if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil && s.graphQLReadAllowed(ctx, repo, fetcher) {
-		threadCalls, err := s.syncProviderMRReviewThreads(
-			ctx, repo, existing.ID, number, existing.SnapshotRevision, true,
-		)
-		calls += threadCalls
-		if err != nil {
+	} else {
+		// A parent 304 does not cover edited/deleted comments. Once a detail
+		// check is admitted, check comments too before advancing freshness.
+		if existing.State == "open" {
+			client, err := s.clientFor(repo)
+			if err != nil {
+				return calls, err
+			}
+			comments, err := s.listCommentsForRefresh(ctx, client, repo, number, existing.CommentCount)
+			calls++
+			if err != nil && !platformgithub.IsNotModified(err) {
+				return calls, err
+			}
+			if err == nil {
+				if err := s.persistPRComments(ctx, repo, existing, comments); err != nil {
+					client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+					return calls, err
+				}
+			}
+		}
+		if err := s.refreshStoredPRCommentVisibility(
+			ctx, repo, existing.ID, existing.SnapshotRevision, number,
+		); err != nil {
 			if errors.Is(err, errParentSnapshotAdvanced) {
 				return calls, nil
 			}
 			return calls, err
 		}
-	} else {
-		markSyncDegraded(ctx)
+		if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil && s.graphQLReadAllowed(ctx, repo, fetcher) {
+			threadCalls, err := s.syncProviderMRReviewThreads(
+				ctx, repo, existing.ID, number, existing.SnapshotRevision, true,
+			)
+			calls += threadCalls
+			if err != nil {
+				if errors.Is(err, errParentSnapshotAdvanced) {
+					return calls, nil
+				}
+				return calls, err
+			}
+		} else {
+			markSyncDegraded(ctx)
+		}
 	}
 	pending := existing.CIHadPending
 	if (existing.CIHadPending || ciHasWorkflowRunEntry(existing.CIChecksJSON)) && existing.PlatformHeadSHA != "" {
@@ -375,15 +379,18 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 		)
 		calls += ciRefreshCalls
 		if err != nil {
-			return calls, err
+			return calls, errors.Join(timelineErr, err)
 		}
 		if !ciApplied {
-			return calls, nil
+			return calls, timelineErr
 		}
 		fresh, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
 		if err == nil && fresh != nil {
 			pending = ciHasPending(fresh.CIChecksJSON)
 		}
+	}
+	if timelineErr != nil {
+		return calls, timelineErr
 	}
 	// Unchanged rounds have no dataset commit of their own, so commit
 	// liveness travels with the detail-fetched marker under the same
@@ -695,14 +702,14 @@ func (s *Syncer) refreshTimeline(
 		return fmt.Errorf("list commits for MR #%d: %w", number, err)
 	}
 
-	timelineEvents, err := client.ListPullRequestTimelineEvents(ctx, repo.Owner, repo.Name, number)
-	if err != nil {
+	timelineEvents, timelineErr := client.ListPullRequestTimelineEvents(ctx, repo.Owner, repo.Name, number)
+	if timelineErr != nil {
 		if disabledErr := repositoryFeatureDisabledError(
-			repo, platform.RepositoryFeatureMergeRequests, err,
+			repo, platform.RepositoryFeatureMergeRequests, timelineErr,
 		); disabledErr != nil {
 			return disabledErr
 		}
-		logSyncFailure(ctx, slog.LevelWarn, "timeline event fetch failed during timeline refresh", err,
+		logSyncFailure(ctx, slog.LevelWarn, "timeline event fetch failed during timeline refresh", timelineErr,
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
 		)
@@ -786,8 +793,20 @@ func (s *Syncer) refreshTimeline(
 	if !applied {
 		return errParentSnapshotAdvanced
 	}
+	if timelineErr != nil {
+		cleared, err := s.db.ClearMRDetailFetchedSnapshot(ctx, mrID, expectedRevision)
+		if err != nil {
+			return fmt.Errorf("clear detail fetched for MR #%d: %w", number, err)
+		}
+		if !cleared {
+			return errParentSnapshotAdvanced
+		}
+	}
 	if _, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number, expectedRevision, false); err != nil {
 		return fmt.Errorf("sync review threads for MR #%d: %w", number, err)
+	}
+	if timelineErr != nil {
+		return fmt.Errorf("list timeline events for MR #%d: %w", number, timelineErr)
 	}
 	return nil
 }

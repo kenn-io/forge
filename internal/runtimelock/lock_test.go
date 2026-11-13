@@ -1,17 +1,42 @@
 package runtimelock
 
 import (
+	"context"
 	"os"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestAcquireWaitsForLockOrContext(t *testing.T) {
+	dir := t.TempDir()
+	holder, err := Acquire(t.Context(), dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = holder.Release() })
+
+	synctest.Test(t, func(t *testing.T) {
+		// A caller's deadline interrupts the wait while the lock remains held.
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Millisecond)
+		defer cancel()
+		_, err = Acquire(ctx, dir)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+
+		timer := time.AfterFunc(20*time.Millisecond, func() { _ = holder.Release() })
+		defer timer.Stop()
+
+		h, err := Acquire(t.Context(), dir)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = h.Release() })
+	})
+}
 
 func TestAcquireSucceedsOnEmptyDataDir(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 
-	h, err := Acquire(dir)
+	h, err := Acquire(t.Context(), dir)
 	require.NoError(err)
 	require.NotNil(h)
 	t.Cleanup(func() { _ = h.Release() })
@@ -29,50 +54,28 @@ func TestAcquireSecondCallReturnsCollision(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 
-	h1, err := Acquire(dir)
+	h1, err := Acquire(t.Context(), dir)
 	require.NoError(err)
 	t.Cleanup(func() { _ = h1.Release() })
 
-	_, err = Acquire(dir)
+	_, err = Acquire(t.Context(), dir)
 	require.Error(err)
 
 	var cerr *CollisionError
 	require.ErrorAs(err, &cerr)
 	require.Equal(dir, cerr.DataDir)
 	require.Equal(LockPath(dir), cerr.LockPath)
-}
-
-func TestAcquireCollisionWithMetadata(t *testing.T) {
-	require := require.New(t)
-	dir := t.TempDir()
-
-	h1, err := Acquire(dir)
-	require.NoError(err)
-	t.Cleanup(func() { _ = h1.Release() })
+	require.Nil(cerr.Metadata)
+	require.Equal(ReasonMetadataMissing, cerr.MetadataUnavailable)
 
 	meta := Metadata{PID: 1234, ListenAddr: "127.0.0.1:8091"}
 	require.NoError(h1.WriteMetadata(meta))
 
-	_, err = Acquire(dir)
-	var cerr *CollisionError
+	_, err = Acquire(t.Context(), dir)
+	cerr = nil
 	require.ErrorAs(err, &cerr)
 	require.NotNil(cerr.Metadata)
 	require.Equal(meta, *cerr.Metadata)
-}
-
-func TestAcquireCollisionWithoutMetadata(t *testing.T) {
-	require := require.New(t)
-	dir := t.TempDir()
-
-	h1, err := Acquire(dir)
-	require.NoError(err)
-	t.Cleanup(func() { _ = h1.Release() })
-
-	_, err = Acquire(dir)
-	var cerr *CollisionError
-	require.ErrorAs(err, &cerr)
-	require.Nil(cerr.Metadata)
-	require.Equal(ReasonMetadataMissing, cerr.MetadataUnavailable)
 }
 
 func TestAcquireRemovesStaleMetadata(t *testing.T) {
@@ -84,7 +87,7 @@ func TestAcquireRemovesStaleMetadata(t *testing.T) {
 	stale := Metadata{PID: 9999, ListenAddr: "127.0.0.1:9999"}
 	require.NoError(writeMetadata(dir, stale))
 
-	h, err := Acquire(dir)
+	h, err := Acquire(t.Context(), dir)
 	require.NoError(err)
 	t.Cleanup(func() { _ = h.Release() })
 
@@ -96,7 +99,7 @@ func TestReleaseRemovesMetadataKeepsLockFile(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 
-	h, err := Acquire(dir)
+	h, err := Acquire(t.Context(), dir)
 	require.NoError(err)
 
 	require.NoError(h.WriteMetadata(Metadata{PID: 1, ListenAddr: "127.0.0.1:1"}))
@@ -111,7 +114,7 @@ func TestReleaseRemovesMetadataKeepsLockFile(t *testing.T) {
 	require.NoError(err)
 
 	// A fresh Acquire on the same dir now succeeds.
-	h2, err := Acquire(dir)
+	h2, err := Acquire(t.Context(), dir)
 	require.NoError(err)
 	t.Cleanup(func() { _ = h2.Release() })
 }
@@ -120,7 +123,7 @@ func TestReleaseIsIdempotent(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 
-	h, err := Acquire(dir)
+	h, err := Acquire(t.Context(), dir)
 	require.NoError(err)
 
 	require.NoError(h.Release())

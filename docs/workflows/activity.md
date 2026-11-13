@@ -10,6 +10,13 @@ Use **Threaded** mode to group events under their pull request or issue. This is
 usually the quieter view because a busy discussion takes one row. Use **Flat**
 mode when exact event order matters.
 
+Threaded Activity loads up to 5,000 pull requests and issues at a time. When
+more match, select **Load older items** at the bottom of the list. On a phone,
+the list loads as you scroll through the first 500 items, then offers the same
+button. Changing the time range, repository, or search starts a new list;
+Activity updates refresh the number of pages you loaded. Newly active items can
+move older items onto the next page.
+
 <figure class="workflow-shot">
   <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/activity-threaded-light.svg" alt="Forge Activity in Threaded mode with events grouped under their pull requests and issues in light mode">
   <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/activity-threaded-dark.svg" alt="Forge Activity in Threaded mode with events grouped under their pull requests and issues in dark mode">
@@ -20,10 +27,16 @@ The filters can narrow the queue by:
 
 - time range and repository
 - pull requests, issues, and default-branch commits
-- event type, author, or text
+- event type, author, labels, or text
 - open or closed state
-- draft pull requests
 - human or bot activity
+- the pull request conditions from the Pulls filter menu: draft, approved, merge
+  conflicts, merge queued, CI, has a workspace, and from a fork
+
+The Activity filter menu uses the same names and order as the Pulls filter menu.
+Each condition cycles through off, required, and excluded. Pull request
+conditions only decide which pull request activity shows; issue activity stays in
+the queue.
 
 Each GitHub pull request's commit rows show their own original author.
 Default-branch rows use the author from the most recently synced pull request
@@ -43,7 +56,7 @@ commit rollup in **Settings → Activity**. Forge saves these defaults in
 
 Filter choices stay in the Activity URL. You can bookmark a useful queue or
 send the link to another Kenn Forge user with access to the same repositories.
-Refreshing preserves the selected time range and **Hide closed/merged** choice,
+Refreshing preserves the selected time range and the **Open** state choice,
 even when they differ from the defaults in Settings.
 
 ## Read an item without losing the queue

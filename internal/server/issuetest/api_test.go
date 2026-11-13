@@ -84,6 +84,47 @@ func TestAPIListIssuesFiltersPullRequestReferences(t *testing.T) {
 	}
 }
 
+// Label and Hide bots filters reach the issue query and apply before the limit.
+func TestAPIListIssuesLabelAndBotFilters(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	ctx := t.Context()
+	srv, database := servertest.SetupTestServer(t)
+	serverfake.SeedIssue(t, database, "acme", "widget", 1, "open")
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	seed := func(number int, author string, labels ...string) {
+		id := serverfake.SeedIssue(t, database, "acme", "widget", number, "open")
+		_, err := database.WriteDB().ExecContext(ctx, `UPDATE forge_issues SET author = ?, last_activity_at = ? WHERE id = ?`,
+			author, time.Now().UTC().Add(time.Duration(number)*time.Minute), id)
+		require.NoError(err)
+		set := []db.Label{}
+		for _, name := range labels {
+			set = append(set, db.Label{Name: name, Color: "ffffff"})
+		}
+		require.NoError(database.ReplaceIssueLabels(ctx, repo.ID, id, set))
+	}
+	seed(1, "testuser", "Bug")
+	seed(2, "renovate[bot]", "bug")
+	seed(3, "testuser", "BUG", "wontfix")
+	list := func(query string) []int {
+		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/issues?"+query, nil)
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+		var issues []issueapi.IssueResponse
+		require.NoError(json.Unmarshal(rr.Body.Bytes(), &issues))
+		numbers := []int{}
+		for _, issue := range issues {
+			numbers = append(numbers, issue.Number)
+		}
+		return numbers
+	}
+
+	assert.Equal(t, []int{3, 2, 1}, list("labels=bUg"))
+	assert.Equal(t, []int{3, 1}, list("hide_bots=true"))
+	assert.Equal(t, []int{1}, list("labels=bug&exclude_labels=WONTFIX&hide_bots=true&limit=1"))
+}
+
 func TestAPICreateIssue(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

@@ -28,15 +28,11 @@ func openSemanticSearch(ctx context.Context, cfg *config.Config, database *db.DB
 		recipe = config.DefaultLocalEmbeddingRecipe()
 		builtin = true
 	}
-	var resolve func(context.Context) (string, error)
+	var resolve func(context.Context) (string, bool, error)
 	if strings.TrimSpace(recipe.BaseURL) == "" {
 		recipe = config.LocalEmbeddingRecipe(recipe)
-		resolve = func(ctx context.Context) (string, error) {
-			endpoint, err := deps.resolve(ctx, builtin, nil)
-			if err != nil {
-				return "", fmt.Errorf("local embeddings: run kenn-forge embeddings local: %w", err)
-			}
-			return endpoint, nil
+		resolve = func(ctx context.Context) (string, bool, error) {
+			return deps.resolveSemantic(ctx, builtin)
 		}
 	}
 	encoder, err := semantic.NewEncoder(recipe, resolve)
@@ -44,4 +40,19 @@ func openSemanticSearch(ctx context.Context, cfg *config.Config, database *db.DB
 		return nil, err
 	}
 	return semantic.Open(ctx, filepath.Join(cfg.DataDir, semantic.SidecarFile), encoder, database, cfg.SyncDuration())
+}
+
+func (d localEmbeddingDeps) resolveSemantic(ctx context.Context, builtin bool) (string, bool, error) {
+	endpoint, err := d.resolve(ctx, builtin, nil)
+	if err != nil {
+		return "", false, fmt.Errorf("local embeddings: run kenn-forge embeddings local: %w", err)
+	}
+	if builtin {
+		return endpoint, true, nil
+	}
+	local, err := d.endpoint(ctx, embedlocal.Options{SkipOllama: true})
+	if ctx.Err() != nil {
+		return "", false, ctx.Err()
+	}
+	return endpoint, err == nil && endpoint == local, nil
 }

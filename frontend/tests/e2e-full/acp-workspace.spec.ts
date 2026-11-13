@@ -196,6 +196,13 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await expect(screenshot).toBeVisible();
     await expect.poll(() => screenshot.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(640);
     await page.screenshot({ path: testInfo.outputPath("acp-view-image-reloaded.png") });
+    // A reloaded chat leaves tool details on the host until the tool call is expanded.
+    const imageTools = chat.locator(".tool-group").filter({ has: page.getByRole("img", { name: "Panel screenshot" }) });
+    await imageTools.locator(".chip").click();
+    await imageTools.getByRole("button", { name: /View Image/ }).click();
+    await expect(imageTools.getByText("Raw input")).toBeVisible();
+    await expect(imageTools.getByText("Loading details…")).toHaveCount(0);
+    await expect(screenshot).toBeVisible();
     await chat.getByRole("textbox", { name: "Message agent" }).fill("Inspect the workspace");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     await expect(
@@ -307,16 +314,12 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
       }
       await expect(mobileChat).toBeVisible();
       // The oversized prompt separates the recent snapshot from the screenshot.
-      // Load its page, then the older messages, through the real history control.
-      await expect(mobileChat.getByRole("button", { name: "Load earlier messages" })).toBeVisible();
+      // Its page holds only that prompt, so one click must keep paging past it
+      // to the older messages.
+      const historyButton = mobileChat.getByRole("button", { name: "Load earlier messages" });
+      await expect(historyButton).toBeEnabled();
       await expect(mobileChat.getByRole("img", { name: "Panel screenshot" })).toHaveCount(0);
-      for (let pageIndex = 0; pageIndex < 2; pageIndex++) {
-        const messageCount = await mobileChat.locator(".message-body").count();
-        const historyButton = mobileChat.getByRole("button", { name: "Load earlier messages" });
-        await expect(historyButton).toBeEnabled();
-        await historyButton.dispatchEvent("click");
-        await expect.poll(() => mobileChat.locator(".message-body").count()).toBeGreaterThan(messageCount);
-      }
+      await historyButton.dispatchEvent("click");
       await expect(mobileChat.getByRole("img", { name: "Panel screenshot" })).toBeVisible();
       await expect(mobileChat.getByRole("button", { name: "Model: Deep" })).toBeVisible();
       await expect(mobileChat.getByRole("button", { name: "Effort: High" })).toBeVisible();

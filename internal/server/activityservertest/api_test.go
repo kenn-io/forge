@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/itemapi"
+	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
@@ -405,8 +407,22 @@ func TestAPIListActivityHonorsLimit(t *testing.T) {
 			require.Len(resp.JSON200.ItemActivity, int(limit))
 			assert.True(resp.JSON200.ItemActivityCapped)
 			assert.Equal(int64(1), resp.JSON200.ItemActivity[0].ItemNumber)
+			require.NotNil(resp.JSON200.NextSubjectCursor)
+			next, err := client.HTTP.ListActivityWithResponse(t.Context(), &generated.ListActivityRequestOptions{
+				Query: &generated.ListActivityQuery{Since: &since, Limit: &limit, Projection: tc.projection, SubjectBefore: resp.JSON200.NextSubjectCursor},
+			})
+			require.NoError(err)
+			require.Len(next.JSON200.ItemActivity, 1)
+			assert.Equal(int64(2), next.JSON200.ItemActivity[0].ItemNumber)
 		})
 	}
+}
+
+func TestAPIListActivityRejectsInvalidSubjectCursor(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	srv, _, _ := setupTestServer(t)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?subject_before=invalid", nil)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 func TestAPIListCollapsedActivityIncludesParentRecentOnlyByNotification(t *testing.T) {
@@ -649,6 +665,178 @@ func TestAPIListActivityHideDraftsAppliesToEveryProjection(t *testing.T) {
 	var threadBody itemapi.ActivityResponse
 	require.NoError(json.NewDecoder(thread.Body).Decode(&threadBody))
 	assert.Empty(threadBody.Items)
+}
+
+// Activity takes the pull request list's filters, which decide only which pull
+// request activity shows, and reports each pull request's head repository kind
+// so the browser can filter forks.
+func TestAPIListActivityPullFiltersKeepIssuesAndReportHeadRepository(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServer(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	serverfake.SeedPR(
+		t, database, "acme", "widget", 91,
+		serverfake.WithSeedPRTimes(now.Add(-time.Hour), now.Add(-time.Hour), now.Add(-time.Hour)),
+		func(pr *db.MergeRequest) {
+			pr.IsDraft = true
+			pr.HeadRepoCloneURL = "https://github.com/contributor/widget.git"
+		},
+	)
+	serverfake.SeedPR(
+		t, database, "acme", "widget", 92,
+		serverfake.WithSeedPRTimes(now.Add(-2*time.Hour), now.Add(-2*time.Hour), now.Add(-2*time.Hour)),
+		func(pr *db.MergeRequest) { pr.ReviewDecision = "APPROVED" },
+	)
+	serverfake.SeedIssue(t, database, "acme", "widget", 93, "open")
+
+	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
+	list := func(query string) itemapi.ActivityResponse {
+		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+query, nil)
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+		var body itemapi.ActivityResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+		return body
+	}
+	parents := func(body itemapi.ActivityResponse) map[int]pullapi.HeadRepoKind {
+		kinds := map[int]pullapi.HeadRepoKind{}
+		for _, subject := range body.ItemActivity {
+			kinds[subject.ItemNumber] = subject.HeadRepoKind
+		}
+		return kinds
+	}
+
+	all := list("")
+	assert.Equal(map[int]pullapi.HeadRepoKind{
+		91: pullapi.HeadRepoKindFork, 92: pullapi.HeadRepoKindSameRepo, 93: "",
+	}, parents(all))
+	for _, item := range all.Items {
+		if item.ItemNumber == 91 {
+			assert.Equal(pullapi.HeadRepoKindFork, item.HeadRepoKind)
+		}
+	}
+
+	assert.Equal(map[int]pullapi.HeadRepoKind{91: pullapi.HeadRepoKindFork, 93: ""},
+		parents(list("&attributes=draft&hide_drafts=true")), "a required draft choice wins over the saved hide")
+	assert.Equal(map[int]pullapi.HeadRepoKind{92: pullapi.HeadRepoKindSameRepo, 93: ""},
+		parents(list("&attributes=approved")))
+	assert.Equal(map[int]pullapi.HeadRepoKind{91: pullapi.HeadRepoKindFork, 93: ""},
+		parents(list("&attributes=not_approved")))
+
+	invalid := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?attributes=ready", nil)
+	assert.Equal(http.StatusBadRequest, invalid.Code, invalid.Body.String())
+}
+
+// Activity's server filters reach every projection and the thread-events route. PR attributes
+// narrow only pull request activity; issue filters narrow only issue activity.
+func TestAPIListActivityServerItemFilters(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	at := func(number int) time.Time { return now.Add(time.Duration(number-100) * time.Minute) }
+	labelled := func(names ...string) []db.Label {
+		set := []db.Label{}
+		for _, name := range names {
+			set = append(set, db.Label{Name: name, Color: "ffffff"})
+		}
+		return set
+	}
+	serverfake.SeedPR(t, database, "acme", "widget", 91, serverfake.WithSeedPRTimes(at(91), at(91), at(91)),
+		func(pr *db.MergeRequest) {
+			pr.HeadRepoCloneURL = "https://github.com/contributor/widget.git"
+			pr.Labels = labelled("Bug")
+		})
+	serverfake.SeedPR(t, database, "acme", "widget", 92, serverfake.WithSeedPRTimes(at(92), at(92), at(92)),
+		func(pr *db.MergeRequest) { pr.Labels = labelled("bug", "wontfix") })
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	issue := func(number int, author string, labels ...string) int64 {
+		id := serverfake.SeedIssue(t, database, "acme", "widget", number, "open")
+		_, err := database.WriteDB().ExecContext(ctx,
+			`UPDATE forge_issues SET author = ?, created_at = ?, last_activity_at = ? WHERE id = ?`,
+			author, at(number), at(number), id)
+		require.NoError(err)
+		require.NoError(database.ReplaceIssueLabels(ctx, repo.ID, id, labelled(labels...)))
+		return id
+	}
+	issue(93, "renovate[bot]", "BUG")
+	referencedID := issue(94, "testuser")
+	issue(95, "testuser")
+	require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{{
+		IssueID: referencedID, EventType: "cross_referenced", CreatedAt: at(94), DedupeKey: "cross-reference-94",
+		MetadataJSON: `{"source_type":"PullRequest","source_owner":"acme","source_repo":"client","source_number":42,"source_url":"https://github.com/acme/client/pull/42"}`,
+	}}))
+	require.NoError(database.SetStarred(ctx, db.ItemTypePR, repo.ID, 91))
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "ws-pull-91", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypePullRequest,
+		ItemNumber: 91, WorktreePath: t.TempDir(), Status: "ready",
+	}))
+
+	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
+	get := func(path string) itemapi.ActivityResponse {
+		rr := testutil.DoJSON(t, srv, http.MethodGet, path, nil)
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+		var body itemapi.ActivityResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+		return body
+	}
+	parents := func(query string) []int {
+		numbers := []int{}
+		for _, subject := range get("/api/v1/activity?since=" + since + query).ItemActivity {
+			numbers = append(numbers, subject.ItemNumber)
+		}
+		return numbers
+	}
+	events := func(query string) []int {
+		numbers := []int{}
+		for _, item := range get("/api/v1/activity?since=" + since + "&projection=events&limit=50" + query).Items {
+			if !slices.Contains(numbers, item.ItemNumber) {
+				numbers = append(numbers, item.ItemNumber)
+			}
+		}
+		return numbers
+	}
+
+	for _, tc := range []struct {
+		query string
+		want  []int
+	}{
+		{"&attributes=fork", []int{95, 94, 93, 91}},
+		{"&attributes=not_fork", []int{95, 94, 93, 92}},
+		{"&attributes=has_workspace", []int{95, 94, 93, 91}},
+		{"&attributes=no_workspace", []int{95, 94, 93, 92}},
+		{"&labels=bUG", []int{93, 92, 91}},
+		{"&labels=bug&exclude_labels=WONTFIX", []int{93, 91}},
+		{"&hide_bot_authored_issues=true", []int{95, 94, 92, 91}},
+		{"&starred=true", []int{91}},
+		{"&referenced_by_pr=true", []int{94, 92, 91}},
+		{"&not_referenced_by_pr=true", []int{95, 93, 92, 91}},
+	} {
+		assert.Equal(tc.want, parents(tc.query), "full projection %s", tc.query)
+		assert.Equal(tc.want, parents("&projection=collapsed"+tc.query), "collapsed projection %s", tc.query)
+		assert.Equal(tc.want, events(tc.query), "events projection %s", tc.query)
+	}
+	assert.Equal([]int{91}, parents("&projection=collapsed&limit=1&attributes=fork&item_types=pr"),
+		"the filter applies before the limit")
+	assert.Equal([]int{94}, parents("&projection=collapsed&limit=1&referenced_by_pr=true&item_types=issue"))
+
+	thread := func(number int, query string) int {
+		return len(get(fmt.Sprintf("/api/v1/activity/thread-events?provider=github&platform_host=github.com"+
+			"&platform_repo_id=%d&item_type=pr&item_number=%d%s", testutil.FixtureRepoID("acme", "widget"), number, query)).Items)
+	}
+	assert.NotZero(thread(92, "&labels=WontFix"))
+	assert.Zero(thread(92, "&exclude_labels=WontFix"))
+	assert.Zero(thread(92, "&attributes=fork"))
+	assert.Zero(thread(92, "&starred=true"))
+
+	invalid := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?attributes=forked", nil)
+	assert.Equal(http.StatusBadRequest, invalid.Code, invalid.Body.String())
 }
 
 func TestAPIListActivityReturnsRecentParentWhenItsVisibleEventsAreFiltered(t *testing.T) {
@@ -1010,19 +1198,14 @@ func TestAPIListActivityAppliesTrackedRepoScopeBeforeAuthorLimit(t *testing.T) {
 	assert.False(feedBody.Capped)
 }
 
-func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
+func TestAPIListActivitySearchFindsParentsBeyondEventCap(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		events    int
-		limit     int
-		parents   []int
-		truncated bool
-	}{
-		{"beyond page", 201, 200, []int{2, 1}, false},
-		{"beyond window", itemapi.ActivitySafetyCap + 1, 0, []int{2}, true},
-	} {
+		name  string
+		count int
+		limit string
+	}{{"page limit", 201, "&limit=200"}, {"safety cap", itemapi.ActivitySafetyCap + 1, ""}} {
 		t.Run(tc.name, func(t *testing.T) {
+			serverfake.RunParallelServerTest(t)
 			srv, database, _ := setupTestServer(t)
 			ctx := t.Context()
 			base := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Second)
@@ -1036,7 +1219,7 @@ func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap
 			noisyPRID := serverfake.SeedPR(t, database, "acme", "widget", 2,
 				serverfake.WithSeedPRTitle("Unrelated noisy parent"),
 				serverfake.WithSeedPRTimes(base, base, base))
-			noisyEvents := make([]db.MREvent, tc.events)
+			noisyEvents := make([]db.MREvent, tc.count)
 			for i := range noisyEvents {
 				noisyEvents[i] = db.MREvent{
 					MergeRequestID: noisyPRID, EventType: "issue_comment", Author: "reviewer",
@@ -1046,24 +1229,20 @@ func TestAPIListActivitySearchReportsParentTruncationWhenMatchesOverflowEventCap
 			}
 			require.NoError(t, database.UpsertMREvents(ctx, noisyEvents))
 			since := url.QueryEscape(base.Add(-time.Minute).Format(time.RFC3339))
-			limit := ""
-			if tc.limit > 0 {
-				limit = "&limit=" + strconv.Itoa(tc.limit)
-			}
 			for _, projection := range []string{"full", "collapsed"} {
 				t.Run(projection, func(t *testing.T) {
-					rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle&projection="+projection+limit, nil)
+					rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+"&search=needle"+tc.limit+"&projection="+projection, nil)
 					require.Equal(t, http.StatusOK, rr.Code)
 					var body itemapi.ActivityResponse
 					require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
-					require.Len(t, body.ItemActivity, len(tc.parents))
-					for i, number := range tc.parents {
+					require.Len(t, body.ItemActivity, 2)
+					for i, number := range []int{2, 1} {
 						assert.Equal(t, number, body.ItemActivity[i].ItemNumber)
 					}
-					assert.Equal(t, tc.truncated, body.ItemActivityCapped)
-					if tc.limit == 0 && projection == "full" {
-						assert.Len(t, body.Items, itemapi.ActivitySafetyCap)
+					assert.False(t, body.ItemActivityCapped)
+					if projection == "full" {
 						assert.True(t, body.Capped)
+						assert.Len(t, body.Items, tc.count-1)
 					}
 				})
 			}

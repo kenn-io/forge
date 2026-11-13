@@ -45,6 +45,10 @@ import type {
   GetRepoCommitDiffPathParameters,
   GetRepoOnHostPathParameters,
   GetRepoPathParameters,
+  GetRepoWebUrlOnHostParams,
+  GetRepoWebUrlOnHostPathParameters,
+  GetRepoWebUrlParams,
+  GetRepoWebUrlPathParameters,
   ListRepoBrowserRefsOnHostParams,
   ListRepoBrowserRefsOnHostPathParameters,
   ListRepoBrowserRefsParams,
@@ -67,6 +71,7 @@ import type {
   RepoPreviewResponse,
   RepoResponse,
   RepoSummaryResponse,
+  RepositoryWebURLResponse,
   ResolveItemResponse,
   ResolveRepoItemOnHostParams,
   ResolveRepoItemOnHostPathParameters,
@@ -579,6 +584,42 @@ export const resolveRepoItemOnHost = async (
   );
 };
 
+export const getGetRepoWebUrlOnHostUrl = (
+  { platformHost, provider, owner, name }: GetRepoWebUrlOnHostPathParameters,
+  params?: GetRepoWebUrlOnHostParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/web-url?${stringifiedParams}`
+    : `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/web-url`;
+};
+
+/**
+ * @summary Get repository web URL
+ */
+export const getRepoWebUrlOnHost = async (
+  { platformHost, provider, owner, name }: GetRepoWebUrlOnHostPathParameters,
+  params?: GetRepoWebUrlOnHostParams,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<RepositoryWebURLResponse> => {
+  return orvalFetch<RepositoryWebURLResponse>(
+    getGetRepoWebUrlOnHostUrl({ platformHost, provider, owner, name }, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
 export const getGetRepoUrl = ({ provider, owner, name }: GetRepoPathParameters) => {
   return `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}`;
 };
@@ -1035,6 +1076,39 @@ export const resolveRepoItem = async (
   return orvalFetch<ResolveItemResponse>(getResolveRepoItemUrl({ provider, owner, name, number }, params), {
     ...options,
     method: "POST",
+  });
+};
+
+export const getGetRepoWebUrlUrl = (
+  { provider, owner, name }: GetRepoWebUrlPathParameters,
+  params?: GetRepoWebUrlParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/web-url?${stringifiedParams}`
+    : `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/web-url`;
+};
+
+/**
+ * @summary Get repository web URL
+ */
+export const getRepoWebUrl = async (
+  { provider, owner, name }: GetRepoWebUrlPathParameters,
+  params?: GetRepoWebUrlParams,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<RepositoryWebURLResponse> => {
+  return orvalFetch<RepositoryWebURLResponse>(getGetRepoWebUrlUrl({ provider, owner, name }, params), {
+    ...options,
+    method: "GET",
   });
 };
 

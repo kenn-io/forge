@@ -80,13 +80,17 @@ async function listIssues(api: APIRequestContext): Promise<IssueResponse> {
   return (await response.json()) as IssueResponse;
 }
 
-async function selectActivityViewItem(page: Page, label: string): Promise<void> {
+async function selectActivityViewItem(page: Page, label: string | RegExp): Promise<void> {
   const panel = page.locator(".kit-filter-dropdown__panel");
   if (!(await panel.isVisible())) {
     await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
     await expect(panel).toBeVisible();
   }
-  await panel.locator(".kit-filter-dropdown__item", { hasText: label }).click();
+  await (
+    typeof label === "string"
+      ? panel.locator(".kit-filter-dropdown__item", { hasText: label })
+      : panel.getByRole("button", { name: label })
+  ).click();
 }
 
 async function activityStatusCount(page: Page, label: "PRs" | "issues"): Promise<number> {
@@ -425,7 +429,9 @@ test.describe("workspace session activity across item surfaces", () => {
       const pullCountBefore = await activityStatusCount(page, "PRs");
       const issueCountBefore = await activityStatusCount(page, "issues");
 
-      await selectActivityViewItem(page, "Hide bots");
+      // Bots cycles off, required, excluded; excluded hides bot activity.
+      await selectActivityViewItem(page, /^Bots/);
+      await selectActivityViewItem(page, /^Bots/);
       await expect(botPullRow).toHaveCount(0);
       await expect(botIssueRow).toHaveCount(0);
       await expect(page.getByRole("contentinfo").locator(".status-item").filter({ hasText: /PRs$/ })).toHaveText(
@@ -454,7 +460,8 @@ test.describe("workspace session activity across item surfaces", () => {
         const botIssueCard = botPhonePage.locator(".mobile-activity-card", { hasText: botIssueTitle });
         await expect(botPullCard).toBeVisible();
         await expect(botIssueCard).toBeVisible();
-        await botPhonePage.getByRole("switch", { name: "Hide bots", exact: true }).click();
+        await botPhonePage.getByRole("combobox", { name: /Bots/ }).click();
+        await botPhonePage.getByRole("option", { name: "No" }).click();
         await expect(botPullCard).toHaveCount(0);
         await expect(botIssueCard).toHaveCount(0);
       } finally {

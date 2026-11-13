@@ -42,6 +42,7 @@ function pull(number: number, title: string, overrides: Record<string, unknown> 
     repo_name: "widgets",
     platform_host: "github.com",
     platform_head_sha: `${number}`.padStart(40, "a"),
+    head_repo_kind: "same_repo",
     repo,
     worktree_links: [],
     ...overrides,
@@ -56,40 +57,52 @@ async function mockPulls(page: Page) {
       await route.fallback();
       return;
     }
+    // The server applies label filters before its limit, ignoring case; the mock does the same.
+    const required = url.searchParams.getAll("labels").map((name) => name.toLowerCase());
+    const excluded = url.searchParams.getAll("exclude_labels").map((name) => name.toLowerCase());
+    const names = (row: { labels?: { name: string }[] }) => (row.labels ?? []).map((label) => label.name.toLowerCase());
+    const rows = [
+      pull(10, "Approved review queue", {
+        labels: [{ name: "bug", color: "d73a4a", is_default: true }],
+        ReviewDecision: "APPROVED",
+        workspace: { id: "ws-10", status: "ready" },
+        merge_queue: {
+          position: 1,
+          state: "queued",
+          enqueued_at: "2026-03-30T14:00:00Z",
+          observed_at: "2026-03-30T14:00:00Z",
+        },
+      }),
+      pull(11, "Draft parser cleanup", {
+        labels: [
+          { name: "bug", color: "d73a4a", is_default: true },
+          { name: "docs", color: "0075ca", is_default: true },
+        ],
+        IsDraft: true,
+        head_repo_kind: "unknown",
+        CIStatus: "pending",
+        CIChecksJSON: JSON.stringify([{ name: "test", status: "in_progress", conclusion: "" }]),
+      }),
+      pull(12, "Ready failed workflow", {
+        labels: [{ name: "docs", color: "0075ca", is_default: true }],
+        CIStatus: "failure",
+        workspace: { id: "ws-12", status: "ready" },
+        deferred_merge_pending: true,
+      }),
+      pull(13, "Ready conflict resolver", {
+        MergeableState: "dirty",
+        head_repo_kind: "fork",
+      }),
+    ];
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([
-        pull(10, "Approved review queue", {
-          labels: [{ name: "bug", color: "d73a4a", is_default: true }],
-          ReviewDecision: "APPROVED",
-          workspace: { id: "ws-10", status: "ready" },
-          merge_queue: {
-            position: 1,
-            state: "queued",
-            enqueued_at: "2026-03-30T14:00:00Z",
-            observed_at: "2026-03-30T14:00:00Z",
-          },
-        }),
-        pull(11, "Draft parser cleanup", {
-          labels: [
-            { name: "bug", color: "d73a4a", is_default: true },
-            { name: "docs", color: "0075ca", is_default: true },
-          ],
-          IsDraft: true,
-          CIStatus: "pending",
-          CIChecksJSON: JSON.stringify([{ name: "test", status: "in_progress", conclusion: "" }]),
-        }),
-        pull(12, "Ready failed workflow", {
-          labels: [{ name: "docs", color: "0075ca", is_default: true }],
-          CIStatus: "failure",
-          workspace: { id: "ws-12", status: "ready" },
-          deferred_merge_pending: true,
-        }),
-        pull(13, "Ready conflict resolver", {
-          MergeableState: "dirty",
-        }),
-      ]),
+      body: JSON.stringify(
+        rows.filter(
+          (row) =>
+            required.every((name) => names(row).includes(name)) && !excluded.some((name) => names(row).includes(name)),
+        ),
+      ),
     });
   });
 }
@@ -117,17 +130,19 @@ test("PR filters all apply and each pair of opposites is pick-one", async ({ pag
     await filterPanel.locator(".kit-filter-dropdown__section-title, .kit-filter-dropdown__item").allTextContents()
   )
     .map((text) => text.trim())
-    .filter((text) => ["PR", "Has workspace", "View"].includes(text));
-  expect(workspaceGrouping).toEqual(["PR", "Has workspace", "View"]);
+    .filter((text) => ["Pull requests", "Has workspace", "View"].includes(text));
+  expect(workspaceGrouping).toEqual(["Pull requests", "Has workspace", "View"]);
 
   await filterPanel.getByRole("button", { name: "Has workspace" }).click();
   await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/]);
   await filterPanel.getByRole("button", { name: /^(Clear filters|Reset view)$/ }).click();
   await expect(rows).toHaveCount(4);
 
-  await filterPanel.getByRole("button", { name: "Draft", exact: true }).click();
+  const draft = filterPanel.locator(".kit-filter-dropdown__item", { hasText: "Draft" });
+  await draft.click();
   await expect(rows).toHaveText([/Draft parser cleanup/]);
-  await filterPanel.getByRole("button", { name: "Ready for review" }).click();
+  // Excluding drafts from the open list leaves what Ready for review used to show.
+  await draft.click();
   await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/, /Ready conflict resolver/]);
   await filterPanel.getByRole("button", { name: "Failed CI" }).click();
   await expect(rows).toHaveText([/Ready failed workflow/]);
@@ -141,7 +156,8 @@ test("PR filters all apply and each pair of opposites is pick-one", async ({ pag
 
   await expect(rows).toHaveText([/Approved review queue/, /Ready conflict resolver/]);
 
-  await filterPanel.getByRole("button", { name: "Ready for review" }).click();
+  await draft.click();
+  await draft.click();
   await filterPanel.getByRole("button", { name: "Approved", exact: true }).click();
   await expect(rows).toHaveText([/Approved review queue/]);
 });
@@ -156,6 +172,11 @@ test("a condition row cycles through required, excluded, and off", async ({ page
   const filterPanel = page.locator(".kit-filter-dropdown__panel");
 
   for (const condition of [
+    {
+      label: "Draft",
+      required: [/Draft parser cleanup/],
+      excluded: [/Approved review queue/, /Ready failed workflow/, /Ready conflict resolver/],
+    },
     {
       label: "Approved",
       required: [/Approved review queue/],
@@ -175,6 +196,12 @@ test("a condition row cycles through required, excluded, and off", async ({ page
       label: "Has workspace",
       required: [/Approved review queue/, /Ready failed workflow/],
       excluded: [/Draft parser cleanup/, /Ready conflict resolver/],
+    },
+    {
+      // A head repository that could not be classified stays visible when forks are hidden.
+      label: "From fork",
+      required: [/Ready conflict resolver/],
+      excluded: [/Approved review queue/, /Draft parser cleanup/, /Ready failed workflow/],
     },
   ]) {
     const row = filterPanel.locator(".kit-filter-dropdown__item", { hasText: condition.label });
@@ -252,4 +279,36 @@ test("the Labels flyout requires, excludes, and clears each label", async ({ pag
     .click();
   await expect(rows).toHaveCount(4);
   await expect(labelsRow).toContainText("Any");
+});
+
+test("a changing PR count leaves the open filter menu and its trigger in place", async ({ page }) => {
+  await mockApi(page);
+  let listSize = 9;
+  await page.route("**/api/v1/pulls**", async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() !== "GET" || url.pathname !== "/api/v1/pulls") {
+      await route.fallback();
+      return;
+    }
+    const body = Array.from({ length: listSize }, (_, index) => pull(index + 1, `Change ${index + 1}`));
+    listSize = 123;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.goto("/pulls");
+
+  const count = page.locator(".filter-bar .list-count-chip");
+  await expect(count).toHaveText("9 PRs");
+  await openPrFilters(page);
+  const trigger = page.locator(".filter-bar .kit-filter-dropdown__btn[aria-expanded='true']");
+  const panel = page.locator(".kit-filter-dropdown__panel");
+  const triggerBefore = await trigger.boundingBox();
+  const panelBefore = await panel.boundingBox();
+
+  // Involves me reloads the list from the server, which now has 123 PRs.
+  await panel.getByRole("button", { name: "Involves me" }).click();
+  await expect(count).toHaveText("123 PRs");
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+
+  expect(await trigger.boundingBox()).toEqual(triggerBefore);
+  expect(await panel.boundingBox()).toEqual(panelBefore);
 });

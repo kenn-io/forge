@@ -4814,7 +4814,7 @@
               aria-hidden="true"
             />
           </span>
-          <span>{loadError.message}</span>
+          <span class="state-message-detail">{loadError.message}</span>
           <button
             class="retry-btn"
             onclick={() => {
@@ -4852,7 +4852,7 @@
               aria-hidden="true"
             />
           </span>
-          <span>
+          <span class="state-message-detail">
             {workspace.error_message ??
               "Workspace setup failed"}
           </span>
@@ -4893,7 +4893,7 @@
               aria-hidden="true"
             />
           </span>
-          <span>
+          <span class="state-message-detail">
             {workspace.error_message ??
               "Workspace deletion failed."}
           </span>
@@ -5825,8 +5825,22 @@
     font-size: var(--font-size-lg);
   }
 
+  /* Server errors can be any length: a dirty-worktree refusal lists every
+     changed path. The row may shrink to a short split pane, and the text
+     scrolls inside it so the icon and actions stay on screen. */
   .state-message.error {
+    min-height: 0;
     color: var(--accent-red);
+  }
+
+  .state-message-detail {
+    min-width: 0;
+    max-width: 72ch;
+    max-height: min(40vh, 16rem, 100%);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    overflow-wrap: anywhere;
+    white-space: pre-line;
   }
 
   .workspace-zero-state {

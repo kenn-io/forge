@@ -265,12 +265,17 @@ and back.
 - `Involves me` and `Unassigned` are each three independent browser-local preferences (Pulls, Issues,
   Activity), sent as pre-limit server queries, never URL or config state.
 - A condition filter is three-state: a click cycles off, required (tick), excluded (cross), like a
-  label. This covers `Involves me`, `Unassigned`, `Referenced by PR`, `Approved`, `Merge conflicts`,
-  `Merge queued`, and `Has workspace` wherever they are one row; a pair already shown as a pick-one section stays
-  on/off (maintainer decision; `frontend/src/lib/utils/tri-filter.ts`). The server takes the opposite
-  as its own query (`not_involves_me`, `assigned`, `not_referenced_by_pr`, `not_approved`, `not_merge_queued`,
-  `no_merge_conflicts`), so both directions apply before limits.
-- Phone Activity shows a three-state filter as an Any/Yes/No choice, since a switch has no third state.
+  label. This covers `Involves me`, `Unassigned`, `Referenced by PR`, `Draft`, `Approved`, `Merge conflicts`,
+  `Merge queued`, `Has workspace`, `From fork`, and Activity `Bots` wherever they are one row; a pair already
+  shown as a pick-one section (CI) stays on/off (maintainer decision; `frontend/src/lib/utils/tri-filter.ts`).
+  Server-matched conditions send their opposite as its own query (`not_draft`, `not_approved`, ...), so both
+  directions apply before limits. `From fork` classifies each PR at query time through a Go SQL
+  function, not a stored column, so a repository rename never leaves a stale answer
+  (maintainer decision; `internal/db/head_repo_kind.go::mergeRequestIsForkSQL`).
+- In Activity, PR conditions decide only which pull request activity shows; issue and repository
+  rows always pass (maintainer decision; `internal/db/queries_activity.go::activityPullAttributeClause`).
+- Phones show a three-state filter as an Any/Yes/No choice, since a switch has no third state, and a
+  pick-one section as one select (`frontend/src/lib/components/shared/FilterSectionsPanel.svelte`).
 - `Unassigned` matches only PR/issue subjects with an empty synchronized assignee set; its opposite
   matches every other subject, including a PR whose assignees never synchronized.
 - `Referenced by PR` is a browser-local Issues preference, default off, exposed in every issue-filter
@@ -287,26 +292,34 @@ and back.
   stay in step; the TypeScript twin is `frontend/src/lib/utils/search-query.ts`
   (`internal/db/search_query.go::ParseSearchQuery`).
 - Activity excludes parents by their own fields; only included terms may match through child events.
-- The PR and Issues sidebars load Closed and All in pages of 200, ordered by recent activity; Load more grows the page. Browser-only filters apply to loaded rows.
+- The PR and Issues sidebars load Closed and All in pages of 200, ordered by recent activity; Load more grows the page.
+- Every PR, issue, and Activity filter applies on the server before the limit, so a bounded phone page
+  never hides matches further down (maintainer decision). The browser re-checks loaded rows only so a
+  failed refresh never shows rows from earlier filters (`frontend/src/lib/stores/pulls.svelte.ts::listQuery`).
 - Every list of labeled PRs or issues with a filter menu (PRs, Issues, merge queues, worklists, Activity)
   has a Labels filter: a flyout from a `Labels` row in that menu, where each label cycles neutral, required,
   excluded ("req"/"excl" in the row summary). A row must carry every required label and no excluded one;
-  names match case-insensitively across repositories. It is browser-only, and its choices and counts
-  come from every loaded item, not the visible ones, so rows stay put while cycling
-  (`frontend/src/lib/utils/label-filter.ts`). Activity counts each PR or issue once, not each event.
+  names match case-insensitively across repositories. The PR, issue, and Activity servers apply it before
+  the limit, and choices come from the items loaded before any label filter in the same list scope, so
+  rows stay put while cycling (`frontend/src/lib/utils/label-filter.ts::rememberedLabelChoices`); merge
+  queues and worklists match their loaded rows. Activity counts each PR or issue once, not each event.
   Workspaces has no Labels filter. Only merge queues save their label choice, with their other filters.
 - Zero-padded PR searches (`0001`) match the exact number before pagination.
-- Desktop and phone Activity must share event/visibility definitions and actions; derive active indicators
-  and reset from those lists. Layout and short phone labels may differ (maintainer decision;
-  `frontend/src/lib/components/activityFilters.ts::activityFilterOptions`).
+- Every PR, issue, and Activity filter is one element in `frontend/src/lib/components/shared/list-filter-menus.ts`,
+  rendered by the PR list, issue list, and Activity on desktop and phone; badges and reset derive from it.
+  Activity carries every PR and issue list filter plus timeline extras that never overlap one (maintainer
+  decision). Only Activity's Layout, Group, and roll-up and the PR list's Stack tree are desktop- or
+  list-only layouts. A parity browser test fails CI on drift (`frontend/src/App.list-filter-parity.browser.svelte.ts`).
 - `Merge queued` matches an open PR that needs no more action to merge: in a provider merge queue, with
   provider auto-merge on, or held by this server's "merge after CI" worker. Removed queue entries do not
   match. The worker keeps its held PRs only in memory, so the server passes them into the query
   (`internal/db/queries.go::mergeQueuedCondition`). On a spoke, workspace rows take the hub's view.
-- In Activity, excluded `Merge queued` is the saved `hide_merge_queued` choice: it applies to events,
-  notifications, and workspace activity, defaults off in Settings/`config.toml` (named `Hide queued for
-  merge` there), and its explicit on/off URL choice survives refresh and navigation. Required
-  (`merge_queued`) is a passing view and is not saved. Reset filters turns both off.
+- In Activity, each saved Settings hide default is the excluded side of its row: `Hide queued for
+  merge`, `Hide drafts`, and `Hide bots` cross `Merge queued`, `Draft`, and `Bots`, and `Hide
+  closed/merged` is State `Open`. The required side (and State `Closed`) is a passing view, not saved,
+  and wins over the saved hide in the request. Reset filters turns both off. Excluded `Merge queued`
+  applies to events, notifications, and workspace activity, and its explicit URL choice survives
+  refresh and navigation.
 - Activity filter defaults live in Settings and `config.toml`; URL overrides are session-scoped, and a
   partial Activity URL inherits the last validated route's missing params.
 - Explicit Activity choices survive refresh, Settings navigation, and late hydration; omit filter
@@ -747,10 +760,8 @@ Not every visibility control means "remove this entity entirely."
   draft state from the hub (`internal/server/spokeapi/provider_activity_subjects.go::HubProviderSource.MarkDraftActivitySubjects`).
 - Hide drafts' default lives in Settings; a session choice wins over later hydration.
 - Server-backed visibility filters reload Activity so turning one off restores omitted rows.
-- Activity `capped` reports event overflow and alone drives event reloads and the warning;
-  `item_activity_capped` adds `+` to loaded-subject counts and a parent-truncation notice in threaded view.
-- A search whose event matches overflow the bounded matching window also reports `item_activity_capped`, since
-  event-matched parents derive from that window.
+- Activity `capped` reports event overflow and drives event reloads and the warning;
+  `item_activity_capped` adds `+` to loaded-subject counts and shows a partial-count warning independently of the subject cursor.
 - Status totals deduplicate open subjects across snapshots; parent lifecycle state overrides event state.
 - Authoritative parents rewrite retained event parent metadata, keyed by stable identity.
 
@@ -759,13 +770,22 @@ Not every visibility control means "remove this entity entirely."
 - Flat Activity requests 200 events initially; event overflow offers Load more in 200-event increments through 5,000. Pending pages retain rows and a disabled control; the ceiling notice appears only after the final page succeeds.
 - Server filters, repositories, and ranges reset the flat page to 200; flat/threaded toggles and refreshes preserve its size. Flat authoritative snapshots replace the event page; threaded snapshots retain cached children. Cached repository rows are previews until the new page arrives.
 - Flat status counts cover loaded subjects and carry `+` when either events or parent summaries overflow. Browser-only filters apply to loaded events; an empty filtered page says `No matches in loaded activity` while more event pages remain.
-- Full search reads one bounded event window for child-text parent matches, then trims events to the requested page; cursored and collapsed reads may need a separate matching window.
+- Search finds event-matched parents before the subject page limit. Loading older subjects uses
+  `subject_before` and `next_subject_cursor` to append one page while preserving completed
+  discussion; individually expanded new threads load their events. A changed filter cancels a
+  pending older page. Authoritative refreshes reread the requested subject depth with a fresh time
+  boundary shared by all pages in that read, including pages that finish loading while the refresh
+  runs. If a later page fails, the refreshed prefix and cached tail remain visible with an error.
+  Items displaced beyond that window remain reachable on the next page. A filtered, globally
+  expanded feed refreshes its complete discussion after a complete subject refresh; it retains the
+  previous discussion if that read fails and retries on the next refresh.
 - Collapsed cursors come from the same snapshot as visible summaries; never derive poll authority
   from a visible row. Opaque cursors preserve timestamps outside the Unix nanosecond range.
 - Empty deltas must not rebuild summaries.
 - Full snapshots are latest-successful-request-wins by request start; incremental polls never claim
   snapshot authority, and failed reads never claim or suppress others.
-- Projection is part of snapshot scope; the `events` projection is delta-only.
+- The displayed projection is part of snapshot scope; collapsed summaries can refresh an expanded
+  display, and the `events` projection is delta-only.
 - In collapsed threaded mode every fourth scheduled poll is an authoritative replacement, so events
   hidden behind the forward cursor self-heal. Every authoritative snapshot clears an error banner.
 - Single-thread expansion uses stable identity, a frozen upper bound, and active filters; global

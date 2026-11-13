@@ -29,6 +29,10 @@ func (s *Handlers) RegisterProviderRepoAPI(api huma.API) {
 		httpapi.DocumentOperation("get-repo", "Get repository", "Repositories"))
 	huma.Get(api, hostRepoPath, s.getRepoOnHost,
 		httpapi.DocumentOperation("get-repo-on-host", "Get repository", "Repositories"))
+	huma.Get(api, repoPath+"/web-url", s.repositoryWebURL,
+		httpapi.DocumentOperation("get-repo-web-url", "Get repository web URL", "Repositories"))
+	huma.Get(api, hostRepoPath+"/web-url", s.repositoryWebURLOnHost,
+		httpapi.DocumentOperation("get-repo-web-url-on-host", "Get repository web URL", "Repositories"))
 	huma.Register(api, huma.Operation{
 		OperationID: "get-markdown-image", Method: http.MethodGet, Path: repoPath + "/markdown-image",
 		DefaultStatus: http.StatusOK, Summary: "Get markdown image", Tags: []string{"Repositories"},

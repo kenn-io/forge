@@ -1,5 +1,42 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { buildCanonicalProviderItemURL, parseProviderItemURL } from "./item-reference.js";
+import { buildCanonicalProviderItemURL, buildProviderIssueListURL, parseProviderItemURL } from "./item-reference.js";
+
+describe("provider issue lists", () => {
+  it.each([
+    ["github", undefined, "team/widgets", undefined, "https://github.com/team/widgets/issues"],
+    [
+      "gitlab",
+      "gitlab.example.com",
+      "team/sub-group/widgets",
+      undefined,
+      "https://gitlab.example.com/team/sub-group/widgets/-/issues",
+    ],
+    [
+      "gitea",
+      "git.example.test:3000",
+      "team/widgets",
+      "http://git.example.test:3000/prefix/team/widgets/",
+      "http://git.example.test:3000/prefix/team/widgets/issues",
+    ],
+    [
+      "gitlab",
+      "git.example.test",
+      "group/sub-group/widgets",
+      "https://git.example.test/group/sub-group/widgets",
+      "https://git.example.test/group/sub-group/widgets/-/issues",
+    ],
+  ])("builds the %s issue list", (provider, platformHost, repoPath, webURL, expected) => {
+    expect(buildProviderIssueListURL({ provider, platformHost, repoPath, webURL })).toBe(expected);
+  });
+
+  it.each([
+    ["gitea", "git.example.test", "javascript:alert(1)//"],
+    ["gitea", "git.example.test", "https://user:password@git.example.test/team/widgets"],
+    ["bitbucket", "bitbucket.example.com", undefined],
+  ])("rejects an invalid issue list for %s at %s", (provider, platformHost, webURL) => {
+    expect(buildProviderIssueListURL({ provider, platformHost, repoPath: "team/widgets", webURL })).toBeUndefined();
+  });
+});
 
 const pull = {
   provider: "bitbucket",
@@ -31,13 +68,10 @@ describe("Bitbucket item references", () => {
     });
   });
 
-  it("builds Cloud issue links without inventing Data Center issues", () => {
+  it("builds Cloud issue links", () => {
     expect(buildCanonicalProviderItemURL({ ...pull, itemType: "issue" })).toBe(
       "https://bitbucket.org/EX/widgets/issues/7",
     );
-    expect(
-      buildCanonicalProviderItemURL({ ...pull, itemType: "issue", platformHost: "bitbucket.example.com" }),
-    ).toBeUndefined();
   });
 });
 

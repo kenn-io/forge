@@ -136,6 +136,7 @@ func (s *Handlers) ToRepoSummaryResponse(
 	resp := itemapi.RepoSummaryResponse{
 		Repo:                s.RepoResolver.Ref(summary.Repo),
 		PlatformHost:        summary.Repo.PlatformHost,
+		WebURL:              summary.Repo.WebURL,
 		DefaultPlatformHost: defaultPlatformHost,
 		Owner:               summary.Repo.Owner,
 		Name:                summary.Repo.Name,

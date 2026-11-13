@@ -236,22 +236,27 @@ func landingAccount(user *gh.User) *platform.Account {
 	if user == nil {
 		return nil
 	}
-	a := &platform.Account{Type: platform.AccountTypeUnknown}
+	a := &platform.Account{Type: accountType(user.GetType())}
 	if user.ID != nil {
 		a.ID = new(*user.ID)
 	}
 	if user.Login != nil {
 		a.Login = new(*user.Login)
 	}
-	switch user.GetType() {
-	case "User":
-		a.Type = platform.AccountTypeUser
-	case "Bot":
-		a.Type = platform.AccountTypeBot
-	case "Organization":
-		a.Type = platform.AccountTypeOrganization
-	}
 	return a
+}
+
+func accountType(value string) platform.AccountType {
+	switch value {
+	case "User":
+		return platform.AccountTypeUser
+	case "Bot":
+		return platform.AccountTypeBot
+	case "Organization":
+		return platform.AccountTypeOrganization
+	default:
+		return platform.AccountTypeUnknown
+	}
 }
 
 func landingTime(stamp *gh.Timestamp) *time.Time {

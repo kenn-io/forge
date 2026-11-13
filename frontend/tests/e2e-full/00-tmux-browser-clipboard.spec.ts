@@ -1480,44 +1480,66 @@ test("tmux drag-copy reaches the clipboard in tab and inline hosts", async ({ pa
   }
 });
 
-test("tmux drag-copy autoscrolls beyond the terminal edge", async ({ page, browserName }) => {
-  test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
-  let fallbackWrites: string[] = [];
-  if (browserName === "chromium") {
-    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-  } else {
-    fallbackWrites = await interceptDeniedBrowserClipboard(page);
-  }
-
-  let isolatedServer: IsolatedE2EServer | null = null;
-  let api: APIRequestContext | null = null;
-  try {
-    isolatedServer = await startIsolatedWorkspaceE2EServer();
-    api = await playwrightRequest.newContext({
-      baseURL: isolatedServer.info.base_url,
-    });
-    const workspace = await createIssueWorkspace(api, 10);
-    const output = observeTerminalOutput(page);
-
-    await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
-    const terminal = await openTerminalPanel(page);
-    const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
-    runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSession, "mouse", "on"]);
-    const dimensions = await renderScrollMarkers(page, terminal, output);
+for (const modeKeys of ["emacs", "vi"] as const) {
+  test(`tmux drag-copy autoscrolls beyond the terminal edge${modeKeys === "vi" ? " with vi keys" : ""}`, async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(
+      !hasCommand("git") || !hasCommand("tmux", ["-V"]),
+      "git and tmux are required for the real workspace flow",
+    );
+    let fallbackWrites: string[] = [];
     if (browserName === "chromium") {
-      await setBrowserClipboard(page, "");
-    }
-    await dragTerminalPastTop(page, terminal, dimensions, isolatedServer, tmuxSession);
-    await expect.poll(() => output.inputIncludes("\x1b[<64;")).toBe(true);
-    await expect.poll(() => output.inputIncludes("\x1b[<0;1;1m")).toBe(true);
-    await expect.poll(() => output.includes("\x1b]52;"), { timeout: 10_000 }).toBe(true);
-    if (browserName === "firefox") {
-      await expect.poll(() => fallbackWrites.some((write) => write.includes("edge-scroll-001"))).toBe(true);
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
     } else {
-      await expect.poll(() => readBrowserClipboard(page)).toContain("edge-scroll-001");
+      fallbackWrites = await interceptDeniedBrowserClipboard(page);
     }
-  } finally {
-    await api?.dispose();
-    await isolatedServer?.stop();
-  }
-});
+
+    let isolatedServer: IsolatedE2EServer | null = null;
+    let api: APIRequestContext | null = null;
+    try {
+      isolatedServer = await startIsolatedWorkspaceE2EServer();
+      api = await playwrightRequest.newContext({
+        baseURL: isolatedServer.info.base_url,
+      });
+      const workspace = await createIssueWorkspace(api, 10);
+      const output = observeTerminalOutput(page);
+
+      await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+      const terminal = await openTerminalPanel(page);
+      const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSession, "mouse", "on"]);
+      runE2ETmuxCommand(isolatedServer, ["set-option", "-w", "-t", tmuxSession, "mode-keys", modeKeys]);
+      // Release during a pending redraw, using the real server's copy binding.
+      // Waiting for the redraw in this test would hide lost clipboard delivery.
+      const keyTable = modeKeys === "vi" ? "copy-mode-vi" : "copy-mode";
+      const binding = runE2ETmuxCommand(isolatedServer, ["list-keys", "-T", keyTable, "MouseDragEnd1Pane"]);
+      const key = "MouseDragEnd1Pane ";
+      expect(binding).toContain(key);
+      runE2ETmuxCommand(isolatedServer, [
+        "bind-key",
+        "-T",
+        keyTable,
+        "MouseDragEnd1Pane",
+        `refresh-client ; ${binding.slice(binding.indexOf(key) + key.length)}`,
+      ]);
+      const dimensions = await renderScrollMarkers(page, terminal, output);
+      if (browserName === "chromium") {
+        await setBrowserClipboard(page, "");
+      }
+      await dragTerminalPastTop(page, terminal, dimensions, isolatedServer, tmuxSession);
+      await expect.poll(() => output.inputIncludes("\x1b[<64;")).toBe(true);
+      await expect.poll(() => output.inputIncludes("\x1b[<0;1;1m")).toBe(true);
+      await expect.poll(() => output.includes("\x1b]52;"), { timeout: 10_000 }).toBe(true);
+      if (browserName === "firefox") {
+        await expect.poll(() => fallbackWrites.some((write) => write.includes("edge-scroll-001"))).toBe(true);
+      } else {
+        await expect.poll(() => readBrowserClipboard(page)).toContain("edge-scroll-001");
+      }
+    } finally {
+      await api?.dispose();
+      await isolatedServer?.stop();
+    }
+  });
+}

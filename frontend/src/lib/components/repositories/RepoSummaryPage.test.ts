@@ -979,10 +979,10 @@ describe("RepoSummaryPage", () => {
     render(RepoSummaryPage);
     expect(await screen.findByDisplayValue("Fence an unknown outcome")).toBeTruthy();
     await waitFor(() => {
-      expect(flash.getFlash()).toMatchObject({
-        message: expect.stringMatching(/outcome is unknown.*check the issue list before retrying/i),
-        tone: "danger",
-      });
+      expect(
+        screen.getByText(/couldn't confirm whether it created the issue.*check the issue list before trying again/i),
+      ).toBeTruthy();
+      expect(flash.getFlash()).toBeNull();
       expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", true);
     });
 
@@ -992,6 +992,85 @@ describe("RepoSummaryPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Create issue" })).toHaveProperty("disabled", false);
     });
+  });
+
+  it.each([
+    ["github", "", undefined, "https://github.com/acme/widgets/issues"],
+    ["gh", "GitHub.Com", "javascript:alert(1)//", "https://github.com/acme/widgets/issues"],
+    ["gitlab", "gitlab.com", undefined, "https://gitlab.com/acme/widgets/-/issues"],
+    ["forgejo", "", undefined, "https://codeberg.org/acme/widgets/issues"],
+    ["bitbucket", "Bitbucket.Org", undefined, "https://bitbucket.org/acme/widgets/issues"],
+    [
+      "gitea",
+      "git.example.test:3000",
+      "http://git.example.test:3000/acme/widgets",
+      "http://git.example.test:3000/acme/widgets/issues",
+    ],
+  ])("offers the %s issue list", async (provider, host, webURL, expected) => {
+    const summary = {
+      ...repoSummaryFixture({ provider, platformHost: host, owner: "acme", name: "widgets" }),
+      web_url: webURL,
+    };
+    mockGet.mockResolvedValue({ data: [summary] });
+    mockPost.mockRejectedValueOnce(new Error("connection lost"));
+
+    render(RepoSummaryPage);
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), { target: { value: "Keep this draft" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Create issue" }));
+    const link = await screen.findByRole("link", { name: "Open issue list" });
+    expect(link.getAttribute("href")).toBe(expected);
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  });
+
+  it.each([
+    [undefined, "error"],
+    [undefined, "unsafe"],
+    ["javascript:alert(1)//", "unsafe"],
+  ])("recovers a missing issue list address with cached address %s and first read %s", async (webURL, firstRead) => {
+    const summary = repoSummaryFixture({
+      provider: "gitea",
+      platformHost: "git.example.test:3000",
+      owner: "acme",
+      name: "widgets",
+    });
+    let reads = 0;
+    mockGet.mockImplementation((path: string) => {
+      if (path.includes("web-url")) {
+        reads++;
+        if (reads === 1) {
+          return Promise.resolve(
+            firstRead === "error" ? { error: "provider unavailable" } : { data: { web_url: "javascript:alert(1)//" } },
+          );
+        }
+        return Promise.resolve({ data: { web_url: "http://git.example.test:3000/prefix/acme/widgets" } });
+      }
+      return Promise.resolve({
+        data: [{ ...summary, web_url: webURL, repo: { ...summary.repo, platform_repo_id: 42 } }],
+      });
+    });
+    mockPost.mockRejectedValue(new Error("connection lost"));
+
+    render(RepoSummaryPage);
+    await screen.findByRole("button", { name: /acme\s*\/\s*widgets/ });
+    await fireEvent.click(screen.getByRole("button", { name: "New issue" }));
+    await fireEvent.input(screen.getByPlaceholderText("Issue title"), { target: { value: "Keep this draft" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Create issue" }));
+    await screen.findByText("Could not load the issue list.", { exact: false });
+    expect(screen.queryByRole("link", { name: "Open issue list" })).toBeNull();
+    expect(mockGet).toHaveBeenCalledWith(
+      "/host/{platform_host}/repo/{provider}/{owner}/{name}/web-url",
+      expect.objectContaining({ params: expect.objectContaining({ query: { platform_repo_id: 42 } }) }),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect((await screen.findByRole("link", { name: "Open issue list" })).getAttribute("href")).toBe(
+      "http://git.example.test:3000/prefix/acme/widgets/issues",
+    );
+    expect(screen.getByDisplayValue("Keep this draft")).toBeTruthy();
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(reads).toBe(2);
   });
 
   it("allows issue creation to retry after a rejected request", async () => {
@@ -1021,12 +1100,12 @@ describe("RepoSummaryPage", () => {
     await fireEvent.submit(createButton);
 
     await waitFor(() => {
-      expect(flash.getFlash()).toMatchObject({
-        message: expect.stringMatching(
-          /issue transport unavailable.*outcome is unknown.*check the issue list before retrying/i,
+      expect(
+        screen.getByText(
+          /couldn't confirm whether it created the issue.*check the issue list before trying again.*issue transport unavailable/i,
         ),
-        tone: "danger",
-      });
+      ).toBeTruthy();
+      expect(flash.getFlash()).toBeNull();
       expect((screen.getByRole("button", { name: "Create issue" }) as HTMLButtonElement).disabled).toBe(true);
     });
 
@@ -1088,12 +1167,12 @@ describe("RepoSummaryPage", () => {
     await fireEvent.submit(screen.getByRole("button", { name: "Create issue" }));
 
     await waitFor(() => {
-      expect(flash.getFlash()).toMatchObject({
-        message: expect.stringMatching(
-          /provider response unavailable.*outcome is unknown.*check the issue list before retrying/i,
+      expect(
+        screen.getByText(
+          /couldn't confirm whether it created the issue.*check the issue list before trying again.*provider response unavailable/i,
         ),
-        tone: "danger",
-      });
+      ).toBeTruthy();
+      expect(flash.getFlash()).toBeNull();
       expect((screen.getByRole("button", { name: "Create issue" }) as HTMLButtonElement).disabled).toBe(true);
     });
 

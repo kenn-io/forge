@@ -229,8 +229,10 @@ func (d *DB) updateCommentMetadataSnapshot(
 		}
 		query := fmt.Sprintf(`
 			UPDATE %s
-			SET metadata_json = ?
-			WHERE %s = ? AND event_type = 'issue_comment' AND platform_id = ?`,
+			SET metadata_json = CASE WHEN json_valid(metadata_json) AND json_type(metadata_json,'$.actor_account_type')='text'
+                THEN json_set(CASE WHEN json_valid(?1) THEN ?1 ELSE '{}' END,'$.actor_account_type',json_extract(metadata_json,'$.actor_account_type'))
+                ELSE ?1 END
+			WHERE %s = ?2 AND event_type = 'issue_comment' AND platform_id = ?3`,
 			eventTable, parentColumn,
 		)
 		for _, update := range updates {

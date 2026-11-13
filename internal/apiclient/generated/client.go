@@ -7095,6 +7095,39 @@ func (o *UpdateRepoUIVisibilityOnHostRequestOptions) GetHeader() (map[string]str
 	return nil, nil
 }
 
+// GetRepoWebURLOnHostRequestOptions is the options needed to make a request to GetRepoWebURLOnHost.
+type GetRepoWebURLOnHostRequestOptions struct {
+	PathParams *GetRepoWebURLOnHostPath
+	Query      *GetRepoWebURLOnHostQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetRepoWebURLOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetRepoWebURLOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return paramcodec.Map(o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetRepoWebURLOnHostRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetRepoWebURLOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // CreateRepoWorkspaceOnHostRequestOptions is the options needed to make a request to CreateRepoWorkspaceOnHost.
 type CreateRepoWorkspaceOnHostRequestOptions struct {
 	PathParams *CreateRepoWorkspaceOnHostPath
@@ -10842,6 +10875,39 @@ func (o *UpdateRepoUIVisibilityRequestOptions) GetHeader() (map[string]string, e
 	return nil, nil
 }
 
+// GetRepoWebURLRequestOptions is the options needed to make a request to GetRepoWebURL.
+type GetRepoWebURLRequestOptions struct {
+	PathParams *GetRepoWebURLPath
+	Query      *GetRepoWebURLQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetRepoWebURLRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetRepoWebURLRequestOptions) GetQuery() (map[string]any, error) {
+	return paramcodec.Map(o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetRepoWebURLRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetRepoWebURLRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // CreateRepoWorkspaceRequestOptions is the options needed to make a request to CreateRepoWorkspace.
 type CreateRepoWorkspaceRequestOptions struct {
 	PathParams *CreateRepoWorkspacePath
@@ -13315,6 +13381,7 @@ type ClientInterface interface {
 	RefreshRepoOnHostWithResponse(ctx context.Context, options *RefreshRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshRepoOnHostResp, error)
 	ResolveRepoItemOnHostWithResponse(ctx context.Context, options *ResolveRepoItemOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolveRepoItemOnHostResp, error)
 	UpdateRepoUIVisibilityOnHostWithResponse(ctx context.Context, options *UpdateRepoUIVisibilityOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoUIVisibilityOnHostResp, error)
+	GetRepoWebURLOnHostWithResponse(ctx context.Context, options *GetRepoWebURLOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoWebURLOnHostResp, error)
 	CreateRepoWorkspaceOnHostWithResponse(ctx context.Context, options *CreateRepoWorkspaceOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateRepoWorkspaceOnHostResp, error)
 	UpdateRepoWorktreeBaseOnHostWithResponse(ctx context.Context, options *UpdateRepoWorktreeBaseOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoWorktreeBaseOnHostResp, error)
 	ListIssuesWithResponse(ctx context.Context, options *ListIssuesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListIssuesResp, error)
@@ -13438,6 +13505,7 @@ type ClientInterface interface {
 	RefreshRepoWithResponse(ctx context.Context, options *RefreshRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshRepoResp, error)
 	ResolveRepoItemWithResponse(ctx context.Context, options *ResolveRepoItemRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolveRepoItemResp, error)
 	UpdateRepoUIVisibilityWithResponse(ctx context.Context, options *UpdateRepoUIVisibilityRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoUIVisibilityResp, error)
+	GetRepoWebURLWithResponse(ctx context.Context, options *GetRepoWebURLRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoWebURLResp, error)
 	CreateRepoWorkspaceWithResponse(ctx context.Context, options *CreateRepoWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateRepoWorkspaceResp, error)
 	UpdateRepoWorktreeBaseWithResponse(ctx context.Context, options *UpdateRepoWorktreeBaseRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoWorktreeBaseResp, error)
 	ListReposWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListReposResp, error)
@@ -13812,27 +13880,35 @@ func (c *Client) ListActivityWithResponse(ctx context.Context, options *ListActi
 	var err error
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"after":               {Style: "form", Explode: &[]bool{false}[0]},
-		"assigned":            {Style: "form", Explode: &[]bool{false}[0]},
-		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
-		"author":              {Style: "form", Explode: &[]bool{false}[0]},
-		"before":              {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_drafts":         {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_merge_queued":   {Style: "form", Explode: &[]bool{false}[0]},
-		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
-		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
-		"merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
-		"not_involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
-		"projection":          {Style: "form", Explode: &[]bool{false}[0]},
-		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
-		"search":              {Style: "form", Explode: &[]bool{false}[0]},
-		"since":               {Style: "form", Explode: &[]bool{false}[0]},
-		"types":               {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":          {Style: "form", Explode: &[]bool{false}[0]},
+		"after":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"at_or_before":             {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":               {Style: "form", Explode: &[]bool{false}[0]},
+		"author":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"before":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":            {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bot_authored_issues": {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":                {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_closed_merged":       {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_default_branch":      {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_drafts":              {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
+		"involves_me":              {Style: "form", Explode: &[]bool{false}[0]},
+		"item_types":               {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"merge_queued":             {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr":     {Style: "form", Explode: &[]bool{false}[0]},
+		"projection":               {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":         {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"search":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"since":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"subject_before":           {Style: "form", Explode: &[]bool{false}[0]},
+		"types":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":               {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/activity",
@@ -13978,8 +14054,12 @@ func (c *Client) ListActivityThreadEventsWithResponse(ctx context.Context, optio
 
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"at_or_before":              {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":                {Style: "form", Explode: &[]bool{false}[0]},
 		"before":                    {Style: "form", Explode: &[]bool{false}[0]},
 		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                      {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":             {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bot_authored_issues":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -13989,11 +14069,14 @@ func (c *Client) ListActivityThreadEventsWithResponse(ctx context.Context, optio
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
 		"merge_queued":              {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr":      {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_host":             {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
 		"provider":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":          {Style: "form", Explode: &[]bool{false}[0]},
 		"search":                    {Style: "form", Explode: &[]bool{false}[0]},
 		"since":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":                   {Style: "form", Explode: &[]bool{false}[0]},
 		"types":                     {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":                {Style: "form", Explode: &[]bool{false}[0]},
 	}
@@ -14346,9 +14429,10 @@ func (c *Client) GetArchiveSnapshotWithResponse(ctx context.Context, options *Ge
 	var err error
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":         {Style: "form", Explode: &[]bool{false}[0]},
-		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
-		"start":       {Style: "form", Explode: &[]bool{false}[0]},
+		"end":                {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope":        {Style: "form", Explode: &[]bool{false}[0]},
+		"pull_request_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":              {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -28366,6 +28450,79 @@ func (c *Client) UpdateRepoUIVisibilityOnHostWithResponse(ctx context.Context, o
 	}
 }
 
+// GetRepoWebURLOnHost Get repository web URL
+func (c *Client) GetRepoWebURLOnHostWithResponse(ctx context.Context, options *GetRepoWebURLOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoWebURLOnHostResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/web-url",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/repo/{provider}/{owner}/{name}/web-url")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetRepoWebURLOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetRepoWebURLOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetRepoWebURLOnHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoWebURLOnHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoWebURLOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoWebURLOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // CreateRepoWorkspaceOnHost Create workspace for new work
 func (c *Client) CreateRepoWorkspaceOnHostWithResponse(ctx context.Context, options *CreateRepoWorkspaceOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateRepoWorkspaceOnHostResp, error) {
 	var err error
@@ -28511,6 +28668,7 @@ func (c *Client) ListIssuesWithResponse(ctx context.Context, options *ListIssues
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"assigned":             {Style: "form", Explode: &[]bool{false}[0]},
 		"assignee":             {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":            {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                {Style: "form", Explode: &[]bool{false}[0]},
 		"not_involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
@@ -36642,6 +36800,79 @@ func (c *Client) UpdateRepoUIVisibilityWithResponse(ctx context.Context, options
 	}
 }
 
+// GetRepoWebURL Get repository web URL
+func (c *Client) GetRepoWebURLWithResponse(ctx context.Context, options *GetRepoWebURLRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoWebURLResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/web-url",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/repo/{provider}/{owner}/{name}/web-url")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetRepoWebURLResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetRepoWebURLErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetRepoWebURLResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoWebURLResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoWebURLErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoWebURLErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // CreateRepoWorkspace Create workspace for new work
 func (c *Client) CreateRepoWorkspaceWithResponse(ctx context.Context, options *CreateRepoWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateRepoWorkspaceResp, error) {
 	var err error
@@ -38703,6 +38934,20 @@ func (c *Client) TriggerSyncWithResponse(ctx context.Context, options *TriggerSy
 	}
 	switch resp.StatusCode {
 	case 202:
+		out.JSON202 = new(TriggerSyncResponseJSON)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON202); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "TriggerSyncResponseJSON",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
 		return out, nil
 	default:
 		out.ApplicationProblemPlusJSONDefault = new(TriggerSyncErrorResponse)
@@ -42465,27 +42710,35 @@ func (c *Client) DispatchWorkflowRaw(ctx context.Context, httpClient *http.Clien
 func (c *Client) ListActivityRaw(ctx context.Context, httpClient *http.Client, options *ListActivityRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"after":               {Style: "form", Explode: &[]bool{false}[0]},
-		"assigned":            {Style: "form", Explode: &[]bool{false}[0]},
-		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
-		"author":              {Style: "form", Explode: &[]bool{false}[0]},
-		"before":              {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_drafts":         {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_merge_queued":   {Style: "form", Explode: &[]bool{false}[0]},
-		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
-		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
-		"merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
-		"not_involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
-		"projection":          {Style: "form", Explode: &[]bool{false}[0]},
-		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
-		"search":              {Style: "form", Explode: &[]bool{false}[0]},
-		"since":               {Style: "form", Explode: &[]bool{false}[0]},
-		"types":               {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":          {Style: "form", Explode: &[]bool{false}[0]},
+		"after":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"at_or_before":             {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":               {Style: "form", Explode: &[]bool{false}[0]},
+		"author":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"before":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":            {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bot_authored_issues": {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":                {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_closed_merged":       {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_default_branch":      {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_drafts":              {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
+		"involves_me":              {Style: "form", Explode: &[]bool{false}[0]},
+		"item_types":               {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"merge_queued":             {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr":     {Style: "form", Explode: &[]bool{false}[0]},
+		"projection":               {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":         {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"search":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"since":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"subject_before":           {Style: "form", Explode: &[]bool{false}[0]},
+		"types":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":               {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/activity",
@@ -42525,8 +42778,12 @@ func (c *Client) ListActivityThreadEventsRaw(ctx context.Context, httpClient *ht
 
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"at_or_before":              {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":                {Style: "form", Explode: &[]bool{false}[0]},
 		"before":                    {Style: "form", Explode: &[]bool{false}[0]},
 		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                      {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":             {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bot_authored_issues":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -42536,11 +42793,14 @@ func (c *Client) ListActivityThreadEventsRaw(ctx context.Context, httpClient *ht
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
 		"merge_queued":              {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr":      {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_host":             {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
 		"provider":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":          {Style: "form", Explode: &[]bool{false}[0]},
 		"search":                    {Style: "form", Explode: &[]bool{false}[0]},
 		"since":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":                   {Style: "form", Explode: &[]bool{false}[0]},
 		"types":                     {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":                {Style: "form", Explode: &[]bool{false}[0]},
 	}
@@ -42628,9 +42888,10 @@ func (c *Client) GetArchiveReportRaw(ctx context.Context, httpClient *http.Clien
 func (c *Client) GetArchiveSnapshotRaw(ctx context.Context, httpClient *http.Client, options *GetArchiveSnapshotRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":         {Style: "form", Explode: &[]bool{false}[0]},
-		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
-		"start":       {Style: "form", Explode: &[]bool{false}[0]},
+		"end":                {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope":        {Style: "form", Explode: &[]bool{false}[0]},
+		"pull_request_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":              {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -46245,6 +46506,26 @@ func (c *Client) UpdateRepoUIVisibilityOnHostRaw(ctx context.Context, httpClient
 	return httpClient.Do(req)
 }
 
+// GetRepoWebURLOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) GetRepoWebURLOnHostRaw(ctx context.Context, httpClient *http.Client, options *GetRepoWebURLOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/web-url",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // CreateRepoWorkspaceOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) CreateRepoWorkspaceOnHostRaw(ctx context.Context, httpClient *http.Client, options *CreateRepoWorkspaceOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -46283,6 +46564,7 @@ func (c *Client) ListIssuesRaw(ctx context.Context, httpClient *http.Client, opt
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"assigned":             {Style: "form", Explode: &[]bool{false}[0]},
 		"assignee":             {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":            {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                {Style: "form", Explode: &[]bool{false}[0]},
 		"not_involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
@@ -48299,6 +48581,26 @@ func (c *Client) UpdateRepoUIVisibilityRaw(ctx context.Context, httpClient *http
 	return httpClient.Do(req)
 }
 
+// GetRepoWebURLRaw returns an unread response. The caller must close its body.
+func (c *Client) GetRepoWebURLRaw(ctx context.Context, httpClient *http.Client, options *GetRepoWebURLRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/web-url",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // CreateRepoWorkspaceRaw returns an unread response. The caller must close its body.
 func (c *Client) CreateRepoWorkspaceRaw(ctx context.Context, httpClient *http.Client, options *CreateRepoWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -49768,27 +50070,35 @@ func NewListActivityRequest(ctx context.Context, baseURL string, options *ListAc
 	c := NewClient(apiClient)
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"after":               {Style: "form", Explode: &[]bool{false}[0]},
-		"assigned":            {Style: "form", Explode: &[]bool{false}[0]},
-		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
-		"author":              {Style: "form", Explode: &[]bool{false}[0]},
-		"before":              {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_drafts":         {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_merge_queued":   {Style: "form", Explode: &[]bool{false}[0]},
-		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
-		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
-		"merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
-		"not_involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
-		"projection":          {Style: "form", Explode: &[]bool{false}[0]},
-		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
-		"search":              {Style: "form", Explode: &[]bool{false}[0]},
-		"since":               {Style: "form", Explode: &[]bool{false}[0]},
-		"types":               {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":          {Style: "form", Explode: &[]bool{false}[0]},
+		"after":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"at_or_before":             {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":               {Style: "form", Explode: &[]bool{false}[0]},
+		"author":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"before":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":            {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bot_authored_issues": {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":                {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_closed_merged":       {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_default_branch":      {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_drafts":              {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
+		"involves_me":              {Style: "form", Explode: &[]bool{false}[0]},
+		"item_types":               {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"merge_queued":             {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr":     {Style: "form", Explode: &[]bool{false}[0]},
+		"projection":               {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":         {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"search":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"since":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"subject_before":           {Style: "form", Explode: &[]bool{false}[0]},
+		"types":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":               {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/activity",
@@ -49830,8 +50140,12 @@ func NewListActivityThreadEventsRequest(ctx context.Context, baseURL string, opt
 
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"at_or_before":              {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":                {Style: "form", Explode: &[]bool{false}[0]},
 		"before":                    {Style: "form", Explode: &[]bool{false}[0]},
 		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                      {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":             {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bot_authored_issues":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -49841,11 +50155,14 @@ func NewListActivityThreadEventsRequest(ctx context.Context, baseURL string, opt
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
 		"merge_queued":              {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr":      {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_host":             {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
 		"provider":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":          {Style: "form", Explode: &[]bool{false}[0]},
 		"search":                    {Style: "form", Explode: &[]bool{false}[0]},
 		"since":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":                   {Style: "form", Explode: &[]bool{false}[0]},
 		"types":                     {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":                {Style: "form", Explode: &[]bool{false}[0]},
 	}
@@ -49938,9 +50255,10 @@ func NewGetArchiveSnapshotRequest(ctx context.Context, baseURL string, options *
 	c := NewClient(apiClient)
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":         {Style: "form", Explode: &[]bool{false}[0]},
-		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
-		"start":       {Style: "form", Explode: &[]bool{false}[0]},
+		"end":                {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope":        {Style: "form", Explode: &[]bool{false}[0]},
+		"pull_request_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":              {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -53772,6 +54090,27 @@ func NewUpdateRepoUIVisibilityOnHostRequest(ctx context.Context, baseURL string,
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewGetRepoWebURLOnHostRequest constructs a typed request for a caller-owned transport.
+func NewGetRepoWebURLOnHostRequest(ctx context.Context, baseURL string, options *GetRepoWebURLOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/web-url",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewCreateRepoWorkspaceOnHostRequest constructs a typed request for a caller-owned transport.
 func NewCreateRepoWorkspaceOnHostRequest(ctx context.Context, baseURL string, options *CreateRepoWorkspaceOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -53817,6 +54156,7 @@ func NewListIssuesRequest(ctx context.Context, baseURL string, options *ListIssu
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"assigned":             {Style: "form", Explode: &[]bool{false}[0]},
 		"assignee":             {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":            {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                {Style: "form", Explode: &[]bool{false}[0]},
 		"not_involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
@@ -55949,6 +56289,27 @@ func NewUpdateRepoUIVisibilityRequest(ctx context.Context, baseURL string, optio
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewGetRepoWebURLRequest constructs a typed request for a caller-owned transport.
+func NewGetRepoWebURLRequest(ctx context.Context, baseURL string, options *GetRepoWebURLRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/web-url",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewCreateRepoWorkspaceRequest constructs a typed request for a caller-owned transport.
 func NewCreateRepoWorkspaceRequest(ctx context.Context, baseURL string, options *CreateRepoWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -57445,6 +57806,24 @@ const (
 	ActivityViewModeThreaded ActivityViewMode = "threaded"
 )
 
+// ActivityItemResponseHeadRepoKind Whether the parent pull request's head branch lives in its base repository or a fork; absent for issues and repository-level activity.
+type ActivityItemResponseHeadRepoKind string
+
+const (
+	ActivityItemResponseHeadRepoKindFork     ActivityItemResponseHeadRepoKind = "fork"
+	ActivityItemResponseHeadRepoKindSameRepo ActivityItemResponseHeadRepoKind = "same_repo"
+	ActivityItemResponseHeadRepoKindUnknown  ActivityItemResponseHeadRepoKind = "unknown"
+)
+
+// ActivitySubjectResponseHeadRepoKind Whether a pull request's head branch lives in its base repository or a fork; absent for issues and repository-level activity.
+type ActivitySubjectResponseHeadRepoKind string
+
+const (
+	ActivitySubjectResponseHeadRepoKindFork     ActivitySubjectResponseHeadRepoKind = "fork"
+	ActivitySubjectResponseHeadRepoKindSameRepo ActivitySubjectResponseHeadRepoKind = "same_repo"
+	ActivitySubjectResponseHeadRepoKindUnknown  ActivitySubjectResponseHeadRepoKind = "unknown"
+)
+
 type AgentProtocol string
 
 const (
@@ -57582,6 +57961,12 @@ const (
 	ArchiveSnapshotIssueScopeOpen ArchiveSnapshotIssueScope = "open"
 )
 
+type ArchiveSnapshotPullRequestScope string
+
+const (
+	ArchiveSnapshotPullRequestScopeRecentlyClosed ArchiveSnapshotPullRequestScope = "recently_closed"
+)
+
 type ArchiveStatusResponseCollectionMode string
 
 const (
@@ -57707,6 +58092,14 @@ const (
 	MergeRequestResponseStateOpen   MergeRequestResponseState = "open"
 )
 
+type MergeRequestResponseHeadRepoKind string
+
+const (
+	MergeRequestResponseHeadRepoKindFork     MergeRequestResponseHeadRepoKind = "fork"
+	MergeRequestResponseHeadRepoKindSameRepo MergeRequestResponseHeadRepoKind = "same_repo"
+	MergeRequestResponseHeadRepoKindUnknown  MergeRequestResponseHeadRepoKind = "unknown"
+)
+
 // ProblemErrorCode Machine-readable error code. Stable across occurrences.
 type ProblemErrorCode string
 
@@ -57821,6 +58214,15 @@ type WorklistItemResponseItemType string
 const (
 	WorklistItemResponseItemTypeIssue WorklistItemResponseItemType = "issue"
 	WorklistItemResponseItemTypePr    WorklistItemResponseItemType = "pr"
+)
+
+// WorkspaceActivitySubjectResponseHeadRepoKind Whether a pull request's head branch lives in its base repository or a fork; absent for issues and when this server does not sync the repository.
+type WorkspaceActivitySubjectResponseHeadRepoKind string
+
+const (
+	WorkspaceActivitySubjectResponseHeadRepoKindFork     WorkspaceActivitySubjectResponseHeadRepoKind = "fork"
+	WorkspaceActivitySubjectResponseHeadRepoKindSameRepo WorkspaceActivitySubjectResponseHeadRepoKind = "same_repo"
+	WorkspaceActivitySubjectResponseHeadRepoKindUnknown  WorkspaceActivitySubjectResponseHeadRepoKind = "unknown"
 )
 
 type WorkspaceChatCommandType string
@@ -57967,6 +58369,13 @@ type ListActivityThreadEventsQueryItemType string
 const (
 	ListActivityThreadEventsQueryItemTypeIssue ListActivityThreadEventsQueryItemType = "issue"
 	ListActivityThreadEventsQueryItemTypePr    ListActivityThreadEventsQueryItemType = "pr"
+)
+
+// GetArchiveSnapshotQueryPullRequestScope Include open pull requests and those closed or merged within 30 days before observed_at, with references in either direction, including references outside the window.
+type GetArchiveSnapshotQueryPullRequestScope string
+
+const (
+	GetArchiveSnapshotQueryPullRequestScopeRecentlyClosed GetArchiveSnapshotQueryPullRequestScope = "recently_closed"
 )
 
 // GetArchiveSnapshotQueryIssueScope Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window.
@@ -59314,6 +59723,13 @@ type UpdateRepoUIVisibilityOnHostPath struct {
 	Name         string `json:"name"`
 }
 
+type GetRepoWebURLOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+}
+
 type CreateRepoWorkspaceOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -59995,6 +60411,12 @@ type UpdateRepoUIVisibilityPath struct {
 	Name     string `json:"name"`
 }
 
+type GetRepoWebURLPath struct {
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+}
+
 type CreateRepoWorkspacePath struct {
 	Provider string `json:"provider"`
 	Owner    string `json:"owner"`
@@ -60573,12 +60995,19 @@ type ListActivityQuery struct {
 	Assigned         *bool                        `json:"assigned,omitempty"`
 	After            *string                      `json:"after,omitempty"`
 	Before           *string                      `json:"before,omitempty"`
+	SubjectBefore    *string                      `json:"subject_before,omitempty"`
 	AtOrBefore       *string                      `json:"at_or_before,omitempty"`
 	Since            *string                      `json:"since,omitempty"`
 	Projection       *ListActivityQueryProjection `json:"projection,omitempty"`
 	Limit            *int64                       `json:"limit,omitempty"`
 	HideClosedMerged *bool                        `json:"hide_closed_merged,omitempty"`
-	HideBots         *bool                        `json:"hide_bots,omitempty"`
+
+	// ClosedMerged Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged.
+	ClosedMerged *bool `json:"closed_merged,omitempty"`
+	HideBots     *bool `json:"hide_bots,omitempty"`
+
+	// Bots Keep only bot-authored activity. Wins over hide_bots.
+	Bots *bool `json:"bots,omitempty"`
 
 	// HideDrafts Exclude activity for draft pull requests.
 	HideDrafts *bool `json:"hide_drafts,omitempty"`
@@ -60587,8 +61016,29 @@ type ListActivityQuery struct {
 	HideMergeQueued *bool `json:"hide_merge_queued,omitempty"`
 
 	// MergeQueued Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
-	MergeQueued       *bool `json:"merge_queued,omitempty"`
-	HideDefaultBranch *bool `json:"hide_default_branch,omitempty"`
+	MergeQueued *bool `json:"merge_queued,omitempty"`
+
+	// Attributes Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, has_workspace, no_workspace, fork, not_fork. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts.
+	Attributes        *string `json:"attributes,omitempty"`
+	HideDefaultBranch *bool   `json:"hide_default_branch,omitempty"`
+
+	// Labels Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches.
+	Labels []string `json:"labels,omitempty"`
+
+	// ExcludeLabels Drop activity whose pull request or issue carries any named label. Names match without case across repositories.
+	ExcludeLabels []string `json:"exclude_labels,omitempty"`
+
+	// HideBotAuthoredIssues Drop issue activity on issues a bot account opened. Pull request and repository activity always passes.
+	HideBotAuthoredIssues *bool `json:"hide_bot_authored_issues,omitempty"`
+
+	// Starred Keep only activity whose pull request or issue is starred.
+	Starred *bool `json:"starred,omitempty"`
+
+	// ReferencedByPr Keep only issue activity on issues a pull request references. Pull request and repository activity always passes.
+	ReferencedByPr *bool `json:"referenced_by_pr,omitempty"`
+
+	// NotReferencedByPr Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies.
+	NotReferencedByPr *bool `json:"not_referenced_by_pr,omitempty"`
 }
 
 type ListActivityAuthorsQuery struct {
@@ -60614,7 +61064,13 @@ type ListActivityThreadEventsQuery struct {
 	AtOrBefore       *string `json:"at_or_before,omitempty"`
 	Limit            *int64  `json:"limit,omitempty"`
 	HideClosedMerged *bool   `json:"hide_closed_merged,omitempty"`
-	HideBots         *bool   `json:"hide_bots,omitempty"`
+
+	// ClosedMerged Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged.
+	ClosedMerged *bool `json:"closed_merged,omitempty"`
+	HideBots     *bool `json:"hide_bots,omitempty"`
+
+	// Bots Keep only bot-authored activity. Wins over hide_bots.
+	Bots *bool `json:"bots,omitempty"`
 
 	// HideDrafts Exclude activity for draft pull requests.
 	HideDrafts *bool `json:"hide_drafts,omitempty"`
@@ -60623,8 +61079,29 @@ type ListActivityThreadEventsQuery struct {
 	HideMergeQueued *bool `json:"hide_merge_queued,omitempty"`
 
 	// MergeQueued Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
-	MergeQueued       *bool `json:"merge_queued,omitempty"`
-	HideDefaultBranch *bool `json:"hide_default_branch,omitempty"`
+	MergeQueued *bool `json:"merge_queued,omitempty"`
+
+	// Attributes Comma-separated pull request filters, as on the activity list.
+	Attributes        *string `json:"attributes,omitempty"`
+	HideDefaultBranch *bool   `json:"hide_default_branch,omitempty"`
+
+	// Labels Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches.
+	Labels []string `json:"labels,omitempty"`
+
+	// ExcludeLabels Drop activity whose pull request or issue carries any named label. Names match without case across repositories.
+	ExcludeLabels []string `json:"exclude_labels,omitempty"`
+
+	// HideBotAuthoredIssues Drop issue activity on issues a bot account opened. Pull request and repository activity always passes.
+	HideBotAuthoredIssues *bool `json:"hide_bot_authored_issues,omitempty"`
+
+	// Starred Keep only activity whose pull request or issue is starred.
+	Starred *bool `json:"starred,omitempty"`
+
+	// ReferencedByPr Keep only issue activity on issues a pull request references. Pull request and repository activity always passes.
+	ReferencedByPr *bool `json:"referenced_by_pr,omitempty"`
+
+	// NotReferencedByPr Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies.
+	NotReferencedByPr *bool `json:"not_referenced_by_pr,omitempty"`
 }
 
 type GetArchiveReportQuery struct {
@@ -60640,6 +61117,9 @@ type GetArchiveReportQuery struct {
 }
 
 type GetArchiveSnapshotQuery struct {
+	// PullRequestScope Include open pull requests and those closed or merged within 30 days before observed_at, with references in either direction, including references outside the window.
+	PullRequestScope *GetArchiveSnapshotQueryPullRequestScope `json:"pull_request_scope,omitempty"`
+
 	// IssueScope Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window.
 	IssueScope *GetArchiveSnapshotQueryIssueScope `json:"issue_scope,omitempty"`
 
@@ -61005,6 +61485,11 @@ type ResolveRepoItemOnHostQuery struct {
 	ItemType *ResolveRepoItemOnHostQueryItemType `json:"item_type,omitempty"`
 }
 
+type GetRepoWebURLOnHostQuery struct {
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+}
+
 type ListIssuesQuery struct {
 	// Numbers Item numbers in every repo unless repo is set; before pagination.
 	Numbers []int64 `json:"numbers,omitempty"`
@@ -61038,6 +61523,15 @@ type ListIssuesQuery struct {
 
 	// NotReferencedByPr Only include issues no pull request references. With referenced_by_pr, neither filter applies.
 	NotReferencedByPr *bool `json:"not_referenced_by_pr,omitempty"`
+
+	// Labels Only include issues carrying every named label. Names match without case across repositories; applied before pagination.
+	Labels []string `json:"labels,omitempty"`
+
+	// ExcludeLabels Drop issues carrying any named label. Names match without case across repositories; applied before pagination.
+	ExcludeLabels []string `json:"exclude_labels,omitempty"`
+
+	// HideBots Drop issues a bot account opened: a -bot login suffix on any provider, [bot] on GitHub, and project or group access token users on GitLab.
+	HideBots *bool `json:"hide_bots,omitempty"`
 }
 
 type SyncIssueQuery struct {
@@ -61078,11 +61572,17 @@ type ListPullsQuery struct {
 	// Numbers Item numbers in every repo unless repo is set; before pagination.
 	Numbers []int64 `json:"numbers,omitempty"`
 
-	// Attributes Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination.
+	// Attributes Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not), has_workspace and no_workspace (with a workspace on this server, or not), fork and not_fork (the head branch lives in a fork, or not; an unknown head repository is not a fork). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, merge_queued or not_merge_queued, has_workspace or no_workspace, and fork or not_fork. Every other selected filter, including involves_me and unassigned, must also match before pagination.
 	Attributes *string `json:"attributes,omitempty"`
 
 	// Label Exact case-sensitive label name; applied before pagination.
 	Label *string `json:"label,omitempty"`
+
+	// Labels Only include pull requests carrying every named label. Names match without case across repositories; applied before pagination.
+	Labels []string `json:"labels,omitempty"`
+
+	// ExcludeLabels Drop pull requests carrying any named label. Names match without case across repositories; applied before pagination.
+	ExcludeLabels []string `json:"exclude_labels,omitempty"`
 
 	// Repo Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
 	Repo *string `json:"repo,omitempty"`
@@ -61225,6 +61725,11 @@ type GetMarkdownMediaQuery struct {
 type ResolveRepoItemQuery struct {
 	// ItemType Optional item type hint for providers whose issues and merge requests have separate number spaces.
 	ItemType *ResolveRepoItemQueryItemType `json:"item_type,omitempty"`
+}
+
+type GetRepoWebURLQuery struct {
+	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
 }
 
 type GetSnapshotQuery struct {
@@ -62162,6 +62667,10 @@ type UpdateRepoUIVisibilityOnHostResponse = SettingsResponse
 
 type UpdateRepoUIVisibilityOnHostErrorResponse = ProblemError
 
+type GetRepoWebURLOnHostResponse = RepositoryWebURLResponse
+
+type GetRepoWebURLOnHostErrorResponse = ProblemError
+
 type CreateRepoWorkspaceOnHostResponse = WorkspaceResponse
 
 type CreateRepoWorkspaceOnHostErrorResponse = ProblemError
@@ -62618,6 +63127,10 @@ type UpdateRepoUIVisibilityResponse = SettingsResponse
 
 type UpdateRepoUIVisibilityErrorResponse = ProblemError
 
+type GetRepoWebURLResponse = RepositoryWebURLResponse
+
+type GetRepoWebURLErrorResponse = ProblemError
+
 type CreateRepoWorkspaceResponse = WorkspaceResponse
 
 type CreateRepoWorkspaceErrorResponse = ProblemError
@@ -62731,6 +63244,8 @@ type ListStacksErrorResponse = ProblemError
 type UnsetStarredErrorResponse = ProblemError
 
 type SetStarredErrorResponse = ProblemError
+
+type TriggerSyncResponseJSON = TriggerSyncResponse
 
 type TriggerSyncErrorResponse = ProblemError
 
@@ -64931,6 +65446,15 @@ type UpdateRepoUIVisibilityOnHostResp struct {
 	ApplicationProblemPlusJSONDefault *UpdateRepoUIVisibilityOnHostErrorResponse
 }
 
+type GetRepoWebURLOnHostResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoWebURLOnHostErrorResponse
+	JSON200                           *GetRepoWebURLOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetRepoWebURLOnHostErrorResponse
+}
+
 type CreateRepoWorkspaceOnHostResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -66037,6 +66561,15 @@ type UpdateRepoUIVisibilityResp struct {
 	ApplicationProblemPlusJSONDefault *UpdateRepoUIVisibilityErrorResponse
 }
 
+type GetRepoWebURLResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoWebURLErrorResponse
+	JSON200                           *GetRepoWebURLResponse
+	ApplicationProblemPlusJSONDefault *GetRepoWebURLErrorResponse
+}
+
 type CreateRepoWorkspaceResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -66309,6 +66842,7 @@ type TriggerSyncResp struct {
 	Body                              []byte
 	StatusCode                        int
 	Error                             *TriggerSyncErrorResponse
+	JSON202                           *TriggerSyncResponseJSON
 	ApplicationProblemPlusJSONDefault *TriggerSyncErrorResponse
 }
 
@@ -66977,31 +67511,34 @@ type ActivityAuthorsResponse struct {
 }
 
 type ActivityItemResponse struct {
-	ActivityType       string     `json:"activity_type"`
-	ActivityURL        *string    `json:"activity_url,omitempty"`
-	AfterSha           *string    `json:"after_sha,omitempty"`
-	Author             string     `json:"author"`
-	AuthorEmail        *string    `json:"author_email,omitempty"`
-	AuthorName         *string    `json:"author_name,omitempty"`
-	AuthoredAt         *string    `json:"authored_at,omitempty"`
-	BeforeSha          *string    `json:"before_sha,omitempty"`
-	BodyPreview        string     `json:"body_preview"`
-	BranchName         *string    `json:"branch_name,omitempty"`
-	CommitAuthor       *string    `json:"commit_author,omitempty"`
-	CommitSha          *string    `json:"commit_sha,omitempty"`
-	CommittedAt        *string    `json:"committed_at,omitempty"`
-	CommitterEmail     *string    `json:"committer_email,omitempty"`
-	CommitterName      *string    `json:"committer_name,omitempty"`
-	CreatedAt          string     `json:"created_at"`
-	Cursor             string     `json:"cursor"`
-	ID                 string     `json:"id"`
-	ItemAuthor         *string    `json:"item_author,omitempty"`
-	ItemLastActivityAt *time.Time `json:"item_last_activity_at,omitempty"`
-	ItemNumber         int64      `json:"item_number"`
-	ItemState          string     `json:"item_state"`
-	ItemTitle          string     `json:"item_title"`
-	ItemType           string     `json:"item_type"`
-	ItemURL            string     `json:"item_url"`
+	ActivityType   string  `json:"activity_type"`
+	ActivityURL    *string `json:"activity_url,omitempty"`
+	AfterSha       *string `json:"after_sha,omitempty"`
+	Author         string  `json:"author"`
+	AuthorEmail    *string `json:"author_email,omitempty"`
+	AuthorName     *string `json:"author_name,omitempty"`
+	AuthoredAt     *string `json:"authored_at,omitempty"`
+	BeforeSha      *string `json:"before_sha,omitempty"`
+	BodyPreview    string  `json:"body_preview"`
+	BranchName     *string `json:"branch_name,omitempty"`
+	CommitAuthor   *string `json:"commit_author,omitempty"`
+	CommitSha      *string `json:"commit_sha,omitempty"`
+	CommittedAt    *string `json:"committed_at,omitempty"`
+	CommitterEmail *string `json:"committer_email,omitempty"`
+	CommitterName  *string `json:"committer_name,omitempty"`
+	CreatedAt      string  `json:"created_at"`
+	Cursor         string  `json:"cursor"`
+
+	// HeadRepoKind Whether the parent pull request's head branch lives in its base repository or a fork; absent for issues and repository-level activity.
+	HeadRepoKind       *ActivityItemResponseHeadRepoKind `json:"head_repo_kind,omitempty"`
+	ID                 string                            `json:"id"`
+	ItemAuthor         *string                           `json:"item_author,omitempty"`
+	ItemLastActivityAt *time.Time                        `json:"item_last_activity_at,omitempty"`
+	ItemNumber         int64                             `json:"item_number"`
+	ItemState          string                            `json:"item_state"`
+	ItemTitle          string                            `json:"item_title"`
+	ItemType           string                            `json:"item_type"`
+	ItemURL            string                            `json:"item_url"`
 
 	// Labels The parent pull request's or issue's current labels; absent for repository-level activity.
 	Labels       []Label                 `json:"labels,omitempty"`
@@ -67033,6 +67570,7 @@ type ActivityResponse struct {
 	ItemActivityCapped             bool                               `json:"item_activity_capped"`
 	Items                          []ActivityItemResponse             `json:"items"`
 	NextCursor                     *string                            `json:"next_cursor,omitempty"`
+	NextSubjectCursor              *string                            `json:"next_subject_cursor,omitempty"`
 	UseWorkspaceActivityForRecency bool                               `json:"use_workspace_activity_for_recency"`
 	WorkspaceActivity              []WorkspaceActivitySubjectResponse `json:"workspace_activity"`
 }
@@ -67040,12 +67578,15 @@ type ActivityResponse struct {
 type ActivitySubjectResponse struct {
 	ActivityAt          time.Time `json:"activity_at"`
 	EventLedgerRevision string    `json:"event_ledger_revision"`
-	ItemAuthor          *string   `json:"item_author,omitempty"`
-	ItemNumber          int64     `json:"item_number"`
-	ItemState           string    `json:"item_state"`
-	ItemTitle           string    `json:"item_title"`
-	ItemType            string    `json:"item_type"`
-	ItemURL             string    `json:"item_url"`
+
+	// HeadRepoKind Whether a pull request's head branch lives in its base repository or a fork; absent for issues and repository-level activity.
+	HeadRepoKind *ActivitySubjectResponseHeadRepoKind `json:"head_repo_kind,omitempty"`
+	ItemAuthor   *string                              `json:"item_author,omitempty"`
+	ItemNumber   int64                                `json:"item_number"`
+	ItemState    string                               `json:"item_state"`
+	ItemTitle    string                               `json:"item_title"`
+	ItemType     string                               `json:"item_type"`
+	ItemURL      string                               `json:"item_url"`
 
 	// Labels The pull request's or issue's current labels.
 	Labels       []Label                 `json:"labels,omitempty"`
@@ -67286,14 +67827,15 @@ type ArchiveSnapshot struct {
 	End    time.Time `json:"end"`
 
 	// IssueScope When open, includes all cached open issues and linked closed context regardless of creation time.
-	IssueScope   *ArchiveSnapshotIssueScope `json:"issue_scope,omitempty"`
-	Issues       []SnapshotItem             `json:"issues"`
-	ObservedAt   time.Time                  `json:"observed_at"`
-	PullRequests []SnapshotPullRequest      `json:"pull_requests"`
-	Relations    []SnapshotRelation         `json:"relations"`
-	Repositories []SnapshotRepository       `json:"repositories"`
-	Schema1      string                     `json:"schema"`
-	Start        time.Time                  `json:"start"`
+	IssueScope       *ArchiveSnapshotIssueScope       `json:"issue_scope,omitempty"`
+	Issues           []SnapshotItem                   `json:"issues"`
+	ObservedAt       time.Time                        `json:"observed_at"`
+	PullRequestScope *ArchiveSnapshotPullRequestScope `json:"pull_request_scope,omitempty"`
+	PullRequests     []SnapshotPullRequest            `json:"pull_requests"`
+	Relations        []SnapshotRelation               `json:"relations"`
+	Repositories     []SnapshotRepository             `json:"repositories"`
+	Schema1          string                           `json:"schema"`
+	Start            time.Time                        `json:"start"`
 }
 
 type ArchiveStatusResponse struct {
@@ -68272,6 +68814,13 @@ type FleetSettingsResponse struct {
 	RestartRequired bool          `json:"restart_required"`
 	Role            string        `json:"role"`
 	Sessions        FleetSessions `json:"sessions"`
+}
+
+type FullSyncStatus struct {
+	InstanceID           uuid.UUID `json:"instance_id"`
+	LastError            *string   `json:"last_error,omitempty"`
+	SettledGeneration    int64     `json:"settled_generation"`
+	SuccessfulGeneration int64     `json:"successful_generation"`
 }
 
 type GetPullsInputBody struct {
@@ -69295,58 +69844,59 @@ type MergeRequestEventResponse struct {
 }
 
 type MergeRequestResponse struct {
-	Additions                int64                      `json:"Additions"`
-	Author                   string                     `json:"Author"`
-	AuthorDisplayName        string                     `json:"AuthorDisplayName"`
-	BaseBranch               string                     `json:"BaseBranch"`
-	Body                     string                     `json:"Body"`
-	CIChecksJSON             string                     `json:"CIChecksJSON"`
-	CIHadPending             bool                       `json:"CIHadPending"`
-	CIStatus                 string                     `json:"CIStatus"`
-	ClosedAt                 *time.Time                 `json:"ClosedAt"`
-	CommentCount             int64                      `json:"CommentCount"`
-	CreatedAt                time.Time                  `json:"CreatedAt"`
-	Deletions                int64                      `json:"Deletions"`
-	FilesChanged             *int64                     `json:"FilesChanged"`
-	HeadBranch               string                     `json:"HeadBranch"`
-	HeadRepoCloneURL         string                     `json:"HeadRepoCloneURL"`
-	ID                       int64                      `json:"ID"`
-	IsDraft                  bool                       `json:"IsDraft"`
-	IsLocked                 bool                       `json:"IsLocked"`
-	LastActivityAt           time.Time                  `json:"LastActivityAt"`
-	MergeCommitSHA           string                     `json:"MergeCommitSHA"`
-	MergeableState           string                     `json:"MergeableState"`
-	MergedAt                 *time.Time                 `json:"MergedAt"`
-	Number                   int64                      `json:"Number"`
-	PlatformExternalID       string                     `json:"PlatformExternalID"`
-	PlatformID               int64                      `json:"PlatformID"`
-	RepoID                   int64                      `json:"RepoID"`
-	ReviewDecision           string                     `json:"ReviewDecision"`
-	Starred                  bool                       `json:"Starred"`
-	State                    MergeRequestResponseState  `json:"State"`
-	Title                    string                     `json:"Title"`
-	URL                      string                     `json:"URL"`
-	UpdatedAt                time.Time                  `json:"UpdatedAt"`
-	Assignees                []string                   `json:"assignees,omitempty"`
-	CiObservedAt             *time.Time                 `json:"ci_observed_at,omitempty"`
-	DeferredMergePending     *bool                      `json:"deferred_merge_pending,omitempty"`
-	DetailFetchedAt          *string                    `json:"detail_fetched_at,omitempty"`
-	DetailLoaded             bool                       `json:"detail_loaded"`
-	DiffSizeHistory          []PRDiffSizePoint          `json:"diff_size_history,omitempty"`
-	Labels                   []Label                    `json:"labels,omitempty"`
-	LastWorkspaceActivityAt  *time.Time                 `json:"last_workspace_activity_at,omitempty"`
-	MergeQueue               *MergeQueueEntryResponse   `json:"merge_queue,omitempty"`
-	MergeQueueRemoval        *MergeQueueRemovalResponse `json:"merge_queue_removal,omitempty"`
-	MergeRules               string                     `json:"merge_rules"`
-	MergeableStateObservedAt *time.Time                 `json:"mergeable_state_observed_at,omitempty"`
-	PlatformBaseSha          *string                    `json:"platform_base_sha,omitempty"`
-	PlatformHeadSha          *string                    `json:"platform_head_sha,omitempty"`
-	PlatformHost             string                     `json:"platform_host"`
-	Repo                     RepoRefResponse            `json:"repo"`
-	RepoName                 string                     `json:"repo_name"`
-	RepoOwner                string                     `json:"repo_owner"`
-	RequestedReviewers       []string                   `json:"requested_reviewers,omitempty"`
-	ReviewDecisionObservedAt *time.Time                 `json:"review_decision_observed_at,omitempty"`
+	Additions                int64                            `json:"Additions"`
+	Author                   string                           `json:"Author"`
+	AuthorDisplayName        string                           `json:"AuthorDisplayName"`
+	BaseBranch               string                           `json:"BaseBranch"`
+	Body                     string                           `json:"Body"`
+	CIChecksJSON             string                           `json:"CIChecksJSON"`
+	CIHadPending             bool                             `json:"CIHadPending"`
+	CIStatus                 string                           `json:"CIStatus"`
+	ClosedAt                 *time.Time                       `json:"ClosedAt"`
+	CommentCount             int64                            `json:"CommentCount"`
+	CreatedAt                time.Time                        `json:"CreatedAt"`
+	Deletions                int64                            `json:"Deletions"`
+	FilesChanged             *int64                           `json:"FilesChanged"`
+	HeadBranch               string                           `json:"HeadBranch"`
+	HeadRepoCloneURL         string                           `json:"HeadRepoCloneURL"`
+	ID                       int64                            `json:"ID"`
+	IsDraft                  bool                             `json:"IsDraft"`
+	IsLocked                 bool                             `json:"IsLocked"`
+	LastActivityAt           time.Time                        `json:"LastActivityAt"`
+	MergeCommitSHA           string                           `json:"MergeCommitSHA"`
+	MergeableState           string                           `json:"MergeableState"`
+	MergedAt                 *time.Time                       `json:"MergedAt"`
+	Number                   int64                            `json:"Number"`
+	PlatformExternalID       string                           `json:"PlatformExternalID"`
+	PlatformID               int64                            `json:"PlatformID"`
+	RepoID                   int64                            `json:"RepoID"`
+	ReviewDecision           string                           `json:"ReviewDecision"`
+	Starred                  bool                             `json:"Starred"`
+	State                    MergeRequestResponseState        `json:"State"`
+	Title                    string                           `json:"Title"`
+	URL                      string                           `json:"URL"`
+	UpdatedAt                time.Time                        `json:"UpdatedAt"`
+	Assignees                []string                         `json:"assignees,omitempty"`
+	CiObservedAt             *time.Time                       `json:"ci_observed_at,omitempty"`
+	DeferredMergePending     *bool                            `json:"deferred_merge_pending,omitempty"`
+	DetailFetchedAt          *string                          `json:"detail_fetched_at,omitempty"`
+	DetailLoaded             bool                             `json:"detail_loaded"`
+	DiffSizeHistory          []PRDiffSizePoint                `json:"diff_size_history,omitempty"`
+	HeadRepoKind             MergeRequestResponseHeadRepoKind `json:"head_repo_kind"`
+	Labels                   []Label                          `json:"labels,omitempty"`
+	LastWorkspaceActivityAt  *time.Time                       `json:"last_workspace_activity_at,omitempty"`
+	MergeQueue               *MergeQueueEntryResponse         `json:"merge_queue,omitempty"`
+	MergeQueueRemoval        *MergeQueueRemovalResponse       `json:"merge_queue_removal,omitempty"`
+	MergeRules               string                           `json:"merge_rules"`
+	MergeableStateObservedAt *time.Time                       `json:"mergeable_state_observed_at,omitempty"`
+	PlatformBaseSha          *string                          `json:"platform_base_sha,omitempty"`
+	PlatformHeadSha          *string                          `json:"platform_head_sha,omitempty"`
+	PlatformHost             string                           `json:"platform_host"`
+	Repo                     RepoRefResponse                  `json:"repo"`
+	RepoName                 string                           `json:"repo_name"`
+	RepoOwner                string                           `json:"repo_owner"`
+	RequestedReviewers       []string                         `json:"requested_reviewers,omitempty"`
+	ReviewDecisionObservedAt *time.Time                       `json:"review_decision_observed_at,omitempty"`
 
 	// SearchScore Similarity to q when semantic is set; compare only within one response.
 	SearchScore      *float32                  `json:"search_score,omitempty"`
@@ -70427,6 +70977,7 @@ type RepoSummaryResponse struct {
 	Releases             []RepoSummaryReleaseResponse     `json:"releases"`
 	Repo                 RepoRefResponse                  `json:"repo"`
 	TimelineUpdatedAt    *string                          `json:"timeline_updated_at,omitempty"`
+	WebURL               *string                          `json:"web_url,omitempty"`
 }
 
 type RepoSyncProblem struct {
@@ -70497,6 +71048,12 @@ type RepositoryRoute struct {
 	Owner        string `json:"owner"`
 	PlatformHost string `json:"platform_host"`
 	Provider     string `json:"provider"`
+}
+
+type RepositoryWebURLResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	WebURL string  `json:"web_url"`
 }
 
 type RequestChangesPRHostInputBody struct {
@@ -70744,11 +71301,29 @@ type Snapshot struct {
 	Worktrees             []WorktreeSummary  `json:"worktrees"`
 }
 
+type SnapshotAction struct {
+	Actor      string    `json:"actor"`
+	Kind       string    `json:"kind"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
 type SnapshotCheck struct {
 	Conclusion string `json:"conclusion"`
 	Name       string `json:"name"`
 	Status     string `json:"status"`
 	URL        string `json:"url"`
+}
+
+type SnapshotComment struct {
+	Author            string  `json:"author"`
+	AuthorAssociation *string `json:"author_association"`
+
+	// Body Full comment text within the snapshot byte budget.
+	Body          string    `json:"body"`
+	BodyTruncated bool      `json:"body_truncated"`
+	CreatedAt     time.Time `json:"created_at"`
+	ID            string    `json:"id"`
+	URL           string    `json:"url"`
 }
 
 type SnapshotCoverage struct {
@@ -70803,14 +71378,20 @@ type SnapshotPullRequest struct {
 	CheckState        string          `json:"check_state"`
 	Checks            []SnapshotCheck `json:"checks"`
 	ClosedAt          *time.Time      `json:"closed_at,omitempty"`
-	CreatedAt         time.Time       `json:"created_at"`
-	Deletions         *int64          `json:"deletions"`
+	ClosedBy          *string         `json:"closed_by,omitempty"`
+
+	// Comments For terminal pull requests, comments by the author or known human MEMBER, OWNER, and COLLABORATOR accounts.
+	Comments  []SnapshotComment `json:"comments,omitempty"`
+	CreatedAt time.Time         `json:"created_at"`
+	Deletions *int64            `json:"deletions"`
 
 	// DetailFetchedAt Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
 	DetailFetchedAt *time.Time `json:"detail_fetched_at"`
 	Draft           bool       `json:"draft"`
-	Gaps            []string   `json:"gaps"`
-	HeadBranch      string     `json:"head_branch"`
+
+	// Gaps Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author.
+	Gaps       []string `json:"gaps"`
+	HeadBranch string   `json:"head_branch"`
 
 	// HeadInSameRepository Null when either repository identity is unavailable or the head identity is stale; false means a known different repository.
 	HeadInSameRepository  *bool            `json:"head_in_same_repository"`
@@ -70818,6 +71399,8 @@ type SnapshotPullRequest struct {
 	ID                    string           `json:"id"`
 	Labels                []string         `json:"labels"`
 	LastActivityAt        *time.Time       `json:"last_activity_at"`
+	LastAuthorAction      *SnapshotAction  `json:"last_author_action,omitempty"`
+	LastMaintainerAction  *SnapshotAction  `json:"last_maintainer_action,omitempty"`
 	MergeStatusObservedAt *time.Time       `json:"merge_status_observed_at"`
 	MergeableState        string           `json:"mergeable_state"`
 	Number                int64            `json:"number"`
@@ -70832,7 +71415,9 @@ type SnapshotPullRequest struct {
 }
 
 type SnapshotRelation struct {
-	EvidenceID string    `json:"evidence_id"`
+	EvidenceID string `json:"evidence_id"`
+
+	// Kind pull_request_reference points from the mentioning pull request to the referenced pull request.
 	Kind       string    `json:"kind"`
 	ObservedAt time.Time `json:"observed_at"`
 	SourceID   string    `json:"source_id"`
@@ -70886,19 +71471,27 @@ type SpokePreparationAbortReport struct {
 	RestartRequired    bool    `json:"restart_required"`
 }
 
+type SpokePreparationConflict struct {
+	Description  string `json:"description"`
+	Kind         string `json:"kind"`
+	SourceDigest string `json:"source_digest"`
+	SourceKey    string `json:"source_key"`
+	TargetDigest string `json:"target_digest"`
+}
+
 type SpokePreparationReport struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                 *string                 `json:"$schema,omitempty"`
-	ActiveDeferredMerges   int64                   `json:"active_deferred_merges"`
-	HandoffConflicts       []ProviderStateConflict `json:"handoff_conflicts"`
-	HandoffErrors          []string                `json:"handoff_errors"`
-	InFlightProviderWrites int64                   `json:"in_flight_provider_writes"`
-	PreparationSeal        *string                 `json:"preparation_seal,omitempty"`
-	ReadyLaunchSpecs       int64                   `json:"ready_launch_specs"`
-	ReadyToActivate        bool                    `json:"ready_to_activate"`
-	RestartRequired        bool                    `json:"restart_required"`
-	UndrainedAcks          int64                   `json:"undrained_acks"`
-	Unprepared             []UnpreparedWorkspace   `json:"unprepared"`
+	Schema                 *string                    `json:"$schema,omitempty"`
+	ActiveDeferredMerges   int64                      `json:"active_deferred_merges"`
+	HandoffConflicts       []SpokePreparationConflict `json:"handoff_conflicts"`
+	HandoffErrors          []string                   `json:"handoff_errors"`
+	InFlightProviderWrites int64                      `json:"in_flight_provider_writes"`
+	PreparationSeal        *string                    `json:"preparation_seal,omitempty"`
+	ReadyLaunchSpecs       int64                      `json:"ready_launch_specs"`
+	ReadyToActivate        bool                       `json:"ready_to_activate"`
+	RestartRequired        bool                       `json:"restart_required"`
+	UndrainedAcks          int64                      `json:"undrained_acks"`
+	Unprepared             []UnpreparedWorkspace      `json:"unprepared"`
 }
 
 type SpokePreparationSeal struct {
@@ -71000,6 +71593,7 @@ type SyncStatus struct {
 	Schema                  *string                  `json:"$schema,omitempty"`
 	CurrentRepo             *string                  `json:"current_repo,omitempty"`
 	DetailRefreshOverdue    *int64                   `json:"detail_refresh_overdue,omitempty"`
+	FullSync                *FullSyncStatus          `json:"full_sync,omitempty"`
 	GitAccess               []GitAccessProblem       `json:"git_access,omitempty"`
 	LastError               *string                  `json:"last_error,omitempty"`
 	LastErrorCeilingKey     *string                  `json:"last_error_ceiling_key,omitempty"`
@@ -71112,6 +71706,13 @@ type ToolingTokenStatus struct {
 	Env    *string `json:"env,omitempty"`
 	Ready  bool    `json:"ready"`
 	Source *string `json:"source,omitempty"`
+}
+
+type TriggerSyncResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string    `json:"$schema,omitempty"`
+	Generation *int64     `json:"generation,omitempty"`
+	InstanceID *uuid.UUID `json:"instance_id,omitempty"`
 }
 
 type UnpreparedWorkspace struct {
@@ -71524,12 +72125,15 @@ type Workspace struct {
 
 type WorkspaceActivitySubjectResponse struct {
 	ActivityAt time.Time `json:"activity_at"`
-	ItemAuthor *string   `json:"item_author,omitempty"`
-	ItemNumber int64     `json:"item_number"`
-	ItemState  string    `json:"item_state"`
-	ItemTitle  string    `json:"item_title"`
-	ItemType   string    `json:"item_type"`
-	ItemURL    string    `json:"item_url"`
+
+	// HeadRepoKind Whether a pull request's head branch lives in its base repository or a fork; absent for issues and when this server does not sync the repository.
+	HeadRepoKind *WorkspaceActivitySubjectResponseHeadRepoKind `json:"head_repo_kind,omitempty"`
+	ItemAuthor   *string                                       `json:"item_author,omitempty"`
+	ItemNumber   int64                                         `json:"item_number"`
+	ItemState    string                                        `json:"item_state"`
+	ItemTitle    string                                        `json:"item_title"`
+	ItemType     string                                        `json:"item_type"`
+	ItemURL      string                                        `json:"item_url"`
 
 	// Labels The pull request's or issue's current labels, when this server syncs its repository.
 	Labels       []Label                 `json:"labels,omitempty"`
@@ -71616,10 +72220,13 @@ type WorkspaceChatCommand struct {
 }
 
 type WorkspaceChatMessage struct {
-	Content   *ACPContent  `json:"content,omitempty"`
-	CreatedAt string       `json:"createdAt"`
-	ID        string       `json:"id"`
-	Images    []ACPContent `json:"images,omitempty"`
+	Content   *ACPContent `json:"content,omitempty"`
+	CreatedAt string      `json:"createdAt"`
+
+	// DetailsOmitted The chat socket left out this tool call's input, output, and non-inline content; a toolDetails command returns them.
+	DetailsOmitted *bool        `json:"detailsOmitted,omitempty"`
+	ID             string       `json:"id"`
+	Images         []ACPContent `json:"images,omitempty"`
 
 	// Index Position of the message in the whole transcript. A sent or steered user message is inserted before output that arrived while it was being sent, so later messages can move up by one; the inserted message carries its submissionId.
 	Index            int64             `json:"index"`

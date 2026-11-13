@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"uuid"
 
 	"go.kenn.io/forge/platform"
 )
@@ -16,9 +17,22 @@ const (
 	SyncErrorCodeLocalCeilingExhausted SyncErrorCode = "localSyncCeilingExhausted"
 )
 
+type FullSyncReceipt struct {
+	InstanceID uuid.UUID `json:"instance_id"`
+	Generation uint64    `json:"generation"`
+}
+
+type FullSyncStatus struct {
+	InstanceID           uuid.UUID `json:"instance_id"`
+	SettledGeneration    uint64    `json:"settled_generation"`
+	SuccessfulGeneration uint64    `json:"successful_generation"`
+	LastError            string    `json:"last_error,omitempty"`
+}
+
 // SyncStatus holds the current state of the sync engine.
 type SyncStatus struct {
-	Relay *RelayStatus `json:"relay,omitempty"`
+	FullSync *FullSyncStatus `json:"full_sync,omitempty"`
+	Relay    *RelayStatus    `json:"relay,omitempty"`
 	// GitAccess lists repositories whose clone-store Git currently fails
 	// for a credential reason.
 	GitAccess []GitAccessProblem `json:"git_access,omitempty"`

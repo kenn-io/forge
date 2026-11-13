@@ -468,6 +468,58 @@ func TestOwnerCleanupPreservesAdmissionWhenRunRemovalFails(t *testing.T) {
 	require.DirExists(admissionDir)
 }
 
+func TestOwnerCleanupRecoversAfterPartialRunRemoval(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Getuid() == 0 {
+		t.Skip("requires Unix directory permissions and an unprivileged user")
+	}
+	const rootEnv = "KENN_FORGE_TEST_TMUX_PARTIAL_CLEANUP_ROOT"
+	const modeEnv = "KENN_FORGE_TEST_TMUX_PARTIAL_CLEANUP_MODE"
+	if root := os.Getenv(rootEnv); root != "" {
+		require := require.New(t)
+		owner, err := newAt(root)
+		require.NoError(err)
+		blocked := filepath.Join(owner.runDir, "blocked")
+		require.NoError(os.Mkdir(blocked, 0o700))
+		require.NoError(os.WriteFile(filepath.Join(blocked, "keep"), []byte("fixture"), 0o600))
+		require.NoError(os.Chmod(blocked, 0o500))
+
+		if os.Getenv(modeEnv) == "owner" {
+			require.ErrorIs(owner.Cleanup(), os.ErrPermission)
+		} else {
+			require.NoError(owner.reaper.cancel())
+		}
+		return
+	}
+	for _, mode := range []string{"owner", "reaper"} {
+		t.Run(mode, func(t *testing.T) {
+			require := require.New(t)
+			root := filepath.Join(t.TempDir(), "root")
+			command := procutil.CommandContext(t.Context(), os.Args[0], "-test.run=^TestOwnerCleanupRecoversAfterPartialRunRemoval$")
+			command.Env = append(os.Environ(), rootEnv+"="+root, modeEnv+"="+mode)
+			output, err := command.CombinedOutput()
+			require.NoError(err, string(output))
+			if mode == "reaper" {
+				require.ErrorIs(reapStale(root), os.ErrPermission)
+			}
+			// RemoveAll can remove owner.json before a later entry fails. Restore
+			// permissions so the next owner can finish the interrupted cleanup.
+			require.NoError(filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+				if err != nil {
+					return err
+				}
+				if entry.IsDir() {
+					return os.Chmod(path, 0o700)
+				}
+				return nil
+			}))
+
+			next, err := newAt(root)
+			require.NoError(err, "a partial cleanup must not block later test binaries")
+			require.NoError(next.Cleanup())
+		})
+	}
+}
+
 func TestAdmittedCreationsPreservesMarkerWhenLookupIsIndeterminate(t *testing.T) {
 	require := require.New(t)
 	admissionDir := t.TempDir()

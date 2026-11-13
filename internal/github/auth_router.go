@@ -73,7 +73,7 @@ func (e *MissingRouteError) Error() string {
 	if target == "" {
 		target = "ownerless request"
 	}
-	return fmt.Sprintf("no GitHub credential route for %s on %s", target, e.Host)
+	return fmt.Sprintf("no GitHub credential route for %s on %s. Configure a GitHub token for this repository or owner in Forge's config.toml and restart Forge.", target, e.Host)
 }
 
 // HostRouter selects exact-repository, owner, or fallback credential routes on

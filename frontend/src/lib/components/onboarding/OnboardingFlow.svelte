@@ -29,6 +29,7 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { buildProviderPullRequestRoute } from "../../routes.js";
   import { navigate } from "../../stores/router.svelte.ts";
+  import { readErrorMessage } from "../../stores/sync.svelte.js";
   import { githubAccount, resolveToolingStatus } from "../../stores/tooling-status.svelte.ts";
   import { recordWorkspaceCreated } from "../../stores/workspace-create-pending.svelte.js";
   import { createDefaultWorkspaceTarget } from "../../stores/workspace-target.svelte.js";
@@ -78,6 +79,8 @@
   let phaseExecution: AppExecution<void, never> | undefined;
   let syncExecution: AppExecution<void, never> | undefined;
   let pullsExecution: AppExecution<void, never> | undefined;
+  let unsubscribeSync: (() => void) | undefined;
+  let lastPullSync = "";
   let workspaceExecution: AppExecution<void, never> | undefined;
   let componentDestroyed = false;
 
@@ -160,6 +163,7 @@
   }
 
   function moveTo(next: Phase): void {
+    pullsExecution?.interrupt();
     phaseExecution?.interrupt();
     phaseExecution = runtime.runCommand(moveToProgram(next), {
       operation: "move onboarding phase",
@@ -296,26 +300,18 @@
         syncError = null;
       });
       let triggerFailed = false;
-      yield* stores.sync.triggerSyncEffect().pipe(
+      yield* stores.sync.triggerOnboardingSyncEffect().pipe(
         Effect.catch((failure) =>
           Effect.sync(() => {
             triggerFailed = true;
-            syncError = stores.sync.getSyncState()?.last_error || errorMessage(failure);
+            syncError = failure.operation === "wait for sync"
+              ? readErrorMessage(failure, "failed to sync")
+              : stores.sync.getSyncState()?.last_error || errorMessage(failure) || readErrorMessage(failure, "failed to trigger sync");
           }),
         ),
       );
       if (triggerFailed) return;
-      const state = stores.sync.getSyncState();
-      if (!state?.running) {
-        const lastError = state?.last_error;
-        if (lastError) {
-          yield* Effect.sync(() => {
-            syncError = lastError;
-          });
-        } else if (state?.last_run_at) {
-          yield* finishSyncProgram();
-        }
-      }
+      yield* finishSyncProgram();
     });
   }
 
@@ -334,15 +330,18 @@
     startSync();
   }
 
-  function loadAvailablePullsProgram(): Effect.Effect<void, never, AppServices> {
+  function loadAvailablePullsProgram(quiet = false): Effect.Effect<void, never, AppServices> {
     return Effect.sync(() => {
-      pullsLoading = true;
-      pullsError = null;
+      if (!quiet) {
+        pullsLoading = true;
+        pullsError = null;
+      }
     }).pipe(
       Effect.andThen(stores.pulls.loadPullsEffect()),
       Effect.matchEffect({
         onFailure: (failure) =>
           Effect.sync(() => {
+            if (quiet) return;
             pullsError = stores.pulls.getError() ?? errorMessage(failure);
             availablePulls = [];
             selectedPull = null;
@@ -351,21 +350,23 @@
           Effect.sync(() => {
             const loadError = stores.pulls.getError();
             if (loadError) {
+              if (quiet) return;
               pullsError = loadError;
               availablePulls = [];
               selectedPull = null;
               return;
             }
+            pullsError = null;
             availablePulls = stores.pulls
               .getPulls()
               .filter((pull) => pull.State === "open")
               .slice(0, 8);
-            selectedPull = availablePulls[0] ?? null;
+            selectedPull = availablePulls.find((pull) => pull.ID === selectedPull?.ID) ?? availablePulls[0] ?? null;
           }),
       }),
       Effect.ensuring(
         Effect.sync(() => {
-          if (!componentDestroyed) pullsLoading = false;
+          if (!quiet && !componentDestroyed) pullsLoading = false;
         }),
       ),
     );
@@ -373,13 +374,16 @@
 
   function finishSyncProgram(): Effect.Effect<void, never, AppServices> {
     if (syncFinishing) return Effect.void;
+    let syncAtLoad = "";
     return Effect.sync(() => {
       syncFinishing = true;
+      syncAtLoad = stores.sync.getSyncState()?.last_run_at ?? "";
     }).pipe(
       Effect.andThen(loadAvailablePullsProgram()),
       Effect.andThen(
         Effect.sync(() => {
           syncFinishing = false;
+          lastPullSync = syncAtLoad;
         }),
       ),
       Effect.andThen(moveToProgram("pulls")),
@@ -391,19 +395,19 @@
     );
   }
 
-  function finishSync(): void {
+  function retryPullLoad(): void {
     pullsExecution?.interrupt();
-    pullsExecution = runtime.runCommand(finishSyncProgram(), {
-      operation: "finish onboarding sync",
+    pullsExecution = runtime.runCommand(loadAvailablePullsProgram(), {
+      operation: "retry onboarding pull request load",
       safeContext: {},
       onFailure: () => {},
     });
   }
 
-  function retryPullLoad(): void {
+  function reloadPulls(): void {
     pullsExecution?.interrupt();
-    pullsExecution = runtime.runCommand(loadAvailablePullsProgram(), {
-      operation: "retry onboarding pull request load",
+    pullsExecution = runtime.runCommand(loadAvailablePullsProgram(true), {
+      operation: "refresh onboarding pull requests",
       safeContext: {},
       onFailure: () => {},
     });
@@ -555,18 +559,25 @@
 
   onMount(() => {
     onStart();
-    const unsubscribe = stores.sync.subscribeSyncComplete(() => {
-      if (phase !== "sync") return;
-      const state = stores.sync.getSyncState();
-      if (state?.last_error) syncError = state.last_error;
-      else finishSync();
+    unsubscribeSync = stores.sync.subscribeSyncComplete(() => {
+      if (phase !== "pulls") return;
+      lastPullSync = stores.sync.getSyncState()?.last_run_at ?? "";
+      reloadPulls();
     });
     if (phase === "sync") startSync();
-    return unsubscribe;
+  });
+
+  $effect(() => {
+    const lastRun = syncState?.last_run_at ?? "";
+    if (phase === "pulls" && lastRun && Date.parse(lastRun) > (Date.parse(lastPullSync) || 0)) {
+      lastPullSync = lastRun;
+      untrack(reloadPulls);
+    }
   });
 
   onDestroy(() => {
     componentDestroyed = true;
+    unsubscribeSync?.();
     repositoryExecution?.interrupt();
     configureExecution?.interrupt();
     phaseExecution?.interrupt();
@@ -813,7 +824,6 @@
               <div class="center-state empty-pulls">
                 <GitPullRequestIcon size={20} aria-hidden="true" />
                 <strong>No open pull requests yet</strong>
-                <span>The repositories are configured and will keep syncing in the background.</span>
               </div>
             {/if}
           {/if}
@@ -1176,11 +1186,6 @@
 
   .empty-pulls strong {
     color: var(--text-primary);
-  }
-
-  .empty-pulls span {
-    max-width: 48ch;
-    font-size: var(--font-size-sm);
   }
 
   .no-results {

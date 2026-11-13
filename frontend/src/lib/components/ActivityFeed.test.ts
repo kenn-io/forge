@@ -115,6 +115,10 @@ const hideClosedMerged = vi.hoisted(() => ({ value: false }));
 const hideBots = vi.hoisted(() => ({ value: false }));
 const hideDrafts = vi.hoisted(() => ({ value: false }));
 const mergeQueued = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
+const onlyClosedMerged = vi.hoisted(() => ({ value: false }));
+const onlyBots = vi.hoisted(() => ({ value: false }));
+const onlyDrafts = vi.hoisted(() => ({ value: false }));
+const pullAttributeFilters = vi.hoisted(() => ({ value: [] as string[] }));
 const labelFilters = vi.hoisted(() => ({ value: new Map() as LabelFilters }));
 const cycleLabelFilter = vi.hoisted(() =>
   vi.fn((name: string) => {
@@ -138,9 +142,11 @@ const enabledEvents = vi.hoisted(() => ({
 const showNotifications = vi.hoisted(() => ({ value: true }));
 const activityCapped = vi.hoisted(() => ({ value: false }));
 const itemActivityCapped = vi.hoisted(() => ({ value: false }));
+const olderItemsAvailable = vi.hoisted(() => ({ value: false }));
 const canLoadMore = vi.hoisted(() => ({ value: false }));
 const loadingMore = vi.hoisted(() => ({ value: false }));
 const loadMoreActivity = vi.hoisted(() => vi.fn());
+const loadOlderItems = vi.hoisted(() => vi.fn());
 const involvesMe = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const unassigned = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
@@ -171,12 +177,24 @@ vi.mock("../context.js", () => ({
       getActivityAuthorsError: () => null,
       getEnabledEvents: () => enabledEvents.value,
       getShowNotifications: () => showNotifications.value,
+      getStarred: () => false,
+      setStarred: vi.fn(),
+      getReferencedByPR: () => undefined,
+      setReferencedByPR: vi.fn(),
+      getHideBotAuthoredIssues: () => false,
+      setHideBotAuthoredIssues: vi.fn(),
+      getTimeRangeDefault: () => "7d",
+      getViewModeDefault: () => "flat",
       getInvolvesMe: () => involvesMe.value,
       getUnassigned: () => unassigned.value,
       getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => hideBots.value,
       getHideDrafts: () => hideDrafts.value,
       getMergeQueued: () => mergeQueued.value,
+      getActivityState: () => (onlyClosedMerged.value ? "closed" : hideClosedMerged.value ? "open" : "all"),
+      getBots: () => (onlyBots.value ? "require" : hideBots.value ? "exclude" : undefined),
+      getDraft: () => (onlyDrafts.value ? "require" : hideDrafts.value ? "exclude" : undefined),
+      getPullAttributeFilters: () => pullAttributeFilters.value,
       getLabelFilters: () => labelFilters.value,
       cycleLabelFilter,
       clearLabelFilters: vi.fn(() => {
@@ -195,6 +213,9 @@ vi.mock("../context.js", () => ({
       isActivityLoading: () => false,
       isActivityCapped: () => activityCapped.value,
       isItemActivityCapped: () => itemActivityCapped.value,
+      canLoadOlderItems: () => olderItemsAvailable.value,
+      isLoadingOlderItems: () => false,
+      loadOlderItems,
       canLoadMoreActivity: () => canLoadMore.value,
       isLoadingMoreActivity: () => loadingMore.value,
       loadMoreActivity,
@@ -228,6 +249,21 @@ vi.mock("../context.js", () => ({
       setHideClosedMerged: vi.fn(),
       setHideBots: vi.fn(),
       setHideDrafts,
+      setActivityState: vi.fn((state: "open" | "closed" | "all") => {
+        onlyClosedMerged.value = state === "closed";
+        hideClosedMerged.value = state === "open";
+      }),
+      setBots: vi.fn((value: "require" | "exclude" | undefined) => {
+        onlyBots.value = value === "require";
+        hideBots.value = value === "exclude";
+      }),
+      setDraft: vi.fn((value: "require" | "exclude" | undefined) => {
+        onlyDrafts.value = value === "require";
+        setHideDrafts(value === "exclude");
+      }),
+      setPullAttributeFilters: vi.fn((next: string[]) => {
+        pullAttributeFilters.value = next;
+      }),
       setMergeQueued: (value: "require" | "exclude" | undefined) => {
         mergeQueued.value = value;
       },
@@ -240,6 +276,7 @@ vi.mock("../context.js", () => ({
       setViewMode: vi.fn(),
       syncToURL: vi.fn(),
     },
+    issues: { canFilterReferencedByPR: () => true },
     settings: {
       getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }),
       isSettingsLoaded: () => true,
@@ -266,6 +303,10 @@ describe("ActivityFeed compact mode", () => {
     rollUpCommits.value = false;
     hideDefaultBranchActivity.value = false;
     hideClosedMerged.value = false;
+    onlyClosedMerged.value = false;
+    onlyBots.value = false;
+    onlyDrafts.value = false;
+    pullAttributeFilters.value = [];
     hideOrgName.value = false;
     enabledItemTypes.value = new Set(["pr", "issue"]);
     enabledEvents.value = new Set(["comment", "review", "commit", "force_push"]);
@@ -274,9 +315,11 @@ describe("ActivityFeed compact mode", () => {
     unassigned.value = undefined;
     activityCapped.value = false;
     itemActivityCapped.value = false;
+    olderItemsAvailable.value = false;
     canLoadMore.value = false;
     loadingMore.value = false;
     loadMoreActivity.mockClear();
+    loadOlderItems.mockClear();
     selectedAuthor.value = undefined;
     setActivityAuthor.mockClear();
     setActivityFilterTypes.mockClear();
@@ -330,9 +373,10 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
   });
 
-  it("keeps older activity available when the loaded page has no label matches", () => {
+  it("keeps older activity available when the loaded page has no matches", () => {
     activityCapped.value = true;
-    labelFilters.value = new Map([["cache", { name: "cache", mode: "require" }]]);
+    // Bots: required hides the loaded human-authored rows in the browser.
+    onlyBots.value = true;
     canLoadMore.value = true;
     render(ActivityFeed);
     expect(screen.queryByText("No activity found")).toBeNull();
@@ -340,38 +384,30 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
   });
 
-  it.each([
-    {
-      kind: "events",
-      rule: "shows the event ceiling notice after paging ends",
-      view: "threaded" as const,
-      visible: true,
-      notice: /most recent 5,000 events/,
-      otherNotice: /5,000 most recently active pull requests and issues/,
-    },
-    {
-      kind: "parents",
-      rule: "shows the parent ceiling notice in threaded view",
-      view: "threaded" as const,
-      visible: true,
-      notice: /5,000 most recently active pull requests and issues/,
-      otherNotice: /most recent 5,000 events/,
-    },
-    {
-      kind: "parents",
-      rule: "hides the parent ceiling notice in flat view",
-      view: "flat" as const,
-      visible: false,
-      notice: /5,000 most recently active pull requests and issues/,
-      otherNotice: /most recent 5,000 events/,
-    },
-  ])("$rule", ({ kind, view, visible, notice, otherNotice }) => {
-    activityCapped.value = kind === "events";
-    itemActivityCapped.value = kind === "parents";
-    viewMode.value = view;
+  it("shows the event ceiling notice after paging ends", () => {
+    activityCapped.value = true;
+    viewMode.value = "threaded";
     render(ActivityFeed);
-    expect(screen.queryByText(notice) !== null).toBe(visible);
-    expect(screen.queryByText(otherNotice)).toBeNull();
+    expect(screen.getByText(/most recent 5,000 events/)).toBeTruthy();
+  });
+
+  it("shows the older item control in threaded view", async () => {
+    itemActivityCapped.value = true;
+    olderItemsAvailable.value = true;
+    viewMode.value = "threaded";
+    render(ActivityFeed);
+    expect(screen.getByText(/Item totals cover loaded items only/)).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Load older items" }));
+    expect(loadOlderItems).toHaveBeenCalledOnce();
+  });
+
+  it("hides the older item control in flat view", () => {
+    itemActivityCapped.value = true;
+    olderItemsAvailable.value = true;
+    viewMode.value = "flat";
+    render(ActivityFeed);
+    expect(screen.queryByText(/Item totals cover loaded items only/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load older items" })).toBeNull();
   });
 
   it("offers to retry a failed thread history load", async () => {
@@ -445,63 +481,6 @@ describe("ActivityFeed compact mode", () => {
     expect(container.textContent).not.toContain("Bot-authored workspace");
   });
 
-  it("filters a workspace summary by its item's labels when the workspace row carries none", () => {
-    useWorkspaceActivityForRecency.value = true;
-    viewMode.value = "threaded";
-    const labeled = (...names: string[]) => names.map((name) => ({ name, color: "d73a4a", is_default: false }));
-    items.value = [];
-    // A spoke sends workspace rows without labels for repositories only its hub syncs.
-    itemActivity.value = [
-      workspaceSubject({
-        item_number: 8,
-        item_title: "Excluded parent",
-        workspace: undefined,
-        labels: labeled("wontfix"),
-      }),
-    ];
-    workspaceActivity.value = [
-      workspaceSubject({ item_number: 8, item_title: "Excluded parent" }),
-      workspaceSubject({ item_number: 9, item_title: "Kept workspace" }),
-    ];
-    labelFilters.value = cycleLabel(cycleLabel(new Map(), "wontfix"), "wontfix");
-
-    const { container } = render(ActivityFeed, { props: { compact: true } });
-
-    expect(container.textContent).not.toContain("Excluded parent");
-    expect(container.textContent).toContain("Kept workspace");
-  });
-
-  it("matches a workspace row to its item by repository ID after the repository is renamed", () => {
-    useWorkspaceActivityForRecency.value = true;
-    viewMode.value = "threaded";
-    const labeled = (...names: string[]) => names.map((name) => ({ name, color: "d73a4a", is_default: false }));
-    const renamed = activityItem("renamed-source").repo!;
-    items.value = [];
-    itemActivity.value = [
-      workspaceSubject({
-        item_number: 8,
-        item_title: "Excluded parent",
-        repo: { ...renamed, platform_repo_id: 42 },
-        workspace: undefined,
-        labels: labeled("wontfix"),
-      }),
-    ];
-    // The workspace row still has the route from before the rename.
-    workspaceActivity.value = [
-      workspaceSubject({
-        item_number: 8,
-        item_title: "Excluded parent",
-        repo: { ...renamed, platform_repo_id: 42, name: "old-widgets", repo_path: "acme/old-widgets" },
-        repo_name: "old-widgets",
-      }),
-    ];
-    labelFilters.value = cycleLabel(cycleLabel(new Map(), "wontfix"), "wontfix");
-
-    const { container } = render(ActivityFeed, { props: { compact: true } });
-
-    expect(container.textContent).not.toContain("Excluded parent");
-  });
-
   it("selects a single PR or issue author from the Author flyout", async () => {
     render(ActivityFeed, { props: { compact: false } });
 
@@ -512,24 +491,6 @@ describe("ActivityFeed compact mode", () => {
     await fireEvent.click(within(flyout).getByRole("button", { name: "Alice" }));
 
     expect(setActivityAuthor).toHaveBeenCalledWith("Alice");
-  });
-
-  it("keeps rows of items with every required label and none of the excluded ones", () => {
-    const labeled = (...names: string[]) => names.map((name) => ({ name, color: "d73a4a", is_default: false }));
-    items.value = [
-      activityItem("bug-ui", { item_number: 1, item_title: "Bug in the UI", labels: labeled("bug", "ui") }),
-      activityItem("bug-only", { item_number: 2, item_title: "Plain bug", labels: labeled("Bug") }),
-      activityItem("bug-wontfix", { item_number: 3, item_title: "Wontfix bug", labels: labeled("bug", "wontfix") }),
-      branchActivityItem("branch-commit", { body_preview: "Branch commit" }),
-    ];
-    labelFilters.value = cycleLabel(cycleLabel(cycleLabel(new Map(), "bug"), "wontfix"), "wontfix");
-
-    const { container } = render(ActivityFeed, { props: { compact: false } });
-
-    expect(container.textContent).toContain("Bug in the UI");
-    expect(container.textContent).toContain("Plain bug");
-    expect(container.textContent).not.toContain("Wontfix bug");
-    expect(container.textContent).not.toContain("Branch commit");
   });
 
   it("counts each item once in the Labels flyout and cycles the clicked label", async () => {
@@ -569,6 +530,7 @@ describe("ActivityFeed compact mode", () => {
 
   it("resets popover filters and author without changing the PR and issue toggles", async () => {
     selectedAuthor.value = "Alice";
+    hideDrafts.value = true;
     mergeQueued.value = "exclude";
     enabledItemTypes.value = new Set(["pr"]);
     render(ActivityFeed, { props: { compact: false } });
@@ -577,7 +539,7 @@ describe("ActivityFeed compact mode", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
 
     expect(setActivityAuthor).toHaveBeenCalledWith(undefined);
-    expect(setHideDrafts).toHaveBeenCalledWith(false);
+    expect(hideDrafts.value).toBe(false);
     expect(mergeQueued.value).toBeUndefined();
     expect(enabledItemTypes.value).toEqual(new Set(["pr"]));
   });
@@ -596,27 +558,101 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.getByRole("button", { name: "Unassigned" }).getAttribute("aria-pressed")).toBe("false");
   });
 
-  it("reloads server-filtered activity when closed or bot visibility changes", async () => {
+  it("reloads server-filtered activity when state, bot, draft, or PR filters change", async () => {
     render(ActivityFeed, { props: { compact: false } });
     const mountedReads = loadActivity.mock.calls.length;
 
     await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
-    await fireEvent.click(screen.getByRole("button", { name: "Hide closed/merged" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    expect(hideClosedMerged.value).toBe(true);
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 1);
 
-    await fireEvent.click(screen.getByRole("button", { name: "Hide bots" }));
-    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 2);
-
-    await fireEvent.click(screen.getByRole("button", { name: "Hide drafts" }));
-    expect(setHideDrafts).toHaveBeenCalledWith(true);
+    const bots = screen.getByRole("button", { name: "Bots" });
+    await fireEvent.click(bots);
+    await fireEvent.click(bots);
+    expect(hideBots.value).toBe(true);
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 3);
 
+    const draft = screen.getByRole("button", { name: "Draft" });
+    await fireEvent.click(draft);
+    expect(onlyDrafts.value).toBe(true);
+    await fireEvent.click(draft);
+    expect(setHideDrafts).toHaveBeenLastCalledWith(true);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 5);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Approved" }));
+    expect(pullAttributeFilters.value).toEqual(["approved"]);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 6);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Passing CI" }));
+    expect(pullAttributeFilters.value).toEqual(["approved", "passed_ci"]);
+    await fireEvent.click(screen.getByRole("button", { name: "Failed CI" }));
+    expect(pullAttributeFilters.value).toEqual(["approved", "failed_ci"]);
+    await fireEvent.click(screen.getByRole("button", { name: "Failed CI" }));
+    expect(pullAttributeFilters.value).toEqual(["approved"]);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 9);
+
     await fireEvent.click(screen.getByRole("button", { name: "Unassigned" }));
-    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 4);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 10);
 
     await fireEvent.click(screen.getByRole("button", { name: "Merge queued" }));
     expect(mergeQueued.value).toBe("require");
-    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 5);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 11);
+  });
+
+  it("filters loaded pull request rows by fork and workspace in the browser and leaves issues alone", async () => {
+    items.value = [
+      activityItem("fork", { item_number: 1, item_title: "Fork pull request", head_repo_kind: "fork" }),
+      activityItem("same", {
+        item_number: 2,
+        item_title: "Same-repo pull request",
+        head_repo_kind: "same_repo",
+        workspace: { id: "ws-2", status: "ready" } as ActivityItem["workspace"],
+      }),
+      activityItem("issue", { item_number: 3, item_title: "Open issue", item_type: "issue" }),
+    ];
+    const visible = (filters: string[]) => {
+      pullAttributeFilters.value = filters;
+      const view = render(ActivityFeed, { props: { compact: false } });
+      const text = view.container.textContent ?? "";
+      view.unmount();
+      return ["Fork pull request", "Same-repo pull request", "Open issue"].filter((title) => text.includes(title));
+    };
+
+    expect(visible(["fork"])).toEqual(["Fork pull request", "Open issue"]);
+    expect(visible(["not_fork"])).toEqual(["Same-repo pull request", "Open issue"]);
+    expect(visible(["has_workspace"])).toEqual(["Same-repo pull request", "Open issue"]);
+    expect(visible(["no_workspace"])).toEqual(["Fork pull request", "Open issue"]);
+
+    pullAttributeFilters.value = [];
+    render(ActivityFeed, { props: { compact: false } });
+    const mountedReads = loadActivity.mock.calls.length;
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "From fork" }));
+    expect(pullAttributeFilters.value).toEqual(["fork"]);
+    await fireEvent.click(screen.getByRole("button", { name: "Has workspace" }));
+    expect(pullAttributeFilters.value).toEqual(["fork", "has_workspace"]);
+    // The server applies From fork and Has workspace before its limit, so each change reloads.
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 2);
+  });
+
+  it("keeps only closed and merged items, or only bot activity, before the next load", async () => {
+    items.value = [
+      activityItem("open", { item_number: 1, item_title: "Open by a person" }),
+      activityItem("merged", { item_number: 2, item_title: "Merged by a person", item_state: "merged" }),
+      activityItem("bot", { item_number: 3, item_title: "Open by a bot", author: "renovate[bot]" }),
+    ];
+    onlyClosedMerged.value = true;
+    const closed = render(ActivityFeed, { props: { compact: false } });
+    expect(closed.container.textContent).toContain("Merged by a person");
+    expect(closed.container.textContent).not.toContain("Open by a person");
+    closed.unmount();
+
+    onlyClosedMerged.value = false;
+    onlyBots.value = true;
+    const bots = render(ActivityFeed, { props: { compact: false } });
+    expect(bots.container.textContent).toContain("Open by a bot");
+    expect(bots.container.textContent).not.toContain("Open by a person");
   });
 
   it("cycles Involves me, Unassigned, and Merge queued through required, excluded, and off", async () => {
@@ -663,7 +699,7 @@ describe("ActivityFeed compact mode", () => {
     await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
 
     expect(screen.getByRole("button", { name: "By repo" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "Flat list" }).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("independently toggles PR and issue visibility", async () => {

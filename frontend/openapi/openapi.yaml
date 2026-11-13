@@ -491,6 +491,13 @@ components:
           type: string
         cursor:
           type: string
+        head_repo_kind:
+          description: Whether the parent pull request's head branch lives in its base repository or a fork; absent for issues and repository-level activity.
+          enum:
+            - same_repo
+            - fork
+            - unknown
+          type: string
         id:
           type: string
         item_author:
@@ -597,6 +604,8 @@ components:
           type: array
         next_cursor:
           type: string
+        next_subject_cursor:
+          type: string
         use_workspace_activity_for_recency:
           type: boolean
         workspace_activity:
@@ -619,6 +628,13 @@ components:
           format: date-time
           type: string
         event_ledger_revision:
+          type: string
+        head_repo_kind:
+          description: Whether a pull request's head branch lives in its base repository or a fork; absent for issues and repository-level activity.
+          enum:
+            - same_repo
+            - fork
+            - unknown
           type: string
         item_author:
           type: string
@@ -1352,6 +1368,10 @@ components:
           type: array
         observed_at:
           format: date-time
+          type: string
+        pull_request_scope:
+          enum:
+            - recently_closed
           type: string
         pull_requests:
           items:
@@ -3840,6 +3860,27 @@ components:
         - sessions
         - restart_required
       type: object
+    FullSyncStatus:
+      additionalProperties: false
+      properties:
+        instance_id:
+          format: uuid
+          type: string
+        last_error:
+          type: string
+        settled_generation:
+          format: int64
+          minimum: 0
+          type: integer
+        successful_generation:
+          format: int64
+          minimum: 0
+          type: integer
+      required:
+        - instance_id
+        - settled_generation
+        - successful_generation
+      type: object
     GetPullsInputBody:
       additionalProperties: false
       properties:
@@ -6227,6 +6268,12 @@ components:
           items:
             $ref: "#/components/schemas/PRDiffSizePoint"
           type: array
+        head_repo_kind:
+          enum:
+            - same_repo
+            - fork
+            - unknown
+          type: string
         labels:
           items:
             $ref: "#/components/schemas/Label"
@@ -6285,6 +6332,7 @@ components:
         - repo_owner
         - repo_name
         - platform_host
+        - head_repo_kind
         - worktree_links
         - detail_loaded
         - ID
@@ -9161,6 +9209,8 @@ components:
           $ref: "#/components/schemas/RepoRefResponse"
         timeline_updated_at:
           type: string
+        web_url:
+          type: string
       required:
         - repo
         - platform_host
@@ -9360,6 +9410,21 @@ components:
         - platform_host
         - owner
         - name
+      type: object
+    RepositoryWebURLResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RepositoryWebURLResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        web_url:
+          type: string
+      required:
+        - web_url
       type: object
     RequestChangesPRHostInputBody:
       additionalProperties: false
@@ -10029,6 +10094,21 @@ components:
         - sessions
         - workspaces
       type: object
+    SnapshotAction:
+      additionalProperties: false
+      properties:
+        actor:
+          type: string
+        kind:
+          type: string
+        occurred_at:
+          format: date-time
+          type: string
+      required:
+        - kind
+        - actor
+        - occurred_at
+      type: object
     SnapshotCheck:
       additionalProperties: false
       properties:
@@ -10045,6 +10125,36 @@ components:
         - status
         - conclusion
         - url
+      type: object
+    SnapshotComment:
+      additionalProperties: false
+      properties:
+        author:
+          type: string
+        author_association:
+          type:
+            - string
+            - "null"
+        body:
+          description: Full comment text within the snapshot byte budget.
+          type: string
+        body_truncated:
+          type: boolean
+        created_at:
+          format: date-time
+          type: string
+        id:
+          type: string
+        url:
+          type: string
+      required:
+        - id
+        - author
+        - author_association
+        - body
+        - body_truncated
+        - url
+        - created_at
       type: object
     SnapshotCoverage:
       additionalProperties: false
@@ -10216,6 +10326,13 @@ components:
           type:
             - string
             - "null"
+        closed_by:
+          type: string
+        comments:
+          description: For terminal pull requests, comments by the author or known human MEMBER, OWNER, and COLLABORATOR accounts.
+          items:
+            $ref: "#/components/schemas/SnapshotComment"
+          type: array
         created_at:
           format: date-time
           type: string
@@ -10233,6 +10350,7 @@ components:
         draft:
           type: boolean
         gaps:
+          description: Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author.
           items:
             type: string
           type: array
@@ -10256,6 +10374,10 @@ components:
           type:
             - string
             - "null"
+        last_author_action:
+          $ref: "#/components/schemas/SnapshotAction"
+        last_maintainer_action:
+          $ref: "#/components/schemas/SnapshotAction"
         merge_status_observed_at:
           format: date-time
           type:
@@ -10325,6 +10447,7 @@ components:
         evidence_id:
           type: string
         kind:
+          description: pull_request_reference points from the mentioning pull request to the referenced pull request.
           type: string
         observed_at:
           format: date-time
@@ -10472,6 +10595,26 @@ components:
         - provider_writes_open
         - restart_required
       type: object
+    SpokePreparationConflict:
+      additionalProperties: false
+      properties:
+        description:
+          type: string
+        kind:
+          type: string
+        source_digest:
+          type: string
+        source_key:
+          type: string
+        target_digest:
+          type: string
+      required:
+        - description
+        - kind
+        - source_key
+        - source_digest
+        - target_digest
+      type: object
     SpokePreparationReport:
       additionalProperties: false
       properties:
@@ -10487,7 +10630,7 @@ components:
           type: integer
         handoff_conflicts:
           items:
-            $ref: "#/components/schemas/ProviderStateConflict"
+            $ref: "#/components/schemas/SpokePreparationConflict"
           type: array
         handoff_errors:
           items:
@@ -10786,6 +10929,8 @@ components:
         detail_refresh_overdue:
           format: int64
           type: integer
+        full_sync:
+          $ref: "#/components/schemas/FullSyncStatus"
         git_access:
           items:
             $ref: "#/components/schemas/GitAccessProblem"
@@ -11071,6 +11216,24 @@ components:
           type: string
       required:
         - ready
+      type: object
+    TriggerSyncResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/TriggerSyncResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        generation:
+          format: int64
+          minimum: 0
+          type: integer
+        instance_id:
+          format: uuid
+          type: string
       type: object
     UnpreparedWorkspace:
       additionalProperties: false
@@ -12177,6 +12340,13 @@ components:
         activity_at:
           format: date-time
           type: string
+        head_repo_kind:
+          description: Whether a pull request's head branch lives in its base repository or a fork; absent for issues and when this server does not sync the repository.
+          enum:
+            - same_repo
+            - fork
+            - unknown
+          type: string
         item_author:
           type: string
         item_number:
@@ -12432,6 +12602,9 @@ components:
           $ref: "#/components/schemas/ACPContent"
         createdAt:
           type: string
+        detailsOmitted:
+          description: The chat socket left out this tool call's input, output, and non-inline content; a toolDetails command returns them.
+          type: boolean
         id:
           type: string
         images:
@@ -13704,6 +13877,11 @@ paths:
             type: string
         - explode: false
           in: query
+          name: subject_before
+          schema:
+            type: string
+        - explode: false
+          in: query
           name: at_or_before
           schema:
             type: string
@@ -13735,10 +13913,24 @@ paths:
           name: hide_closed_merged
           schema:
             type: boolean
+        - description: Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged.
+          explode: false
+          in: query
+          name: closed_merged
+          schema:
+            description: Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged.
+            type: boolean
         - explode: false
           in: query
           name: hide_bots
           schema:
+            type: boolean
+        - description: Keep only bot-authored activity. Wins over hide_bots.
+          explode: false
+          in: query
+          name: bots
+          schema:
+            description: Keep only bot-authored activity. Wins over hide_bots.
             type: boolean
         - description: Exclude activity for draft pull requests.
           explode: false
@@ -13761,10 +13953,63 @@ paths:
           schema:
             description: Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
             type: boolean
+        - description: "Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, has_workspace, no_workspace, fork, not_fork. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts."
+          explode: false
+          in: query
+          name: attributes
+          schema:
+            description: "Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, has_workspace, no_workspace, fork, not_fork. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts."
+            type: string
         - explode: false
           in: query
           name: hide_default_branch
           schema:
+            type: boolean
+        - description: Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches.
+          explode: true
+          in: query
+          name: labels
+          schema:
+            description: Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches.
+            items:
+              type: string
+            type: array
+        - description: Drop activity whose pull request or issue carries any named label. Names match without case across repositories.
+          explode: true
+          in: query
+          name: exclude_labels
+          schema:
+            description: Drop activity whose pull request or issue carries any named label. Names match without case across repositories.
+            items:
+              type: string
+            type: array
+        - description: Drop issue activity on issues a bot account opened. Pull request and repository activity always passes.
+          explode: false
+          in: query
+          name: hide_bot_authored_issues
+          schema:
+            description: Drop issue activity on issues a bot account opened. Pull request and repository activity always passes.
+            type: boolean
+        - description: Keep only activity whose pull request or issue is starred.
+          explode: false
+          in: query
+          name: starred
+          schema:
+            description: Keep only activity whose pull request or issue is starred.
+            type: boolean
+        - description: Keep only issue activity on issues a pull request references. Pull request and repository activity always passes.
+          explode: false
+          in: query
+          name: referenced_by_pr
+          schema:
+            description: Keep only issue activity on issues a pull request references. Pull request and repository activity always passes.
+            type: boolean
+        - description: Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies.
+          explode: false
+          in: query
+          name: not_referenced_by_pr
+          schema:
+            description: Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies.
             type: boolean
       responses:
         "200":
@@ -13902,10 +14147,24 @@ paths:
           name: hide_closed_merged
           schema:
             type: boolean
+        - description: Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged.
+          explode: false
+          in: query
+          name: closed_merged
+          schema:
+            description: Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged.
+            type: boolean
         - explode: false
           in: query
           name: hide_bots
           schema:
+            type: boolean
+        - description: Keep only bot-authored activity. Wins over hide_bots.
+          explode: false
+          in: query
+          name: bots
+          schema:
+            description: Keep only bot-authored activity. Wins over hide_bots.
             type: boolean
         - description: Exclude activity for draft pull requests.
           explode: false
@@ -13928,10 +14187,63 @@ paths:
           schema:
             description: Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
             type: boolean
+        - description: Comma-separated pull request filters, as on the activity list.
+          explode: false
+          in: query
+          name: attributes
+          schema:
+            description: Comma-separated pull request filters, as on the activity list.
+            type: string
         - explode: false
           in: query
           name: hide_default_branch
           schema:
+            type: boolean
+        - description: Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches.
+          explode: true
+          in: query
+          name: labels
+          schema:
+            description: Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches.
+            items:
+              type: string
+            type: array
+        - description: Drop activity whose pull request or issue carries any named label. Names match without case across repositories.
+          explode: true
+          in: query
+          name: exclude_labels
+          schema:
+            description: Drop activity whose pull request or issue carries any named label. Names match without case across repositories.
+            items:
+              type: string
+            type: array
+        - description: Drop issue activity on issues a bot account opened. Pull request and repository activity always passes.
+          explode: false
+          in: query
+          name: hide_bot_authored_issues
+          schema:
+            description: Drop issue activity on issues a bot account opened. Pull request and repository activity always passes.
+            type: boolean
+        - description: Keep only activity whose pull request or issue is starred.
+          explode: false
+          in: query
+          name: starred
+          schema:
+            description: Keep only activity whose pull request or issue is starred.
+            type: boolean
+        - description: Keep only issue activity on issues a pull request references. Pull request and repository activity always passes.
+          explode: false
+          in: query
+          name: referenced_by_pr
+          schema:
+            description: Keep only issue activity on issues a pull request references. Pull request and repository activity always passes.
+            type: boolean
+        - description: Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies.
+          explode: false
+          in: query
+          name: not_referenced_by_pr
+          schema:
+            description: Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies.
             type: boolean
       responses:
         "200":
@@ -14086,6 +14398,15 @@ paths:
     get:
       operationId: get-archive-snapshot
       parameters:
+        - description: Include open pull requests and those closed or merged within 30 days before observed_at, with references in either direction, including references outside the window.
+          explode: false
+          in: query
+          name: pull_request_scope
+          schema:
+            description: Include open pull requests and those closed or merged within 30 days before observed_at, with references in either direction, including references outside the window.
+            enum:
+              - recently_closed
+            type: string
         - description: "Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window."
           explode: false
           in: query
@@ -22944,6 +23265,57 @@ paths:
       summary: Update repository UI visibility
       tags:
         - Settings
+  /host/{platform_host}/repo/{provider}/{owner}/{name}/web-url:
+    get:
+      operationId: get-repo-web-url-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: platform_repo_id
+          schema:
+            format: int64
+            type: integer
+        - explode: false
+          in: query
+          name: bitbucket_repository_uuid
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryWebURLResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get repository web URL
+      tags:
+        - Repositories
   /host/{platform_host}/repo/{provider}/{owner}/{name}/workspaces:
     post:
       operationId: create-repo-workspace-on-host
@@ -23137,6 +23509,31 @@ paths:
           name: not_referenced_by_pr
           schema:
             description: Only include issues no pull request references. With referenced_by_pr, neither filter applies.
+            type: boolean
+        - description: Only include issues carrying every named label. Names match without case across repositories; applied before pagination.
+          explode: true
+          in: query
+          name: labels
+          schema:
+            description: Only include issues carrying every named label. Names match without case across repositories; applied before pagination.
+            items:
+              type: string
+            type: array
+        - description: Drop issues carrying any named label. Names match without case across repositories; applied before pagination.
+          explode: true
+          in: query
+          name: exclude_labels
+          schema:
+            description: Drop issues carrying any named label. Names match without case across repositories; applied before pagination.
+            items:
+              type: string
+            type: array
+        - description: "Drop issues a bot account opened: a -bot login suffix on any provider, [bot] on GitHub, and project or group access token users on GitLab."
+          explode: false
+          in: query
+          name: hide_bots
+          schema:
+            description: "Drop issues a bot account opened: a -bot login suffix on any provider, [bot] on GitHub, and project or group access token users on GitLab."
             type: boolean
       responses:
         "200":
@@ -25032,12 +25429,12 @@ paths:
               format: int64
               type: integer
             type: array
-        - description: "Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination."
+        - description: "Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not), has_workspace and no_workspace (with a workspace on this server, or not), fork and not_fork (the head branch lives in a fork, or not; an unknown head repository is not a fork). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, merge_queued or not_merge_queued, has_workspace or no_workspace, and fork or not_fork. Every other selected filter, including involves_me and unassigned, must also match before pagination."
           explode: false
           in: query
           name: attributes
           schema:
-            description: "Comma-separated PR inclusion filters: approved, not_approved, draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination."
+            description: "Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not), has_workspace and no_workspace (with a workspace on this server, or not), fork and not_fork (the head branch lives in a fork, or not; an unknown head repository is not a fork). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, merge_queued or not_merge_queued, has_workspace or no_workspace, and fork or not_fork. Every other selected filter, including involves_me and unassigned, must also match before pagination."
             type: string
         - description: Exact case-sensitive label name; applied before pagination.
           explode: false
@@ -25046,6 +25443,24 @@ paths:
           schema:
             description: Exact case-sensitive label name; applied before pagination.
             type: string
+        - description: Only include pull requests carrying every named label. Names match without case across repositories; applied before pagination.
+          explode: true
+          in: query
+          name: labels
+          schema:
+            description: Only include pull requests carrying every named label. Names match without case across repositories; applied before pagination.
+            items:
+              type: string
+            type: array
+        - description: Drop pull requests carrying any named label. Names match without case across repositories; applied before pagination.
+          explode: true
+          in: query
+          name: exclude_labels
+          schema:
+            description: Drop pull requests carrying any named label. Names match without case across repositories; applied before pagination.
+            items:
+              type: string
+            type: array
         - description: Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
           explode: false
           in: query
@@ -28261,6 +28676,52 @@ paths:
       summary: Update repository UI visibility
       tags:
         - Settings
+  /repo/{provider}/{owner}/{name}/web-url:
+    get:
+      operationId: get-repo-web-url
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: platform_repo_id
+          schema:
+            format: int64
+            type: integer
+        - explode: false
+          in: query
+          name: bitbucket_repository_uuid
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepositoryWebURLResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get repository web URL
+      tags:
+        - Repositories
   /repo/{provider}/{owner}/{name}/workspaces:
     post:
       operationId: create-repo-workspace
@@ -29040,6 +29501,10 @@ paths:
             type: array
       responses:
         "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriggerSyncResponse"
           description: Accepted
         default:
           content:

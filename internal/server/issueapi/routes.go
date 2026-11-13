@@ -20,6 +20,7 @@ func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*list
 		Repo:    input.Repo, State: input.State, Starred: input.Starred,
 		InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, ReferencedByPR: input.ReferencedByPR,
 		NotInvolvesMe: input.NotInvolvesMe, Assigned: input.Assigned, NotReferencedByPR: input.NotReferencedByPR,
+		Labels: input.Labels, ExcludeLabels: input.ExcludeLabels, HideBots: input.HideBots,
 		Text: input.Q, Semantic: input.Semantic, Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
 	}
 	var rows []IssueResponse
@@ -87,6 +88,9 @@ func (s *Handler) listIssuesRouteCore(
 		WorkspaceActivity: overrides,
 		ReferencedByPR:    input.ReferencedByPR && !input.NotReferencedByPR,
 		NotReferencedByPR: input.NotReferencedByPR && !input.ReferencedByPR,
+		Labels:            httpapi.LabelNames(input.Labels),
+		ExcludeLabels:     httpapi.LabelNames(input.ExcludeLabels),
+		HideBots:          input.HideBots,
 		Items:             items,
 	}
 	if input.InvolvesMe != input.NotInvolvesMe {

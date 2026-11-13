@@ -46,7 +46,7 @@ func TestAgentHookRunRelaysLifecyclePayloadToDaemon(t *testing.T) {
 	))
 	token, err := runtimelock.EnsureAuthToken(dataDir)
 	require.NoError(err)
-	lock, err := runtimelock.Acquire(dataDir)
+	lock, err := runtimelock.Acquire(t.Context(), dataDir)
 	require.NoError(err)
 	t.Cleanup(func() { _ = lock.Release() })
 	require.NoError(lock.WriteMetadata(runtimelock.Metadata{
@@ -100,7 +100,7 @@ func TestAgentHookRunNormalizesGeminiLifecyclePayload(t *testing.T) {
 		fmt.Appendf(nil, "data_dir = %q\n", filepath.ToSlash(dataDir)),
 		0o600,
 	))
-	lock, err := runtimelock.Acquire(dataDir)
+	lock, err := runtimelock.Acquire(t.Context(), dataDir)
 	require.NoError(err)
 	t.Cleanup(func() { _ = lock.Release() })
 	require.NoError(lock.WriteMetadata(runtimelock.Metadata{

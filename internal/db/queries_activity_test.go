@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"slices"
 	"strings"
@@ -1801,7 +1802,83 @@ func TestListActivitySubjectsUsesAuthoritativeRecencyForWindowAndLimit(t *testin
 	assert.Equal(recentActivityAt, subjects[0].ActivityAt)
 }
 
-func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T) {
+func TestListActivitySubjectsPagesEqualTimestamps(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	firstRepo := insertTestRepo(t, d, "alice", "alpha")
+	secondRepo := insertTestRepo(t, d, "alice", "beta")
+	now := baseTime().Add(123456789 * time.Nanosecond)
+	insertTestMRWithOptions(t, d, testMR(firstRepo, 1, withMRActivity(now)))
+	insertTestMRWithOptions(t, d, testMR(secondRepo, 2, withMRActivity(now)))
+	insertTestMRWithOptions(t, d, testMR(secondRepo, 3, withMRActivity(now)))
+	insertTestIssue(t, d, secondRepo, 4, "Issue", now)
+	first, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 2})
+	require.NoError(t, err)
+	require.Len(t, first, 2)
+	assert.Equal(t, 3, first[0].Subject.Key.ItemNumber)
+	assert.Equal(t, 2, first[1].Subject.Key.ItemNumber)
+	last := first[1]
+	second, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 2, Before: &ActivitySubjectCursor{
+		ActivityAt: last.activityAtRaw, RepoID: last.Subject.Key.RepoID, ItemType: last.Subject.Key.ItemType, ItemNumber: last.Subject.Key.ItemNumber,
+	}})
+	require.NoError(t, err)
+	require.Len(t, second, 2)
+	assert.Equal(t, "issue", second[0].Subject.Key.ItemType)
+	assert.Equal(t, 4, second[0].Subject.Key.ItemNumber)
+	assert.Equal(t, 1, second[1].Subject.Key.ItemNumber)
+	last = second[1]
+	third, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 2, Before: &ActivitySubjectCursor{
+		ActivityAt: last.activityAtRaw, RepoID: last.Subject.Key.RepoID, ItemType: last.Subject.Key.ItemType, ItemNumber: last.Subject.Key.ItemNumber,
+	}})
+	require.NoError(t, err)
+	assert.Empty(t, third)
+}
+
+func TestListActivitySubjectsPagesStoredTimestampEncodings(t *testing.T) {
+	t.Parallel()
+	for _, stored := range []string{"2024-01-15T12:00:00Z", "2024-01-15T12:00:00.123456789Z", "2024-01-15 12:00:00 +0000 UTC"} {
+		t.Run(stored, func(t *testing.T) {
+			t.Parallel()
+			d := openTestDB(t)
+			repo := insertTestRepo(t, d, "alice", "alpha")
+			insertTestMRWithOptions(t, d, testMR(repo, 1))
+			insertTestMRWithOptions(t, d, testMR(repo, 2))
+			_, err := d.WriteDB().ExecContext(t.Context(), `UPDATE forge_merge_requests SET created_at = ? WHERE repo_id = ?`, stored, repo)
+			require.NoError(t, err)
+
+			first, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 1})
+			require.NoError(t, err)
+			require.Len(t, first, 1)
+			assert.Equal(t, 2, first[0].Subject.Key.ItemNumber)
+			cursor, err := DecodeActivitySubjectCursor(EncodeActivitySubjectCursor(first[0]))
+			require.NoError(t, err)
+			second, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{Limit: 1, Before: &cursor})
+			require.NoError(t, err)
+			require.Len(t, second, 1)
+			assert.Equal(t, 1, second[0].Subject.Key.ItemNumber)
+		})
+	}
+}
+
+func TestActivitySubjectCursorValidation(t *testing.T) {
+	t.Parallel()
+	stamp := time.Date(2024, 1, 2, 3, 4, 5, 123456789, time.UTC)
+	subject := ActivitySubject{activityAtRaw: stamp.Format(time.RFC3339Nano), ActivityAt: stamp, Subject: WorkspaceSubjectMetadata{Key: WorkspaceSubjectKey{RepoID: 7, ItemType: "issue", ItemNumber: 9}}}
+	cursor, err := DecodeActivitySubjectCursor(EncodeActivitySubjectCursor(subject))
+	require.NoError(t, err)
+	assert.Equal(t, stamp.Format(time.RFC3339Nano), cursor.ActivityAt)
+	assert.Equal(t, int64(7), cursor.RepoID)
+	assert.Equal(t, "issue", cursor.ItemType)
+	assert.Equal(t, 9, cursor.ItemNumber)
+	for _, raw := range []string{"2024-01-15T12:00:00Z|1|pr", "2024-01-15T12:00:00Z|x|pr|1", "2024-01-15T12:00:00Z|1|pr|x"} {
+		_, err := DecodeActivitySubjectCursor(base64.RawURLEncoding.EncodeToString([]byte(raw)))
+		require.Error(t, err, raw)
+	}
+	_, err = DecodeActivitySubjectCursor("invalid=")
+	require.Error(t, err)
+}
+
+func TestListActivitySubjectsSearchAndKeyRestriction(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
@@ -1811,25 +1888,19 @@ func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T)
 	now := baseTime()
 	repoID := insertTestRepo(t, d, "alice", "alpha")
 
-	insertTestMRWithOptions(t, d, testMR(repoID, 1,
+	firstID := insertTestMRWithOptions(t, d, testMR(repoID, 1,
 		withMRTitle("Unrelated parent matched through an event"),
 		withMRActivity(now.Add(-time.Hour)),
 	))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{MergeRequestID: firstID, EventType: "issue_comment", Author: "reviewer", Body: "needle", CreatedAt: now, DedupeKey: "match"}}))
 	insertTestMRWithOptions(t, d, testMR(repoID, 2,
 		withMRTitle("Needle in the parent title"),
 		withMRActivity(now.Add(-2*time.Hour)),
 	))
-	insertTestMRWithOptions(t, d, testMR(repoID, 3,
-		withMRTitle("Unrelated parent without a matching event"),
-		withMRActivity(now.Add(-3*time.Hour)),
-	))
+	insertTestMRWithOptions(t, d, testMR(repoID, 4, withMRTitle("Unrelated parent without a matching event"), withMRActivity(now.Add(-4*time.Hour))))
 
 	subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{
-		Search: "needle",
-		SearchMatchedSubjectKeys: []WorkspaceSubjectKey{
-			{RepoID: repoID, ItemType: "pr", ItemNumber: 1},
-		},
-		Limit: 50,
+		Search: "needle", SearchEventOpts: &ListActivityOpts{Search: "needle"}, Limit: 50,
 	})
 	require.NoError(err)
 	require.Len(subjects, 2)
@@ -1837,6 +1908,14 @@ func TestListActivitySubjectsIncludesParentsWhoseEventsMatchSearch(t *testing.T)
 		subjects[0].Subject.Key.ItemNumber,
 		subjects[1].Subject.Key.ItemNumber,
 	})
+
+	subjects, err = d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{
+		Search: "needle", SearchEventOpts: &ListActivityOpts{Search: "needle"}, Limit: 50,
+		Keys: []WorkspaceSubjectKey{{RepoID: repoID, ItemType: "pr", ItemNumber: 1}, {RepoID: repoID, ItemType: "issue", ItemNumber: 2}},
+	})
+	require.NoError(err)
+	require.Len(subjects, 1)
+	assert.Equal(1, subjects[0].Subject.Key.ItemNumber)
 }
 
 func TestListActivitySearchExcludesNegatedItemAuthor(t *testing.T) {
@@ -1872,7 +1951,7 @@ func TestListActivitySearchExcludesNegatedItemAuthor(t *testing.T) {
 	}
 }
 
-func TestListActivitySubjectsExcludedTermOverridesMatchedEvents(t *testing.T) {
+func TestListActivitySubjectsExcludesNegatedParentAuthor(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
@@ -1880,17 +1959,17 @@ func TestListActivitySubjectsExcludedTermOverridesMatchedEvents(t *testing.T) {
 	d := openTestDB(t)
 	now := baseTime()
 	repoID := insertTestRepo(t, d, "alice", "alpha")
-	insertTestMRWithOptions(t, d, testMR(repoID, 1,
-		withMRTitle("Needle work"), withMRAuthor("excluded-author"), withMRActivity(now.Add(-time.Hour))))
+	excludedID := insertTestMRWithOptions(t, d, testMR(repoID, 1,
+		withMRTitle("Other work"), withMRAuthor("excluded-author"), withMRActivity(now.Add(-time.Hour))))
+	require.NoError(d.UpsertMREvents(t.Context(), []MREvent{{
+		MergeRequestID: excludedID, EventType: "issue_comment", Author: "reviewer",
+		Body: "needle", CreatedAt: now, DedupeKey: "match",
+	}}))
 	insertTestMRWithOptions(t, d, testMR(repoID, 2,
 		withMRTitle("Needle work"), withMRAuthor("kept-author"), withMRActivity(now.Add(-2*time.Hour))))
 
 	subjects, err := d.ListActivitySubjects(t.Context(), ListActivitySubjectsOpts{
-		Search: "needle NOT excluded-author",
-		SearchMatchedSubjectKeys: []WorkspaceSubjectKey{
-			{RepoID: repoID, ItemType: "pr", ItemNumber: 1},
-		},
-		Limit: 50,
+		Search: "needle NOT excluded-author", SearchEventOpts: &ListActivityOpts{Search: "needle"}, Limit: 50,
 	})
 	require.NoError(err)
 	require.Len(subjects, 1)
@@ -3587,4 +3666,100 @@ func TestListCollapsedActivityProjectionSignalMatchesExactWindow(t *testing.T) {
 			})
 		}
 	}
+}
+
+// PR filters in Activity decide only which pull request rows show; issue rows
+// always pass. A notification for a pull request that has not synced cannot be
+// shown to match a required filter, so only exclusions keep it.
+func TestActivityPullFiltersLeaveIssuesAndOnlyDirectionsMirrorHide(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	since := now.Add(-24 * time.Hour)
+	repoID := insertTestRepo(t, d, "acme", "widget")
+
+	draftID := insertTestMRWithOptions(t, d, testMR(repoID, 1, withMRAuthor("ann"), withMRActivity(now.Add(-time.Hour)),
+		func(mr *MergeRequest) { mr.IsDraft = true }))
+	insertTestMRWithOptions(t, d, testMR(repoID, 2, withMRAuthor("bob"), withMRActivity(now.Add(-2*time.Hour)),
+		func(mr *MergeRequest) { mr.ReviewDecision = "APPROVED" }))
+	merged := testMR(repoID, 3, withMRAuthor("cy"), withMRState(MergeRequestStateMerged), withMRActivity(now.Add(-3*time.Hour)))
+	merged.MergedAt = &merged.LastActivityAt
+	insertTestMRWithOptions(t, d, merged)
+	insertTestMRWithOptions(t, d, testMR(repoID, 4, withMRAuthor("renovate[bot]"), withMRActivity(now.Add(-4*time.Hour))))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+		MergeRequestID: draftID, EventType: "issue_comment", Author: "dependabot[bot]",
+		CreatedAt: now.Add(-30 * time.Minute), DedupeKey: "bot-on-human",
+	}}))
+	insertTestIssueWithOptions(t, d, testIssue(repoID, 5, withIssueAuthor("eve"), withIssueActivity(now.Add(-5*time.Hour))))
+	closedIssue := testIssue(repoID, 6, withIssueAuthor("fay"), withIssueActivity(now.Add(-6*time.Hour)))
+	closedIssue.State = "closed"
+	closedIssue.ClosedAt = &closedIssue.LastActivityAt
+	insertTestIssueWithOptions(t, d, closedIssue)
+	unsyncedPull := 7
+	require.NoError(d.UpsertNotifications(ctx, []Notification{{
+		Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "unsynced-pull",
+		RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest", SubjectTitle: "PR 7",
+		WebURL: "https://github.com/acme/widget/pull/7", ItemNumber: &unsyncedPull, ItemType: "pr",
+		ItemAuthor: "gil", Reason: "mention", Unread: true,
+		SourceUpdatedAt: now.Add(-7 * time.Hour), SyncedAt: now.Add(-7 * time.Hour),
+	}}))
+
+	feed := func(opts ListActivityOpts) []string {
+		opts.Since, opts.Limit = &since, 50
+		items, err := d.ListActivity(ctx, opts)
+		require.NoError(err)
+		keys := []string{}
+		for _, item := range items {
+			key := fmt.Sprintf("%s:%d", item.ItemType, item.ItemNumber)
+			if !slices.Contains(keys, key) {
+				keys = append(keys, key)
+			}
+		}
+		return keys
+	}
+	subjects := func(opts ListActivitySubjectsOpts) []string {
+		opts.Since, opts.Limit = &since, 50
+		rows, err := d.ListActivitySubjects(ctx, opts)
+		require.NoError(err)
+		keys := []string{}
+		for _, row := range rows {
+			keys = append(keys, fmt.Sprintf("%s:%d", row.Subject.Key.ItemType, row.Subject.Key.ItemNumber))
+		}
+		return keys
+	}
+
+	issues := []string{"issue:5", "issue:6"}
+	assert.ElementsMatch(append([]string{"pr:1"}, issues...), feed(ListActivityOpts{PullAttributes: []string{"draft"}}))
+	assert.ElementsMatch(append([]string{"pr:2", "pr:3", "pr:4", "pr:7"}, issues...), feed(ListActivityOpts{HideDrafts: true}))
+	assert.ElementsMatch(append([]string{"pr:1"}, issues...),
+		feed(ListActivityOpts{HideDrafts: true, PullAttributes: []string{"draft"}}), "a required draft choice wins over the saved hide")
+	assert.ElementsMatch(append([]string{"pr:2"}, issues...), feed(ListActivityOpts{PullAttributes: []string{"approved"}}))
+	assert.ElementsMatch(append([]string{"pr:1", "pr:3", "pr:4", "pr:7"}, issues...), feed(ListActivityOpts{PullAttributes: []string{"not_approved"}}))
+	assert.ElementsMatch(issues, feed(ListActivityOpts{OnlyMergeQueued: true}), "no PR is queued, and issues still show")
+	assert.ElementsMatch([]string{"pr:3", "issue:6"}, feed(ListActivityOpts{OnlyClosedMerged: true, HideClosedMerged: true}))
+	assert.ElementsMatch([]string{"pr:1", "pr:4"}, feed(ListActivityOpts{OnlyBots: true, HideBots: true}),
+		"only bot-authored rows: the bot PR and the bot comment on a human PR")
+
+	assert.ElementsMatch(append([]string{"pr:1"}, issues...), subjects(ListActivitySubjectsOpts{PullAttributes: []string{"draft"}}))
+	assert.ElementsMatch(append([]string{"pr:2", "pr:3", "pr:4"}, issues...), subjects(ListActivitySubjectsOpts{HideDrafts: true}))
+	assert.ElementsMatch([]string{"pr:3", "issue:6"}, subjects(ListActivitySubjectsOpts{OnlyClosedMerged: true}))
+	assert.ElementsMatch([]string{"pr:4"}, subjects(ListActivitySubjectsOpts{OnlyBots: true}))
+
+	projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
+		OnlyBots: true, Since: &since, Limit: 50, SubjectLimit: 50,
+	})
+	require.NoError(err)
+	parents := []string{}
+	for _, subject := range projection.Subjects {
+		parents = append(parents, fmt.Sprintf("%s:%d", subject.Subject.Key.ItemType, subject.Subject.Key.ItemNumber))
+	}
+	assert.Equal([]string{"pr:4"}, parents)
+	direct := []string{}
+	for _, row := range projection.DirectRows {
+		direct = append(direct, fmt.Sprintf("%s:%d:%s", row.ItemType, row.ItemNumber, row.Author))
+	}
+	assert.Equal([]string{"pr:1:dependabot[bot]"}, direct, "a bot event on a hidden human parent stays direct")
 }

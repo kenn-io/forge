@@ -636,6 +636,7 @@ type MergeRequest struct {
 	URL                string
 	Title              string
 	Author             string
+	AuthorAccountType  *string `json:"-"`
 	AuthorAssociation  *string `json:"-"`
 	AuthorDisplayName  string
 	State              MergeRequestState `enum:"open,closed,merged"`
@@ -835,13 +836,20 @@ type ListMergeRequestsOpts struct {
 	// DeferredMergeItems are the pull requests this server's own worker holds for a merge after CI.
 	// Only merge_queued and not_merge_queued read them.
 	DeferredMergeItems []RepoItemNumber
+	// WorkspaceItems are the pull requests with a workspace on this server. Only has_workspace
+	// and no_workspace read them.
+	WorkspaceItems []RepoItemNumber
 	// AllowedRepoIDs scopes repositories before pagination. nil is unrestricted; empty matches none.
 	AllowedRepoIDs []int64
 	// Numbers filters item numbers before pagination. nil is unrestricted; empty matches none.
 	Numbers []int64
 	// Items limits results to the named items before pagination. nil is unrestricted; empty matches none.
-	Items             []RepoItemNumber
-	Label             string
+	Items []RepoItemNumber
+	// Label is an exact, case-sensitive label name.
+	Label string
+	// Labels must all be present and ExcludeLabels absent, comparing names without case.
+	Labels            []string
+	ExcludeLabels     []string
 	RepoID            int64
 	PlatformHost      string
 	RepoOwner         string
@@ -1002,6 +1010,11 @@ type ListIssuesOpts struct {
 	Assigned          bool
 	ViewerUninvolved  bool
 	NotReferencedByPR bool
+	// Labels must all be present and ExcludeLabels absent, comparing names without case.
+	Labels        []string
+	ExcludeLabels []string
+	// HideBots drops issues a bot account opened.
+	HideBots bool
 }
 
 type Notification struct {
@@ -1165,6 +1178,7 @@ type ActivityItem struct {
 // ActivitySubject is the authoritative parent projection for one pull request
 // or issue in the Activity time range. It is independent of event visibility.
 type ActivitySubject struct {
+	activityAtRaw       string // Preserves the SQLite sort key for pagination.
 	Subject             WorkspaceSubjectMetadata
 	ActivityAt          time.Time
 	EventLedgerRevision string
@@ -1683,18 +1697,29 @@ type ListActivityOpts struct {
 	// caller will not serve.
 	ExcludeNotifications bool
 	HideClosedMerged     bool
-	HideBots             bool
-	HideDrafts           bool
-	HideMergeQueued      bool
+	// OnlyClosedMerged keeps only activity HideClosedMerged would hide, and wins over it.
+	OnlyClosedMerged bool
+	HideBots         bool
+	// OnlyBots keeps only bot-authored activity, and wins over HideBots.
+	OnlyBots        bool
+	HideDrafts      bool
+	HideMergeQueued bool
 	// OnlyMergeQueued keeps only activity on pull requests HideMergeQueued would hide: open and
 	// in a merge queue, with provider auto-merge on, or in DeferredMergeItems.
 	OnlyMergeQueued bool
+	// PullAttributes are PR inclusion filters with ListMergeRequestsOpts.Attributes semantics.
+	// They apply only to pull request rows; issue and repository rows always pass.
+	PullAttributes []string
+	ActivityItemFilters
 	// DeferredMergeItems are the pull requests this server's worker holds for a merge after CI.
 	DeferredMergeItems []RepoItemNumber
-	HideDefaultBranch  bool
-	ParentRepoID       int64
-	ParentItemType     string
-	ParentItemNumber   int
+	// WorkspaceItems are the pull requests with a workspace on this server, for has_workspace
+	// and no_workspace.
+	WorkspaceItems    []RepoItemNumber
+	HideDefaultBranch bool
+	ParentRepoID      int64
+	ParentItemType    string
+	ParentItemNumber  int
 	// DirectProjectionOnly selects rows that cannot be represented by the
 	// filtered parent projection, including repository/unparented rows and
 	// visible human events whose bot-authored parent is hidden.
@@ -1720,7 +1745,7 @@ type ListActivityOpts struct {
 }
 
 // ListActivitySubjectsOpts holds parent-level filters for the Activity feed.
-// Event-type filters and cursors do not apply to this authoritative snapshot.
+// Event cursors do not apply to this authoritative snapshot.
 type ListActivitySubjectsOpts struct {
 	Repo           string
 	RepoFilters    []RepoFilter
@@ -1730,23 +1755,36 @@ type ListActivitySubjectsOpts struct {
 	// admitting or reordering otherwise-old parents.
 	ExcludeNotificationRecency bool
 	Search                     string
-	// SearchMatchedSubjectKeys identifies parents whose provider events matched
-	// Search. The parent title and author do not necessarily contain that term.
-	SearchMatchedSubjectKeys []WorkspaceSubjectKey
-	Author                   string
-	Unassigned               bool
-	ViewerLogins             []RepoViewerLogin
-	HideClosedMerged         bool
-	HideBots                 bool
-	HideDrafts               bool
-	HideMergeQueued          bool
-	OnlyMergeQueued          bool
-	DeferredMergeItems       []RepoItemNumber
-	Limit                    int
-	Since                    *time.Time
+	SearchEventOpts            *ListActivityOpts
+	Author                     string
+	Unassigned                 bool
+	ViewerLogins               []RepoViewerLogin
+	HideClosedMerged           bool
+	OnlyClosedMerged           bool
+	HideBots                   bool
+	OnlyBots                   bool
+	HideDrafts                 bool
+	HideMergeQueued            bool
+	OnlyMergeQueued            bool
+	PullAttributes             []string
+	ActivityItemFilters
+	DeferredMergeItems []RepoItemNumber
+	WorkspaceItems     []RepoItemNumber
+	Limit              int
+	Since              *time.Time
+	Before             *ActivitySubjectCursor
+	// Keys, when non-nil, restricts subjects to these activity-typed keys.
+	Keys []WorkspaceSubjectKey
 	// Assigned and ViewerUninvolved invert Unassigned and ViewerLogins, as in ListActivityOpts.
 	Assigned         bool
 	ViewerUninvolved bool
+}
+
+type ActivitySubjectCursor struct {
+	ActivityAt string
+	RepoID     int64
+	ItemType   string
+	ItemNumber int
 }
 
 type ActivityProjection struct {
@@ -1757,8 +1795,8 @@ type ActivityProjection struct {
 
 type ListActivityProjectionOpts struct {
 	ListActivityOpts
-	SubjectLimit     int
-	SearchEventLimit int
+	SubjectLimit  int
+	SubjectBefore *ActivitySubjectCursor
 }
 
 // ListActivityAuthorsOpts holds the repository and time scopes used to build

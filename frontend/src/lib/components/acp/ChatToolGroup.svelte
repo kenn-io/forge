@@ -5,10 +5,12 @@
   import ChatMessageView from "./ChatMessageView.svelte"
   import ChatToolDetails from "./ChatToolDetails.svelte"
   import ChatContentBlock from "./ChatContentBlock.svelte"
+  import ChatShellCommand from "./ChatShellCommand.svelte"
   import { isInlineMediaContent } from "./chat-content.js"
   import { decodeAppDescriptor } from "./mcp-app.js"
   import type { ContentScrollPositions } from "./chat-content-scroll.js"
-  import { toolStatus, type ChatMessage } from "./chat-types.js"
+  import { toolStatus, type ChatContent, type ChatMessage } from "./chat-types.js"
+  import { parseToolTitle } from "./chat-tool-title.js"
 
   let {
     messages,
@@ -49,7 +51,14 @@
       message.locations?.length ||
       message.toolContent?.length ||
       message.rawInput ||
-      message.rawOutput
+      message.rawOutput ||
+      message.detailsOmitted
+    )
+  }
+
+  function inlineContent(message: ChatMessage): ChatContent[] {
+    return (message.toolContent ?? []).flatMap((item) =>
+      item.content && (isInlineMediaContent(item.content) || decodeAppDescriptor(item.content)) ? [item.content] : [],
     )
   }
 
@@ -109,17 +118,26 @@
         {:else}
         {@const status = toolStatus(message)}
         {@const expandable = hasDetails(message)}
+        {@const title = parseToolTitle(message.kind, message.text)}
         <li class={`status-${status}`} data-message-id={message.id}>
           {#snippet row()}
-          <span class="icon" aria-hidden="true">
-            {#if status === "failed"}<X size={12} />
-            {:else if status === "in_progress"}<Spinner
-                size={12}
-                label=""
-              />
-            {:else if status === "pending"}<Clock size={12} />
-            {:else if status === "cancelled"}<Ban size={12} />
-            {:else}<Check size={12} />{/if}
+          <span
+            class="icon"
+            title={message.createdAt
+              ? new Date(message.createdAt).toLocaleString()
+              : undefined}
+          >
+            <span class="glyph" aria-hidden="true">
+              {#if status === "failed"}<X size={12} />
+              {:else if status === "in_progress"}<Spinner
+                  size={12}
+                  label=""
+                />
+              {:else if status === "pending"}<Clock size={12} />
+              {:else if status === "cancelled"}<Ban size={12} />
+              {:else}<Check size={12} />{/if}
+            </span>
+            <span class="kit-sr-only">{status.replaceAll("_", " ")}</span>
           </span>
           <span class="tool-name">
             {#if message.subagent}
@@ -130,15 +148,8 @@
                   : "Sub-agent"}</span
               >
             {/if}
-            {message.text}
+            {#if title.shell}<ChatShellCommand command={message.text} />{:else}{#each title.parts as part, partIndex (partIndex)}{#if part.role === "verb"}<span class={["verb", `kind-${message.kind}`]}>{part.text}</span>{:else if part.role === "target"}<code class="target">{part.text}</code>{:else if part.role === "range"}<span class="range">{part.text}</span>{:else}{part.text}{/if}{/each}{/if}
           </span>
-          <span
-            class="state"
-            title={message.createdAt
-              ? new Date(message.createdAt).toLocaleString()
-              : undefined}
-            >{status.replaceAll("_", " ")}</span
-          >
           {/snippet}
           {#if expandable}
             <button
@@ -162,10 +173,9 @@
     </ul>
   {/if}
   {#each messages as message (message.id)}
-    {#each message.toolContent ?? [] as item, contentIndex (contentIndex)}
-      {#if item.content && (isInlineMediaContent(item.content) || decodeAppDescriptor(item.content))}
-        <ChatContentBlock content={item.content} />
-      {/if}
+    <!-- Keyed among inline items only, so details arriving around them keep them mounted. -->
+    {#each inlineContent(message) as content, contentIndex (contentIndex)}
+      <ChatContentBlock {content} />
     {/each}
   {/each}
 </div>
@@ -238,7 +248,7 @@
   }
   .row {
     display: grid;
-    grid-template-columns: 14px minmax(0, 1fr) auto;
+    grid-template-columns: 14px minmax(0, 1fr);
     align-items: baseline;
     gap: var(--space-4);
     padding: var(--space-3) var(--space-5);
@@ -259,13 +269,15 @@
     outline: var(--focus-ring);
     outline-offset: -2px;
   }
-  .icon {
+  .icon,
+  .glyph {
     display: inline-flex;
+  }
+  .icon {
     align-self: center;
     color: var(--accent-green);
   }
-  .status-failed .icon,
-  .status-failed .state {
+  .status-failed .icon {
     color: var(--accent-red);
   }
   .status-pending .icon,
@@ -278,6 +290,30 @@
     overflow-wrap: anywhere;
     color: var(--text-primary);
   }
+  .target {
+    padding: 1px 4px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    font-family: var(--font-mono);
+    box-decoration-break: clone;
+  }
+  /* The verb carries the tool kind; green and red stay with the status icon. */
+  .kind-read,
+  .kind-search {
+    color: var(--accent-blue);
+  }
+  .kind-edit,
+  .kind-delete,
+  .kind-move {
+    color: var(--accent-amber);
+  }
+  .kind-fetch {
+    color: var(--accent-teal);
+  }
+  .range {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
   .subagent {
     display: inline-flex;
     align-items: center;
@@ -287,10 +323,6 @@
     border: 1px solid color-mix(in srgb, var(--accent-purple) 35%, var(--border-default));
     border-radius: var(--radius-sm);
     color: var(--accent-purple);
-    white-space: nowrap;
-  }
-  .state {
-    color: var(--text-secondary);
     white-space: nowrap;
   }
 

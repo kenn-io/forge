@@ -262,8 +262,9 @@ async function selectActivityViewItem(label: string): Promise<void> {
     await page.elementLocator(activityFiltersBtn()).click();
     await vi.waitFor(() => expect(document.querySelector(".kit-filter-dropdown__panel")).not.toBeNull(), WAIT);
   }
+  // Match the whole label: State's "All states" precedes Group's "All".
   const item = Array.from(document.querySelectorAll(".kit-filter-dropdown__panel .kit-filter-dropdown__item")).find(
-    (el) => (el.textContent ?? "").includes(label),
+    (el) => (el.textContent ?? "").trim() === label,
   )!;
   await page.elementLocator(item).click();
 }
@@ -415,7 +416,7 @@ describe("grouping toggle", () => {
     await vi.waitFor(() => expect(document.querySelector(".activity-feed")).not.toBeNull(), WAIT);
     await selectActivityViewItem("Threaded");
     await vi.waitFor(() => expect(document.querySelector(".threaded-view .item-row")).not.toBeNull(), WAIT);
-    await selectActivityViewItem("All");
+    await selectActivityViewItem("Flat list");
     await vi.waitFor(() => expect(document.querySelector(".threaded-view .repo-tag")).not.toBeNull(), WAIT);
 
     // widgets#1 and tools#1 must stay distinct threads, so an exact "#1" ref appears twice.
@@ -476,7 +477,7 @@ describe("grouping toggle", () => {
     await vi.waitFor(() => expect(document.querySelector(".activity-feed")).not.toBeNull(), WAIT);
     await selectActivityViewItem("Threaded");
     await vi.waitFor(() => expect(document.querySelector(".threaded-view .item-row")).not.toBeNull(), WAIT);
-    await selectActivityViewItem("All");
+    await selectActivityViewItem("Flat list");
     await vi.waitFor(() => expect(document.querySelector(".threaded-view .repo-tag")).not.toBeNull(), WAIT);
 
     const row = (): Element =>
@@ -506,7 +507,7 @@ describe("grouping toggle", () => {
     expect(document.querySelector(".activity-feed .kit-empty-state")?.textContent ?? "").toContain("No activity found");
 
     await selectActivityViewItem("Threaded");
-    await selectActivityViewItem("All");
+    await selectActivityViewItem("Flat list");
     await vi.waitFor(() => expect(document.querySelector(".threaded-view .kit-empty-state")).not.toBeNull(), WAIT);
   });
 });

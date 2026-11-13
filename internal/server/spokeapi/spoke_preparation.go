@@ -16,10 +16,15 @@ import (
 
 const MaxSpokePreparationResponseBytes = 1 << 20
 
+type SpokePreparationConflict struct {
+	db.ProviderStateConflict
+	Description string `json:"description"`
+}
+
 type SpokePreparationReport struct {
 	ReadyLaunchSpecs       int                        `json:"ready_launch_specs"`
 	Unprepared             []db.UnpreparedWorkspace   `json:"unprepared" nullable:"false"`
-	HandoffConflicts       []db.ProviderStateConflict `json:"handoff_conflicts" nullable:"false"`
+	HandoffConflicts       []SpokePreparationConflict `json:"handoff_conflicts" nullable:"false"`
 	HandoffErrors          []string                   `json:"handoff_errors" nullable:"false"`
 	InFlightProviderWrites int                        `json:"in_flight_provider_writes"`
 	ActiveDeferredMerges   int                        `json:"active_deferred_merges"`
@@ -189,20 +194,22 @@ func (s *Handlers) HandoffSpokeProviderState(
 			receipt.ContentDigest == record.ContentDigest {
 			continue
 		}
+		repo := record.ReviewDraft.Repository
+		description := fmt.Sprintf("review draft for %s/%s #%d on %s (%s)", repo.Owner, repo.Name, record.ReviewDraft.PullNumber, repo.PlatformHost, repo.Provider)
 		httpRequest, requestErr := providerStateImportRequest(ctx, record)
 		var result db.ProviderStateImportResult
 		if err := spokePreparationProviderJSON(ctx, client, federationauth.ScopeProviderHandoff, httpRequest, requestErr, &result); err != nil {
 			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("handoff %s %s: %v", record.Kind, record.SourceKey, err))
+				fmt.Sprintf("handoff %s: %v", description, err))
 			continue
 		}
 		if result.Conflict != nil {
-			report.HandoffConflicts = append(report.HandoffConflicts, *result.Conflict)
+			report.HandoffConflicts = append(report.HandoffConflicts, SpokePreparationConflict{ProviderStateConflict: *result.Conflict, Description: description})
 			continue
 		}
 		if strings.TrimSpace(result.Receipt) == "" {
 			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("handoff %s %s returned no receipt", record.Kind, record.SourceKey))
+				fmt.Sprintf("handoff %s returned no receipt", description))
 			continue
 		}
 		if err := s.Db.RecordSpokePreparationReceipt(ctx, db.SpokePreparationReceipt{
@@ -211,7 +218,7 @@ func (s *Handlers) HandoffSpokeProviderState(
 			HubReceipt:    result.Receipt, ImportedAt: (*s.Now)().UTC(),
 		}); err != nil {
 			report.HandoffErrors = append(report.HandoffErrors,
-				fmt.Sprintf("record %s %s receipt: %v", record.Kind, record.SourceKey, err))
+				fmt.Sprintf("record receipt for %s: %v", description, err))
 		}
 	}
 }

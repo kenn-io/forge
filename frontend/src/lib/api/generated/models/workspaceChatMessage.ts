@@ -10,6 +10,8 @@ import type { ACPTurn } from "./aCPTurn.ts";
 export interface WorkspaceChatMessage {
   content?: ACPContent;
   createdAt: string;
+  /** The chat socket left out this tool call's input, output, and non-inline content; a toolDetails command returns them. */
+  detailsOmitted?: boolean;
   id: string;
   images?: ACPContent[];
   /** Position of the message in the whole transcript. A sent or steered user message is inserted before output that arrived while it was being sent, so later messages can move up by one; the inserted message carries its submissionId. */

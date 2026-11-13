@@ -1,9 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
+import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { PullRequest } from "../../api/types.js";
+import type { PullRequest, SyncStatus } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
+import { createEventsStore } from "../../stores/events.svelte.js";
+import { createSyncStore } from "../../stores/sync.svelte.js";
 import {
   createdWorkspaceRef,
   resetWorkspaceCreatePendingForTest,
@@ -108,7 +111,8 @@ function storeFixture(
         last_error: "",
       }),
       triggerSync,
-      triggerSyncEffect,
+      triggerOnboardingSyncEffect: triggerSyncEffect,
+      getRateLimits: () => ({ provider_pools: {}, local_ceilings: {} }),
       subscribeSyncComplete: () => () => {},
     },
     pulls: {
@@ -136,6 +140,47 @@ function renderFlow(stores: StoreInstances) {
     },
   });
   return { ...callbacks, unmount: view.unmount };
+}
+
+// Serves the first-sync routes and leaves every other request to the default stub.
+function stubSyncRoutes(routes: {
+  post?: () => Promise<Response>;
+  status?: () => Promise<Response>;
+  rateLimits?: () => Promise<Response>;
+}) {
+  const originalFetch = globalThis.fetch;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    const path = new URL(request.url).pathname;
+    if (routes.post && path === "/api/v1/sync" && request.method === "POST") return routes.post();
+    if (routes.status && path === "/api/v1/sync/status") return routes.status();
+    if (routes.rateLimits && path === "/api/v1/rate-limits") return routes.rateLimits();
+    return originalFetch(input, init);
+  });
+}
+
+function respond(body: unknown, status = 200) {
+  return Promise.resolve(Response.json(body, { status }));
+}
+
+function problem(code: string, status: number, detail: string) {
+  return respond({ code, status, title: code, detail, type: "about:blank" }, status);
+}
+
+function synced(generation: number, instance_id = "instance") {
+  return { instance_id, settled_generation: generation, successful_generation: generation };
+}
+
+function testRuntime() {
+  if (!runtimeCapture.current) throw new Error("test runtime is not initialized");
+  return runtimeCapture.current;
+}
+
+function realSyncStore(fixture: ReturnType<typeof storeFixture>, initial?: SyncStatus) {
+  const sync = createSyncStore({ runtime: testRuntime() });
+  if (initial) sync.setSyncStatus(initial);
+  fixture.stores.sync = sync;
+  return sync;
 }
 
 describe("OnboardingFlow", () => {
@@ -427,6 +472,476 @@ describe("OnboardingFlow", () => {
     });
     expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy();
   });
+
+  it("starts sync when the initial status request remains pending", async () => {
+    let attempts = 0;
+    stubSyncRoutes({
+      post: () => {
+        attempts++;
+        return respond({ instance_id: "instance", generation: 1 });
+      },
+      status: () => new Promise<Response>(() => {}),
+    });
+    const fixture = storeFixture({ configured: true });
+    realSyncStore(fixture);
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(attempts).toBe(1));
+  });
+
+  it.each(["network failure", "unknown gateway problem"])(
+    "recovers a transient %s without a click",
+    async (failure) => {
+      let attempts = 0;
+      let recoveryReads = 0;
+      stubSyncRoutes({
+        post: () => {
+          attempts++;
+          if (attempts !== 1) return respond({ instance_id: "instance", generation: 1 });
+          if (failure === "network failure") return Promise.reject(new Error("response lost"));
+          return problem("futureGatewayError", 503, "Unavailable");
+        },
+        status: () => {
+          if (attempts === 1) recoveryReads++;
+          return respond({
+            running: false,
+            last_run_at: attempts > 1 ? "2026-08-02T12:01:00Z" : "",
+            last_error: "",
+            full_sync: attempts > 1 ? synced(1) : synced(0),
+          });
+        },
+        rateLimits: () => respond({ provider_pools: {}, local_ceilings: {} }),
+      });
+      const fixture = storeFixture({ configured: true });
+      realSyncStore(fixture);
+      renderFlow(fixture.stores);
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy(), {
+        timeout: 5000,
+      });
+      expect(attempts).toBe(2);
+      expect(recoveryReads).toBe(0);
+    },
+  );
+
+  it("refreshes the pull picker after later syncs without losing the selection", async () => {
+    const fixture = storeFixture({ configured: true });
+    const sync = realSyncStore(fixture);
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:01:00Z" });
+    vi.spyOn(sync, "triggerOnboardingSyncEffect").mockReturnValue(Effect.void);
+    const first = pullRequest();
+    const second = { ...first, ID: 10, Number: 43, Title: "Deferred repository pull" };
+    let pulls = [first];
+    vi.spyOn(fixture.stores.pulls, "getPulls").mockImplementation(() => pulls);
+    const pending = Promise.withResolvers<void>();
+    const load = vi.spyOn(fixture.stores.pulls, "loadPullsEffect");
+    const view = renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Continue with PR #42" })).toBeTruthy(), {
+      timeout: 5000,
+    });
+    load.mockImplementationOnce(() => Effect.promise(() => pending.promise));
+    sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:01:00Z" });
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:02:00Z" });
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("button", { name: "Continue with PR #42" })).toBeTruthy();
+    pulls = [second, first];
+    pending.resolve();
+    await waitFor(() => expect(screen.getByText("Deferred repository pull")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Continue with PR #42" })).toBeTruthy();
+    load.mockImplementationOnce(() => Effect.fail(new Error("load failed")));
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:02:00.500Z" });
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(3));
+    expect(screen.getByText("Deferred repository pull")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Continue with PR #42" })).toBeTruthy();
+    view.unmount();
+    sync.setSyncStatus({ running: true });
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:04:00Z" });
+    expect(load).toHaveBeenCalledTimes(3);
+  });
+
+  it("shows pulls after a failed initial load recovers in the background", async () => {
+    const fixture = storeFixture({ configured: true });
+    const sync = realSyncStore(fixture);
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:01:00Z" });
+    vi.spyOn(sync, "triggerOnboardingSyncEffect").mockReturnValue(Effect.void);
+    const load = vi.spyOn(fixture.stores.pulls, "loadPullsEffect");
+    load.mockImplementationOnce(() => Effect.fail(new Error("Could not load pull requests")));
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Could not load pull requests"));
+    sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:01:00Z" });
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:02:00Z" });
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByText("Keep workspace activity across reloads")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Continue with PR #42" })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps the chosen pull when leaving during a background reload", async () => {
+    const fixture = storeFixture({ configured: true });
+    const sync = realSyncStore(fixture);
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:01:00Z" });
+    vi.spyOn(sync, "triggerOnboardingSyncEffect").mockReturnValue(Effect.void);
+    const pending = Promise.withResolvers<void>();
+    let pulls = [pullRequest()];
+    vi.spyOn(fixture.stores.pulls, "getPulls").mockImplementation(() => pulls);
+    const load = vi.spyOn(fixture.stores.pulls, "loadPullsEffect");
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Continue with PR #42" })).toBeTruthy());
+    load.mockImplementationOnce(() => Effect.promise(() => pending.promise));
+    sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:01:00Z" });
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:02:00Z" });
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with PR #42" }));
+    pulls = [{ ...pullRequest(), ID: 10, Number: 43, Title: "New pull" }];
+    pending.resolve();
+    await tick();
+    await waitFor(() => expect(screen.getByText("acme/forge · PR #42")).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Create workspace" })).toBeTruthy();
+  });
+
+  it("refreshes pulls when another sync completes during the initial load", async () => {
+    const fixture = storeFixture({ configured: true });
+    const sync = realSyncStore(fixture);
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:01:00Z" });
+    vi.spyOn(sync, "triggerOnboardingSyncEffect").mockReturnValue(Effect.void);
+    const pending = Promise.withResolvers<void>();
+    let pulls = [pullRequest()];
+    vi.spyOn(fixture.stores.pulls, "getPulls").mockImplementation(() => pulls);
+    const load = vi.spyOn(fixture.stores.pulls, "loadPullsEffect");
+    load.mockImplementationOnce(() => Effect.promise(() => pending.promise));
+    load.mockImplementation(() =>
+      Effect.sync(() => {
+        pulls = [{ ...pullRequest(), ID: 10, Number: 43, Title: "New pull" }];
+      }),
+    );
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(load).toHaveBeenCalledOnce());
+    sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:01:00Z" });
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:02:00Z" });
+    pending.resolve();
+    await waitFor(() => expect(screen.getByText("New pull")).toBeTruthy());
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the credential action when the accepted sync cannot route a repository", async () => {
+    let posts = 0;
+    stubSyncRoutes({
+      post: () => {
+        posts++;
+        return respond({ instance_id: "instance", generation: 1 });
+      },
+      status: () =>
+        respond({
+          running: false,
+          full_sync: {
+            ...synced(0),
+            settled_generation: 1,
+            last_error:
+              "no GitHub credential route for missing/repo on github.com. Configure a GitHub token for this repository or owner in Forge's config.toml and restart Forge.",
+          },
+        }),
+    });
+    const fixture = storeFixture({ configured: true });
+    realSyncStore(fixture);
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("config.toml and restart Forge"));
+    expect(screen.getByRole("alert").textContent).toContain("missing/repo on github.com");
+    expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy();
+    expect(posts).toBe(1);
+  });
+
+  it("opens pull requests when the post-completion quota refresh stalls", async () => {
+    stubSyncRoutes({
+      post: () => respond({ instance_id: "instance", generation: 1 }),
+      status: () => respond({ running: false, full_sync: synced(1) }),
+      rateLimits: () => new Promise<Response>(() => {}),
+    });
+    const fixture = storeFixture({ configured: true });
+    realSyncStore(fixture);
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+    expect(fixture.loadPulls).toHaveBeenCalledOnce();
+  });
+
+  it("does not report a quota wait for a different host", async () => {
+    const fixture = storeFixture({ configured: true, pulls: [] });
+    const reset = new Date(Date.now() + 3600000).toISOString();
+    vi.spyOn(fixture.stores.sync, "getRateLimits").mockReturnValue({
+      local_ceilings: {},
+      provider_pools: {
+        pool: {
+          provider: "github",
+          platform_host: "github.example.com",
+          principal_label: "account",
+          rate_principal: "user:1",
+          reserve_buffer: 200,
+          sync_paused: false,
+          sync_throttle_factor: 1,
+          rest: { known: true, remaining: 100, limit: 5000, requests: 0, reset_at: reset },
+          graphql: { known: true, remaining: 5000, limit: 5000, requests: 0, reset_at: reset },
+        },
+      },
+    });
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByText("No open pull requests yet")).toBeTruthy());
+    expect(screen.queryByText(/Quota for account/)).toBeNull();
+  });
+
+  it("offers retry when accepted sync status is forbidden", async () => {
+    let reads = 0;
+    let posts = 0;
+    stubSyncRoutes({
+      post: () => {
+        posts++;
+        return respond({ instance_id: "instance", generation: 1 });
+      },
+      status: () => {
+        reads++;
+        return problem("forbidden", 403, "Access denied");
+      },
+    });
+    const fixture = storeFixture({ configured: true });
+    realSyncStore(fixture);
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(reads).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy());
+    expect(screen.getByRole("alert").textContent).toContain("Access denied");
+    expect(posts).toBe(1);
+  });
+
+  it.each(["setup", "configuration reload"])("waits for a retry after %s", async (source) => {
+    const accepted = Promise.withResolvers<Response>();
+    let attempts = 0;
+    let statusReads = 0;
+    stubSyncRoutes({
+      post: () => {
+        attempts++;
+        return attempts === 1 ? Promise.reject(new Error("response lost")) : accepted.promise;
+      },
+      status: () => {
+        statusReads++;
+        return respond({ running: true, last_run_at: "2026-08-02T12:00:30Z", last_error: "" });
+      },
+    });
+    const fixture = storeFixture();
+    const sync = realSyncStore(fixture, { running: true, last_run_at: "2026-08-02T12:00:00Z", last_error: "" });
+    renderFlow(fixture.stores);
+    await fireEvent.click(screen.getByRole("button", { name: "Continue with GitHub" }));
+    await waitFor(() => expect(screen.getByText("acme/forge")).toBeTruthy());
+    if (source === "setup") {
+      await fireEvent.click(screen.getByText("acme/forge"));
+      await fireEvent.click(screen.getByRole("button", { name: "Configure 1 repository" }));
+    } else {
+      fixture.configureExternally();
+    }
+    await waitFor(() => expect(attempts).toBe(1));
+    if (source === "setup") expect(observedBulkAddBodies).toHaveLength(1);
+    // Model delayed delivery of a completion published before the repository update.
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:00:30Z", last_error: "" });
+    await tick();
+    expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
+    await waitFor(() => expect(attempts).toBe(2));
+    expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
+    accepted.resolve(Response.json({ instance_id: "sync-instance", generation: 2 }));
+    await waitFor(() => expect(statusReads).toBe(1));
+    sync.setSyncStatus({
+      running: false,
+      last_run_at: "2026-08-02T12:01:00Z",
+      last_error: "",
+      full_sync: synced(2, "sync-instance"),
+    });
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+  });
+
+  it.each(["stale", "failed"])("does not advance after retry when the status refresh is %s", async (refresh) => {
+    const accepted = Promise.withResolvers<Response>();
+    let attempts = 0;
+    let statusReads = 0;
+    stubSyncRoutes({
+      post: () => {
+        attempts++;
+        return attempts === 1 ? Promise.reject(new Error("response lost")) : accepted.promise;
+      },
+      status: () => {
+        statusReads++;
+        return refresh === "stale"
+          ? respond({ running: false, last_run_at: "2026-08-02T12:00:30Z", last_error: "" })
+          : problem("hubUnavailable", 503, "Unavailable");
+      },
+    });
+    const fixture = storeFixture({ configured: true });
+    const sync = realSyncStore(fixture, { running: true, last_run_at: "2026-08-02T12:00:00Z", last_error: "" });
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(attempts).toBe(1));
+    sync.setSyncStatus({ running: false, last_run_at: "2026-08-02T12:00:30Z", last_error: "" });
+    await waitFor(() => expect(attempts).toBe(2));
+    expect(sync.getSyncState()).toMatchObject({ running: true, last_error: "" });
+    accepted.resolve(Response.json({ instance_id: "sync-instance", generation: 2 }));
+    await waitFor(() => expect(statusReads).toBeGreaterThan(0));
+    await tick();
+    expect(fixture.loadPulls).not.toHaveBeenCalled();
+    expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
+    sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:00:30Z", last_error: "" });
+    sync.setSyncStatus({
+      running: false,
+      last_run_at: "2026-08-02T12:01:00Z",
+      last_error: "",
+      full_sync: synced(2, "sync-instance"),
+    });
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+  });
+
+  it("waits when an older sync event arrives during a retried request and refresh fails", async () => {
+    let source: EventTarget | undefined;
+    class EventSourceStub extends EventTarget {
+      constructor(_url: string) {
+        super();
+        source = this;
+      }
+      close() {}
+    }
+    vi.stubGlobal("EventSource", EventSourceStub);
+    const accepted = Promise.withResolvers<Response>();
+    let attempts = 0;
+    let statusReads = 0;
+    stubSyncRoutes({
+      post: () => {
+        attempts++;
+        return attempts === 1 ? Promise.reject(new Error("response lost")) : accepted.promise;
+      },
+      status: () => {
+        statusReads++;
+        return problem("hubUnavailable", 503, "Unavailable");
+      },
+    });
+    const fixture = storeFixture({ configured: true });
+    const sync = realSyncStore(fixture, { running: true, last_run_at: "2026-08-02T12:00:00Z", last_error: "" });
+    const runtime = testRuntime();
+    const events = createEventsStore({
+      runtime,
+      onSyncStatus: (status) => Effect.sync(() => sync.setSyncStatus(status)),
+    });
+    runtime.runCommand(events.streamEffect, { operation: "provider events", safeContext: {}, onFailure: () => {} });
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(source).toBeDefined());
+    await waitFor(() => expect(attempts).toBe(2));
+    const send = (data: object, lastEventId: string) =>
+      source?.dispatchEvent(new MessageEvent("sync_status", { data: JSON.stringify(data), lastEventId }));
+    // This completion belongs to an earlier accepted pass.
+    send(
+      { running: false, last_run_at: "2026-08-02T12:00:30Z", last_error: "", full_sync: synced(1, "sync-instance") },
+      "1",
+    );
+    await waitFor(() => expect(sync.getSyncState()?.running).toBe(false));
+    accepted.resolve(Response.json({ instance_id: "sync-instance", generation: 2 }));
+    await waitFor(() => expect(statusReads).toBeGreaterThan(0));
+    await tick();
+    expect(fixture.loadPulls).not.toHaveBeenCalled();
+    expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
+    send({ running: true, full_sync: synced(2, "sync-instance") }, "2");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+    expect(fixture.loadPulls).toHaveBeenCalledTimes(1);
+    send({ running: false, last_run_at: "2026-08-02T12:02:00Z" }, "3");
+    await waitFor(() => expect(fixture.loadPulls).toHaveBeenCalledTimes(2));
+    expect(attempts).toBe(2);
+  });
+
+  it("advances when the retried sync finishes before its response", async () => {
+    const accepted = Promise.withResolvers<Response>();
+    let attempts = 0;
+    stubSyncRoutes({
+      post: () => {
+        attempts++;
+        return attempts === 1 ? Promise.reject(new Error("response lost")) : accepted.promise;
+      },
+      status: () => respond({ running: false, last_run_at: "2026-08-02T12:01:00Z", last_error: "" }),
+    });
+    const fixture = storeFixture({ configured: true });
+    const sync = realSyncStore(fixture, { running: false, last_run_at: "2026-08-02T12:00:00Z", last_error: "" });
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(attempts).toBe(2));
+    sync.setSyncStatus({ running: true, last_run_at: "2026-08-02T12:00:00Z", last_error: "" });
+    sync.setSyncStatus({
+      running: false,
+      last_run_at: "2026-08-02T12:01:00Z",
+      last_error: "",
+      full_sync: synced(2, "sync-instance"),
+    });
+    await tick();
+    expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
+    accepted.resolve(Response.json({ instance_id: "sync-instance", generation: 2 }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Open a pull request" })).toBeTruthy());
+  });
+
+  it("offers retry when a fresh status identifies a restarted syncer", async () => {
+    let reads = 0;
+    let posts = 0;
+    stubSyncRoutes({
+      post: () => {
+        posts++;
+        return respond({ instance_id: "old-instance", generation: 1 });
+      },
+      status: () => {
+        reads++;
+        return respond({
+          running: false,
+          full_sync: reads === 1 ? synced(0, "old-instance") : synced(1, "new-instance"),
+        });
+      },
+    });
+    const fixture = storeFixture({ configured: true });
+    const sync = realSyncStore(fixture, { running: false });
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(reads).toBe(1));
+    testRuntime().runCommand(sync.reconcileSyncStatusEffect, {
+      operation: "refresh sync",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy());
+    expect(screen.getByRole("alert").textContent).toContain("Sync service restarted.");
+    expect(posts).toBe(1);
+    expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
+  });
+
+  it("offers retry when the accepted response has no receipt", async () => {
+    let posts = 0;
+    stubSyncRoutes({
+      post: () => {
+        posts++;
+        return respond({});
+      },
+    });
+    const fixture = storeFixture({ configured: true });
+    realSyncStore(fixture, { running: false, last_error: "Earlier sync failed" });
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy());
+    expect(posts).toBe(1);
+    expect(screen.getByRole("alert").textContent).toContain("Could not confirm sync status.");
+    expect(screen.queryByRole("heading", { name: "Open a pull request" })).toBeNull();
+  });
+
+  it("shows a retry when status clears the transport error", async () => {
+    let attempts = 0;
+    stubSyncRoutes({
+      post: () => {
+        attempts++;
+        return Promise.reject(new Error(""));
+      },
+      status: () => respond({ running: false, last_run_at: "", last_error: "" }),
+    });
+    const fixture = storeFixture({ configured: true });
+    const sync = realSyncStore(fixture);
+    const trigger = sync.triggerOnboardingSyncEffect;
+    sync.triggerOnboardingSyncEffect = () =>
+      trigger().pipe(
+        Effect.tapError(() =>
+          Effect.sync(() => sync.setSyncStatus({ running: false, last_run_at: "", last_error: "" })),
+        ),
+      );
+    renderFlow(fixture.stores);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry sync" })).toBeTruthy(), { timeout: 5000 });
+    expect(attempts).toBe(3);
+    expect(screen.getByRole("alert").textContent).toContain("Could not reach Kenn Forge");
+  }, 7000);
 
   it("starts sync when repositories become configured while onboarding remains mounted", async () => {
     const fixture = storeFixture();

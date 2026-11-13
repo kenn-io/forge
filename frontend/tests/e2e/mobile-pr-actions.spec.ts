@@ -98,6 +98,8 @@ test("phone PR review form and label picker open as modals on screen", async ({ 
 
 test("phone PR list keyboard focus moves row to row and the search field shows one focus ring", async ({ page }) => {
   await mockApi(page);
+  // A flat list puts rows right after the scroll region; grouping adds repo headings between.
+  await page.addInitScript(() => localStorage.setItem("kenn-forge:groupingMode", "flat"));
 
   await page.goto("/m/pulls");
   const rows = page.locator(".mobile-shell .pull-item");

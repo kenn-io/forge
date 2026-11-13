@@ -31,4 +31,5 @@ export interface RepoSummaryResponse {
   releases: RepoSummaryReleaseResponse[];
   repo: RepoRefResponse;
   timeline_updated_at?: string;
+  web_url?: string;
 }

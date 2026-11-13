@@ -151,7 +151,7 @@ func (s *Server) ResolveWorkspaceLaunchSpec(
 		if spec.GitHeadRef == "" {
 			spec.GitHeadRef = pull.HeadBranch
 		}
-		headRepo := workspace.WorkspaceHeadRepo(
+		headRepo := platform.HeadRepo(
 			repo.Platform, repo.PlatformHost, repo.Owner, repo.Name,
 			pull.HeadRepoCloneURL,
 		)

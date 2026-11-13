@@ -1,7 +1,7 @@
 <script lang="ts">
 import * as roborevAPI from "../../api/roborev/generated/client.js";
 
-  import { SearchInput } from "@kenn-io/kit-ui";
+  import { Button, SearchInput } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import { onDestroy } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -30,6 +30,8 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
   let expandedRepo = $state<string | undefined>(undefined);
   let branches = $state.raw<BranchWithCount[]>([]);
   let loadingBranches = $state(false);
+  let branchError = $state(false);
+  let branchRequest = 0;
   let pickerRef = $state<HTMLDivElement>();
 
   const selectedRepo = $derived(
@@ -102,7 +104,14 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
       return;
     }
     expandedRepo = rootPath;
+    loadBranches(rootPath);
+  }
+
+  function loadBranches(rootPath: string): void {
+    const request = ++branchRequest;
     loadingBranches = true;
+    // An interrupted read must leave the error state visible.
+    branchError = true;
     if (!client) {
       loadingBranches = false;
       return;
@@ -125,13 +134,16 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
                     }),
                   )
                 : Effect.sync(() => {
-                    branches = result.data?.branches ?? [];
+                    if (request === branchRequest) {
+                      branchError = false;
+                      branches = result.data?.branches ?? [];
+                    }
                   }),
             ),
             Effect.catch(() => Effect.void),
             Effect.ensuring(
               Effect.sync(() => {
-                loadingBranches = false;
+                if (request === branchRequest) loadingBranches = false;
               }),
             ),
           ),
@@ -297,6 +309,8 @@ import * as roborevAPI from "../../api/roborev/generated/client.js";
               <div class="branches">
                 {#if loadingBranches}
                   <span class="branch-loading">Loading...</span>
+                {:else if branchError}
+                  <span class="branch-loading" role="alert">Could not load branches. <Button size="sm" onclick={() => loadBranches(repo.root_path)}>Retry</Button></span>
                 {:else}
                   {#each branches as branch (branch.name)}
                     <button

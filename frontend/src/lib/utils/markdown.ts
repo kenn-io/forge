@@ -280,6 +280,7 @@ const SHIKI_THEMES = {
   dark: SHIKI_DARK_THEME,
 } as const;
 const SHIKI_PLAINTEXT_LANG = "text";
+const SHIKI_SHELL_LANG = "shellscript";
 const SHIKI_GENERATED_ATTR = "data-kenn-forge-shiki";
 // Marks players this renderer generated, so the sanitizer can tell them from
 // raw <video> markup in the source. Stripped from the output.
@@ -813,6 +814,38 @@ async function loadCodeFenceLanguages(languages: string[]): Promise<void> {
   const highlighter = shikiHighlighter ?? (await getShikiHighlighter());
   await Promise.all(languages.map((lang) => loadCodeFenceLanguage(lang, highlighter)));
 }
+
+// One highlighted piece of a shell command, colored for each app theme.
+export interface ShellToken {
+  content: string;
+  light?: string | undefined;
+  dark?: string | undefined;
+}
+
+// Highlights a shell command with the code-fence themes. Returns tokens
+// instead of HTML so callers render text nodes and need no sanitizing.
+export const highlightShellCommandEffect = Effect.fn("Markdown.highlightShell")(function* (command: string) {
+  return yield* Effect.tryPromise({
+    try: async (): Promise<ShellToken[]> => {
+      const highlighter = shikiHighlighter ?? (await getShikiHighlighter());
+      await loadCodeFenceLanguage(SHIKI_SHELL_LANG, highlighter);
+      const { tokens } = highlighter.codeToTokens(command, {
+        lang: SHIKI_SHELL_LANG,
+        themes: SHIKI_THEMES,
+        defaultColor: false,
+      });
+      return tokens.flatMap((line, index) => [
+        ...(index > 0 ? [{ content: "\n" }] : []),
+        ...line.map((token) => ({
+          content: token.content,
+          light: token.htmlStyle?.["--shiki-light"],
+          dark: token.htmlStyle?.["--shiki-dark"],
+        })),
+      ]);
+    },
+    catch: (cause) => MarkdownRenderError.make({ cause }),
+  });
+});
 
 export function renderMarkdownBlocks(
   raw: string,

@@ -224,6 +224,7 @@ func TestAPIListRepoSummaries(t *testing.T) {
 		{Platform: "github", Owner: "acme", Name: "widgets", PlatformHost: "github.com"},
 		{Platform: "github", Owner: "acme", Name: "tools", PlatformHost: "github.com"},
 		{Platform: "github", Owner: "acme", Name: "archived", PlatformHost: "github.com"},
+		{Platform: "gitea", Owner: "team", Name: "service", PlatformHost: "git.example.test:3000"},
 	}
 	srv, database, _ := setupTestServerWithRepos(t, &serverfake.MockGH{}, repos)
 	client := servertest.SetupTestClient(t, srv)
@@ -233,6 +234,12 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	widgetsRepo, err := database.GetRepoByIdentity(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	require.NotNil(widgetsRepo)
+	httpRepo, err := database.GetRepoByIdentity(t.Context(), db.RepoIdentity{Platform: "gitea", PlatformHost: "git.example.test:3000", RepoPath: "team/service"})
+	require.NoError(err)
+	require.NotNil(httpRepo)
+	require.NoError(database.UpdateRepoProviderObservation(t.Context(), httpRepo.ID, db.RepoProviderMetadata{
+		WebURL: "http://git.example.test:3000/prefix/team/service",
+	}, nil, nil))
 	publishedAt := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
 	previousPublishedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	commitsSince := 42
@@ -276,16 +283,22 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
-	require.Len(*resp.JSON200, 3)
+	require.Len(*resp.JSON200, 4)
 
 	var widgets *generated.RepoSummaryResponse
+	var httpSummary *generated.RepoSummaryResponse
 	for i := range *resp.JSON200 {
 		summary := &(*resp.JSON200)[i]
+		if summary.Name == "service" {
+			httpSummary = summary
+		}
 		if summary.Name == "widgets" {
 			widgets = summary
-			break
 		}
 	}
+	require.NotNil(httpSummary)
+	require.NotNil(httpSummary.WebURL)
+	assert.Equal("http://git.example.test:3000/prefix/team/service", *httpSummary.WebURL)
 	require.NotNil(widgets)
 	require.NotNil(widgets.ActiveAuthors)
 	require.NotNil(widgets.RecentIssues)

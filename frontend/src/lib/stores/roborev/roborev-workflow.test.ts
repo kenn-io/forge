@@ -30,7 +30,7 @@ it("describes whether a fenced Roborev action was sent", () => {
         reconciliationCause: new Error("authority unavailable"),
       }),
     ),
-    "Could not confirm whether the add Roborev comment was applied. Matching actions remain blocked until Roborev authority is available.",
+    "Forge couldn't confirm the outcome. It will check when you retry. Action: add Roborev comment.",
   );
 });
 

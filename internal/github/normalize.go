@@ -51,6 +51,7 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) (*db.MergeRequest, error) {
 		URL:                platformMR.URL,
 		Title:              platformMR.Title,
 		Author:             platformMR.Author,
+		AuthorAccountType:  platformMR.AuthorAccountType,
 		AuthorAssociation:  platformMR.AuthorAssociation,
 		AuthorDisplayName:  platformMR.AuthorDisplayName,
 		State:              db.MergeRequestState(platformMR.State),
@@ -127,7 +128,7 @@ func NormalizeCommentEventWithVisibility(
 	visibility platformgithub.CommentVisibility,
 ) db.MREvent {
 	event := NormalizeCommentEvent(mrID, c)
-	event.MetadataJSON = platformgithub.NormalizeCommentVisibilityMetadata(visibility)
+	event.MetadataJSON = platformgithub.WithActorAccountType(platformgithub.NormalizeCommentVisibilityMetadata(visibility), c.GetUser().GetType())
 	return event
 }
 
@@ -164,6 +165,7 @@ func NormalizeTimelineEvent(mrID int64, event platformgithub.PullRequestTimeline
 			NodeID:               event.NodeID,
 			EventType:            event.EventType,
 			Actor:                event.Actor,
+			ActorAccountType:     event.ActorAccountType,
 			Assignee:             event.Assignee,
 			CreatedAt:            event.CreatedAt,
 			DeletedCommentAuthor: event.DeletedCommentAuthor,
@@ -177,6 +179,7 @@ func NormalizeTimelineEvent(mrID int64, event platformgithub.PullRequestTimeline
 			SourceType:           event.SourceType,
 			SourceOwner:          event.SourceOwner,
 			SourceRepo:           event.SourceRepo,
+			SourceRepoID:         event.SourceRepoID,
 			SourceNumber:         event.SourceNumber,
 			SourceTitle:          event.SourceTitle,
 			SourceURL:            event.SourceURL,
@@ -204,6 +207,7 @@ func NormalizeIssueTimelineEvent(issueID int64, event platformgithub.PullRequest
 			SourceType:        event.SourceType,
 			SourceOwner:       event.SourceOwner,
 			SourceRepo:        event.SourceRepo,
+			SourceRepoID:      event.SourceRepoID,
 			SourceNumber:      event.SourceNumber,
 			SourceTitle:       event.SourceTitle,
 			SourceURL:         event.SourceURL,

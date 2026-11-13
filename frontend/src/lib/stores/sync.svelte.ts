@@ -2,7 +2,10 @@ import { Deferred, Duration, Effect, Option } from "effect";
 import { pollWhileVisible } from "../effect/poll-while-visible.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
-import { retryIdempotentRead } from "../api/retry-policy.js";
+import { isTransientPickerReadFailure, retryIdempotentRead } from "../api/retry-policy.js";
+import { ApiProblemError } from "../api/effect-errors.js";
+import { ProblemCodes } from "../api/problems.js";
+import type { FullSyncStatus, TriggerSyncResponse } from "../api/generated/models/index.js";
 import type { RateLimitsResponse, SyncStatus } from "../api/types.js";
 import { SyncWorkflow, type SyncReadError } from "./sync-workflow.js";
 
@@ -11,11 +14,45 @@ export interface SyncStoreOptions {
   getPriorityRepos?: (() => string | undefined) | undefined;
 }
 
-function readErrorMessage(error: SyncReadError, fallback: string): string {
+export function readErrorMessage(error: SyncReadError, fallback: string): string {
   if (error._tag === "ApiProblemError") {
     return error.problem.detail ?? error.problem.title ?? fallback;
   }
   return "Could not reach Kenn Forge";
+}
+
+type SyncReceipt = Required<Pick<TriggerSyncResponse, "instance_id" | "generation">>;
+
+function isSyncReceipt(accepted: TriggerSyncResponse | undefined): accepted is TriggerSyncResponse & SyncReceipt {
+  return (
+    !!accepted &&
+    !!accepted.instance_id &&
+    typeof accepted.generation === "number" &&
+    Number.isSafeInteger(accepted.generation) &&
+    accepted.generation >= 1
+  );
+}
+
+function waitFailure(message: string) {
+  return Effect.fail(
+    new ApiProblemError({
+      operation: "wait for sync",
+      problem: { code: ProblemCodes.serviceUnavailable, detail: message },
+    }),
+  );
+}
+
+function lastRunAdvanced(previous: string, next: string): boolean {
+  if (next === "") return false;
+  if (previous === "") return true;
+  return Date.parse(next) > Date.parse(previous);
+}
+
+function parsePriorityRepos(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
 }
 
 export function createSyncStore(opts: SyncStoreOptions) {
@@ -28,6 +65,8 @@ export function createSyncStore(opts: SyncStoreOptions) {
   let wasRunning = false;
   let onSyncCompleteOnce: (() => void) | null = null;
   const syncCompleteListeners = new Set<() => void>();
+  const statusObservers = new Set<(next: SyncStatus | null, fresh: boolean, failure?: SyncReadError) => void>();
+  let receiptEpoch = 0;
   let currentIntervalMs = 30_000;
   let liveUpdatesConnected = false;
   let refreshGeneration = 0;
@@ -78,7 +117,8 @@ export function createSyncStore(opts: SyncStoreOptions) {
     });
   }
 
-  function applySyncStatus(next: SyncStatus | null): void {
+  function applySyncStatus(next: SyncStatus | null, fresh = false): void {
+    if (next) for (const observer of statusObservers) observer(next, fresh);
     const isRunning = next?.running ?? false;
     if (triggeredSyncLastRunAt !== undefined) {
       const nextLastRunAt = next?.last_run_at ?? "";
@@ -102,10 +142,46 @@ export function createSyncStore(opts: SyncStoreOptions) {
     adjustPollingSpeed(isRunning);
   }
 
-  function syncStatusRead() {
-    return executeGeneratedApiRequest("GET /sync/status", (client) => client.SyncService.getSyncStatus()).pipe(
-      retryIdempotentRead,
+  // A settled receipt proves the accepted run finished, so the optimistic
+  // pre-trigger gate must not hold back the status that reports it.
+  function settleTriggeredSync(
+    resume: ((effect: Effect.Effect<void, SyncReadError>) => void) | undefined,
+    outcome: Effect.Effect<void, SyncReadError>,
+  ): void {
+    triggeredSyncLastRunAt = undefined;
+    resume?.(outcome);
+  }
+
+  // Same fence as reconcileSyncStatusProgram, for a status read alone.
+  function fencedSyncStatusRead() {
+    const generation = refreshGeneration;
+    const epoch = receiptEpoch;
+    return syncStatusRead().pipe(
+      Effect.tap((next) =>
+        Effect.sync(() => {
+          if (generation === refreshGeneration) applySyncStatus(next, epoch === receiptEpoch && epoch > 0);
+        }),
+      ),
     );
+  }
+
+  function syncStatusRead() {
+    return Effect.suspend(() => {
+      const generation = refreshGeneration;
+      const epoch = receiptEpoch;
+      return executeGeneratedApiRequest("GET /sync/status", (client, signal) =>
+        client.SyncService.getSyncStatus({ signal }),
+      ).pipe(
+        retryIdempotentRead,
+        Effect.tapError((failure) =>
+          Effect.sync(() => {
+            if (generation === refreshGeneration) {
+              for (const observer of statusObservers) observer(null, epoch === receiptEpoch && epoch > 0, failure);
+            }
+          }),
+        ),
+      );
+    });
   }
 
   function rateLimitsRead() {
@@ -116,13 +192,14 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
   function refreshSyncStatusProgram() {
     const generation = refreshGeneration;
+    const epoch = receiptEpoch;
     return Effect.gen(function* () {
       const workflow = yield* SyncWorkflow;
       const snapshot = yield* workflow.refresh(generation, syncStatusRead(), rateLimitsRead());
       if (generation !== refreshGeneration) return;
       yield* Effect.sync(() => {
         if (Option.isSome(snapshot.status)) {
-          applySyncStatus(snapshot.status.value);
+          applySyncStatus(snapshot.status.value, epoch === receiptEpoch && epoch > 0);
         }
         if (Option.isSome(snapshot.rateLimits)) {
           rateLimits = snapshot.rateLimits.value;
@@ -161,13 +238,14 @@ export function createSyncStore(opts: SyncStoreOptions) {
 
   function reconcileSyncStatusProgram() {
     const generation = refreshGeneration;
+    const epoch = receiptEpoch;
     return Effect.gen(function* () {
       const [nextStatus, nextRateLimits] = yield* Effect.all([syncStatusRead(), Effect.option(rateLimitsRead())], {
         concurrency: "unbounded",
       });
       if (generation !== refreshGeneration) return;
       yield* Effect.sync(() => {
-        applySyncStatus(nextStatus);
+        applySyncStatus(nextStatus, epoch === receiptEpoch && epoch > 0);
         if (Option.isSome(nextRateLimits)) rateLimits = nextRateLimits.value;
       });
     });
@@ -180,21 +258,15 @@ export function createSyncStore(opts: SyncStoreOptions) {
     applySyncStatus(next);
   }
 
-  function lastRunAdvanced(previous: string, next: string): boolean {
-    if (next === "") return false;
-    if (previous === "") return true;
-    return Date.parse(next) > Date.parse(previous);
-  }
-
-  function triggeredSyncProgram(request: Effect.Effect<unknown, SyncReadError, GeneratedApi>) {
-    const previous = status;
+  function triggeredSyncProgram<A>(request: Effect.Effect<A, SyncReadError, GeneratedApi>, retry = false) {
+    let previous = status;
     refreshGeneration += 1;
-    let baselineLastRunAt = previous?.last_run_at ?? null;
+    let baselineLastRunAt = previous ? (previous.last_run_at ?? "") : null;
 
     return Effect.gen(function* () {
-      if (previous === null) {
+      if (previous === null && !retry) {
         const baseline = yield* Effect.option(syncStatusRead());
-        baselineLastRunAt = Option.isSome(baseline) ? (baseline.value.last_run_at ?? null) : null;
+        baselineLastRunAt = Option.isSome(baseline) ? (baseline.value.last_run_at ?? "") : null;
       }
       yield* Effect.sync(() => {
         triggeredSyncLastRunAt = baselineLastRunAt;
@@ -208,8 +280,27 @@ export function createSyncStore(opts: SyncStoreOptions) {
         wasRunning = true;
         adjustPollingSpeed(true);
       });
-      yield* request;
-      yield* Effect.suspend(refreshSyncStatusProgram);
+      const attempt = Effect.suspend(() => {
+        if (triggeredSyncLastRunAt === undefined && status) {
+          previous = status;
+          triggeredSyncLastRunAt = status.last_run_at ?? "";
+          status = { ...status, running: true };
+          wasRunning = true;
+          refreshGeneration += 1;
+          adjustPollingSpeed(true);
+        }
+        return request;
+      });
+      const result = yield* retry
+        ? retryIdempotentRead(
+            attempt,
+            (failure) =>
+              isTransientPickerReadFailure(failure) &&
+              !(failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.serviceUnavailable),
+          )
+        : request;
+      if (!retry) yield* Effect.suspend(refreshSyncStatusProgram);
+      return result;
     }).pipe(
       Effect.tapError((failure) =>
         Effect.sync(() => {
@@ -225,7 +316,15 @@ export function createSyncStore(opts: SyncStoreOptions) {
           adjustPollingSpeed(false);
         }),
       ),
-      Effect.asVoid,
+      Effect.onInterrupt(() =>
+        Effect.sync(() => {
+          if (triggeredSyncLastRunAt === undefined) return;
+          triggeredSyncLastRunAt = undefined;
+          status = previous;
+          wasRunning = previous?.running ?? false;
+          adjustPollingSpeed(wasRunning);
+        }),
+      ),
     );
   }
 
@@ -237,13 +336,95 @@ export function createSyncStore(opts: SyncStoreOptions) {
     });
   }
 
-  function triggerSyncEffect() {
+  function fullSyncRequest() {
     const priorityRepos = parsePriorityRepos(getPriorityRepos());
-    return triggeredSyncProgram(
-      executeGeneratedApiRequest("POST /sync", (client) =>
-        client.SyncService.triggerSync(priorityRepos.length > 0 ? { priority_repo: priorityRepos } : undefined),
-      ),
+    return executeGeneratedApiRequest("POST /sync", (client, signal) =>
+      client.SyncService.triggerSync(priorityRepos.length > 0 ? { priority_repo: priorityRepos } : undefined, {
+        signal,
+      }),
     );
+  }
+
+  function triggerSyncEffect() {
+    return triggeredSyncProgram(fullSyncRequest());
+  }
+
+  function triggerOnboardingSyncEffect() {
+    return Effect.gen(function* () {
+      const previous = status;
+      let receipt: SyncReceipt | undefined;
+      let acceptedEpoch = 0;
+      let lastObserved: SyncStatus | undefined;
+      const observed = new Map<string, FullSyncStatus>();
+      let outcome: Effect.Effect<void, SyncReadError> | undefined;
+      let resume: ((effect: Effect.Effect<void, SyncReadError>) => void) | undefined;
+      const observe = (next: SyncStatus | null, fresh: boolean, failure?: SyncReadError) => {
+        if (outcome) return;
+        if (failure) {
+          if (receipt && fresh && acceptedEpoch === receiptEpoch && !isTransientPickerReadFailure(failure)) {
+            outcome = waitFailure(readErrorMessage(failure, "Could not read sync status."));
+            status = lastObserved ?? previous;
+            wasRunning = status?.running ?? false;
+            adjustPollingSpeed(wasRunning);
+            settleTriggeredSync(resume, outcome);
+          }
+          return;
+        }
+        if (!next) return;
+        lastObserved = next;
+        const full = next.full_sync;
+        if (!full) return;
+        if (receipt && full.instance_id !== receipt.instance_id) {
+          if (fresh) outcome = waitFailure("Sync service restarted.");
+        } else {
+          const previous = observed.get(full.instance_id);
+          if (!previous || full.settled_generation >= previous.settled_generation) observed.set(full.instance_id, full);
+        }
+        const latest = receipt && observed.get(receipt.instance_id);
+        if (receipt && latest) {
+          if (latest.successful_generation >= receipt.generation) outcome = Effect.void;
+          else if (latest.settled_generation >= receipt.generation)
+            outcome = waitFailure(latest.last_error || "Sync failed. Retry sync.");
+        }
+        if (outcome) settleTriggeredSync(resume, outcome);
+      };
+      yield* Effect.sync(() => statusObservers.add(observe));
+      return yield* Effect.gen(function* () {
+        const accepted = yield* triggeredSyncProgram(fullSyncRequest(), true);
+        if (!isSyncReceipt(accepted)) {
+          return yield* waitFailure("Could not confirm sync status.");
+        }
+        receipt = { instance_id: accepted.instance_id, generation: accepted.generation };
+        acceptedEpoch = ++receiptEpoch;
+        const latest = observed.get(receipt.instance_id);
+        if (latest) {
+          const saved = lastObserved;
+          observe({ running: false, full_sync: latest }, false);
+          lastObserved = saved;
+        }
+        if (outcome) {
+          if (lastObserved) applySyncStatus(lastObserved);
+          return yield* outcome;
+        }
+        const wait = Effect.callback<void, SyncReadError>((callback) => {
+          resume = callback;
+          if (outcome) callback(outcome);
+        });
+        const refresh = Effect.suspend(fencedSyncStatusRead).pipe(Effect.ignore, Effect.andThen(Effect.never));
+        return yield* Effect.raceFirst(wait, refresh);
+      }).pipe(
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            if (triggeredSyncLastRunAt === undefined && !lastObserved) return;
+            triggeredSyncLastRunAt = undefined;
+            status = lastObserved ?? previous;
+            wasRunning = status?.running ?? false;
+            adjustPollingSpeed(wasRunning);
+          }),
+        ),
+        Effect.ensuring(Effect.sync(() => statusObservers.delete(observe))),
+      );
+    });
   }
 
   function triggerSync(): void {
@@ -258,13 +439,6 @@ export function createSyncStore(opts: SyncStoreOptions) {
     runTriggeredSync(
       executeGeneratedApiRequest("POST /sync", (client) => client.SyncService.triggerSync({ only_repo: [repo] })),
     );
-  }
-
-  function parsePriorityRepos(value: string | undefined): string[] {
-    return (value ?? "")
-      .split(",")
-      .map((part) => part.trim())
-      .filter((part) => part !== "");
   }
 
   function adjustPollingSpeed(running: boolean): void {
@@ -321,6 +495,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     reconcileSyncStatusEffect,
     setSyncStatus,
     triggerSyncEffect,
+    triggerOnboardingSyncEffect,
     triggerSync,
     triggerRepoSync,
     pollingEffect,

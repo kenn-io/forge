@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Disclosure } from "@kenn-io/kit-ui";
+  import { Disclosure, Spinner } from "@kenn-io/kit-ui";
   import Terminal from "@lucide/svelte/icons/terminal";
   import ChatContentBlock from "./ChatContentBlock.svelte";
   import { isInlineMediaContent, lineDiff, stripAnsi } from "./chat-content.js";
@@ -29,6 +29,9 @@
 </script>
 
 <div class="details" {id}>
+  {#if message.detailsOmitted}
+    <span class="loading"><Spinner size={12} label="" />Loading details…</span>
+  {/if}
   {#if locations.length}
     <ul class="locations" aria-label="Locations">
       {#each locations as location, index (index)}
@@ -87,6 +90,7 @@
     min-width: 0;
     padding: 0 var(--space-5) var(--space-3) calc(14px + var(--space-4) + var(--space-5));
   }
+  .loading,
   .terminal {
     display: inline-flex;
     align-items: center;

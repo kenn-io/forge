@@ -1,6 +1,7 @@
 import { canonicalProvider } from "../api/provider-routes.js";
 import { buildIssueRoute, buildRoutedItemRoute, type RepositoryRouteRef } from "../routes.js";
 import { withBasePath } from "../stores/router.svelte.js";
+import { isSafeExternalHTTPURL } from "./safe-external-url.js";
 
 export type ItemReferenceType = "pr" | "issue";
 
@@ -44,29 +45,40 @@ function encodeRepoPath(repoPath: string): string {
     .join("/");
 }
 
+export function buildProviderIssueListURL(
+  ref: Pick<RepositoryRouteRef, "provider" | "platformHost" | "repoPath"> & { webURL?: string | undefined },
+): string | undefined {
+  const provider = canonicalProvider(ref.provider);
+  const host = providerHost(provider, ref.platformHost);
+  const repoPath = encodeRepoPath(ref.repoPath);
+  if (!host || !repoPath || (provider === "bitbucket" && host.toLowerCase() !== "bitbucket.org")) return undefined;
+  const repoURL = ref.webURL?.replace(/\/+$/, "") || `https://${host}/${repoPath}`;
+  const issueListURL = `${repoURL}${provider === "gitlab" ? "/-/issues" : "/issues"}`;
+  return isSafeExternalHTTPURL(issueListURL) ? issueListURL : undefined;
+}
+
 export function buildCanonicalProviderItemURL(ref: ResolvableItemReference): string | undefined {
+  if (ref.itemType !== "pr") {
+    const issueListURL = buildProviderIssueListURL(ref);
+    return issueListURL ? `${issueListURL}/${encodeURIComponent(ref.number.toString())}` : undefined;
+  }
   const host = providerHost(ref.provider, ref.platformHost);
   const repoPath = encodeRepoPath(ref.repoPath);
   if (!host || !repoPath) return undefined;
   const provider = canonicalProvider(ref.provider);
   const number = encodeURIComponent(ref.number.toString());
   if (provider === "bitbucket" && host.toLowerCase() !== "bitbucket.org") {
-    if (ref.itemType !== "pr") return undefined;
     return `https://${host}/projects/${encodeURIComponent(ref.owner)}/repos/${encodeURIComponent(ref.name)}/pull-requests/${number}`;
   }
   let itemPath: string;
-  if (ref.itemType === "pr") {
-    if (provider === "gitlab") {
-      itemPath = `/-/merge_requests/${number}`;
-    } else if (provider === "bitbucket") {
-      itemPath = `/pull-requests/${number}`;
-    } else if (provider === "github") {
-      itemPath = `/pull/${number}`;
-    } else {
-      itemPath = `/pulls/${number}`;
-    }
+  if (provider === "gitlab") {
+    itemPath = `/-/merge_requests/${number}`;
+  } else if (provider === "bitbucket") {
+    itemPath = `/pull-requests/${number}`;
+  } else if (provider === "github") {
+    itemPath = `/pull/${number}`;
   } else {
-    itemPath = provider === "gitlab" ? `/-/issues/${number}` : `/issues/${number}`;
+    itemPath = `/pulls/${number}`;
   }
   return `https://${host}/${repoPath}${itemPath}`;
 }

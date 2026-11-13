@@ -14,6 +14,7 @@ export interface ActivityResponse {
   item_activity_capped: boolean;
   items: ActivityItemResponse[];
   next_cursor?: string;
+  next_subject_cursor?: string;
   use_workspace_activity_for_recency: boolean;
   workspace_activity: WorkspaceActivitySubjectResponse[];
 }

@@ -19,6 +19,7 @@ import {
 } from "../../stores/workspace-repo-catalog.svelte.js";
 import { repositoryKeyToWire, type RepositoryKey } from "../../api/repository-key.js";
 import { getFlashes } from "../../stores/flash.svelte.js";
+import { workspaceListSortOptions } from "./workspaceListSort.js";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
@@ -217,8 +218,8 @@ function sortFixtures() {
   ];
 }
 
-// Focuses a row the way the Tab key does. jsdom tracks whether the last input
-// was a key or a pointer, and the hover card opens only for keyboard focus.
+// Focuses a row after a keyboard event. jsdom 31 matches :focus-visible for
+// every focused element; pointer modality is supplied explicitly where tested.
 async function keyboardFocus(row: HTMLElement): Promise<void> {
   await fireEvent.keyDown(document.body, { key: "Tab" });
   row.focus();
@@ -1486,9 +1487,16 @@ describe("WorkspaceListSidebar", () => {
 
     // Focus that follows a press is the click's own, so the card stays closed.
     row.blur();
+    // jsdom 31 does not model input modality for :focus-visible. Supply the
+    // browser's pointer-focus result while still exercising the focus handler.
+    const matches = row.matches.bind(row);
+    const pointerFocus = vi
+      .spyOn(row, "matches")
+      .mockImplementation((selector) => (selector === ":focus-visible" ? false : matches(selector)));
     row.focus();
     await tick();
     expect(screen.queryByRole("tooltip")).toBeNull();
+    pointerFocus.mockRestore();
 
     row.blur();
     await keyboardFocus(row);
@@ -1719,8 +1727,9 @@ describe("WorkspaceListSidebar", () => {
       },
     });
     render(WorkspaceListSidebar, { props: { selectedId: "" } });
-    await screen.findByText("Focus workspace");
-    const focusRow = () => screen.getByText("Focus workspace").closest(".ws-row") as HTMLElement;
+    await screen.findByText("Focus workspace", { selector: ".ws-name" });
+    const focusRow = () =>
+      screen.getByText("Focus workspace", { selector: ".ws-name" }).closest(".ws-row") as HTMLElement;
 
     const unpinnedRow = focusRow();
     unpinnedRow.focus();
@@ -1784,8 +1793,9 @@ describe("WorkspaceListSidebar", () => {
       },
     });
     render(WorkspaceListSidebar, { props: { selectedId: "" } });
-    await screen.findByText("Moving workspace");
-    const movingRow = () => screen.queryByText("Moving workspace")?.closest(".ws-row") as HTMLElement | null;
+    await screen.findByText("Moving workspace", { selector: ".ws-name" });
+    const movingRow = () =>
+      screen.queryByText("Moving workspace", { selector: ".ws-name" })?.closest(".ws-row") as HTMLElement | null;
 
     await fireEvent.contextMenu(movingRow()!);
     await fireEvent.click(screen.getByRole("menuitem", { name: "Pin workspace", exact: true }));
@@ -2031,7 +2041,7 @@ describe("WorkspaceListSidebar", () => {
     await fireEvent.click(doneRow!);
 
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/done-newer-hook");
-    expect(doneRow?.querySelector(".agent-state")?.textContent).toContain("Done");
+    expect(doneRow?.querySelector(".agent-state")).toBeNull();
     expect(doneRow?.querySelector(".workspace-sort-time")?.getAttribute("datetime")).toBe("2026-05-13T12:00:00Z");
     expect(rowTitles(container)).toEqual([
       "approval",
@@ -2045,7 +2055,7 @@ describe("WorkspaceListSidebar", () => {
 
     await fireEvent.click(screen.getByTitle("Filter workspaces"));
     await fireEvent.click(screen.getByRole("button", { name: "Created" }));
-    expect(doneRow?.querySelector(".agent-state")?.textContent).toContain("Done");
+    expect(doneRow?.querySelector(".agent-state")).toBeNull();
   });
 
   it("uses item activity as the agent-status fallback timestamp", async () => {
@@ -2970,6 +2980,59 @@ describe("WorkspaceListSidebar", () => {
     expect(await screen.findByText("Done")).toBeTruthy();
   });
 
+  // Every sort clears Done on open; none, including Agent status, may opt out.
+  it.each(workspaceListSortOptions.map((option) => option.value))(
+    "clears Done when its workspace is opened in the %s sort until the agent finishes again",
+    async (sort) => {
+      localStorage.setItem("kenn-forge:workspaceListSort", sort);
+      let agentStateUpdatedAt = "2026-07-28T12:00:00Z";
+      mockGet.mockImplementation(() =>
+        Promise.resolve({
+          data: {
+            workspaces: [
+              workspaceFixture({
+                id: "ws-done",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "acme",
+                name: "widget",
+                number: 9,
+                title: "done",
+                agentState: "done",
+                agentStateUpdatedAt,
+              }),
+              workspaceFixture({
+                id: "ws-working",
+                provider: "github",
+                platformHost: "github.com",
+                owner: "acme",
+                name: "widget",
+                number: 8,
+                title: "working",
+                agentState: "working",
+              }),
+            ],
+          },
+        }),
+      );
+
+      const first = render(WorkspaceListSidebar, { props: { selectedId: "" } });
+      expect(await screen.findByLabelText("Agent done")).toBeTruthy();
+      const orderBefore = rowTitles(first.container);
+
+      await fireEvent.click(screen.getByText("done").closest<HTMLElement>(".ws-row")!);
+
+      expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-done");
+      expect(screen.queryByLabelText("Agent done")).toBeNull();
+      expect(rowTitles(first.container)).toEqual(orderBefore);
+
+      first.unmount();
+      agentStateUpdatedAt = "2026-07-28T12:05:00Z";
+      render(WorkspaceListSidebar, { props: { selectedId: "" } });
+      expect(await screen.findByLabelText("Agent done")).toBeTruthy();
+    },
+  );
+
   it("does not dismiss an unversioned completed agent state", async () => {
     mockGet.mockResolvedValue({
       data: {
@@ -3403,7 +3466,8 @@ describe("WorkspaceListSidebar", () => {
         ),
     );
     const { container } = render(WorkspaceListSidebar, { props: { selectedId: "ws-new" } });
-    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+    const row = async (title: string) =>
+      (await screen.findByText(title, { selector: ".ws-name" })).closest<HTMLElement>(".ws-row")!;
     const selectedTitles = () =>
       Array.from(container.querySelectorAll(".ws-row.multi-selected .ws-name")).map((el) => el.textContent?.trim());
 
@@ -3419,12 +3483,12 @@ describe("WorkspaceListSidebar", () => {
     expect(dialog.textContent).toContain('Delete "Newest created", "Oldest without activity"?');
     await fireEvent.click(within(dialog).getByRole("button", { name: "Delete 2 workspaces" }));
 
-    await waitFor(() => expect(screen.queryByText("Newest created")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Newest created", { selector: ".ws-name" })).toBeNull());
     expect(mockDelete.mock.calls.map(([, options]) => options.params.path.id).sort()).toEqual(["ws-new", "ws-old"]);
     // Bulk deletion never forces, so uncommitted changes are never discarded.
     expect(mockDelete.mock.calls.filter(([, options]) => options.params.query?.force === true)).toEqual([]);
-    expect(screen.getByText("Oldest without activity")).toBeTruthy();
-    expect(screen.getByText("Most recently active")).toBeTruthy();
+    expect(screen.getByText("Oldest without activity", { selector: ".ws-name" })).toBeTruthy();
+    expect(screen.getByText("Most recently active", { selector: ".ws-name" })).toBeTruthy();
     expect(mockNavigate).toHaveBeenCalledWith("/workspaces");
     await waitFor(() => {
       expect(getFlashes().map((flash) => flash.message)).toContainEqual(
@@ -3445,7 +3509,8 @@ describe("WorkspaceListSidebar", () => {
         }),
     );
     render(WorkspaceListSidebar, { props: { selectedId: "ws-new" } });
-    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+    const row = async (title: string) =>
+      (await screen.findByText(title, { selector: ".ws-name" })).closest<HTMLElement>(".ws-row")!;
 
     await fireEvent.click(await row("Oldest without activity"), { shiftKey: true });
     await fireEvent.contextMenu(await row("Oldest without activity"));
@@ -3455,15 +3520,15 @@ describe("WorkspaceListSidebar", () => {
 
     await waitFor(() => expect(pending.size).toBe(2));
     expect(screen.queryByRole("dialog", { name: "Delete 2 workspaces?" })).toBeNull();
-    expect(screen.getByText("Newest created")).toBeTruthy();
-    expect(screen.getByText("Oldest without activity")).toBeTruthy();
+    expect(screen.getByText("Newest created", { selector: ".ws-name" })).toBeTruthy();
+    expect(screen.getByText("Oldest without activity", { selector: ".ws-name" })).toBeTruthy();
 
     pending.get("ws-old")!();
-    await waitFor(() => expect(screen.queryByText("Oldest without activity")).toBeNull());
-    expect(screen.getByText("Newest created")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText("Oldest without activity", { selector: ".ws-name" })).toBeNull());
+    expect(screen.getByText("Newest created", { selector: ".ws-name" })).toBeTruthy();
 
     pending.get("ws-new")!();
-    await waitFor(() => expect(screen.queryByText("Newest created")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Newest created", { selector: ".ws-name" })).toBeNull());
     expect(mockNavigate).toHaveBeenCalledWith("/workspaces");
   });
 
@@ -3483,7 +3548,8 @@ describe("WorkspaceListSidebar", () => {
         }),
     );
     render(WorkspaceListSidebar, { props: { selectedId: "ws-new" } });
-    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+    const row = async (title: string) =>
+      (await screen.findByText(title, { selector: ".ws-name" })).closest<HTMLElement>(".ws-row")!;
     const deleteOne = async (title: string) => {
       await fireEvent.contextMenu(await row(title));
       await fireEvent.click(screen.getByRole("menuitem", { name: "Delete workspace..." }));
@@ -3516,7 +3582,7 @@ describe("WorkspaceListSidebar", () => {
 
     // Finishing the bulk delete leaves the single deletes busy.
     pending.get("ws-new")!(204);
-    await waitFor(() => expect(screen.queryByText("Newest created")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("Newest created", { selector: ".ws-name" })).toBeNull());
     expect(within(await row("Most recently active")).getByLabelText("Deleting workspace")).toBeTruthy();
     expect(within(await row("Oldest without activity")).getByLabelText("Deleting workspace")).toBeTruthy();
 
@@ -3530,8 +3596,8 @@ describe("WorkspaceListSidebar", () => {
     expect(within(await row("Most recently active")).getByLabelText("Deleting workspace")).toBeTruthy();
 
     pending.get("ws-mid")!(204);
-    await waitFor(() => expect(screen.queryByText("Most recently active")).toBeNull());
-    expect(screen.getByText("Oldest without activity")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText("Most recently active", { selector: ".ws-name" })).toBeNull());
+    expect(screen.getByText("Oldest without activity", { selector: ".ws-name" })).toBeTruthy();
   });
 
   it("offers force delete when a delete is refused for uncommitted changes", async () => {
@@ -3792,7 +3858,8 @@ describe("WorkspaceListSidebar", () => {
     });
     mockDelete.mockResolvedValue({ response: { ok: true, status: 204 } });
     render(WorkspaceListSidebar, { props: { selectedId: "ws-new" } });
-    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+    const row = async (title: string) =>
+      (await screen.findByText(title, { selector: ".ws-name" })).closest<HTMLElement>(".ws-row")!;
 
     await fireEvent.click(await row("Oldest without activity"), { shiftKey: true });
     await fireEvent.contextMenu(await row("Oldest without activity"));
@@ -3814,8 +3881,8 @@ describe("WorkspaceListSidebar", () => {
       ["/workspaces/{id}/runtime/sessions/{session_key}", "ws-new", "chat-1"],
       ["/workspaces/{id}/runtime/sessions/{session_key}", "ws-old", "shell-1"],
     ]);
-    expect(screen.getByText("Newest created")).toBeTruthy();
-    expect(screen.getByText("Oldest without activity")).toBeTruthy();
+    expect(screen.getByText("Newest created", { selector: ".ws-name" })).toBeTruthy();
+    expect(screen.getByText("Oldest without activity", { selector: ".ws-name" })).toBeTruthy();
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 

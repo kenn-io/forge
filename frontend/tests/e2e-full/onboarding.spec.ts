@@ -104,6 +104,106 @@ async function configureWidgetRepository(page: Page, baseURL: string): Promise<v
   await expect(page.getByRole("heading", { name: "Open a pull request" })).toBeVisible({ timeout: 30_000 });
 }
 
+test("shows the empty pull list when repository sync is deferred", async ({ page }) => {
+  let server: IsolatedE2EServer | null = null;
+  try {
+    server = await startIsolatedE2EServerWithOptions();
+    await removeConfiguredRepositories(page, server.info.base_url);
+    await prepareGitHubOnboarding(page, defaultPlatformHost);
+    const reset = new Date(Date.now() + 3600000).toISOString();
+    await page.route("**/api/v1/rate-limits", (route) =>
+      route.fulfill({
+        json: {
+          local_ceilings: {},
+          provider_pools: {
+            pool: {
+              provider: "github",
+              platform_host: "github.com",
+              principal_label: "account",
+              rate_principal: "user:1",
+              reserve_buffer: 200,
+              sync_paused: false,
+              sync_throttle_factor: 1,
+              rest: { known: true, remaining: 100, limit: 5000, requests: 0, reset_at: reset },
+              graphql: { known: true, remaining: 5000, limit: 5000, requests: 0, reset_at: reset },
+            },
+          },
+        },
+      }),
+    );
+    await page.route("**/api/v1/pulls?**", (route) => route.fulfill({ json: [] }));
+    await configureWidgetRepository(page, server.info.base_url);
+    await expect(page.getByText("No open pull requests yet")).toBeVisible();
+  } finally {
+    await server?.stop();
+  }
+});
+
+test("shows the credential recovery action during setup", async ({ page }) => {
+  let server: IsolatedE2EServer | null = null;
+  try {
+    server = await startIsolatedE2EServerWithOptions();
+    await removeConfiguredRepositories(page, server.info.base_url);
+    await prepareGitHubOnboarding(page, defaultPlatformHost);
+    await page.route("**/api/v1/sync", (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({ status: 202, json: { instance_id: "instance", generation: 1 } })
+        : route.continue(),
+    );
+    await page.route("**/api/v1/sync/status", (route) =>
+      route.fulfill({
+        json: {
+          running: false,
+          full_sync: {
+            instance_id: "instance",
+            settled_generation: 1,
+            successful_generation: 0,
+            last_error:
+              "no GitHub credential route for acme/widgets on github.com. Configure a GitHub token for this repository or owner in Forge's config.toml and restart Forge.",
+          },
+        },
+      }),
+    );
+    await page.setViewportSize({ width: 700, height: 900 });
+    await page.goto(`${server.info.base_url}/`);
+    await page.getByRole("button", { name: "Continue with GitHub" }).click();
+    await page.getByRole("checkbox", { name: /acme\/widgets/ }).click();
+    await page.getByRole("button", { name: "Configure 1 repository" }).click();
+    await expect(page.getByRole("alert")).toContainText("config.toml and restart Forge");
+    await expect(page.getByRole("button", { name: "Retry sync" })).toBeVisible();
+  } finally {
+    await server?.stop();
+  }
+});
+
+test("offers retry when accepted sync status is forbidden", async ({ page }) => {
+  let server: IsolatedE2EServer | null = null;
+  try {
+    server = await startIsolatedE2EServerWithOptions();
+    await removeConfiguredRepositories(page, server.info.base_url);
+    await prepareGitHubOnboarding(page, defaultPlatformHost);
+    await page.route("**/api/v1/sync", (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({ status: 202, json: { instance_id: "instance", generation: 1 } })
+        : route.continue(),
+    );
+    await page.route("**/api/v1/sync/status", (route) =>
+      route.fulfill({
+        status: 403,
+        json: { code: "forbidden", status: 403, title: "Forbidden", detail: "Access denied", type: "about:blank" },
+      }),
+    );
+    await page.goto(`${server.info.base_url}/`);
+    await page.getByRole("button", { name: "Continue with GitHub" }).click();
+    await page.getByRole("checkbox", { name: /acme\/widgets/ }).click();
+    await page.getByRole("button", { name: "Configure 1 repository" }).click();
+    await expect(page.getByRole("alert")).toContainText("Access denied");
+    await expect(page.getByRole("button", { name: "Retry sync" })).toBeVisible();
+  } finally {
+    await server?.stop();
+  }
+});
+
 test("first run reaches a ready PR workspace", async ({ page }) => {
   test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for workspace setup");
   test.setTimeout(120_000);

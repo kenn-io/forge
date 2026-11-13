@@ -543,6 +543,27 @@ func TestOpenAPIDocumentsCustomStatusCodes(t *testing.T) {
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 
+	var document struct {
+		Paths map[string]struct {
+			Post struct {
+				Responses map[string]struct {
+					Content map[string]struct {
+						Schema struct {
+							Ref string `json:"$ref"`
+						} `json:"schema"`
+					} `json:"content"`
+				} `json:"responses"`
+			} `json:"post"`
+		} `json:"paths"`
+		Components struct {
+			Schemas map[string]struct{} `json:"schemas"`
+		} `json:"components"`
+	}
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &document))
+	ref := document.Paths["/sync"].Post.Responses["202"].Content["application/json"].Schema.Ref
+	require.NotEmpty(ref)
+	_, ok := document.Components.Schemas[strings.TrimPrefix(ref, "#/components/schemas/")]
+	require.True(ok)
 	spec := rr.Body.String()
 	require.Contains(spec, `"/sync":{"post":{"operationId":"trigger-sync"`)
 	require.Contains(spec, `"/starred":{"delete":{"operationId":"unset-starred"`)

@@ -31,53 +31,11 @@ func (d *DB) ListCollapsedActivityProjection(
 		return ActivityProjection{}, err
 	}
 
-	var searchMatched []WorkspaceSubjectKey
-	if len(ParseSearchQuery(opts.Search).Include) > 0 {
-		searchOpts := opts.ListActivityOpts
-		if opts.SearchEventLimit > 0 {
-			searchOpts.Limit = opts.SearchEventLimit
-		}
-		searchRows, searchErr := listActivityWithQueryer(ctx, tx, searchOpts)
-		if searchErr != nil {
-			return ActivityProjection{}, searchErr
-		}
-		searchMatched = make([]WorkspaceSubjectKey, 0, len(searchRows))
-		for _, row := range searchRows {
-			if row.ItemType == "pr" || row.ItemType == "issue" {
-				searchMatched = append(searchMatched, WorkspaceSubjectKey{
-					RepoID: row.RepoID, ItemType: row.ItemType, ItemNumber: row.ItemNumber,
-				})
-			}
-		}
-	}
-
 	subjectLimit := opts.SubjectLimit
 	if subjectLimit <= 0 {
 		subjectLimit = opts.Limit
 	}
-	subjects, err := listActivitySubjectsWithQueryer(ctx, tx, ListActivitySubjectsOpts{
-		Repo:           opts.Repo,
-		RepoFilters:    opts.RepoFilters,
-		AllowedRepoIDs: opts.AllowedRepoIDs,
-		ItemTypes:      opts.ItemTypes,
-		ExcludeNotificationRecency: opts.ExcludeNotifications ||
-			activityTypesExcludeNotification(opts.Types),
-		Search:                   opts.Search,
-		SearchMatchedSubjectKeys: searchMatched,
-		Author:                   opts.Author,
-		Unassigned:               opts.Unassigned,
-		Assigned:                 opts.Assigned,
-		ViewerLogins:             opts.ViewerLogins,
-		ViewerUninvolved:         opts.ViewerUninvolved,
-		HideClosedMerged:         opts.HideClosedMerged,
-		HideBots:                 opts.HideBots,
-		HideDrafts:               opts.HideDrafts,
-		HideMergeQueued:          opts.HideMergeQueued,
-		OnlyMergeQueued:          opts.OnlyMergeQueued,
-		DeferredMergeItems:       opts.DeferredMergeItems,
-		Limit:                    subjectLimit,
-		Since:                    opts.Since,
-	})
+	subjects, err := listActivitySubjectsWithQueryer(ctx, tx, ActivitySubjectsOpts(opts.ListActivityOpts, opts.SubjectBefore, subjectLimit))
 	if err != nil {
 		return ActivityProjection{}, err
 	}
@@ -93,4 +51,42 @@ func (d *DB) ListCollapsedActivityProjection(
 
 func activityTypesExcludeNotification(types []string) bool {
 	return len(types) > 0 && !slices.Contains(types, "notification")
+}
+
+// ActivitySubjectsOpts builds the parent-level filters for one subjects read
+// of newest-first subjects from before.
+func ActivitySubjectsOpts(
+	opts ListActivityOpts, before *ActivitySubjectCursor, limit int,
+) ListActivitySubjectsOpts {
+	searchOpts := opts
+	searchOpts.AfterTime, searchOpts.BeforeTime, searchOpts.AtOrBeforeTime = nil, nil, nil
+	return ListActivitySubjectsOpts{
+		Repo:           opts.Repo,
+		RepoFilters:    opts.RepoFilters,
+		AllowedRepoIDs: opts.AllowedRepoIDs,
+		ItemTypes:      opts.ItemTypes,
+		ExcludeNotificationRecency: opts.ExcludeNotifications ||
+			activityTypesExcludeNotification(opts.Types),
+		Search:              opts.Search,
+		SearchEventOpts:     &searchOpts,
+		Author:              opts.Author,
+		Unassigned:          opts.Unassigned,
+		Assigned:            opts.Assigned,
+		ViewerLogins:        opts.ViewerLogins,
+		ViewerUninvolved:    opts.ViewerUninvolved,
+		HideClosedMerged:    opts.HideClosedMerged,
+		OnlyClosedMerged:    opts.OnlyClosedMerged,
+		HideBots:            opts.HideBots,
+		OnlyBots:            opts.OnlyBots,
+		HideDrafts:          opts.HideDrafts,
+		HideMergeQueued:     opts.HideMergeQueued,
+		OnlyMergeQueued:     opts.OnlyMergeQueued,
+		PullAttributes:      opts.PullAttributes,
+		ActivityItemFilters: opts.ActivityItemFilters,
+		DeferredMergeItems:  opts.DeferredMergeItems,
+		WorkspaceItems:      opts.WorkspaceItems,
+		Limit:               limit,
+		Since:               opts.Since,
+		Before:              before,
+	}
 }

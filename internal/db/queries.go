@@ -946,6 +946,110 @@ func (d *DB) ListLabelsForSubjects(
 	return out, nil
 }
 
+// pullRequestItems lists the pull requests among keys.
+func pullRequestItems(keys []WorkspaceSubjectKey) []RepoItemNumber {
+	items := []RepoItemNumber{}
+	for _, key := range keys {
+		if key.ItemType == WorkspaceItemTypePullRequest {
+			items = append(items, RepoItemNumber{RepoID: key.RepoID, Number: key.ItemNumber})
+		}
+	}
+	return items
+}
+
+// ListPullHeadRepoCloneURLs returns the stored head clone URL of each synced pull request among keys.
+func (d *DB) ListPullHeadRepoCloneURLs(
+	ctx context.Context, keys []WorkspaceSubjectKey,
+) (map[WorkspaceSubjectKey]string, error) {
+	out := make(map[WorkspaceSubjectKey]string)
+	items := pullRequestItems(keys)
+	if len(items) == 0 {
+		return out, nil
+	}
+	var args []any
+	cond := repoItemCondition("p", items, &args)
+	rows, err := d.roQueryContext(ctx,
+		"SELECT p.repo_id, p.number, p.head_repo_clone_url FROM forge_merge_requests p WHERE "+cond, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list pull head repositories: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		key := WorkspaceSubjectKey{ItemType: WorkspaceItemTypePullRequest}
+		var cloneURL string
+		if err := rows.Scan(&key.RepoID, &key.ItemNumber, &cloneURL); err != nil {
+			return nil, fmt.Errorf("scan pull head repository: %w", err)
+		}
+		out[key] = cloneURL
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list pull head repositories: %w", err)
+	}
+	return out, nil
+}
+
+// ListWorkspaceSubjectsMatchingFilters returns the keys that Activity's PR attributes and item
+// filters in opts keep, as they decide for activity rows; with neither, every key.
+func (d *DB) ListWorkspaceSubjectsMatchingFilters(
+	ctx context.Context, keys []WorkspaceSubjectKey, opts ListActivityOpts,
+) (map[WorkspaceSubjectKey]struct{}, error) {
+	out := make(map[WorkspaceSubjectKey]struct{})
+	encoded := make([][3]any, 0, len(keys))
+	for _, key := range keys {
+		switch key.ItemType {
+		case WorkspaceItemTypePullRequest:
+			encoded = append(encoded, [3]any{key.RepoID, ItemTypePR, key.ItemNumber})
+		case WorkspaceItemTypeIssue:
+			encoded = append(encoded, [3]any{key.RepoID, ItemTypeIssue, key.ItemNumber})
+		}
+	}
+	keysJSON, err := json.Marshal(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("encode workspace subjects: %w", err)
+	}
+	args := []any{string(keysJSON)}
+	clauses := opts.clauses(&args)
+	if cond := activityPullAttributeClause(
+		opts.PullAttributes, false, false, false, opts.DeferredMergeItems, opts.WorkspaceItems, &args,
+	); cond != "" {
+		clauses = append(clauses, cond)
+	}
+	if len(clauses) == 0 {
+		for _, key := range keys {
+			out[key] = struct{}{}
+		}
+		return out, nil
+	}
+	if len(encoded) == 0 {
+		return out, nil
+	}
+	rows, err := d.roQueryContext(ctx, `
+		WITH subjects(repo_id, item_type, item_number) AS (
+			SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]') FROM json_each(?)
+		)
+		SELECT repo_id, item_type, item_number FROM subjects WHERE `+strings.Join(clauses, " AND "), args...)
+	if err != nil {
+		return nil, fmt.Errorf("list workspace subjects matching filters: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var key WorkspaceSubjectKey
+		var itemType string
+		if err := rows.Scan(&key.RepoID, &itemType, &key.ItemNumber); err != nil {
+			return nil, fmt.Errorf("scan workspace subject matching filters: %w", err)
+		}
+		key.ItemType = WorkspaceItemTypePullRequest
+		if itemType == ItemTypeIssue {
+			key.ItemType = WorkspaceItemTypeIssue
+		}
+		out[key] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list workspace subjects matching filters: %w", err)
+	}
+	return out, nil
+}
+
 func (d *DB) scanSubjectLabels(
 	ctx context.Context, query, payload, itemType string, out map[WorkspaceSubjectKey][]Label,
 ) error {
@@ -1479,7 +1583,7 @@ func upsertMergeRequestSnapshot(
 ) (int64, int64, bool, error) {
 	result, err := executor.ExecContext(ctx, `
 		INSERT INTO forge_merge_requests
-		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_association, author_display_name,
+		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_account_type, author_association, author_display_name,
 		     state, is_draft, is_locked, body, head_branch, base_branch,
 		     platform_head_sha, platform_base_sha, head_repo_clone_url,
 		     additions, deletions, files_changed, merge_commit_sha, comment_count,
@@ -1490,13 +1594,14 @@ func upsertMergeRequestSnapshot(
 		     last_activity_at, merged_at, closed_at, mergeable_state, mergeable_state_observed_at,
 		     assignees_json, reviewers_json, auto_merge_enabled, head_repo_identity_stale,
 		     snapshot_revision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id          = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), forge_merge_requests.platform_external_id),
 		    url                  = excluded.url,
 		    title                = excluded.title,
 		    author               = excluded.author,
+		    author_account_type = CASE WHEN forge_merge_requests.author = excluded.author AND excluded.author_account_type IS NULL THEN forge_merge_requests.author_account_type ELSE excluded.author_account_type END,
 		    author_association = CASE WHEN forge_merge_requests.author = excluded.author THEN COALESCE(excluded.author_association, forge_merge_requests.author_association) ELSE excluded.author_association END,
 		    author_display_name  = excluded.author_display_name,
 		    state                = excluded.state,
@@ -1548,7 +1653,7 @@ func upsertMergeRequestSnapshot(
 		    snapshot_revision    = forge_merge_requests.snapshot_revision + 1
 		WHERE excluded.updated_at >= forge_merge_requests.updated_at`,
 		mr.RepoID, mr.PlatformID, mr.PlatformExternalID, mr.Number, mr.URL, mr.Title,
-		mr.Author, mr.AuthorAssociation, mr.AuthorDisplayName,
+		mr.Author, mr.AuthorAccountType, mr.AuthorAssociation, mr.AuthorDisplayName,
 		mr.State, mr.IsDraft, mr.IsLocked, mr.Body, mr.HeadBranch, mr.BaseBranch,
 		mr.PlatformHeadSHA, mr.PlatformBaseSHA, mr.HeadRepoCloneURL,
 		mr.Additions, mr.Deletions, mr.FilesChanged, mr.MergeCommitSHA,
@@ -1840,6 +1945,82 @@ func filterSectionsCondition(sections ...[]string) string {
 	return "(" + strings.Join(selected, " AND ") + ")"
 }
 
+// pullAttributeSections turns PR inclusion filters into SQL sections over a merge request aliased p.
+// Mutually exclusive filters share a section and match either; the caller ANDs the sections.
+// has_workspace and no_workspace read workspaces, the pull requests with a workspace on this server.
+func pullAttributeSections(attributes []string, held, workspaces []RepoItemNumber, args *[]any) [][]string {
+	// Empty and JSON null decode as no checks; invalid check arrays cannot match by check content.
+	const checks = `CASE
+		WHEN trim(p.ci_checks_json) = '' THEN '[]'
+		WHEN json_valid(p.ci_checks_json) THEN CASE json_type(p.ci_checks_json)
+			WHEN 'null' THEN '[]' WHEN 'array' THEN p.ci_checks_json END
+		END`
+	const pending = `COALESCE(json_extract(c.value, '$.status'), '') IN ('in_progress', 'queued', 'pending', 'waiting')`
+	var review, approval, ci, conflicts, mergeQueue, merging, workspace, fork []string
+	// Sections are emitted in a fixed order, so their arguments must follow that order too.
+	var mergingArgs, workspaceArgs []any
+	hasWorkspace := func() string {
+		if workspaces == nil {
+			workspaces = []RepoItemNumber{}
+		}
+		return repoItemCondition("p", workspaces, &workspaceArgs)
+	}
+	for _, attribute := range attributes {
+		switch attribute {
+		case "has_workspace":
+			workspace = append(workspace, hasWorkspace())
+		case "no_workspace":
+			workspace = append(workspace, notCondition(hasWorkspace()))
+		case "fork":
+			fork = append(fork, mergeRequestIsForkSQL)
+		case "not_fork":
+			fork = append(fork, notCondition(mergeRequestIsForkSQL))
+		case "merge_queued":
+			merging = append(merging, mergeQueuedCondition("p", held, &mergingArgs))
+		case "not_merge_queued":
+			merging = append(merging, notCondition(mergeQueuedCondition("p", held, &mergingArgs)))
+		case "approved":
+			approval = append(approval, "upper(trim(p.review_decision)) = 'APPROVED'")
+		case "not_approved":
+			approval = append(approval, notCondition("upper(trim(p.review_decision)) = 'APPROVED'"))
+		case "draft":
+			review = append(review, "p.is_draft")
+		case "not_draft":
+			review = append(review, "NOT p.is_draft")
+		case "ready":
+			review = append(review, "(p.state = 'open' AND NOT p.is_draft)")
+		case "merge_conflicts":
+			conflicts = append(conflicts, "(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))")
+		case "no_merge_conflicts":
+			conflicts = append(conflicts, notCondition("(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))"))
+		case "merge_queue":
+			mergeQueue = append(mergeQueue, `(p.state = 'open' AND EXISTS (
+				SELECT 1 FROM forge_merge_queue_states q
+				WHERE q.repo_id = p.repo_id AND q.number = p.number
+				  AND (q.queued OR (q.removal_reason != '' AND q.removed_at IS NOT NULL))
+			))`)
+		case "failed_ci":
+			ci = append(ci, `(lower(trim(p.ci_status)) IN ('failure', 'failed', 'error') OR (
+				NOT EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE c.type NOT IN ('object', 'null'))
+				AND EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
+					NOT (`+pending+`) AND json_extract(c.value, '$.conclusion') IN ('failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure')
+					ELSE 0 END)
+			))`)
+		case "passed_ci":
+			ci = append(ci, `(lower(trim(p.ci_status)) IN ('', 'success')
+				AND (`+checks+`) IS NOT NULL
+				AND (lower(trim(p.ci_status)) != '' OR json_array_length(`+checks+`) > 0)
+				AND NOT EXISTS (
+					SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
+						(`+pending+`) OR COALESCE(json_extract(c.value, '$.conclusion'), '') NOT IN ('success', 'skipped', 'neutral')
+						ELSE 1 END
+				))`)
+		}
+	}
+	*args = append(append(*args, mergingArgs...), workspaceArgs...)
+	return [][]string{review, approval, ci, conflicts, mergeQueue, merging, workspace, fork}
+}
+
 func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeRequestsOpts) ([]MergeRequest, error) {
 	state := opts.State
 	if state == "" {
@@ -1857,7 +2038,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 
 	pageAttributeMatches := len(opts.Attributes) > 0 && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == ""
 	pageAll := !pageAttributeMatches && len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 &&
-		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && !opts.Starred && opts.ViewerLogins == nil &&
+		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && len(opts.Labels) == 0 && !opts.Starred && opts.ViewerLogins == nil &&
 		len(opts.WorkspaceActivity) == 0
 	allowedRepoColumn := "p.repo_id"
 	if len(opts.RepoFilters) == 1 || pageAttributeMatches {
@@ -1956,6 +2137,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		)`)
 		args = append(args, opts.Label)
 	}
+	conds = append(conds, labelFilterConditions(ItemTypePR, "p.id", opts.Labels, opts.ExcludeLabels, &args)...)
 	if opts.Search != "" {
 		// Zero padding opts into an exact PR number before pagination, so old
 		// PRs remain reachable without changing ordinary substring searches.
@@ -1991,57 +2173,8 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		}
 		involved = append(involved, involvement)
 	}
-	// Empty and JSON null decode as no checks; invalid check arrays cannot match by check content.
-	const checks = `CASE
-		WHEN trim(p.ci_checks_json) = '' THEN '[]'
-		WHEN json_valid(p.ci_checks_json) THEN CASE json_type(p.ci_checks_json)
-			WHEN 'null' THEN '[]' WHEN 'array' THEN p.ci_checks_json END
-		END`
-	const pending = `COALESCE(json_extract(c.value, '$.status'), '') IN ('in_progress', 'queued', 'pending', 'waiting')`
-	var review, approval, ci, conflicts, mergeQueue, merging []string
-	for _, attribute := range opts.Attributes {
-		switch attribute {
-		case "merge_queued":
-			merging = append(merging, mergeQueuedCondition("p", opts.DeferredMergeItems, &inclusionArgs))
-		case "not_merge_queued":
-			merging = append(merging, notCondition(mergeQueuedCondition("p", opts.DeferredMergeItems, &inclusionArgs)))
-		case "approved":
-			approval = append(approval, "upper(trim(p.review_decision)) = 'APPROVED'")
-		case "not_approved":
-			approval = append(approval, notCondition("upper(trim(p.review_decision)) = 'APPROVED'"))
-		case "draft":
-			review = append(review, "p.is_draft")
-		case "ready":
-			review = append(review, "(p.state = 'open' AND NOT p.is_draft)")
-		case "merge_conflicts":
-			conflicts = append(conflicts, "(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))")
-		case "no_merge_conflicts":
-			conflicts = append(conflicts, notCondition("(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))"))
-		case "merge_queue":
-			mergeQueue = append(mergeQueue, `(p.state = 'open' AND EXISTS (
-				SELECT 1 FROM forge_merge_queue_states q
-				WHERE q.repo_id = p.repo_id AND q.number = p.number
-				  AND (q.queued OR (q.removal_reason != '' AND q.removed_at IS NOT NULL))
-			))`)
-		case "failed_ci":
-			ci = append(ci, `(lower(trim(p.ci_status)) IN ('failure', 'failed', 'error') OR (
-				NOT EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE c.type NOT IN ('object', 'null'))
-				AND EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
-					NOT (`+pending+`) AND json_extract(c.value, '$.conclusion') IN ('failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure')
-					ELSE 0 END)
-			))`)
-		case "passed_ci":
-			ci = append(ci, `(lower(trim(p.ci_status)) IN ('', 'success')
-				AND (`+checks+`) IS NOT NULL
-				AND (lower(trim(p.ci_status)) != '' OR json_array_length(`+checks+`) > 0)
-				AND NOT EXISTS (
-					SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
-						(`+pending+`) OR COALESCE(json_extract(c.value, '$.conclusion'), '') NOT IN ('success', 'skipped', 'neutral')
-						ELSE 1 END
-				))`)
-		}
-	}
-	if inclusion := filterSectionsCondition(involved, unassigned, review, approval, ci, conflicts, mergeQueue, merging); inclusion != "" {
+	attributeSections := pullAttributeSections(opts.Attributes, opts.DeferredMergeItems, opts.WorkspaceItems, &inclusionArgs)
+	if inclusion := filterSectionsCondition(append([][]string{involved, unassigned}, attributeSections...)...); inclusion != "" {
 		if len(narrowing) > 0 {
 			// SQLite can reorder WHERE terms; evaluate narrowing filters before inclusion subqueries.
 			inclusion = "CASE WHEN " + strings.Join(narrowing, " AND ") + " THEN " + inclusion + " ELSE 0 END"
@@ -2380,10 +2513,11 @@ func (d *DB) UpsertMergedActorEvent(
 		case err == nil:
 			if _, updateErr := tx.ExecContext(ctx, `
 				UPDATE forge_mr_events
-				SET author = ?,
+				SET metadata_json = CASE WHEN lower(author) <> lower(?) AND json_valid(metadata_json) THEN json_remove(metadata_json,'$.actor_account_type') ELSE metadata_json END,
+				    author = ?,
 				    summary = CASE WHEN TRIM(summary) = '' THEN ? ELSE summary END,
 				    created_at = ?
-				WHERE id = ?`, event.Author, event.Summary, event.CreatedAt, authoredID); updateErr != nil {
+				WHERE id = ?`, event.Author, event.Author, event.Summary, event.CreatedAt, authoredID); updateErr != nil {
 				return fmt.Errorf("align authored merged event: %w", updateErr)
 			}
 			if _, deleteErr := tx.ExecContext(ctx, `
@@ -2408,7 +2542,8 @@ func (d *DB) UpsertMergedActorEvent(
 		case err == nil:
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE forge_mr_events
-				SET author = ?,
+				SET metadata_json = CASE WHEN json_valid(metadata_json) THEN json_remove(metadata_json,'$.actor_account_type') ELSE metadata_json END,
+				    author = ?,
 				    summary = CASE WHEN TRIM(summary) = '' THEN ? ELSE summary END,
 				    created_at = ?
 				WHERE id = ?`, event.Author, event.Summary, event.CreatedAt, actorlessID); err != nil {
@@ -3312,7 +3447,7 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 	)`)
 
 	pageAll := len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 &&
-		opts.Items == nil && opts.Numbers == nil && !opts.Starred && opts.Assignee == "" && !opts.ReferencedByPR && !opts.NotReferencedByPR && opts.ViewerLogins == nil &&
+		opts.Items == nil && opts.Numbers == nil && !opts.Starred && opts.Assignee == "" && !opts.ReferencedByPR && !opts.NotReferencedByPR && len(opts.Labels) == 0 && opts.ViewerLogins == nil &&
 		len(opts.WorkspaceActivity) == 0
 	allowedRepoCondIndex := len(conds)
 	if cond := repoIDCondition("i.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
@@ -3389,15 +3524,15 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		}
 		conds = append(conds, involvement)
 	}
-	const referencedByPR = `EXISTS (
-			SELECT 1 FROM forge_issue_pr_references ref
-			WHERE ref.issue_id = i.id
-		)`
 	if opts.ReferencedByPR {
-		conds = append(conds, referencedByPR)
+		conds = append(conds, referencedByPRCondition("i"))
 	}
 	if opts.NotReferencedByPR {
-		conds = append(conds, "NOT "+referencedByPR)
+		conds = append(conds, "NOT "+referencedByPRCondition("i"))
+	}
+	conds = append(conds, labelFilterConditions(ItemTypeIssue, "i.id", opts.Labels, opts.ExcludeLabels, &args)...)
+	if opts.HideBots {
+		conds = append(conds, "NOT "+botAuthorCondition("i.author", "r.platform"))
 	}
 
 	pageAll = pageAll && d.activityPageWalks(ctx, "forge_issues", "+last_activity_at", opts.AllowedRepoIDs, opts.Limit, opts.Offset)

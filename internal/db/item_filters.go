@@ -27,8 +27,8 @@ func botAuthorCondition(authorExpr, providerExpr string) string {
 }
 
 // labelConditions returns, for each name, a condition matching the pull request or issue whose
-// id is idExpr when it carries a label of that name, ignoring ASCII case, so the same label in
-// different repositories is one choice.
+// id is idExpr when it carries a label of that name, ignoring case under full Unicode case
+// folding, so the same label in different repositories is one choice.
 func labelConditions(itemType, idExpr string, names []string, args *[]any) []string {
 	table, column := "forge_merge_request_labels", "merge_request_id"
 	if itemType == ItemTypeIssue {
@@ -38,7 +38,7 @@ func labelConditions(itemType, idExpr string, names []string, args *[]any) []str
 	for _, name := range names {
 		conditions = append(conditions, `EXISTS (
 			SELECT 1 FROM `+table+` il JOIN forge_labels l ON l.id = il.label_id
-			WHERE il.`+column+` = `+idExpr+` AND lower(l.name) = lower(?)
+			WHERE il.`+column+` = `+idExpr+` AND `+casefoldSQLFunction+`(l.name) = `+casefoldSQLFunction+`(?)
 		)`)
 		*args = append(*args, name)
 	}

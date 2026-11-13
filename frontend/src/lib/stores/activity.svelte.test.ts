@@ -15,7 +15,11 @@ import {
   isActivityItemTypeEnabled,
   notificationDbId,
 } from "./activity.svelte.js";
+import type { Snippet } from "svelte";
+import { activityFilterMenu } from "../components/activityFilters.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
+import type { GroupingStore } from "./grouping.svelte.js";
+import type { IssuesStore } from "./issues.svelte.js";
 import { involvesMeFilterStorageKey } from "./involves-me-filter.js";
 import { unassignedFilterStorageKey } from "./unassigned-filter.js";
 
@@ -1617,6 +1621,35 @@ describe("activity store workspace activity", () => {
       expect(refreshed.getHideMergeQueued()).toBe(!defaultValue);
     },
   );
+
+  it("leaves saved Draft and Merge queued defaults alone when another PR condition changes", () => {
+    const defaults = { ...settings(false), hide_drafts: true, hide_merge_queued: true };
+    const store = makeStore();
+    store.hydrateDefaults(defaults);
+    store.initializeFromMount();
+    const menu = activityFilterMenu({
+      activity: store,
+      grouping: {
+        getHideOrgName: () => false,
+        setHideOrgName: vi.fn(),
+        getGroupByRepo: () => true,
+        setGroupByRepo: vi.fn(),
+      } as unknown as GroupingStore,
+      issues: { canFilterReferencedByPR: () => true } as unknown as IssuesStore,
+      labelMenu: (() => {}) as unknown as Snippet,
+      authorMenu: (() => {}) as unknown as Snippet,
+    });
+    menu.sections
+      .flatMap((section) => section.items)
+      .find((item) => item.label === "Approved")!
+      .onSelect();
+    expect(new URLSearchParams(window.location.search).has("hide_merge_queued")).toBe(false);
+
+    // Saved defaults still apply to the conditions the user did not touch.
+    store.hydrateDefaults({ ...defaults, hide_drafts: false, hide_merge_queued: false });
+    expect(store.getHideDrafts()).toBe(false);
+    expect(store.getHideMergeQueued()).toBe(false);
+  });
 
   it("persists and sends the Involves me filter", async () => {
     const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));

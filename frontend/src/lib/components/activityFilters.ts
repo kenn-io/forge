@@ -133,8 +133,11 @@ export function activityFilterMenu({
     const before = getAttributes();
     const tri = (pair: { require: PullAttributeFilter; exclude: PullAttributeFilter }) =>
       next.includes(pair.require) ? "require" : next.includes(pair.exclude) ? "exclude" : undefined;
-    activity.setDraft(tri(DRAFT));
-    activity.setMergeQueued(tri(MERGE_QUEUED));
+    // Setting Draft or Merge queued overrides its saved default, so touch only the one that changed.
+    const draft = tri(DRAFT);
+    if (draft !== activity.getDraft()) activity.setDraft(draft);
+    const queued = tri(MERGE_QUEUED);
+    if (queued !== activity.getMergeQueued()) activity.setMergeQueued(queued);
     activity.setPullAttributeFilters(next.filter((filter) => !OWN_FIELD_ATTRIBUTES.includes(filter)));
     if ([...before, ...next].some((filter) => before.includes(filter) !== next.includes(filter))) reload();
   };

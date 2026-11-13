@@ -109,8 +109,8 @@ func TestListMergeRequestsWorkspaceForkAndLabelFiltersApplyBeforeLimit(t *testin
 	}{
 		{number: 1, head: "https://github.com/contributor/widget.git", labels: []string{"Bug"}},
 		{number: 2, head: "https://github.com/acme/widget.git", labels: []string{"bug", "WontFix"}},
-		{number: 3, head: ""},
-		{number: 4, head: "https://github.com/acme/widget.git"},
+		{number: 3, head: "", labels: []string{"Équipe", "Straße"}},
+		{number: 4, head: "https://github.com/acme/widget.git", labels: []string{"ÉQUIPE"}},
 	} {
 		pr := testMR(repoID, row.number, withMRActivity(baseTime().Add(time.Duration(row.number)*time.Minute)))
 		pr.HeadRepoCloneURL = row.head
@@ -147,6 +147,9 @@ func TestListMergeRequestsWorkspaceForkAndLabelFiltersApplyBeforeLimit(t *testin
 		{"required and excluded labels", ListMergeRequestsOpts{Labels: []string{"bug"}, ExcludeLabels: []string{"wontfix"}, Limit: 1}, []int{1}},
 		{"excluded label only", ListMergeRequestsOpts{ExcludeLabels: []string{"BUG"}}, []int{4, 3}},
 		{"exact label still exact", ListMergeRequestsOpts{Label: "bug"}, []int{2}},
+		{"required label folds non-ASCII case", ListMergeRequestsOpts{Labels: []string{"équipe"}}, []int{4, 3}},
+		{"excluded label folds non-ASCII case", ListMergeRequestsOpts{ExcludeLabels: []string{"équipe", "bug"}}, []int{}},
+		{"required label uses full case folding", ListMergeRequestsOpts{Labels: []string{"STRASSE"}}, []int{3}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rows, err := d.ListMergeRequests(ctx, tc.opts)

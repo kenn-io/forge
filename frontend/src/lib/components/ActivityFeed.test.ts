@@ -604,6 +604,7 @@ describe("ActivityFeed compact mode", () => {
 
   it("resets popover filters and author without changing the PR and issue toggles", async () => {
     selectedAuthor.value = "Alice";
+    hideDrafts.value = true;
     mergeQueued.value = "exclude";
     enabledItemTypes.value = new Set(["pr"]);
     render(ActivityFeed, { props: { compact: false } });
@@ -612,7 +613,7 @@ describe("ActivityFeed compact mode", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
 
     expect(setActivityAuthor).toHaveBeenCalledWith(undefined);
-    expect(setHideDrafts).toHaveBeenCalledWith(false);
+    expect(hideDrafts.value).toBe(false);
     expect(mergeQueued.value).toBeUndefined();
     expect(enabledItemTypes.value).toEqual(new Set(["pr"]));
   });

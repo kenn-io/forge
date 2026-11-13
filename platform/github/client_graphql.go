@@ -130,7 +130,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             id
           }
           ... on CrossReferencedEvent {
-            actor { login __typename }
+            actor { login }
             createdAt
             isCrossRepository
             willCloseTarget
@@ -159,7 +159,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             }
           }
           ... on AssignedEvent {
-            actor { login __typename }
+            actor { login }
             assignee {
               __typename
               ... on Bot { login }
@@ -170,7 +170,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             createdAt
           }
           ... on UnassignedEvent {
-            actor { login __typename }
+            actor { login }
             assignee {
               __typename
               ... on Bot { login }
@@ -181,11 +181,11 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             createdAt
           }
           ... on ClosedEvent {
-            actor { login __typename }
+            actor { login }
             createdAt
           }
           ... on ReopenedEvent {
-            actor { login __typename }
+            actor { login }
             createdAt
           }
         }

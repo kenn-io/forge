@@ -135,7 +135,6 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 	}
 	mrIDs := []int64{}
 	pullPositions := map[int64]int{}
-	terminalTimes := map[int64]*time.Time{}
 	issueIDs := map[int64]string{}
 	for _, row := range items {
 		repo := repos[row.RepoID]
@@ -165,10 +164,6 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		mrIDs = append(mrIDs, row.ID)
 		pullPositions[row.ID] = len(result.PullRequests)
-		terminalTimes[row.ID] = row.ClosedAt
-		if row.State == "merged" {
-			terminalTimes[row.ID] = row.MergedAt
-		}
 		mergeStatusTimes := []*time.Time{row.CIObservedAt, row.MergeableStateObservedAt}
 		if repo.Platform == string(platform.KindGitHub) {
 			mergeStatusTimes = append(mergeStatusTimes, row.ReviewDecisionObservedAt)
@@ -246,7 +241,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		for _, row := range lifecycle {
 			pull := &result.PullRequests[pullPositions[row.MergeRequestID]]
-			terminal := terminalTimes[row.MergeRequestID]
+			terminal := pull.ClosedAt
 			switch row.Kind {
 			case "reopened":
 				pull.ClosedBy = nil

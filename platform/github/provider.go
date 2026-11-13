@@ -934,7 +934,6 @@ func (p *Provider) ListIssueEvents(
 			NodeID:            timelineEvent.NodeID,
 			EventType:         timelineEvent.EventType,
 			Actor:             timelineEvent.Actor,
-			ActorAccountType:  timelineEvent.ActorAccountType,
 			Assignee:          timelineEvent.Assignee,
 			CreatedAt:         timelineEvent.CreatedAt,
 			SourceType:        timelineEvent.SourceType,

@@ -202,7 +202,6 @@ func NormalizeIssueTimelineEvent(issueID int64, event platformgithub.PullRequest
 			NodeID:            event.NodeID,
 			EventType:         event.EventType,
 			Actor:             event.Actor,
-			ActorAccountType:  event.ActorAccountType,
 			Assignee:          event.Assignee,
 			CreatedAt:         event.CreatedAt,
 			SourceType:        event.SourceType,

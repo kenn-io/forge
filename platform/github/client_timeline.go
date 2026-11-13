@@ -250,8 +250,7 @@ func (c *Client) ListIssueTimelineEvents(
 							TypeName string `json:"__typename"`
 							ID       string `json:"id"`
 							Actor    *struct {
-								TypeName string `json:"__typename"`
-								Login    string `json:"login"`
+								Login string `json:"login"`
 							} `json:"actor"`
 							Assignee *struct {
 								TypeName string `json:"__typename"`
@@ -385,7 +384,6 @@ func (c *Client) ListIssueTimelineEvents(
 			}
 			if node.Actor != nil {
 				event.Actor = node.Actor.Login
-				event.ActorAccountType = node.Actor.TypeName
 			}
 			if node.Assignee != nil {
 				event.Assignee = node.Assignee.Login

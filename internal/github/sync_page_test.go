@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 func pageSyncGitFixture(t *testing.T) (remote, work, base, head string) {
@@ -24,6 +25,90 @@ func pageSyncGitFixture(t *testing.T) (remote, work, base, head string) {
 	base = syncActivityCommitAndPush(t, work, "base.txt", "base", "base", "main")
 	head = syncActivityCommitAndPush(t, work, "feature.txt", "feature", "feature", "feature")
 	return remote, work, base, head
+}
+
+func TestMRDetailTimelineRecoveryRefreshesIndependentState(t *testing.T) {
+	for _, page := range []bool{true, false} {
+		name := "background full response"
+		if page {
+			name = "page 304"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			f := newPageSyncFixture(t)
+			f.client.notModified = page
+			f.client.timelineEventsErr = errors.New("timeline unavailable")
+			f.client.checkRuns[0].Conclusion = new("failure")
+			f.client.workflowRuns = []*gh.WorkflowRun{{ID: new(int64(7)), HeadSHA: &f.head, Event: new("pull_request"), PullRequests: []*gh.PullRequest{{Number: new(1)}}}}
+
+			conditionalCalls := f.client.conditionalCalls.Load()
+			var err error
+			if page {
+				err = f.syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1)
+			} else {
+				_, err = f.syncer.fetchMRDetail(ctx, f.repo, f.repoID, 1)
+			}
+			require.ErrorContains(t, err, "timeline unavailable")
+			assert.Equal(t, conditionalCalls+1, f.client.conditionalCalls.Load())
+			stored, err := f.syncer.db.GetMergeRequestByRepoIDAndNumber(ctx, f.repoID, 1)
+			require.NoError(t, err)
+			assert.Nil(t, stored.DetailFetchedAt)
+			assert.Equal(t, "failure", stored.CIStatus)
+			assert.True(t, stored.WorkflowApprovalRequired)
+		})
+	}
+}
+
+func TestMRDetailTimelineRecoveryOnBackground304(t *testing.T) {
+	for _, watched := range []bool{false, true} {
+		name := "detail drain"
+		if watched {
+			name = "watched sync"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
+			f := newPageSyncFixture(t)
+			_, err := f.syncer.db.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET detail_fetched_at = NULL WHERE id = ?", f.before.ID)
+			require.NoError(t, err)
+			f.client.timelineEventsErr = errors.New("timeline unavailable")
+			f.client.checkRuns[0].Conclusion = new("failure")
+			f.client.workflowRuns = []*gh.WorkflowRun{{ID: new(int64(7)), HeadSHA: &f.head, Event: new("pull_request"), PullRequests: []*gh.PullRequest{{Number: new(1)}}}}
+			sync := func() error {
+				if watched {
+					return f.syncer.syncMRWithWatchedRef(ctx, WatchedMR{Owner: "owner", Name: "repo", Number: 1, PlatformHost: "github.com"})
+				}
+				_, err := f.syncer.fetchMRDetail(ctx, f.repo, f.repoID, 1)
+				return err
+			}
+			conditionalCalls := f.client.conditionalCalls.Load()
+			require.ErrorContains(t, sync(), "timeline unavailable")
+			assert.Equal(t, conditionalCalls+1, f.client.conditionalCalls.Load())
+			stored, err := f.syncer.db.GetMergeRequestByRepoIDAndNumber(ctx, f.repoID, 1)
+			require.NoError(t, err)
+			assert.Nil(t, stored.DetailFetchedAt)
+			assert.Equal(t, "failure", stored.CIStatus)
+			assert.True(t, stored.WorkflowApprovalRequired)
+
+			f.client.timelineEventsErr = nil
+			f.client.timelineEvents = []platformgithub.PullRequestTimelineEvent{{NodeID: "event-1", EventType: "closed", Actor: "alice", CreatedAt: time.Now().UTC()}}
+			commentChecks := f.client.listIssueCommentsIfChangedCalls.Load()
+			require.NoError(t, sync())
+			assert.Equal(t, conditionalCalls+2, f.client.conditionalCalls.Load())
+			assert.Equal(t, commentChecks, f.client.listIssueCommentsIfChangedCalls.Load())
+			stored, err = f.syncer.db.GetMergeRequestByRepoIDAndNumber(ctx, f.repoID, 1)
+			require.NoError(t, err)
+			assert.NotNil(t, stored.DetailFetchedAt)
+			events, err := f.syncer.db.ListMREvents(ctx, stored.ID)
+			require.NoError(t, err)
+			require.Len(t, events, 1)
+			assert.Equal(t, "closed", events[0].EventType)
+
+			f.client.timelineEventsErr = errors.New("complete detail must use fast path")
+			require.NoError(t, sync())
+			assert.Equal(t, conditionalCalls+3, f.client.conditionalCalls.Load())
+			assert.Equal(t, commentChecks+1, f.client.listIssueCommentsIfChangedCalls.Load())
+		})
+	}
 }
 
 type pageSyncFixture struct {

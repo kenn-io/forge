@@ -187,21 +187,20 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 		}
 	}
 
-	if err := s.refreshTimeline(
+	timelineErr := s.refreshTimeline(
 		ctx, repo, mrID, revision, number,
 		livenessHeadForRound(normalized, existing),
-	); err != nil {
-		// Timeline = 4 base calls (comments + reviews + commits + force-push);
-		// provider review-thread sync is handled inside refreshTimeline.
-		calls += 4
-		if errors.Is(err, errParentSnapshotAdvanced) {
-			return calls, nil
-		}
-		return calls, err
-	}
+	)
+	// Timeline = 4 base calls; review-thread sync is handled inside it.
 	calls += 4
+	if errors.Is(timelineErr, errParentSnapshotAdvanced) {
+		return calls, nil
+	}
+	if errors.Is(timelineErr, db.ErrRepositoryIdentityChanged) {
+		return calls, timelineErr
+	}
 	if _, err := s.persistMergedTransitionEvent(ctx, mrID, revision, fullPR, normalized.MergedAt); err != nil {
-		return calls, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
+		return calls, errors.Join(timelineErr, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err))
 	}
 
 	ciHeadSHA := ""
@@ -213,10 +212,10 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 	)
 	calls += ciRefreshCalls
 	if err != nil {
-		return calls, err
+		return calls, errors.Join(timelineErr, err)
 	}
 	if !ciApplied {
-		return calls, nil
+		return calls, timelineErr
 	}
 
 	// Refresh workflow approval state so the DB-only detail GET
@@ -228,7 +227,10 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 	)
 	calls += approvalCalls
 	if !approvalApplied {
-		return calls, nil
+		return calls, timelineErr
+	}
+	if timelineErr != nil {
+		return calls, timelineErr
 	}
 
 	// Determine whether CI had pending checks for scoring by
@@ -325,47 +327,74 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	existing *db.MergeRequest,
 	calls int,
 ) (int, error) {
-	// A parent 304 does not cover edited/deleted comments. Once a detail
-	// check is admitted, check comments too before advancing freshness.
-	if existing.State == "open" {
-		client, err := s.clientFor(repo)
-		if err != nil {
-			return calls, err
-		}
-		comments, err := s.listCommentsForRefresh(ctx, client, repo, number, existing.CommentCount)
-		calls++
-		if err != nil && !platformgithub.IsNotModified(err) {
-			return calls, err
-		}
-		if err == nil {
-			if err := s.persistPRComments(ctx, repo, existing, comments); err != nil {
-				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
-				return calls, err
-			}
-		}
-	}
-	if err := s.refreshStoredPRCommentVisibility(
-		ctx, repo, existing.ID, existing.SnapshotRevision, number,
-	); err != nil {
-		if errors.Is(err, errParentSnapshotAdvanced) ||
-			errors.Is(err, db.ErrRepositoryIdentityChanged) {
+	if existing.DetailFetchedAt == nil {
+		err := s.refreshTimeline(ctx, repo, existing.ID, existing.SnapshotRevision, number, livenessHeadForRound(existing, existing))
+		calls += 4
+		if errors.Is(err, errParentSnapshotAdvanced) {
 			return calls, nil
 		}
-		return calls, err
-	}
-	if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil && s.graphQLReadAllowed(ctx, repo, fetcher) {
-		threadCalls, err := s.syncProviderMRReviewThreads(
-			ctx, repo, existing.ID, number, existing.SnapshotRevision, true,
-		)
-		calls += threadCalls
+		if errors.Is(err, db.ErrRepositoryIdentityChanged) {
+			return calls, err
+		}
 		if err != nil {
+			ciApplied, ciErr := s.refreshCIStatusSnapshot(
+				ctx, repo, existing.ID, existing.SnapshotRevision,
+				number, ciRulesBranch(existing), existing.PlatformHeadSHA,
+			)
+			calls += ciRefreshCalls
+			if ciErr != nil {
+				return calls, errors.Join(err, ciErr)
+			}
+			if ciApplied {
+				_, approvalCalls := s.refreshWorkflowApproval(
+					ctx, repo, repoID, number, existing.PlatformHeadSHA, nil, existing,
+				)
+				calls += approvalCalls
+			}
+			return calls, err
+		}
+	} else {
+		// A parent 304 does not cover edited/deleted comments. Once a detail
+		// check is admitted, check comments too before advancing freshness.
+		if existing.State == "open" {
+			client, err := s.clientFor(repo)
+			if err != nil {
+				return calls, err
+			}
+			comments, err := s.listCommentsForRefresh(ctx, client, repo, number, existing.CommentCount)
+			calls++
+			if err != nil && !platformgithub.IsNotModified(err) {
+				return calls, err
+			}
+			if err == nil {
+				if err := s.persistPRComments(ctx, repo, existing, comments); err != nil {
+					client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+					return calls, err
+				}
+			}
+		}
+		if err := s.refreshStoredPRCommentVisibility(
+			ctx, repo, existing.ID, existing.SnapshotRevision, number,
+		); err != nil {
 			if errors.Is(err, errParentSnapshotAdvanced) {
 				return calls, nil
 			}
 			return calls, err
 		}
-	} else {
-		markSyncDegraded(ctx)
+		if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil && s.graphQLReadAllowed(ctx, repo, fetcher) {
+			threadCalls, err := s.syncProviderMRReviewThreads(
+				ctx, repo, existing.ID, number, existing.SnapshotRevision, true,
+			)
+			calls += threadCalls
+			if err != nil {
+				if errors.Is(err, errParentSnapshotAdvanced) {
+					return calls, nil
+				}
+				return calls, err
+			}
+		} else {
+			markSyncDegraded(ctx)
+		}
 	}
 	pending := existing.CIHadPending
 	if (existing.CIHadPending || ciHasWorkflowRunEntry(existing.CIChecksJSON)) && existing.PlatformHeadSHA != "" {

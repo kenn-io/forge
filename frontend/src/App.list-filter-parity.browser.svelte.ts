@@ -190,11 +190,33 @@ function sinceOf(req: MockRequest): number {
   return since ? Date.parse(since) : 0;
 }
 
+// Activity filters the server applies by each row's pull request or issue.
+const STARRED_ITEMS = new Set([12]);
+const ISSUES_REFERENCED_BY_PR = new Set([21]);
+
 function answerActivity(): MockRouteOverride {
   const fixture = activityFixture();
-  // The server keeps only activity inside the requested time window.
-  const within = (req: MockRequest) => (row: { activity_at?: string; created_at?: string }) =>
-    Date.parse(row.activity_at ?? row.created_at ?? "") >= sinceOf(req);
+  type Row = Pick<ActivitySubject, "item_number" | "item_type" | "labels"> & {
+    activity_at?: string;
+    created_at?: string;
+  };
+  // The server keeps only activity inside the requested time window whose
+  // pull request or issue passes the label, Starred, and reference filters.
+  const within = (req: MockRequest) => (row: Row) => {
+    const params = req.url.searchParams;
+    const names = (row.labels ?? []).map((entry) => entry.name.toLowerCase());
+    const has = (name: string) => names.includes(name.toLowerCase());
+    const referenced = ISSUES_REFERENCED_BY_PR.has(row.item_number);
+    return (
+      Date.parse(row.activity_at ?? row.created_at ?? "") >= sinceOf(req) &&
+      params.getAll("labels").every(has) &&
+      !params.getAll("exclude_labels").some(has) &&
+      (params.get("starred") !== "true" || STARRED_ITEMS.has(row.item_number)) &&
+      (row.item_type !== "issue" ||
+        ((params.get("referenced_by_pr") !== "true" || referenced) &&
+          (params.get("not_referenced_by_pr") !== "true" || !referenced)))
+    );
+  };
   return (req) =>
     req.method === "GET" && req.url.pathname === "/api/v1/activity"
       ? jsonResponse({
@@ -304,9 +326,10 @@ describe("list filters across desktop, phone, and Activity", () => {
       bases: () => [null],
       // The phone inbox always shows one card per PR or issue with its newest
       // events, so View, Group, and commit roll-up are desktop feed layouts.
-      skipSections: ["Layout", "Group", "Commits"],
-      // Reset clears filters but keeps which item types show and the time range.
-      keptByReset: ["Items", "Time range"],
+      // Desktop shows the item types (Items) as toolbar toggles, not in its menu.
+      skipSections: ["Layout", "Group", "Commits", "Items"],
+      // Reset clears filters but keeps the time range.
+      keptByReset: ["Time range"],
     };
     const onDesktop = await run(
       "/",

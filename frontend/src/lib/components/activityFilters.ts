@@ -301,7 +301,8 @@ export function activityFilterMenu({
   return {
     itemTypes,
     sections: [items, timeRange, ...filterSections],
-    desktopSections: [items, view!, timeRange, ...afterView, ...filterSections],
+    // Desktop shows the item types as toolbar toggles, so its menu leaves them out.
+    desktopSections: [view!, timeRange, ...afterView, ...filterSections],
     filterCount: countFilters(filterSections),
     reset: () => {
       resetSections(filterSections);

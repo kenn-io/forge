@@ -285,6 +285,10 @@ peer bearers and route scopes       internal/federationauth
   never flashes it.
 - A successful sync-status probe may restore hub availability while a projection-specific refresh
   error stays visible.
+- A timed-out or failed hub read can raise the banner while the spoke's hub event stream stays up,
+  so no `hub_connection_changed` event arrives to clear it. The periodic sync-status poll, which
+  goes through the hub, runs the same refresh-then-clear recovery when the hub answers
+  (`frontend/src/lib/stores/sync.svelte.ts::createSyncStore`).
 - Opening a tracked pull with no cached row runs one item sync through the hub, not a full
   repository sync; a missing repository directs the user to settings (`frontend/src/lib/stores/detail.svelte.ts::createDetailStore`).
 - Spokes have no provider failover: their provider credentials are Git routes only, so hub loss

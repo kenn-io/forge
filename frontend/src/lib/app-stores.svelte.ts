@@ -116,6 +116,12 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const syncStore = createSyncStore({
     runtime: appRuntime,
     getPriorityRepos: hs.getGlobalRepo,
+    onHubAnswered: () =>
+      reconcileProviderStateAfterHubConnection().pipe(
+        Effect.catch(() =>
+          Effect.sync(() => errorCb?.("Forge reached the hub again but could not refresh the current view.")),
+        ),
+      ),
   });
 
   const activityOpts: ActivityStoreOptions = { runtime: appRuntime };

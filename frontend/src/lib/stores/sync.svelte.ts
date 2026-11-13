@@ -1,6 +1,6 @@
 import { Deferred, Duration, Effect, Option } from "effect";
 import { pollWhileVisible } from "../effect/poll-while-visible.js";
-import type { AppRuntime } from "../app/runtime.js";
+import type { AppRuntime, AppServices } from "../app/runtime.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
 import { isTransientPickerReadFailure, retryIdempotentRead } from "../api/retry-policy.js";
 import { ApiProblemError } from "../api/effect-errors.js";
@@ -12,6 +12,9 @@ import { SyncWorkflow, type SyncReadError } from "./sync-workflow.js";
 export interface SyncStoreOptions {
   runtime: AppRuntime;
   getPriorityRepos?: (() => string | undefined) | undefined;
+  // Runs when a polled status read reaches the hub while provider data is
+  // marked unavailable. Defaults to marking it available.
+  onHubAnswered?: (() => Effect.Effect<void, never, AppServices>) | undefined;
 }
 
 export function readErrorMessage(error: SyncReadError, fallback: string): string {
@@ -196,7 +199,8 @@ export function createSyncStore(opts: SyncStoreOptions) {
     return Effect.gen(function* () {
       const workflow = yield* SyncWorkflow;
       const snapshot = yield* workflow.refresh(generation, syncStatusRead(), rateLimitsRead());
-      if (generation !== refreshGeneration) return;
+      const hubAnswered = Option.isSome(snapshot.status);
+      if (generation !== refreshGeneration) return hubAnswered;
       yield* Effect.sync(() => {
         if (Option.isSome(snapshot.status)) {
           applySyncStatus(snapshot.status.value, epoch === receiptEpoch && epoch > 0);
@@ -205,6 +209,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
           rateLimits = snapshot.rateLimits.value;
         }
       });
+      return hubAnswered;
     });
   }
 
@@ -470,7 +475,22 @@ export function createSyncStore(opts: SyncStoreOptions) {
     );
   });
 
-  const pollingEffect = pollWhileVisible(Effect.suspend(refreshSyncStatusProgram), waitForPollingCadence, {
+  const restoreProviderAvailability =
+    opts.onHubAnswered ??
+    (() =>
+      Effect.sync(() => {
+        providerAvailable = true;
+      }));
+
+  // On a spoke the status read goes through the hub. A read that timed out
+  // marks provider data unavailable without dropping the hub event stream,
+  // so no hub_connection_changed event arrives to clear it; a later status
+  // read that the hub answers does.
+  const pollSyncStatus = Effect.suspend(refreshSyncStatusProgram).pipe(
+    Effect.andThen((hubAnswered) => (hubAnswered && !providerAvailable ? restoreProviderAvailability() : Effect.void)),
+  );
+
+  const pollingEffect = pollWhileVisible(pollSyncStatus, waitForPollingCadence, {
     immediate: true,
   }).pipe(
     Effect.ensuring(

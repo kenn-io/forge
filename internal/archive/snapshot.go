@@ -140,9 +140,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 	for _, row := range items {
 		repo := repos[row.RepoID]
 		bodyLimit := 8192
-		knownBot := strings.Contains(strings.ToLower(row.Author), "[bot]") || (row.AuthorAccountType != nil && strings.EqualFold(*row.AuthorAccountType, "bot"))
-		classificationUnknown := !knownBot && (row.Author == "" || row.AuthorAssociation == nil || *row.AuthorAssociation == "" || (repo.Platform == string(platform.KindGitHub) && (row.AuthorAccountType == nil || (!strings.EqualFold(*row.AuthorAccountType, "user") && !strings.EqualFold(*row.AuthorAccountType, "organization")))))
-		if opts.PullRequestScope == "recently_closed" && row.Kind == "pull_request" && !classificationUnknown && !knownBot && !strings.EqualFold(*row.AuthorAssociation, "MEMBER") && !strings.EqualFold(*row.AuthorAssociation, "OWNER") && (row.AuthorAccountType == nil || !strings.EqualFold(*row.AuthorAccountType, "bot")) {
+		if opts.PullRequestScope == "recently_closed" && row.Kind == "pull_request" && row.BodyClass == 1 {
 			bodyLimit = snapshot.MaxBytes
 		}
 		body, cut := snapshotText(row.Body, bodyLimit)
@@ -178,7 +176,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		mergeStatusObservedAt := minObservedAt(mergeStatusTimes)
 		pull := snapshot.SnapshotPullRequest{SnapshotItem: item, Draft: row.Draft, HeadSHA: row.HeadSHA, HeadBranch: row.HeadBranch, BaseBranch: row.BaseBranch, ChangedFiles: row.FilesChanged, ReviewState: row.ReviewDecision, CheckState: row.CIStatus, MergeableState: row.MergeableState, RequestedReviewers: db.ParseUserNamesJSON(row.ReviewersJSON), MergeStatusObservedAt: mergeStatusObservedAt, Checks: []snapshot.SnapshotCheck{}, Reviews: []snapshot.SnapshotReview{}, Gaps: []string{}}
 		if opts.PullRequestScope == "recently_closed" {
-			if classificationUnknown {
+			if row.BodyClass == 2 {
 				pull.Gaps = append(pull.Gaps, "contributor_classification_unknown")
 			}
 			if row.AuthorAccountType != nil && strings.EqualFold(*row.AuthorAccountType, "bot") && !strings.HasSuffix(strings.ToLower(pull.Author), "[bot]") {
@@ -272,10 +270,13 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		if err != nil {
 			return result, err
 		}
+		maintainerIDs := map[int64]int64{}
 		for _, row := range activity {
 			pull := &result.PullRequests[pullPositions[row.MergeRequestID]]
 			if row.Class == "unknown" {
-				pull.Gaps = append(pull.Gaps, "actor_role_unknown")
+				if pull.LastMaintainerAction == nil || row.OccurredAt.After(pull.LastMaintainerAction.OccurredAt) || (row.OccurredAt.Equal(pull.LastMaintainerAction.OccurredAt) && row.ID > maintainerIDs[row.MergeRequestID]) {
+					pull.Gaps = append(pull.Gaps, "actor_role_unknown")
+				}
 				continue
 			}
 			action := &snapshot.SnapshotAction{Kind: row.Kind, Actor: row.Actor, OccurredAt: row.OccurredAt.UTC()}
@@ -283,6 +284,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 				pull.LastAuthorAction = action
 			} else {
 				pull.LastMaintainerAction = action
+				maintainerIDs[row.MergeRequestID] = row.ID
 			}
 		}
 		comments, refs, err := db.LoadArchiveSnapshotPullEvidence(ctx, tx, repoIDs, mrIDs, result.ObservedAt)
@@ -295,10 +297,10 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			pull.Comments = append(pull.Comments, snapshot.SnapshotComment{ID: pull.ID + "/comment/" + url.QueryEscape(row.Key), Author: row.Author, AuthorAssociation: row.AuthorAssociation, Body: body, BodyTruncated: cut, URL: row.URL, CreatedAt: row.CreatedAt.UTC()})
 		}
 		for _, ref := range refs {
-			repoID := snapshotRepositoryID(repos[ref.RepoID])
+			repoID := snapshotRepositoryID(ref.TargetRepo)
 			sourceRepoID := repoID
 			if ref.SourceProviderID > 0 {
-				repo := repos[ref.RepoID]
+				repo := ref.TargetRepo
 				repo.Key = platform.RepositoryIDKey(ref.SourceProviderID)
 				sourceRepoID = snapshotRepositoryID(repo)
 			}

@@ -156,6 +156,7 @@ func NormalizeCommentEvent(
 	c *gh.IssueComment,
 ) platform.MergeRequestEvent {
 	event := normalizeIssueCommentBase(repo, c)
+	event.MetadataJSON = WithActorAccountType(event.MetadataJSON, c.GetUser().GetType())
 	event.MergeRequestNumber = mrNumber
 	event.DedupeKey = fmt.Sprintf("comment-%d", c.GetID())
 	return event
@@ -179,6 +180,7 @@ func NormalizeReviewEvent(
 		Summary:            r.GetState(),
 		DirectURL:          r.GetHTMLURL(),
 	}
+	event.MetadataJSON = WithActorAccountType(event.MetadataJSON, r.GetUser().GetType())
 	if r.SubmittedAt != nil {
 		event.CreatedAt = r.SubmittedAt.Time
 	}
@@ -259,6 +261,11 @@ func NormalizeCommitEvent(
 		metadata, _ := json.Marshal(commitEventMetadata{CommitAuthor: author})
 		event.MetadataJSON = string(metadata)
 	}
+	actorType := c.GetCommitter().GetType()
+	if committer == "" {
+		actorType = c.GetAuthor().GetType()
+	}
+	event.MetadataJSON = WithActorAccountType(event.MetadataJSON, actorType)
 	if commit != nil {
 		event.Body = commit.GetMessage()
 		if committerSignature != nil && committerSignature.Date != nil {
@@ -321,6 +328,7 @@ func NormalizeTimelineEvent(
 			Ref:       event.Ref,
 			CreatedAt: event.CreatedAt,
 		})
+		normalized.MetadataJSON = WithActorAccountType(normalized.MetadataJSON, event.ActorAccountType)
 		if event.NodeID != "" {
 			normalized.DedupeKey = timelineDedupeKey(event)
 		}
@@ -387,7 +395,7 @@ func NormalizeTimelineEvent(
 			EventType:          event.EventType,
 			Author:             event.Actor,
 			Summary:            assignmentSummary(event.EventType, event.Actor, event.Assignee),
-			MetadataJSON:       string(metadata),
+			MetadataJSON:       WithActorAccountType(string(metadata), event.ActorAccountType),
 			CreatedAt:          event.CreatedAt,
 			DedupeKey:          timelineDedupeKey(event),
 		}
@@ -713,6 +721,7 @@ func normalizeIssueCommentBase(repo platform.RepoRef, c *gh.IssueComment) platfo
 		Body:               c.GetBody(),
 		DirectURL:          c.GetHTMLURL(),
 	}
+	event.MetadataJSON = WithActorAccountType(event.MetadataJSON, c.GetUser().GetType())
 	if c.CreatedAt != nil {
 		event.CreatedAt = c.CreatedAt.Time
 	}

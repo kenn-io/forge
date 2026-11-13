@@ -91,3 +91,20 @@ func TestSnapshotMeasurementCountsFullContributorBodies(t *testing.T) {
 	assert.Greater(t, after.Records, before.Records)
 	assert.Greater(t, after.TextBytes, before.TextBytes)
 }
+
+func TestCommentVisibilityRefreshPreservesActorType(t *testing.T) {
+	database := openTestDB(t)
+	now := time.Now().UTC()
+	repoID := insertArchiveReportRepo(t, database, RepoIdentity{Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: "widget"})
+	id := insertArchiveReportMR(t, database, repoID, 1, "mr-1", "Title", "author", now)
+	commentID := int64(123)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: id, PlatformID: &commentID, EventType: "issue_comment", Author: "maintainer", MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "comment", CreatedAt: now}}))
+	var revision int64
+	require.NoError(t, database.ReadDB().QueryRowContext(t.Context(), `SELECT snapshot_revision FROM forge_merge_requests WHERE id=?`, id).Scan(&revision))
+	applied, err := database.UpdateMergeRequestCommentMetadataSnapshot(t.Context(), id, revision, []CommentMetadataUpdate{{PlatformID: commentID, MetadataJSON: `{"provider_hidden":true}`}})
+	require.NoError(t, err)
+	require.True(t, applied)
+	var metadata string
+	require.NoError(t, database.ReadDB().QueryRowContext(t.Context(), `SELECT metadata_json FROM forge_mr_events WHERE merge_request_id=? AND platform_id=?`, id, commentID).Scan(&metadata))
+	assert.JSONEq(t, `{"provider_hidden":true,"actor_account_type":"user"}`, metadata)
+}

@@ -128,7 +128,7 @@ func NormalizeCommentEventWithVisibility(
 	visibility platformgithub.CommentVisibility,
 ) db.MREvent {
 	event := NormalizeCommentEvent(mrID, c)
-	event.MetadataJSON = platformgithub.NormalizeCommentVisibilityMetadata(visibility)
+	event.MetadataJSON = platformgithub.WithActorAccountType(platformgithub.NormalizeCommentVisibilityMetadata(visibility), c.GetUser().GetType())
 	return event
 }
 
@@ -165,6 +165,7 @@ func NormalizeTimelineEvent(mrID int64, event platformgithub.PullRequestTimeline
 			NodeID:               event.NodeID,
 			EventType:            event.EventType,
 			Actor:                event.Actor,
+			ActorAccountType:     event.ActorAccountType,
 			Assignee:             event.Assignee,
 			CreatedAt:            event.CreatedAt,
 			DeletedCommentAuthor: event.DeletedCommentAuthor,
@@ -201,6 +202,7 @@ func NormalizeIssueTimelineEvent(issueID int64, event platformgithub.PullRequest
 			NodeID:            event.NodeID,
 			EventType:         event.EventType,
 			Actor:             event.Actor,
+			ActorAccountType:  event.ActorAccountType,
 			Assignee:          event.Assignee,
 			CreatedAt:         event.CreatedAt,
 			SourceType:        event.SourceType,

@@ -30,6 +30,7 @@ type PullRequestReviewThreadComment struct {
 	SubjectType       string
 	Body              string
 	AuthorLogin       string
+	AuthorAccountType string
 	AuthorAssociation *string
 	Path              string
 	Line              int

@@ -19,19 +19,19 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             id
           }
           ... on HeadRefForcePushedEvent {
-            actor { login }
+            actor { login __typename }
             beforeCommit { oid }
             afterCommit { oid }
             createdAt
             ref { name }
           }
           ... on CommentDeletedEvent {
-            actor { login }
+            actor { login __typename }
             createdAt
             deletedCommentAuthor { login }
           }
           ... on CrossReferencedEvent {
-            actor { login }
+            actor { login __typename }
             createdAt
             isCrossRepository
             willCloseTarget
@@ -60,19 +60,19 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             }
           }
           ... on RenamedTitleEvent {
-            actor { login }
+            actor { login __typename }
             createdAt
             previousTitle
             currentTitle
           }
           ... on BaseRefChangedEvent {
-            actor { login }
+            actor { login __typename }
             createdAt
             previousRefName
             currentRefName
           }
           ... on AssignedEvent {
-            actor { login }
+            actor { login __typename }
             assignee {
               __typename
               ... on Bot { login }
@@ -83,7 +83,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             createdAt
           }
           ... on UnassignedEvent {
-            actor { login }
+            actor { login __typename }
             assignee {
               __typename
               ... on Bot { login }
@@ -94,19 +94,19 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             createdAt
           }
           ... on AddedToMergeQueueEvent {
-            actor { login }
+            actor { login __typename }
             createdAt
           }
           ... on MergedEvent {
-            actor { login }
+            actor { login __typename }
             createdAt
           }
           ... on ClosedEvent {
-            actor { login }
+            actor { login __typename }
             createdAt
           }
           ... on ReopenedEvent {
-            actor { login }
+            actor { login __typename }
             createdAt
           }
         }
@@ -130,7 +130,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             id
           }
           ... on CrossReferencedEvent {
-            actor { login }
+            actor { login __typename }
             createdAt
             isCrossRepository
             willCloseTarget
@@ -159,7 +159,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             }
           }
           ... on AssignedEvent {
-            actor { login }
+            actor { login __typename }
             assignee {
               __typename
               ... on Bot { login }
@@ -170,7 +170,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             createdAt
           }
           ... on UnassignedEvent {
-            actor { login }
+            actor { login __typename }
             assignee {
               __typename
               ... on Bot { login }
@@ -181,11 +181,11 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
             createdAt
           }
           ... on ClosedEvent {
-            actor { login }
+            actor { login __typename }
             createdAt
           }
           ... on ReopenedEvent {
-            actor { login }
+            actor { login __typename }
             createdAt
           }
         }
@@ -277,7 +277,7 @@ query($threadID: ID!, $cursor: String) {
           subjectType
           diffHunk
           url
-          author { login }
+          author { login __typename }
           authorAssociation
           commit { oid }
           originalCommit { oid }
@@ -319,7 +319,8 @@ type graphQLReviewThreadComment struct {
 	DiffHunk          string       `json:"diffHunk"`
 	URL               string       `json:"url"`
 	Author            *struct {
-		Login string `json:"login"`
+		TypeName string `json:"__typename"`
+		Login    string `json:"login"`
 	} `json:"author"`
 	Commit *struct {
 		OID string `json:"oid"`

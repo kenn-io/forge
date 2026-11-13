@@ -327,6 +327,7 @@ func TestAdaptComment(t *testing.T) {
 		UpdatedAt:      now,
 	}
 	gql.Author.Login = "bob"
+	gql.Author.Typename = "Bot"
 
 	c := adaptComment(&gql)
 
@@ -334,6 +335,7 @@ func TestAdaptComment(t *testing.T) {
 	assert.Equal("LGTM", c.GetBody())
 	assert.Equal("https://github.com/acme/widgets/issues/7#issuecomment-100", c.GetHTMLURL())
 	assert.Equal("bob", c.GetUser().GetLogin())
+	assert.Equal("Bot", c.GetUser().GetType())
 }
 
 func TestAdaptReview(t *testing.T) {
@@ -349,6 +351,7 @@ func TestAdaptReview(t *testing.T) {
 		SubmittedAt: now,
 	}
 	gql.Author.Login = "carol"
+	gql.Author.Typename = "User"
 
 	r := adaptReview(&gql)
 
@@ -356,6 +359,7 @@ func TestAdaptReview(t *testing.T) {
 	assert.Equal("Looks good", r.GetBody())
 	assert.Equal("APPROVED", r.GetState())
 	assert.Equal("carol", r.GetUser().GetLogin())
+	assert.Equal("User", r.GetUser().GetType())
 }
 
 func TestAdaptCommit(t *testing.T) {

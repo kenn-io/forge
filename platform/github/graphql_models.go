@@ -130,7 +130,7 @@ func (r GraphQLReviewRequest) Login() string {
 type GraphQLComment struct {
 	DatabaseId        int64
 	FullDatabaseId    GraphQLInt64
-	Author            struct{ Login string }
+	Author            GraphQLActorRef
 	AuthorAssociation *string
 	Body              string
 	URL               string `graphql:"url"`
@@ -175,7 +175,7 @@ type GraphQLReviewThreadComment struct {
 	SubjectType       string
 	DiffHunk          string
 	URL               string `graphql:"url"`
-	Author            struct{ Login string }
+	Author            GraphQLActorRef
 	Commit            *struct {
 		OID string `graphql:"oid"`
 	}
@@ -194,7 +194,7 @@ type GraphQLReviewThreadComment struct {
 type GraphQLReview struct {
 	AuthorAssociation *string
 	DatabaseId        int64
-	Author            struct{ Login string }
+	Author            GraphQLActorRef
 	Body              string
 	State             string
 	SubmittedAt       time.Time
@@ -250,7 +250,8 @@ type GraphQLNodeFragment struct {
 }
 
 type GraphQLActorRef struct {
-	Login string
+	Typename string `graphql:"__typename"`
+	Login    string
 }
 
 type GraphQLHeadRefForcePushedEvent struct {

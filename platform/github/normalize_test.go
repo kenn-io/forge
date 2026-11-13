@@ -406,3 +406,10 @@ func TestGitHubPlatformRepositoryReportsPrivacy(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeCommentAndReviewRetainActorType(t *testing.T) {
+	comment := NormalizeCommentEvent(platform.RepoRef{}, 1, &gh.IssueComment{User: &gh.User{Login: new("robot"), Type: new("Bot")}})
+	assert.Contains(t, comment.MetadataJSON, `"actor_account_type":"bot"`)
+	review := NormalizeReviewEvent(platform.RepoRef{}, 1, &gh.PullRequestReview{User: &gh.User{Login: new("maintainer"), Type: new("User")}})
+	assert.Contains(t, review.MetadataJSON, `"actor_account_type":"user"`)
+}

@@ -24,12 +24,7 @@ import {
   toggleFilterInSections,
   type PullAttributeFilter,
 } from "../utils/pull-attributes.js";
-import {
-  cycleLabelFilter as cycleLabel,
-  labelFilterParams,
-  matchesLabelFilters,
-  type LabelFilters,
-} from "../utils/label-filter.js";
+import { cycleLabelFilter as cycleLabel, labelFilterParams, type LabelFilters } from "../utils/label-filter.js";
 import { showFlash } from "./flash.svelte.js";
 import { PullsWorkflow, type FetchPullResult } from "./pulls-workflow.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
@@ -164,14 +159,12 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   // The server applies every filter before its limit, so each page it returns
-  // already matches. The browser checks loaded rows again only so rows from an
-  // earlier query never show while a refresh for new filters fails.
+  // already matches. The browser checks loaded rows against the PR conditions
+  // again only so rows from an earlier query never show while a refresh for new
+  // filters fails. Labels are left to the server, which matches them with full
+  // Unicode case folding.
   const filteredPulls = $derived(
-    attributeFilters.length === 0 && labelFilters.size === 0
-      ? pulls
-      : pulls.filter(
-          (pr) => pullMatchesAttributeFilters(pr, attributeFilters) && matchesLabelFilters(pr.labels, labelFilters),
-        ),
+    attributeFilters.length === 0 ? pulls : pulls.filter((pr) => pullMatchesAttributeFilters(pr, attributeFilters)),
   );
 
   function getFilteredPulls(): PullRequest[] {

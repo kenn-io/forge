@@ -48,12 +48,7 @@ import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter
 import { readIssuePRReferenceFilter, writeIssuePRReferenceFilter } from "./issue-pr-reference-filter.js";
 import { createRecentDetails } from "./recent-details.js";
 import { repoIdentityKey } from "../utils/repo-label.js";
-import {
-  cycleLabelFilter as cycleLabel,
-  labelFilterParams,
-  matchesLabelFilters,
-  type LabelFilters,
-} from "../utils/label-filter.js";
+import { cycleLabelFilter as cycleLabel, labelFilterParams, type LabelFilters } from "../utils/label-filter.js";
 import { isBotAuthor } from "../utils/bot-author.js";
 import {
   repositoryKeyAllows,
@@ -227,11 +222,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return visibleIssues;
   }
 
-  const labelFilteredIssues = $derived(
-    labelFilters.size === 0
-      ? visibleIssues
-      : visibleIssues.filter((issue) => matchesLabelFilters(issue.labels, labelFilters)),
-  );
+  // The server applies label filters with full Unicode case folding, so the
+  // browser does not match labels again.
+  const labelFilteredIssues = $derived(visibleIssues);
 
   function getFilteredIssues(): Issue[] {
     return labelFilteredIssues;

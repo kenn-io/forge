@@ -32,9 +32,21 @@ describe("issue sidebar label filter", () => {
       { ...base!, ID: 802, Number: 802, Title: "Known crash", labels: labeled("Bug", "wontfix") },
       { ...base!, ID: 803, Number: 803, Title: "Write the guide", labels: labeled("docs") },
     ];
+    // The server applies label filters before its limit, ignoring case; the mock does the same.
+    const named = (issue: (typeof issues)[number], name: string) =>
+      issue.labels.some((label) => label.name.toLowerCase() === name.toLowerCase());
     mounted = await mountBrowserApp("/issues", {
       overrides: [
-        (req) => (req.method === "GET" && req.url.pathname === "/api/v1/issues" ? jsonResponse(issues) : null),
+        (req) => {
+          if (req.method !== "GET" || req.url.pathname !== "/api/v1/issues") return null;
+          const required = req.url.searchParams.getAll("labels");
+          const excluded = req.url.searchParams.getAll("exclude_labels");
+          return jsonResponse(
+            issues.filter(
+              (issue) => required.every((name) => named(issue, name)) && !excluded.some((name) => named(issue, name)),
+            ),
+          );
+        },
       ],
     });
     await vi.waitFor(() => expect(rowTitles()).toHaveLength(3));

@@ -133,7 +133,7 @@
     activity.getUseWorkspaceActivityForRecency()
       ? activity
           .getWorkspaceActivity()
-          .filter((subject) => activitySubjectVisible(activity, subject, labelIndex.labelsFor(subject)))
+          .filter((subject) => activitySubjectVisible(activity, subject))
       : [],
   );
 

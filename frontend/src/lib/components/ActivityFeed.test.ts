@@ -373,9 +373,10 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
   });
 
-  it("keeps older activity available when the loaded page has no label matches", () => {
+  it("keeps older activity available when the loaded page has no matches", () => {
     activityCapped.value = true;
-    labelFilters.value = new Map([["cache", { name: "cache", mode: "require" }]]);
+    // Bots: required hides the loaded human-authored rows in the browser.
+    onlyBots.value = true;
     canLoadMore.value = true;
     render(ActivityFeed);
     expect(screen.queryByText("No activity found")).toBeNull();
@@ -480,63 +481,6 @@ describe("ActivityFeed compact mode", () => {
     expect(container.textContent).not.toContain("Bot-authored workspace");
   });
 
-  it("filters a workspace summary by its item's labels when the workspace row carries none", () => {
-    useWorkspaceActivityForRecency.value = true;
-    viewMode.value = "threaded";
-    const labeled = (...names: string[]) => names.map((name) => ({ name, color: "d73a4a", is_default: false }));
-    items.value = [];
-    // A spoke sends workspace rows without labels for repositories only its hub syncs.
-    itemActivity.value = [
-      workspaceSubject({
-        item_number: 8,
-        item_title: "Excluded parent",
-        workspace: undefined,
-        labels: labeled("wontfix"),
-      }),
-    ];
-    workspaceActivity.value = [
-      workspaceSubject({ item_number: 8, item_title: "Excluded parent" }),
-      workspaceSubject({ item_number: 9, item_title: "Kept workspace" }),
-    ];
-    labelFilters.value = cycleLabel(cycleLabel(new Map(), "wontfix"), "wontfix");
-
-    const { container } = render(ActivityFeed, { props: { compact: true } });
-
-    expect(container.textContent).not.toContain("Excluded parent");
-    expect(container.textContent).toContain("Kept workspace");
-  });
-
-  it("matches a workspace row to its item by repository ID after the repository is renamed", () => {
-    useWorkspaceActivityForRecency.value = true;
-    viewMode.value = "threaded";
-    const labeled = (...names: string[]) => names.map((name) => ({ name, color: "d73a4a", is_default: false }));
-    const renamed = activityItem("renamed-source").repo!;
-    items.value = [];
-    itemActivity.value = [
-      workspaceSubject({
-        item_number: 8,
-        item_title: "Excluded parent",
-        repo: { ...renamed, platform_repo_id: 42 },
-        workspace: undefined,
-        labels: labeled("wontfix"),
-      }),
-    ];
-    // The workspace row still has the route from before the rename.
-    workspaceActivity.value = [
-      workspaceSubject({
-        item_number: 8,
-        item_title: "Excluded parent",
-        repo: { ...renamed, platform_repo_id: 42, name: "old-widgets", repo_path: "acme/old-widgets" },
-        repo_name: "old-widgets",
-      }),
-    ];
-    labelFilters.value = cycleLabel(cycleLabel(new Map(), "wontfix"), "wontfix");
-
-    const { container } = render(ActivityFeed, { props: { compact: true } });
-
-    expect(container.textContent).not.toContain("Excluded parent");
-  });
-
   it("selects a single PR or issue author from the Author flyout", async () => {
     render(ActivityFeed, { props: { compact: false } });
 
@@ -547,24 +491,6 @@ describe("ActivityFeed compact mode", () => {
     await fireEvent.click(within(flyout).getByRole("button", { name: "Alice" }));
 
     expect(setActivityAuthor).toHaveBeenCalledWith("Alice");
-  });
-
-  it("keeps rows of items with every required label and none of the excluded ones", () => {
-    const labeled = (...names: string[]) => names.map((name) => ({ name, color: "d73a4a", is_default: false }));
-    items.value = [
-      activityItem("bug-ui", { item_number: 1, item_title: "Bug in the UI", labels: labeled("bug", "ui") }),
-      activityItem("bug-only", { item_number: 2, item_title: "Plain bug", labels: labeled("Bug") }),
-      activityItem("bug-wontfix", { item_number: 3, item_title: "Wontfix bug", labels: labeled("bug", "wontfix") }),
-      branchActivityItem("branch-commit", { body_preview: "Branch commit" }),
-    ];
-    labelFilters.value = cycleLabel(cycleLabel(cycleLabel(new Map(), "bug"), "wontfix"), "wontfix");
-
-    const { container } = render(ActivityFeed, { props: { compact: false } });
-
-    expect(container.textContent).toContain("Bug in the UI");
-    expect(container.textContent).toContain("Plain bug");
-    expect(container.textContent).not.toContain("Wontfix bug");
-    expect(container.textContent).not.toContain("Branch commit");
   });
 
   it("counts each item once in the Labels flyout and cycles the clicked label", async () => {

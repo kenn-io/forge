@@ -15,7 +15,6 @@ import {
 import type { GroupingStore } from "../stores/grouping.svelte.js";
 import type { IssuesStore } from "../stores/issues.svelte.js";
 import { isBotAuthor as isBotAccount } from "../utils/bot-author.js";
-import { matchesLabelFilters } from "../utils/label-filter.js";
 import {
   PULL_ATTRIBUTE_SECTIONS,
   cycleFilterInSections,
@@ -327,14 +326,14 @@ interface ActivityRowFacts {
   provider: string | undefined;
   hasWorkspace: boolean;
   headRepoKind: string | undefined;
-  labels: ActivitySubject["labels"];
 }
 
 /**
  * Applies the filters the browser checks on a loaded row. The server applies
  * the same filters to what it returns; the browser repeats them so rows that
  * arrive through live updates or workspace activity obey them, and applies
- * the ones only the browser can match (Has workspace, From fork). Desktop and
+ * the ones only the browser can match (Has workspace, From fork). Labels are
+ * left to the server, which matches them with full Unicode case folding. Desktop and
  * phone Activity both call these. Pull request conditions leave issue and
  * repository rows alone.
  */
@@ -344,7 +343,6 @@ function activityRowVisible(activity: ActivityStore, row: ActivityRowFacts): boo
   if (state !== "all" && row.closedOrMerged !== (state === "closed")) return false;
   const bots = activity.getBots();
   if (bots !== undefined && isBotAuthor(row.author) !== (bots === "require")) return false;
-  if (!matchesLabelFilters(row.labels, activity.getLabelFilters())) return false;
   if (row.itemType === "issue") {
     return !(activity.getHideBotAuthoredIssues() && isBotAccount(row.itemAuthor, row.provider));
   }
@@ -367,18 +365,13 @@ export function activityItemVisible(activity: ActivityStore, item: ActivityItem)
     provider: item.repo?.provider,
     hasWorkspace: item.workspace !== undefined,
     headRepoKind: item.head_repo_kind,
-    labels: item.labels,
   });
 }
 
-/**
- * Whether Activity's filters keep a loaded PR or issue. A workspace row can
- * arrive without labels; pass the labels known for its item instead.
- */
+/** Whether Activity's filters keep a loaded PR or issue. */
 export function activitySubjectVisible(
   activity: ActivityStore,
   subject: ActivitySubject | WorkspaceActivitySubject,
-  labels: ActivitySubject["labels"] = subject.labels,
 ): boolean {
   return activityRowVisible(activity, {
     itemType: subject.item_type,
@@ -388,7 +381,6 @@ export function activitySubjectVisible(
     provider: subject.repo?.provider,
     hasWorkspace: subject.workspace !== undefined,
     headRepoKind: subject.head_repo_kind,
-    labels,
   });
 }
 
@@ -420,10 +412,9 @@ function labelSubjectKey(subject: LabeledSubject): string | undefined {
 /**
  * Labels for every loaded PR or issue. A spoke sends workspace rows without
  * labels, so a workspace row takes its item's labels from the provider rows.
- * Desktop and phone Activity both filter and offer label choices from this.
+ * Desktop and phone Activity both offer label choices from this.
  */
 export function activityLabelIndex(activity: ActivityStore): {
-  labelsFor: (subject: WorkspaceActivitySubject) => ActivityItem["labels"];
   /** One entry per PR or issue, so a label's count is items, not events. */
   subjects: { labels?: ActivityItem["labels"] }[];
 } {
@@ -444,5 +435,5 @@ export function activityLabelIndex(activity: ActivityStore): {
     const key = labelSubjectKey(subject);
     if (key && !subjects.has(key)) subjects.set(key, { labels: labelsFor(subject) });
   }
-  return { labelsFor, subjects: [...subjects.values()] };
+  return { subjects: [...subjects.values()] };
 }

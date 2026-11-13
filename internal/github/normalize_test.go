@@ -357,7 +357,11 @@ func TestNormalizeTimelineEventCrossReferenced(t *testing.T) {
 	assert.Equal("timeline-CRE_1", event.DedupeKey)
 	assert.Contains(event.MetadataJSON, `"source_title":"Related bug"`)
 	assert.Contains(event.MetadataJSON, `"is_cross_repository":true`)
-	assert.Contains(event.MetadataJSON, `"source_repo_id":9876543210`)
+	var metadata struct {
+		SourceRepoID int64 `json:"source_repo_id"`
+	}
+	require.NoError(json.Unmarshal([]byte(event.MetadataJSON), &metadata))
+	assert.Equal(int64(9876543210), metadata.SourceRepoID)
 }
 
 func TestNormalizeTimelineEventCommentDeleted(t *testing.T) {

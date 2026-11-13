@@ -226,6 +226,7 @@ func TestNormalizeIssueTimelineEventCrossReferenced(t *testing.T) {
 		SourceType:        "PullRequest",
 		SourceOwner:       "kenn-io",
 		SourceRepo:        "roborev",
+		SourceRepoID:      9876543210,
 		SourceNumber:      860,
 		SourceTitle:       "Add global review guidelines",
 		SourceURL:         "https://github.com/kenn-io/roborev/pull/860",
@@ -239,6 +240,7 @@ func TestNormalizeIssueTimelineEventCrossReferenced(t *testing.T) {
 	assert.Equal("Referenced from kenn-io/roborev#860", event.Summary)
 	assert.Equal(createdAt, event.CreatedAt)
 	assert.Equal("timeline-CRE_1", event.DedupeKey)
+	assert.Contains(event.MetadataJSON, `"source_repo_id":9876543210`)
 	assert.Contains(event.MetadataJSON, `"source_type":"PullRequest"`)
 	assert.Contains(event.MetadataJSON, `"source_title":"Add global review guidelines"`)
 	assert.Contains(event.MetadataJSON, `"source_url":"https://github.com/kenn-io/roborev/pull/860"`)

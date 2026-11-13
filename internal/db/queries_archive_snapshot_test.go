@@ -115,6 +115,9 @@ func TestSnapshotActivitySelection(t *testing.T) {
 	githubMR, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: githubID, PlatformID: 2, Number: 2, Author: "author", State: MergeRequestStateOpen, PlatformHeadSHA: "head-sha", CreatedAt: now, UpdatedAt: now})
 	require.NoError(t, err)
 	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{
+		{MergeRequestID: githubMR, EventType: "issue_comment", Author: "older-maintainer", AuthorAssociation: new("OWNER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "older-review", CreatedAt: now.Add(-5 * time.Minute)},
+		{MergeRequestID: githubMR, EventType: "issue_comment", Author: "author", AuthorAssociation: new("CONTRIBUTOR"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "older-author", CreatedAt: now.Add(-3 * time.Minute)},
+		{MergeRequestID: githubMR, EventType: "issue_comment", Author: "author", MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "author-unknown-role", CreatedAt: now.Add(-3 * time.Minute)},
 		{MergeRequestID: githubMR, EventType: "review", Author: "maintainer", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "review", CreatedAt: now.Add(-4 * time.Minute)},
 		{MergeRequestID: githubMR, EventType: "commit", Author: "author", AuthorAssociation: new("CONTRIBUTOR"), MetadataJSON: `{"actor_account_type":"user"}`, Summary: "head-sha", DedupeKey: "head", CreatedAt: now.Add(-2 * time.Minute)},
 		{MergeRequestID: githubMR, EventType: "commit", Author: "author", AuthorAssociation: new("CONTRIBUTOR"), MetadataJSON: `{"actor_account_type":"user"}`, Summary: "old-sha", DedupeKey: "old", CreatedAt: now},
@@ -126,7 +129,7 @@ func TestSnapshotActivitySelection(t *testing.T) {
 	defer func() { _ = tx.Rollback() }()
 	activity, err := LoadArchiveSnapshotActivity(t.Context(), tx, []int64{id, githubMR})
 	require.NoError(t, err)
-	require.Len(t, activity, 3)
+	require.Len(t, activity, 4)
 	assert.Equal(t, "push", activity[0].Kind)
 	assert.Equal(t, "Commit Author", activity[0].Actor)
 	assert.Equal(t, "unknown", activity[0].Class)
@@ -136,6 +139,8 @@ func TestSnapshotActivitySelection(t *testing.T) {
 	assert.Equal(t, "author", activity[2].Class)
 	assert.Equal(t, "push", activity[2].Kind)
 	assert.Equal(t, now.Add(-2*time.Minute), activity[2].OccurredAt)
+	assert.Equal(t, "unknown", activity[3].Class)
+	assert.Equal(t, "author", activity[3].Actor)
 }
 
 func TestCommentVisibilityRefreshPreservesActorType(t *testing.T) {

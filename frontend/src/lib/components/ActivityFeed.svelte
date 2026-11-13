@@ -10,15 +10,21 @@
   import { Effect } from "effect";
   import { onMount, onDestroy } from "svelte";
   import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
-  import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
+  import type { ActivityItem } from "../api/types.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getAppRuntime } from "../app/runtime-context.js";
   import { getStores, getNavigate } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
   import ListLoadMore from "./sidebar/ListLoadMore.svelte";
-  import { activityFilterMenu, activityItemVisible, activitySubjectVisible } from "./activityFilters.js";
+  import {
+    activityFilterMenu,
+    activityItemVisible,
+    activityLabelIndex,
+    activitySubjectVisible,
+  } from "./activityFilters.js";
   import AuthorFilterMenu from "./shared/AuthorFilterMenu.svelte";
   import LabelFilterMenu from "./shared/LabelFilterMenu.svelte";
+  import { getGlobalRepo } from "../stores/filter.svelte.js";
   import { rememberedLabelChoices } from "../utils/label-filter.js";
   import { FilterDropdown, ScrollBox } from "@kenn-io/kit-ui";
   import {
@@ -30,9 +36,7 @@
     activityAuthor,
     notificationReasonLabel,
     shortSha,
-    activityItemKey,
   } from "./activityRows.js";
-  import { repositoryKeyFromWire, type RepositoryKeyWire } from "../api/repository-key.js";
   import {
     localDateLabel,
     parseAPITimestamp,
@@ -217,48 +221,13 @@
 
   const displayItems = $derived(activity.getActivityItems().filter((item) => activityItemVisible(activity, item)));
 
-  type LabeledSubject = Pick<ActivityItem, "repo_owner" | "repo_name" | "platform_host" | "item_type" | "item_number" | "labels"> & {
-    repo?: (RepositoryKeyWire & { provider?: string; platform_host?: string; repo_path?: string | undefined }) | undefined;
-  };
-
-  // Keyed by stable repository identity, so a workspace row still carrying a repository's old
-  // owner/name matches the hub's rows for the same item.
-  function labelSubjectKey(subject: LabeledSubject): string | undefined {
-    if (!subject.item_type) return undefined;
-    return activityItemKey({
-      provider: subject.repo?.provider ?? "",
-      platformHost: subject.repo?.platform_host ?? subject.platform_host,
-      repositoryKey: repositoryKeyFromWire(subject.repo),
-      owner: subject.repo_owner,
-      name: subject.repo_name,
-      repoPath: subject.repo?.repo_path,
-      itemType: subject.item_type,
-      itemNumber: subject.item_number,
-    });
-  }
-
-  // Labels by pull request or issue from the provider rows, parents last so they win. A spoke
-  // sends workspace rows without labels, so a workspace row falls back to these.
-  const providerLabels = $derived.by(() => {
-    const labels = new Map<string, ActivityItem["labels"]>();
-    for (const subject of [...activity.getActivityItems(), ...activity.getItemActivity()]) {
-      const key = labelSubjectKey(subject);
-      if (key) labels.set(key, subject.labels);
-    }
-    return labels;
-  });
-
-  function workspaceSubjectLabels(subject: WorkspaceActivitySubject): ActivityItem["labels"] {
-    if (subject.labels) return subject.labels;
-    const key = labelSubjectKey(subject);
-    return key ? providerLabels.get(key) : undefined;
-  }
+  const labelIndex = $derived(activityLabelIndex(activity));
 
   const visibleWorkspaceActivity = $derived(
     activity.getUseWorkspaceActivityForRecency()
       ? activity
           .getWorkspaceActivity()
-          .filter((subject) => activitySubjectVisible(activity, subject, workspaceSubjectLabels(subject)))
+          .filter((subject) => activitySubjectVisible(activity, subject, labelIndex.labelsFor(subject)))
       : [],
   );
 
@@ -293,16 +262,11 @@
   }
 
   // One entry per pull request or issue, so a label's count is items, not events.
-  const labelSubjects = $derived.by(() => {
-    const subjects = new Map<string, { labels?: ActivityItem["labels"] }>();
-    for (const [key, labels] of providerLabels) subjects.set(key, { labels });
-    for (const subject of activity.getWorkspaceActivity()) {
-      const key = labelSubjectKey(subject);
-      if (key && !subjects.has(key)) subjects.set(key, { labels: subject.labels });
-    }
-    return [...subjects.values()];
-  });
-  const activityLabelChoices = rememberedLabelChoices(() => labelSubjects, activity.getLabelFilters);
+  const activityLabelChoices = rememberedLabelChoices(
+    () => labelIndex.subjects,
+    activity.getLabelFilters,
+    () => JSON.stringify([activity.getTimeRange(), activity.getActivitySearch(), getGlobalRepo()]),
+  );
   const labelChoices = $derived(activityLabelChoices());
 
   // Compact mode has no author chip, so the trigger names the author instead.

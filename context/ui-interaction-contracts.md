@@ -269,7 +269,8 @@ and back.
   `Merge queued`, `Has workspace`, `From fork`, and Activity `Bots` wherever they are one row; a pair already
   shown as a pick-one section (CI) stays on/off (maintainer decision; `frontend/src/lib/utils/tri-filter.ts`).
   Server-matched conditions send their opposite as its own query (`not_draft`, `not_approved`, ...), so both
-  directions apply before limits; `Has workspace` and `From fork` match loaded rows in the browser.
+  directions apply before limits. `From fork` reads a classification stored on each PR at sync
+  (`internal/db/migrations/000096_merge_request_head_repo_kind.up.sql`).
 - In Activity, PR conditions decide only which pull request activity shows; issue and repository
   rows always pass (maintainer decision; `internal/db/queries_activity.go::activityPullAttributeClause`).
 - Phones show a three-state filter as an Any/Yes/No choice, since a switch has no third state, and a
@@ -290,13 +291,17 @@ and back.
   stay in step; the TypeScript twin is `frontend/src/lib/utils/search-query.ts`
   (`internal/db/search_query.go::ParseSearchQuery`).
 - Activity excludes parents by their own fields; only included terms may match through child events.
-- The PR and Issues sidebars load Closed and All in pages of 200, ordered by recent activity; Load more grows the page. Browser-only filters apply to loaded rows.
+- The PR and Issues sidebars load Closed and All in pages of 200, ordered by recent activity; Load more grows the page.
+- Every PR, issue, and Activity filter applies on the server before the limit, so a bounded phone page
+  never hides matches further down (maintainer decision). The browser re-checks loaded rows only so a
+  failed refresh never shows rows from earlier filters (`frontend/src/lib/stores/pulls.svelte.ts::listQuery`).
 - Every list of labeled PRs or issues with a filter menu (PRs, Issues, merge queues, worklists, Activity)
   has a Labels filter: a flyout from a `Labels` row in that menu, where each label cycles neutral, required,
   excluded ("req"/"excl" in the row summary). A row must carry every required label and no excluded one;
-  names match case-insensitively across repositories. It is browser-only, and its choices and counts
-  come from every loaded item, not the visible ones, so rows stay put while cycling
-  (`frontend/src/lib/utils/label-filter.ts`). Activity counts each PR or issue once, not each event.
+  names match case-insensitively across repositories. The PR, issue, and Activity servers apply it before
+  the limit, and choices come from the items loaded before any label filter in the same list scope, so
+  rows stay put while cycling (`frontend/src/lib/utils/label-filter.ts::rememberedLabelChoices`); merge
+  queues and worklists match their loaded rows. Activity counts each PR or issue once, not each event.
   Workspaces has no Labels filter. Only merge queues save their label choice, with their other filters.
 - Zero-padded PR searches (`0001`) match the exact number before pagination.
 - Every PR, issue, and Activity filter is one element in `frontend/src/lib/components/shared/list-filter-menus.ts`,

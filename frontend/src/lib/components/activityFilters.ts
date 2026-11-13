@@ -17,14 +17,14 @@ import type { IssuesStore } from "../stores/issues.svelte.js";
 import { isBotAuthor as isBotAccount } from "../utils/bot-author.js";
 import { matchesLabelFilters } from "../utils/label-filter.js";
 import {
-  BROWSER_ONLY_PULL_ATTRIBUTES,
   PULL_ATTRIBUTE_SECTIONS,
   cycleFilterInSections,
   toggleFilterInSections,
   triFilterInSelection,
   type PullAttributeFilter,
 } from "../utils/pull-attributes.js";
-import { isClosedOrMergedActivity, isDefaultBranchActivity } from "./activityRows.js";
+import { activityItemKey, isClosedOrMergedActivity, isDefaultBranchActivity } from "./activityRows.js";
+import { repositoryKeyFromWire, type RepositoryKeyWire } from "../api/repository-key.js";
 import {
   commonSection,
   countFilters,
@@ -136,10 +136,7 @@ export function activityFilterMenu({
     activity.setDraft(tri(DRAFT));
     activity.setMergeQueued(tri(MERGE_QUEUED));
     activity.setPullAttributeFilters(next.filter((filter) => !OWN_FIELD_ATTRIBUTES.includes(filter)));
-    // Has workspace and From fork apply to loaded rows; everything else asks the server.
-    const changed = [...before, ...next].filter((filter) => before.includes(filter) !== next.includes(filter));
-    if (changed.some((filter) => !BROWSER_ONLY_PULL_ATTRIBUTES.includes(filter))) reload();
-    else activity.syncToURL();
+    if ([...before, ...next].some((filter) => before.includes(filter) !== next.includes(filter))) reload();
   };
 
   // Activity applies every PR and issue list filter. A filter added to those
@@ -390,4 +387,59 @@ export function activitySubjectVisible(
     headRepoKind: subject.head_repo_kind,
     labels,
   });
+}
+
+type LabeledSubject = Pick<
+  ActivityItem,
+  "repo_owner" | "repo_name" | "platform_host" | "item_type" | "item_number" | "labels"
+> & {
+  repo?:
+    | (RepositoryKeyWire & { provider?: string; platform_host?: string; repo_path?: string | undefined })
+    | undefined;
+};
+
+// Keyed by stable repository identity, so a workspace row still carrying a repository's old
+// owner/name matches the hub's rows for the same item.
+function labelSubjectKey(subject: LabeledSubject): string | undefined {
+  if (!subject.item_type) return undefined;
+  return activityItemKey({
+    provider: subject.repo?.provider ?? "",
+    platformHost: subject.repo?.platform_host ?? subject.platform_host,
+    repositoryKey: repositoryKeyFromWire(subject.repo),
+    owner: subject.repo_owner,
+    name: subject.repo_name,
+    repoPath: subject.repo?.repo_path,
+    itemType: subject.item_type,
+    itemNumber: subject.item_number,
+  });
+}
+
+/**
+ * Labels for every loaded PR or issue. A spoke sends workspace rows without
+ * labels, so a workspace row takes its item's labels from the provider rows.
+ * Desktop and phone Activity both filter and offer label choices from this.
+ */
+export function activityLabelIndex(activity: ActivityStore): {
+  labelsFor: (subject: WorkspaceActivitySubject) => ActivityItem["labels"];
+  /** One entry per PR or issue, so a label's count is items, not events. */
+  subjects: { labels?: ActivityItem["labels"] }[];
+} {
+  // Parents last, so their labels win.
+  const provider = new Map<string, ActivityItem["labels"]>();
+  for (const subject of [...activity.getActivityItems(), ...activity.getItemActivity()]) {
+    const key = labelSubjectKey(subject);
+    if (key) provider.set(key, subject.labels);
+  }
+  const labelsFor = (subject: WorkspaceActivitySubject) => {
+    if (subject.labels) return subject.labels;
+    const key = labelSubjectKey(subject);
+    return key ? provider.get(key) : undefined;
+  };
+  const subjects = new Map<string, { labels?: ActivityItem["labels"] }>();
+  for (const [key, labels] of provider) subjects.set(key, { labels });
+  for (const subject of activity.getWorkspaceActivity()) {
+    const key = labelSubjectKey(subject);
+    if (key && !subjects.has(key)) subjects.set(key, { labels: labelsFor(subject) });
+  }
+  return { labelsFor, subjects: [...subjects.values()] };
 }

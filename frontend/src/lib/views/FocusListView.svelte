@@ -401,8 +401,12 @@
       ? pullListFilterMenu({ pulls, grouping, labelMenu: labelFilterMenu, reload: resetPageAndLoad })
       : issueListFilterMenu({ issues, grouping, labelMenu: labelFilterMenu, reload: resetPageAndLoad }),
   );
-  const pullLabelChoices = rememberedLabelChoices(pulls.getPulls, pulls.getLabelFilters);
-  const issueLabelChoices = rememberedLabelChoices(issues.getIssues, issues.getLabelFilters);
+  const pullLabelChoices = rememberedLabelChoices(pulls.getPulls, pulls.getLabelFilters, () =>
+    JSON.stringify([pulls.getFilterState(), pulls.getSearchQuery(), selectedRepo]),
+  );
+  const issueLabelChoices = rememberedLabelChoices(issues.getIssues, issues.getLabelFilters, () =>
+    JSON.stringify([issues.getIssueFilterState(), issues.getIssueSearchQuery(), selectedRepo]),
+  );
   const labelChoices = $derived(listType === "mrs" ? pullLabelChoices() : issueLabelChoices());
 
   const prGroups = $derived(

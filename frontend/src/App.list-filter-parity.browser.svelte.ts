@@ -21,6 +21,7 @@ import {
 } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;
+const DAY = 24 * 60 * 60 * 1000;
 const PHONE_FILTERS = ".mobile-triage-search-bar__filter button";
 
 /** Repo group headings, item numbers, titles, and row repo names in on-screen order. */
@@ -36,8 +37,11 @@ function listRows(list: HTMLElement): string[] {
  * phone shows one card per item, so the comparison is the set of items.
  */
 function activityItems(list: HTMLElement): string[] {
-  const numbers = list.querySelectorAll(".item-number, .item-ref, .mobile-activity-number");
-  return [...new Set([...numbers].map((node) => node.textContent!.trim()))].sort();
+  const read = (selector: string) =>
+    [...new Set([...list.querySelectorAll(selector)].map((node) => node.textContent!.trim()))].sort();
+  // Repo labels show Hide org name; desktop puts them on group headers or rows, the phone on each card.
+  const repos = read(".repo-name, .repo-tag, .col-repo, .mobile-activity-card__meta > span:first-child");
+  return [...read(".item-number, .item-ref, .mobile-activity-number"), ...repos.map((repo) => `repo: ${repo}`)];
 }
 
 function label(name: string) {
@@ -157,6 +161,10 @@ function activityFixture() {
     subject("pr", 12, { labels: [label("docs")] }),
     subject("issue", 21, { item_author: "renovate[bot]", labels: [label("bug")] }),
     subject("issue", 22, { item_state: "closed" }),
+    // Older items, so each time range shows a different set.
+    subject("pr", 13, { activity_at: new Date(now - 3 * DAY).toISOString() }),
+    subject("pr", 14, { activity_at: new Date(now - 20 * DAY).toISOString() }),
+    subject("pr", 15, { activity_at: new Date(now - 60 * DAY).toISOString() }),
   ];
   const items = subjects.map(
     (item, index): ActivityItem =>
@@ -174,13 +182,24 @@ function activityFixture() {
   return { items, item_activity: subjects };
 }
 
+/** The start of the window a request asks for: a range such as "7d", or a timestamp. */
+function sinceOf(req: MockRequest): number {
+  const since = req.url.searchParams.get("since") ?? "";
+  const range = /^(\d+)([hd])$/.exec(since);
+  if (range) return Date.now() - Number(range[1]) * (range[2] === "h" ? 60 * 60 * 1000 : DAY);
+  return since ? Date.parse(since) : 0;
+}
+
 function answerActivity(): MockRouteOverride {
   const fixture = activityFixture();
+  // The server keeps only activity inside the requested time window.
+  const within = (req: MockRequest) => (row: { activity_at?: string; created_at?: string }) =>
+    Date.parse(row.activity_at ?? row.created_at ?? "") >= sinceOf(req);
   return (req) =>
     req.method === "GET" && req.url.pathname === "/api/v1/activity"
       ? jsonResponse({
-          items: fixture.items,
-          item_activity: fixture.item_activity,
+          items: fixture.items.filter(within(req)),
+          item_activity: fixture.item_activity.filter(within(req)),
           capped: false,
           item_activity_capped: false,
           event_cursor: "cursor",

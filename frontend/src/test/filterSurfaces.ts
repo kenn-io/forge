@@ -80,14 +80,15 @@ export function desktopSurface(listSelector: string, triggerSelector: string): S
     },
     async click(label) {
       await open();
-      await page.elementLocator(row(label)).click();
+      // Click the menu row itself: a page-wide name such as the top bar's PRs tab can share its label.
+      row(label).click();
     },
     async submenu(label) {
       await open();
       const node = row(label);
       if (!node.classList.contains("submenu")) return null;
       const flyout = () => document.querySelector<HTMLElement>(".kit-filter-dropdown__submenu");
-      if (node.getAttribute("aria-expanded") !== "true") await page.elementLocator(node).click();
+      if (node.getAttribute("aria-expanded") !== "true") node.click();
       await vi.waitFor(() => expect(flyout()).not.toBeNull());
       return flyout()!;
     },
@@ -106,10 +107,15 @@ export function phoneSurface(listSelector: string, triggerSelector: string): Sur
   const rows = () => [...panel()!.querySelectorAll<HTMLElement>(".filter-sections-panel__item")];
   const row = (label: string) =>
     rows().find((node) => text(node.querySelector(".filter-sections-panel__label")) === label);
+  // A view can keep the panel mounted while hiding it, so open means rendered and not hidden.
+  const isOpen = () => {
+    const node = panel();
+    return node !== null && node.closest("[hidden]") === null;
+  };
   async function open(): Promise<void> {
-    if (panel()) return;
+    if (isOpen()) return;
     await page.elementLocator(list().querySelector(triggerSelector)!).click();
-    await vi.waitFor(() => expect(panel()).not.toBeNull());
+    await vi.waitFor(() => expect(isOpen()).toBe(true));
   }
   /** Opens a select, reads its option labels, and picks `choose` if given. */
   async function select(cell: HTMLElement, choose?: string): Promise<string[]> {
@@ -260,6 +266,7 @@ export async function settled(
   surface: Surface,
   pathname: string,
   visibleRows: (list: HTMLElement) => string[],
+  labels?: ReadonlySet<string>,
 ): Promise<Outcome> {
   // Wait until the list stops requesting and re-rendering.
   let previous = "";
@@ -270,11 +277,34 @@ export async function settled(
     if (current === previous) break;
     previous = current;
   }
+  const items = await surface.itemStates();
   return {
     rows: visibleRows(surface.list()),
     query: lastListQuery(mounted.api.requests, pathname),
-    items: await surface.itemStates(),
+    // Only the compared sections; a surface's declared extras are not compared.
+    items: labels ? Object.fromEntries(Object.entries(items).filter(([label]) => labels.has(label))) : items,
   };
+}
+
+/**
+ * Puts back choices Reset deliberately keeps, such as Activity's time range,
+ * so every item starts from the same view: a pick-one section returns to the
+ * option that was on, and any other row is clicked until it matches.
+ */
+async function restoreInitial(surface: Surface, menu: MenuSection[], initial: Outcome): Promise<void> {
+  for (const section of menu) {
+    const initiallyOn = section.items.filter((label) => initial.items[label]?.state === "on");
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const now = await surface.itemStates();
+      const differing = section.items.filter((label) => now[label]?.state !== initial.items[label]?.state);
+      if (differing.length === 0) break;
+      const pickOne =
+        initiallyOn.length === 1 &&
+        section.items.every((label) => label === initiallyOn[0] || initial.items[label]?.state === "off");
+      if (pickOne) await surface.click(initiallyOn[0]!);
+      else for (const label of differing) await surface.click(label);
+    }
+  }
 }
 
 // Submenus this test can drive. A row whose submenu holds anything else fails
@@ -304,7 +334,8 @@ async function clickChoice(surface: Surface, label: string, name: string): Promi
   const choice = [...submenu.querySelectorAll<HTMLElement>(SUBMENU_CHOICE)].find(
     (node) => text(node.querySelector(SUBMENU_CHOICE_NAME) ?? node) === name,
   )!;
-  await page.elementLocator(choice).click();
+  // A choice's name, such as an author, can recur elsewhere on the page.
+  choice.click();
 }
 
 export interface ExerciseOptions {
@@ -327,7 +358,9 @@ export async function exercise(mounted: MountedBrowserApp, surface: Surface, opt
   const { pathname, visibleRows } = options;
   await vi.waitFor(() => expect(visibleRows(surface.list()).length).toBeGreaterThan(0), WAIT);
   const menu = (await surface.menu()).filter((section) => !options.skipSections?.includes(section.title));
-  const initial = await settled(mounted, surface, pathname, visibleRows);
+  const labels = new Set(menu.flatMap((section) => section.items));
+  const settle = () => settled(mounted, surface, pathname, visibleRows, labels);
+  const initial = await settle();
   const outcomes: Record<string, unknown> = { initial };
   const submenus: Record<string, string[]> = {};
   const targets: { key: string; label: string; apply: () => Promise<void> }[] = [];
@@ -349,12 +382,12 @@ export async function exercise(mounted: MountedBrowserApp, surface: Surface, opt
   for (const base of options.bases(menu)) {
     for (const { key, apply } of targets) {
       if (base !== null) await surface.click(base);
-      const start = await settled(mounted, surface, pathname, visibleRows);
+      const start = await settle();
       const states = [];
       for (let round = 0; round < 2; round++) {
         await surface.open();
         await apply();
-        states.push(await settled(mounted, surface, pathname, visibleRows));
+        states.push(await settle());
       }
       if (
         states.some((state) => state.query !== start.query || JSON.stringify(state.rows) !== JSON.stringify(start.rows))
@@ -362,10 +395,8 @@ export async function exercise(mounted: MountedBrowserApp, surface: Surface, opt
         narrowed.add(key);
       }
       await surface.reset();
-      expect(
-        await settled(mounted, surface, pathname, visibleRows),
-        `Reset after ${base ?? "default"}: ${key}`,
-      ).toEqual(initial);
+      await restoreInitial(surface, menu, initial);
+      expect(await settle(), `Reset after ${base ?? "default"}: ${key}`).toEqual(initial);
       outcomes[`${base ?? "default"}: ${key}`] = states;
     }
   }

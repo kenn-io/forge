@@ -133,6 +133,16 @@ func TestListMergeRequestsWorkspaceForkAndLabelFiltersApplyBeforeLimit(t *testin
 		{"without a workspace", ListMergeRequestsOpts{Attributes: []string{"no_workspace"}, WorkspaceItems: workspaces}, []int{4, 3, 2}},
 		{"with a workspace when none exist", ListMergeRequestsOpts{Attributes: []string{"has_workspace"}}, []int{}},
 		{"either workspace choice", ListMergeRequestsOpts{Attributes: []string{"has_workspace", "no_workspace"}, WorkspaceItems: workspaces}, []int{4, 3, 2, 1}},
+		{"workspace before held merge", ListMergeRequestsOpts{
+			Attributes:         []string{"has_workspace", "not_merge_queued"},
+			WorkspaceItems:     []RepoItemNumber{{RepoID: repoID, Number: 2}},
+			DeferredMergeItems: []RepoItemNumber{{RepoID: repoID, Number: 1}},
+		}, []int{2}},
+		{"held merge before workspace", ListMergeRequestsOpts{
+			Attributes:         []string{"not_merge_queued", "has_workspace"},
+			WorkspaceItems:     []RepoItemNumber{{RepoID: repoID, Number: 2}},
+			DeferredMergeItems: []RepoItemNumber{{RepoID: repoID, Number: 1}},
+		}, []int{2}},
 		{"required label in any case", ListMergeRequestsOpts{Labels: []string{"BUG"}}, []int{2, 1}},
 		{"required and excluded labels", ListMergeRequestsOpts{Labels: []string{"bug"}, ExcludeLabels: []string{"wontfix"}, Limit: 1}, []int{1}},
 		{"excluded label only", ListMergeRequestsOpts{ExcludeLabels: []string{"BUG"}}, []int{4, 3}},

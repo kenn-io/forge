@@ -426,7 +426,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   function setHideBots(value: boolean): void {
     hideBots = value;
-    loadIssues(activeListParams);
     const generation = ++hideBotsMutationGeneration;
     const program = Effect.gen(function* () {
       const workflow = yield* SettingsWorkflow;

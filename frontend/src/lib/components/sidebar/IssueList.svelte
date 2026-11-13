@@ -16,6 +16,7 @@
   import ListCountChip from "./ListCountChip.svelte";
   import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
   import { rememberedLabelChoices } from "../../utils/label-filter.js";
+  import { getGlobalRepo } from "../../stores/filter.svelte.js";
   import { issueListFilterMenu } from "../shared/list-filter-menus.js";
   import {
     FilterDropdown,
@@ -102,7 +103,9 @@
     );
   }
 
-  const issueLabelChoices = rememberedLabelChoices(issues.getIssues, issues.getLabelFilters);
+  const issueLabelChoices = rememberedLabelChoices(issues.getIssues, issues.getLabelFilters, () =>
+    JSON.stringify([issues.getIssueFilterState(), issues.getIssueSearchQuery(), getGlobalRepo()]),
+  );
   const labelChoices = $derived(issueLabelChoices());
   const filterMenu = $derived(issueListFilterMenu({
     issues,

@@ -705,7 +705,8 @@ describe("ActivityFeed compact mode", () => {
     expect(pullAttributeFilters.value).toEqual(["fork"]);
     await fireEvent.click(screen.getByRole("button", { name: "Has workspace" }));
     expect(pullAttributeFilters.value).toEqual(["fork", "has_workspace"]);
-    expect(loadActivity, "browser-only filters do not reload").toHaveBeenCalledTimes(mountedReads);
+    // The server applies From fork and Has workspace before its limit, so each change reloads.
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 2);
   });
 
   it("keeps only closed and merged items, or only bot activity, before the next load", async () => {

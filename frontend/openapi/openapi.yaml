@@ -13904,7 +13904,7 @@ paths:
           schema:
             type: boolean
         - description: Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches.
-          explode: false
+          explode: true
           in: query
           name: labels
           schema:
@@ -13913,7 +13913,7 @@ paths:
               type: string
             type: array
         - description: Drop activity whose pull request or issue carries any named label. Names match without case across repositories.
-          explode: false
+          explode: true
           in: query
           name: exclude_labels
           schema:
@@ -14138,7 +14138,7 @@ paths:
           schema:
             type: boolean
         - description: Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches.
-          explode: false
+          explode: true
           in: query
           name: labels
           schema:
@@ -14147,7 +14147,7 @@ paths:
               type: string
             type: array
         - description: Drop activity whose pull request or issue carries any named label. Names match without case across repositories.
-          explode: false
+          explode: true
           in: query
           name: exclude_labels
           schema:
@@ -23440,7 +23440,7 @@ paths:
             description: Only include issues no pull request references. With referenced_by_pr, neither filter applies.
             type: boolean
         - description: Only include issues carrying every named label. Names match without case across repositories; applied before pagination.
-          explode: false
+          explode: true
           in: query
           name: labels
           schema:
@@ -23449,7 +23449,7 @@ paths:
               type: string
             type: array
         - description: Drop issues carrying any named label. Names match without case across repositories; applied before pagination.
-          explode: false
+          explode: true
           in: query
           name: exclude_labels
           schema:
@@ -25373,7 +25373,7 @@ paths:
             description: Exact case-sensitive label name; applied before pagination.
             type: string
         - description: Only include pull requests carrying every named label. Names match without case across repositories; applied before pagination.
-          explode: false
+          explode: true
           in: query
           name: labels
           schema:
@@ -25382,7 +25382,7 @@ paths:
               type: string
             type: array
         - description: Drop pull requests carrying any named label. Names match without case across repositories; applied before pagination.
-          explode: false
+          explode: true
           in: query
           name: exclude_labels
           schema:

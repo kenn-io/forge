@@ -1,10 +1,16 @@
 <script lang="ts">
   import RepoPrivateIcon from "../components/shared/RepoPrivateIcon.svelte";
-  import { activityFilterMenu, activityItemVisible, activitySubjectVisible } from "../components/activityFilters.js";
+  import {
+    activityFilterMenu,
+    activityItemVisible,
+    activityLabelIndex,
+    activitySubjectVisible,
+  } from "../components/activityFilters.js";
   import FilterSectionsPanel from "../components/shared/FilterSectionsPanel.svelte";
   import LabelFilterMenu from "../components/shared/LabelFilterMenu.svelte";
   import ListLoadMore from "../components/sidebar/ListLoadMore.svelte";
   import AuthorFilterMenu from "../components/shared/AuthorFilterMenu.svelte";
+  import { getGlobalRepo } from "../stores/filter.svelte.js";
   import { rememberedLabelChoices } from "../utils/label-filter.js";
   import { Effect } from "effect";
   import { onDestroy, onMount, tick } from "svelte";
@@ -125,7 +131,9 @@
 
   const visibleWorkspaceActivity = $derived(
     activity.getUseWorkspaceActivityForRecency()
-      ? activity.getWorkspaceActivity().filter((subject) => activitySubjectVisible(activity, subject))
+      ? activity
+          .getWorkspaceActivity()
+          .filter((subject) => activitySubjectVisible(activity, subject, labelIndex.labelsFor(subject)))
       : [],
   );
 
@@ -134,24 +142,12 @@
   );
 
   // One entry per loaded PR or issue, so a label's count is items, not events.
-  const labelSubjects = $derived.by(() => {
-    const subjects = new SvelteMap<string, { labels?: ActivityItem["labels"] }>();
-    for (const subject of [...activity.getActivityItems(), ...activity.getItemActivity()]) {
-      const key = activityItemKey({
-        provider: subject.repo.provider,
-        platformHost: subject.repo.platform_host,
-        repositoryKey: repositoryKeyFromWire(subject.repo),
-        owner: subject.repo.owner,
-        name: subject.repo.name,
-        repoPath: subject.repo.repo_path,
-        itemType: subject.item_type,
-        itemNumber: subject.item_number,
-      });
-      subjects.set(key, { labels: subject.labels });
-    }
-    return [...subjects.values()];
-  });
-  const activityLabelChoices = rememberedLabelChoices(() => labelSubjects, activity.getLabelFilters);
+  const labelIndex = $derived(activityLabelIndex(activity));
+  const activityLabelChoices = rememberedLabelChoices(
+    () => labelIndex.subjects,
+    activity.getLabelFilters,
+    () => JSON.stringify([activity.getTimeRange(), activity.getActivitySearch(), getGlobalRepo()]),
+  );
   const labelChoices = $derived(activityLabelChoices());
 
   const groups = $derived.by(() => {

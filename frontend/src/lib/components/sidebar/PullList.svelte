@@ -28,6 +28,7 @@
   import { repoGroups, repoItemLabel, type RepoGroup } from "../shared/repo-groups.js";
   import { createRepoLabelFormatter } from "../../utils/repo-label.js";
   import { rememberedLabelChoices } from "../../utils/label-filter.js";
+  import { getGlobalRepo } from "../../stores/filter.svelte.js";
   import {
     INITIAL_RENDER_BUDGET,
     RENDER_BUDGET_STEP,
@@ -122,7 +123,9 @@
     );
   }
 
-  const pullLabelChoices = rememberedLabelChoices(pulls.getPulls, pulls.getLabelFilters);
+  const pullLabelChoices = rememberedLabelChoices(pulls.getPulls, pulls.getLabelFilters, () =>
+    JSON.stringify([pulls.getFilterState(), pulls.getSearchQuery(), getGlobalRepo()]),
+  );
   const labelChoices = $derived(pullLabelChoices());
   const filterMenu = $derived(pullListFilterMenu({
     pulls,

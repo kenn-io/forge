@@ -1962,11 +1962,13 @@ func pullAttributeSections(attributes []string, held, workspaces []RepoItemNumbe
 		END`
 	const pending = `COALESCE(json_extract(c.value, '$.status'), '') IN ('in_progress', 'queued', 'pending', 'waiting')`
 	var review, approval, ci, conflicts, mergeQueue, merging, workspace, fork []string
+	// Sections are emitted in a fixed order, so their arguments must follow that order too.
+	var mergingArgs, workspaceArgs []any
 	hasWorkspace := func() string {
 		if workspaces == nil {
 			workspaces = []RepoItemNumber{}
 		}
-		return repoItemCondition("p", workspaces, args)
+		return repoItemCondition("p", workspaces, &workspaceArgs)
 	}
 	for _, attribute := range attributes {
 		switch attribute {
@@ -1979,9 +1981,9 @@ func pullAttributeSections(attributes []string, held, workspaces []RepoItemNumbe
 		case "not_fork":
 			fork = append(fork, "p.head_repo_kind != 'fork'")
 		case "merge_queued":
-			merging = append(merging, mergeQueuedCondition("p", held, args))
+			merging = append(merging, mergeQueuedCondition("p", held, &mergingArgs))
 		case "not_merge_queued":
-			merging = append(merging, notCondition(mergeQueuedCondition("p", held, args)))
+			merging = append(merging, notCondition(mergeQueuedCondition("p", held, &mergingArgs)))
 		case "approved":
 			approval = append(approval, "upper(trim(p.review_decision)) = 'APPROVED'")
 		case "not_approved":
@@ -2020,6 +2022,7 @@ func pullAttributeSections(attributes []string, held, workspaces []RepoItemNumbe
 				))`)
 		}
 	}
+	*args = append(append(*args, mergingArgs...), workspaceArgs...)
 	return [][]string{review, approval, ci, conflicts, mergeQueue, merging, workspace, fork}
 }
 

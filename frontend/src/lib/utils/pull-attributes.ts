@@ -76,14 +76,6 @@ export const PULL_ATTRIBUTE_SECTIONS: readonly (readonly PullAttributeFilter[])[
   ["fork", "not_fork"],
 ];
 
-/** Attributes only the browser can match; the server never receives them. */
-export const BROWSER_ONLY_PULL_ATTRIBUTES: readonly PullAttributeFilter[] = [
-  "has_workspace",
-  "no_workspace",
-  "fork",
-  "not_fork",
-];
-
 export function pullMatchesAttributeFilters(pr: PullRequest, filters: readonly PullAttributeFilter[]): boolean {
   return matchesFilterSections(PULL_ATTRIBUTE_SECTIONS, filters, (filter) => pullMatchesAttribute(pr, filter));
 }

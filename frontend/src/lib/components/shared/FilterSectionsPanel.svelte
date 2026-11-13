@@ -40,6 +40,11 @@
   function describedBy(item: FilterChoice): string | undefined {
     return item.description ? `${panelId}-${item.id}-description` : undefined;
   }
+
+  function toggleDescription(item: FilterChoice): { ariaDescribedby?: string } {
+    const id = describedBy(item);
+    return id ? { ariaDescribedby: id } : {};
+  }
 </script>
 
 {#snippet values(item: FilterChoice)}
@@ -117,7 +122,7 @@
               <Toggle
                 checked={item.active}
                 disabled={item.disabled ?? false}
-                {...item.description ? { ariaDescribedby: describedBy(item) } : {}}
+                {...toggleDescription(item)}
                 onchange={item.onSelect}
               >
                 <span class="filter-sections-panel__label">{item.label}</span>

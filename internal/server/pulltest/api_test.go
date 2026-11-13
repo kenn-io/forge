@@ -144,7 +144,7 @@ func TestAPIListPullsServerFilters(t *testing.T) {
 				}
 			})
 	}
-	seed(1, "https://github.com/acme/widget.git")
+	seed(1, "https://github.com/acme/widget.git", "needs,ops")
 	seed(2, "https://github.com/contributor/widget.git", "Bug")
 	seed(3, "", "bug", "wontfix")
 	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
@@ -171,6 +171,8 @@ func TestAPIListPullsServerFilters(t *testing.T) {
 	assert.Equal(t, []int{3, 2}, list("labels=BUG"))
 	assert.Equal(t, []int{2}, list("labels=bug&exclude_labels=WontFix&limit=1"))
 	assert.Equal(t, []int{1}, list("exclude_labels=bug"))
+	assert.Equal(t, []int{1}, list("labels=needs%2Cops"), "a comma stays inside its label name")
+	assert.Equal(t, []int{}, list("labels=needs&labels=ops"))
 	assert.Equal(t, []int{3}, list("label=bug"), "the exact label filter stays case-sensitive")
 	invalid := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?attributes=forked", nil)
 	assert.Equal(t, http.StatusBadRequest, invalid.Code, invalid.Body.String())

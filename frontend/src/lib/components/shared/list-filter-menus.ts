@@ -279,7 +279,7 @@ export function issueFilterSections(target: IssueFilterTarget): FilterSection[] 
         ...(target.referencedByPR
           ? [triChoice("referenced-by-pr", "Referenced by PR", target.referencedByPR, target.reload)]
           : []),
-        toggleChoice("hide-bot-authored-issues", "Hide bot-authored issues", target.hideBotAuthors),
+        toggleChoice("hide-bot-authored-issues", "Hide bot-authored issues", target.hideBotAuthors, target.reload),
       ],
     },
   ];

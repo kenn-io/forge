@@ -18,7 +18,6 @@ import {
   providerUsesHostRoute,
 } from "../api/provider-routes.js";
 import {
-  BROWSER_ONLY_PULL_ATTRIBUTES,
   cycleFilterInSections,
   PULL_ATTRIBUTE_SECTIONS,
   pullMatchesAttributeFilters,
@@ -624,7 +623,6 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function listQuery(params?: PullsParams): PullsParams {
     const globalRepo = getGlobalRepo();
-    const serverAttributes = attributeFilters.filter((filter) => !BROWSER_ONLY_PULL_ATTRIBUTES.includes(filter));
     const query: PullsParams = {
       state: filterState,
       ...(globalRepo !== undefined && { repo: globalRepo }),
@@ -633,7 +631,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ...(involvesMe === "exclude" && { not_involves_me: true }),
       ...(unassigned === "require" && { unassigned: true }),
       ...(unassigned === "exclude" && { assigned: true }),
-      ...(serverAttributes.length > 0 && { attributes: serverAttributes.join(",") }),
+      ...(attributeFilters.length > 0 && { attributes: attributeFilters.join(",") }),
       ...labelFilterParams(labelFilters),
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,

@@ -141,7 +141,7 @@ describe("pulls store display order", () => {
     expect(store.getPulls()).toHaveLength(200);
   });
 
-  it("keeps the page with a browser-only attribute filter", async () => {
+  it("reloads from the first page with an attribute filter applied on the server", async () => {
     const rows = Array.from({ length: 400 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
     const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
@@ -150,11 +150,10 @@ describe("pulls store display order", () => {
     store.loadMorePulls();
     await vi.waitFor(() => expect(store.getPulls()).toHaveLength(400));
     get.mockClear();
+    // A filter change is a new query, so it starts again from the first page.
     store.toggleAttributeFilter("draft");
-    expect(get).not.toHaveBeenCalled();
-    await loadPulls(store);
-    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
-    expect(store.getPulls()).toHaveLength(400);
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 200, attributes: "draft" }, expect.anything());
   });
 
   it("rolls back the page after a failed load more and allows retry", async () => {
@@ -746,12 +745,12 @@ describe("pulls store display order", () => {
 
     store.cycleLabelFilter("Bug");
     await vi.waitFor(() => expect(store.isLoading()).toBe(false));
-    expect(lastQuery()).toMatchObject({ labels: "Bug" });
+    expect(lastQuery()).toMatchObject({ labels: ["Bug"] });
 
     store.cycleLabelFilter("Docs");
     store.cycleLabelFilter("Docs");
     await vi.waitFor(() => expect(store.isLoading()).toBe(false));
-    expect(lastQuery()).toMatchObject({ labels: "Bug", exclude_labels: "Docs" });
+    expect(lastQuery()).toMatchObject({ labels: ["Bug"], exclude_labels: ["Docs"] });
 
     store.clearLabelFilters();
     await vi.waitFor(() => expect(store.isLoading()).toBe(false));

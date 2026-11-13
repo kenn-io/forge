@@ -98,8 +98,8 @@ type StreamEventsInput struct {
 // ActivityItemFilterInput narrows Activity by the pull request or issue each row belongs to,
 // before the limit.
 type ActivityItemFilterInput struct {
-	Labels                []string `query:"labels" doc:"Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches."`
-	ExcludeLabels         []string `query:"exclude_labels" doc:"Drop activity whose pull request or issue carries any named label. Names match without case across repositories."`
+	Labels                []string `query:"labels,explode" doc:"Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches."`
+	ExcludeLabels         []string `query:"exclude_labels,explode" doc:"Drop activity whose pull request or issue carries any named label. Names match without case across repositories."`
 	HideBotAuthoredIssues bool     `query:"hide_bot_authored_issues" doc:"Drop issue activity on issues a bot account opened. Pull request and repository activity always passes."`
 	Starred               bool     `query:"starred" doc:"Keep only activity whose pull request or issue is starred."`
 	ReferencedByPR        bool     `query:"referenced_by_pr" doc:"Keep only issue activity on issues a pull request references. Pull request and repository activity always passes."`

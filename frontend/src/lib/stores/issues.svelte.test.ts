@@ -152,7 +152,7 @@ describe("issues store paging", () => {
     },
   );
 
-  it("sends Hide bots to the server and keeps the loaded page size", async () => {
+  it("reloads from the first page with Hide bots applied on the server", async () => {
     const rows = Array.from({ length: 400 }, (_, index) => issue(index + 1, "alice"));
     const get = vi.fn(async (query?: IssuesParams) => rows.slice(0, query?.limit));
     const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
@@ -161,10 +161,10 @@ describe("issues store paging", () => {
     store.loadMoreIssues();
     await vi.waitFor(() => expect(store.getIssues()).toHaveLength(400));
     get.mockClear();
-    // A saved Hide bots that arrives after the first page reloads it, so every row it shows matches.
+    // A saved Hide bots that arrives after the first page reloads it; a new filter starts from the first page.
     store.hydrateDefaults({ hide_bots: true });
     await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
-    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400, hide_bots: true }, expect.anything());
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 200, hide_bots: true }, expect.anything());
   });
 
   it("sends required and excluded labels to the server and reloads on each change", async () => {
@@ -175,10 +175,10 @@ describe("issues store paging", () => {
 
     store.cycleLabelFilter("Bug");
     await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
-    expect(lastQuery()).toMatchObject({ labels: "Bug" });
+    expect(lastQuery()).toMatchObject({ labels: ["Bug"] });
     store.cycleLabelFilter("Bug");
     await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
-    expect(lastQuery()).toMatchObject({ exclude_labels: "Bug" });
+    expect(lastQuery()).toMatchObject({ exclude_labels: ["Bug"] });
     expect(lastQuery()).not.toHaveProperty("labels");
   });
 

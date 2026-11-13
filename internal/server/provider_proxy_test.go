@@ -1582,9 +1582,9 @@ func TestSpokeForwardsListFiltersToHub(t *testing.T) {
 	}
 
 	var pulls []pullapi.MergeRequestResponse
-	query := get("/api/v1/pulls?attributes=fork,no_workspace&labels=Bug,ops&exclude_labels=wontfix", &pulls)
+	query := get("/api/v1/pulls?attributes=fork,no_workspace&labels=Bug&labels=needs%2Cops&exclude_labels=wontfix", &pulls)
 	assert.Equal("fork", query.Get("attributes"))
-	assert.Equal("Bug,ops", query.Get("labels"))
+	assert.Equal([]string{"Bug", "needs,ops"}, query["labels"], "a comma stays inside its label name")
 	assert.Equal("wontfix", query.Get("exclude_labels"))
 	assert.Empty(numbers(pulls), "the hub applied the labels")
 	get("/api/v1/pulls?attributes=fork,no_workspace", &pulls)

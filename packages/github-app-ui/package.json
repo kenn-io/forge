@@ -2,7 +2,7 @@
   "name": "@kenn-forge/github-app-ui",
   "version": "0.0.1",
   "private": true,
-  "license": "Elastic-2.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "node ../../node_modules/vite-plus/bin/vp dev",

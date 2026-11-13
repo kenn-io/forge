@@ -556,8 +556,8 @@ func TestSnapshotRecentlyClosedPullRequests(t *testing.T) {
 		{MergeRequestID: original, EventType: "issue_comment", Author: "contributor", Body: strings.Repeat("界", 1000), DedupeKey: "author", CreatedAt: now},
 		{MergeRequestID: original, EventType: "issue_comment", Author: "maintainer", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, Body: "Thanks", DedupeKey: "member", CreatedAt: now},
 		{MergeRequestID: original, EventType: "issue_comment", Author: "owner", AuthorAssociation: new("OWNER"), MetadataJSON: `{"actor_account_type":"user"}`, Body: "Approved", DedupeKey: "owner", CreatedAt: now},
-		{MergeRequestID: original, EventType: "issue_comment", Author: "unknown", Body: "Reason", DedupeKey: "unknown", CreatedAt: now},
-		{MergeRequestID: original, EventType: "issue_comment", Author: "collaborator", AuthorAssociation: new("COLLABORATOR"), Body: "Closing in favor of the replacement", DedupeKey: "collaborator", CreatedAt: now},
+		{MergeRequestID: original, EventType: "issue_comment", Author: "unknown", AuthorAssociation: new("COLLABORATOR"), Body: "Reason", DedupeKey: "unknown", CreatedAt: now},
+		{MergeRequestID: original, EventType: "issue_comment", Author: "collaborator", AuthorAssociation: new("COLLABORATOR"), MetadataJSON: `{"actor_account_type":"user"}`, Body: "Closing in favor of the replacement", DedupeKey: "collaborator", CreatedAt: now},
 		{MergeRequestID: original, EventType: "issue_comment", Author: "other", AuthorAssociation: new("CONTRIBUTOR"), Body: "Other", DedupeKey: "other", CreatedAt: now},
 		{MergeRequestID: original, EventType: "cross_referenced", MetadataJSON: `{"source_type":"PullRequest","source_owner":"owner","source_repo":"project","source_number":2,"source_url":"https://github.test/pull/2","is_cross_repository":false}`, DedupeKey: "reference", CreatedAt: now},
 		{MergeRequestID: merged, EventType: "issue_comment", Body: "Unknown author", DedupeKey: "empty-author", CreatedAt: now},
@@ -578,8 +578,9 @@ func TestSnapshotRecentlyClosedPullRequests(t *testing.T) {
 	require.Contains(result.PullRequests[1].Gaps, "comment_author_association_unknown")
 	require.Equal(db.MergeRequestStateClosed, db.MergeRequestState(result.PullRequests[0].State))
 	require.Equal(&closed, result.PullRequests[0].ClosedAt)
-	require.Len(result.PullRequests[0].Comments, 3)
+	require.Len(result.PullRequests[0].Comments, 4)
 	require.Equal(strings.Repeat("界", 1000), result.PullRequests[0].Comments[0].Body)
+	require.Equal("Closing in favor of the replacement", result.PullRequests[0].Comments[3].Body)
 	require.Contains(result.PullRequests[0].Gaps, "comment_author_association_unknown")
 	require.Len(result.Relations, 1)
 }

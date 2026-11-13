@@ -71302,7 +71302,7 @@ type SnapshotPullRequest struct {
 	ClosedAt          *time.Time      `json:"closed_at,omitempty"`
 	ClosedBy          *string         `json:"closed_by,omitempty"`
 
-	// Comments For terminal pull requests, comments by the author or MEMBER/OWNER accounts.
+	// Comments For terminal pull requests, comments by the author or known human MEMBER, OWNER, and COLLABORATOR accounts.
 	Comments  []SnapshotComment `json:"comments,omitempty"`
 	CreatedAt time.Time         `json:"created_at"`
 	Deletions *int64            `json:"deletions"`

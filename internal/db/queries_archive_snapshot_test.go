@@ -102,6 +102,10 @@ func TestSnapshotMeasurementCountsFullContributorBodies(t *testing.T) {
 	after := measure(true)
 	assert.Equal(t, actions.Records+1, after.Records)
 	assert.GreaterOrEqual(t, after.TextBytes-actions.TextBytes, int64(len(comment)))
+	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: "collaborator", AuthorAssociation: new("COLLABORATOR"), MetadataJSON: `{"actor_account_type":"user"}`, Body: comment, DedupeKey: "collaborator", CreatedAt: now}}))
+	collaborator := measure(true)
+	assert.Equal(t, after.Records+1, collaborator.Records)
+	assert.GreaterOrEqual(t, collaborator.TextBytes-after.TextBytes, int64(len(comment)))
 }
 
 func TestSnapshotActivityMatchesGiteaHeadCommit(t *testing.T) {

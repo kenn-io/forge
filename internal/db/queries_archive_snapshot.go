@@ -97,7 +97,7 @@ const archiveSnapshotLinks = `link_candidates AS (
 
 const (
 	archiveSnapshotCommentBody   = `COALESCE(CAST(substr(CAST(COALESCE(e.body,'') AS BLOB),1,33554433) AS TEXT),'')`
-	archiveSnapshotCommentFilter = `((p.author <> '' AND lower(e.author)=lower(p.author)) OR (upper(e.author_association) IN ('MEMBER','OWNER') AND ` + archiveSnapshotHumanActor + `))`
+	archiveSnapshotCommentFilter = `((p.author <> '' AND lower(e.author)=lower(p.author)) OR (upper(e.author_association) IN ('MEMBER','OWNER','COLLABORATOR') AND ` + archiveSnapshotHumanActor + `))`
 	archiveSnapshotHumanActor    = `(e.author<>'' AND instr(lower(e.author),'[bot]')=0 AND lower(COALESCE(json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.actor_account_type'),'')) IN ('user','organization'))`
 )
 
@@ -206,7 +206,7 @@ func LoadArchiveSnapshotItems(ctx context.Context, tx *sql.Tx, repoIDs []int64, 
  (SELECT json_group_array(l.name) FROM forge_merge_request_labels ml JOIN forge_labels l ON l.id=ml.label_id WHERE ml.merge_request_id=p.id),
  p.is_draft,COALESCE(p.platform_head_sha,''),COALESCE(p.head_branch,''),COALESCE(p.base_branch,''),COALESCE(p.head_repo_clone_url,''),p.head_repo_identity_stale,p.additions,p.deletions,p.files_changed,COALESCE(p.review_decision,''),COALESCE(p.ci_status,''),COALESCE(p.ci_checks_json,''),COALESCE(p.mergeable_state,''),
  p.assignees_json,p.reviewers_json,p.last_activity_at,p.closed_at,p.merged_at,p.ci_observed_at,p.review_decision_observed_at,p.mergeable_state_observed_at,
- EXISTS (SELECT 1 FROM forge_mr_events e WHERE e.merge_request_id=p.id AND p.state IN ('closed','merged') AND e.event_type='issue_comment' AND (p.author = '' OR lower(e.author) != lower(p.author)) AND NOT COALESCE(`+archiveSnapshotCommentFilter+`,0) AND (e.author_association IS NULL OR e.author_association='' OR (upper(e.author_association) IN ('MEMBER','OWNER') AND NOT `+archiveSnapshotHumanActor+` AND instr(lower(e.author),'[bot]')=0 AND lower(COALESCE(json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.actor_account_type'),''))<>'bot'))),
+ EXISTS (SELECT 1 FROM forge_mr_events e WHERE e.merge_request_id=p.id AND p.state IN ('closed','merged') AND e.event_type='issue_comment' AND (p.author = '' OR lower(e.author) != lower(p.author)) AND NOT COALESCE(`+archiveSnapshotCommentFilter+`,0) AND (e.author_association IS NULL OR e.author_association='' OR (upper(e.author_association) IN ('MEMBER','OWNER','COLLABORATOR') AND NOT `+archiveSnapshotHumanActor+` AND instr(lower(e.author),'[bot]')=0 AND lower(COALESCE(json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.actor_account_type'),''))<>'bot'))),
  EXISTS (SELECT 1 FROM reference_candidates c WHERE c.target_id=p.id AND c.source_provider_id IS NULL),selected.body_class
  FROM forge_merge_requests p JOIN pulls selected ON selected.id=p.id JOIN forge_repos r ON r.id=p.repo_id
  UNION ALL

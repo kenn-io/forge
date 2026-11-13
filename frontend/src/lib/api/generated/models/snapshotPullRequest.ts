@@ -23,7 +23,7 @@ export interface SnapshotPullRequest {
   /** @nullable */
   closed_at?: string | null;
   closed_by?: string;
-  /** For terminal pull requests, comments by the author or MEMBER/OWNER accounts. */
+  /** For terminal pull requests, comments by the author or known human MEMBER, OWNER, and COLLABORATOR accounts. */
   comments?: SnapshotComment[];
   created_at: string;
   /** @nullable */

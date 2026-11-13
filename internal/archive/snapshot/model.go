@@ -74,7 +74,7 @@ type SnapshotPullRequest struct {
 	LastAuthorAction     *SnapshotAction   `json:"last_author_action,omitempty"`
 	LastMaintainerAction *SnapshotAction   `json:"last_maintainer_action,omitempty"`
 	ClosedBy             *string           `json:"closed_by,omitempty"`
-	Comments             []SnapshotComment `json:"comments,omitzero" doc:"For terminal pull requests, comments by the author or MEMBER/OWNER accounts."`
+	Comments             []SnapshotComment `json:"comments,omitzero" doc:"For terminal pull requests, comments by the author or known human MEMBER, OWNER, and COLLABORATOR accounts."`
 	Draft                bool              `json:"draft"`
 	HeadSHA              string            `json:"head_sha"`
 	HeadBranch           string            `json:"head_branch"`

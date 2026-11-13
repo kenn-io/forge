@@ -10329,7 +10329,7 @@ components:
         closed_by:
           type: string
         comments:
-          description: For terminal pull requests, comments by the author or MEMBER/OWNER accounts.
+          description: For terminal pull requests, comments by the author or known human MEMBER, OWNER, and COLLABORATOR accounts.
           items:
             $ref: "#/components/schemas/SnapshotComment"
           type: array

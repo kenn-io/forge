@@ -78,6 +78,19 @@ func insertTestMRWithOptions(t *testing.T, d *DB, mr *MergeRequest) int64 {
 	return id
 }
 
+func insertTestMRBeforeAuthorType(t *testing.T, d *DB, mr *MergeRequest) int64 {
+	t.Helper()
+	var id int64
+	err := d.WriteDB().QueryRowContext(t.Context(), `INSERT INTO forge_merge_requests
+		(repo_id, platform_id, number, url, title, author, state, head_branch, base_branch,
+		 created_at, updated_at, last_activity_at, merged_at, closed_at, auto_merge_enabled)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+		mr.RepoID, mr.PlatformID, mr.Number, mr.URL, mr.Title, mr.Author, mr.State, mr.HeadBranch, mr.BaseBranch,
+		mr.CreatedAt, mr.UpdatedAt, mr.LastActivityAt, mr.MergedAt, mr.ClosedAt, mr.AutoMergeEnabled).Scan(&id)
+	require.NoError(t, err)
+	return id
+}
+
 func insertTestMR(t *testing.T, d *DB, repoID int64, number int, title string, activity time.Time) int64 {
 	t.Helper()
 	return insertTestMRWithOptions(t, d, testMR(repoID, number, withMRTitle(title), withMRActivity(activity)))

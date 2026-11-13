@@ -53,7 +53,9 @@ func (a *ACP) publishMessageLocked(index int) {
 
 func (a *ACP) insertMessageLocked(index int, message ACPMessage) {
 	a.initializeMessagesLocked()
-	message.ID = rand.Text()
+	if message.ID == "" {
+		message.ID = rand.Text()
+	}
 	if index > 0 {
 		message.PreviousID = a.state.Messages[index-1].ID
 	}

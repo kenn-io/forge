@@ -106,6 +106,26 @@ On Windows, ending a conversation with `/clear` or exit clears its badge even
 if another program, such as a virus scanner, has the activity file open. If
 Forge can't clear it, the SessionEnd hook fails and names the file.
 
+## Continue an agent you started elsewhere
+
+With hooks installed, an agent running in any terminal gets a workspace when its
+Git worktree holds the head of an open pull request. The workspace uses that
+worktree and shows the agent's conversation in its chat as it happens.
+
+- In a Herdr pane, you can type in either
+  place and the other shows it. `herdr` must be on the Forge daemon's `PATH`.
+- In any other terminal, the chat is read-only until the agent exits.
+- Claude and Codex conversations show while the agent runs. Other agents' chats
+  stay empty until the agent exits and Forge loads the session.
+- After the agent exits, your next prompt continues the same session in Forge.
+  This needs a chat agent in Settings whose key starts with the agent's name,
+  such as `claude-chat`.
+- The worktree needs a remote for the repository the pull request targets. A
+  checkout whose only remote is a fork gets no workspace.
+
+Tool approvals stay in the agent's terminal while it runs. Deleting the workspace
+keeps the worktree and branch and leaves the agent running.
+
 ## Attach outside the browser
 
 Workspace and session controls expose tmux attach commands. This is useful for

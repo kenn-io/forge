@@ -98,6 +98,9 @@ type ACP struct {
 	// replaying drops the agent's history replay during session/load: the
 	// saved transcript, not the replay, is the conversation of record.
 	replaying bool
+	// importingHistory marks a load whose replay becomes the transcript, since
+	// Forge kept none of the session (acpSavedSession.ImportHistory).
+	importingHistory bool
 	// external is a turn the agent started itself after a steering request.
 	// It ends when the agent reports an idle thread after an active one.
 	external     *acpExternalTurn
@@ -276,6 +279,10 @@ type ACPState struct {
 	// true while that start runs. Only the daemon sets them.
 	Dormant  bool `json:"dormant,omitempty"`
 	Starting bool `json:"starting,omitempty"`
+	// ExternalReadOnly marks a chat mirroring an agent that runs outside Forge in
+	// a terminal Forge cannot type into, so it takes no input until that agent
+	// exits.
+	ExternalReadOnly bool `json:"externalReadOnly,omitempty"`
 	// Notices explain a degraded but usable session start. They are not
 	// errors: the chat works, and they last for the life of the session.
 	Notices []string `json:"notices,omitempty"`
@@ -524,7 +531,8 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 		} else if load {
 			a.mu.Lock()
 			a.sessionID = saved.SessionID
-			a.replaying = true
+			a.replaying = !saved.ImportHistory
+			a.importingHistory = saved.ImportHistory
 			a.mu.Unlock()
 			var loaded acpsdk.LoadSessionResponse
 			step = "session/load"
@@ -532,17 +540,19 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 			loaded, err = a.client.LoadSession(initCtx, acpsdk.LoadSessionRequest{Cwd: cwd, McpServers: mcpServers, SessionId: acpsdk.SessionId(saved.SessionID)})
 			tracing.EndSpan(stepSpan, err)
 			a.mu.Lock()
-			a.replaying = false
+			a.replaying, a.importingHistory = false, false
 			if err == nil {
 				a.state.ConfigOptions = acpConfigOptions(loaded.ConfigOptions)
-				a.restoreTranscriptLocked(saved.State)
+				if !saved.ImportHistory {
+					a.restoreTranscriptLocked(saved.State)
+				}
 			}
 			a.mu.Unlock()
 			// An agent may store a session only at its first prompt, as
 			// Claude Code does, so a session that never received one cannot
 			// be loaded. It holds no agent context, so a new session loses
 			// nothing.
-			if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok && requestErr.Code == acpResourceNotFound && !saved.State.prompted() {
+			if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok && requestErr.Code == acpResourceNotFound && !saved.State.prompted() && !saved.AgentPrompted {
 				load, err = false, nil
 				// The new session's updates may arrive before its ID does.
 				a.mu.Lock()

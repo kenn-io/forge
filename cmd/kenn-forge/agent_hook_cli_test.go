@@ -78,6 +78,24 @@ func TestAgentHookRunRelaysLifecyclePayloadToDaemon(t *testing.T) {
 	assert.JSONEq(payload, string(receivedPayload))
 }
 
+func TestAgentHookReportsWhatOnlyTheHookCanSeeAboutAnExternalAgent(t *testing.T) {
+	t.Setenv("HERDR_PANE_ID", "w1:p1")
+	t.Setenv("HERDR_SOCKET_PATH", "/run/herdr.sock")
+	t.Run("an agent Forge launched reports nothing extra", func(t *testing.T) {
+		t.Setenv(agentactivity.RuntimeSessionKeyEnv, "runtime-1")
+		header := http.Header{}
+		setExternalAgentHeaders(header)
+		assert.Empty(t, header)
+	})
+	t.Run("an agent in a Herdr pane names the pane and its server", func(t *testing.T) {
+		t.Setenv(agentactivity.RuntimeSessionKeyEnv, "")
+		header := http.Header{}
+		setExternalAgentHeaders(header)
+		assert.Equal(t, "w1:p1", header.Get("X-Kenn-Forge-Herdr-Pane"))
+		assert.Equal(t, "/run/herdr.sock", header.Get("X-Kenn-Forge-Herdr-Socket"))
+	})
+}
+
 func TestAgentHookRunNormalizesGeminiLifecyclePayload(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

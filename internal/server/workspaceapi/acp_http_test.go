@@ -135,22 +135,17 @@ func TestChatSocketServesASavedChatAndReportsItsStartFailure(t *testing.T) {
 
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(`{"type":"prompt","mode":"send","id":"p1","text":"hello"}`)))
 	var refused chatFrame
-	var failed *localruntime.ACPState
-	for refused.CommandError == "" || failed == nil {
+	for refused.CommandError == "" {
 		frame := readChatFrame(ctx, t, conn)
-		if frame.CommandError != "" {
-			refused = frame
-		}
-		if frame.Updates != nil && frame.Updates.Error != "" {
-			failed = frame.Updates
+		refused = frame
+		if frame.Updates != nil {
+			assert.Empty(t, frame.Updates.Error, "the refusal shows beside the prompt, not as a chat-wide error too")
 		}
 	}
 	assert.Equal(t, "prompt", refused.Command)
 	assert.Equal(t, "p1", refused.ID)
 	const cannotReload = "this chat's agent cannot reload its session, so it stays on the previous Forge version; closing its tab stops the agent and deletes the chat"
 	assert.Contains(t, refused.CommandError, cannotReload)
-	assert.False(t, failed.Starting, "a failed start stays shown as starting")
-	assert.Contains(t, failed.Error, cannotReload)
 	_, commands := owner.received()
 	assert.Empty(t, commands, "the old owner received the prompt")
 }

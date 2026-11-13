@@ -329,6 +329,10 @@ func (m *Manager) PrepareAgentLaunchContext(
 	if workspace == nil {
 		return ErrWorkspaceNotFound
 	}
+	// Forge writes nothing into a checkout it did not create.
+	if workspace.ExternalWorktree {
+		return nil
+	}
 	summary, err := m.lifecycleSummary(ctx, workspace)
 	if err != nil {
 		return fmt.Errorf("validate workspace launch specification: %w", err)

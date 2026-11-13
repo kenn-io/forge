@@ -95,6 +95,15 @@ type ACP struct {
 	heldSeq          uint64
 	lastTextDelivery time.Time
 	textDelivery     *time.Timer
+	// savedBase is the snapshot this owner last wrote; empty until it writes
+	// one. savedCursor and savedMetadata describe what the last save held,
+	// and the byte counts decide when the journal is rewritten as a
+	// snapshot. See acp_journal.go.
+	savedBase     string
+	savedCursor   uint64
+	savedMetadata [32]byte
+	snapshotBytes int
+	journalBytes  int
 	// replaying drops the agent's history replay during session/load: the
 	// saved transcript, not the replay, is the conversation of record.
 	replaying bool

@@ -21,10 +21,8 @@ import (
 
 func readSavedSession(t *testing.T, path string) acpSavedSession {
 	t.Helper()
-	data, err := os.ReadFile(path)
+	saved, err := readACPSaved(path)
 	require.NoError(t, err)
-	var saved acpSavedSession
-	require.NoError(t, json.Unmarshal(data, &saved))
 	return saved
 }
 
@@ -74,11 +72,11 @@ func TestACPPromptSendingAtCrashRunsAfterRestore(t *testing.T) {
 	c := newInProcessChat(t)
 	recordPath := c.recordPath()
 	first := c.start(nil)
-	var atCrash []byte
+	var saved acpSavedSession
 	var err error
 	first.beforePromptWrite = func() {
-		// session.json now holds what a crashed owner would leave behind.
-		atCrash, err = os.ReadFile(recordPath)
+		// The saved session now holds what a crashed owner would leave behind.
+		saved, err = readACPSaved(recordPath)
 		require.NoError(t, err)
 		require.NoError(t, first.cmd.Process.Kill())
 		<-first.Done()
@@ -90,8 +88,6 @@ func TestACPPromptSendingAtCrashRunsAfterRestore(t *testing.T) {
 	assert.Equal(t, []ACPQueuedPrompt{kept}, live.Queue, "a prompt whose write failed waits at the head of the queue")
 	assert.True(t, live.QueuePaused)
 
-	var saved acpSavedSession
-	require.NoError(t, json.Unmarshal(atCrash, &saved))
 	require.Equal(t, &kept, saved.State.Sending)
 	require.Empty(t, saved.State.Queue)
 	second := c.start(&saved)
@@ -119,16 +115,15 @@ func TestACPSteerAcceptedBeforeACrashRunsAfterRestore(t *testing.T) {
 	first := c.start(nil)
 	require.NoError(t, first.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
 	require.True(t, publishedACPState(t, first).SteeringSupported)
-	atCrash := make(chan []byte, 1)
+	atCrash := make(chan acpSavedSession, 1)
 	first.beforePromptWrite = func() {
-		data, _ := os.ReadFile(recordPath)
-		atCrash <- data
+		saved, _ := readACPSaved(recordPath)
+		atCrash <- saved
 		_ = first.cmd.Process.Kill()
 		<-first.Done()
 	}
 	require.NoError(t, first.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}), "a steer is accepted at once")
-	var saved acpSavedSession
-	require.NoError(t, json.Unmarshal(<-atCrash, &saved))
+	saved := <-atCrash
 	adjust := ACPQueuedPrompt{ID: "steer", Text: "adjust", Sender: ACPSender{Kind: ACPSenderUser}}
 	require.Equal(t, []ACPQueuedPrompt{adjust}, saved.State.Steers, "the steer is saved before the agent sees it")
 	require.Eventually(t, func() bool {

@@ -439,10 +439,7 @@ func TestApplyOwnerUpgradeKeepsTheHandoffUntilItsPromptsAreSaved(t *testing.T) {
 	require.NoError(t, agent.applyOwnerUpgrade(dir))
 
 	assert.NoFileExists(t, handoff)
-	data, err = os.ReadFile(agent.recordPath)
-	require.NoError(t, err)
-	var saved acpSavedSession
-	require.NoError(t, json.Unmarshal(data, &saved))
+	saved := readSavedSession(t, agent.recordPath)
 	require.Len(t, saved.State.Queue, 1, "applying the handoff again must not queue the prompt twice")
 	assert.Equal(t, "unsaved", saved.State.Queue[0].ID)
 }

@@ -342,9 +342,7 @@ func TestACPReloadOfSessionTheAgentNeverStored(t *testing.T) {
 				// The agent gives the new session its own ID.
 				saved := savedACPSession(t, first, info.Key)
 				saved.SessionID = "stale-session"
-				data, err := json.Marshal(saved)
-				require.NoError(t, err)
-				require.NoError(t, os.WriteFile(first.acpSessionPath(info.Key), data, 0o600))
+				writeSavedACPSession(t, first, info.Key, saved)
 			}
 
 			second := newACPTestManager(t, options)
@@ -666,12 +664,21 @@ func restoreACPChat(manager *Manager, info SessionInfo, dir string) error {
 	return manager.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{storedACPChat(info, dir)})
 }
 
+// writeSavedACPSession replaces a chat's saved session with saved as a
+// standalone snapshot. A journal extends only the snapshot its owner wrote,
+// so the old journal must not apply on top of an edited one.
+func writeSavedACPSession(t *testing.T, manager *Manager, key string, saved acpSavedSession) {
+	t.Helper()
+	saved.Base = ""
+	data, err := json.Marshal(saved)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(manager.acpSessionPath(key), data, 0o600))
+}
+
 func savedACPSession(t *testing.T, manager *Manager, key string) acpSavedSession {
 	t.Helper()
-	data, err := os.ReadFile(manager.acpSessionPath(key))
+	saved, err := manager.readSavedACP(key)
 	require.NoError(t, err)
-	var saved acpSavedSession
-	require.NoError(t, json.Unmarshal(data, &saved))
 	return saved
 }
 
@@ -799,9 +806,7 @@ func TestACPTakenOverChatIsNotSupervised(t *testing.T) {
 	saved := savedACPSession(t, manager, info.Key)
 	require.NotNil(t, saved.State.Supervision)
 	saved.State.Supervision.TakenOver = true
-	data, err := json.Marshal(saved)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(manager.acpSessionPath(info.Key), data, 0o600))
+	writeSavedACPSession(t, manager, info.Key, saved)
 
 	supervised, err := manager.SupervisedACP("workspace", info.Key)
 	require.NoError(t, err)

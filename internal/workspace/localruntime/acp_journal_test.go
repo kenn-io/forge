@@ -155,6 +155,28 @@ func TestACPSnapshotSaveSucceedsWhenTheOldJournalStays(t *testing.T) {
 	})
 }
 
+// A journal a failed removal left behind can end in a partial record. Saves
+// after the new snapshot replace it rather than append behind that record.
+func TestACPSavesAfterASnapshotReplaceAnOldJournal(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		agent.recordPath = filepath.Join(t.TempDir(), "session.json")
+		require.NoError(t, agent.Prompt("work", ACPSender{Kind: ACPSenderUser}))
+		// The state a snapshot whose journal removal failed leaves behind.
+		stale, err := json.Marshal(acpJournalRecord{Base: "old"})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(acpJournalPath(agent.recordPath), append(append(stale, '\n'), `{"Base":"`...), 0o600))
+
+		acpToolCall(t, agent, "first", acpsdk.ToolCallStatusCompleted)
+		acpToolCall(t, agent, "second", acpsdk.ToolCallStatusCompleted)
+		statuses := savedToolStatuses(t, agent.recordPath)
+		assert.Contains(t, statuses, "first")
+		assert.Contains(t, statuses, "second")
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+	})
+}
+
 // An entry inserted before another reads back in its place, though the
 // journal records it after the entry it precedes.
 func TestACPJournalRestoresInsertedEntriesInPlace(t *testing.T) {

@@ -239,10 +239,16 @@ func (a *ACP) changedMessagesLocked(cursor uint64) []ACPMessage {
 }
 
 // appendSynced appends data and syncs it. The first append after a snapshot
-// may create the file, and its directory entry is durable only once the
-// directory is synced too.
-func appendSynced(path string, data []byte, creating bool) (err error) {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+// starts the journal over: an old journal whose removal failed can end in a
+// partial record, which would hide every record after it. That append may
+// create the file, and its directory entry is durable only once the directory
+// is synced too.
+func appendSynced(path string, data []byte, first bool) (err error) {
+	flags := os.O_WRONLY | os.O_CREATE | os.O_APPEND
+	if first {
+		flags = os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	}
+	file, err := os.OpenFile(path, flags, 0o600)
 	if err != nil {
 		return err
 	}
@@ -253,8 +259,13 @@ func appendSynced(path string, data []byte, creating bool) (err error) {
 	if err := file.Sync(); err != nil {
 		return err
 	}
-	if creating {
-		return atomicfile.SyncDir(filepath.Dir(path))
+	if !first {
+		return nil
+	}
+	// The record is written and synced, so it replays on reload; the save
+	// happened, as with a snapshot whose directory sync fails.
+	if err := atomicfile.SyncDir(filepath.Dir(path)); err != nil {
+		slog.Warn("sync ACP chat journal directory", "path", path, "err", err)
 	}
 	return nil
 }

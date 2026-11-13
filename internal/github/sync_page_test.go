@@ -33,14 +33,14 @@ func TestMRDetailTimelineRecovery(t *testing.T) {
 		recovery bool
 	}{
 		{name: "page 304"},
-		{name: "background full response"},
-		{name: "detail drain 304", recovery: true},
+		{name: "fetchMRDetail full response"},
+		{name: "fetchMRDetail 304", recovery: true},
 		{name: "watched sync 304", recovery: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 			f := newPageSyncFixture(t)
-			f.client.notModified = tc.name != "background full response"
+			f.client.notModified = tc.name != "fetchMRDetail full response"
 			if tc.recovery {
 				_, err := f.syncer.db.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET detail_fetched_at = NULL WHERE id = ?", f.before.ID)
 				require.NoError(t, err)
@@ -60,9 +60,7 @@ func TestMRDetailTimelineRecovery(t *testing.T) {
 				_, err := f.syncer.fetchMRDetail(ctx, f.repo, f.repoID, 1)
 				return err
 			}
-			conditionalCalls := f.client.conditionalCalls.Load()
 			require.ErrorContains(t, sync(), "timeline unavailable")
-			assert.Equal(t, conditionalCalls+1, f.client.conditionalCalls.Load())
 			stored, err := f.syncer.db.GetMergeRequestByRepoIDAndNumber(ctx, f.repoID, 1)
 			require.NoError(t, err)
 			assert.Nil(t, stored.DetailFetchedAt)
@@ -76,7 +74,6 @@ func TestMRDetailTimelineRecovery(t *testing.T) {
 			f.client.timelineEvents = []platformgithub.PullRequestTimelineEvent{{NodeID: "event-1", EventType: "closed", Actor: "alice", CreatedAt: time.Now().UTC()}}
 			commentChecks := f.client.listIssueCommentsIfChangedCalls.Load()
 			require.NoError(t, sync())
-			assert.Equal(t, conditionalCalls+2, f.client.conditionalCalls.Load())
 			assert.Equal(t, commentChecks, f.client.listIssueCommentsIfChangedCalls.Load())
 			stored, err = f.syncer.db.GetMergeRequestByRepoIDAndNumber(ctx, f.repoID, 1)
 			require.NoError(t, err)

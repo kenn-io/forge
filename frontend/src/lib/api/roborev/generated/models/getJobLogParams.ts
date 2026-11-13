@@ -3,12 +3,8 @@
  */
 
 export type GetJobLogParams = {
-  /**
-   * Job ID
-   */
+  /** Job ID */
   job_id?: string;
-  /**
-   * Byte offset into the log file
-   */
+  /** Byte offset into the log file */
   offset?: string;
 };

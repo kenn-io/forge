@@ -4,14 +4,14 @@
   import { onDestroy, untrack } from "svelte";
   import { getStores } from "../../context.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { createRoborevClient, executeRoborevRequest } from "../../api/roborev/client.js";
-  import * as roborevAPI from "../../api/roborev/generated/client.js";
+  import { createRoborevClient } from "../../api/roborev/client.js";
   import { createDaemonStore } from "../../stores/roborev/daemon.svelte.js";
   import { createJobsStore } from "../../stores/roborev/jobs.svelte.js";
   import { createReviewStore } from "../../stores/roborev/review.svelte.js";
   import { createLogStore } from "../../stores/roborev/log.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import { makeRoborevOwner, RoborevResponseError, RoborevWorkflow } from "../../stores/roborev/roborev-workflow.js";
+  import { resolveRoborevRepoRoot } from "../../stores/roborev/resolve-repo.js";
+  import { makeRoborevOwner, RoborevWorkflow } from "../../stores/roborev/roborev-workflow.js";
   import SidebarStoreScope from "./SidebarStoreScope.svelte";
   import FilterBar from "../roborev/FilterBar.svelte";
   import DaemonStatus from "../roborev/DaemonStatus.svelte";
@@ -60,17 +60,7 @@
         if (!daemon.isAvailable()) return;
         if (!repositorySelected) {
           if (!requestedPath) return;
-          const result = yield* executeRoborevRequest("resolve workspace Roborev repository", (signal) =>
-            roborevAPI.resolveRepo({ path: requestedPath }, { signal }, client),
-          );
-          if (result.status !== 200) {
-            return yield* Effect.fail(RoborevResponseError.make({
-              operation: "resolve workspace Roborev repository",
-              message: "Failed to resolve repository",
-              cause: result.data,
-            }));
-          }
-          const rootPath = result.data.tracked ? result.data.repo?.root_path : undefined;
+          const rootPath = yield* resolveRoborevRepoRoot(client, requestedPath);
           if (!rootPath) return;
           yield* Effect.sync(() => {
             repositorySelected = true;

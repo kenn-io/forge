@@ -3,40 +3,22 @@
  */
 
 export type ExportReviewsParams = {
-  /**
-   * Output format; only json is supported
-   */
+  /** Output format; only json is supported */
   format?: string;
-  /**
-   * Export profile: content or metadata
-   */
+  /** Export profile: content or metadata */
   profile?: string;
-  /**
-   * Inclusive completed_at lower bound (RFC3339 or YYYY-MM-DD)
-   */
+  /** Inclusive completed_at lower bound (RFC3339 or YYYY-MM-DD) */
   since?: string;
-  /**
-   * Exclusive completed_at upper bound (RFC3339 or YYYY-MM-DD; date-only means through that UTC day)
-   */
+  /** Exclusive completed_at upper bound (RFC3339 or YYYY-MM-DD; date-only means through that UTC day) */
   until?: string;
-  /**
-   * Only include reviews marked closed
-   */
+  /** Only include reviews marked closed */
   closed_only?: boolean;
-  /**
-   * Exact exported repo identifier filter
-   */
+  /** Exact exported repo identifier filter */
   repo?: string;
-  /**
-   * Exact project display-name filter
-   */
+  /** Exact project display-name filter */
   project?: string;
-  /**
-   * Maximum top-level reviews in this page
-   */
+  /** Maximum top-level reviews in this page */
   limit?: number;
-  /**
-   * Opaque next_cursor from a previous page. Resumes strictly after its (completed_at, review_id) position; mutually exclusive with since.
-   */
+  /** Opaque next_cursor from a previous page. Resumes strictly after its (completed_at, review_id) position; mutually exclusive with since. */
   cursor?: string;
 };

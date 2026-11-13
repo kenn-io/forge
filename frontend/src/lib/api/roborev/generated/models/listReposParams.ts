@@ -3,12 +3,8 @@
  */
 
 export type ListReposParams = {
-  /**
-   * Filter to repos with jobs on this branch
-   */
+  /** Filter to repos with jobs on this branch */
   branch?: string;
-  /**
-   * Filter repos by path prefix
-   */
+  /** Filter repos by path prefix */
   prefix?: string;
 };

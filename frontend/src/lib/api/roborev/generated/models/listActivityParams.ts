@@ -3,8 +3,6 @@
  */
 
 export type ListActivityParams = {
-  /**
-   * Maximum entries to return
-   */
+  /** Maximum entries to return */
   limit?: string;
 };

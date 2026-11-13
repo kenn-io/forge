@@ -678,8 +678,10 @@ Mobile layouts may redirect between list and detail surfaces, but must preserve 
 - A component claiming menu-like behavior honors that role's keyboard contract, or uses simpler semantics.
 - Kata association selection stays available while detail refreshes; background freshness must not
   block link selection or Forge-owned actions.
-- Local Roborev reviews belong to the PR workspace panel: read on display or explicit action, never
-  poll globally or refresh hidden panels.
+- Local Roborev reviews belong to the PR workspace panel and the PR detail Roborev timeline: read on
+  display or explicit action, never poll globally or refresh hidden panels. The timeline reads the PR's
+  local workspace path and merges roborev's marked PR comments
+  (`frontend/src/lib/components/roborev/pr-review-timeline.ts`).
 - Resolve local reviews from the workspace's actual path; unresolved paths require an explicit choice, and
   remote workspaces cannot use the viewing node's Roborev authority.
 - Teardown of a catalog consumer cancels only that consumer's reads, never review runs or siblings.

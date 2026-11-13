@@ -3,8 +3,6 @@
  */
 
 export type StreamEventsParams = {
-  /**
-   * Filter events by repo root path
-   */
+  /** Filter events by repo root path */
   repo?: string;
 };

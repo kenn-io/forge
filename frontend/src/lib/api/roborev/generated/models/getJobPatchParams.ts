@@ -3,8 +3,6 @@
  */
 
 export type GetJobPatchParams = {
-  /**
-   * Job ID
-   */
+  /** Job ID */
   job_id?: string;
 };

@@ -3,12 +3,8 @@
  */
 
 export type GetReviewParams = {
-  /**
-   * Look up review by job ID
-   */
+  /** Look up review by job ID */
   job_id?: number;
-  /**
-   * Look up review by commit SHA
-   */
+  /** Look up review by commit SHA */
   sha?: string;
 };

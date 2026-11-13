@@ -3,12 +3,8 @@
  */
 
 export type GetJobOutputParams = {
-  /**
-   * Job ID
-   */
+  /** Job ID */
   job_id?: string;
-  /**
-   * Stream output as NDJSON when set to 1
-   */
+  /** Stream output as NDJSON when set to 1 */
   stream?: string;
 };

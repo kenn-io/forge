@@ -5,6 +5,7 @@ import {
   labelFilterChoices,
   labelFilterSummary,
   matchesLabelFilters,
+  rememberedLabelChoices,
   type LabelFilters,
 } from "./label-filter.js";
 
@@ -70,5 +71,29 @@ describe("label filters", () => {
     filters = cycleLabelFilter(filters, "bug");
     filters = cycleLabelFilter(filters, "bug");
     expect(labelFilterSummary(filters)).toBe("1 excl");
+  });
+
+  it("keeps label choices while cycling labels, and follows a new scope's own results", () => {
+    let items = [{ labels: labels("bug", "docs") }, { labels: labels("docs") }];
+    let filters: LabelFilters = new Map();
+    let scope = "repo-a";
+    const choices = rememberedLabelChoices(
+      () => items,
+      () => filters,
+      () => scope,
+    );
+    const names = () => choices().map((choice) => choice.name);
+    expect(names()).toEqual(["docs", "bug"]);
+
+    // The server applies the label, so only matching rows come back; choices stay put.
+    filters = cycleLabelFilter(filters, "bug");
+    items = [{ labels: labels("bug", "docs") }];
+    expect(names()).toEqual(["docs", "bug"]);
+
+    // A new scope is read before its response arrives, while the old rows are still loaded.
+    scope = "repo-b";
+    names();
+    items = [{ labels: labels("bug", "infra") }];
+    expect(names()).toEqual(["bug", "infra"]);
   });
 });

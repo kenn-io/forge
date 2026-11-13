@@ -265,7 +265,7 @@
   const activityLabelChoices = rememberedLabelChoices(
     () => labelIndex.subjects,
     activity.getLabelFilters,
-    () => JSON.stringify([activity.getTimeRange(), activity.getActivitySearch(), getGlobalRepo()]),
+    () => JSON.stringify([activity.getTimeRange(), activity.getActivityState(), activity.getActivitySearch(), getGlobalRepo()]),
   );
   const labelChoices = $derived(activityLabelChoices());
 

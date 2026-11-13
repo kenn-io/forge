@@ -287,9 +287,10 @@ export async function settled(
 }
 
 /**
- * Puts back choices Reset deliberately keeps, such as Activity's time range,
- * so every item starts from the same view: a pick-one section returns to the
- * option that was on, and any other row is clicked until it matches.
+ * Puts back the sections Reset deliberately keeps, such as Activity's time
+ * range, so every item starts from the same view: a pick-one section returns
+ * to the option that was on, and any other row is clicked until it matches.
+ * Only those sections: anything else Reset leaves changed must fail.
  */
 async function restoreInitial(surface: Surface, menu: MenuSection[], initial: Outcome): Promise<void> {
   for (const section of menu) {
@@ -345,6 +346,8 @@ export interface ExerciseOptions {
   bases: (menu: MenuSection[]) => (string | null)[];
   /** Sections only this surface has, for a declared reason; neither compared nor exercised. */
   skipSections?: string[];
+  /** Sections Reset deliberately keeps, such as Activity's Time range; restored after each Reset. */
+  keptByReset?: string[];
 }
 
 /**
@@ -395,7 +398,11 @@ export async function exercise(mounted: MountedBrowserApp, surface: Surface, opt
         narrowed.add(key);
       }
       await surface.reset();
-      await restoreInitial(surface, menu, initial);
+      await restoreInitial(
+        surface,
+        menu.filter((section) => options.keptByReset?.includes(section.title)),
+        initial,
+      );
       expect(await settle(), `Reset after ${base ?? "default"}: ${key}`).toEqual(initial);
       outcomes[`${base ?? "default"}: ${key}`] = states;
     }

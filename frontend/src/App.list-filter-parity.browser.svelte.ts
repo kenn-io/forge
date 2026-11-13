@@ -305,6 +305,8 @@ describe("list filters across desktop, phone, and Activity", () => {
       // The phone inbox always shows one card per PR or issue with its newest
       // events, so View, Group, and commit roll-up are desktop feed layouts.
       skipSections: ["Layout", "Group", "Commits"],
+      // Reset clears filters but keeps which item types show and the time range.
+      keptByReset: ["Items", "Time range"],
     };
     const onDesktop = await run(
       "/",

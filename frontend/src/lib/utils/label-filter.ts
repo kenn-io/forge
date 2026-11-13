@@ -96,7 +96,8 @@ export function labelFilterParams(filters: LabelFilters): { labels?: string[]; e
  * label filters, so once one is on the loaded items carry only matching
  * labels; choices then come from the items loaded before any label filter in
  * the same list scope (repository, state, search, and so on). A new scope
- * starts from its own items.
+ * entered with a label filter on has no unfiltered items, so its choices
+ * follow its own loaded items until the label filters are cleared.
  */
 export function rememberedLabelChoices<T extends { labels?: readonly Pick<Label, "name" | "color">[] | undefined }>(
   items: () => readonly T[],
@@ -108,9 +109,11 @@ export function rememberedLabelChoices<T extends { labels?: readonly Pick<Label,
   return () => {
     const active = filters();
     const current = scope();
-    if (active.size === 0 || current !== unfilteredScope) {
+    if (active.size === 0) {
       unfiltered = items();
       unfilteredScope = current;
+    } else if (current !== unfilteredScope) {
+      unfiltered = [];
     }
     return labelFilterChoices(unfiltered.length === 0 ? items() : unfiltered, active);
   };

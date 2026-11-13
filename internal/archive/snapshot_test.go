@@ -752,3 +752,18 @@ func TestSnapshotActionEvidenceIsEventLocal(t *testing.T) {
 	assert.Equal(t, "maintainer", result.PullRequests[0].LastMaintainerAction.Actor)
 	assert.NotContains(t, result.PullRequests[0].Gaps, "actor_role_unknown")
 }
+
+func TestSnapshotAuthorActionWithUnknownMaintainerRole(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", State: db.MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour), UpdatedAt: now, DetailFetchedAt: &now})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{
+		{MergeRequestID: id, EventType: "issue_comment", Author: "maintainer", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "maintainer", CreatedAt: now.Add(-time.Minute)},
+		{MergeRequestID: id, EventType: "issue_comment", Author: "author", MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "author", CreatedAt: now},
+	}))
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	assert.Equal(t, &snapshot.SnapshotAction{Kind: "comment", Actor: "author", OccurredAt: now}, result.PullRequests[0].LastAuthorAction)
+	assert.Contains(t, result.PullRequests[0].Gaps, "actor_role_unknown")
+}

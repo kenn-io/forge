@@ -149,13 +149,12 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 			wantMetadata:    `{"commit_author":"original-author"}`,
 		},
 		{
-			name:            "committer date is used without committer identity",
-			author:          user("original-author", ""),
+			name:            "committer signature is preferred without linked users",
 			commitAuthor:    signature("original-name", authoredAt),
-			commitCommitter: &gh.CommitAuthor{Date: &gh.Timestamp{Time: committedAt}},
-			wantAuthor:      "original-author",
+			commitCommitter: signature("committer-name", committedAt),
+			wantAuthor:      "committer-name",
 			wantCreatedAt:   committedAt,
-			wantMetadata:    `{"commit_author":"original-author"}`,
+			wantMetadata:    `{"commit_author":"original-name"}`,
 		},
 		{
 			name:            "same normalized identity preserves known author",

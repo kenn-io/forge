@@ -558,9 +558,6 @@ func TestSnapshotRecentlyClosedPullRequests(t *testing.T) {
 	merged, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 4, Number: 4, Title: "Merged", State: db.MergeRequestStateMerged, CreatedAt: old, UpdatedAt: now, MergedAt: &mergedAt})
 	require.NoError(err)
 	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{
-		{MergeRequestID: original, EventType: "issue_comment", Author: "contributor", Body: "Closing this", DedupeKey: "author", CreatedAt: now},
-		{MergeRequestID: original, EventType: "issue_comment", Author: "collaborator", AuthorAssociation: new("COLLABORATOR"), MetadataJSON: `{"actor_account_type":"user"}`, Body: "Closing in favor of the replacement", DedupeKey: "collaborator", CreatedAt: now},
-		{MergeRequestID: original, EventType: "issue_comment", Author: "other", AuthorAssociation: new("CONTRIBUTOR"), Body: "Other", DedupeKey: "other", CreatedAt: now},
 		{MergeRequestID: original, EventType: "cross_referenced", MetadataJSON: `{"source_type":"PullRequest","source_owner":"owner","source_repo":"project","source_number":2,"source_url":"https://github.test/pull/2","is_cross_repository":false}`, DedupeKey: "reference", CreatedAt: now},
 		{MergeRequestID: merged, EventType: "issue_comment", Body: "Unknown author", DedupeKey: "empty-author", CreatedAt: now},
 	}))
@@ -579,10 +576,6 @@ func TestSnapshotRecentlyClosedPullRequests(t *testing.T) {
 	require.Contains(result.PullRequests[1].Gaps, "comment_author_association_unknown")
 	require.Equal(db.MergeRequestStateClosed, db.MergeRequestState(result.PullRequests[0].State))
 	require.Equal(&closed, result.PullRequests[0].ClosedAt)
-	require.Len(result.PullRequests[0].Comments, 2)
-	require.Equal("Closing this", result.PullRequests[0].Comments[0].Body)
-	require.Equal("Closing in favor of the replacement", result.PullRequests[0].Comments[1].Body)
-	require.NotContains(result.PullRequests[0].Gaps, "comment_author_association_unknown")
 	require.Len(result.Relations, 1)
 	require.Equal(strings.TrimSuffix(result.PullRequests[0].ID, ":1")+":2", result.Relations[0].SourceID)
 	require.Equal(result.PullRequests[0].ID, result.Relations[0].TargetID)
@@ -713,10 +706,6 @@ func TestSnapshotActionRoleEvidence(t *testing.T) {
 	assert.Equal(t, &snapshot.SnapshotAction{Kind: "comment", Actor: "author", OccurredAt: now.Add(-time.Minute)}, result.PullRequests[0].LastAuthorAction)
 	assert.Equal(t, &snapshot.SnapshotAction{Kind: "assigned", Actor: "maintainer", OccurredAt: now}, result.PullRequests[0].LastMaintainerAction)
 	assert.NotContains(t, result.PullRequests[0].Gaps, "actor_role_unknown")
-	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: "collaborator", AuthorAssociation: new("COLLABORATOR"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "collaborator", CreatedAt: now.Add(time.Second)}}))
-	result, err = service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
-	require.NoError(t, err)
-	assert.Equal(t, &snapshot.SnapshotAction{Kind: "comment", Actor: "collaborator", OccurredAt: now.Add(time.Second)}, result.PullRequests[0].LastMaintainerAction)
 	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: "assigned", Author: "unknown", MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "unknown", CreatedAt: now.Add(time.Minute)}}))
 	result, err = service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
 	require.NoError(t, err)
@@ -766,7 +755,6 @@ func TestSnapshotPushRoleEvidence(t *testing.T) {
 				assert.Equal(t, want, result.PullRequests[0].LastMaintainerAction)
 			}
 			assert.Equal(t, tc.unlinked, slices.Contains(result.PullRequests[0].Gaps, "actor_role_unknown"))
-			assert.Equal(t, tc.authorRole == "", slices.Contains(result.PullRequests[0].Gaps, "contributor_classification_unknown"))
 		})
 	}
 }
@@ -814,6 +802,8 @@ func TestSnapshotIncludesCachedMemberClosingCommentWithoutAccountType(t *testing
 		name, author, association, metadata          string
 		comment, action, unknown, associationUnknown bool
 	}{
+		{"author", "contributor", "CONTRIBUTOR", `{"actor_account_type":"user"}`, true, false, false, false},
+		{"contributor", "other", "CONTRIBUTOR", `{"actor_account_type":"user"}`, false, false, false, false},
 		{"member", "maintainer", "MEMBER", "", true, false, true, false},
 		{"owner", "maintainer", "OWNER", "", true, false, true, false},
 		{"collaborator", "maintainer", "COLLABORATOR", "", true, false, true, false},

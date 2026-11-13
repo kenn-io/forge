@@ -120,8 +120,8 @@ test("PR filters all apply and each pair of opposites is pick-one", async ({ pag
     await filterPanel.locator(".kit-filter-dropdown__section-title, .kit-filter-dropdown__item").allTextContents()
   )
     .map((text) => text.trim())
-    .filter((text) => ["PR", "Has workspace", "View"].includes(text));
-  expect(workspaceGrouping).toEqual(["PR", "Has workspace", "View"]);
+    .filter((text) => ["Pull requests", "Has workspace", "View"].includes(text));
+  expect(workspaceGrouping).toEqual(["Pull requests", "Has workspace", "View"]);
 
   await filterPanel.getByRole("button", { name: "Has workspace" }).click();
   await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/]);

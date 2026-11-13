@@ -146,7 +146,8 @@ test("activity default view mode and time range persist through the segmented co
   await page.getByRole("button", { name: "Back to app" }).click();
   for (const label of ["Flat", "7d"]) {
     await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
-    await page.locator(".kit-filter-dropdown__item", { hasText: label }).click();
+    // Exact: Group's "Flat list" also contains "Flat".
+    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: label, exact: true }).click();
   }
   await page.reload();
   await expect(page.locator(".activity-feed .kit-filter-dropdown__btn")).toContainText("Flat · 7d");

@@ -204,7 +204,7 @@ test.describe("phone routes", () => {
     await expect(activityFilters).toBeVisible();
     expect((await activityFilters.boundingBox())?.height ?? 0).toBeGreaterThan(0);
     await expect(page.getByRole("switch", { name: "PRs" })).toBeVisible();
-    await expect(page.getByRole("switch", { name: "Issues" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Issues", exact: true })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Comments" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Reviews" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Commits" })).toBeVisible();
@@ -365,8 +365,8 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
     await page.getByRole("button", { name: /^Filters/ }).click();
 
-    await page.getByRole("switch", { name: "Issues" }).click();
-    await expect(page.getByRole("switch", { name: "Issues" })).not.toBeChecked();
+    await page.getByRole("switch", { name: "Issues", exact: true }).click();
+    await expect(page.getByRole("switch", { name: "Issues", exact: true })).not.toBeChecked();
     await expect(page).toHaveURL(/item_types=pr/);
 
     await page.getByRole("combobox", { name: /Time range/ }).click();
@@ -397,10 +397,9 @@ test.describe("phone routes", () => {
     const queued = page.getByRole("combobox", { name: /Merge queued/ });
     await expect(queued).toContainText("No");
 
-    // An older hide_merge_queued link opens as the PR list's Merge queued: No.
     const cleared = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return url.pathname === "/api/v1/activity" && !url.searchParams.has("attributes");
+      return url.pathname === "/api/v1/activity" && !url.searchParams.has("hide_merge_queued");
     });
     await queued.click();
     await page.getByRole("option", { name: "Any" }).click();
@@ -408,14 +407,14 @@ test.describe("phone routes", () => {
     await expect(queued).toContainText("Any");
     await filters.click();
     await expect(filters).toHaveAttribute("aria-pressed", "false");
-    await expect(page).toHaveURL(/pr_filters=(&|$)/);
+    await expect(page).toHaveURL(/hide_merge_queued=0/);
     await page.reload();
     await filters.click();
     await expect(queued).toContainText("Any");
 
     const enabled = page.waitForResponse((response) => {
       const url = new URL(response.url());
-      return url.pathname === "/api/v1/activity" && url.searchParams.get("attributes") === "not_merge_queued";
+      return url.pathname === "/api/v1/activity" && url.searchParams.get("hide_merge_queued") === "true";
     });
     await queued.click();
     await page.getByRole("option", { name: "No" }).click();
@@ -437,7 +436,7 @@ test.describe("phone routes", () => {
 
     // Author opens the same author list as desktop Activity, inline in the panel.
     await page.getByRole("button", { name: /^Author/ }).click();
-    await expect(page.getByRole("button", { name: "carol" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "carol", exact: true })).toBeVisible();
 
     const overlayMetrics = await page.locator(".filter-sections-panel__submenu .author-filter").evaluate((panel) => {
       const bounds = panel.getBoundingClientRect();
@@ -456,7 +455,7 @@ test.describe("phone routes", () => {
       const url = new URL(response.url());
       return url.pathname === "/api/v1/activity" && url.searchParams.get("author") === "carol";
     });
-    await page.getByRole("button", { name: "carol" }).click();
+    await page.getByRole("button", { name: "carol", exact: true }).click();
     const response = await filteredResponse;
     expect(response.status()).toBe(200);
     const payload = await response.json();
@@ -808,14 +807,14 @@ test.describe("phone routes", () => {
       await expect(humanIssue).toBeVisible();
 
       await page.getByRole("button", { name: "Filters" }).click();
-      const hideBots = page.getByRole("button", { name: "Hide bot-authored issues" });
-      await expect(hideBots).toHaveAttribute("aria-pressed", "false");
+      const hideBots = page.getByRole("switch", { name: "Hide bot-authored issues" });
+      await expect(hideBots).not.toBeChecked();
       const settingsUpdate = page.waitForResponse(
         (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
       );
       await hideBots.click();
       expect((await settingsUpdate).ok()).toBe(true);
-      await expect(hideBots).toHaveAttribute("aria-pressed", "true");
+      await expect(hideBots).toBeChecked();
       await expect(botIssue).toHaveCount(0);
       await expect(humanIssue).toBeVisible();
 
@@ -827,7 +826,7 @@ test.describe("phone routes", () => {
       await page.reload();
       await expect(page.locator(".issue-item").first()).toBeVisible();
       await page.getByRole("button", { name: "Filters" }).click();
-      await expect(hideBots).toHaveAttribute("aria-pressed", "true");
+      await expect(hideBots).toBeChecked();
       await expect(botIssue).toHaveCount(0);
       await expect(humanIssue).toBeVisible();
 
@@ -836,7 +835,7 @@ test.describe("phone routes", () => {
       );
       await hideBots.click();
       expect((await settingsReset).ok()).toBe(true);
-      await expect(hideBots).toHaveAttribute("aria-pressed", "false");
+      await expect(hideBots).not.toBeChecked();
       await expect(botIssue).toBeVisible();
     } finally {
       await server.stop();
@@ -889,7 +888,7 @@ test.describe("high-density phone routes", () => {
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
     await page.getByRole("button", { name: /^Filters/ }).click();
     await expect(page.getByRole("switch", { name: "PRs" })).toBeVisible();
-    await expect(page.getByRole("switch", { name: "Issues" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Issues", exact: true })).toBeVisible();
     await page.getByRole("combobox", { name: /Time range/ }).click();
     await expect(page.getByRole("option", { name: "24h" })).toBeVisible();
 

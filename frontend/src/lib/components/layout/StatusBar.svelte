@@ -179,10 +179,20 @@
       });
     }
 
+    // A spoke sends workspace rows without labels; like the feed, use the provider rows' labels
+    // for the same item, parents last so they win.
+    const providerLabels = new Map<string, ActivityItem["labels"]>();
+    if (labels.size > 0) {
+      for (const row of [...activity.getActivityItems(), ...activity.getItemActivity()]) {
+        providerLabels.set(activityItemKey(row), row.labels);
+      }
+    }
+
     // Workspace-only subjects are visible threads too, but must not override
     // an authoritative parent or an existing event-backed lifecycle state.
     for (const subject of activity.getWorkspaceActivity()) {
-      if (!shown(subject.item_type, subject.labels, activitySubjectVisible(activity, subject))) continue;
+      const subjectLabels = subject.labels ?? providerLabels.get(activityItemKey(subject));
+      if (!shown(subject.item_type, subjectLabels, activitySubjectVisible(activity, subject))) continue;
       const key = activityItemKey(subject);
       if (!subjects.has(key)) {
         subjects.set(key, {

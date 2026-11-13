@@ -622,7 +622,7 @@ test.describe("activity split view", () => {
     const repoLabel = row.locator(".compact-meta > span").first();
     await expect(repoLabel).toHaveText("acme/widgets");
 
-    await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+    await page.locator(".activity-feed .filters-wrap .kit-filter-dropdown__btn").click();
     await page
       .locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", {
         hasText: "Hide org name",
@@ -1182,7 +1182,7 @@ test.describe("activity split view", () => {
     await openActivityPRSplit(page);
 
     const rail = page.locator(".activity-pane");
-    const filtersButton = rail.locator(".kit-filter-dropdown__btn");
+    const filtersButton = rail.locator(".filters-wrap .kit-filter-dropdown__btn");
     await expect(filtersButton).toBeVisible();
     await filtersButton.click();
 

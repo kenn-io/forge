@@ -19,7 +19,6 @@ import {
 } from "../api/provider-routes.js";
 import {
   BROWSER_ONLY_PULL_ATTRIBUTES,
-  cycleFilterInSections,
   PULL_ATTRIBUTE_SECTIONS,
   pullMatchesAttributeFilters,
   toggleFilterInSections,
@@ -357,18 +356,18 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   // --- writes ---
 
-  function applyAttributeFilters(next: PullAttributeFilter[], changed: PullAttributeFilter): void {
+  /** Replaces the selection, reloading when a changed attribute is matched by the server. */
+  function setAttributeFilters(next: PullAttributeFilter[]): void {
+    const changed = [...next, ...attributeFilters].filter(
+      (filter) => next.includes(filter) !== attributeFilters.includes(filter),
+    );
     attributeFilters = next;
-    if (!BROWSER_ONLY_PULL_ATTRIBUTES.includes(changed) && (involvesMe || unassigned)) loadPulls(activeListParams);
+    const serverChange = changed.some((filter) => !BROWSER_ONLY_PULL_ATTRIBUTES.includes(filter));
+    if (serverChange && (involvesMe || unassigned)) loadPulls(activeListParams);
   }
 
   function toggleAttributeFilter(filter: PullAttributeFilter): void {
-    applyAttributeFilters(toggleFilterInSections(PULL_ATTRIBUTE_SECTIONS, attributeFilters, filter), filter);
-  }
-
-  /** Cycles an attribute through off, required, and its opposite. */
-  function cycleAttributeFilter(filter: PullAttributeFilter, opposite: PullAttributeFilter): void {
-    applyAttributeFilters(cycleFilterInSections(PULL_ATTRIBUTE_SECTIONS, attributeFilters, filter, opposite), filter);
+    setAttributeFilters(toggleFilterInSections(PULL_ATTRIBUTE_SECTIONS, attributeFilters, filter));
   }
 
   function cycleLabelFilter(name: string): void {
@@ -747,7 +746,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     selectNextPR,
     selectPrevPR,
     toggleAttributeFilter,
-    cycleAttributeFilter,
+    setAttributeFilters,
     cycleLabelFilter,
     clearLocalFilters,
     getSearchQuery,

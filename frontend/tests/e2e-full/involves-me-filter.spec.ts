@@ -76,7 +76,7 @@ test.describe("Involves me standard filters", () => {
     await expect(page.locator(".activity-row").first()).toBeVisible();
     expect(await page.evaluate((key) => localStorage.getItem(key), storageKeys.activity)).toBeNull();
     const activityResponse = waitForInvolvesMeRequest(page, "/api/v1/activity");
-    await selectFilter(page, ".activity-feed .kit-filter-dropdown__btn");
+    await selectFilter(page, ".activity-feed .filters-wrap .kit-filter-dropdown__btn");
     expect((await activityResponse).ok()).toBe(true);
 
     expect(
@@ -126,7 +126,7 @@ test.describe("Involves me standard filters", () => {
 
     await page.goto(baseURL);
     await expect(page.locator(".activity-row").first()).toBeVisible();
-    await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+    await page.locator(".activity-feed .filters-wrap .kit-filter-dropdown__btn").click();
     await expectFilterItemInViewport(page, "Unassigned");
     const activityResponse = waitForUnassignedRequest(page, "/api/v1/activity");
     await page.locator(".kit-filter-dropdown__item", { hasText: "Unassigned" }).click();
@@ -159,7 +159,7 @@ test.describe("Involves me standard filters", () => {
       {
         route: baseURL,
         row: ".activity-row",
-        trigger: ".activity-feed .kit-filter-dropdown__btn",
+        trigger: ".activity-feed .filters-wrap .kit-filter-dropdown__btn",
         path: "/api/v1/activity",
         key: "activity",
       },

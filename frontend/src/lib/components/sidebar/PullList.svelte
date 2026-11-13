@@ -26,8 +26,8 @@
   import type { PullRequest } from "../../api/types.js";
   import type { PullSidebarRow } from "../../utils/pull-stack-tree.js";
   import type { GroupingMode } from "../../stores/grouping.svelte.js";
-  import { triFilterInSelection, type PullAttributeFilter } from "../../utils/pull-attributes.js";
-  import { cycleTriFilter, triFilterRow } from "../../utils/tri-filter.js";
+  import { pullListFilterOptions } from "../pullFilters.js";
+  import PullFilterMenu from "../PullFilterMenu.svelte";
   import { createRepoLabelFormatter } from "../../utils/repo-label.js";
   import { labelFilterChoices, labelFilterSummary } from "../../utils/label-filter.js";
   import {
@@ -56,28 +56,6 @@
     grouping.getGroupingMode(),
   );
   const pullStateOptions = ["open", "closed", "all"] as const;
-  // Every selected filter must match. CI is a pick-one pair; a condition row cycles
-  // through off, required, and its opposite.
-  const pickOneFilterSections: {
-    title: string;
-    options: { value: PullAttributeFilter; label: string }[];
-  }[] = [
-    {
-      title: "CI",
-      options: [
-        { value: "passed_ci", label: "Passing CI" },
-        { value: "failed_ci", label: "Failed CI" },
-      ],
-    },
-  ];
-  const conditionFilterOptions: { value: PullAttributeFilter; opposite: PullAttributeFilter; label: string }[] = [
-    { value: "draft", opposite: "not_draft", label: "Draft" },
-    { value: "approved", opposite: "not_approved", label: "Approved" },
-    { value: "merge_conflicts", opposite: "no_merge_conflicts", label: "Merge conflicts" },
-    { value: "merge_queued", opposite: "not_merge_queued", label: "Merge queued" },
-    { value: "has_workspace", opposite: "no_workspace", label: "Has workspace" },
-    { value: "fork", opposite: "not_fork", label: "From fork" },
-  ];
   const groupingOptions: {
     value: GroupingMode;
     label: string;
@@ -160,139 +138,51 @@
     return "All";
   }
 
-  function pullStateDropdownLabel(state: string): string {
-    if (state === "all") return "All states";
-    return pullStateLabel(state);
-  }
-
-  function groupingDropdownLabel(mode: GroupingMode): string {
-    if (mode === "byRepo") return "By repo";
-    return "Flat list";
-  }
-
-  function setPullState(state: string): void {
-    pulls.setFilterState(state);
-    pulls.loadPulls();
-  }
-
+  // The narrow menu also holds State, so its reset returns State to Open.
   function resetCompactView(): void {
-    pulls.clearLocalFilters();
-    grouping.setGroupingMode("byRepo");
-    pulls.setStackTree(false);
-    grouping.setHideOrgName(false);
-    if (pulls.getFilterState() !== "open") {
-      pulls.setFilterState("open");
-    }
-    pulls.loadPulls();
+    pulls.setFilterState("open");
+    clearLocalViewFilters();
   }
 
   function clearLocalViewFilters(): void {
     pulls.clearLocalFilters();
     pulls.setStackTree(false);
-    pulls.loadPulls();
     grouping.setHideOrgName(false);
+    pulls.loadPulls();
   }
 
-  const stateFilterSection = $derived({
-    title: "State",
-    items: pullStateOptions.map((state) => ({
-      id: `state-${state}`,
-      label: pullStateDropdownLabel(state),
-      active: pulls.getFilterState() === state,
-      onSelect: () => setPullState(state),
-    })),
-  });
-  const groupFilterSection = $derived({
-    title: "Group",
-    items: groupingOptions.map((option) => ({
+  const filters = $derived(pullListFilterOptions(pulls, () => pulls.loadPulls()));
+  const groupItems = $derived(
+    groupingOptions.map((option) => ({
       id: `group-${option.value}`,
-      label: groupingDropdownLabel(option.value),
+      label: option.value === "byRepo" ? "By repo" : "Flat list",
       active: groupingMode === option.value,
+      closeOnSelect: true,
       onSelect: () => grouping.setGroupingMode(option.value),
     })),
-  });
-
+  );
   const labelChoices = $derived(labelFilterChoices(pulls.getPulls(), pulls.getLabelFilters()));
-  function attributeFilterItem(option: { value: PullAttributeFilter; label: string }) {
-    return {
-      id: `pr-${option.value}`,
-      label: option.label,
-      active: pulls.getAttributeFilters().includes(option.value),
-      onSelect: () => pulls.toggleAttributeFilter(option.value),
-    };
-  }
-
-  const localFilterSections = $derived.by(() => [
-    {
-      title: "PR",
-      items: [
-        {
-          id: "labels",
-          label: "Labels",
-          detail: labelFilterSummary(pulls.getLabelFilters()),
-          active: pulls.getLabelFilters().size > 0,
-          submenu: labelFilterMenu,
-          onSelect: () => {},
-        },
-        {
-          id: "involves-me",
-          label: "Involves me",
-          ...triFilterRow(pulls.getInvolvesMe()),
-          onSelect: () => {
-            pulls.setInvolvesMe(cycleTriFilter(pulls.getInvolvesMe()));
-            pulls.loadPulls();
-          },
-        },
-        {
-          id: "unassigned",
-          label: "Unassigned",
-          ...triFilterRow(pulls.getUnassigned()),
-          onSelect: () => {
-            pulls.setUnassigned(cycleTriFilter(pulls.getUnassigned()));
-            pulls.loadPulls();
-          },
-        },
-        ...conditionFilterOptions.map((option) => ({
-          id: option.value === "has_workspace" ? "has-workspace" : `pr-${option.value}`,
-          label: option.label,
-          ...triFilterRow(triFilterInSelection(pulls.getAttributeFilters(), option.value, option.opposite)),
-          onSelect: () => pulls.cycleAttributeFilter(option.value, option.opposite),
-        })),
-      ],
-    },
-    ...pickOneFilterSections.map((section) => ({
-      title: section.title,
-      items: section.options.map(attributeFilterItem),
-    })),
-  ]);
-  const viewFilterSection = $derived({
-    title: "View",
-    items: [
-      {
-        id: "stack-tree",
-        label: "Stack tree",
-        active: pulls.getStackTree(),
-        onSelect: () => pulls.setStackTree(!pulls.getStackTree()),
-      },
-      {
-        id: "hide-org-name",
-        label: "Hide org name",
-        active: grouping.getHideOrgName(),
-        onSelect: () => grouping.setHideOrgName(!grouping.getHideOrgName()),
-      },
-    ],
+  const labelFilters = $derived({
+    summary: labelFilterSummary(pulls.getLabelFilters()),
+    active: pulls.getLabelFilters().size > 0,
+    menu: labelFilterMenu,
   });
-  const prFilterSections = $derived([...localFilterSections, viewFilterSection]);
-  // Layout choices follow the filters, as in the Activity menu.
-  const compactFilterSections = $derived([
-    stateFilterSection,
-    ...localFilterSections,
-    groupFilterSection,
-    viewFilterSection,
+  const viewFilters = $derived([
+    {
+      id: "stack-tree",
+      label: "Stack tree",
+      active: pulls.getStackTree(),
+      onSelect: () => pulls.setStackTree(!pulls.getStackTree()),
+    },
+    {
+      id: "hide-org-name",
+      label: "Hide org name",
+      active: grouping.getHideOrgName(),
+      onSelect: () => grouping.setHideOrgName(!grouping.getHideOrgName()),
+    },
   ]);
   const hasCompactFilterChanges = $derived(
     pulls.getFilterState() !== "open"
-      || groupingMode !== "byRepo"
       || pulls.getLocalFilterCount() > 0
       || grouping.getHideOrgName()
       || pulls.getStackTree(),
@@ -637,9 +527,35 @@
         <button
           class="state-btn"
           class:state-btn--active={pulls.getFilterState() === s}
-          onclick={() => setPullState(s)}
+          onclick={() => filters.state.set(s)}
         >{pullStateLabel(s)}</button>
       {/each}
+    </div>
+    <div class="compact-filter-menu">
+      <PullFilterMenu
+        {filters}
+        labels={labelFilters}
+        view={viewFilters}
+        label="Filters"
+        title="Filters"
+        active={hasCompactFilterChanges}
+        badgeCount={localViewFilterCount}
+        resetLabel="Reset view"
+        onReset={resetCompactView}
+        minWidth="190px"
+      />
+    </div>
+    <!-- Grouping is the list's own layout choice, kept out of the shared filter menu. -->
+    <div class="compact-group-menu">
+      <FilterDropdown
+        label="Group"
+        title="Group pull requests"
+        icon="sort"
+        showBadge={false}
+        active={groupingMode !== "byRepo"}
+        sections={[{ title: "Group", items: groupItems }]}
+        minWidth="140px"
+      />
     </div>
     <div class="group-toggle">
       {#each groupingOptions as option (option.value)}
@@ -650,28 +566,19 @@
         >{option.label}</button>
       {/each}
     </div>
-    <div class="compact-filter-menu">
-      <FilterDropdown
-        label="Filters"
-        title="Filters"
-        active={hasCompactFilterChanges}
-        badgeCount={localViewFilterCount}
-        sections={compactFilterSections}
-        resetLabel="Reset view"
-        onReset={resetCompactView}
-        minWidth="190px"
-      />
-    </div>
     <div
       class="local-filter-menu"
       class:local-filter-menu--icon-only={useIconOnlyLocalFilters}
     >
-      <FilterDropdown
+      <PullFilterMenu
+        {filters}
+        showState={false}
+        labels={labelFilters}
+        view={viewFilters}
         label="PR filters"
         title="PR filters"
         active={localViewFilterCount > 0 || pulls.getStackTree()}
         badgeCount={localViewFilterCount}
-        sections={prFilterSections}
         resetLabel="Clear filters"
         onReset={clearLocalViewFilters}
         minWidth="190px"
@@ -1011,7 +918,8 @@
     transform-origin: right center;
   }
 
-  .compact-filter-menu {
+  .compact-filter-menu,
+  .compact-group-menu {
     display: none;
     flex-shrink: 0;
     transform-origin: left center;
@@ -1038,7 +946,8 @@
     right: -5px;
   }
 
-  .compact-filter-menu :global(.kit-filter-dropdown__btn) {
+  .compact-filter-menu :global(.kit-filter-dropdown__btn),
+  .compact-group-menu :global(.kit-filter-dropdown__btn) {
     width: 34px;
     justify-content: center;
     gap: 0;
@@ -1046,7 +955,8 @@
   }
 
   .compact-filter-menu :global(.kit-filter-dropdown__trigger-label),
-  .compact-filter-menu :global(.kit-filter-dropdown__trigger-detail) {
+  .compact-filter-menu :global(.kit-filter-dropdown__trigger-detail),
+  .compact-group-menu :global(.kit-filter-dropdown__trigger-label) {
     display: none;
   }
 
@@ -1112,7 +1022,8 @@
     display: none;
   }
 
-  .filter-bar--compact .compact-filter-menu {
+  .filter-bar--compact .compact-filter-menu,
+  .filter-bar--compact .compact-group-menu {
     display: block;
     animation: sidebar-filter-collapse-in 120ms ease-out;
   }

@@ -65,8 +65,8 @@ test("Activity filter defaults save to TOML and apply in a new browser session",
   try {
     const freshPage = await context.newPage();
     await freshPage.goto(isolatedServer!.info.base_url);
-    await expect(freshPage.locator(".activity-feed .kit-filter-dropdown__btn")).toContainText("30d");
-    await freshPage.locator(".activity-feed .kit-filter-dropdown__btn").click();
+    await expect(freshPage.locator(".activity-feed .layout-wrap .kit-filter-dropdown__btn")).toContainText("30d");
+    await freshPage.locator(".activity-feed .filters-wrap .kit-filter-dropdown__btn").click();
     for (const [name, pressed] of [
       ["Reviews", false],
       ["Notifications", false],
@@ -145,12 +145,12 @@ test("activity default view mode and time range persist through the segmented co
 
   await page.getByRole("button", { name: "Back to app" }).click();
   for (const label of ["Flat", "7d"]) {
-    await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+    await page.locator(".activity-feed .layout-wrap .kit-filter-dropdown__btn").click();
     await page.locator(".kit-filter-dropdown__item", { hasText: label }).click();
   }
   await page.reload();
-  await expect(page.locator(".activity-feed .kit-filter-dropdown__btn")).toContainText("Flat · 7d");
-  await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+  await expect(page.locator(".activity-feed .layout-wrap .kit-filter-dropdown__btn")).toContainText("Flat · 7d");
+  await page.locator(".activity-feed .filters-wrap .kit-filter-dropdown__btn").click();
   await page.getByRole("button", { name: "Roll up commits", exact: true }).click();
   await page.keyboard.press("Escape");
   await page.getByTitle("Settings", { exact: true }).click();
@@ -161,8 +161,8 @@ test("activity default view mode and time range persist through the segmented co
   await page.getByRole("button", { name: "Toggle hide bots" }).click();
   expect((await activitySave).status()).toBe(200);
   await page.getByRole("button", { name: "Back to app" }).click();
-  await expect(page.locator(".activity-feed .kit-filter-dropdown__btn")).toContainText("Flat · 7d");
-  await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+  await expect(page.locator(".activity-feed .layout-wrap .kit-filter-dropdown__btn")).toContainText("Flat · 7d");
+  await page.locator(".activity-feed .filters-wrap .kit-filter-dropdown__btn").click();
   await expect(page.getByRole("button", { name: "Roll up commits", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",

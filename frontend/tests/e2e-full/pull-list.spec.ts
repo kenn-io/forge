@@ -29,18 +29,13 @@ async function selectPullGrouping(page: Page, label: string): Promise<void> {
     await groupButton.click();
     return;
   }
-
-  const compactLabel = compactPullGroupingLabel(label);
-  const dropdown = await openCompactFilterMenu(page);
-  await dropdown.locator(".kit-filter-dropdown__item", { hasText: compactLabel }).click();
-  await page.keyboard.press("Escape");
-  await expect(dropdown).toBeHidden();
-}
-
-function compactPullGroupingLabel(label: string): string {
-  if (label === "Repo") return "By repo";
-  if (label === "All") return "Flat list";
-  return label;
+  // Narrow sidebars move the Repo/All toggle into its own Group menu.
+  await page.locator(".compact-group-menu .kit-filter-dropdown__btn").click();
+  await page
+    .locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", {
+      hasText: label === "Repo" ? "By repo" : "Flat list",
+    })
+    .click();
 }
 
 async function openCompactFilterMenu(page: Page) {

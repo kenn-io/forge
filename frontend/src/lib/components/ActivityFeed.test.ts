@@ -611,12 +611,13 @@ describe("ActivityFeed compact mode", () => {
   it("exposes whether each choice and filter is on", async () => {
     render(ActivityFeed, { props: { compact: false } });
 
-    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /^Layout/ }));
 
     expect(screen.getByRole("button", { name: "Flat" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "Threaded" }).getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByRole("button", { name: "7d" }).getAttribute("aria-pressed")).toBe("true");
 
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
     expect(screen.getByRole("button", { name: "Roll up commits" }).getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByRole("button", { name: "Comments" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "Unassigned" }).getAttribute("aria-pressed")).toBe("false");
@@ -759,7 +760,7 @@ describe("ActivityFeed compact mode", () => {
     viewMode.value = "threaded";
     render(ActivityFeed, { props: { compact: false } });
 
-    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /^Layout/ }));
 
     expect(screen.getByRole("button", { name: "By repo" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe("false");

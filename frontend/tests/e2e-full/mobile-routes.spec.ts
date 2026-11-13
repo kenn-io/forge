@@ -729,7 +729,8 @@ test.describe("phone routes", () => {
       await trigger.click();
       await expect(page.getByRole("button", { name: "Unassigned" })).toBeVisible();
       if (route === "pulls") {
-        await expect(page.getByRole("button", { name: "By repo" })).toBeVisible();
+        await expect(page.getByRole("button", { name: "From fork" })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Failed CI" })).toBeVisible();
       }
     }
   });

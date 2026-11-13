@@ -352,7 +352,7 @@ test("SSE comment refresh does not promote the commenter to an Activity author c
     expect((await initialAuthors).status()).toBe(200);
     await expect(page.locator(".activity-table .activity-row").first()).toBeVisible();
 
-    const filtersTrigger = page.locator(".activity-feed .kit-filter-dropdown__btn");
+    const filtersTrigger = page.locator(".activity-feed .filters-wrap .kit-filter-dropdown__btn");
     const filtersPanel = page.locator(".kit-filter-dropdown__panel");
     await filtersTrigger.click();
     const authorTrigger = filtersPanel.getByRole("button", { name: /^Author/ });
@@ -413,13 +413,13 @@ test("authoritative Activity reloads keep renamed routes distinct and reconcile 
     });
     const rename = await page.request.post(`${server.info.base_url}/__e2e/activity/repository-identity?phase=rename`);
     expect(rename.ok(), await rename.text()).toBe(true);
-    await page.getByRole("button", { name: /^Filters/ }).click();
+    await page.getByRole("button", { name: /^Layout/ }).click();
     await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "90d", exact: true }).click();
     await page.keyboard.press("Escape");
     await renamedActivity;
 
     await expect(original).toHaveCount(1);
-    await page.getByRole("button", { name: /^Filters/ }).click();
+    await page.getByRole("button", { name: /^Layout/ }).click();
     await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Flat", exact: true }).click();
     const notification = page.locator(".activity-row", { hasText: "Review requested" });
     await expect(notification).toHaveCount(1);
@@ -434,7 +434,7 @@ test("authoritative Activity reloads keep renamed routes distinct and reconcile 
       .poll(() => page.evaluate(() => window.sessionStorage.getItem("e2e-opened-provider-url")))
       .toBe("https://github.com/acme/widgets-renamed/pull/1");
 
-    await page.getByRole("button", { name: /^Filters/ }).click();
+    await page.getByRole("button", { name: /^Layout/ }).click();
     await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Threaded", exact: true }).click();
     await original.click();
     await expect.poll(() => new URL(page.url()).searchParams.get("repo_path")).toBe("acme/widgets-renamed");
@@ -459,7 +459,7 @@ test("authoritative Activity reloads keep renamed routes distinct and reconcile 
     });
     const reuse = await page.request.post(`${server.info.base_url}/__e2e/activity/repository-identity?phase=reuse`);
     expect(reuse.ok(), await reuse.text()).toBe(true);
-    await page.getByRole("button", { name: /^Filters/ }).click();
+    await page.getByRole("button", { name: /^Layout/ }).click();
     await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "30d", exact: true }).click();
     await page.keyboard.press("Escape");
     await replacementActivity;

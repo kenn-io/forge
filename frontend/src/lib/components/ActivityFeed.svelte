@@ -17,17 +17,17 @@
     DEFAULT_EVENT_TYPES,
     isActivityItemTypeEnabled,
     type ActivityItemType,
-    type TimeRange,
-    type ViewMode,
   } from "../stores/activity.svelte.js";
   import { getStores, getNavigate } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
   import ListLoadMore from "./sidebar/ListLoadMore.svelte";
   import { activityFilterOptions, activityItemVisible, activitySubjectVisible } from "./activityFilters.js";
+  import ActivityLayoutMenu from "./ActivityLayoutMenu.svelte";
+  import PullFilterMenu from "./PullFilterMenu.svelte";
   import AuthorFilterMenu from "./shared/AuthorFilterMenu.svelte";
   import LabelFilterMenu from "./shared/LabelFilterMenu.svelte";
   import { labelFilterChoices, labelFilterSummary, matchesLabelFilters } from "../utils/label-filter.js";
-  import { FilterDropdown, ScrollBox } from "@kenn-io/kit-ui";
+  import { ScrollBox } from "@kenn-io/kit-ui";
   import {
     isDefaultBranchActivity,
     isDefaultBranchCommitActivity,
@@ -141,29 +141,10 @@
     filters.applyFilters();
   }
 
-  function handleTimeRangeChange(range: TimeRange): void {
-    activity.setTimeRange(range);
-    activity.syncToURL();
-    activity.loadActivity();
-  }
-
-  function handleViewModeChange(mode: ViewMode): void {
-    activity.setViewMode(mode);
-    activity.syncToURL();
-    activity.loadActivity();
-  }
-
   function handleRollUpCommitsChange(value: boolean): void {
     activity.setRollUpCommits(value);
     activity.syncToURL();
   }
-
-  const TIME_RANGES: { value: TimeRange; label: string }[] = [
-    { value: "24h", label: "24h" },
-    { value: "7d", label: "7d" },
-    { value: "30d", label: "30d" },
-    { value: "90d", label: "90d" },
-  ];
 
   function handleSearchInput(val: string): void {
     searchInput = val;
@@ -187,15 +168,22 @@
     );
   }
 
-  // Global shortcuts stay off while the filter panel is open, as in any
-  // other popover that takes focus.
-  const filterFrameId = $props.id();
-  let popFilterFrame: (() => void) | undefined;
-  function setFiltersOpen(open: boolean): void {
-    popFilterFrame?.();
-    popFilterFrame = open ? pushModalFrame(filterFrameId, []) : undefined;
+  // Global shortcuts stay off while a menu panel is open, as in any other
+  // popover that takes focus. Each menu keeps its own frame.
+  const menuFrameId = $props.id();
+  const popMenuFrames = new Map<string, () => void>();
+  function menuOpenChange(menu: string): (open: boolean) => void {
+    return (open) => {
+      popMenuFrames.get(menu)?.();
+      popMenuFrames.delete(menu);
+      if (open) popMenuFrames.set(menu, pushModalFrame(`${menuFrameId}-${menu}`, []));
+    };
   }
-  onDestroy(() => popFilterFrame?.());
+  const setFiltersOpen = menuOpenChange("filters");
+  const setLayoutOpen = menuOpenChange("layout");
+  onDestroy(() => {
+    for (const pop of popMenuFrames.values()) pop();
+  });
 
   const authorOptions = $derived.by<TypeaheadOption[]>(() =>
     activity.getActivityAuthors().map((author) => ({
@@ -376,22 +364,8 @@
     filters.applyFilters();
   }
 
-  function choiceItems<T extends string>(choice: { id: string; value: T; options: { value: T; label: string }[]; choose: (value: T) => void }) {
-    return choice.options.map((option) => ({
-      id: `${choice.id}-${option.value}`,
-      label: option.label,
-      active: choice.value === option.value,
-      onSelect: () => choice.choose(option.value),
-    }));
-  }
-
   // Compact mode has no author chip, so the trigger names the author instead.
   const compactAuthor = $derived(compact ? activity.getActivityAuthor() : undefined);
-
-  const currentViewDetail = $derived.by(() => {
-    const mode = activity.getViewMode() === "flat" ? "Flat" : "Threaded";
-    return `${mode} · ${activity.getTimeRange()}`;
-  });
 
   const collapseThreads = $derived(activity.getCollapseThreads());
 
@@ -399,98 +373,14 @@
     collapseThreads ? "Expand all" : "Collapse all",
   );
 
-  // The filters come first, in the pull request list's order (State, the conditions, CI), then
-  // layout and scope, then View.
-  const filterSections = $derived.by(() => [
-    { title: "State", items: choiceItems(filters.state) },
-    { title: "Event types", items: filters.events },
+  const viewFilters = $derived([
     {
-      title: "Filter",
-      items: [
-        {
-          id: "author",
-          label: "Author",
-          detail: activity.getActivityAuthor() || "Anyone",
-          active: Boolean(activity.getActivityAuthor()),
-          submenu: authorFilterMenu,
-          onSelect: () => {},
-        },
-        {
-          id: "labels",
-          label: "Labels",
-          detail: labelFilterSummary(activity.getLabelFilters()),
-          active: activity.getLabelFilters().size > 0,
-          submenu: labelFilterMenu,
-          onSelect: () => {},
-        },
-        ...filters.conditions,
-      ],
+      id: "roll-up-commits",
+      label: "Roll up commits",
+      active: activity.getRollUpCommits(),
+      onSelect: () => handleRollUpCommitsChange(!activity.getRollUpCommits()),
     },
-    { title: "CI", items: choiceItems(filters.ci) },
-    {
-      title: "Layout",
-      items: [
-        {
-          id: "view-flat",
-          label: "Flat",
-          active: activity.getViewMode() === "flat",
-          closeOnSelect: true,
-          onSelect: () => handleViewModeChange("flat"),
-        },
-        {
-          id: "view-threaded",
-          label: "Threaded",
-          active: activity.getViewMode() === "threaded",
-          closeOnSelect: true,
-          onSelect: () => handleViewModeChange("threaded"),
-        },
-      ],
-    },
-    ...(activity.getViewMode() === "threaded"
-      ? [
-          {
-            title: "Group",
-            items: [
-              {
-                id: "group-by-repo",
-                label: "By repo",
-                active: grouping.getGroupByRepo(),
-                closeOnSelect: true,
-                onSelect: () => grouping.setGroupByRepo(true),
-              },
-              {
-                id: "group-all",
-                label: "All",
-                active: !grouping.getGroupByRepo(),
-                closeOnSelect: true,
-                onSelect: () => grouping.setGroupByRepo(false),
-              },
-            ],
-          },
-        ]
-      : []),
-    {
-      title: "Time range",
-      items: TIME_RANGES.map((range) => ({
-        id: `range-${range.value}`,
-        label: range.label,
-        active: activity.getTimeRange() === range.value,
-        closeOnSelect: true,
-        onSelect: () => handleTimeRangeChange(range.value),
-      })),
-    },
-    {
-      title: "View",
-      items: [
-        {
-          id: "roll-up-commits",
-          label: "Roll up commits",
-          active: activity.getRollUpCommits(),
-          onSelect: () => handleRollUpCommitsChange(!activity.getRollUpCommits()),
-        },
-        ...filters.view,
-      ],
-    },
+    ...filters.view,
   ]);
 
   function eventClass(type: string): string {
@@ -633,13 +523,33 @@
       />
     </div>
 
+    <div class="layout-wrap">
+      <ActivityLayoutMenu onOpenChange={setLayoutOpen} />
+    </div>
+
     <div class="filters-wrap">
-      <FilterDropdown
+      <PullFilterMenu
+        filters={filters.pull}
+        labels={{
+          summary: labelFilterSummary(activity.getLabelFilters()),
+          active: activity.getLabelFilters().size > 0,
+          menu: labelFilterMenu,
+        }}
+        sectionsAfterState={[{ title: "Event types", items: filters.events }]}
+        rowsBefore={[{
+          id: "author",
+          label: "Author",
+          detail: activity.getActivityAuthor() || "Anyone",
+          active: Boolean(activity.getActivityAuthor()),
+          submenu: authorFilterMenu,
+          onSelect: () => {},
+        }]}
+        rowsAfterInvolvement={[filters.bots]}
+        rowsAfter={[filters.hideDefaultBranch]}
+        view={viewFilters}
         label={compactAuthor ? `Filters · ${compactAuthor}` : "Filters"}
-        title="View and filter activity"
-        detail={compactAuthor ? "" : currentViewDetail}
+        title="Filter activity"
         badgeCount={popoverFilterCount}
-        sections={filterSections}
         resetLabel="Reset filters"
         onReset={resetFilters}
         minWidth="240px"
@@ -1141,6 +1051,16 @@
     min-width: 0;
     max-width: min(320px, 100%);
     flex: 0 1 auto;
+  }
+
+  .activity-feed--compact .layout-wrap {
+    order: 3;
+    flex: 0 0 auto;
+  }
+
+  /* The trigger's detail already names the layout and range. */
+  .activity-feed--compact .layout-wrap :global(.kit-filter-dropdown__trigger-label) {
+    display: none;
   }
 
   .activity-feed--compact .collapse-all-btn {

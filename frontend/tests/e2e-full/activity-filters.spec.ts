@@ -15,7 +15,13 @@ async function waitForTable(page: Page): Promise<void> {
 }
 
 async function selectActivityFilterItem(page: Page, label: string | RegExp): Promise<void> {
-  await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+  await page.locator(".activity-feed .filters-wrap .kit-filter-dropdown__btn").click();
+  await page.locator(".kit-filter-dropdown__panel").waitFor({ state: "visible" });
+  await filterItem(page, label).click();
+}
+
+async function selectActivityLayoutItem(page: Page, label: string): Promise<void> {
+  await page.locator(".activity-feed .layout-wrap .kit-filter-dropdown__btn").click();
   await page.locator(".kit-filter-dropdown__panel").waitFor({ state: "visible" });
   await filterItem(page, label).click();
 }
@@ -105,7 +111,7 @@ test.describe("activity feed filters", () => {
   });
 
   test("Threaded item toggles hide the complete matching threads", async ({ page }) => {
-    await selectActivityFilterItem(page, "Threaded");
+    await selectActivityLayoutItem(page, "Threaded");
     await expect(page.locator(".threaded-view .chip--kind-pr").first()).toBeVisible();
     await expect(page.locator(".threaded-view .chip--kind-issue").first()).toBeVisible();
 
@@ -147,24 +153,24 @@ test.describe("activity feed filters", () => {
   });
 
   test("refresh preserves the selected time window and State Open", async ({ page }) => {
-    await selectActivityFilterItem(page, "90d");
+    await selectActivityLayoutItem(page, "90d");
     await selectActivityFilterItem(page, OPEN);
     await page.reload();
     await waitForTable(page);
 
-    await expect(page.locator(".activity-feed .kit-filter-dropdown__btn")).toContainText("90d");
+    await expect(page.locator(".activity-feed .layout-wrap .kit-filter-dropdown__btn")).toContainText("90d");
     await expect(page.locator(".state-badge.state-closed, .state-badge.state-merged")).toHaveCount(0);
     await selectActivityFilterItem(page, ALL_STATES);
     await expect(page.locator(".state-badge.state-closed, .state-badge.state-merged").first()).toBeVisible();
   });
 
   test("returning from Settings preserves the time window and State Open", async ({ page }) => {
-    await selectActivityFilterItem(page, "90d");
+    await selectActivityLayoutItem(page, "90d");
     await selectActivityFilterItem(page, OPEN);
     await page.goto("/settings");
     await page.getByRole("button", { name: "Back to app" }).click();
     await waitForTable(page);
-    await expect(page.locator(".activity-feed .kit-filter-dropdown__btn")).toContainText("90d");
+    await expect(page.locator(".activity-feed .layout-wrap .kit-filter-dropdown__btn")).toContainText("90d");
     await expect(page.locator(".state-badge.state-closed, .state-badge.state-merged")).toHaveCount(0);
   });
 
@@ -230,7 +236,7 @@ test.describe("activity feed filters", () => {
 
     await page.reload();
     await waitForTable(page);
-    await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+    await page.locator(".activity-feed .filters-wrap .kit-filter-dropdown__btn").click();
     await expect(row).toHaveAccessibleName(/, excluded$/);
     await page.keyboard.press("Escape");
     await page.getByTitle("Settings", { exact: true }).click();
@@ -239,7 +245,7 @@ test.describe("activity feed filters", () => {
     await waitForTable(page);
     await page.goto("/?view=flat");
     await waitForTable(page);
-    await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+    await page.locator(".activity-feed .filters-wrap .kit-filter-dropdown__btn").click();
     await expect(row).toHaveAccessibleName(/, excluded$/);
     await page.getByRole("button", { name: "Reset filters" }).click();
     await expect(row).toHaveAttribute("aria-pressed", "false");
@@ -255,7 +261,7 @@ test.describe("activity feed filters", () => {
     // Use a web-first assertion that retries until the row count
     // drops below the 7d count, proving the filtered response
     // has rendered.
-    await selectActivityFilterItem(page, "24h");
+    await selectActivityLayoutItem(page, "24h");
     await expect(page.locator(".activity-row")).not.toHaveCount(count7d, {
       timeout: 10_000,
     });
@@ -353,7 +359,7 @@ test.describe("activity repository-only filtering", () => {
 
     await page.goto(isolatedServer!.info.base_url);
     await waitForTable(page);
-    await selectActivityFilterItem(page, "Threaded");
+    await selectActivityLayoutItem(page, "Threaded");
     await expect(page.locator(".threaded-view .item-row:not(.branch-activity-row)").first()).toBeVisible();
     await page.getByRole("switch", { name: "PRs" }).click();
     const repoOnlyResponse = page.waitForResponse((response) => {
@@ -398,7 +404,7 @@ test.describe("activity UTC timestamp presentation", () => {
   });
 
   test("activity API timestamps stay UTC and render as local dates", async ({ page }) => {
-    await selectActivityFilterItem(page, "30d");
+    await selectActivityLayoutItem(page, "30d");
     await expect(page.locator(".activity-row").first()).toBeVisible();
 
     const payload = await page.evaluate(async () => {

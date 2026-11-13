@@ -13,6 +13,7 @@ import {
   type PullsStoreOptions,
 } from "./pulls.svelte.js";
 import { dismissFlash, getFlash, getFlashes } from "./flash.svelte.js";
+import { pullListFilterOptions } from "../components/pullFilters.js";
 import { involvesMeFilterStorageKey } from "./involves-me-filter.js";
 import { unassignedFilterStorageKey } from "./unassigned-filter.js";
 
@@ -660,6 +661,13 @@ describe("pulls store display order", () => {
     expect(store.getFilteredPulls()).toEqual([]);
   });
 
+  // Clicks a condition row in the shared PR filter menu.
+  function clickCondition(store: ReturnType<typeof createPullsStore>, id: string): void {
+    const row = pullListFilterOptions(store, () => {}).conditions.find((condition) => condition.id === id);
+    if (!row) throw new Error(`no condition row ${id}`);
+    row.onSelect();
+  }
+
   it("cycles a condition through required, its opposite, and off", async () => {
     const store = createPullsStore({
       client: clientWithPulls([
@@ -674,20 +682,20 @@ describe("pulls store display order", () => {
     await loadPulls(store);
     const shown = () => store.getDisplayOrderPRs().map((pr) => pr.ID);
 
-    for (const [filter, opposite] of [
-      ["has_workspace", "no_workspace"],
-      ["approved", "not_approved"],
-      ["merge_conflicts", "no_merge_conflicts"],
+    for (const [id, filter, opposite] of [
+      ["has-workspace", "has_workspace", "no_workspace"],
+      ["approved", "approved", "not_approved"],
+      ["merge-conflicts", "merge_conflicts", "no_merge_conflicts"],
     ] as const) {
-      store.cycleAttributeFilter(filter, opposite);
+      clickCondition(store, id);
       expect(store.getAttributeFilters()).toEqual([filter]);
       expect(shown()).toEqual([1]);
 
-      store.cycleAttributeFilter(filter, opposite);
+      clickCondition(store, id);
       expect(store.getAttributeFilters()).toEqual([opposite]);
       expect(shown()).toEqual([2]);
 
-      store.cycleAttributeFilter(filter, opposite);
+      clickCondition(store, id);
       expect(store.getAttributeFilters()).toEqual([]);
       expect(shown()).toEqual([1, 2]);
     }
@@ -707,9 +715,9 @@ describe("pulls store display order", () => {
     await loadPulls(store);
     const shown = () => store.getDisplayOrderPRs().map((pr) => pr.ID);
 
-    store.cycleAttributeFilter("merge_queued", "not_merge_queued");
+    clickCondition(store, "merge-queued");
     expect(shown()).toEqual([1, 2]);
-    store.cycleAttributeFilter("merge_queued", "not_merge_queued");
+    clickCondition(store, "merge-queued");
     expect(shown()).toEqual([3]);
   });
 
@@ -721,15 +729,15 @@ describe("pulls store display order", () => {
     const reads = () => get.mock.calls.length;
 
     let before = reads();
-    store.cycleAttributeFilter("approved", "not_approved");
-    store.cycleAttributeFilter("approved", "not_approved");
+    clickCondition(store, "approved");
+    clickCondition(store, "approved");
     await vi.waitFor(() => expect(store.isLoading()).toBe(false));
     expect(reads()).toBeGreaterThan(before);
     expect(get).toHaveBeenLastCalledWith(expect.objectContaining({ attributes: "not_approved" }), expect.anything());
 
     before = reads();
-    store.cycleAttributeFilter("has_workspace", "no_workspace");
-    store.cycleAttributeFilter("has_workspace", "no_workspace");
+    clickCondition(store, "has-workspace");
+    clickCondition(store, "has-workspace");
     await vi.waitFor(() => expect(store.isLoading()).toBe(false));
     expect(store.getAttributeFilters()).toEqual(["not_approved", "no_workspace"]);
     expect(reads()).toBe(before);

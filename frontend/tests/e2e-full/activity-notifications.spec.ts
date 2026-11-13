@@ -24,7 +24,7 @@ test.describe("notifications in the activity feed", () => {
 
       // The Notifications filter removes them while the underlying
       // PR/issue activity rows remain.
-      await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+      await page.locator(".activity-feed .filters-wrap .kit-filter-dropdown__btn").click();
       await page.locator(".kit-filter-dropdown__panel").waitFor({ state: "visible" });
       await page.locator(".kit-filter-dropdown__item", { hasText: "Notifications" }).click();
 

@@ -21,7 +21,15 @@
   import { createRangeSelection, isSelectAllShortcut } from "../utils/range-selection.svelte.js";
   import type { Issue, PullRequest } from "../api/types.js";
   import { createRepoLabelFormatter } from "../utils/repo-label.js";
-  import { cycleTriFilter, triFilterRow, type TriFilter } from "../utils/tri-filter.js";
+  import { pullMatchesAttributeFilters } from "../utils/pull-attributes.js";
+  import PullFilterMenu from "../components/PullFilterMenu.svelte";
+  import {
+    afterSet,
+    choiceItems,
+    pullListFilterOptions,
+    triFilter,
+    type FilterRow,
+  } from "../components/pullFilters.js";
   import RepoTypeahead from "../components/RepoTypeahead.svelte";
   import MobileTriageSearchBar from "../components/mobile/MobileTriageSearchBar.svelte";
   import { getGlobalRepo, setGlobalRepo } from "../stores/filter.svelte.js";
@@ -44,10 +52,6 @@
   const { pulls, issues, sync, settings, grouping } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
-
-  const groupingMode = $derived(
-    grouping.getGroupingMode(),
-  );
 
   interface Props {
     listType: "mrs" | "issues";
@@ -81,29 +85,6 @@
   function loadList(): void {
     if (listType === "mrs") pulls.loadPulls(repoParams);
     else issues.loadIssues(repoParams);
-  }
-
-  function toggleInvolvesMe(): void {
-    if (listType === "mrs") {
-      pulls.setInvolvesMe(cycleTriFilter(pulls.getInvolvesMe()));
-    } else {
-      issues.setInvolvesMe(cycleTriFilter(issues.getInvolvesMe()));
-    }
-    resetPageAndLoad();
-  }
-
-  function toggleUnassigned(): void {
-    if (listType === "mrs") {
-      pulls.setUnassigned(cycleTriFilter(pulls.getUnassigned()));
-    } else {
-      issues.setUnassigned(cycleTriFilter(issues.getUnassigned()));
-    }
-    resetPageAndLoad();
-  }
-
-  function toggleReferencedByPR(): void {
-    issues.setReferencedByPR(cycleTriFilter(issues.getReferencedByPR()));
-    resetPageAndLoad();
   }
 
   function setListState(state: string): void {
@@ -246,7 +227,10 @@
 
   // Filter state accessors for PRs.
   const prFilterState = $derived(pulls.getFilterState());
-  const prItems = $derived(pulls.getPulls());
+  // Labels have no control here, so only the shared attribute filters apply.
+  const prItems = $derived(
+    pulls.getPulls().filter((pr) => pullMatchesAttributeFilters(pr, pulls.getAttributeFilters())),
+  );
   const prLoading = $derived(pulls.isLoading());
   const prError = $derived(pulls.getError());
 
@@ -433,122 +417,96 @@
   const itemLabel = $derived(
     listType === "mrs" ? "PRs" : "issues",
   );
-  const involvesMe = $derived(
-    listType === "mrs" ? pulls.getInvolvesMe() : issues.getInvolvesMe(),
-  );
-  const unassigned = $derived(
-    listType === "mrs" ? pulls.getUnassigned() : issues.getUnassigned(),
-  );
+  const prFilters = $derived(pullListFilterOptions(pulls, resetPageAndLoad));
+  const issueInvolvement = $derived<FilterRow[]>([
+    triFilter("involves-me", "Involves me", afterSet({ get: issues.getInvolvesMe, set: issues.setInvolvesMe }, resetPageAndLoad)),
+    triFilter("unassigned", "Unassigned", afterSet({ get: issues.getUnassigned, set: issues.setUnassigned }, resetPageAndLoad)),
+    ...(issues.canFilterReferencedByPR()
+      ? [triFilter(
+          "referenced-by-pr",
+          "Referenced by PR",
+          afterSet({ get: issues.getReferencedByPR, set: issues.setReferencedByPR }, resetPageAndLoad),
+        )]
+      : []),
+  ]);
+  const involvementRows = $derived(listType === "mrs" ? prFilters.involvement : issueInvolvement);
   const compactFiltersActive = $derived(
     listType === "mrs"
-      ? prFilterState !== "open"
-        || groupingMode !== "byRepo"
-        || involvesMe !== undefined
-        || unassigned !== undefined
+      ? prFilters.state.value !== prFilters.state.defaultValue
+        || prFilters.ci.value !== prFilters.ci.defaultValue
+        || [...prFilters.involvement, ...prFilters.conditions].some((row) => row.active || row.excluded)
       : issueFilterState !== "open"
-        || involvesMe !== undefined
-        || unassigned !== undefined
-        || issues.getReferencedByPR() !== undefined
+        || issueInvolvement.some((row) => row.active || row.excluded)
         || issues.getHideBots(),
   );
-  const compactFilterSections = $derived.by((): FilterDropdownSection[] => {
-    const sections: FilterDropdownSection[] = [
-      {
-        title: "State",
-        items: ["open", "closed", "all"].map((state) => ({
-          id: `state-${state}`,
-          label: state === "open" ? "Open" : state === "closed" ? "Closed" : "All",
-          active: (listType === "mrs" ? prFilterState : issueFilterState) === state,
-          onSelect: () => setListState(state),
-        })),
-      },
-    ];
-
-    if (listType === "mrs") {
-      sections.push({
-        title: "Group",
-        items: [
-          {
-            id: "group-by-repo",
-            label: "By repo",
-            active: groupingMode === "byRepo",
-            onSelect: () => grouping.setGroupingMode("byRepo"),
-          },
-          {
-            id: "group-flat",
-            label: "Flat list",
-            active: groupingMode === "flat",
-            onSelect: () => grouping.setGroupingMode("flat"),
-          },
-        ],
-      });
-    }
-
-    sections.push({
-      title: listType === "mrs" ? "PR" : "Issue",
+  const issueFilterSections = $derived<FilterDropdownSection[]>([
+    {
+      title: "State",
+      items: ["open", "closed", "all"].map((state) => ({
+        id: `state-${state}`,
+        label: state === "open" ? "Open" : state === "closed" ? "Closed" : "All",
+        active: issueFilterState === state,
+        onSelect: () => setListState(state),
+      })),
+    },
+    {
+      title: "Issue",
       items: [
+        ...issueInvolvement,
         {
-          id: "involves-me",
-          label: "Involves me",
-          ...triFilterRow(involvesMe),
-          onSelect: toggleInvolvesMe,
+          id: "hide-bot-authored-issues",
+          label: "Hide bot-authored issues",
+          active: issues.getHideBots(),
+          onSelect: () => void issues.setHideBots(!issues.getHideBots()),
         },
-        {
-          id: "unassigned",
-          label: "Unassigned",
-          ...triFilterRow(unassigned),
-          onSelect: toggleUnassigned,
-        },
-        ...(listType === "issues" && issues.canFilterReferencedByPR()
-          ? [{
-              id: "referenced-by-pr",
-              label: "Referenced by PR",
-              ...triFilterRow(issues.getReferencedByPR()),
-              onSelect: toggleReferencedByPR,
-            }]
-          : []),
-        ...(listType === "issues"
-          ? [{
-              id: "hide-bot-authored-issues",
-              label: "Hide bot-authored issues",
-              active: issues.getHideBots(),
-              onSelect: () => void issues.setHideBots(!issues.getHideBots()),
-            }]
-          : []),
       ],
-    });
-
-    return sections;
-  });
+    },
+  ]);
 </script>
 
-{#snippet triFilterButton(label: string, value: TriFilter, onclick: () => void)}
+{#snippet filterButton(row: { label: string; active: boolean; excluded?: boolean; onSelect: () => void })}
   <button
     type="button"
     class="visibility-btn"
-    class:visibility-btn--active={value === "require"}
-    class:visibility-btn--excluded={value === "exclude"}
-    aria-pressed={value !== undefined}
-    {onclick}
+    class:visibility-btn--active={row.active}
+    class:visibility-btn--excluded={row.excluded}
+    aria-pressed={row.active || row.excluded === true}
+    onclick={row.onSelect}
   >
-    {#if value === "exclude"}
+    {#if row.excluded}
       <XIcon size={11} strokeWidth={2.4} aria-hidden="true" />
     {/if}
-    {label}{#if value === "exclude"}<span class="kit-sr-only">, excluded</span>{/if}
+    {row.label}{#if row.excluded}<span class="kit-sr-only">, excluded</span>{/if}
   </button>
+{/snippet}
+
+{#snippet listFilterMenu(label: string, align: "start" | "end")}
+  {#if listType === "mrs"}
+    <PullFilterMenu
+      filters={prFilters}
+      {label}
+      title="Filters"
+      active={compactFiltersActive}
+      showBadge={false}
+      minWidth="180px"
+      {align}
+    />
+  {:else}
+    <FilterDropdown
+      {label}
+      title="Filters"
+      active={compactFiltersActive}
+      showBadge={false}
+      sections={issueFilterSections}
+      minWidth="180px"
+      {align}
+    />
+  {/if}
 {/snippet}
 
 {#snippet compactPhoneFilters()}
   <div class="compact-phone-filter-menu">
-    <FilterDropdown
-      label="Filters"
-      title="Filters"
-      active={compactFiltersActive}
-      showBadge={false}
-      sections={compactFilterSections}
-      minWidth="180px"
-      align="end"
-    />
+    {@render listFilterMenu("Filters", "end")}
   </div>
 {/snippet}
 
@@ -577,15 +535,9 @@
       </div>
     {/if}
     {#if !showRepoSelector && !phonePresentation}
-      <div class="compact-filter-menu">
-        <FilterDropdown
-          label="List filters"
-          title="Filters"
-          active={compactFiltersActive}
-          showBadge={false}
-          sections={compactFilterSections}
-          minWidth="180px"
-        />
+      <!-- The PR conditions live only in this menu at desktop widths, so it always shows for PRs. -->
+      <div class="compact-filter-menu" class:compact-filter-menu--always={listType === "mrs"}>
+        {@render listFilterMenu("List filters", "start")}
       </div>
     {/if}
     <div class="state-toggle">
@@ -620,12 +572,18 @@
       {/if}
     </div>
     <div class="visibility-controls">
-      {@render triFilterButton("Involves me", involvesMe, toggleInvolvesMe)}
-      {@render triFilterButton("Unassigned", unassigned, toggleUnassigned)}
+      {#each involvementRows as row (row.id)}
+        {@render filterButton(row)}
+      {/each}
+      {#if listType === "mrs" && showRepoSelector}
+        {#each prFilters.conditions as row (row.id)}
+          {@render filterButton(row)}
+        {/each}
+        {#each choiceItems(prFilters.ci) as item (item.id)}
+          {@render filterButton(item)}
+        {/each}
+      {/if}
       {#if listType === "issues"}
-        {#if issues.canFilterReferencedByPR()}
-          {@render triFilterButton("Referenced by PR", issues.getReferencedByPR(), toggleReferencedByPR)}
-        {/if}
         <button
           type="button"
           class="visibility-btn"
@@ -816,6 +774,10 @@
   .compact-filter-menu {
     display: none;
     flex-shrink: 0;
+  }
+
+  .compact-filter-menu--always {
+    display: block;
   }
 
   .compact-filter-menu :global(.kit-filter-dropdown__btn) {

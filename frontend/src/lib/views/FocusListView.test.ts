@@ -8,7 +8,9 @@ import {
   getIssueReferencedByPR,
   getIssueSearch,
   getIssueUnassigned,
+  getPullAttributeFilters,
   getPullInvolvesMe,
+  getPullRows,
   getPullSearch,
   getPullUnassigned,
   resetFocusListViewState,
@@ -16,12 +18,15 @@ import {
   setIssueReferencedByPR,
   setIssueSearch,
   setIssueUnassigned,
+  setPullAttributeFilters,
   setPullInvolvesMe,
+  setPullRows,
   setPullSearch,
   setPullUnassigned,
 } from "../../test/focusListViewState.svelte.js";
 import { getGlobalRepo, setGlobalRepo } from "../stores/filter.svelte.js";
 import type { TriFilter } from "../utils/tri-filter.js";
+import type { PullRequest } from "../api/types.js";
 
 const pullSearch = vi.hoisted(() => vi.fn());
 const issueSearch = vi.hoisted(() => vi.fn());
@@ -40,8 +45,10 @@ const pullListCapped = vi.hoisted(() => ({ state: undefined as SvelteMap<string,
 const issueListCapped = vi.hoisted(() => ({ state: undefined as SvelteMap<string, boolean> | undefined }));
 vi.mock("../context.js", () => ({
   getActions: () => ({ importItem: vi.fn() }),
+  getHostState: () => ({}),
   getNavigate: () => vi.fn(),
   getStores: () => ({
+    activity: { getUseWorkspaceActivityForRecency: () => false },
     grouping: {
       getGroupingMode: () => "flat",
       getHideOrgName: () => false,
@@ -87,7 +94,9 @@ vi.mock("../context.js", () => ({
       getSearchQuery: getPullSearch,
       getError: () => null,
       getFilterState: () => "open",
-      getPulls: () => [],
+      getPulls: getPullRows,
+      getAttributeFilters: getPullAttributeFilters,
+      setAttributeFilters: setPullAttributeFilters,
       isLoading: () => false,
       isListCapped: () => pullListCapped.state?.get("capped") ?? false,
       loadPulls,
@@ -134,6 +143,7 @@ vi.mock("../context.js", () => ({
           ],
         },
       ],
+      getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }),
       hasConfiguredRepos: () => true,
       isSettingsLoaded: () => true,
     },
@@ -387,6 +397,53 @@ describe("FocusListView search", () => {
     expect(loadList).toHaveBeenLastCalledWith({ repo: "github|github.com/acme/api" });
     expect(screen.queryByRole("button", { name: "Save preset" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete preset Backend" })).toBeNull();
+  });
+
+  it("offers the shared PR conditions and CI on the phone PR list", async () => {
+    const pr = (id: number, title: string, overrides: Partial<PullRequest>) =>
+      ({
+        ID: id,
+        Number: id,
+        Title: title,
+        LastActivityAt: "2026-05-20T15:00:00Z",
+        repo_owner: "acme",
+        repo_name: "api",
+        platform_host: "github.com",
+        repo: { provider: "github", platform_host: "github.com", owner: "acme", name: "api", repo_path: "acme/api" },
+        State: "open",
+        IsDraft: false,
+        ReviewDecision: "",
+        CIStatus: "",
+        CIChecksJSON: "[]",
+        MergeableState: "clean",
+        ...overrides,
+      }) as PullRequest;
+    setPullRows([pr(1, "Sketch the parser", { IsDraft: true }), pr(2, "Ship the parser", { CIStatus: "success" })]);
+    render(FocusListView, { props: { listType: "mrs", showRepoSelector: true } });
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    const shown = () => ["Sketch the parser", "Ship the parser"].filter((title) => screen.queryByText(title));
+
+    const draft = screen.getByRole("button", { name: "Draft" });
+    await fireEvent.click(draft);
+    expect(getPullAttributeFilters()).toEqual(["draft"]);
+    expect(shown()).toEqual(["Sketch the parser"]);
+
+    await fireEvent.click(draft);
+    expect(getPullAttributeFilters()).toEqual(["not_draft"]);
+    expect(screen.getByRole("button", { name: "Draft, excluded" })).toBe(draft);
+    expect(shown()).toEqual(["Ship the parser"]);
+
+    await fireEvent.click(draft);
+    const passing = screen.getByRole("button", { name: "Passing CI" });
+    await fireEvent.click(passing);
+    expect(getPullAttributeFilters()).toEqual(["passed_ci"]);
+    expect(passing.getAttribute("aria-pressed")).toBe("true");
+    expect(shown()).toEqual(["Ship the parser"]);
+
+    // Picking the chosen CI option again turns CI off.
+    await fireEvent.click(passing);
+    expect(getPullAttributeFilters()).toEqual([]);
+    expect(shown()).toEqual(["Sketch the parser", "Ship the parser"]);
   });
 
   it.each([

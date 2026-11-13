@@ -470,7 +470,9 @@ describe("view navigation", () => {
     await page.elementLocator(document.querySelector(".activity-table .activity-row")!).click();
     await vi.waitFor(() => expect(document.querySelector(".activity-shell--split")).not.toBeNull(), WAIT);
 
-    await page.elementLocator(document.querySelector(".activity-feed .kit-filter-dropdown__btn")!).click();
+    await page
+      .elementLocator(document.querySelector(".activity-feed .filters-wrap .kit-filter-dropdown__btn")!)
+      .click();
     await vi.waitFor(() => expect(document.querySelector(".kit-filter-dropdown__panel")).not.toBeNull(), WAIT);
 
     const paletteShortcut = pressKey("k", { meta: true });

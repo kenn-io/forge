@@ -80,12 +80,15 @@ async function listIssues(api: APIRequestContext): Promise<IssueResponse> {
   return (await response.json()) as IssueResponse;
 }
 
-async function selectActivityViewItem(page: Page, label: string | RegExp): Promise<void> {
+async function selectActivityViewItem(
+  page: Page,
+  label: string | RegExp,
+  menu: "filters" | "layout" = "filters",
+): Promise<void> {
   const panel = page.locator(".kit-filter-dropdown__panel");
-  if (!(await panel.isVisible())) {
-    await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
-    await expect(panel).toBeVisible();
-  }
+  if (await panel.isVisible()) await page.keyboard.press("Escape");
+  await page.locator(`.activity-feed .${menu}-wrap .kit-filter-dropdown__btn`).click();
+  await expect(panel).toBeVisible();
   await (
     typeof label === "string"
       ? panel.locator(".kit-filter-dropdown__item", { hasText: label })
@@ -298,8 +301,8 @@ test.describe("workspace session activity across item surfaces", () => {
 
       await page.goto(`${server.info.base_url}/`);
       await expect(page.locator(".activity-table .activity-row").first()).toBeVisible();
-      await selectActivityViewItem(page, "Threaded");
-      await selectActivityViewItem(page, "24h");
+      await selectActivityViewItem(page, "Threaded", "layout");
+      await selectActivityViewItem(page, "24h", "layout");
       await selectActivityViewItem(page, "Notifications");
       const pullActivityRow = page.locator(".threaded-view .item-row", { hasText: "Add widget caching layer" }).first();
       await expect(pullActivityRow).toBeVisible();
@@ -419,7 +422,9 @@ test.describe("workspace session activity across item surfaces", () => {
       await settingsLoaded;
       // Returning to Activity restores the Threaded/24h selection made above.
       await expect(page.locator(".threaded-view .item-row").first()).toBeVisible();
-      await expect(page.locator(".activity-feed .kit-filter-dropdown__btn")).toContainText("Threaded · 24h");
+      await expect(page.locator(".activity-feed .layout-wrap .kit-filter-dropdown__btn")).toContainText(
+        "Threaded · 24h",
+      );
       const botPullTitle = "Bump lodash from 4.17.20 to 4.17.21";
       const botIssueTitle = "Security advisory: prototype pollution";
       const botPullRow = page.locator(".threaded-view .item-row", { hasText: botPullTitle });

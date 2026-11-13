@@ -328,9 +328,9 @@ describe("status bar counts", () => {
     );
     await vi.waitFor(() => expect(statusItemTexts()).toEqual(["2 PRs", "2 issues", "2 repos"]), WAIT);
 
-    stores!.pulls.cycleAttributeFilter("fork", "not_fork");
+    stores!.pulls.setAttributeFilters(["fork"]);
     await vi.waitFor(() => expect(statusItemTexts()).toEqual(["1 PRs", "2 issues", "1 repos"]), WAIT);
-    stores!.pulls.cycleAttributeFilter("fork", "not_fork");
+    stores!.pulls.setAttributeFilters(["not_fork"]);
     await vi.waitFor(() => expect(statusItemTexts()).toEqual(["1 PRs", "2 issues", "2 repos"]), WAIT);
 
     stores!.issues.cycleLabelFilter("bug");

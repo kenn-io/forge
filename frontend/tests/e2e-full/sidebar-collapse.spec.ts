@@ -315,13 +315,15 @@ test.describe("collapsible sidebar", () => {
     await expectCompactFilterBar(filterBar);
 
     const dropdown = await openCompactFilters(filterBar);
-    await expect(dropdown.locator(".kit-filter-dropdown__section-title", { hasText: "PR" })).toBeVisible();
+    await expect(dropdown.locator(".kit-filter-dropdown__section-title", { hasText: "Filter" })).toBeVisible();
     await dropdown.locator(".kit-filter-dropdown__item", { hasText: "Closed" }).click();
     await expect(filterBar.page().locator(".state-note")).toBeVisible();
     await expect(dropdown).toBeVisible();
+    await page.keyboard.press("Escape");
 
-    await dropdown.locator(".kit-filter-dropdown__item", { hasText: "Flat list" }).click();
-    await expect(dropdown).toBeVisible();
+    // Grouping has its own menu beside the filters.
+    await filterBar.locator(".compact-group-menu .kit-filter-dropdown__btn").click();
+    await page.locator(".kit-filter-dropdown__item", { hasText: "Flat list" }).click();
     await expect(page.locator(".sidebar-group-header")).toHaveCount(0, {
       timeout: 5_000,
     });

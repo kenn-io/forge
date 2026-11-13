@@ -1,11 +1,11 @@
 <script lang="ts">
   import RepoPrivateIcon from "../components/shared/RepoPrivateIcon.svelte";
   import {
-    ACTIVITY_TRI_FILTER_OPTIONS,
     activityFilterOptions,
     activityItemVisible,
     activitySubjectVisible,
   } from "../components/activityFilters.js";
+  import { TRI_FILTER_OPTIONS } from "../components/pullFilters.js";
   import { Effect } from "effect";
   import { onDestroy, onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
@@ -749,7 +749,7 @@
         />
       </div>
 
-      {#each [filters.state, filters.ci] as choice (choice.id)}
+      {#each [filters.pull.state, filters.pull.ci] as choice (choice.id)}
         <div class="mobile-filter-select">
           <span>{choice.label}</span>
           <SelectDropdown
@@ -771,7 +771,7 @@
               class="mobile-filter-dropdown"
               title={filter.label}
               value={tri.value ?? "any"}
-              options={ACTIVITY_TRI_FILTER_OPTIONS}
+              options={TRI_FILTER_OPTIONS}
               onchange={(value) => tri.set(value === "require" || value === "exclude" ? value : undefined)}
             />
           </div>

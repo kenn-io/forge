@@ -16,23 +16,19 @@ async function waitForPullList(page: Page): Promise<void> {
   await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
 }
 
-async function selectPullGrouping(page: Page, label: string | RegExp): Promise<void> {
+async function selectPullGrouping(page: Page, label: string): Promise<void> {
   const groupButton = page.locator(".group-btn", { hasText: label });
   if (await groupButton.isVisible()) {
     await groupButton.click();
     return;
   }
-
-  const compactLabel = compactPullGroupingLabel(label);
-  await page.getByRole("button", { name: "Filters" }).click();
-  await page.locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", { hasText: compactLabel }).click();
-}
-
-function compactPullGroupingLabel(label: string | RegExp): string | RegExp {
-  if (typeof label !== "string") return label;
-  if (label === "Repo") return "By repo";
-  if (label === "All") return "Flat list";
-  return label;
+  // Narrow sidebars move the Repo/All toggle into its own Group menu.
+  await page.locator(".compact-group-menu .kit-filter-dropdown__btn").click();
+  await page
+    .locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", {
+      hasText: label === "Repo" ? "By repo" : "Flat list",
+    })
+    .click();
 }
 
 test.describe("grouping toggle", () => {

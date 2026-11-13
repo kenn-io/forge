@@ -201,28 +201,17 @@ function count(selector: string): number {
 }
 
 async function selectPullGrouping(label: string): Promise<void> {
-  // The PR/issue list sidebar is 340px, below the 395px compact threshold, so the
-  // inline group buttons are CSS-hidden and grouping lives in the "Filters"
-  // compact dropdown. The "Group" section is last, so pick the last item whose
-  // label matches (the State section may also expose an "All" entry).
+  // The PR/issue list sidebar is 340px, below the compact threshold, so the inline
+  // group buttons are CSS-hidden and grouping lives in the Group menu beside Filters.
   await vi.waitFor(
-    () => expect(document.querySelector(".compact-filter-menu .kit-filter-dropdown__btn")).not.toBeNull(),
+    () => expect(document.querySelector(".compact-group-menu .kit-filter-dropdown__btn")).not.toBeNull(),
     WAIT,
   );
-  const filtersBtn = document.querySelector(".compact-filter-menu .kit-filter-dropdown__btn")!;
-  await page.elementLocator(filtersBtn).click();
-  await vi.waitFor(
-    () => expect(document.querySelector(".compact-filter-menu .kit-filter-dropdown__panel")).not.toBeNull(),
-    WAIT,
+  await page.elementLocator(document.querySelector(".compact-group-menu .kit-filter-dropdown__btn")!).click();
+  await vi.waitFor(() => expect(document.querySelector(".kit-filter-dropdown__panel")).not.toBeNull(), WAIT);
+  const item = Array.from(document.querySelectorAll(".kit-filter-dropdown__panel .kit-filter-dropdown__item")).find(
+    (el) => (el.textContent ?? "").trim() === (label === "Repo" ? "By repo" : "Flat list"),
   );
-  const compactLabel = compactPullGroupingLabel(label);
-  const items = Array.from(
-    document.querySelectorAll(".compact-filter-menu .kit-filter-dropdown__panel .kit-filter-dropdown__item"),
-  ).filter(
-    (el) =>
-      (el.querySelector(".kit-filter-dropdown__label")?.textContent ?? el.textContent ?? "").trim() === compactLabel,
-  );
-  const item = items[items.length - 1];
   expect(item).toBeDefined();
   await page.elementLocator(item!).click();
 }
@@ -246,27 +235,21 @@ async function selectCompactFilterItem(label: string): Promise<void> {
   await page.elementLocator(item!).click();
 }
 
-function compactPullGroupingLabel(label: string): string {
-  if (label === "Repo") return "By repo";
-  if (label === "All") return "Flat list";
-  return label;
-}
-
-function activityFiltersBtn(): Element {
-  return document.querySelector(".activity-feed .kit-filter-dropdown__btn")!;
+// Activity's layout menu holds Flat/Threaded, Group, and the time range; its filter menu holds the rest.
+function activityMenuBtn(menu: "filters" | "layout"): Element {
+  return document.querySelector(`.activity-feed .${menu}-wrap .kit-filter-dropdown__btn`)!;
 }
 
 async function selectActivityViewItem(label: string): Promise<void> {
-  // Open the activity feed's Filters popover fresh, then click the labelled item.
-  if (!document.querySelector(".kit-filter-dropdown__panel")) {
-    await page.elementLocator(activityFiltersBtn()).click();
-    await vi.waitFor(() => expect(document.querySelector(".kit-filter-dropdown__panel")).not.toBeNull(), WAIT);
-  }
-  // Match the whole label: State's "All states" precedes Group's "All".
+  const menu = ["Threaded", "Flat", "By repo", "All"].includes(label) ? "layout" : "filters";
+  await page.elementLocator(activityMenuBtn(menu)).click();
+  await vi.waitFor(() => expect(document.querySelector(".kit-filter-dropdown__panel")).not.toBeNull(), WAIT);
+  // Match the whole label: the filter menu's "All states" would also contain "All".
   const item = Array.from(document.querySelectorAll(".kit-filter-dropdown__panel .kit-filter-dropdown__item")).find(
     (el) => (el.textContent ?? "").trim() === label,
   )!;
   await page.elementLocator(item).click();
+  if (menu === "filters") await page.elementLocator(activityMenuBtn(menu)).click();
 }
 
 function activityDropdownHas(label: string): boolean {
@@ -430,13 +413,14 @@ describe("grouping toggle", () => {
     mounted = await mountBrowserApp("/", { overrides: overrides() });
     await vi.waitFor(() => expect(document.querySelector(".activity-feed")).not.toBeNull(), WAIT);
 
-    await page.elementLocator(activityFiltersBtn()).click();
+    await page.elementLocator(activityMenuBtn("layout")).click();
     await vi.waitFor(() => expect(document.querySelector(".kit-filter-dropdown__panel")).not.toBeNull(), WAIT);
     expect(activityDropdownHas("By repo")).toBe(false);
+    await page.elementLocator(activityMenuBtn("layout")).click();
 
     await selectActivityViewItem("Threaded");
     await vi.waitFor(() => expect(document.querySelector(".threaded-view")).not.toBeNull(), WAIT);
-    await page.elementLocator(activityFiltersBtn()).click();
+    await page.elementLocator(activityMenuBtn("layout")).click();
     await vi.waitFor(() => expect(document.querySelector(".kit-filter-dropdown__panel")).not.toBeNull(), WAIT);
     expect(activityDropdownHas("By repo")).toBe(true);
   });

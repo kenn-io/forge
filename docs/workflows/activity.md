@@ -6,9 +6,10 @@ one queue.
 
 ## Choose the right view
 
-Use **Threaded** mode to group events under their pull request or issue. This is
-usually the quieter view because a busy discussion takes one row. Use **Flat**
-mode when exact event order matters.
+The **Layout** menu holds the view choices: Flat or Threaded, grouping by
+repository, and the time range. Use **Threaded** mode to group events under
+their pull request or issue. This is usually the quieter view because a busy
+discussion takes one row. Use **Flat** mode when exact event order matters.
 
 Threaded Activity loads up to 5,000 pull requests and issues at a time. When
 more match, select **Load older items** at the bottom of the list. On a phone,
@@ -25,7 +26,7 @@ move older items onto the next page.
 
 The filters can narrow the queue by:
 
-- time range and repository
+- repository
 - pull requests, issues, and default-branch commits
 - event type, author, labels, or text
 - open or closed state

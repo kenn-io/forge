@@ -270,9 +270,11 @@ and back.
   shown as a pick-one section (CI) stays on/off (maintainer decision; `frontend/src/lib/utils/tri-filter.ts`).
   Server-matched conditions send their opposite as its own query (`not_draft`, `not_approved`, ...), so both
   directions apply before limits; `Has workspace` and `From fork` match loaded rows in the browser.
-- The PR list and Activity filter menus are one design: shared controls keep the same names, order,
-  and behavior (State, conditions, CI, View), so a change to one menu's shared control goes to both
-  (maintainer decision; `frontend/src/lib/components/activityFilters.ts::activityFilterOptions`).
+- PR lists and Activity render one shared filter menu (State, Filter rows, CI, View) from one
+  definition, desktop and phone; change a shared control there, never per view. A view's layout
+  choices (Activity Layout, Group, Time range; the PR list's Group) live in that view's own menu,
+  never in the shared one (maintainer decision; `frontend/src/lib/components/pullFilters.ts`,
+  `frontend/src/lib/components/PullFilterMenu.svelte`).
 - In Activity, PR conditions decide only which pull request activity shows; issue and repository
   rows always pass (maintainer decision; `internal/db/queries_activity.go::activityPullAttributeClause`).
 - Phone Activity shows a three-state filter as an Any/Yes/No choice, since a switch has no third state.

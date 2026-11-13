@@ -1,3 +1,5 @@
+import type { PullRequest } from "../lib/api/types.js";
+import type { PullAttributeFilter } from "../lib/utils/pull-attributes.js";
 import type { TriFilter } from "../lib/utils/tri-filter.js";
 
 let pullSearch = $state<string | undefined>(undefined);
@@ -7,6 +9,24 @@ let issueInvolvesMe = $state<TriFilter>(undefined);
 let pullUnassigned = $state<TriFilter>(undefined);
 let issueUnassigned = $state<TriFilter>(undefined);
 let issueReferencedByPR = $state<TriFilter>(undefined);
+let pullAttributeFilters = $state<PullAttributeFilter[]>([]);
+let pullRows = $state<PullRequest[]>([]);
+
+export function getPullAttributeFilters(): PullAttributeFilter[] {
+  return pullAttributeFilters;
+}
+
+export function setPullAttributeFilters(value: PullAttributeFilter[]): void {
+  pullAttributeFilters = value;
+}
+
+export function getPullRows(): PullRequest[] {
+  return pullRows;
+}
+
+export function setPullRows(value: PullRequest[]): void {
+  pullRows = value;
+}
 
 export function getPullSearch(): string | undefined {
   return pullSearch;
@@ -72,4 +92,6 @@ export function resetFocusListViewState(): void {
   pullUnassigned = undefined;
   issueUnassigned = undefined;
   issueReferencedByPR = undefined;
+  pullAttributeFilters = [];
+  pullRows = [];
 }

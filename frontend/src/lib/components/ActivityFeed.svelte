@@ -399,10 +399,34 @@
     collapseThreads ? "Expand all" : "Collapse all",
   );
 
-  // Sections follow the pull request list's menu: State, then layout and scope, the conditions,
-  // CI, and View.
+  // The filters come first, in the pull request list's order (State, the conditions, CI), then
+  // layout and scope, then View.
   const filterSections = $derived.by(() => [
     { title: "State", items: choiceItems(filters.state) },
+    { title: "Event types", items: filters.events },
+    {
+      title: "Filter",
+      items: [
+        {
+          id: "author",
+          label: "Author",
+          detail: activity.getActivityAuthor() || "Anyone",
+          active: Boolean(activity.getActivityAuthor()),
+          submenu: authorFilterMenu,
+          onSelect: () => {},
+        },
+        {
+          id: "labels",
+          label: "Labels",
+          detail: labelFilterSummary(activity.getLabelFilters()),
+          active: activity.getLabelFilters().size > 0,
+          submenu: labelFilterMenu,
+          onSelect: () => {},
+        },
+        ...filters.conditions,
+      ],
+    },
+    { title: "CI", items: choiceItems(filters.ci) },
     {
       title: "Layout",
       items: [
@@ -455,30 +479,6 @@
         onSelect: () => handleTimeRangeChange(range.value),
       })),
     },
-    { title: "Event types", items: filters.events },
-    {
-      title: "Filter",
-      items: [
-        {
-          id: "author",
-          label: "Author",
-          detail: activity.getActivityAuthor() || "Anyone",
-          active: Boolean(activity.getActivityAuthor()),
-          submenu: authorFilterMenu,
-          onSelect: () => {},
-        },
-        {
-          id: "labels",
-          label: "Labels",
-          detail: labelFilterSummary(activity.getLabelFilters()),
-          active: activity.getLabelFilters().size > 0,
-          submenu: labelFilterMenu,
-          onSelect: () => {},
-        },
-        ...filters.conditions,
-      ],
-    },
-    { title: "CI", items: choiceItems(filters.ci) },
     {
       title: "View",
       items: [

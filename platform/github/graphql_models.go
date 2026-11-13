@@ -444,7 +444,7 @@ func AdaptPR(gql *GraphQLPR) *gh.PullRequest {
 		HTMLURL:           new(gql.URL),
 		Additions:         new(gql.Additions),
 		Deletions:         new(gql.Deletions),
-		User:              &gh.User{Login: new(BotLogin(gql.Author.Login, gql.Author.Typename)), Type: new(gql.Author.Typename)},
+		User:              &gh.User{Login: new(gql.Author.Login), Type: new(gql.Author.Typename)},
 		AuthorAssociation: gql.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		Head: &gh.PullRequestBranch{
 			Ref: new(gql.HeadRefName),

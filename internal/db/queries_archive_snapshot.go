@@ -95,6 +95,7 @@ const archiveSnapshotLinks = `link_candidates AS (
  ) WHERE reference_rank=1
 )`
 
+// Snapshots use provider bot evidence; Activity intentionally uses broader login heuristics.
 const (
 	archiveSnapshotCommentBody   = `COALESCE(CAST(substr(CAST(COALESCE(e.body,'') AS BLOB),1,33554433) AS TEXT),'')`
 	archiveSnapshotCommentFilter = `((p.author <> '' AND lower(e.author)=lower(p.author)) OR (upper(e.author_association) IN ('MEMBER','OWNER','COLLABORATOR') AND e.author<>'' AND NOT ` + archiveSnapshotKnownBot + `))`
@@ -151,12 +152,15 @@ const archiveSnapshotActivity = `activity_events AS MATERIALIZED (
  WHERE e.event_type IN ('issue_comment','review','review_comment','assigned','commit','force_push')
  AND (e.event_type<>'commit' OR (p.platform_head_sha<>'' AND (e.summary=p.platform_head_sha OR e.platform_external_id=p.platform_head_sha)))
  ), actor_roles AS MATERIALIZED (
- SELECT repo_id,author,(SELECT r.author_association FROM forge_mr_events r WHERE r.repo_id=a.repo_id AND r.author=a.author AND r.author_association<>''
- ORDER BY r.created_at DESC,r.id DESC LIMIT 1) AS role
- FROM (SELECT DISTINCT repo_id,author FROM activity_events WHERE human=1 AND COALESCE(author_association,'')='') a
+ SELECT repo_id,author,role FROM (
+ SELECT r.repo_id,lower(r.author) AS author,r.author_association AS role,
+ ROW_NUMBER() OVER (PARTITION BY r.repo_id,lower(r.author) ORDER BY r.created_at DESC,r.id DESC) AS rank
+ FROM forge_mr_events r
+ WHERE r.repo_id IN (SELECT DISTINCT repo_id FROM activity_events WHERE human=1 AND COALESCE(author_association,'')='') AND r.author_association<>''
+ ) WHERE rank=1
  ), activity_candidates AS (
  SELECT e.*,COALESCE(NULLIF(e.author_association,''),r.role,CASE WHEN lower(e.author)=lower(e.pull_author) THEN e.pull_role END) AS role
- FROM activity_events e LEFT JOIN actor_roles r ON r.repo_id=e.repo_id AND r.author=e.author
+ FROM activity_events e LEFT JOIN actor_roles r ON r.repo_id=e.repo_id AND r.author=lower(e.author)
  ), classified_activity AS (
  SELECT *, 'author' AS class FROM activity_candidates WHERE human=1 AND author<>'' AND lower(author)=lower(pull_author)
  UNION ALL SELECT *, 'maintainer' FROM activity_candidates WHERE human=1 AND (upper(role) IN ('MEMBER','OWNER') OR (upper(role)='COLLABORATOR' AND lower(author)<>lower(pull_author)))

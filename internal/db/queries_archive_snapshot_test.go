@@ -146,13 +146,15 @@ func TestSnapshotActivityRoleEvidence(t *testing.T) {
 		at   time.Duration
 	}
 	for _, tc := range []struct {
-		name         string
-		observations []observation
-		actionRole   string
-		otherRepo    bool
-		wantClass    string
+		name          string
+		observations  []observation
+		actionRole    string
+		evidenceLogin string
+		otherRepo     bool
+		wantClass     string
 	}{
 		{name: "same repository", observations: []observation{{"MEMBER", -time.Minute}}, wantClass: "maintainer"},
+		{name: "login case differs", observations: []observation{{"MEMBER", -time.Minute}}, evidenceLogin: "Actor", wantClass: "maintainer"},
 		{name: "other repository", observations: []observation{{"MEMBER", -time.Minute}}, otherRepo: true, wantClass: "unknown"},
 		{name: "explicit role wins", observations: []observation{{"MEMBER", -time.Minute}}, actionRole: "CONTRIBUTOR"},
 		{name: "newer evidence wins", observations: []observation{{"MEMBER", -2 * time.Minute}, {"CONTRIBUTOR", -time.Minute}}},
@@ -170,9 +172,13 @@ func TestSnapshotActivityRoleEvidence(t *testing.T) {
 			}
 			id := insertArchiveReportMR(t, database, repo, 1, "mr-1", "Target", "author", now)
 			other := insertArchiveReportMR(t, database, evidenceRepo, 2, "mr-2", "Evidence", "author", now)
+			evidenceLogin := tc.evidenceLogin
+			if evidenceLogin == "" {
+				evidenceLogin = "actor"
+			}
 			// Separate upserts give later observations higher IDs.
 			for i, obs := range tc.observations {
-				require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: other, EventType: "issue_comment", Author: "actor", AuthorAssociation: &obs.role, MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: fmt.Sprintf("evidence-%d", i), CreatedAt: now.Add(obs.at)}}))
+				require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: other, EventType: "issue_comment", Author: evidenceLogin, AuthorAssociation: &obs.role, MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: fmt.Sprintf("evidence-%d", i), CreatedAt: now.Add(obs.at)}}))
 			}
 			var role *string
 			kind, wantKind := "assigned", "assigned"

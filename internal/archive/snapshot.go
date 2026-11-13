@@ -174,6 +174,9 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			if row.BodyClass == 2 {
 				pull.Gaps = append(pull.Gaps, "contributor_classification_unknown")
 			}
+			if row.AuthorAccountType != nil && strings.EqualFold(*row.AuthorAccountType, "bot") && !strings.HasSuffix(strings.ToLower(pull.Author), "[bot]") {
+				pull.Author += "[bot]"
+			}
 			if row.ReferenceIdentityUnknown {
 				pull.Gaps = append(pull.Gaps, "reference_identity_unknown")
 			}
@@ -262,11 +265,15 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		if err != nil {
 			return result, err
 		}
+		authorIDs := map[int64]int64{}
 		maintainerIDs := map[int64]int64{}
 		for _, row := range activity {
 			pull := &result.PullRequests[pullPositions[row.MergeRequestID]]
 			if row.Class == "unknown" {
-				if pull.LastMaintainerAction == nil || row.OccurredAt.After(pull.LastMaintainerAction.OccurredAt) || (row.OccurredAt.Equal(pull.LastMaintainerAction.OccurredAt) && row.ID > maintainerIDs[row.MergeRequestID]) {
+				laterThan := func(action *snapshot.SnapshotAction, id int64) bool {
+					return action == nil || row.OccurredAt.After(action.OccurredAt) || (row.OccurredAt.Equal(action.OccurredAt) && row.ID > id)
+				}
+				if laterThan(pull.LastAuthorAction, authorIDs[row.MergeRequestID]) || laterThan(pull.LastMaintainerAction, maintainerIDs[row.MergeRequestID]) {
 					pull.Gaps = append(pull.Gaps, "actor_role_unknown")
 				}
 				continue
@@ -274,6 +281,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			action := &snapshot.SnapshotAction{Kind: row.Kind, Actor: row.Actor, OccurredAt: row.OccurredAt.UTC()}
 			if row.Class == "author" {
 				pull.LastAuthorAction = action
+				authorIDs[row.MergeRequestID] = row.ID
 			} else {
 				pull.LastMaintainerAction = action
 				maintainerIDs[row.MergeRequestID] = row.ID

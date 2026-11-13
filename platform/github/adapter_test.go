@@ -239,7 +239,7 @@ func TestPullRequestAuthorAccountType(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, fromGraphQL.AuthorAccountType)
 			if tc.input == "Bot" {
-				assert.Equal(t, "automation[bot]", fromGraphQL.Author)
+				assert.Equal(t, "automation", fromGraphQL.Author)
 			}
 		})
 	}

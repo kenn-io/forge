@@ -624,12 +624,16 @@ func TestSnapshotContributorBodyClassification(t *testing.T) {
 		_, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: int64(i + 1), Number: i + 1, Author: fixture.author, AuthorAssociation: fixture.association, AuthorAccountType: fixture.account, Body: body, State: db.MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
 		require.NoError(t, err)
 	}
+	normal, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
+	require.NoError(t, err)
+	require.Len(t, normal.PullRequests, 3)
+	assert.Equal(t, "author", normal.PullRequests[1].Author)
 	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
 	require.NoError(t, err)
 	require.Len(t, result.PullRequests, 3)
 	assert.Equal(t, body, result.PullRequests[0].Body)
 	assert.False(t, result.PullRequests[0].BodyTruncated)
-	assert.Equal(t, "author", result.PullRequests[1].Author)
+	assert.Equal(t, "author[bot]", result.PullRequests[1].Author)
 	assert.NotContains(t, result.PullRequests[1].Gaps, "contributor_classification_unknown")
 	assert.True(t, result.PullRequests[1].BodyTruncated)
 	assert.True(t, result.PullRequests[2].BodyTruncated)
@@ -863,4 +867,45 @@ func TestSnapshotCachedActorTypes(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestSnapshotGraphQLBotAuthorDefault(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	gql := &platformgithub.GraphQLPR{DatabaseId: 1, Number: 1, State: "OPEN", Author: platformgithub.GraphQLIssueAuthor{Login: "automation", Typename: "Bot"}, CreatedAt: now, UpdatedAt: now}
+	pr, err := platformgithub.NormalizePullRequest(platform.RepoRef{}, platformgithub.AdaptPR(gql))
+	require.NoError(t, err)
+	_, err = database.UpsertMergeRequest(t.Context(), platformdb.DBMergeRequest(repoID, pr))
+	require.NoError(t, err)
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	assert.Equal(t, "automation", result.PullRequests[0].Author)
+	result, err = service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	assert.Equal(t, "automation[bot]", result.PullRequests[0].Author)
+}
+
+func TestSnapshotUnknownAuthorActionBeforeMaintainer(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", AuthorAccountType: new("user"), AuthorAssociation: new("CONTRIBUTOR"), State: db.MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{
+		{MergeRequestID: id, EventType: "issue_comment", Author: "author", DedupeKey: "author", CreatedAt: now.Add(-time.Minute)},
+		{MergeRequestID: id, EventType: "issue_comment", Author: "maintainer", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "maintainer", CreatedAt: now},
+	}))
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	assert.Nil(t, result.PullRequests[0].LastAuthorAction)
+	assert.Equal(t, &snapshot.SnapshotAction{Kind: "comment", Actor: "maintainer", OccurredAt: now}, result.PullRequests[0].LastMaintainerAction)
+	assert.Contains(t, result.PullRequests[0].Gaps, "actor_role_unknown")
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: "author", MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "known-author", CreatedAt: now}}))
+	result, err = service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	assert.NotContains(t, result.PullRequests[0].Gaps, "actor_role_unknown")
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: "author", DedupeKey: "unknown-tie", CreatedAt: now}}))
+	result, err = service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	assert.Contains(t, result.PullRequests[0].Gaps, "actor_role_unknown")
 }

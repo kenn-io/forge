@@ -494,8 +494,12 @@ test.describe("phone routes", () => {
     await anyone.click();
     expect((await unfilteredResponse).status()).toBe(200);
 
-    await expect(page.getByRole("button", { name: "Filters", exact: true })).toBeVisible();
+    const filtersButton = page.getByRole("button", { name: "Filters", exact: true });
+    await expect(filtersButton).toBeVisible();
     await expect.poll(() => new URL(page.url()).searchParams.has("author")).toBe(false);
+    // Cards load their events when they scroll into view, and the open panel covers them.
+    await filtersButton.click();
+    await expect(page.locator("#mobile-activity-filters")).toBeHidden();
     const eventAuthors = page.locator(".mobile-activity-event__body > span");
     await expect(async () => {
       const authors = await eventAuthors.allTextContents();

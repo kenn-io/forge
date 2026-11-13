@@ -480,6 +480,45 @@ func TestACPTurnClockSavesPeriodically(t *testing.T) {
 	})
 }
 
+// Streamed tool activity saves no more often than the transcript's size
+// allows, the pending save writes the latest activity, and the turn's end
+// saves at once.
+func TestACPProgressSavesScaleWithTranscriptSize(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		agent.recordPath = filepath.Join(t.TempDir(), "session.json")
+		require.NoError(t, agent.Prompt("work", ACPSender{Kind: ACPSenderUser}))
+		savedTools := func() []string {
+			var ids []string
+			for _, message := range readSavedSession(t, agent.recordPath).State.Messages {
+				if message.ToolCallID != "" {
+					ids = append(ids, message.ToolCallID)
+				}
+			}
+			return ids
+		}
+
+		// A three-megabyte transcript allows one save every three seconds.
+		acpUpdate(t, agent, acpsdk.SessionUpdate{ToolCall: &acpsdk.SessionUpdateToolCall{
+			ToolCallId: "big", Title: string(bytes.Repeat([]byte("x"), 3*acpProgressSaveBytesPerSecond)),
+		}})
+		advance(minProgressSaveInterval)
+		require.Equal(t, []string{"big"}, savedTools())
+
+		acpToolCall(t, agent, "next", acpsdk.ToolCallStatusInProgress)
+		acpToolStatus(t, agent, "next", acpsdk.ToolCallStatusCompleted)
+		advance(2500 * time.Millisecond)
+		assert.Equal(t, []string{"big"}, savedTools(), "progress waits for the interval")
+		advance(time.Second)
+		assert.Equal(t, []string{"big", "next"}, savedTools(), "the pending save writes the latest progress")
+
+		acpToolCall(t, agent, "last", acpsdk.ToolCallStatusCompleted)
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+		assert.Equal(t, []string{"big", "next", "last"}, savedTools(), "the turn's end saves at once")
+	})
+}
+
 // A coordinator's allowance travels with its queued prompt and bounds the
 // turn the prompt starts.
 func TestACPQueuedPromptKeepsItsAllowance(t *testing.T) {

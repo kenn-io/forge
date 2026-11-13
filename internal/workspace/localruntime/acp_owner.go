@@ -98,10 +98,48 @@ func (a *ACP) persistLocked() error {
 		return err
 	}
 	err = atomicfile.WriteFile(a.recordPath, data, atomicfile.WithPerm(0o600))
-	if errors.Is(err, atomicfile.ErrPublished) {
-		return nil
+	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
+		return err
 	}
-	return err
+	a.savedAt, a.savedBytes = time.Now(), len(data)
+	if a.progressSave != nil {
+		// This save already holds the progress the pending one would write.
+		a.progressSave.Stop()
+		a.progressSave = nil
+	}
+	return nil
+}
+
+// acpProgressSaveBytesPerSecond bounds the write rate of streamed-progress
+// saves. Each save rewrites and syncs the whole transcript, so saving on every
+// tool update made a long chat rewrite tens of megabytes every few seconds and
+// starve the disk for everything else on the host.
+const acpProgressSaveBytesPerSecond = 1 << 20
+
+// minProgressSaveInterval is the progress save interval for small chats.
+const minProgressSaveInterval = time.Second
+
+// saveProgressLocked saves streamed agent output no more often than the
+// transcript size allows; a pending save writes the latest state when it
+// fires. Changes that took effect save at once through persistLocked, so a
+// crashed owner loses at most the last interval of streamed output.
+func (a *ACP) saveProgressLocked() {
+	if a.progressSave != nil {
+		return
+	}
+	interval := max(minProgressSaveInterval,
+		time.Duration(a.savedBytes)*time.Second/acpProgressSaveBytesPerSecond)
+	wait := time.Until(a.savedAt.Add(interval))
+	if wait <= 0 {
+		_ = a.persistLocked()
+		return
+	}
+	a.progressSave = time.AfterFunc(wait, func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		a.progressSave = nil
+		_ = a.persistLocked()
+	})
 }
 
 // saveTakenEffectLocked saves a change that has already taken effect, such

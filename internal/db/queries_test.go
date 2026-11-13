@@ -588,6 +588,7 @@ func TestUpsertMergedActorEventUsesCurrentParentMergedAt(t *testing.T) {
 		mr.State = MergeRequestStateMerged
 		mr.MergedAt = &initialMergedAt
 	}))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{MergeRequestID: mrID, EventType: "merged", Author: "automation", MetadataJSON: `{"actor_account_type":"bot","source":"timeline"}`, CreatedAt: initialMergedAt, DedupeKey: "original"}}))
 	currentMergedAt := initialMergedAt.Add(time.Hour)
 	require.NoError(d.UpdateMRState(
 		ctx, repoID, 1, "merged", &currentMergedAt, &currentMergedAt,
@@ -607,6 +608,7 @@ func TestUpsertMergedActorEventUsesCurrentParentMergedAt(t *testing.T) {
 	require.NoError(err)
 	require.Len(events, 1)
 	require.Equal(currentMergedAt, events[0].CreatedAt)
+	require.JSONEq(`{"source":"timeline"}`, events[0].MetadataJSON)
 }
 
 func TestUpsertMergedActorEventAcceptsLegacyParentWithMergedAt(t *testing.T) {

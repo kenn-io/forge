@@ -2464,10 +2464,11 @@ func (d *DB) UpsertMergedActorEvent(
 		case err == nil:
 			if _, updateErr := tx.ExecContext(ctx, `
 				UPDATE forge_mr_events
-				SET author = ?,
+				SET metadata_json = CASE WHEN lower(author) <> lower(?) AND json_valid(metadata_json) THEN json_remove(metadata_json,'$.actor_account_type') ELSE metadata_json END,
+				    author = ?,
 				    summary = CASE WHEN TRIM(summary) = '' THEN ? ELSE summary END,
 				    created_at = ?
-				WHERE id = ?`, event.Author, event.Summary, event.CreatedAt, authoredID); updateErr != nil {
+				WHERE id = ?`, event.Author, event.Author, event.Summary, event.CreatedAt, authoredID); updateErr != nil {
 				return fmt.Errorf("align authored merged event: %w", updateErr)
 			}
 			if _, deleteErr := tx.ExecContext(ctx, `
@@ -2492,7 +2493,8 @@ func (d *DB) UpsertMergedActorEvent(
 		case err == nil:
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE forge_mr_events
-				SET author = ?,
+				SET metadata_json = CASE WHEN json_valid(metadata_json) THEN json_remove(metadata_json,'$.actor_account_type') ELSE metadata_json END,
+				    author = ?,
 				    summary = CASE WHEN TRIM(summary) = '' THEN ? ELSE summary END,
 				    created_at = ?
 				WHERE id = ?`, event.Author, event.Summary, event.CreatedAt, actorlessID); err != nil {

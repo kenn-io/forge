@@ -409,6 +409,7 @@ func NormalizeTimelineEvent(
 			EventType:          event.EventType,
 			Author:             event.Actor,
 			Summary:            lifecycleSummary(event.EventType),
+			MetadataJSON:       WithActorAccountType("", event.ActorAccountType),
 			CreatedAt:          event.CreatedAt,
 			DedupeKey:          timelineDedupeKey(event),
 		}

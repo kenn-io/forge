@@ -758,7 +758,7 @@ func TestSnapshotPushRoleEvidence(t *testing.T) {
 			} else {
 				assert.Equal(t, want, result.PullRequests[0].LastMaintainerAction)
 			}
-			assert.Equal(t, tc.unlinked, slices.Contains(result.PullRequests[0].Gaps, "actor_role_unknown"))
+			assert.Equal(t, tc.unlinked || tc.authorRole == "", slices.Contains(result.PullRequests[0].Gaps, "actor_role_unknown"))
 		})
 	}
 }
@@ -907,5 +907,39 @@ func TestSnapshotUnknownAuthorActionBeforeMaintainer(t *testing.T) {
 	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: "author", DedupeKey: "unknown-tie", CreatedAt: now}}))
 	result, err = service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
 	require.NoError(t, err)
+	assert.Contains(t, result.PullRequests[0].Gaps, "actor_role_unknown")
+}
+
+func TestSnapshotBotLifecycleActor(t *testing.T) {
+	for _, state := range []string{"closed", "merged"} {
+		t.Run(state, func(t *testing.T) {
+			database, service, repoID, now := newPullScopeSnapshotFixture(t)
+			terminal := now.Add(-time.Minute)
+			mr := &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", State: db.MergeRequestState(state), CreatedAt: now.Add(-time.Hour), UpdatedAt: now, ClosedAt: &terminal}
+			if state == "merged" {
+				mr.MergedAt = &terminal
+			}
+			id, err := database.UpsertMergeRequest(t.Context(), mr)
+			require.NoError(t, err)
+			event := platformgithub.NormalizeTimelineEvent(platform.RepoRef{}, 1, platformgithub.PullRequestTimelineEvent{NodeID: "terminal", EventType: state, Actor: "automation", ActorAccountType: "Bot", CreatedAt: terminal})
+			require.NotNil(t, event)
+			require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{platformdb.DBMREvent(id, *event)}))
+			result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+			require.NoError(t, err)
+			require.Len(t, result.PullRequests, 1)
+			assert.Equal(t, new("automation[bot]"), result.PullRequests[0].ClosedBy)
+		})
+	}
+}
+
+func TestSnapshotAuthorActionWithoutRoleReportsGap(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", AuthorAccountType: new("user"), State: db.MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: "author", MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "comment", CreatedAt: now}}))
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	assert.Equal(t, &snapshot.SnapshotAction{Kind: "comment", Actor: "author", OccurredAt: now}, result.PullRequests[0].LastAuthorAction)
 	assert.Contains(t, result.PullRequests[0].Gaps, "actor_role_unknown")
 }

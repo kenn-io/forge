@@ -695,14 +695,14 @@ func (s *Syncer) refreshTimeline(
 		return fmt.Errorf("list commits for MR #%d: %w", number, err)
 	}
 
-	timelineEvents, err := client.ListPullRequestTimelineEvents(ctx, repo.Owner, repo.Name, number)
-	if err != nil {
+	timelineEvents, timelineErr := client.ListPullRequestTimelineEvents(ctx, repo.Owner, repo.Name, number)
+	if timelineErr != nil {
 		if disabledErr := repositoryFeatureDisabledError(
-			repo, platform.RepositoryFeatureMergeRequests, err,
+			repo, platform.RepositoryFeatureMergeRequests, timelineErr,
 		); disabledErr != nil {
 			return disabledErr
 		}
-		logSyncFailure(ctx, slog.LevelWarn, "timeline event fetch failed during timeline refresh", err,
+		logSyncFailure(ctx, slog.LevelWarn, "timeline event fetch failed during timeline refresh", timelineErr,
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
 		)
@@ -788,6 +788,9 @@ func (s *Syncer) refreshTimeline(
 	}
 	if _, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number, expectedRevision, false); err != nil {
 		return fmt.Errorf("sync review threads for MR #%d: %w", number, err)
+	}
+	if timelineErr != nil {
+		return fmt.Errorf("list timeline events for MR #%d: %w", number, timelineErr)
 	}
 	return nil
 }

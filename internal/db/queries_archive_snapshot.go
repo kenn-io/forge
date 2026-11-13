@@ -164,7 +164,7 @@ const archiveSnapshotActivity = `activity_events AS MATERIALIZED (
  ), classified_activity AS (
  SELECT *, 'author' AS class FROM activity_candidates WHERE human=1 AND author<>'' AND lower(author)=lower(pull_author)
  UNION ALL SELECT *, 'maintainer' FROM activity_candidates WHERE human=1 AND (upper(role) IN ('MEMBER','OWNER') OR (upper(role)='COLLABORATOR' AND lower(author)<>lower(pull_author)))
- UNION ALL SELECT *, 'unknown' FROM activity_candidates WHERE human=-1 OR (human=1 AND NOT (author<>'' AND lower(author)=lower(pull_author)) AND (role IS NULL OR role=''))
+ UNION ALL SELECT *, 'unknown' FROM activity_candidates WHERE human=-1 OR (human=1 AND (role IS NULL OR role=''))
  ), activity AS (
  SELECT * FROM (SELECT *,row_number() OVER (PARTITION BY merge_request_id,class ORDER BY created_at DESC,id DESC) AS rank FROM classified_activity) WHERE rank=1
  )`
@@ -403,7 +403,7 @@ func LoadArchiveSnapshotLifecycle(ctx context.Context, tx *sql.Tx, mrIDs []int64
 	if err != nil {
 		return nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT merge_request_id,event_type,author,created_at FROM forge_mr_events WHERE merge_request_id IN (SELECT value FROM json_each(?)) AND event_type IN ('closed','merged','reopened') ORDER BY created_at,id`, string(ids))
+	rows, err := tx.QueryContext(ctx, `SELECT merge_request_id,event_type,CASE WHEN e.author<>'' AND substr(lower(e.author),-5)<>'[bot]' AND lower(COALESCE(json_extract(`+archiveSnapshotMetadata+`,'$.actor_account_type'),''))='bot' THEN e.author||'[bot]' ELSE e.author END,created_at FROM forge_mr_events e WHERE merge_request_id IN (SELECT value FROM json_each(?)) AND event_type IN ('closed','merged','reopened') ORDER BY created_at,id`, string(ids))
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot lifecycle: %w", err)
 	}

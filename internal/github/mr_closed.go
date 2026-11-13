@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -149,6 +150,16 @@ func (s *Syncer) filterDuplicateMergedLifecycleEvents(
 	for _, event := range events {
 		if isAuthoredMergedLifecycleEvent(event) &&
 			authoredMergedLifecycleEventExists(existing) {
+			index := slices.IndexFunc(existing, isAuthoredMergedLifecycleEvent)
+			prior := existing[index]
+			var metadata struct {
+				ActorAccountType string `json:"actor_account_type"`
+			}
+			if strings.EqualFold(prior.Author, event.Author) && json.Unmarshal([]byte(event.MetadataJSON), &metadata) == nil && metadata.ActorAccountType != "" {
+				accountType := strings.ToUpper(metadata.ActorAccountType[:1]) + metadata.ActorAccountType[1:]
+				prior.MetadataJSON = platformgithub.WithActorAccountType(prior.MetadataJSON, accountType)
+				out = append(out, prior)
+			}
 			continue
 		}
 		out = append(out, event)

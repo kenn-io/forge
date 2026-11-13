@@ -226,10 +226,7 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 		ctx, repo, repoID, number, ciHeadSHA, fullPR, normalized,
 	)
 	calls += approvalCalls
-	if !approvalApplied {
-		return calls, timelineErr
-	}
-	if timelineErr != nil {
+	if !approvalApplied || timelineErr != nil {
 		return calls, timelineErr
 	}
 
@@ -327,31 +324,15 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	existing *db.MergeRequest,
 	calls int,
 ) (int, error) {
+	var timelineErr error
 	if existing.DetailFetchedAt == nil {
-		err := s.refreshTimeline(ctx, repo, existing.ID, existing.SnapshotRevision, number, livenessHeadForRound(existing, existing))
+		timelineErr = s.refreshTimeline(ctx, repo, existing.ID, existing.SnapshotRevision, number, livenessHeadForRound(existing, existing))
 		calls += 4
-		if errors.Is(err, errParentSnapshotAdvanced) {
+		if errors.Is(timelineErr, errParentSnapshotAdvanced) {
 			return calls, nil
 		}
-		if errors.Is(err, db.ErrRepositoryIdentityChanged) {
-			return calls, err
-		}
-		if err != nil {
-			ciApplied, ciErr := s.refreshCIStatusSnapshot(
-				ctx, repo, existing.ID, existing.SnapshotRevision,
-				number, ciRulesBranch(existing), existing.PlatformHeadSHA,
-			)
-			calls += ciRefreshCalls
-			if ciErr != nil {
-				return calls, errors.Join(err, ciErr)
-			}
-			if ciApplied {
-				_, approvalCalls := s.refreshWorkflowApproval(
-					ctx, repo, repoID, number, existing.PlatformHeadSHA, nil, existing,
-				)
-				calls += approvalCalls
-			}
-			return calls, err
+		if errors.Is(timelineErr, db.ErrRepositoryIdentityChanged) {
+			return calls, timelineErr
 		}
 	} else {
 		// A parent 304 does not cover edited/deleted comments. Once a detail
@@ -404,15 +385,18 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 		)
 		calls += ciRefreshCalls
 		if err != nil {
-			return calls, err
+			return calls, errors.Join(timelineErr, err)
 		}
 		if !ciApplied {
-			return calls, nil
+			return calls, timelineErr
 		}
 		fresh, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
 		if err == nil && fresh != nil {
 			pending = ciHasPending(fresh.CIChecksJSON)
 		}
+	}
+	if timelineErr != nil {
+		return calls, timelineErr
 	}
 	// Unchanged rounds have no dataset commit of their own, so commit
 	// liveness travels with the detail-fetched marker under the same

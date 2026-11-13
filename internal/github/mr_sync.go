@@ -297,11 +297,8 @@ func (s *Syncer) refreshMRDetailSnapshot(
 	approvalApplied, _ := s.refreshWorkflowApproval(
 		ctx, repo, repoID, number, syncMRHeadSHA, ghPR, normalized,
 	)
-	if !approvalApplied {
+	if !approvalApplied || timelineErr != nil {
 		return false, timelineErr
-	}
-	if timelineErr != nil {
-		return false, fmt.Errorf("refresh timeline for MR #%d: %w", number, timelineErr)
 	}
 
 	// Update ci_had_pending after refreshing CI status.

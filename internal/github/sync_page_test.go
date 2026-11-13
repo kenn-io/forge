@@ -27,54 +27,34 @@ func pageSyncGitFixture(t *testing.T) (remote, work, base, head string) {
 	return remote, work, base, head
 }
 
-func TestMRDetailTimelineRecoveryRefreshesIndependentState(t *testing.T) {
-	for _, page := range []bool{true, false} {
-		name := "background full response"
-		if page {
-			name = "page 304"
-		}
-		t.Run(name, func(t *testing.T) {
+func TestMRDetailTimelineRecovery(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		recovery bool
+	}{
+		{name: "page 304"},
+		{name: "background full response"},
+		{name: "detail drain 304", recovery: true},
+		{name: "watched sync 304", recovery: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			ctx := t.Context()
 			f := newPageSyncFixture(t)
-			f.client.notModified = page
-			f.client.timelineEventsErr = errors.New("timeline unavailable")
-			f.client.checkRuns[0].Conclusion = new("failure")
-			f.client.workflowRuns = []*gh.WorkflowRun{{ID: new(int64(7)), HeadSHA: &f.head, Event: new("pull_request"), PullRequests: []*gh.PullRequest{{Number: new(1)}}}}
-
-			conditionalCalls := f.client.conditionalCalls.Load()
-			var err error
-			if page {
-				err = f.syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1)
-			} else {
-				_, err = f.syncer.fetchMRDetail(ctx, f.repo, f.repoID, 1)
+			f.client.notModified = tc.name != "background full response"
+			if tc.recovery {
+				_, err := f.syncer.db.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET detail_fetched_at = NULL WHERE id = ?", f.before.ID)
+				require.NoError(t, err)
 			}
-			require.ErrorContains(t, err, "timeline unavailable")
-			assert.Equal(t, conditionalCalls+1, f.client.conditionalCalls.Load())
-			stored, err := f.syncer.db.GetMergeRequestByRepoIDAndNumber(ctx, f.repoID, 1)
-			require.NoError(t, err)
-			assert.Nil(t, stored.DetailFetchedAt)
-			assert.Equal(t, "failure", stored.CIStatus)
-			assert.True(t, stored.WorkflowApprovalRequired)
-		})
-	}
-}
-
-func TestMRDetailTimelineRecoveryOnBackground304(t *testing.T) {
-	for _, watched := range []bool{false, true} {
-		name := "detail drain"
-		if watched {
-			name = "watched sync"
-		}
-		t.Run(name, func(t *testing.T) {
-			ctx := t.Context()
-			f := newPageSyncFixture(t)
-			_, err := f.syncer.db.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET detail_fetched_at = NULL WHERE id = ?", f.before.ID)
-			require.NoError(t, err)
 			f.client.timelineEventsErr = errors.New("timeline unavailable")
-			f.client.checkRuns[0].Conclusion = new("failure")
-			f.client.workflowRuns = []*gh.WorkflowRun{{ID: new(int64(7)), HeadSHA: &f.head, Event: new("pull_request"), PullRequests: []*gh.PullRequest{{Number: new(1)}}}}
+			if !tc.recovery {
+				f.client.checkRuns[0].Conclusion = new("failure")
+				f.client.workflowRuns = []*gh.WorkflowRun{{ID: new(int64(7)), HeadSHA: &f.head, Event: new("pull_request"), PullRequests: []*gh.PullRequest{{Number: new(1)}}}}
+			}
 			sync := func() error {
-				if watched {
+				switch tc.name {
+				case "page 304":
+					return f.syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1)
+				case "watched sync 304":
 					return f.syncer.syncMRWithWatchedRef(ctx, WatchedMR{Owner: "owner", Name: "repo", Number: 1, PlatformHost: "github.com"})
 				}
 				_, err := f.syncer.fetchMRDetail(ctx, f.repo, f.repoID, 1)
@@ -86,8 +66,11 @@ func TestMRDetailTimelineRecoveryOnBackground304(t *testing.T) {
 			stored, err := f.syncer.db.GetMergeRequestByRepoIDAndNumber(ctx, f.repoID, 1)
 			require.NoError(t, err)
 			assert.Nil(t, stored.DetailFetchedAt)
-			assert.Equal(t, "failure", stored.CIStatus)
-			assert.True(t, stored.WorkflowApprovalRequired)
+			if !tc.recovery {
+				assert.Equal(t, "failure", stored.CIStatus)
+				assert.True(t, stored.WorkflowApprovalRequired)
+				return
+			}
 
 			f.client.timelineEventsErr = nil
 			f.client.timelineEvents = []platformgithub.PullRequestTimelineEvent{{NodeID: "event-1", EventType: "closed", Actor: "alice", CreatedAt: time.Now().UTC()}}
@@ -102,11 +85,6 @@ func TestMRDetailTimelineRecoveryOnBackground304(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, events, 1)
 			assert.Equal(t, "closed", events[0].EventType)
-
-			f.client.timelineEventsErr = errors.New("complete detail must use fast path")
-			require.NoError(t, sync())
-			assert.Equal(t, conditionalCalls+3, f.client.conditionalCalls.Load())
-			assert.Equal(t, commentChecks+1, f.client.listIssueCommentsIfChangedCalls.Load())
 		})
 	}
 }

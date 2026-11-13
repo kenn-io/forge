@@ -53,7 +53,7 @@ test.describe("activity feed filters", () => {
   });
 
   test("PR filter shows only PR items", async ({ page }) => {
-    await page.getByRole("switch", { name: "Issues" }).click();
+    await page.getByRole("switch", { name: "Issues", exact: true }).click();
     await expectAllBadges(page, "PR");
   });
 
@@ -64,10 +64,10 @@ test.describe("activity feed filters", () => {
 
   test("All filter shows both PR and issue items", async ({ page }) => {
     // Hide issues to change state, then restore them.
-    await page.getByRole("switch", { name: "Issues" }).click();
+    await page.getByRole("switch", { name: "Issues", exact: true }).click();
     await expectAllBadges(page, "PR");
 
-    await page.getByRole("switch", { name: "Issues" }).click();
+    await page.getByRole("switch", { name: "Issues", exact: true }).click();
 
     // Wait for both badge types to appear, proving the unfiltered
     // response has rendered.
@@ -96,7 +96,7 @@ test.describe("activity feed filters", () => {
     expect(new Set(snapshot.items.map((item) => item.activity_type))).toEqual(new Set(["commit", "notification"]));
     expect(new URL(page.url()).searchParams.get("event_types")).toBe("none");
     await expect(page.getByRole("switch", { name: "PRs" })).toBeChecked();
-    await expect(page.getByRole("switch", { name: "Issues" })).toBeChecked();
+    await expect(page.getByRole("switch", { name: "Issues", exact: true })).toBeChecked();
     await expect(page.locator(".activity-row .evt-label.evt-notification").first()).toBeVisible();
     await expect(page.locator(".activity-row .evt-label.evt-commit").first()).toBeVisible();
     await expect(page.locator(".activity-row .evt-label.evt-comment, .activity-row .evt-label.evt-review")).toHaveCount(
@@ -318,7 +318,7 @@ test.describe("activity feed filters", () => {
 
   test("combined: PRs + State Open shows only open PRs", async ({ page }) => {
     // Hide issues and wait for filtered DOM.
-    await page.getByRole("switch", { name: "Issues" }).click();
+    await page.getByRole("switch", { name: "Issues", exact: true }).click();
     await expectAllBadges(page, "PR");
 
     // Choose Open (applied in the browser before the next load).
@@ -361,7 +361,7 @@ test.describe("activity repository-only filtering", () => {
       const itemTypes = url.searchParams.getAll("item_types");
       return url.pathname === "/api/v1/activity" && itemTypes.length === 1 && itemTypes[0] === "repo";
     });
-    await page.getByRole("switch", { name: "Issues" }).click();
+    await page.getByRole("switch", { name: "Issues", exact: true }).click();
     await repoOnlyResponse;
 
     await expect(page.locator(".threaded-view .item-row:not(.branch-activity-row)")).toHaveCount(0);

@@ -6,8 +6,6 @@
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
   import { getStores } from "../../context.js";
   import type { ActivityItem } from "../../api/types.js";
-  import { isActivityItemTypeEnabled } from "../../stores/activity.svelte.js";
-  import { matchesLabelFilters } from "../../utils/label-filter.js";
   import { activityItemVisible, activitySubjectVisible } from "../activityFilters.js";
   import { repoIdentityKey } from "../../utils/repo-label.js";
   import BudgetBars from "./BudgetBars.svelte";
@@ -152,16 +150,10 @@
     const pullRequests = new Set<string>();
     const issueKeys = new Set<string>();
     const repos = new Set<string>();
-    const enabledItemTypes = activity.getEnabledItemTypes();
-    const labels = activity.getLabelFilters();
     // The same row filters the Activity feed applies, so the counts follow its filter menu.
-    const shown = (itemType: string, itemLabels: ActivityItem["labels"], visible: boolean) =>
-      visible
-      && isActivityItemTypeEnabled(itemType, enabledItemTypes)
-      && (labels.size === 0 || matchesLabelFilters(itemLabels, labels));
-
+    // Labels are matched by the server, which sent only matching rows.
     for (const item of activity.getActivityItems()) {
-      if (!shown(item.item_type, item.labels, activityItemVisible(activity, item))) continue;
+      if (!activityItemVisible(activity, item)) continue;
 
       subjects.set(activityItemKey(item), {
         item,
@@ -172,27 +164,17 @@
     // Parent summaries carry the authoritative lifecycle state and replace any
     // event-backed snapshot for the same item.
     for (const subject of activity.getItemActivity()) {
-      if (!shown(subject.item_type, subject.labels, activitySubjectVisible(activity, subject))) continue;
+      if (!activitySubjectVisible(activity, subject)) continue;
       subjects.set(activityItemKey(subject), {
         item: subject,
         lifecycleState: subject.item_state,
       });
     }
 
-    // A spoke sends workspace rows without labels; like the feed, use the provider rows' labels
-    // for the same item, parents last so they win.
-    const providerLabels = new Map<string, ActivityItem["labels"]>();
-    if (labels.size > 0) {
-      for (const row of [...activity.getActivityItems(), ...activity.getItemActivity()]) {
-        providerLabels.set(activityItemKey(row), row.labels);
-      }
-    }
-
     // Workspace-only subjects are visible threads too, but must not override
     // an authoritative parent or an existing event-backed lifecycle state.
     for (const subject of activity.getWorkspaceActivity()) {
-      const subjectLabels = subject.labels ?? providerLabels.get(activityItemKey(subject));
-      if (!shown(subject.item_type, subjectLabels, activitySubjectVisible(activity, subject))) continue;
+      if (!activitySubjectVisible(activity, subject)) continue;
       const key = activityItemKey(subject);
       if (!subjects.has(key)) {
         subjects.set(key, {

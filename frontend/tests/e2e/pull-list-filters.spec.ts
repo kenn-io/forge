@@ -57,42 +57,52 @@ async function mockPulls(page: Page) {
       await route.fallback();
       return;
     }
+    // The server applies label filters before its limit, ignoring case; the mock does the same.
+    const required = url.searchParams.getAll("labels").map((name) => name.toLowerCase());
+    const excluded = url.searchParams.getAll("exclude_labels").map((name) => name.toLowerCase());
+    const names = (row: { labels?: { name: string }[] }) => (row.labels ?? []).map((label) => label.name.toLowerCase());
+    const rows = [
+      pull(10, "Approved review queue", {
+        labels: [{ name: "bug", color: "d73a4a", is_default: true }],
+        ReviewDecision: "APPROVED",
+        workspace: { id: "ws-10", status: "ready" },
+        merge_queue: {
+          position: 1,
+          state: "queued",
+          enqueued_at: "2026-03-30T14:00:00Z",
+          observed_at: "2026-03-30T14:00:00Z",
+        },
+      }),
+      pull(11, "Draft parser cleanup", {
+        labels: [
+          { name: "bug", color: "d73a4a", is_default: true },
+          { name: "docs", color: "0075ca", is_default: true },
+        ],
+        IsDraft: true,
+        head_repo_kind: "unknown",
+        CIStatus: "pending",
+        CIChecksJSON: JSON.stringify([{ name: "test", status: "in_progress", conclusion: "" }]),
+      }),
+      pull(12, "Ready failed workflow", {
+        labels: [{ name: "docs", color: "0075ca", is_default: true }],
+        CIStatus: "failure",
+        workspace: { id: "ws-12", status: "ready" },
+        deferred_merge_pending: true,
+      }),
+      pull(13, "Ready conflict resolver", {
+        MergeableState: "dirty",
+        head_repo_kind: "fork",
+      }),
+    ];
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([
-        pull(10, "Approved review queue", {
-          labels: [{ name: "bug", color: "d73a4a", is_default: true }],
-          ReviewDecision: "APPROVED",
-          workspace: { id: "ws-10", status: "ready" },
-          merge_queue: {
-            position: 1,
-            state: "queued",
-            enqueued_at: "2026-03-30T14:00:00Z",
-            observed_at: "2026-03-30T14:00:00Z",
-          },
-        }),
-        pull(11, "Draft parser cleanup", {
-          labels: [
-            { name: "bug", color: "d73a4a", is_default: true },
-            { name: "docs", color: "0075ca", is_default: true },
-          ],
-          IsDraft: true,
-          head_repo_kind: "unknown",
-          CIStatus: "pending",
-          CIChecksJSON: JSON.stringify([{ name: "test", status: "in_progress", conclusion: "" }]),
-        }),
-        pull(12, "Ready failed workflow", {
-          labels: [{ name: "docs", color: "0075ca", is_default: true }],
-          CIStatus: "failure",
-          workspace: { id: "ws-12", status: "ready" },
-          deferred_merge_pending: true,
-        }),
-        pull(13, "Ready conflict resolver", {
-          MergeableState: "dirty",
-          head_repo_kind: "fork",
-        }),
-      ]),
+      body: JSON.stringify(
+        rows.filter(
+          (row) =>
+            required.every((name) => names(row).includes(name)) && !excluded.some((name) => names(row).includes(name)),
+        ),
+      ),
     });
   });
 }
@@ -120,8 +130,8 @@ test("PR filters all apply and each pair of opposites is pick-one", async ({ pag
     await filterPanel.locator(".kit-filter-dropdown__section-title, .kit-filter-dropdown__item").allTextContents()
   )
     .map((text) => text.trim())
-    .filter((text) => ["PR", "Has workspace", "View"].includes(text));
-  expect(workspaceGrouping).toEqual(["PR", "Has workspace", "View"]);
+    .filter((text) => ["Pull requests", "Has workspace", "View"].includes(text));
+  expect(workspaceGrouping).toEqual(["Pull requests", "Has workspace", "View"]);
 
   await filterPanel.getByRole("button", { name: "Has workspace" }).click();
   await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/]);

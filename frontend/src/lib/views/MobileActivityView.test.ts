@@ -157,6 +157,21 @@ vi.mock("../context.js", () => ({
       getEnabledItemTypes: () => enabledItemTypes.value,
       getEnabledEvents: () => enabledEvents.value,
       getShowNotifications: () => showNotifications.value,
+      getStarred: () => false,
+      setStarred: vi.fn(),
+      getReferencedByPR: () => undefined,
+      setReferencedByPR: vi.fn(),
+      getHideBotAuthoredIssues: () => false,
+      setHideBotAuthoredIssues: vi.fn(),
+      getTimeRangeDefault: () => "7d",
+      getViewModeDefault: () => "threaded",
+      getLabelFilters: () => new Map(),
+      cycleLabelFilter: vi.fn(),
+      clearLabelFilters: vi.fn(),
+      getViewMode: () => "threaded",
+      setViewMode: vi.fn(),
+      getRollUpCommits: () => false,
+      setRollUpCommits: vi.fn(),
       getInvolvesMe: () => involvesMe.value,
       getUnassigned: () => unassigned.value,
       getHideClosedMerged: () => hideClosedMerged.value,
@@ -214,6 +229,7 @@ vi.mock("../context.js", () => ({
       setHideDefaultBranchActivity: vi.fn(),
       syncToURL: vi.fn(),
     },
+    issues: { canFilterReferencedByPR: () => true },
     settings: {
       getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }),
       getConfiguredRepos: () => [
@@ -249,6 +265,8 @@ vi.mock("../context.js", () => ({
       subscribeSyncCompleteWithoutLiveUpdates: vi.fn(() => () => undefined),
     },
     grouping: {
+      getGroupByRepo: () => true,
+      setGroupByRepo: vi.fn(),
       getHideOrgName: () => hideOrgName.value,
       setHideOrgName,
     },
@@ -358,10 +376,6 @@ describe("MobileActivityView branch activity", () => {
     const repoPicker = screen.getByRole("button", { name: "Select repository: Global" });
     const filterPanel = screen.getByLabelText("Activity filters");
     expect(filterPanel.firstElementChild?.contains(repoPicker)).toBe(true);
-    const authorPicker = screen.getByRole("button", { name: "Filter authors: Anyone" });
-    const authorRow = authorPicker.closest(".mobile-author-filter");
-    expect(authorRow?.querySelector(".mobile-author-icon")).toBeTruthy();
-    expect(authorRow?.textContent).toContain("All authors");
     await fireEvent.click(repoPicker);
     loadActivity.mockClear();
     await fireEvent.mouseDown(screen.getByRole("option", { name: "Backend" }));
@@ -608,7 +622,7 @@ describe("MobileActivityView branch activity", () => {
     });
 
     await fireEvent.click(getByRole("button", { name: /^Filters/ }));
-    const button = getByRole<HTMLInputElement>("switch", { name: "Hide org" });
+    const button = getByRole<HTMLInputElement>("switch", { name: "Hide org name" });
     expect(button.checked).toBe(false);
 
     await fireEvent.click(button);
@@ -624,8 +638,9 @@ describe("MobileActivityView branch activity", () => {
     expect(screen.getByPlaceholderText("Search activity")).toBeTruthy();
 
     await fireEvent.click(filters);
-    await fireEvent.click(screen.getByRole("button", { name: "Filter authors: Anyone" }));
-    await fireEvent.mouseDown(screen.getByRole("option", { name: "Alice" }));
+    // Author opens the same author list as desktop Activity.
+    await fireEvent.click(screen.getByRole("button", { name: /^Author/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Alice" }));
 
     expect(setActivityAuthor).toHaveBeenCalledWith("Alice");
 
@@ -636,8 +651,8 @@ describe("MobileActivityView branch activity", () => {
     expect(screen.queryByRole("button", { name: "Clear author filter Alice" })).toBeNull();
 
     await fireEvent.click(screen.getByRole("button", { name: /Filters.*Alice/ }));
-    await fireEvent.click(screen.getByRole("button", { name: "Filter authors: Alice" }));
-    await fireEvent.mouseDown(screen.getByRole("option", { name: "Anyone" }));
+    await fireEvent.click(screen.getByRole("button", { name: /^Author/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Anyone" }));
     expect(setActivityAuthor).toHaveBeenLastCalledWith(undefined);
   });
 

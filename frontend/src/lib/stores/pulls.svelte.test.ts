@@ -141,7 +141,7 @@ describe("pulls store display order", () => {
     expect(store.getPulls()).toHaveLength(200);
   });
 
-  it("keeps the page with a browser-only attribute filter", async () => {
+  it("reloads from the first page with an attribute filter applied on the server", async () => {
     const rows = Array.from({ length: 400 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
     const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
@@ -150,11 +150,10 @@ describe("pulls store display order", () => {
     store.loadMorePulls();
     await vi.waitFor(() => expect(store.getPulls()).toHaveLength(400));
     get.mockClear();
+    // A filter change is a new query, so it starts again from the first page.
     store.toggleAttributeFilter("draft");
-    expect(get).not.toHaveBeenCalled();
-    await loadPulls(store);
-    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
-    expect(store.getPulls()).toHaveLength(400);
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 200, attributes: "draft" }, expect.anything());
   });
 
   it("rolls back the page after a failed load more and allows retry", async () => {
@@ -269,13 +268,12 @@ describe("pulls store display order", () => {
     expect(query).toMatchObject({ not_involves_me: true, assigned: true });
     expect(query).not.toHaveProperty("involves_me");
     expect(query).not.toHaveProperty("unassigned");
-    expect(store.getLocalFilterCount()).toBe(2);
 
     const reloaded = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
     expect(reloaded.getInvolvesMe()).toBe("exclude");
     expect(reloaded.getUnassigned()).toBe("exclude");
 
-    store.clearLocalFilters();
+    store.setInvolvesMe(undefined);
     expect(store.getInvolvesMe()).toBeUndefined();
     expect(localStorage.getItem(involvesMeFilterStorageKey("pulls"))).toBeNull();
   });
@@ -713,10 +711,9 @@ describe("pulls store display order", () => {
     expect(shown()).toEqual([3]);
   });
 
-  it("sends an opposite condition to the server but keeps workspace filters in the browser", async () => {
+  it("sends every attribute, workspace included, to the server and reloads", async () => {
     const get = vi.fn().mockResolvedValue([]);
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
-    store.setInvolvesMe("require");
     await loadPulls(store);
     const reads = () => get.mock.calls.length;
 
@@ -732,7 +729,33 @@ describe("pulls store display order", () => {
     store.cycleAttributeFilter("has_workspace", "no_workspace");
     await vi.waitFor(() => expect(store.isLoading()).toBe(false));
     expect(store.getAttributeFilters()).toEqual(["not_approved", "no_workspace"]);
-    expect(reads()).toBe(before);
+    // A page of 30 phone rows must already match, so the server applies Has workspace too.
+    expect(reads()).toBeGreaterThan(before);
+    expect(get).toHaveBeenLastCalledWith(
+      expect.objectContaining({ attributes: "not_approved,no_workspace" }),
+      expect.anything(),
+    );
+  });
+
+  it("sends required and excluded labels to the server and reloads on each change", async () => {
+    const get = vi.fn().mockResolvedValue([]);
+    const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+    await loadPulls(store);
+    const lastQuery = () => get.mock.calls.at(-1)![0] as Record<string, unknown>;
+
+    store.cycleLabelFilter("Bug");
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+    expect(lastQuery()).toMatchObject({ labels: ["Bug"] });
+
+    store.cycleLabelFilter("Docs");
+    store.cycleLabelFilter("Docs");
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+    expect(lastQuery()).toMatchObject({ labels: ["Bug"], exclude_labels: ["Docs"] });
+
+    store.clearLabelFilters();
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+    expect(lastQuery()).not.toHaveProperty("labels");
+    expect(lastQuery()).not.toHaveProperty("exclude_labels");
   });
 
   it("filters pull requests to entries with a workspace", async () => {

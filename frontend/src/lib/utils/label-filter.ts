@@ -79,3 +79,42 @@ export function labelFilterSummary(filters: LabelFilters): string {
   const parts = [required > 0 && `${required} req`, excluded > 0 && `${excluded} excl`].filter(Boolean);
   return parts.length === 0 ? "Any" : parts.join(", ");
 }
+
+/** The server query for label filters: names every item must carry, and names none may carry. */
+export function labelFilterParams(filters: LabelFilters): { labels?: string[]; exclude_labels?: string[] } {
+  const required: string[] = [];
+  const excluded: string[] = [];
+  for (const entry of filters.values()) (entry.mode === "require" ? required : excluded).push(entry.name);
+  return {
+    ...(required.length > 0 ? { labels: required } : {}),
+    ...(excluded.length > 0 ? { exclude_labels: excluded } : {}),
+  };
+}
+
+/**
+ * Label choices that stay put while label filters change. The server applies
+ * label filters, so once one is on the loaded items carry only matching
+ * labels; choices then come from the items loaded before any label filter in
+ * the same list scope (repository, state, search, and so on). A new scope
+ * entered with a label filter on has no unfiltered items, so its choices
+ * follow its own loaded items until the label filters are cleared.
+ */
+export function rememberedLabelChoices<T extends { labels?: readonly Pick<Label, "name" | "color">[] | undefined }>(
+  items: () => readonly T[],
+  filters: () => LabelFilters,
+  scope: () => string = () => "",
+): () => LabelFilterChoice[] {
+  let unfiltered: readonly T[] = [];
+  let unfilteredScope: string | undefined;
+  return () => {
+    const active = filters();
+    const current = scope();
+    if (active.size === 0) {
+      unfiltered = items();
+      unfilteredScope = current;
+    } else if (current !== unfilteredScope) {
+      unfiltered = [];
+    }
+    return labelFilterChoices(unfiltered.length === 0 ? items() : unfiltered, active);
+  };
+}

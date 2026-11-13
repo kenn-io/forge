@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../../api/types.js";
-import { cycleLabelFilter, type LabelFilters } from "../../utils/label-filter.js";
+import { type LabelFilters } from "../../utils/label-filter.js";
 
 const activityState = vi.hoisted(() => ({
   items: [] as ActivityItem[],
@@ -44,6 +44,7 @@ vi.mock("../../context.js", () => ({
       getBots: () => activityState.bots,
       getPullAttributeFilters: () => activityState.pullAttributeFilters,
       getHideDefaultBranchActivity: () => false,
+      getHideBotAuthoredIssues: () => false,
       getLabelFilters: () => activityState.labelFilters,
       getViewMode: () => "flat",
       isActivityCapped: () => activityState.activityCapped,
@@ -213,19 +214,6 @@ describe("StatusBar Activity counts", () => {
 
     expect(screen.getByText("1 PRs")).toBeTruthy();
     expect(screen.getByText("1 issues")).toBeTruthy();
-  });
-
-  it("excludes an unlabeled workspace row whose item carries an excluded label", () => {
-    activityState.labelFilters = cycleLabelFilter(cycleLabelFilter(new Map(), "bug"), "bug");
-    activityState.itemActivity = [
-      { ...parentSubject("pr", 7), labels: [{ name: "bug", color: "d73a4a" }] },
-      parentSubject("pr", 9),
-    ];
-    activityState.workspaceActivity = [workspaceSubject("pr", 7)];
-
-    render(StatusBar);
-
-    expect(screen.getByText("1 PRs")).toBeTruthy();
   });
 
   it("shows hub outage separately from the local event stream", () => {

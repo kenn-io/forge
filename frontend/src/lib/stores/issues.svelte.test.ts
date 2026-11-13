@@ -152,7 +152,7 @@ describe("issues store paging", () => {
     },
   );
 
-  it("keeps the page with a browser-only bot filter", async () => {
+  it("reloads from the first page with Hide bots applied on the server", async () => {
     const rows = Array.from({ length: 400 }, (_, index) => issue(index + 1, "alice"));
     const get = vi.fn(async (query?: IssuesParams) => rows.slice(0, query?.limit));
     const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
@@ -161,10 +161,25 @@ describe("issues store paging", () => {
     store.loadMoreIssues();
     await vi.waitFor(() => expect(store.getIssues()).toHaveLength(400));
     get.mockClear();
+    // A saved Hide bots that arrives after the first page reloads it; a new filter starts from the first page.
     store.hydrateDefaults({ hide_bots: true });
-    expect(get).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 200, hide_bots: true }, expect.anything());
+  });
+
+  it("sends required and excluded labels to the server and reloads on each change", async () => {
+    const get = vi.fn(async () => [issue(1, "alice")]);
+    const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
     await loadIssues(store);
-    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
+    const lastQuery = () => (get.mock.calls.at(-1) as unknown as [Record<string, unknown>])[0];
+
+    store.cycleLabelFilter("Bug");
+    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
+    expect(lastQuery()).toMatchObject({ labels: ["Bug"] });
+    store.cycleLabelFilter("Bug");
+    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
+    expect(lastQuery()).toMatchObject({ exclude_labels: ["Bug"] });
+    expect(lastQuery()).not.toHaveProperty("labels");
   });
 
   it("reports a failed load more through the issues error and flash", async () => {

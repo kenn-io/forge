@@ -1425,9 +1425,9 @@
             </div>
           {/if}
         {:else if getPage() === "mobile-pulls"}
-          <FocusListView listType="mrs" showRepoSelector chunked />
+          <FocusListView listType="mrs" showRepoSelector phonePresentation chunked />
         {:else if getPage() === "mobile-issues"}
-          <FocusListView listType="issues" showRepoSelector chunked />
+          <FocusListView listType="issues" showRepoSelector phonePresentation chunked />
         {:else if getPage() === "mobile-worklists"}
           {@const route = getRoute()}
           {#await import("./lib/views/MobileWorklistView.svelte")}

@@ -988,34 +988,64 @@ func (d *DB) ListPullHeadRepoCloneURLs(
 	return out, nil
 }
 
-// ListPullsMatchingAttributes returns the pull requests among keys that match every PR filter
-// section in attributes, with ListMergeRequestsOpts.Attributes semantics.
-func (d *DB) ListPullsMatchingAttributes(
-	ctx context.Context, keys []WorkspaceSubjectKey, attributes []string, held []RepoItemNumber,
+// ListWorkspaceSubjectsMatchingFilters returns the keys that Activity's PR attributes and item
+// filters in opts keep, as they decide for activity rows; with neither, every key.
+func (d *DB) ListWorkspaceSubjectsMatchingFilters(
+	ctx context.Context, keys []WorkspaceSubjectKey, opts ListActivityOpts,
 ) (map[WorkspaceSubjectKey]struct{}, error) {
 	out := make(map[WorkspaceSubjectKey]struct{})
-	items := pullRequestItems(keys)
-	var args []any
-	filter := filterSectionsCondition(pullAttributeSections(attributes, held, &args)...)
-	if len(items) == 0 || filter == "" {
+	encoded := make([][3]any, 0, len(keys))
+	for _, key := range keys {
+		switch key.ItemType {
+		case WorkspaceItemTypePullRequest:
+			encoded = append(encoded, [3]any{key.RepoID, ItemTypePR, key.ItemNumber})
+		case WorkspaceItemTypeIssue:
+			encoded = append(encoded, [3]any{key.RepoID, ItemTypeIssue, key.ItemNumber})
+		}
+	}
+	keysJSON, err := json.Marshal(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("encode workspace subjects: %w", err)
+	}
+	args := []any{string(keysJSON)}
+	clauses := opts.clauses(&args)
+	if cond := activityPullAttributeClause(
+		opts.PullAttributes, false, false, false, opts.DeferredMergeItems, opts.WorkspaceItems, &args,
+	); cond != "" {
+		clauses = append(clauses, cond)
+	}
+	if len(clauses) == 0 {
+		for _, key := range keys {
+			out[key] = struct{}{}
+		}
 		return out, nil
 	}
-	cond := repoItemCondition("p", items, &args)
-	rows, err := d.roQueryContext(ctx,
-		"SELECT p.repo_id, p.number FROM forge_merge_requests p WHERE "+filter+" AND "+cond, args...)
+	if len(encoded) == 0 {
+		return out, nil
+	}
+	rows, err := d.roQueryContext(ctx, `
+		WITH subjects(repo_id, item_type, item_number) AS (
+			SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]') FROM json_each(?)
+		)
+		SELECT repo_id, item_type, item_number FROM subjects WHERE `+strings.Join(clauses, " AND "), args...)
 	if err != nil {
-		return nil, fmt.Errorf("list pulls matching filters: %w", err)
+		return nil, fmt.Errorf("list workspace subjects matching filters: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
-		key := WorkspaceSubjectKey{ItemType: WorkspaceItemTypePullRequest}
-		if err := rows.Scan(&key.RepoID, &key.ItemNumber); err != nil {
-			return nil, fmt.Errorf("scan pull matching filters: %w", err)
+		var key WorkspaceSubjectKey
+		var itemType string
+		if err := rows.Scan(&key.RepoID, &itemType, &key.ItemNumber); err != nil {
+			return nil, fmt.Errorf("scan workspace subject matching filters: %w", err)
+		}
+		key.ItemType = WorkspaceItemTypePullRequest
+		if itemType == ItemTypeIssue {
+			key.ItemType = WorkspaceItemTypeIssue
 		}
 		out[key] = struct{}{}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list pulls matching filters: %w", err)
+		return nil, fmt.Errorf("list workspace subjects matching filters: %w", err)
 	}
 	return out, nil
 }
@@ -1917,7 +1947,8 @@ func filterSectionsCondition(sections ...[]string) string {
 
 // pullAttributeSections turns PR inclusion filters into SQL sections over a merge request aliased p.
 // Mutually exclusive filters share a section and match either; the caller ANDs the sections.
-func pullAttributeSections(attributes []string, held []RepoItemNumber, args *[]any) [][]string {
+// has_workspace and no_workspace read workspaces, the pull requests with a workspace on this server.
+func pullAttributeSections(attributes []string, held, workspaces []RepoItemNumber, args *[]any) [][]string {
 	// Empty and JSON null decode as no checks; invalid check arrays cannot match by check content.
 	const checks = `CASE
 		WHEN trim(p.ci_checks_json) = '' THEN '[]'
@@ -1925,13 +1956,29 @@ func pullAttributeSections(attributes []string, held []RepoItemNumber, args *[]a
 			WHEN 'null' THEN '[]' WHEN 'array' THEN p.ci_checks_json END
 		END`
 	const pending = `COALESCE(json_extract(c.value, '$.status'), '') IN ('in_progress', 'queued', 'pending', 'waiting')`
-	var review, approval, ci, conflicts, mergeQueue, merging []string
+	var review, approval, ci, conflicts, mergeQueue, merging, workspace, fork []string
+	// Sections are emitted in a fixed order, so their arguments must follow that order too.
+	var mergingArgs, workspaceArgs []any
+	hasWorkspace := func() string {
+		if workspaces == nil {
+			workspaces = []RepoItemNumber{}
+		}
+		return repoItemCondition("p", workspaces, &workspaceArgs)
+	}
 	for _, attribute := range attributes {
 		switch attribute {
+		case "has_workspace":
+			workspace = append(workspace, hasWorkspace())
+		case "no_workspace":
+			workspace = append(workspace, notCondition(hasWorkspace()))
+		case "fork":
+			fork = append(fork, mergeRequestIsForkSQL)
+		case "not_fork":
+			fork = append(fork, notCondition(mergeRequestIsForkSQL))
 		case "merge_queued":
-			merging = append(merging, mergeQueuedCondition("p", held, args))
+			merging = append(merging, mergeQueuedCondition("p", held, &mergingArgs))
 		case "not_merge_queued":
-			merging = append(merging, notCondition(mergeQueuedCondition("p", held, args)))
+			merging = append(merging, notCondition(mergeQueuedCondition("p", held, &mergingArgs)))
 		case "approved":
 			approval = append(approval, "upper(trim(p.review_decision)) = 'APPROVED'")
 		case "not_approved":
@@ -1970,7 +2017,8 @@ func pullAttributeSections(attributes []string, held []RepoItemNumber, args *[]a
 				))`)
 		}
 	}
-	return [][]string{review, approval, ci, conflicts, mergeQueue, merging}
+	*args = append(append(*args, mergingArgs...), workspaceArgs...)
+	return [][]string{review, approval, ci, conflicts, mergeQueue, merging, workspace, fork}
 }
 
 func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeRequestsOpts) ([]MergeRequest, error) {
@@ -1990,7 +2038,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 
 	pageAttributeMatches := len(opts.Attributes) > 0 && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == ""
 	pageAll := !pageAttributeMatches && len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 &&
-		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && !opts.Starred && opts.ViewerLogins == nil &&
+		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && len(opts.Labels) == 0 && !opts.Starred && opts.ViewerLogins == nil &&
 		len(opts.WorkspaceActivity) == 0
 	allowedRepoColumn := "p.repo_id"
 	if len(opts.RepoFilters) == 1 || pageAttributeMatches {
@@ -2089,6 +2137,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		)`)
 		args = append(args, opts.Label)
 	}
+	conds = append(conds, labelFilterConditions(ItemTypePR, "p.id", opts.Labels, opts.ExcludeLabels, &args)...)
 	if opts.Search != "" {
 		// Zero padding opts into an exact PR number before pagination, so old
 		// PRs remain reachable without changing ordinary substring searches.
@@ -2124,7 +2173,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		}
 		involved = append(involved, involvement)
 	}
-	attributeSections := pullAttributeSections(opts.Attributes, opts.DeferredMergeItems, &inclusionArgs)
+	attributeSections := pullAttributeSections(opts.Attributes, opts.DeferredMergeItems, opts.WorkspaceItems, &inclusionArgs)
 	if inclusion := filterSectionsCondition(append([][]string{involved, unassigned}, attributeSections...)...); inclusion != "" {
 		if len(narrowing) > 0 {
 			// SQLite can reorder WHERE terms; evaluate narrowing filters before inclusion subqueries.
@@ -3398,7 +3447,7 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 	)`)
 
 	pageAll := len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 &&
-		opts.Items == nil && opts.Numbers == nil && !opts.Starred && opts.Assignee == "" && !opts.ReferencedByPR && !opts.NotReferencedByPR && opts.ViewerLogins == nil &&
+		opts.Items == nil && opts.Numbers == nil && !opts.Starred && opts.Assignee == "" && !opts.ReferencedByPR && !opts.NotReferencedByPR && len(opts.Labels) == 0 && opts.ViewerLogins == nil &&
 		len(opts.WorkspaceActivity) == 0
 	allowedRepoCondIndex := len(conds)
 	if cond := repoIDCondition("i.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
@@ -3475,15 +3524,15 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		}
 		conds = append(conds, involvement)
 	}
-	const referencedByPR = `EXISTS (
-			SELECT 1 FROM forge_issue_pr_references ref
-			WHERE ref.issue_id = i.id
-		)`
 	if opts.ReferencedByPR {
-		conds = append(conds, referencedByPR)
+		conds = append(conds, referencedByPRCondition("i"))
 	}
 	if opts.NotReferencedByPR {
-		conds = append(conds, "NOT "+referencedByPR)
+		conds = append(conds, "NOT "+referencedByPRCondition("i"))
+	}
+	conds = append(conds, labelFilterConditions(ItemTypeIssue, "i.id", opts.Labels, opts.ExcludeLabels, &args)...)
+	if opts.HideBots {
+		conds = append(conds, "NOT "+botAuthorCondition("i.author", "r.platform"))
 	}
 
 	pageAll = pageAll && d.activityPageWalks(ctx, "forge_issues", "+last_activity_at", opts.AllowedRepoIDs, opts.Limit, opts.Offset)

@@ -35,7 +35,7 @@ for (const kind of ["issues", "pulls"] as const) {
     await trigger.click();
     await page
       .locator(".kit-filter-dropdown__panel")
-      .getByRole("button", { name: kind === "issues" ? "All" : "All states", exact: true })
+      .getByRole("button", { name: "All states", exact: true })
       .first()
       .click();
     await trigger.click();

@@ -173,7 +173,10 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
 - Phone Activity, PR, and issue filters use the shared repository selector;
   preset management stays outside the phone workflow.
 - Those lists share one full-width search/filter trigger with repository
-  selection first; each view owns its filter content.
+  selection first, then the shared filter menu, never a phone copy; the
+  cross-list filter rule lives in `context/ui-interaction-contracts.md`.
+- The phone Activity inbox shows one card per PR or issue, so Activity's Layout,
+  Group, and commit roll-up stay desktop-only.
 
 ## Routing expectations
 

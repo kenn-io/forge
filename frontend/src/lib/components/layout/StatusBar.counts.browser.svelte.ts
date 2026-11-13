@@ -317,10 +317,12 @@ describe("status bar counts", () => {
                 { ...pr(2, "open", "acme", "tools"), head_repo_kind: "same_repo" },
               ])
             : null,
-        (req) =>
-          req.url.pathname === "/api/v1/issues"
-            ? jsonResponse([{ ...issue(1, "open"), labels: [{ name: "bug", color: "d73a4a" }] }, issue(2, "open")])
-            : null,
+        (req) => {
+          if (req.url.pathname !== "/api/v1/issues") return null;
+          // The server applies label filters; only issue 1 carries "bug".
+          const rows = [{ ...issue(1, "open"), labels: [{ name: "bug", color: "d73a4a" }] }, issue(2, "open")];
+          return jsonResponse(req.url.searchParams.getAll("labels").includes("bug") ? rows.slice(0, 1) : rows);
+        },
       ],
       (configured) => {
         stores = configured;

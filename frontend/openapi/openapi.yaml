@@ -13953,17 +13953,63 @@ paths:
           schema:
             description: Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
             type: boolean
-        - description: "Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts."
+        - description: "Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, has_workspace, no_workspace, fork, not_fork. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts."
           explode: false
           in: query
           name: attributes
           schema:
-            description: "Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts."
+            description: "Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, has_workspace, no_workspace, fork, not_fork. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts."
             type: string
         - explode: false
           in: query
           name: hide_default_branch
           schema:
+            type: boolean
+        - description: Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches.
+          explode: true
+          in: query
+          name: labels
+          schema:
+            description: Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches.
+            items:
+              type: string
+            type: array
+        - description: Drop activity whose pull request or issue carries any named label. Names match without case across repositories.
+          explode: true
+          in: query
+          name: exclude_labels
+          schema:
+            description: Drop activity whose pull request or issue carries any named label. Names match without case across repositories.
+            items:
+              type: string
+            type: array
+        - description: Drop issue activity on issues a bot account opened. Pull request and repository activity always passes.
+          explode: false
+          in: query
+          name: hide_bot_authored_issues
+          schema:
+            description: Drop issue activity on issues a bot account opened. Pull request and repository activity always passes.
+            type: boolean
+        - description: Keep only activity whose pull request or issue is starred.
+          explode: false
+          in: query
+          name: starred
+          schema:
+            description: Keep only activity whose pull request or issue is starred.
+            type: boolean
+        - description: Keep only issue activity on issues a pull request references. Pull request and repository activity always passes.
+          explode: false
+          in: query
+          name: referenced_by_pr
+          schema:
+            description: Keep only issue activity on issues a pull request references. Pull request and repository activity always passes.
+            type: boolean
+        - description: Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies.
+          explode: false
+          in: query
+          name: not_referenced_by_pr
+          schema:
+            description: Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies.
             type: boolean
       responses:
         "200":
@@ -14152,6 +14198,52 @@ paths:
           in: query
           name: hide_default_branch
           schema:
+            type: boolean
+        - description: Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches.
+          explode: true
+          in: query
+          name: labels
+          schema:
+            description: Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches.
+            items:
+              type: string
+            type: array
+        - description: Drop activity whose pull request or issue carries any named label. Names match without case across repositories.
+          explode: true
+          in: query
+          name: exclude_labels
+          schema:
+            description: Drop activity whose pull request or issue carries any named label. Names match without case across repositories.
+            items:
+              type: string
+            type: array
+        - description: Drop issue activity on issues a bot account opened. Pull request and repository activity always passes.
+          explode: false
+          in: query
+          name: hide_bot_authored_issues
+          schema:
+            description: Drop issue activity on issues a bot account opened. Pull request and repository activity always passes.
+            type: boolean
+        - description: Keep only activity whose pull request or issue is starred.
+          explode: false
+          in: query
+          name: starred
+          schema:
+            description: Keep only activity whose pull request or issue is starred.
+            type: boolean
+        - description: Keep only issue activity on issues a pull request references. Pull request and repository activity always passes.
+          explode: false
+          in: query
+          name: referenced_by_pr
+          schema:
+            description: Keep only issue activity on issues a pull request references. Pull request and repository activity always passes.
+            type: boolean
+        - description: Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies.
+          explode: false
+          in: query
+          name: not_referenced_by_pr
+          schema:
+            description: Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies.
             type: boolean
       responses:
         "200":
@@ -23418,6 +23510,31 @@ paths:
           schema:
             description: Only include issues no pull request references. With referenced_by_pr, neither filter applies.
             type: boolean
+        - description: Only include issues carrying every named label. Names match without case across repositories; applied before pagination.
+          explode: true
+          in: query
+          name: labels
+          schema:
+            description: Only include issues carrying every named label. Names match without case across repositories; applied before pagination.
+            items:
+              type: string
+            type: array
+        - description: Drop issues carrying any named label. Names match without case across repositories; applied before pagination.
+          explode: true
+          in: query
+          name: exclude_labels
+          schema:
+            description: Drop issues carrying any named label. Names match without case across repositories; applied before pagination.
+            items:
+              type: string
+            type: array
+        - description: "Drop issues a bot account opened: a -bot login suffix on any provider, [bot] on GitHub, and project or group access token users on GitLab."
+          explode: false
+          in: query
+          name: hide_bots
+          schema:
+            description: "Drop issues a bot account opened: a -bot login suffix on any provider, [bot] on GitHub, and project or group access token users on GitLab."
+            type: boolean
       responses:
         "200":
           content:
@@ -25312,12 +25429,12 @@ paths:
               format: int64
               type: integer
             type: array
-        - description: "Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination."
+        - description: "Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not), has_workspace and no_workspace (with a workspace on this server, or not), fork and not_fork (the head branch lives in a fork, or not; an unknown head repository is not a fork). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, merge_queued or not_merge_queued, has_workspace or no_workspace, and fork or not_fork. Every other selected filter, including involves_me and unassigned, must also match before pagination."
           explode: false
           in: query
           name: attributes
           schema:
-            description: "Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination."
+            description: "Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not), has_workspace and no_workspace (with a workspace on this server, or not), fork and not_fork (the head branch lives in a fork, or not; an unknown head repository is not a fork). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, merge_queued or not_merge_queued, has_workspace or no_workspace, and fork or not_fork. Every other selected filter, including involves_me and unassigned, must also match before pagination."
             type: string
         - description: Exact case-sensitive label name; applied before pagination.
           explode: false
@@ -25326,6 +25443,24 @@ paths:
           schema:
             description: Exact case-sensitive label name; applied before pagination.
             type: string
+        - description: Only include pull requests carrying every named label. Names match without case across repositories; applied before pagination.
+          explode: true
+          in: query
+          name: labels
+          schema:
+            description: Only include pull requests carrying every named label. Names match without case across repositories; applied before pagination.
+            items:
+              type: string
+            type: array
+        - description: Drop pull requests carrying any named label. Names match without case across repositories; applied before pagination.
+          explode: true
+          in: query
+          name: exclude_labels
+          schema:
+            description: Drop pull requests carrying any named label. Names match without case across repositories; applied before pagination.
+            items:
+              type: string
+            type: array
         - description: Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
           explode: false
           in: query

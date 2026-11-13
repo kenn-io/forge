@@ -5,10 +5,14 @@
 export type ListPullsParams = {
   /** Item numbers in every repo unless repo is set; before pagination. */
   numbers?: number[];
-  /** Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination. */
+  /** Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not), has_workspace and no_workspace (with a workspace on this server, or not), fork and not_fork (the head branch lives in a fork, or not; an unknown head repository is not a fork). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, merge_queued or not_merge_queued, has_workspace or no_workspace, and fork or not_fork. Every other selected filter, including involves_me and unassigned, must also match before pagination. */
   attributes?: string;
   /** Exact case-sensitive label name; applied before pagination. */
   label?: string;
+  /** Only include pull requests carrying every named label. Names match without case across repositories; applied before pagination. */
+  labels?: string[];
+  /** Drop pull requests carrying any named label. Names match without case across repositories; applied before pagination. */
+  exclude_labels?: string[];
   /** Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories. */
   repo?: string;
   /** open (default), closed (including merged), merged, closed_unmerged, or all. */

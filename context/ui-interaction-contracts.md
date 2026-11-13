@@ -269,13 +269,13 @@ and back.
   `Merge queued`, `Has workspace`, `From fork`, and Activity `Bots` wherever they are one row; a pair already
   shown as a pick-one section (CI) stays on/off (maintainer decision; `frontend/src/lib/utils/tri-filter.ts`).
   Server-matched conditions send their opposite as its own query (`not_draft`, `not_approved`, ...), so both
-  directions apply before limits; `Has workspace` and `From fork` match loaded rows in the browser.
-- The PR list and Activity filter menus are one design: shared controls keep the same names, order,
-  and behavior (State, conditions, CI, View), so a change to one menu's shared control goes to both
-  (maintainer decision; `frontend/src/lib/components/activityFilters.ts::activityFilterOptions`).
+  directions apply before limits. `From fork` classifies each PR at query time through a Go SQL
+  function, not a stored column, so a repository rename never leaves a stale answer
+  (maintainer decision; `internal/db/head_repo_kind.go::mergeRequestIsForkSQL`).
 - In Activity, PR conditions decide only which pull request activity shows; issue and repository
   rows always pass (maintainer decision; `internal/db/queries_activity.go::activityPullAttributeClause`).
-- Phone Activity shows a three-state filter as an Any/Yes/No choice, since a switch has no third state.
+- Phones show a three-state filter as an Any/Yes/No choice, since a switch has no third state, and a
+  pick-one section as one select (`frontend/src/lib/components/shared/FilterSectionsPanel.svelte`).
 - `Unassigned` matches only PR/issue subjects with an empty synchronized assignee set; its opposite
   matches every other subject, including a PR whose assignees never synchronized.
 - `Referenced by PR` is a browser-local Issues preference, default off, exposed in every issue-filter
@@ -292,18 +292,24 @@ and back.
   stay in step; the TypeScript twin is `frontend/src/lib/utils/search-query.ts`
   (`internal/db/search_query.go::ParseSearchQuery`).
 - Activity excludes parents by their own fields; only included terms may match through child events.
-- The PR and Issues sidebars load Closed and All in pages of 200, ordered by recent activity; Load more grows the page. Browser-only filters apply to loaded rows.
+- The PR and Issues sidebars load Closed and All in pages of 200, ordered by recent activity; Load more grows the page.
+- Every PR, issue, and Activity filter applies on the server before the limit, so a bounded phone page
+  never hides matches further down (maintainer decision). The browser re-checks loaded rows only so a
+  failed refresh never shows rows from earlier filters (`frontend/src/lib/stores/pulls.svelte.ts::listQuery`).
 - Every list of labeled PRs or issues with a filter menu (PRs, Issues, merge queues, worklists, Activity)
   has a Labels filter: a flyout from a `Labels` row in that menu, where each label cycles neutral, required,
   excluded ("req"/"excl" in the row summary). A row must carry every required label and no excluded one;
-  names match case-insensitively across repositories. It is browser-only, and its choices and counts
-  come from every loaded item, not the visible ones, so rows stay put while cycling
-  (`frontend/src/lib/utils/label-filter.ts`). Activity counts each PR or issue once, not each event.
+  names match case-insensitively across repositories. The PR, issue, and Activity servers apply it before
+  the limit, and choices come from the items loaded before any label filter in the same list scope, so
+  rows stay put while cycling (`frontend/src/lib/utils/label-filter.ts::rememberedLabelChoices`); merge
+  queues and worklists match their loaded rows. Activity counts each PR or issue once, not each event.
   Workspaces has no Labels filter. Only merge queues save their label choice, with their other filters.
 - Zero-padded PR searches (`0001`) match the exact number before pagination.
-- Desktop and phone Activity must share event/visibility definitions and actions; derive active indicators
-  and reset from those lists. Layout and short phone labels may differ (maintainer decision;
-  `frontend/src/lib/components/activityFilters.ts::activityFilterOptions`).
+- Every PR, issue, and Activity filter is one element in `frontend/src/lib/components/shared/list-filter-menus.ts`,
+  rendered by the PR list, issue list, and Activity on desktop and phone; badges and reset derive from it.
+  Activity carries every PR and issue list filter plus timeline extras that never overlap one (maintainer
+  decision). Only Activity's Layout, Group, and roll-up and the PR list's Stack tree are desktop- or
+  list-only layouts. A parity browser test fails CI on drift (`frontend/src/App.list-filter-parity.browser.svelte.ts`).
 - `Merge queued` matches an open PR that needs no more action to merge: in a provider merge queue, with
   provider auto-merge on, or held by this server's "merge after CI" worker. Removed queue entries do not
   match. The worker keeps its held PRs only in memory, so the server passes them into the query

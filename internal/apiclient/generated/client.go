@@ -13880,31 +13880,35 @@ func (c *Client) ListActivityWithResponse(ctx context.Context, options *ListActi
 	var err error
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"after":               {Style: "form", Explode: &[]bool{false}[0]},
-		"assigned":            {Style: "form", Explode: &[]bool{false}[0]},
-		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
-		"attributes":          {Style: "form", Explode: &[]bool{false}[0]},
-		"author":              {Style: "form", Explode: &[]bool{false}[0]},
-		"before":              {Style: "form", Explode: &[]bool{false}[0]},
-		"bots":                {Style: "form", Explode: &[]bool{false}[0]},
-		"closed_merged":       {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_drafts":         {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_merge_queued":   {Style: "form", Explode: &[]bool{false}[0]},
-		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
-		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
-		"merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
-		"not_involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
-		"projection":          {Style: "form", Explode: &[]bool{false}[0]},
-		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
-		"search":              {Style: "form", Explode: &[]bool{false}[0]},
-		"since":               {Style: "form", Explode: &[]bool{false}[0]},
-		"subject_before":      {Style: "form", Explode: &[]bool{false}[0]},
-		"types":               {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":          {Style: "form", Explode: &[]bool{false}[0]},
+		"after":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"at_or_before":             {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":               {Style: "form", Explode: &[]bool{false}[0]},
+		"author":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"before":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":            {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bot_authored_issues": {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":                {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_closed_merged":       {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_default_branch":      {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_drafts":              {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
+		"involves_me":              {Style: "form", Explode: &[]bool{false}[0]},
+		"item_types":               {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"merge_queued":             {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr":     {Style: "form", Explode: &[]bool{false}[0]},
+		"projection":               {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":         {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"search":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"since":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"subject_before":           {Style: "form", Explode: &[]bool{false}[0]},
+		"types":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":               {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/activity",
@@ -14055,6 +14059,7 @@ func (c *Client) ListActivityThreadEventsWithResponse(ctx context.Context, optio
 		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
 		"bots":                      {Style: "form", Explode: &[]bool{false}[0]},
 		"closed_merged":             {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bot_authored_issues":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -14064,11 +14069,14 @@ func (c *Client) ListActivityThreadEventsWithResponse(ctx context.Context, optio
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
 		"merge_queued":              {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr":      {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_host":             {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
 		"provider":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":          {Style: "form", Explode: &[]bool{false}[0]},
 		"search":                    {Style: "form", Explode: &[]bool{false}[0]},
 		"since":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":                   {Style: "form", Explode: &[]bool{false}[0]},
 		"types":                     {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":                {Style: "form", Explode: &[]bool{false}[0]},
 	}
@@ -28660,6 +28668,7 @@ func (c *Client) ListIssuesWithResponse(ctx context.Context, options *ListIssues
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"assigned":             {Style: "form", Explode: &[]bool{false}[0]},
 		"assignee":             {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":            {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                {Style: "form", Explode: &[]bool{false}[0]},
 		"not_involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
@@ -42701,31 +42710,35 @@ func (c *Client) DispatchWorkflowRaw(ctx context.Context, httpClient *http.Clien
 func (c *Client) ListActivityRaw(ctx context.Context, httpClient *http.Client, options *ListActivityRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"after":               {Style: "form", Explode: &[]bool{false}[0]},
-		"assigned":            {Style: "form", Explode: &[]bool{false}[0]},
-		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
-		"attributes":          {Style: "form", Explode: &[]bool{false}[0]},
-		"author":              {Style: "form", Explode: &[]bool{false}[0]},
-		"before":              {Style: "form", Explode: &[]bool{false}[0]},
-		"bots":                {Style: "form", Explode: &[]bool{false}[0]},
-		"closed_merged":       {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_drafts":         {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_merge_queued":   {Style: "form", Explode: &[]bool{false}[0]},
-		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
-		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
-		"merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
-		"not_involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
-		"projection":          {Style: "form", Explode: &[]bool{false}[0]},
-		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
-		"search":              {Style: "form", Explode: &[]bool{false}[0]},
-		"since":               {Style: "form", Explode: &[]bool{false}[0]},
-		"subject_before":      {Style: "form", Explode: &[]bool{false}[0]},
-		"types":               {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":          {Style: "form", Explode: &[]bool{false}[0]},
+		"after":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"at_or_before":             {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":               {Style: "form", Explode: &[]bool{false}[0]},
+		"author":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"before":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":            {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bot_authored_issues": {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":                {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_closed_merged":       {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_default_branch":      {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_drafts":              {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
+		"involves_me":              {Style: "form", Explode: &[]bool{false}[0]},
+		"item_types":               {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"merge_queued":             {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr":     {Style: "form", Explode: &[]bool{false}[0]},
+		"projection":               {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":         {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"search":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"since":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"subject_before":           {Style: "form", Explode: &[]bool{false}[0]},
+		"types":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":               {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/activity",
@@ -42770,6 +42783,7 @@ func (c *Client) ListActivityThreadEventsRaw(ctx context.Context, httpClient *ht
 		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
 		"bots":                      {Style: "form", Explode: &[]bool{false}[0]},
 		"closed_merged":             {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bot_authored_issues":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -42779,11 +42793,14 @@ func (c *Client) ListActivityThreadEventsRaw(ctx context.Context, httpClient *ht
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
 		"merge_queued":              {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr":      {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_host":             {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
 		"provider":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":          {Style: "form", Explode: &[]bool{false}[0]},
 		"search":                    {Style: "form", Explode: &[]bool{false}[0]},
 		"since":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":                   {Style: "form", Explode: &[]bool{false}[0]},
 		"types":                     {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":                {Style: "form", Explode: &[]bool{false}[0]},
 	}
@@ -46547,6 +46564,7 @@ func (c *Client) ListIssuesRaw(ctx context.Context, httpClient *http.Client, opt
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"assigned":             {Style: "form", Explode: &[]bool{false}[0]},
 		"assignee":             {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":            {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                {Style: "form", Explode: &[]bool{false}[0]},
 		"not_involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
@@ -50052,31 +50070,35 @@ func NewListActivityRequest(ctx context.Context, baseURL string, options *ListAc
 	c := NewClient(apiClient)
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"after":               {Style: "form", Explode: &[]bool{false}[0]},
-		"assigned":            {Style: "form", Explode: &[]bool{false}[0]},
-		"at_or_before":        {Style: "form", Explode: &[]bool{false}[0]},
-		"attributes":          {Style: "form", Explode: &[]bool{false}[0]},
-		"author":              {Style: "form", Explode: &[]bool{false}[0]},
-		"before":              {Style: "form", Explode: &[]bool{false}[0]},
-		"bots":                {Style: "form", Explode: &[]bool{false}[0]},
-		"closed_merged":       {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_drafts":         {Style: "form", Explode: &[]bool{false}[0]},
-		"hide_merge_queued":   {Style: "form", Explode: &[]bool{false}[0]},
-		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
-		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
-		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
-		"merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
-		"not_involves_me":     {Style: "form", Explode: &[]bool{false}[0]},
-		"projection":          {Style: "form", Explode: &[]bool{false}[0]},
-		"repo":                {Style: "form", Explode: &[]bool{false}[0]},
-		"search":              {Style: "form", Explode: &[]bool{false}[0]},
-		"since":               {Style: "form", Explode: &[]bool{false}[0]},
-		"subject_before":      {Style: "form", Explode: &[]bool{false}[0]},
-		"types":               {Style: "form", Explode: &[]bool{false}[0]},
-		"unassigned":          {Style: "form", Explode: &[]bool{false}[0]},
+		"after":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"assigned":                 {Style: "form", Explode: &[]bool{false}[0]},
+		"at_or_before":             {Style: "form", Explode: &[]bool{false}[0]},
+		"attributes":               {Style: "form", Explode: &[]bool{false}[0]},
+		"author":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"before":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"bots":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"closed_merged":            {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bot_authored_issues": {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":                {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_closed_merged":       {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_default_branch":      {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_drafts":              {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_merge_queued":        {Style: "form", Explode: &[]bool{false}[0]},
+		"involves_me":              {Style: "form", Explode: &[]bool{false}[0]},
+		"item_types":               {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"merge_queued":             {Style: "form", Explode: &[]bool{false}[0]},
+		"not_involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr":     {Style: "form", Explode: &[]bool{false}[0]},
+		"projection":               {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":         {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"search":                   {Style: "form", Explode: &[]bool{false}[0]},
+		"since":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"subject_before":           {Style: "form", Explode: &[]bool{false}[0]},
+		"types":                    {Style: "form", Explode: &[]bool{false}[0]},
+		"unassigned":               {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/activity",
@@ -50123,6 +50145,7 @@ func NewListActivityThreadEventsRequest(ctx context.Context, baseURL string, opt
 		"bitbucket_repository_uuid": {Style: "form", Explode: &[]bool{false}[0]},
 		"bots":                      {Style: "form", Explode: &[]bool{false}[0]},
 		"closed_merged":             {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bot_authored_issues":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
@@ -50132,11 +50155,14 @@ func NewListActivityThreadEventsRequest(ctx context.Context, baseURL string, opt
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
 		"merge_queued":              {Style: "form", Explode: &[]bool{false}[0]},
+		"not_referenced_by_pr":      {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_host":             {Style: "form", Explode: &[]bool{false}[0]},
 		"platform_repo_id":          {Style: "form", Explode: &[]bool{false}[0]},
 		"provider":                  {Style: "form", Explode: &[]bool{false}[0]},
+		"referenced_by_pr":          {Style: "form", Explode: &[]bool{false}[0]},
 		"search":                    {Style: "form", Explode: &[]bool{false}[0]},
 		"since":                     {Style: "form", Explode: &[]bool{false}[0]},
+		"starred":                   {Style: "form", Explode: &[]bool{false}[0]},
 		"types":                     {Style: "form", Explode: &[]bool{false}[0]},
 		"unassigned":                {Style: "form", Explode: &[]bool{false}[0]},
 	}
@@ -54130,6 +54156,7 @@ func NewListIssuesRequest(ctx context.Context, baseURL string, options *ListIssu
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"assigned":             {Style: "form", Explode: &[]bool{false}[0]},
 		"assignee":             {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_bots":            {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                {Style: "form", Explode: &[]bool{false}[0]},
 		"not_involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
@@ -60991,9 +61018,27 @@ type ListActivityQuery struct {
 	// MergeQueued Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
 	MergeQueued *bool `json:"merge_queued,omitempty"`
 
-	// Attributes Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts.
+	// Attributes Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, has_workspace, no_workspace, fork, not_fork. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts.
 	Attributes        *string `json:"attributes,omitempty"`
 	HideDefaultBranch *bool   `json:"hide_default_branch,omitempty"`
+
+	// Labels Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches.
+	Labels []string `json:"labels,omitempty"`
+
+	// ExcludeLabels Drop activity whose pull request or issue carries any named label. Names match without case across repositories.
+	ExcludeLabels []string `json:"exclude_labels,omitempty"`
+
+	// HideBotAuthoredIssues Drop issue activity on issues a bot account opened. Pull request and repository activity always passes.
+	HideBotAuthoredIssues *bool `json:"hide_bot_authored_issues,omitempty"`
+
+	// Starred Keep only activity whose pull request or issue is starred.
+	Starred *bool `json:"starred,omitempty"`
+
+	// ReferencedByPr Keep only issue activity on issues a pull request references. Pull request and repository activity always passes.
+	ReferencedByPr *bool `json:"referenced_by_pr,omitempty"`
+
+	// NotReferencedByPr Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies.
+	NotReferencedByPr *bool `json:"not_referenced_by_pr,omitempty"`
 }
 
 type ListActivityAuthorsQuery struct {
@@ -61039,6 +61084,24 @@ type ListActivityThreadEventsQuery struct {
 	// Attributes Comma-separated pull request filters, as on the activity list.
 	Attributes        *string `json:"attributes,omitempty"`
 	HideDefaultBranch *bool   `json:"hide_default_branch,omitempty"`
+
+	// Labels Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches.
+	Labels []string `json:"labels,omitempty"`
+
+	// ExcludeLabels Drop activity whose pull request or issue carries any named label. Names match without case across repositories.
+	ExcludeLabels []string `json:"exclude_labels,omitempty"`
+
+	// HideBotAuthoredIssues Drop issue activity on issues a bot account opened. Pull request and repository activity always passes.
+	HideBotAuthoredIssues *bool `json:"hide_bot_authored_issues,omitempty"`
+
+	// Starred Keep only activity whose pull request or issue is starred.
+	Starred *bool `json:"starred,omitempty"`
+
+	// ReferencedByPr Keep only issue activity on issues a pull request references. Pull request and repository activity always passes.
+	ReferencedByPr *bool `json:"referenced_by_pr,omitempty"`
+
+	// NotReferencedByPr Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies.
+	NotReferencedByPr *bool `json:"not_referenced_by_pr,omitempty"`
 }
 
 type GetArchiveReportQuery struct {
@@ -61460,6 +61523,15 @@ type ListIssuesQuery struct {
 
 	// NotReferencedByPr Only include issues no pull request references. With referenced_by_pr, neither filter applies.
 	NotReferencedByPr *bool `json:"not_referenced_by_pr,omitempty"`
+
+	// Labels Only include issues carrying every named label. Names match without case across repositories; applied before pagination.
+	Labels []string `json:"labels,omitempty"`
+
+	// ExcludeLabels Drop issues carrying any named label. Names match without case across repositories; applied before pagination.
+	ExcludeLabels []string `json:"exclude_labels,omitempty"`
+
+	// HideBots Drop issues a bot account opened: a -bot login suffix on any provider, [bot] on GitHub, and project or group access token users on GitLab.
+	HideBots *bool `json:"hide_bots,omitempty"`
 }
 
 type SyncIssueQuery struct {
@@ -61500,11 +61572,17 @@ type ListPullsQuery struct {
 	// Numbers Item numbers in every repo unless repo is set; before pagination.
 	Numbers []int64 `json:"numbers,omitempty"`
 
-	// Attributes Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination.
+	// Attributes Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not), has_workspace and no_workspace (with a workspace on this server, or not), fork and not_fork (the head branch lives in a fork, or not; an unknown head repository is not a fork). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, merge_queued or not_merge_queued, has_workspace or no_workspace, and fork or not_fork. Every other selected filter, including involves_me and unassigned, must also match before pagination.
 	Attributes *string `json:"attributes,omitempty"`
 
 	// Label Exact case-sensitive label name; applied before pagination.
 	Label *string `json:"label,omitempty"`
+
+	// Labels Only include pull requests carrying every named label. Names match without case across repositories; applied before pagination.
+	Labels []string `json:"labels,omitempty"`
+
+	// ExcludeLabels Drop pull requests carrying any named label. Names match without case across repositories; applied before pagination.
+	ExcludeLabels []string `json:"exclude_labels,omitempty"`
 
 	// Repo Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
 	Repo *string `json:"repo,omitempty"`

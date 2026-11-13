@@ -95,32 +95,44 @@ type StreamEventsInput struct {
 	WorkspaceID string `query:"workspace_id" doc:"Optional selected local workspace to prewarm and validate while this stream is connected"`
 }
 
+// ActivityItemFilterInput narrows Activity by the pull request or issue each row belongs to,
+// before the limit.
+type ActivityItemFilterInput struct {
+	Labels                []string `query:"labels,explode" doc:"Keep only activity whose pull request or issue carries every named label. Names match without case across repositories; repository activity never matches."`
+	ExcludeLabels         []string `query:"exclude_labels,explode" doc:"Drop activity whose pull request or issue carries any named label. Names match without case across repositories."`
+	HideBotAuthoredIssues bool     `query:"hide_bot_authored_issues" doc:"Drop issue activity on issues a bot account opened. Pull request and repository activity always passes."`
+	Starred               bool     `query:"starred" doc:"Keep only activity whose pull request or issue is starred."`
+	ReferencedByPR        bool     `query:"referenced_by_pr" doc:"Keep only issue activity on issues a pull request references. Pull request and repository activity always passes."`
+	NotReferencedByPR     bool     `query:"not_referenced_by_pr" doc:"Keep only issue activity on issues no pull request references. With referenced_by_pr, neither filter applies."`
+}
+
 type ListActivityInput struct {
-	Repo               string   `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
-	Types              []string `query:"types"`
-	ItemTypes          []string `query:"item_types" doc:"Item scopes included before limiting activity results: pr, issue, or repo."`
-	Search             string   `query:"search"`
-	Author             string   `query:"author" doc:"Exact, case-insensitive pull request or issue author filter."`
-	InvolvesMe         bool     `query:"involves_me" doc:"Only include activity for pull requests and issues involving the authenticated viewer."`
-	Unassigned         bool     `query:"unassigned" doc:"Only include activity for pull requests and issues with no assignees."`
-	NotInvolvesMe      bool     `query:"not_involves_me" doc:"Drop activity for pull requests and issues involving the authenticated viewer. With involves_me, neither filter applies."`
-	Assigned           bool     `query:"assigned" doc:"Drop activity for pull requests and issues with no assignees. With unassigned, neither filter applies."`
-	After              string   `query:"after"`
-	Before             string   `query:"before"`
-	SubjectBefore      string   `query:"subject_before"`
-	AtOrBefore         string   `query:"at_or_before"`
-	Since              string   `query:"since"`
-	Projection         string   `query:"projection" enum:"full,collapsed,events" default:"full"`
-	Limit              int      `query:"limit" minimum:"1" maximum:"5000"`
-	HideClosedMerged   bool     `query:"hide_closed_merged"`
-	ClosedMerged       bool     `query:"closed_merged" doc:"Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged."`
-	HideBots           bool     `query:"hide_bots"`
-	Bots               bool     `query:"bots" doc:"Keep only bot-authored activity. Wins over hide_bots."`
-	HideDrafts         bool     `query:"hide_drafts" doc:"Exclude activity for draft pull requests."`
-	HideMergeQueued    bool     `query:"hide_merge_queued" doc:"Exclude activity for open pull requests in a merge queue or set to merge after CI."`
-	MergeQueued        bool     `query:"merge_queued" doc:"Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued."`
-	Attributes         string   `query:"attributes" doc:"Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts."`
-	HideDefaultBranch  bool     `query:"hide_default_branch"`
+	Repo              string   `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
+	Types             []string `query:"types"`
+	ItemTypes         []string `query:"item_types" doc:"Item scopes included before limiting activity results: pr, issue, or repo."`
+	Search            string   `query:"search"`
+	Author            string   `query:"author" doc:"Exact, case-insensitive pull request or issue author filter."`
+	InvolvesMe        bool     `query:"involves_me" doc:"Only include activity for pull requests and issues involving the authenticated viewer."`
+	Unassigned        bool     `query:"unassigned" doc:"Only include activity for pull requests and issues with no assignees."`
+	NotInvolvesMe     bool     `query:"not_involves_me" doc:"Drop activity for pull requests and issues involving the authenticated viewer. With involves_me, neither filter applies."`
+	Assigned          bool     `query:"assigned" doc:"Drop activity for pull requests and issues with no assignees. With unassigned, neither filter applies."`
+	After             string   `query:"after"`
+	Before            string   `query:"before"`
+	SubjectBefore     string   `query:"subject_before"`
+	AtOrBefore        string   `query:"at_or_before"`
+	Since             string   `query:"since"`
+	Projection        string   `query:"projection" enum:"full,collapsed,events" default:"full"`
+	Limit             int      `query:"limit" minimum:"1" maximum:"5000"`
+	HideClosedMerged  bool     `query:"hide_closed_merged"`
+	ClosedMerged      bool     `query:"closed_merged" doc:"Keep only activity for closed or merged pull requests and issues. Wins over hide_closed_merged."`
+	HideBots          bool     `query:"hide_bots"`
+	Bots              bool     `query:"bots" doc:"Keep only bot-authored activity. Wins over hide_bots."`
+	HideDrafts        bool     `query:"hide_drafts" doc:"Exclude activity for draft pull requests."`
+	HideMergeQueued   bool     `query:"hide_merge_queued" doc:"Exclude activity for open pull requests in a merge queue or set to merge after CI."`
+	MergeQueued       bool     `query:"merge_queued" doc:"Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued."`
+	Attributes        string   `query:"attributes" doc:"Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, has_workspace, no_workspace, fork, not_fork. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts."`
+	HideDefaultBranch bool     `query:"hide_default_branch"`
+	ActivityItemFilterInput
 	ParentProvider     string
 	ParentPlatformHost string
 	ParentRepoKey      platform.RepositoryKey
@@ -820,7 +832,7 @@ func ApplyActivityFilters(opts *db.ListActivityOpts, input *ListActivityInput) e
 		for attribute := range strings.SplitSeq(input.Attributes, ",") {
 			switch attribute {
 			case "draft", "not_draft", "approved", "not_approved", "merge_conflicts", "no_merge_conflicts",
-				"failed_ci", "passed_ci":
+				"failed_ci", "passed_ci", "has_workspace", "no_workspace", "fork", "not_fork":
 			default:
 				return httpapi.Validation("query.attributes", "unknown pull request filter")
 			}
@@ -830,6 +842,14 @@ func ApplyActivityFilters(opts *db.ListActivityOpts, input *ListActivityInput) e
 		}
 	}
 	opts.PullAttributes = attributes
+	opts.ActivityItemFilters = db.ActivityItemFilters{
+		Labels:                httpapi.LabelNames(input.Labels),
+		ExcludeLabels:         httpapi.LabelNames(input.ExcludeLabels),
+		HideBotAuthoredIssues: input.HideBotAuthoredIssues,
+		Starred:               input.Starred,
+		ReferencedByPR:        input.ReferencedByPR && !input.NotReferencedByPR,
+		NotReferencedByPR:     input.NotReferencedByPR && !input.ReferencedByPR,
+	}
 	opts.OnlyClosedMerged = input.ClosedMerged
 	opts.HideClosedMerged = input.HideClosedMerged && !input.ClosedMerged
 	opts.OnlyBots = input.Bots

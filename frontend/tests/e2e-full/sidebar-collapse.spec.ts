@@ -315,7 +315,7 @@ test.describe("collapsible sidebar", () => {
     await expectCompactFilterBar(filterBar);
 
     const dropdown = await openCompactFilters(filterBar);
-    await expect(dropdown.locator(".kit-filter-dropdown__section-title", { hasText: "PR" })).toBeVisible();
+    await expect(dropdown.locator(".kit-filter-dropdown__section-title", { hasText: "Pull requests" })).toBeVisible();
     await dropdown.locator(".kit-filter-dropdown__item", { hasText: "Closed" }).click();
     await expect(filterBar.page().locator(".state-note")).toBeVisible();
     await expect(dropdown).toBeVisible();
@@ -377,7 +377,7 @@ test.describe("collapsible sidebar", () => {
     await expect(filterBar.page().locator(".state-note")).toBeVisible();
     await expect(dropdown).toBeVisible();
 
-    await dropdown.locator(".kit-filter-dropdown__item", { hasText: "All" }).last().click();
+    await dropdown.locator(".kit-filter-dropdown__item", { hasText: "Flat list" }).click();
     await expect(dropdown).toBeVisible();
     await expect(page.locator(".sidebar-group-header")).toHaveCount(0, {
       timeout: 5_000,

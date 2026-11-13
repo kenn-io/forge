@@ -96,6 +96,7 @@ type listActivityThreadEventsInput struct {
 	MergeQueued             bool     `query:"merge_queued" doc:"Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued."`
 	Attributes              string   `query:"attributes" doc:"Comma-separated pull request filters, as on the activity list."`
 	HideDefaultBranch       bool     `query:"hide_default_branch"`
+	itemapi.ActivityItemFilterInput
 }
 
 type triggerSyncInput struct {
@@ -732,12 +733,15 @@ func (s *Handlers) ListActivityService(
 	ctx context.Context, input *itemapi.ListActivityInput,
 ) (itemapi.ActivityResponse, error) {
 	if (*s.ProviderSource) != nil {
+		hubInput, workspaceAttributes := hubActivityInput(input)
 		if (*s.WorkspaceAPI) == nil {
-			response, err := (*s.ProviderSource).ListActivity(ctx, input)
+			response, err := (*s.ProviderSource).ListActivity(ctx, hubInput)
 			if err != nil {
 				return itemapi.ActivityResponse{}, err
 			}
-			return providerActivityResponse(response), nil
+			response = providerActivityResponse(response)
+			keepLocalWorkspaceRows(&response, workspaceAttributes)
+			return response, nil
 		}
 		// The local overlay needs nothing from the hub response, so it is
 		// prepared while the hub call runs. The overlay can make its own hub
@@ -748,9 +752,9 @@ func (s *Handlers) ListActivityService(
 		var overlay func(itemapi.ActivityResponse) itemapi.ActivityResponse
 		var overlayErr error
 		local.Go(func() {
-			overlay, overlayErr = s.prepareLocalActivityWorkspaces(overlayCtx, input)
+			overlay, overlayErr = s.prepareLocalActivityWorkspaces(overlayCtx, hubInput)
 		})
-		response, err := (*s.ProviderSource).ListActivity(ctx, input)
+		response, err := (*s.ProviderSource).ListActivity(ctx, hubInput)
 		if err != nil {
 			cancelOverlay()
 			local.Wait()
@@ -760,7 +764,9 @@ func (s *Handlers) ListActivityService(
 		if overlayErr != nil {
 			return itemapi.ActivityResponse{}, overlayErr
 		}
-		return overlay(response), nil
+		response = overlay(response)
+		keepLocalWorkspaceRows(&response, workspaceAttributes)
+		return response, nil
 	}
 	if _, federationRequest := federationauth.PrincipalFromContext(ctx); federationRequest || (*s.FleetAPI) == nil {
 		output, err := s.listActivityRouteCore(ctx, input)
@@ -808,6 +814,43 @@ func providerActivityResponse(response itemapi.ActivityResponse) itemapi.Activit
 	}
 	response.WorkspaceActivity = []itemapi.WorkspaceActivitySubjectResponse{}
 	return response
+}
+
+// hubActivityInput is input without has_workspace and no_workspace: they name this server's
+// workspaces, which the hub cannot see, so they are returned for keepLocalWorkspaceRows.
+func hubActivityInput(input *itemapi.ListActivityInput) (*itemapi.ListActivityInput, []string) {
+	attributes, local := pullapi.SplitWorkspaceAttributes(input.Attributes)
+	if len(local) == 0 {
+		return input, nil
+	}
+	hubInput := *input
+	hubInput.Attributes = attributes
+	return &hubInput, local
+}
+
+// keepLocalWorkspaceRows applies has_workspace and no_workspace to pull request rows once this
+// server's workspaces are on them. The hub has already limited its rows, so on a spoke these two
+// filters run after the limit.
+func keepLocalWorkspaceRows(response *itemapi.ActivityResponse, attributes []string) {
+	if len(attributes) == 0 {
+		return
+	}
+	keep := func(itemType string, workspace *workspaceapi.WorkspaceRef) bool {
+		matches := "no_workspace"
+		if workspace != nil {
+			matches = "has_workspace"
+		}
+		return itemType != "pr" || slices.Contains(attributes, matches)
+	}
+	response.Items = slices.DeleteFunc(response.Items, func(item itemapi.ActivityItemResponse) bool {
+		return !keep(item.ItemType, item.Workspace)
+	})
+	response.ItemActivity = slices.DeleteFunc(response.ItemActivity, func(item itemapi.ActivitySubjectResponse) bool {
+		return !keep(item.ItemType, item.Workspace)
+	})
+	response.WorkspaceActivity = slices.DeleteFunc(response.WorkspaceActivity, func(item itemapi.WorkspaceActivitySubjectResponse) bool {
+		return !keep(item.ItemType, item.Workspace)
+	})
 }
 
 // prepareLocalActivityWorkspaces reads the local workspace snapshot and
@@ -887,36 +930,37 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 		}
 		if listWorkspaceActivity {
 			// The hub owns provider data: it classifies forks and matches pull request
-			// filters, so its rows for the same items supply both. A pull request the
+			// and issue filters, so its rows for the same items supply both. An item the
 			// hub's filtered response leaves out cannot be shown to match them. A pull
 			// request with only recent workspace output has no hub row, so its own
 			// workspace's head repository classification decides From fork.
-			hubPulls := make(map[providerplane.ItemIdentity]pullapi.HeadRepoKind)
+			hubItems := make(map[providerplane.ItemIdentity]pullapi.HeadRepoKind)
 			for _, item := range response.Items {
-				if item.ItemType == "pr" {
-					hubPulls[itemapi.ActivityItemIdentity(item)] = item.HeadRepoKind
-				}
+				hubItems[itemapi.ActivityItemIdentity(item)] = item.HeadRepoKind
 			}
 			for _, subject := range response.ItemActivity {
-				if subject.ItemType == "pr" {
-					hubPulls[itemapi.ActivitySubjectIdentity(subject)] = subject.HeadRepoKind
-				}
+				hubItems[itemapi.ActivitySubjectIdentity(subject)] = subject.HeadRepoKind
 			}
+			items := input.ActivityItemFilterInput
+			parentFiltered := len(httpapi.LabelNames(items.Labels)) > 0 || len(httpapi.LabelNames(items.ExcludeLabels)) > 0 || items.Starred
+			pullsFiltered := input.Attributes != "" || parentFiltered
+			issuesFiltered := parentFiltered || items.HideBotAuthoredIssues || items.ReferencedByPR != items.NotReferencedByPR
 			listed := snapshot
 			headRepoKinds := make(map[db.WorkspaceSubjectKey]pullapi.HeadRepoKind)
-			if input.Attributes != "" {
+			if pullsFiltered || issuesFiltered {
 				listed.Subjects = make(map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity, len(snapshot.Subjects))
 			}
 			for key, activity := range snapshot.Subjects {
-				kind, onHub := hubPulls[identitiesByKey[key]]
-				if key.ItemType == db.WorkspaceItemTypePullRequest {
+				kind, onHub := hubItems[identitiesByKey[key]]
+				isPull := key.ItemType == db.WorkspaceItemTypePullRequest
+				if isPull {
 					if onHub && kind != "" {
 						headRepoKinds[key] = kind
 					} else if activity.HeadRepoKind != "" {
 						headRepoKinds[key] = pullapi.HeadRepoKind(activity.HeadRepoKind)
 					}
 				}
-				if input.Attributes != "" && (key.ItemType != db.WorkspaceItemTypePullRequest || onHub) {
+				if (pullsFiltered || issuesFiltered) && (onHub || (isPull && !pullsFiltered) || (!isPull && !issuesFiltered)) {
 					listed.Subjects[key] = activity
 				}
 			}
@@ -1161,6 +1205,15 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 
+	workspaceSnapshot, err := (*s.WorkspaceAPI).WorkspaceSubjectSnapshot(ctx)
+	if err != nil {
+		slog.Error("list workspace activity failed", "err", err)
+		return nil, httpapi.Internal("list workspace activity failed")
+	}
+	if slices.Contains(opts.PullAttributes, "has_workspace") || slices.Contains(opts.PullAttributes, "no_workspace") {
+		opts.WorkspaceItems = workspaceSnapshot.PullRequestItems()
+	}
+
 	// Included terms can surface parents through events beyond the returned page.
 	searchHasIncludes := len(db.ParseSearchQuery(opts.Search).Include) > 0
 	hasFullWorkspaceEventItems := projection != "events" && searchHasIncludes
@@ -1213,11 +1266,6 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			return nil, httpapi.Internal("list activity failed")
 		}
 	}
-	workspaceSnapshot, err := (*s.WorkspaceAPI).WorkspaceSubjectSnapshot(ctx)
-	if err != nil {
-		slog.Error("list workspace activity failed", "err", err)
-		return nil, httpapi.Internal("list workspace activity failed")
-	}
 	if opts.Unassigned || opts.Assigned {
 		if err := s.filterWorkspaceSubjectsByAssignment(ctx, &workspaceSnapshot, opts.Unassigned); err != nil {
 			slog.Error("list unassigned workspace subjects failed", "err", err)
@@ -1245,23 +1293,19 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		}
 	}
 
-	if len(opts.PullAttributes) > 0 {
-		matching, err := s.Db.ListPullsMatchingAttributes(
-			ctx, workspaceSnapshotSubjectKeys(workspaceSnapshot), opts.PullAttributes, opts.DeferredMergeItems,
-		)
-		if err != nil {
-			slog.Error("list workspace subjects matching pull filters failed", "err", err)
-			return nil, httpapi.Internal("list workspace activity failed")
+	matching, err := s.Db.ListWorkspaceSubjectsMatchingFilters(ctx, workspaceSnapshotSubjectKeys(workspaceSnapshot), opts)
+	if err != nil {
+		slog.Error("list workspace subjects matching filters failed", "err", err)
+		return nil, httpapi.Internal("list workspace activity failed")
+	}
+	for key := range workspaceSnapshot.Subjects {
+		if _, ok := matching[key]; !ok {
+			delete(workspaceSnapshot.Subjects, key)
 		}
-		for key := range workspaceSnapshot.Subjects {
-			if _, ok := matching[key]; !ok && key.ItemType == db.WorkspaceItemTypePullRequest {
-				delete(workspaceSnapshot.Subjects, key)
-			}
-		}
-		for key := range workspaceSnapshot.OwnReferences {
-			if _, ok := matching[key]; !ok && key.ItemType == db.WorkspaceItemTypePullRequest {
-				delete(workspaceSnapshot.OwnReferences, key)
-			}
+	}
+	for key := range workspaceSnapshot.OwnReferences {
+		if _, ok := matching[key]; !ok {
+			delete(workspaceSnapshot.OwnReferences, key)
 		}
 	}
 	useWorkspaceActivityForRecency := s.useWorkspaceActivityForRecency()
@@ -1552,28 +1596,29 @@ func (s *Handlers) ListActivityThreadEvents(
 		return nil, httpapi.Validation("query.item_number", "item number must be positive")
 	}
 	return s.ListActivity(ctx, &itemapi.ListActivityInput{
-		Types:              input.Types,
-		Search:             input.Search,
-		Unassigned:         input.Unassigned,
-		Since:              input.Since,
-		Before:             input.Before,
-		AtOrBefore:         input.AtOrBefore,
-		Projection:         "events",
-		Limit:              input.Limit,
-		HideClosedMerged:   input.HideClosedMerged,
-		ClosedMerged:       input.ClosedMerged,
-		HideBots:           input.HideBots,
-		Bots:               input.Bots,
-		HideDrafts:         input.HideDrafts,
-		HideMergeQueued:    input.HideMergeQueued,
-		MergeQueued:        input.MergeQueued,
-		Attributes:         input.Attributes,
-		HideDefaultBranch:  input.HideDefaultBranch,
-		ParentProvider:     input.Provider,
-		ParentPlatformHost: input.PlatformHost,
-		ParentRepoKey:      repoKey,
-		ParentItemType:     input.ItemType,
-		ParentItemNumber:   input.ItemNumber,
+		Types:                   input.Types,
+		Search:                  input.Search,
+		Unassigned:              input.Unassigned,
+		Since:                   input.Since,
+		Before:                  input.Before,
+		AtOrBefore:              input.AtOrBefore,
+		Projection:              "events",
+		Limit:                   input.Limit,
+		HideClosedMerged:        input.HideClosedMerged,
+		ClosedMerged:            input.ClosedMerged,
+		HideBots:                input.HideBots,
+		Bots:                    input.Bots,
+		HideDrafts:              input.HideDrafts,
+		HideMergeQueued:         input.HideMergeQueued,
+		MergeQueued:             input.MergeQueued,
+		Attributes:              input.Attributes,
+		HideDefaultBranch:       input.HideDefaultBranch,
+		ActivityItemFilterInput: input.ActivityItemFilterInput,
+		ParentProvider:          input.Provider,
+		ParentPlatformHost:      input.PlatformHost,
+		ParentRepoKey:           repoKey,
+		ParentItemType:          input.ItemType,
+		ParentItemNumber:        input.ItemNumber,
 	})
 }
 

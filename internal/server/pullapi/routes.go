@@ -28,7 +28,6 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
-	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/gitealike"
 )
@@ -41,18 +40,20 @@ const (
 )
 
 type listPullsInput struct {
-	Numbers    []int64 `query:"numbers" doc:"Item numbers in every repo unless repo is set; before pagination."`
-	Attributes string  `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, and merge_queued or not_merge_queued. Every other selected filter, including involves_me and unassigned, must also match before pagination."`
-	Label      string  `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
-	Repo       string  `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
-	State      string  `query:"state" doc:"open (default), closed (including merged), merged, closed_unmerged, or all."`
-	Starred    bool    `query:"starred"`
-	InvolvesMe bool    `query:"involves_me" doc:"Only include pull requests involving the authenticated viewer."`
-	Unassigned bool    `query:"unassigned" doc:"Only include pull requests with no assignees."`
-	Q          string  `query:"q"`
-	Semantic   bool    `query:"semantic" doc:"Rank titles, descriptions, and comments by meaning. Requires q and semantic search on the Forge that syncs providers."`
-	Limit      int     `query:"limit"`
-	Offset     int     `query:"offset"`
+	Numbers       []int64  `query:"numbers" doc:"Item numbers in every repo unless repo is set; before pagination."`
+	Attributes    string   `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, not_approved, draft, not_draft, ready, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again), merge_queued and not_merge_queued (open and in a merge queue or set to merge after CI, or not), has_workspace and no_workspace (with a workspace on this server, or not), fork and not_fork (the head branch lives in a fork, or not; an unknown head repository is not a fork). Mutually exclusive filters match either: draft, not_draft, or ready, failed_ci or passed_ci, approved or not_approved, merge_conflicts or no_merge_conflicts, merge_queued or not_merge_queued, has_workspace or no_workspace, and fork or not_fork. Every other selected filter, including involves_me and unassigned, must also match before pagination."`
+	Label         string   `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
+	Labels        []string `query:"labels,explode" doc:"Only include pull requests carrying every named label. Names match without case across repositories; applied before pagination."`
+	ExcludeLabels []string `query:"exclude_labels,explode" doc:"Drop pull requests carrying any named label. Names match without case across repositories; applied before pagination."`
+	Repo          string   `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
+	State         string   `query:"state" doc:"open (default), closed (including merged), merged, closed_unmerged, or all."`
+	Starred       bool     `query:"starred"`
+	InvolvesMe    bool     `query:"involves_me" doc:"Only include pull requests involving the authenticated viewer."`
+	Unassigned    bool     `query:"unassigned" doc:"Only include pull requests with no assignees."`
+	Q             string   `query:"q"`
+	Semantic      bool     `query:"semantic" doc:"Rank titles, descriptions, and comments by meaning. Requires q and semantic search on the Forge that syncs providers."`
+	Limit         int      `query:"limit"`
+	Offset        int      `query:"offset"`
 	// The opposites of involves_me and unassigned.
 	NotInvolvesMe bool `query:"not_involves_me" doc:"Only include pull requests that do not involve the authenticated viewer. With involves_me, neither filter applies."`
 	Assigned      bool `query:"assigned" doc:"Drop pull requests with no assignees; a pull request whose assignees never synchronized stays. With unassigned, neither filter applies."`
@@ -369,7 +370,8 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 		Repo:    input.Repo, State: input.State,
 		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned,
 		NotInvolvesMe: input.NotInvolvesMe, Assigned: input.Assigned, Text: input.Q, Semantic: input.Semantic,
-		Label: input.Label, Attributes: input.Attributes, Limit: input.Limit, Offset: input.Offset,
+		Label: input.Label, Labels: input.Labels, ExcludeLabels: input.ExcludeLabels,
+		Attributes: input.Attributes, Limit: input.Limit, Offset: input.Offset,
 	}
 	var rows []MergeRequestResponse
 	var err error
@@ -411,7 +413,8 @@ func (s *Handler) listPullsRouteCore(
 		for attribute := range strings.SplitSeq(input.Attributes, ",") {
 			switch attribute {
 			case "approved", "not_approved", "draft", "not_draft", "ready", "merge_conflicts", "no_merge_conflicts",
-				"failed_ci", "passed_ci", "merge_queue", "merge_queued", "not_merge_queued":
+				"failed_ci", "passed_ci", "merge_queue", "merge_queued", "not_merge_queued",
+				"has_workspace", "no_workspace", "fork", "not_fork":
 			default:
 				return nil, httpapi.Validation("query.attributes", "unknown PR inclusion filter")
 			}
@@ -461,6 +464,8 @@ func (s *Handler) listPullsRouteCore(
 		Assigned:          input.Assigned && !input.Unassigned,
 		Search:            input.Q,
 		Label:             input.Label,
+		Labels:            httpapi.LabelNames(input.Labels),
+		ExcludeLabels:     httpapi.LabelNames(input.ExcludeLabels),
 		Limit:             input.Limit,
 		Offset:            input.Offset,
 		RepoFilters:       parseRepoFilters(input.Repo),
@@ -469,6 +474,9 @@ func (s *Handler) listPullsRouteCore(
 	}
 	if slices.Contains(attributes, "merge_queued") || slices.Contains(attributes, "not_merge_queued") {
 		opts.DeferredMergeItems = s.DeferredMergeItems()
+	}
+	if slices.Contains(attributes, "has_workspace") || slices.Contains(attributes, "no_workspace") {
+		opts.WorkspaceItems = snapshot.PullRequestItems()
 	}
 	if input.InvolvesMe != input.NotInvolvesMe {
 		opts.ViewerUninvolved = input.NotInvolvesMe
@@ -721,20 +729,7 @@ func classifyHeadRepoKind(repo db.Repo, mr db.MergeRequest) HeadRepoKind {
 // ClassifyHeadRepoKind reports whether a pull request's head clone URL names its base
 // repository, a fork, or a repository it cannot identify.
 func ClassifyHeadRepoKind(repo db.Repo, headRepoCloneURL string) HeadRepoKind {
-	headRepo := workspace.WorkspaceHeadRepo(
-		string(httpapi.ProviderKind(repo)),
-		httpapi.ProviderHost(repo),
-		repo.Owner,
-		repo.Name,
-		headRepoCloneURL,
-	)
-	if headRepo == nil {
-		return HeadRepoKindSameRepo
-	}
-	if *headRepo == "" {
-		return HeadRepoKindUnknown
-	}
-	return HeadRepoKindFork
+	return HeadRepoKind(platform.ClassifyHeadRepo(repo.Platform, repo.PlatformHost, repo.Owner, repo.Name, headRepoCloneURL))
 }
 
 // BuildDetail assembles the canonical Pull detail response for adjacent HTTP

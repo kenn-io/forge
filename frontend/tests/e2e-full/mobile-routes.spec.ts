@@ -59,7 +59,7 @@ async function expectReadableFocusList(page: Page, itemSelector: string): Promis
     const title = item?.querySelector(".title") ?? null;
     const meta = item?.querySelector(".meta-text") ?? null;
     const search = document.querySelector(".focus-list .kit-search-input input");
-    const stateButton = document.querySelector(".focus-list .state-btn");
+    const stateButton = document.querySelector(".focus-list .filter-sections-panel__item");
     const focusList = document.querySelector(".focus-list");
     const tokenValue = (node: Element | null, name: string): string =>
       node ? getComputedStyle(node).getPropertyValue(name).trim() : "";
@@ -204,14 +204,14 @@ test.describe("phone routes", () => {
     await expect(activityFilters).toBeVisible();
     expect((await activityFilters.boundingBox())?.height ?? 0).toBeGreaterThan(0);
     await expect(page.getByRole("switch", { name: "PRs" })).toBeVisible();
-    await expect(page.getByRole("switch", { name: "Issues" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Issues", exact: true })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Comments" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Reviews" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Commits" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Force pushes" })).toBeVisible();
     await expect(page.getByRole("switch", { name: "Notifications" })).toBeVisible();
     await expect(page.getByRole("combobox", { name: /State/ })).toBeVisible();
-    await expect(page.getByLabel("Time range")).toBeVisible();
+    await expect(page.getByRole("combobox", { name: /^Time range/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Select repository:/ })).toBeVisible();
     await expect(page.locator(".threaded-view")).toHaveCount(0);
     await expect(page.locator(".mobile-activity-card").first()).toBeVisible();
@@ -229,14 +229,16 @@ test.describe("phone routes", () => {
       const eventAuthor = document.querySelector(".mobile-activity-event__body span");
       const eventTime = document.querySelector(".mobile-activity-event time");
       const menuButton = document.querySelector(".mobile-triage-search-bar button[aria-label='Menu']");
-      const itemTypeToggle = document.querySelector(".mobile-item-type-toggle .kit-toggle");
-      const rangeSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Time range']");
+      const itemTypeToggle = document.querySelector(".filter-sections-panel__toggle .kit-toggle");
+      const rangeSelect = document.querySelector(".filter-sections-panel button[aria-label^='Time range']");
       const repoSelect = document.querySelector(".mobile-filter-select--repo .typeahead-trigger");
-      const repoChevron = repoSelect?.querySelector(".typeahead-chevron") ?? null;
       const toolbar = document.querySelector(".mobile-triage-search-bar");
       const filterPanel = document.querySelector(".mobile-activity-filter-grid");
-      const authorFilter = document.querySelector(".mobile-author-filter");
-      const authorChevron = authorFilter?.querySelector(".kit-typeahead__chevron") ?? null;
+      // Author is a row of the shared filter panel that opens the author list inline.
+      const authorFilter =
+        [...document.querySelectorAll(".filter-sections-panel__item")].find(
+          (node) => node.querySelector(".filter-sections-panel__label")?.textContent?.trim() === "Author",
+        ) ?? null;
       const search = document.querySelector(".kit-search-input");
       const buttonRect = firstButton?.getBoundingClientRect();
       const searchRect = search?.getBoundingClientRect();
@@ -301,15 +303,15 @@ test.describe("phone routes", () => {
         themeBgSurface: getComputedStyle(surfaceSample).backgroundColor,
         themeBorder: getComputedStyle(themeSample).borderColor,
         themeRadiusLg: getComputedStyle(surfaceSample).borderRadius,
-        itemTypeToggleFontSize: fontSize(document.querySelector(".mobile-item-type-toggle .kit-toggle__label")),
+        itemTypeToggleFontSize: fontSize(
+          document.querySelector(".filter-sections-panel__toggle .filter-sections-panel__label"),
+        ),
         rangeSelectFontSize: fontSize(rangeSelect),
         repoSelectFontSize: fontSize(repoSelect),
         itemTypeToggleRect: compactRect(itemTypeToggle),
         rangeSelectRect: compactRect(rangeSelect),
         repoSelectRect: compactRect(repoSelect),
-        repoChevronRect: compactRect(repoChevron),
         authorFilterRect: compactRect(authorFilter),
-        authorChevronRect: compactRect(authorChevron),
         searchLeft: searchRect?.left ?? 0,
         searchRight: searchRect?.right ?? 0,
       };
@@ -347,14 +349,13 @@ test.describe("phone routes", () => {
     expect(metrics.rangeSelectFontSize).toBeGreaterThanOrEqual(13);
     expect(metrics.repoSelectFontSize).toBeGreaterThanOrEqual(13);
     expect(metrics.repoSelectRect?.top ?? Infinity).toBeLessThan(metrics.authorFilterRect?.top ?? 0);
-    expect(
-      (metrics.authorFilterRect?.top ?? Infinity) -
-        (metrics.repoSelectRect?.top ?? 0) -
-        (metrics.repoSelectRect?.height ?? 0),
-    ).toBeLessThanOrEqual(1);
-    expect(metrics.authorChevronRect?.width).toBe(metrics.repoChevronRect?.width);
-    expect(metrics.authorChevronRect?.height).toBe(metrics.repoChevronRect?.height);
-    for (const bounds of [metrics.itemTypeToggleRect, metrics.rangeSelectRect, metrics.repoSelectRect]) {
+    expect(metrics.authorFilterRect?.height ?? 0).toBeGreaterThanOrEqual(40);
+    for (const bounds of [
+      metrics.itemTypeToggleRect,
+      metrics.rangeSelectRect,
+      metrics.repoSelectRect,
+      metrics.authorFilterRect,
+    ]) {
       expect(bounds?.left ?? 0).toBeGreaterThanOrEqual(0);
       expect(bounds?.right ?? 0).toBeLessThanOrEqual(metrics.viewportWidth);
     }
@@ -365,8 +366,8 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
     await page.getByRole("button", { name: /^Filters/ }).click();
 
-    await page.getByRole("switch", { name: "Issues" }).click();
-    await expect(page.getByRole("switch", { name: "Issues" })).not.toBeChecked();
+    await page.getByRole("switch", { name: "Issues", exact: true }).click();
+    await expect(page.getByRole("switch", { name: "Issues", exact: true })).not.toBeChecked();
     await expect(page).toHaveURL(/item_types=pr/);
 
     await page.getByRole("combobox", { name: /Time range/ }).click();
@@ -434,11 +435,11 @@ test.describe("phone routes", () => {
     await filters.click();
     await expect(filters).toHaveAttribute("aria-expanded", "true");
 
-    await page.getByRole("button", { name: "Filter authors" }).click();
-    await expect(page.getByRole("combobox", { name: "Filter authors" })).toBeVisible();
-    await expect(page.getByRole("option", { name: "carol" })).toBeVisible();
+    // Author opens the same author list as desktop Activity, inline in the panel.
+    await page.getByRole("button", { name: /^Author/ }).click();
+    await expect(page.getByRole("button", { name: "carol", exact: true })).toBeVisible();
 
-    const overlayMetrics = await page.locator(".mobile-author-filter .kit-typeahead__panel").evaluate((panel) => {
+    const overlayMetrics = await page.locator(".filter-sections-panel__submenu .author-filter").evaluate((panel) => {
       const bounds = panel.getBoundingClientRect();
       return {
         viewportWidth: window.innerWidth,
@@ -455,7 +456,7 @@ test.describe("phone routes", () => {
       const url = new URL(response.url());
       return url.pathname === "/api/v1/activity" && url.searchParams.get("author") === "carol";
     });
-    await page.getByRole("option", { name: "carol" }).click();
+    await page.getByRole("button", { name: "carol", exact: true }).click();
     const response = await filteredResponse;
     expect(response.status()).toBe(200);
     const payload = await response.json();
@@ -485,12 +486,20 @@ test.describe("phone routes", () => {
       const url = new URL(response.url());
       return url.pathname === "/api/v1/activity" && !url.searchParams.has("author");
     });
-    await page.locator(".mobile-author-filter .kit-typeahead__trigger").click();
-    await page.getByRole("option", { name: "Anyone" }).click();
+    // Author is a row in the shared panel; its list offers Anyone to clear the filter.
+    const filtersPanel = page.locator("#mobile-activity-filters");
+    if (!(await filtersPanel.isVisible())) await page.getByRole("button", { name: /^Filters/ }).click();
+    const anyone = page.locator(".filter-sections-panel__submenu .author-filter__row", { hasText: "Anyone" });
+    if (!(await anyone.isVisible())) await page.getByRole("button", { name: /^Author/ }).click();
+    await anyone.click();
     expect((await unfilteredResponse).status()).toBe(200);
 
-    await expect(page.getByRole("button", { name: "Filters" })).toBeVisible();
+    const filtersButton = page.getByRole("button", { name: "Filters", exact: true });
+    await expect(filtersButton).toBeVisible();
     await expect.poll(() => new URL(page.url()).searchParams.has("author")).toBe(false);
+    // Cards load their events when they scroll into view, and the open panel covers them.
+    await filtersButton.click();
+    await expect(page.locator("#mobile-activity-filters")).toBeHidden();
     const eventAuthors = page.locator(".mobile-activity-event__body > span");
     await expect(async () => {
       const authors = await eventAuthors.allTextContents();
@@ -525,7 +534,7 @@ test.describe("phone routes", () => {
 
     const repoLabel = card.locator(".mobile-activity-card__meta span").first();
     const hideOrgToggle = page.getByRole("switch", {
-      name: "Hide org",
+      name: "Hide org name",
     });
     await expect(hideOrgToggle).not.toBeChecked();
     await expect(repoLabel).toHaveText("acme/widgets");
@@ -721,16 +730,14 @@ test.describe("phone routes", () => {
     for (const route of ["pulls", "issues"]) {
       await page.goto(`/${route}`);
       await expectPathname(page, `/${route}`);
-      const trigger = page.getByRole("button", { name: "Filters" });
+      const trigger = page.getByRole("button", { name: "Filters", exact: true });
       await expect(trigger).toBeVisible();
       const bounds = await trigger.boundingBox();
       expect(bounds?.width ?? 0).toBeGreaterThanOrEqual(40);
       expect(bounds?.height ?? 0).toBeGreaterThanOrEqual(40);
       await trigger.click();
-      await expect(page.getByRole("button", { name: "Unassigned" })).toBeVisible();
-      if (route === "pulls") {
-        await expect(page.getByRole("button", { name: "By repo" })).toBeVisible();
-      }
+      await expect(page.getByRole("combobox", { name: /Unassigned/ })).toBeVisible();
+      await expect(page.getByRole("combobox", { name: /Group/ })).toContainText("By repo");
     }
   });
 
@@ -747,7 +754,7 @@ test.describe("phone routes", () => {
     await expect(page.locator(".mobile-shell")).toBeVisible();
     await expect(page.locator(".focus-list")).toBeVisible();
     const pullSearch = page.getByRole("searchbox", { name: "Search PRs" });
-    const pullFilters = page.getByRole("button", { name: "Filters" });
+    const pullFilters = page.getByRole("button", { name: "Filters", exact: true });
     await expect(pullFilters).toHaveText("");
     await expect(pullFilters).toHaveAttribute("aria-expanded", "false");
     await expect(page.locator(".filter-bar")).toBeHidden();
@@ -768,7 +775,7 @@ test.describe("phone routes", () => {
     await expect(phoneModes).toHaveCount(0);
     await expect(page.locator(".focus-list")).toBeVisible();
     const issueSearch = page.getByRole("searchbox", { name: "Search issues" });
-    const issueFilters = page.getByRole("button", { name: "Filters" });
+    const issueFilters = page.getByRole("button", { name: "Filters", exact: true });
     await expect(issueFilters).toHaveAttribute("aria-expanded", "false");
     await expect(page.locator(".filter-bar")).toBeHidden();
     const [issueSearchBounds, issueFilterBounds] = await Promise.all([
@@ -808,15 +815,15 @@ test.describe("phone routes", () => {
       await expect(botIssue).toBeVisible();
       await expect(humanIssue).toBeVisible();
 
-      await page.getByRole("button", { name: "Filters" }).click();
-      const hideBots = page.getByRole("button", { name: "Hide bot-authored issues" });
-      await expect(hideBots).toHaveAttribute("aria-pressed", "false");
+      await page.getByRole("button", { name: "Filters", exact: true }).click();
+      const hideBots = page.getByRole("switch", { name: "Hide bot-authored issues" });
+      await expect(hideBots).not.toBeChecked();
       const settingsUpdate = page.waitForResponse(
         (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
       );
       await hideBots.click();
       expect((await settingsUpdate).ok()).toBe(true);
-      await expect(hideBots).toHaveAttribute("aria-pressed", "true");
+      await expect(hideBots).toBeChecked();
       await expect(botIssue).toHaveCount(0);
       await expect(humanIssue).toBeVisible();
 
@@ -827,8 +834,8 @@ test.describe("phone routes", () => {
 
       await page.reload();
       await expect(page.locator(".issue-item").first()).toBeVisible();
-      await page.getByRole("button", { name: "Filters" }).click();
-      await expect(hideBots).toHaveAttribute("aria-pressed", "true");
+      await page.getByRole("button", { name: "Filters", exact: true }).click();
+      await expect(hideBots).toBeChecked();
       await expect(botIssue).toHaveCount(0);
       await expect(humanIssue).toBeVisible();
 
@@ -837,7 +844,7 @@ test.describe("phone routes", () => {
       );
       await hideBots.click();
       expect((await settingsReset).ok()).toBe(true);
-      await expect(hideBots).toHaveAttribute("aria-pressed", "false");
+      await expect(hideBots).not.toBeChecked();
       await expect(botIssue).toBeVisible();
     } finally {
       await server.stop();
@@ -848,7 +855,11 @@ test.describe("phone routes", () => {
     const server = await startIsolatedE2EServerWithOptions({ providerCollision: true });
     const page = await browser.newPage();
     try {
-      await page.addInitScript(() => localStorage.setItem("kenn-forge:hideOrgName", "1"));
+      // Grouped lists name the repo in the heading; a flat list names it on every row.
+      await page.addInitScript(() => {
+        localStorage.setItem("kenn-forge:hideOrgName", "1");
+        localStorage.setItem("kenn-forge:groupingMode", "flat");
+      });
 
       await page.goto(`${server.info.base_url}/m/pulls`);
       await expect(page.locator(".pull-item .repo-name", { hasText: "github/github.com/acme/widgets" })).toHaveCount(4);
@@ -886,7 +897,7 @@ test.describe("high-density phone routes", () => {
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();
     await page.getByRole("button", { name: /^Filters/ }).click();
     await expect(page.getByRole("switch", { name: "PRs" })).toBeVisible();
-    await expect(page.getByRole("switch", { name: "Issues" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Issues", exact: true })).toBeVisible();
     await page.getByRole("combobox", { name: /Time range/ }).click();
     await expect(page.getByRole("option", { name: "24h" })).toBeVisible();
 
@@ -901,14 +912,14 @@ test.describe("high-density phone routes", () => {
         node ? getComputedStyle(node).getPropertyValue(name).trim() : "";
       const filterControls = [
         ...document.querySelectorAll(
-          ".mobile-activity-filter-grid .kit-select-dropdown__trigger, .mobile-item-type-toggle .kit-toggle, .mobile-boolean-toggle .kit-toggle",
+          ".filter-sections-panel .kit-select-dropdown__trigger, .filter-sections-panel .kit-toggle",
         ),
       ]
         .map((control) => control.getBoundingClientRect())
         .map((rect) => ({ left: rect.left, right: rect.right }));
       const search = document.querySelector(".kit-search-input")?.getBoundingClientRect();
       const firstOption = document
-        .querySelector(".mobile-filter-dropdown .kit-select-dropdown__option")
+        .querySelector(".filter-sections-panel__dropdown .kit-select-dropdown__option")
         ?.getBoundingClientRect();
       return {
         dpr: window.devicePixelRatio,
@@ -918,8 +929,8 @@ test.describe("high-density phone routes", () => {
         activityTypeToken: tokenValue(inbox, "--mobile-type-body"),
         densityScale: tokenValue(inbox, "--mobile-device-density-scale"),
         bodyFontSize: fontSize(".mobile-activity-inbox"),
-        filterFontSize: fontSize(".mobile-item-type-toggle .kit-toggle__label"),
-        filterOptionFontSize: fontSize(".mobile-filter-dropdown .kit-select-dropdown__option"),
+        filterFontSize: fontSize(".filter-sections-panel__toggle .filter-sections-panel__label"),
+        filterOptionFontSize: fontSize(".filter-sections-panel__dropdown .kit-select-dropdown__option"),
         filterOptionHeight: firstOption?.height ?? 0,
         searchHeight: search?.height ?? 0,
         searchLeft: search?.left ?? 0,

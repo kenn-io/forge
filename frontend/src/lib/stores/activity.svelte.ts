@@ -20,7 +20,6 @@ import { createListPaging } from "./list-paging.svelte.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
 import type { TriFilter } from "../utils/tri-filter.js";
 import {
-  BROWSER_ONLY_PULL_ATTRIBUTES,
   PULL_ATTRIBUTE_SECTIONS,
   cycleFilterInSections,
   toggleFilterInSections,
@@ -30,7 +29,7 @@ import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filte
 import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
 import { repositoryKeyFromWire, repositoryKeyToWire } from "../api/repository-key.js";
 import { parseRepoFilterSelection, providerQualifiedRepoFilterValue } from "../utils/repo-filter-values.js";
-import { cycleLabelFilter as cycleLabel, type LabelFilters } from "../utils/label-filter.js";
+import { cycleLabelFilter as cycleLabel, labelFilterParams, type LabelFilters } from "../utils/label-filter.js";
 
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
@@ -312,15 +311,21 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   const onlyDrafts = $derived(onlyDraftsChoice && !hideDrafts);
   // The pull request list's other conditions. They apply only to pull request activity and are not saved.
   let pullAttributeFilters = $state<PullAttributeFilter[]>([]);
-  const serverPullAttributes = $derived([
-    ...(onlyDrafts ? ["draft"] : []),
-    ...pullAttributeFilters.filter((filter) => !BROWSER_ONLY_PULL_ATTRIBUTES.includes(filter)),
-  ]);
+  const serverPullAttributes = $derived([...(onlyDrafts ? ["draft"] : []), ...pullAttributeFilters]);
+  // A thread's parent already passed the feed's workspace check. A spoke forwards thread requests
+  // to the hub, which does not know the spoke's workspaces, so they leave the workspace attributes out.
+  const threadPullAttributes = $derived(
+    serverPullAttributes.filter((attribute) => attribute !== "has_workspace" && attribute !== "no_workspace"),
+  );
   let useWorkspaceActivityForRecency = $state(false);
   let hideDefaultBranchActivity = $state(false);
   let enabledItemTypes = $state<Set<ActivityItemType>>(new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
   let enabledEvents = $state<Set<string>>(new Set(DEFAULT_EVENT_TYPES));
   let showNotifications = $state(true);
+  // Filters Activity shares with the PR and issue lists that the lists keep per session.
+  let starred = $state(false);
+  let referencedByPR = $state<TriFilter>(undefined);
+  let hideBotAuthoredIssues = $state(false);
   let involvesMe = $state(readInvolvesMeFilter("activity"));
   let unassigned = $state(readUnassignedFilter("activity"));
   let initialized = false;
@@ -452,12 +457,18 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return labelFilters;
   }
 
+  // The server applies label filters before its limit, so each change reloads.
   function cycleLabelFilter(name: string): void {
     labelFilters = cycleLabel(labelFilters, name);
+    invalidatePagedActivityRequests();
+    loadActivity();
   }
 
   function clearLabelFilters(): void {
+    if (labelFilters.size === 0) return;
     labelFilters = new Map();
+    invalidatePagedActivityRequests();
+    loadActivity();
   }
 
   function getHideBots(): boolean {
@@ -488,6 +499,21 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function getShowNotifications(): boolean {
     return showNotifications;
+  }
+  function getTimeRangeDefault(): TimeRange {
+    return timeRangeDefault;
+  }
+  function getViewModeDefault(): ViewMode {
+    return viewModeDefault;
+  }
+  function getStarred(): boolean {
+    return starred;
+  }
+  function getReferencedByPR(): TriFilter {
+    return referencedByPR;
+  }
+  function getHideBotAuthoredIssues(): boolean {
+    return hideBotAuthoredIssues;
   }
   function getInvolvesMe(): TriFilter {
     return involvesMe;
@@ -587,29 +613,23 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     onlyDraftsChoice = value === "require";
     setHideDrafts(value === "exclude");
   }
-  function applyPullAttributeFilters(next: PullAttributeFilter[], changed: PullAttributeFilter): void {
+  function applyPullAttributeFilters(next: PullAttributeFilter[]): void {
     pullAttributeFilters = next;
-    if (!BROWSER_ONLY_PULL_ATTRIBUTES.includes(changed)) invalidatePagedActivityRequests();
+    invalidatePagedActivityRequests();
   }
   /** Selects one option of a pick-one pair such as Passing CI and Failed CI. */
   function togglePullAttributeFilter(filter: PullAttributeFilter): void {
-    applyPullAttributeFilters(toggleFilterInSections(PULL_ATTRIBUTE_SECTIONS, pullAttributeFilters, filter), filter);
+    applyPullAttributeFilters(toggleFilterInSections(PULL_ATTRIBUTE_SECTIONS, pullAttributeFilters, filter));
   }
   /** Cycles a condition through off, required, and its opposite. */
   function cyclePullAttributeFilter(filter: PullAttributeFilter, opposite: PullAttributeFilter): void {
-    applyPullAttributeFilters(
-      cycleFilterInSections(PULL_ATTRIBUTE_SECTIONS, pullAttributeFilters, filter, opposite),
-      filter,
-    );
+    applyPullAttributeFilters(cycleFilterInSections(PULL_ATTRIBUTE_SECTIONS, pullAttributeFilters, filter, opposite));
   }
   function setPullAttributeFilters(next: PullAttributeFilter[]): void {
-    const serverChanged = [...next, ...pullAttributeFilters].some(
-      (filter) =>
-        !BROWSER_ONLY_PULL_ATTRIBUTES.includes(filter) &&
-        next.includes(filter) !== pullAttributeFilters.includes(filter),
-    );
+    const changed =
+      next.length !== pullAttributeFilters.length || next.some((filter) => !pullAttributeFilters.includes(filter));
     pullAttributeFilters = next;
-    if (serverChanged) invalidatePagedActivityRequests();
+    if (changed) invalidatePagedActivityRequests();
   }
   function setHideDrafts(v: boolean): void {
     hideDrafts = v;
@@ -634,6 +654,18 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function setShowNotifications(v: boolean): void {
     selectedFilters.add("notif");
     showNotifications = v;
+    invalidatePagedActivityRequests();
+  }
+  function setStarred(value: boolean): void {
+    starred = value;
+    invalidatePagedActivityRequests();
+  }
+  function setReferencedByPR(value: TriFilter): void {
+    referencedByPR = value;
+    invalidatePagedActivityRequests();
+  }
+  function setHideBotAuthoredIssues(value: boolean): void {
+    hideBotAuthoredIssues = value;
     invalidatePagedActivityRequests();
   }
   function setInvolvesMe(value: TriFilter): void {
@@ -731,6 +763,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (onlyClosedMerged) p.closed_merged = true;
     if (onlyBots) p.bots = true;
     if (serverPullAttributes.length > 0) p.attributes = serverPullAttributes.join(",");
+    if (starred) p.starred = true;
+    if (referencedByPR === "require") p.referenced_by_pr = true;
+    if (referencedByPR === "exclude") p.not_referenced_by_pr = true;
+    if (hideBotAuthoredIssues) p.hide_bot_authored_issues = true;
+    Object.assign(p, labelFilterParams(labelFilters));
     if (hideDefaultBranchActivity) p.hide_default_branch = true;
     if (activityPageLimit === undefined && viewMode === "flat") {
       return { ...flatPaging.withLimit(activityPageQuery(p)), since };
@@ -762,6 +799,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       params.merge_queued ?? false,
       params.closed_merged ?? false,
       params.bots ?? false,
+      params.starred ?? false,
+      params.referenced_by_pr ?? false,
+      params.not_referenced_by_pr ?? false,
+      params.hide_bot_authored_issues ?? false,
+      params.labels ?? [],
+      params.exclude_labels ?? [],
       params.attributes ?? "",
       params.hide_default_branch ?? false,
       params.limit ?? 0,
@@ -1142,6 +1185,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       onlyClosedMerged ||
       onlyBots ||
       serverPullAttributes.length > 0 ||
+      starred ||
+      referencedByPR !== undefined ||
+      hideBotAuthoredIssues ||
+      labelFilters.size > 0 ||
       enabledItemTypes.size !== DEFAULT_ACTIVITY_ITEM_TYPES.length;
     const refreshFilteredBulk =
       !result.partialFailure &&
@@ -1485,7 +1532,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       ...(onlyMergeQueued ? { merge_queued: true } : {}),
       ...(onlyClosedMerged ? { closed_merged: true } : {}),
       ...(onlyBots ? { bots: true } : {}),
-      ...(serverPullAttributes.length > 0 ? { attributes: serverPullAttributes.join(",") } : {}),
+      ...(threadPullAttributes.length > 0 ? { attributes: threadPullAttributes.join(",") } : {}),
+      ...(starred ? { starred: true } : {}),
+      ...(referencedByPR === "require" ? { referenced_by_pr: true } : {}),
+      ...(referencedByPR === "exclude" ? { not_referenced_by_pr: true } : {}),
+      ...(hideBotAuthoredIssues ? { hide_bot_authored_issues: true } : {}),
+      ...labelFilterParams(labelFilters),
       ...(hideDefaultBranchActivity ? { hide_default_branch: true } : {}),
     };
     const isCurrentRequest = () =>
@@ -1996,6 +2048,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getHideMergeQueued,
     getMergeQueued,
     getActivityState,
+    getTimeRangeDefault,
+    getViewModeDefault,
+    getStarred,
+    getReferencedByPR,
+    getHideBotAuthoredIssues,
+    setStarred,
+    setReferencedByPR,
+    setHideBotAuthoredIssues,
     getBots,
     getDraft,
     getPullAttributeFilters,

@@ -2,26 +2,30 @@
   import { Effect } from "effect";
   import { pollWhileVisible } from "../effect/poll-while-visible.js";
   import { onDestroy, tick, untrack } from "svelte";
-  import XIcon from "@lucide/svelte/icons/x";
   import type { Attachment } from "svelte/attachments";
   import {
     FilterDropdown,
     ScrollBox,
     StatusDot,
-    type FilterDropdownSection,
     type MenuAnchorPoint,
   } from "@kenn-io/kit-ui";
   import { getAppRuntime } from "../app/runtime-context.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getStores, getNavigate } from "../context.js";
-  import PullItem from "../components/sidebar/PullItem.svelte";
+  import PullRows from "../components/sidebar/PullRows.svelte";
+  import GroupedSidebarSection from "../components/shared/GroupedSidebarSection.svelte";
+  import FilterSectionsPanel from "../components/shared/FilterSectionsPanel.svelte";
+  import LabelFilterMenu from "../components/shared/LabelFilterMenu.svelte";
+  import { issueListFilterMenu, pullListFilterMenu } from "../components/shared/list-filter-menus.js";
+  import { repoGroups, repoItemLabel } from "../components/shared/repo-groups.js";
+  import { rememberedLabelChoices } from "../utils/label-filter.js";
   import IssueItem from "../components/sidebar/IssueItem.svelte";
   import ItemActionsMenu from "../components/sidebar/ItemActionsMenu.svelte";
   import type { ListItemTarget } from "../stores/item-actions.js";
   import { createRangeSelection, isSelectAllShortcut } from "../utils/range-selection.svelte.js";
   import type { Issue, PullRequest } from "../api/types.js";
+  import type { PullSidebarRow } from "../utils/pull-stack-tree.js";
   import { createRepoLabelFormatter } from "../utils/repo-label.js";
-  import { cycleTriFilter, triFilterRow, type TriFilter } from "../utils/tri-filter.js";
   import RepoTypeahead from "../components/RepoTypeahead.svelte";
   import MobileTriageSearchBar from "../components/mobile/MobileTriageSearchBar.svelte";
   import { getGlobalRepo, setGlobalRepo } from "../stores/filter.svelte.js";
@@ -41,13 +45,9 @@
     type PullRequestRouteRef,
   } from "../routes.js";
 
-  const { pulls, issues, sync, settings, grouping } = getStores();
+  const { pulls, issues, sync, settings, grouping, collapsedRepos } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
-
-  const groupingMode = $derived(
-    grouping.getGroupingMode(),
-  );
 
   interface Props {
     listType: "mrs" | "issues";
@@ -81,35 +81,6 @@
   function loadList(): void {
     if (listType === "mrs") pulls.loadPulls(repoParams);
     else issues.loadIssues(repoParams);
-  }
-
-  function toggleInvolvesMe(): void {
-    if (listType === "mrs") {
-      pulls.setInvolvesMe(cycleTriFilter(pulls.getInvolvesMe()));
-    } else {
-      issues.setInvolvesMe(cycleTriFilter(issues.getInvolvesMe()));
-    }
-    resetPageAndLoad();
-  }
-
-  function toggleUnassigned(): void {
-    if (listType === "mrs") {
-      pulls.setUnassigned(cycleTriFilter(pulls.getUnassigned()));
-    } else {
-      issues.setUnassigned(cycleTriFilter(issues.getUnassigned()));
-    }
-    resetPageAndLoad();
-  }
-
-  function toggleReferencedByPR(): void {
-    issues.setReferencedByPR(cycleTriFilter(issues.getReferencedByPR()));
-    resetPageAndLoad();
-  }
-
-  function setListState(state: string): void {
-    if (listType === "mrs") pulls.setFilterState(state);
-    else issues.setIssueFilterState(state);
-    resetPageAndLoad();
   }
 
   const selectedRepo = $derived(showRepoSelector ? getGlobalRepo() : repo);
@@ -234,7 +205,7 @@
   }
 
   $effect(() => {
-    const rowCount = listType === "mrs" ? prItems.length : issueItems.length;
+    const rowCount = listType === "mrs" ? shownPulls.length : shownIssues.length;
     if (pendingScrollTop === null || rowCount === 0) return;
     const top = pendingScrollTop;
     pendingScrollTop = null;
@@ -244,17 +215,13 @@
     });
   });
 
-  // Filter state accessors for PRs.
-  const prFilterState = $derived(pulls.getFilterState());
-  const prItems = $derived(pulls.getPulls());
+  const prLoaded = $derived(pulls.getPulls());
+  const prItems = $derived(pulls.getFilteredPulls());
   const prLoading = $derived(pulls.isLoading());
   const prError = $derived(pulls.getError());
 
-  // Filter state accessors for issues.
-  const issueFilterState = $derived(
-    issues.getIssueFilterState(),
-  );
-  const issueItems = $derived(issues.getIssues());
+  const issueLoaded = $derived(issues.getIssues());
+  const issueItems = $derived(issues.getFilteredIssues());
   const issueLoading = $derived(issues.isIssuesLoading());
   const issueError = $derived(issues.getIssuesError());
   const listCapped = $derived(
@@ -264,12 +231,12 @@
   // Rows in on-screen order. The list opens items on their own route, so no
   // row is opened here to seed a selection.
   const pullSelection = createRangeSelection<PullRequest>({
-    rows: () => (listType === "mrs" ? prItems : []),
+    rows: () => shownPulls,
     key: (pr) => String(pr.ID),
     openedKey: () => null,
   });
   const issueSelection = createRangeSelection<Issue>({
-    rows: () => (listType === "issues" ? issueItems : []),
+    rows: () => shownIssues,
     key: (issue) => String(issue.ID),
     openedKey: () => null,
   });
@@ -416,7 +383,7 @@
   );
   const issueRepoLabelFormatter = $derived(
     createRepoLabelFormatter(
-      issueItems.map((issue) => ({
+      issueLoaded.map((issue) => ({
         provider: issue.repo.provider,
         platformHost: issue.repo.platform_host,
         owner: issue.repo.owner,
@@ -427,129 +394,90 @@
     ),
   );
 
+  // The shared menu is the only filter UI, and the rows below honor every
+  // choice in it, so this list matches the desktop sidebar's.
+  const filterMenu = $derived(
+    listType === "mrs"
+      ? pullListFilterMenu({ pulls, grouping, labelMenu: labelFilterMenu, reload: resetPageAndLoad })
+      : issueListFilterMenu({ issues, grouping, labelMenu: labelFilterMenu, reload: resetPageAndLoad }),
+  );
+  const pullLabelChoices = rememberedLabelChoices(pulls.getPulls, pulls.getLabelFilters, () =>
+    JSON.stringify([pulls.getFilterState(), pulls.getSearchQuery(), selectedRepo]),
+  );
+  const issueLabelChoices = rememberedLabelChoices(issues.getIssues, issues.getLabelFilters, () =>
+    JSON.stringify([issues.getIssueFilterState(), issues.getIssueSearchQuery(), selectedRepo]),
+  );
+  const labelChoices = $derived(listType === "mrs" ? pullLabelChoices() : issueLabelChoices());
+
+  const prGroups = $derived(
+    listType === "mrs" && grouping.getGroupingMode() === "byRepo"
+      ? repoGroups(pulls.pullsByRepo(), prRepoLabelFormatter).map((group) => ({
+          ...group,
+          rows: pulls.getSidebarRows(group.items),
+          collapsed: collapsedRepos.isCollapsed("pulls", group.collapseKey),
+        }))
+      : null,
+  );
+  const prFlatRows = $derived(listType === "mrs" ? pulls.getSidebarRows(prItems) : []);
+  const issueGroups = $derived(
+    listType === "issues" && grouping.getGroupByRepo()
+      ? repoGroups(issues.issuesByRepo(), issueRepoLabelFormatter).map((group) => ({
+          ...group,
+          collapsed: collapsedRepos.isCollapsed("issues", group.collapseKey),
+        }))
+      : null,
+  );
+  const shownPulls = $derived(
+    prGroups === null
+      ? prFlatRows.map((row) => row.pr)
+      : prGroups.flatMap((group) => (group.collapsed ? [] : group.rows.map((row) => row.pr))),
+  );
+  const shownIssues = $derived(
+    issueGroups === null
+      ? (listType === "issues" ? issueItems : [])
+      : issueGroups.flatMap((group) => (group.collapsed ? [] : group.items)),
+  );
+
   const itemCount = $derived(
     listType === "mrs" ? prItems.length : issueItems.length,
   );
   const itemLabel = $derived(
     listType === "mrs" ? "PRs" : "issues",
   );
-  const involvesMe = $derived(
-    listType === "mrs" ? pulls.getInvolvesMe() : issues.getInvolvesMe(),
-  );
-  const unassigned = $derived(
-    listType === "mrs" ? pulls.getUnassigned() : issues.getUnassigned(),
-  );
-  const compactFiltersActive = $derived(
-    listType === "mrs"
-      ? prFilterState !== "open"
-        || groupingMode !== "byRepo"
-        || involvesMe !== undefined
-        || unassigned !== undefined
-      : issueFilterState !== "open"
-        || involvesMe !== undefined
-        || unassigned !== undefined
-        || issues.getReferencedByPR() !== undefined
-        || issues.getHideBots(),
-  );
-  const compactFilterSections = $derived.by((): FilterDropdownSection[] => {
-    const sections: FilterDropdownSection[] = [
-      {
-        title: "State",
-        items: ["open", "closed", "all"].map((state) => ({
-          id: `state-${state}`,
-          label: state === "open" ? "Open" : state === "closed" ? "Closed" : "All",
-          active: (listType === "mrs" ? prFilterState : issueFilterState) === state,
-          onSelect: () => setListState(state),
-        })),
-      },
-    ];
-
-    if (listType === "mrs") {
-      sections.push({
-        title: "Group",
-        items: [
-          {
-            id: "group-by-repo",
-            label: "By repo",
-            active: groupingMode === "byRepo",
-            onSelect: () => grouping.setGroupingMode("byRepo"),
-          },
-          {
-            id: "group-flat",
-            label: "Flat list",
-            active: groupingMode === "flat",
-            onSelect: () => grouping.setGroupingMode("flat"),
-          },
-        ],
-      });
-    }
-
-    sections.push({
-      title: listType === "mrs" ? "PR" : "Issue",
-      items: [
-        {
-          id: "involves-me",
-          label: "Involves me",
-          ...triFilterRow(involvesMe),
-          onSelect: toggleInvolvesMe,
-        },
-        {
-          id: "unassigned",
-          label: "Unassigned",
-          ...triFilterRow(unassigned),
-          onSelect: toggleUnassigned,
-        },
-        ...(listType === "issues" && issues.canFilterReferencedByPR()
-          ? [{
-              id: "referenced-by-pr",
-              label: "Referenced by PR",
-              ...triFilterRow(issues.getReferencedByPR()),
-              onSelect: toggleReferencedByPR,
-            }]
-          : []),
-        ...(listType === "issues"
-          ? [{
-              id: "hide-bot-authored-issues",
-              label: "Hide bot-authored issues",
-              active: issues.getHideBots(),
-              onSelect: () => void issues.setHideBots(!issues.getHideBots()),
-            }]
-          : []),
-      ],
-    });
-
-    return sections;
-  });
 </script>
 
-{#snippet triFilterButton(label: string, value: TriFilter, onclick: () => void)}
-  <button
-    type="button"
-    class="visibility-btn"
-    class:visibility-btn--active={value === "require"}
-    class:visibility-btn--excluded={value === "exclude"}
-    aria-pressed={value !== undefined}
-    {onclick}
-  >
-    {#if value === "exclude"}
-      <XIcon size={11} strokeWidth={2.4} aria-hidden="true" />
-    {/if}
-    {label}{#if value === "exclude"}<span class="kit-sr-only">, excluded</span>{/if}
-  </button>
+{#snippet labelFilterMenu()}
+  <LabelFilterMenu
+    choices={labelChoices}
+    oncycle={(name) => (listType === "mrs" ? pulls.cycleLabelFilter(name) : issues.cycleLabelFilter(name))}
+    emptyText={listType === "mrs" ? "No labels on loaded pull requests" : "No labels on loaded issues"}
+  />
 {/snippet}
 
-{#snippet compactPhoneFilters()}
-  <div class="compact-phone-filter-menu">
-    <FilterDropdown
-      label="Filters"
-      title="Filters"
-      active={compactFiltersActive}
-      showBadge={false}
-      sections={compactFilterSections}
-      minWidth="180px"
-      align="end"
+{#snippet pullRows(rows: PullSidebarRow[], showRepo: boolean)}
+  <PullRows
+    {rows}
+    {showRepo}
+    repoLabel={(pr) => repoItemLabel(pr, prRepoLabelFormatter)}
+    isSelected={() => false}
+    isMultiSelected={(pr) => pullSelection.has(pr)}
+    onclick={handlePRClick}
+    oncontextmenu={openPRContextMenu}
+  />
+{/snippet}
+
+{#snippet issueRows(rows: Issue[], showRepo: boolean)}
+  {#each rows as issue (issue.ID)}
+    <IssueItem
+      {issue}
+      repoLabel={repoItemLabel(issue, issueRepoLabelFormatter)}
+      {showRepo}
+      selected={false}
+      multiSelected={issueSelection.has(issue)}
+      onclick={(event) => handleIssueClick(event, issue)}
+      oncontextmenu={(event) => openIssueContextMenu(event, issue)}
     />
-  </div>
+  {/each}
 {/snippet}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -558,102 +486,55 @@
     <div class="header">
       <span class="header-label">{repoLabel}</span>
       <span class="count-badge">{itemCount}{listCapped ? "+" : ""} {itemLabel}</span>
+      {#if !phonePresentation}
+        <FilterDropdown
+          label="Filters"
+          title="Filters"
+          active={filterMenu.changed}
+          badgeCount={filterMenu.filterCount}
+          sections={filterMenu.sections}
+          resetLabel="Reset view"
+          onReset={filterMenu.reset}
+          minWidth="190px"
+          align="end"
+        />
+      {/if}
     </div>
   {/if}
-  <div
-    id="focus-list-filters"
-    class="filter-bar"
-    class:filter-bar--expanded={filtersExpanded}
-    class:filter-bar--compactable={!showRepoSelector}
-  >
-    {#if showRepoSelector && filtersExpanded}
-      <div class="mobile-repo-filter">
-        <RepoTypeahead
-          selected={selectedRepo}
-          onchange={setGlobalRepo}
-          allowPresetManagement={false}
-          mobile
-        />
-      </div>
-    {/if}
-    {#if !showRepoSelector && !phonePresentation}
-      <div class="compact-filter-menu">
-        <FilterDropdown
-          label="List filters"
-          title="Filters"
-          active={compactFiltersActive}
-          showBadge={false}
-          sections={compactFilterSections}
-          minWidth="180px"
-        />
-      </div>
-    {/if}
-    <div class="state-toggle">
-      {#if listType === "mrs"}
-        {#each ["open", "closed", "all"] as s (s)}
-          <button
-            class="state-btn"
-            class:state-btn--active={prFilterState === s}
-            onclick={() => setListState(s)}
-          >
-            {s === "open"
-              ? "Open"
-              : s === "closed"
-                ? "Closed"
-                : "All"}
-          </button>
-        {/each}
-      {:else}
-        {#each ["open", "closed", "all"] as s (s)}
-          <button
-            class="state-btn"
-            class:state-btn--active={issueFilterState === s}
-            onclick={() => setListState(s)}
-          >
-            {s === "open"
-              ? "Open"
-              : s === "closed"
-                ? "Closed"
-                : "All"}
-          </button>
-        {/each}
-      {/if}
-    </div>
-    <div class="visibility-controls">
-      {@render triFilterButton("Involves me", involvesMe, toggleInvolvesMe)}
-      {@render triFilterButton("Unassigned", unassigned, toggleUnassigned)}
-      {#if listType === "issues"}
-        {#if issues.canFilterReferencedByPR()}
-          {@render triFilterButton("Referenced by PR", issues.getReferencedByPR(), toggleReferencedByPR)}
+  {#if phonePresentation}
+    <div id="focus-list-filters" class="filter-bar" class:filter-bar--expanded={filtersExpanded}>
+      {#if filtersExpanded}
+        {#if showRepoSelector}
+          <div class="mobile-repo-filter">
+            <RepoTypeahead
+              selected={selectedRepo}
+              onchange={setGlobalRepo}
+              allowPresetManagement={false}
+              mobile
+            />
+          </div>
         {/if}
-        <button
-          type="button"
-          class="visibility-btn"
-          class:visibility-btn--active={issues.getHideBots()}
-          aria-label="Hide bot-authored issues"
-          aria-pressed={issues.getHideBots()}
-          onclick={() => void issues.setHideBots(!issues.getHideBots())}
-        >Hide bots</button>
+        <FilterSectionsPanel
+          sections={filterMenu.sections}
+          resetLabel="Reset view"
+          onReset={filterMenu.reset}
+        />
       {/if}
     </div>
-  </div>
+  {/if}
   <MobileTriageSearchBar
     bind:value={searchInput}
     placeholder="Search {itemLabel}..."
     searchAriaLabel="Search {itemLabel}"
     filterControls="focus-list-filters"
     {filtersExpanded}
-    filterControl={!showRepoSelector && phonePresentation ? compactPhoneFilters : undefined}
+    filtersActive={filtersExpanded || filterMenu.changed}
     oninput={onSearchInput}
     onsubmit={(value) => applySearch(value, true)}
     ontoggle={() => filtersExpanded = !filtersExpanded}
   />
 
-  {#if listType === "mrs" && prFilterState !== "open"}
-    <p class="state-note">
-      Showing items closed after tracking began
-    </p>
-  {:else if listType === "issues" && issueFilterState !== "open"}
+  {#if (listType === "mrs" ? pulls.getFilterState() : issues.getIssueFilterState()) !== "open"}
     <p class="state-note">
       Showing items closed after tracking began
     </p>
@@ -663,74 +544,70 @@
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
       <p class="state-message">No repositories configured.</p>
     {:else if listType === "mrs"}
-      {#if prLoading && prItems.length === 0}
+      {#if prLoading && prLoaded.length === 0}
         <p class="state-message">Loading...</p>
-      {:else if prError !== null && prItems.length === 0}
+      {:else if prError !== null && prLoaded.length === 0}
         <p class="state-message state-message--error">
           Error: {prError}
         </p>
-      {:else if prItems.length === 0 && sync.getSyncState()?.running}
+      {:else if prLoaded.length === 0 && sync.getSyncState()?.running}
         <div class="state-message sync-message">
           <StatusDot status="working" label="Syncing pull requests" size={6} animated />
           <span aria-hidden="true">Syncing...</span>
         </div>
-      {:else if prItems.length === 0 && !sync.getSyncState()?.last_run_at}
+      {:else if prLoaded.length === 0 && !sync.getSyncState()?.last_run_at}
         <p class="state-message">Waiting for first sync...</p>
-      {:else if prItems.length === 0}
+      {:else if prItems.length === 0 && filterMenu.filterCount > 0}
+        <p class="state-message">No pull requests match these filters.</p>
+      {:else if prLoaded.length === 0}
         <p class="state-message">No pull requests found.</p>
-      {:else}
-        {#each prItems as pr (pr.ID)}
-          <PullItem
-            {pr}
-            repoLabel={prRepoLabelFormatter.format({
-              provider: pr.repo.provider,
-              platformHost: pr.repo.platform_host,
-              owner: pr.repo.owner,
-              name: pr.repo.name,
-              repoPath: pr.repo.repo_path,
-            })}
-            showRepo={!repo}
-            selected={false}
-            multiSelected={pullSelection.has(pr)}
-            onclick={(event) => handlePRClick(event, pr)}
-            oncontextmenu={(event) => openPRContextMenu(event, pr)}
-          />
+      {:else if prGroups !== null}
+        {#each prGroups as group (group.key)}
+          <GroupedSidebarSection
+            label={group.label}
+            isPrivate={group.isPrivate}
+            count={listCapped ? `${group.items.length}+` : group.items.length}
+            collapsed={group.collapsed}
+            onclick={() => collapsedRepos.toggle("pulls", group.collapseKey)}
+          >
+            {@render pullRows(group.rows, false)}
+          </GroupedSidebarSection>
         {/each}
+      {:else}
+        {@render pullRows(prFlatRows, !repo)}
       {/if}
     {:else}
-      {#if issueLoading && issueItems.length === 0}
+      {#if issueLoading && issueLoaded.length === 0}
         <p class="state-message">Loading...</p>
-      {:else if issueError !== null && issueItems.length === 0}
+      {:else if issueError !== null && issueLoaded.length === 0}
         <p class="state-message state-message--error">
           Error: {issueError}
         </p>
-      {:else if issueItems.length === 0 && sync.getSyncState()?.running}
+      {:else if issueLoaded.length === 0 && sync.getSyncState()?.running}
         <div class="state-message sync-message">
           <StatusDot status="working" label="Syncing issues" size={6} animated />
           <span aria-hidden="true">Syncing...</span>
         </div>
-      {:else if issueItems.length === 0 && !sync.getSyncState()?.last_run_at}
+      {:else if issueLoaded.length === 0 && !sync.getSyncState()?.last_run_at}
         <p class="state-message">Waiting for first sync...</p>
-      {:else if issueItems.length === 0 && !listCapped}
+      {:else if issueItems.length === 0 && !listCapped && filterMenu.filterCount > 0}
+        <p class="state-message">No issues match these filters.</p>
+      {:else if issueLoaded.length === 0 && !listCapped}
         <p class="state-message">No issues found.</p>
-      {:else}
-        {#each issueItems as issue (issue.ID)}
-          <IssueItem
-            {issue}
-            repoLabel={issueRepoLabelFormatter.format({
-              provider: issue.repo.provider,
-              platformHost: issue.repo.platform_host,
-              owner: issue.repo.owner,
-              name: issue.repo.name,
-              repoPath: issue.repo.repo_path,
-            })}
-            showRepo={!repo}
-            selected={false}
-            multiSelected={issueSelection.has(issue)}
-            onclick={(event) => handleIssueClick(event, issue)}
-            oncontextmenu={(event) => openIssueContextMenu(event, issue)}
-          />
+      {:else if issueGroups !== null}
+        {#each issueGroups as group (group.key)}
+          <GroupedSidebarSection
+            label={group.label}
+            isPrivate={group.isPrivate}
+            count={listCapped ? `${group.items.length}+` : group.items.length}
+            collapsed={group.collapsed}
+            onclick={() => collapsedRepos.toggle("issues", group.collapseKey)}
+          >
+            {@render issueRows(group.items, false)}
+          </GroupedSidebarSection>
         {/each}
+      {:else}
+        {@render issueRows(issueItems, !repo)}
       {/if}
     {/if}
     {#if listCapped && (!chunked || pageLimit < 500)}
@@ -761,7 +638,6 @@
     flex-direction: column;
     height: 100%;
     width: 100%;
-    container: focus-list / inline-size;
   }
 
   .header {
@@ -776,6 +652,7 @@
   }
 
   .header-label {
+    flex: 1;
     font-size: var(--font-size-sm);
     font-weight: 600;
     color: var(--text-primary);
@@ -794,101 +671,6 @@
     border-radius: 10px;
     padding: 2px 7px;
     flex-shrink: 0;
-  }
-
-  .filter-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    border-bottom: 1px solid var(--border-muted);
-    flex-shrink: 0;
-    background: var(--bg-surface);
-  }
-
-  .visibility-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-left: auto;
-  }
-
-  .compact-filter-menu {
-    display: none;
-    flex-shrink: 0;
-  }
-
-  .compact-filter-menu :global(.kit-filter-dropdown__btn) {
-    width: 26px;
-    justify-content: center;
-    padding: 3px;
-  }
-
-  .compact-filter-menu :global(.kit-filter-dropdown__trigger-label),
-  .compact-filter-menu :global(.kit-filter-dropdown__trigger-detail) {
-    display: none;
-  }
-
-  .compact-phone-filter-menu :global(.kit-filter-dropdown__trigger-label),
-  .compact-phone-filter-menu :global(.kit-filter-dropdown__trigger-detail) {
-    display: none;
-  }
-
-  .visibility-btn {
-    font-size: var(--font-size-xs);
-    padding: 2px 8px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .visibility-btn {
-    border: 1px solid var(--border-default);
-    background: var(--bg-inset);
-    font-weight: 600;
-  }
-
-  .visibility-btn--active {
-    color: var(--accent-blue);
-    background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
-    border-color: color-mix(in srgb, var(--accent-blue) 34%, transparent);
-  }
-
-  .visibility-btn--excluded {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    color: var(--accent-red);
-    background: color-mix(in srgb, var(--accent-red) 12%, transparent);
-    border-color: color-mix(in srgb, var(--accent-red) 34%, transparent);
-  }
-
-  .state-toggle {
-    display: flex;
-    gap: 2px;
-    background: var(--bg-inset);
-    border-radius: 6px;
-    padding: 2px;
-  }
-
-  .state-btn {
-    font-size: var(--font-size-xs);
-    padding: 2px 8px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .state-btn--active {
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    box-shadow: var(--shadow-sm);
   }
 
   .state-note {
@@ -921,17 +703,6 @@
     min-height: 1px;
   }
 
-  @container focus-list (max-width: 640px) {
-    .filter-bar--compactable .state-toggle,
-    .filter-bar--compactable .visibility-controls {
-      display: none;
-    }
-
-    .filter-bar--compactable .compact-filter-menu {
-      display: block;
-    }
-  }
-
   :global(.mobile-main) .focus-list {
     --focus-mobile-space-2xs: 4.5px;
     --focus-mobile-space-xs: 6.5px;
@@ -939,7 +710,6 @@
     --focus-mobile-space-md: 13px;
     --focus-mobile-hit-target: 40px;
     --focus-mobile-radius-sm: 8.5px;
-    --focus-mobile-radius-md: 12px;
     background: var(--bg-primary);
   }
 
@@ -965,7 +735,7 @@
     line-height: 1.25;
   }
 
-  :global(.mobile-main) .filter-bar {
+  .filter-bar {
     display: none;
     order: 2;
     flex-wrap: wrap;
@@ -973,10 +743,19 @@
     gap: var(--focus-mobile-space-sm);
     padding: var(--focus-mobile-space-sm) var(--focus-mobile-space-md);
     border-bottom: thin solid var(--border-muted);
+    background: var(--bg-surface);
   }
 
-  :global(.mobile-main) .filter-bar--expanded {
+  .filter-bar--expanded {
     display: flex;
+    /* Short phone viewports must still reach the last filters and Reset. */
+    max-height: 60%;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  :global(.mobile-main) .focus-list :global(.sidebar-group-header) {
+    min-height: var(--mobile-chrome-hit-target);
   }
 
   :global(.mobile-main) .mobile-repo-filter {
@@ -987,29 +766,6 @@
   :global(.mobile-main) .mobile-repo-filter :global(.typeahead-popover) {
     left: auto;
     right: 0;
-  }
-
-  :global(.mobile-main) .state-toggle {
-    gap: var(--focus-mobile-space-2xs);
-    border-radius: var(--focus-mobile-radius-md);
-    padding: var(--focus-mobile-space-2xs);
-  }
-
-  :global(.mobile-main) .visibility-controls {
-    flex-wrap: wrap;
-    align-items: stretch;
-    gap: var(--focus-mobile-space-sm);
-    margin-left: 0;
-  }
-
-  :global(.mobile-main) .state-btn,
-  :global(.mobile-main) .visibility-btn {
-    min-height: var(--focus-mobile-hit-target);
-    border-radius: var(--focus-mobile-radius-sm);
-    padding: var(--focus-mobile-space-xs) var(--focus-mobile-space-sm);
-    font-size: var(--font-size-sm);
-    line-height: 1.3;
-    font-weight: 600;
   }
 
   :global(.mobile-main) .state-note {

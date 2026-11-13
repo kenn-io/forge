@@ -926,52 +926,9 @@ func TestWorkspacePRMonitorEligible(t *testing.T) {
 	}
 }
 
-func TestNormalizeCloneRepoIdentity(t *testing.T) {
-	assert := assert.New(t)
-
-	assert.Equal(
-		"github/github.com/fork/widget",
-		normalizeCloneRepoIdentity("github", "", " git@GitHub.com:Fork/Widget.git "),
-	)
-	assert.Equal(
-		"github/github.com/fork/widget",
-		normalizeCloneRepoIdentity("github", "", "https://token@github.com/Fork/Widget/"),
-	)
-	assert.Equal(
-		"github/github.com/fork/widget",
-		normalizeCloneRepoIdentity("github", "", "ssh://git@github.com:22/Fork/Widget.git"),
-	)
-	assert.Equal(
-		"github/ghe.example.com:8443/fork/widget",
-		normalizeCloneRepoIdentity("github", "", "https://ghe.example.com:8443/Fork/Widget.git"),
-	)
-	assert.Equal(
-		"gitlab/gitlab.com/group/subgroup/project",
-		normalizeCloneRepoIdentity("gitlab", "", "https://gitlab.com/Group/Subgroup/Project.git"),
-	)
-	assert.Equal(
-		"gitlab/gitlab.com/group/subgroup/project",
-		normalizeCloneRepoIdentity("gitlab", "", "git@gitlab.com:Group/Subgroup/Project.git"),
-	)
-	assert.NotEqual(
-		normalizeCloneRepoIdentity("github", "", "https://forge.example/acme/widget.git"),
-		normalizeCloneRepoIdentity("gitlab", "", "https://forge.example/acme/widget.git"),
-	)
-	assert.Empty(normalizeCloneRepoIdentity("github", "", "/tmp/workspace/remote.git"))
-	assert.Empty(normalizeCloneRepoIdentity("github", "", "not a clone url"))
-}
-
-func TestNormalizePlatformHostIdentity(t *testing.T) {
-	assert := assert.New(t)
-
-	assert.Equal("ghe.example.com:8443", normalizePlatformHostIdentity("GHE.example.com:8443"))
-	assert.Equal("ghe.example.com", normalizePlatformHostIdentity("ghe.example.com:443"))
-	assert.Equal("ghe.example.com", normalizePlatformHostIdentity("ghe.example.com"))
-}
-
 func TestBitbucketDataCenterHeadAndUpstreamIdentity(t *testing.T) {
-	require.Nil(t, WorkspaceHeadRepo("bitbucket", "code.example.test:8443", "PROJECT", "repo", "https://code.example.test:8443/scm/PROJECT/repo.git"))
-	require.Nil(t, WorkspaceHeadRepo("bitbucket", "code.example.test:8443", "PROJECT", "repo", "ssh://git@code.example.test:7999/PROJECT/repo.git"))
+	require.Nil(t, platform.HeadRepo("bitbucket", "code.example.test:8443", "PROJECT", "repo", "https://code.example.test:8443/scm/PROJECT/repo.git"))
+	require.Nil(t, platform.HeadRepo("bitbucket", "code.example.test:8443", "PROJECT", "repo", "ssh://git@code.example.test:7999/PROJECT/repo.git"))
 	number, ok := selectPRByUpstream("bitbucket", "code.example.test:8443", []db.MergeRequest{{Number: 7, HeadBranch: "topic", HeadRepoCloneURL: "https://code.example.test:8443/scm/PROJECT/repo.git"}}, upstreamState{branchName: "topic", remoteURL: "ssh://git@code.example.test:7999/PROJECT/repo.git"})
 	require.True(t, ok)
 	require.Equal(t, 7, number)

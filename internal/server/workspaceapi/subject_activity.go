@@ -175,3 +175,15 @@ func (s *Handler) workspaceReference(ctx context.Context, summary *db.WorkspaceS
 	s.applyAgentActivity(ctx, &response, summary)
 	return WorkspaceRef{ID: summary.ID, Status: summary.Status, AgentState: response.AgentState}
 }
+
+// PullRequestItems lists the pull requests with a workspace in the snapshot, the ones whose
+// list rows and Activity carry a workspace reference.
+func (s WorkspaceSubjectSnapshot) PullRequestItems() []db.RepoItemNumber {
+	items := []db.RepoItemNumber{}
+	for key := range s.Subjects {
+		if key.ItemType == db.WorkspaceItemTypePullRequest {
+			items = append(items, db.RepoItemNumber{RepoID: key.RepoID, Number: key.ItemNumber})
+		}
+	}
+	return items
+}

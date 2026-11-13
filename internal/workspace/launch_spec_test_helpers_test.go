@@ -97,7 +97,7 @@ func (r databaseLaunchSpecResolver) ResolveWorkspaceLaunchSpec(
 		if spec.GitHeadRef == "" {
 			spec.GitHeadRef = pull.HeadBranch
 		}
-		headRepo := WorkspaceHeadRepo(
+		headRepo := platform.HeadRepo(
 			repo.Platform, repo.PlatformHost, repo.Owner, repo.Name,
 			pull.HeadRepoCloneURL,
 		)

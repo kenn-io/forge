@@ -91,18 +91,21 @@ test.describe("Involves me standard filters", () => {
     await page.goto(`${baseURL}/m/pulls`);
     await expect(page.locator(".focus-list .pull-item").first()).toBeVisible();
     await page.getByRole("button", { name: "Filters" }).click();
+    // The phone shows a three-way filter as an Any/Yes/No select.
     const pullsResponse = waitForInvolvesMeRequest(page, "/api/v1/pulls");
-    await page.getByRole("button", { name: "Involves me" }).click();
+    await page.getByRole("combobox", { name: /Involves me/ }).click();
+    await page.getByRole("option", { name: "Yes" }).click();
     expect((await pullsResponse).ok()).toBe(true);
-    await expect(page.getByRole("button", { name: "Involves me" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("combobox", { name: /Involves me/ })).toContainText("Yes");
 
     await page.goto(`${baseURL}/m/issues`);
     await expect(page.locator(".focus-list .issue-item").first()).toBeVisible();
     await page.getByRole("button", { name: "Filters" }).click();
     const issuesResponse = waitForInvolvesMeRequest(page, "/api/v1/issues");
-    await page.getByRole("button", { name: "Involves me" }).click();
+    await page.getByRole("combobox", { name: /Involves me/ }).click();
+    await page.getByRole("option", { name: "Yes" }).click();
     expect((await issuesResponse).ok()).toBe(true);
-    await expect(page.getByRole("button", { name: "Involves me" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("combobox", { name: /Involves me/ })).toContainText("Yes");
   });
 
   test("keeps Unassigned reachable in the regular Pulls, Issues, and Activity menus", async ({ page }) => {
@@ -205,10 +208,7 @@ test.describe("Involves me standard filters", () => {
       await page.goto(`${baseURL}/${list.route}`);
       await expect(page.locator(`.focus-list ${list.item}`).first()).toBeVisible();
       expect(new URL(page.url()).pathname).toBe(`/${list.route}`);
-      await expect(page.locator("#focus-list-filters .state-toggle")).toBeHidden();
-      await expect(page.locator("#focus-list-filters .visibility-controls")).toBeHidden();
-
-      const trigger = page.locator("#focus-list-filters .compact-filter-menu .kit-filter-dropdown__btn");
+      const trigger = page.locator(".focus-list .header .kit-filter-dropdown__btn");
       await expect(trigger).toBeVisible();
       await trigger.click();
       await expectFilterItemInViewport(page, "Unassigned");

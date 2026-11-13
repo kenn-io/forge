@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -586,6 +587,12 @@ func TestSpokeTakesForkKindAndPullFilterMatchesFromHubRows(t *testing.T) {
 		listed(&itemapi.ListActivityInput{}), "a pull request the hub has no row for keeps its workspace's classification")
 	assert.Equal(map[int]pullapi.HeadRepoKind{9: pullapi.HeadRepoKindFork, 11: ""}, listed(&itemapi.ListActivityInput{Attributes: "approved"}),
 		"a pull request the hub's filtered rows leave out cannot be shown to match, and issues stay")
+	assert.Equal(map[int]pullapi.HeadRepoKind{9: pullapi.HeadRepoKindFork, 10: "", 12: pullapi.HeadRepoKindFork},
+		listed(&itemapi.ListActivityInput{HideBotAuthoredIssues: true}),
+		"an issue filter needs the hub's row for an issue and leaves pull requests alone")
+	assert.Equal(map[int]pullapi.HeadRepoKind{9: pullapi.HeadRepoKindFork},
+		listed(&itemapi.ListActivityInput{Labels: []string{"bug"}}),
+		"a label filter needs the hub's row for both item types")
 }
 
 // A spoke without local provider copies takes each workspace subject's state and author from
@@ -1526,4 +1533,94 @@ func TestRepositoryWebURLRoutesToHub(t *testing.T) {
 	require.NoError(err)
 	require.Equal(http.StatusOK, response.StatusCode)
 	require.JSONEq(`{"web_url":"http://git.example.test/team/service"}`, string(body))
+}
+
+// A spoke sends every list filter to the hub, which applies them before its limit. Only
+// has_workspace and no_workspace stay behind: they name the spoke's own workspaces, which
+// the spoke applies to the hub's rows.
+func TestSpokeForwardsListFiltersToHub(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	hub, hubDB, _ := setupTestServer(t)
+	serverfake.SeedPR(t, hubDB, "acme", "widget", 8, func(pr *db.MergeRequest) {
+		pr.HeadRepoCloneURL = "https://github.com/contributor/widget.git"
+	})
+	serverfake.SeedPR(t, hubDB, "acme", "widget", 9)
+	serverfake.SeedIssue(t, hubDB, "acme", "widget", 10, "open")
+	var mu sync.Mutex
+	var forwarded url.Values
+	hubHTTP := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !slices.Contains([]string{"/api/v1/pulls", "/api/v1/issues", "/api/v1/activity", "/api/v1/activity/thread-events"}, r.URL.Path) {
+			http.Error(w, "unused by this test", http.StatusServiceUnavailable)
+			return
+		}
+		mu.Lock()
+		forwarded = r.URL.Query()
+		mu.Unlock()
+		r.Header.Del("Authorization")
+		hub.ServeHTTP(w, r)
+	}))
+	t.Cleanup(hubHTTP.Close)
+	spoke, _ := newFederatedProviderNodeForTest(t, proxyTestNodeID, hubHTTP.URL, hubHTTP.Client())
+	get := func(path string, body any) url.Values {
+		response := testutil.DoJSON(t, spoke, http.MethodGet, path, nil)
+		require.Equal(http.StatusOK, response.Code, response.Body.String())
+		if body != nil {
+			require.NoError(json.Unmarshal(response.Body.Bytes(), body))
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		return forwarded
+	}
+	numbers := func(rows []pullapi.MergeRequestResponse) []int {
+		out := []int{}
+		for _, row := range rows {
+			out = append(out, row.Number)
+		}
+		return out
+	}
+
+	var pulls []pullapi.MergeRequestResponse
+	query := get("/api/v1/pulls?attributes=fork,no_workspace&labels=Bug&labels=needs%2Cops&exclude_labels=wontfix", &pulls)
+	assert.Equal("fork", query.Get("attributes"))
+	assert.Equal([]string{"Bug", "needs,ops"}, query["labels"], "a comma stays inside its label name")
+	assert.Equal("wontfix", query.Get("exclude_labels"))
+	assert.Empty(numbers(pulls), "the hub applied the labels")
+	get("/api/v1/pulls?attributes=fork,no_workspace", &pulls)
+	assert.Equal([]int{8}, numbers(pulls), "the spoke has no workspace for the hub's fork")
+	get("/api/v1/pulls?attributes=fork,has_workspace", &pulls)
+	assert.Empty(numbers(pulls))
+
+	query = get("/api/v1/issues?labels=Bug&exclude_labels=wontfix&hide_bots=true", nil)
+	assert.Equal("Bug", query.Get("labels"))
+	assert.Equal("wontfix", query.Get("exclude_labels"))
+	assert.Equal("true", query.Get("hide_bots"))
+
+	var activity itemapi.ActivityResponse
+	get("/api/v1/activity?attributes=has_workspace", &activity)
+	parents := []string{}
+	for _, subject := range activity.ItemActivity {
+		parents = append(parents, subject.ItemType+":"+strconv.Itoa(subject.ItemNumber))
+	}
+	assert.Equal([]string{"issue:10"}, parents, "the spoke has no workspace for any pull request, and issues pass")
+
+	query = get("/api/v1/activity?attributes=not_fork,has_workspace&labels=Bug&exclude_labels=wontfix"+
+		"&hide_bot_authored_issues=true&starred=true&referenced_by_pr=true", nil)
+	assert.Equal("not_fork", query.Get("attributes"))
+	assert.Equal("Bug", query.Get("labels"))
+	assert.Equal("wontfix", query.Get("exclude_labels"))
+	assert.Equal("true", query.Get("hide_bot_authored_issues"))
+	assert.Equal("true", query.Get("starred"))
+	assert.Equal("true", query.Get("referenced_by_pr"))
+
+	query = get("/api/v1/activity/thread-events?provider=github&platform_host=github.com&platform_repo_id="+
+		strconv.FormatInt(testutil.FixtureRepoID("acme", "widget"), 10)+"&item_type=pr&item_number=8"+
+		"&attributes=fork&labels=Bug&exclude_labels=wontfix&hide_bot_authored_issues=true&starred=true&not_referenced_by_pr=true", nil)
+	assert.Equal("fork", query.Get("attributes"))
+	assert.Equal("Bug", query.Get("labels"))
+	assert.Equal("wontfix", query.Get("exclude_labels"))
+	assert.Equal("true", query.Get("hide_bot_authored_issues"))
+	assert.Equal("true", query.Get("starred"))
+	assert.Equal("true", query.Get("not_referenced_by_pr"))
 }

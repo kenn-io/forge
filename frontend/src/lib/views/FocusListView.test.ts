@@ -42,10 +42,14 @@ vi.mock("../context.js", () => ({
   getActions: () => ({ importItem: vi.fn() }),
   getNavigate: () => vi.fn(),
   getStores: () => ({
+    collapsedRepos: { isCollapsed: () => false, toggle: vi.fn() },
     grouping: {
       getGroupingMode: () => "flat",
+      getGroupByRepo: () => false,
       getHideOrgName: () => false,
       setGroupingMode: vi.fn(),
+      setGroupByRepo: vi.fn(),
+      setHideOrgName: vi.fn(),
     },
     issues: {
       getInvolvesMe: getIssueInvolvesMe,
@@ -56,6 +60,13 @@ vi.mock("../context.js", () => ({
       getHideBots: () => false,
       getIssueFilterState: () => "open",
       getIssues: () => [],
+      getFilteredIssues: () => [],
+      issuesByRepo: () => new Map(),
+      getLabelFilters: () => new Map(),
+      clearLabelFilters: vi.fn(),
+      cycleLabelFilter: vi.fn(),
+      getIssueFilterStarred: () => false,
+      setIssueFilterStarred: vi.fn(),
       getIssuesError: () => null,
       isIssuesLoading: () => false,
       isIssueListCapped: () => issueListCapped.state?.get("capped") ?? false,
@@ -88,6 +99,18 @@ vi.mock("../context.js", () => ({
       getError: () => null,
       getFilterState: () => "open",
       getPulls: () => [],
+      getFilteredPulls: () => [],
+      pullsByRepo: () => new Map(),
+      getSidebarRows: () => [],
+      getAttributeFilters: () => [],
+      getLabelFilters: () => new Map(),
+      getFilterStarred: () => false,
+      setFilterStarred: vi.fn(),
+      getStackTree: () => false,
+      setStackTree: vi.fn(),
+      cycleLabelFilter: vi.fn(),
+      cycleAttributeFilter: vi.fn(),
+      toggleAttributeFilter: vi.fn(),
       isLoading: () => false,
       isListCapped: () => pullListCapped.state?.get("capped") ?? false,
       loadPulls,
@@ -359,7 +382,7 @@ describe("FocusListView search", () => {
   });
 
   it.each(["mrs", "issues"] as const)("discloses %s filters from an icon-only control", async (listType) => {
-    const { container } = render(FocusListView, { props: { listType, repo: "acme/one" } });
+    const { container } = render(FocusListView, { props: { listType, repo: "acme/one", phonePresentation: true } });
 
     const filters = screen.getByRole("button", { name: "Filters" });
     expect(filters.textContent?.trim()).toBe("");
@@ -376,7 +399,7 @@ describe("FocusListView search", () => {
     ["mrs" as const, loadPulls],
     ["issues" as const, loadIssues],
   ])("applies saved repository presets to the mobile %s query", async (listType, loadList) => {
-    render(FocusListView, { props: { listType, showRepoSelector: true } });
+    render(FocusListView, { props: { listType, showRepoSelector: true, phonePresentation: true } });
 
     expect(screen.queryByRole("button", { name: "Select repository: Global" })).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
@@ -390,72 +413,41 @@ describe("FocusListView search", () => {
   });
 
   it.each([
-    ["mrs" as const, setPullsInvolvesMe, loadPulls],
-    ["issues" as const, setIssuesInvolvesMe, loadIssues],
-  ])("uses the shared Involves me control for %s", async (listType, setInvolvesMe, loadList) => {
-    render(FocusListView, { props: { listType, repo: "acme/one" } });
+    ["mrs" as const, "Involves me", setPullsInvolvesMe, loadPulls],
+    ["issues" as const, "Involves me", setIssuesInvolvesMe, loadIssues],
+    ["mrs" as const, "Unassigned", setPullsUnassigned, loadPulls],
+    ["issues" as const, "Unassigned", setIssuesUnassigned, loadIssues],
+  ])("uses the shared %s %s control on the phone", async (listType, label, setFilter, loadList) => {
+    render(FocusListView, { props: { listType, repo: "acme/one", phonePresentation: true } });
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     loadList.mockClear();
 
-    const control = screen.getByRole("button", { name: "Involves me" });
-    expect(control.getAttribute("aria-pressed")).toBe("false");
-    await fireEvent.click(control);
-
-    expect(setInvolvesMe).toHaveBeenLastCalledWith("require");
-    expect(loadList).toHaveBeenCalledTimes(1);
-    expect(control.getAttribute("aria-pressed")).toBe("true");
-
-    // A second click asks for the opposite, and a third turns the filter off.
-    await fireEvent.click(control);
-    expect(setInvolvesMe).toHaveBeenLastCalledWith("exclude");
-    expect(loadList).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole("button", { name: "Involves me, excluded" })).toBe(control);
-    expect(control.getAttribute("aria-pressed")).toBe("true");
-
-    await fireEvent.click(control);
-    expect(setInvolvesMe).toHaveBeenLastCalledWith(undefined);
-    expect(screen.getByRole("button", { name: "Involves me" }).getAttribute("aria-pressed")).toBe("false");
-  });
-
-  it.each([
-    ["mrs" as const, setPullsUnassigned, loadPulls],
-    ["issues" as const, setIssuesUnassigned, loadIssues],
-  ])("uses the shared Unassigned control for %s", async (listType, setUnassigned, loadList) => {
-    render(FocusListView, { props: { listType, repo: "acme/one" } });
-    loadList.mockClear();
-
-    const control = screen.getByRole("button", { name: "Unassigned" });
-    expect(control.getAttribute("aria-pressed")).toBe("false");
-    await fireEvent.click(control);
-
-    expect(setUnassigned).toHaveBeenLastCalledWith("require");
-    expect(loadList).toHaveBeenCalledTimes(1);
-    expect(control.getAttribute("aria-pressed")).toBe("true");
-
-    // A second click asks for the opposite, and a third turns the filter off.
-    await fireEvent.click(control);
-    expect(setUnassigned).toHaveBeenLastCalledWith("exclude");
-    expect(loadList).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole("button", { name: "Unassigned, excluded" })).toBe(control);
-    expect(control.getAttribute("aria-pressed")).toBe("true");
-
-    await fireEvent.click(control);
-    expect(setUnassigned).toHaveBeenLastCalledWith(undefined);
-    expect(screen.getByRole("button", { name: "Unassigned" }).getAttribute("aria-pressed")).toBe("false");
+    // A switch has no third state, so a filter with an opposite is an Any/Yes/No choice.
+    expect(screen.queryByRole("switch", { name: label })).toBeNull();
+    for (const [option, value, reads] of [
+      ["Yes", "require", 1],
+      ["No", "exclude", 2],
+      ["Any", undefined, 3],
+    ] as const) {
+      await fireEvent.click(screen.getByRole("combobox", { name: new RegExp(label) }));
+      await fireEvent.click(screen.getByRole("option", { name: option }));
+      expect(setFilter).toHaveBeenLastCalledWith(value);
+      expect(loadList).toHaveBeenCalledTimes(reads);
+    }
   });
 
   it("filters issues by pull request references", async () => {
-    render(FocusListView, { props: { listType: "issues", repo: "acme/one" } });
+    render(FocusListView, { props: { listType: "issues", repo: "acme/one", phonePresentation: true } });
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     loadIssues.mockClear();
 
-    const control = screen.getByRole("button", { name: "Referenced by PR" });
-    expect(control.getAttribute("aria-pressed")).toBe("false");
-    await fireEvent.click(control);
-
+    await fireEvent.click(screen.getByRole("combobox", { name: /Referenced by PR/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "Yes" }));
     expect(setIssuesReferencedByPR).toHaveBeenLastCalledWith("require");
     expect(loadIssues).toHaveBeenCalledTimes(1);
-    expect(control.getAttribute("aria-pressed")).toBe("true");
 
-    await fireEvent.click(control);
+    await fireEvent.click(screen.getByRole("combobox", { name: /Referenced by PR/ }));
+    await fireEvent.click(screen.getByRole("option", { name: "No" }));
     expect(setIssuesReferencedByPR).toHaveBeenLastCalledWith("exclude");
     expect(loadIssues).toHaveBeenCalledTimes(2);
   });

@@ -786,6 +786,15 @@ func (s *Syncer) refreshTimeline(
 	if !applied {
 		return errParentSnapshotAdvanced
 	}
+	if timelineErr != nil {
+		cleared, err := s.db.ClearMRDetailFetchedSnapshot(ctx, mrID, expectedRevision)
+		if err != nil {
+			return fmt.Errorf("clear detail fetched for MR #%d: %w", number, err)
+		}
+		if !cleared {
+			return errParentSnapshotAdvanced
+		}
+	}
 	if _, err := s.syncProviderMRReviewThreads(ctx, repo, mrID, number, expectedRevision, false); err != nil {
 		return fmt.Errorf("sync review threads for MR #%d: %w", number, err)
 	}

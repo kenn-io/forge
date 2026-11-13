@@ -5049,18 +5049,19 @@ func TestRefreshTimelineFetchFailureDoesNotRewriteProviderPullRequestActivity(t 
 	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
 	require.NoError(err)
 	mrID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     1,
-		Number:         1,
-		URL:            "https://github.com/owner/repo/pull/1",
-		Title:          "force push activity",
-		Author:         "dev",
-		State:          "open",
-		HeadBranch:     "feature",
-		BaseBranch:     "main",
-		CreatedAt:      now.Add(-3 * time.Hour),
-		UpdatedAt:      now.Add(-2 * time.Hour),
-		LastActivityAt: forcePushAt,
+		RepoID:          repoID,
+		PlatformID:      1,
+		Number:          1,
+		URL:             "https://github.com/owner/repo/pull/1",
+		Title:           "force push activity",
+		Author:          "dev",
+		State:           "open",
+		HeadBranch:      "feature",
+		BaseBranch:      "main",
+		CreatedAt:       now.Add(-3 * time.Hour),
+		UpdatedAt:       now.Add(-2 * time.Hour),
+		LastActivityAt:  forcePushAt,
+		DetailFetchedAt: &now,
 	})
 	require.NoError(err)
 	require.NoError(d.UpsertMREvents(ctx, []db.MREvent{{
@@ -5083,7 +5084,7 @@ func TestRefreshTimelineFetchFailureDoesNotRewriteProviderPullRequestActivity(t 
 		}},
 		timelineEventsErr: errors.New("graphql unavailable"),
 		reviews:           []*gh.PullRequestReview{},
-		comments:          []*gh.IssueComment{},
+		comments:          []*gh.IssueComment{{ID: new(int64(123)), User: &gh.User{Login: new("author")}, Body: new("cached comment"), CreatedAt: makeTimestamp(now)}},
 	}
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
@@ -5094,6 +5095,12 @@ func TestRefreshTimelineFetchFailureDoesNotRewriteProviderPullRequestActivity(t 
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal(forcePushAt, pr.LastActivityAt)
+	assert.Nil(pr.DetailFetchedAt)
+	events, err := d.ListMREvents(ctx, mrID)
+	require.NoError(err)
+	assert.True(slices.ContainsFunc(events, func(event db.MREvent) bool {
+		return event.EventType == "issue_comment" && event.Body == "cached comment"
+	}))
 }
 
 func TestSyncAssignsStableCommitOrderKeysAcrossForcePushReplacement(t *testing.T) {

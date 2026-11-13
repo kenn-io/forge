@@ -591,6 +591,7 @@
           })}
           {showRepo}
           table={tableLayout}
+          compact={useCompactFilters}
           selected={prSelected}
           multiSelected={pullSelection.has(pr)}
           onclick={(event) => handleRowClick(event, pr)}
@@ -751,11 +752,12 @@
         <div
           class="table-headers"
           class:table-headers--sticky={renderedGroups === null}
-          style:grid-template-columns={pullTableColumns(renderedGroups === null)}
+          class:table-headers--compact={useCompactFilters}
+          style:grid-template-columns={pullTableColumns(renderedGroups === null, useCompactFilters)}
           aria-hidden="true"
         >
           {#if renderedGroups === null}<span>Repo</span>{/if}
-          <span>Author</span>
+          <span class="table-header--author">Author</span>
           <span>Item</span>
           <span class="table-header--time">When</span>
           <span></span>
@@ -834,6 +836,15 @@
 
   .table-header--time {
     text-align: right;
+  }
+
+  .table-headers--compact {
+    column-gap: var(--space-2);
+  }
+
+  .table-headers--compact .table-header--author,
+  .table-headers--compact .table-header--time {
+    display: none;
   }
 
   .stack-row {

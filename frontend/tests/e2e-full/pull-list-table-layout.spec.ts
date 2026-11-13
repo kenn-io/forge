@@ -27,6 +27,7 @@ test.beforeEach(async ({ page }) => {
     if (sessionStorage.getItem("kenn-forge:test:pr-table:init") === "1") return;
     localStorage.removeItem("kenn-forge:pullListLayout");
     localStorage.removeItem("kenn-forge:groupingMode");
+    localStorage.setItem("kenn-forge-sidebar-width", "600");
     sessionStorage.setItem("kenn-forge:test:pr-table:init", "1");
   });
 });
@@ -38,11 +39,15 @@ test("the PR list layout chosen in Settings shows one-line table rows and surviv
   await page.getByRole("option", { name: "Table, like Activity" }).click();
 
   await page.goto("/pulls");
+  await expect(page.locator(".pull-item--table").first()).toBeVisible();
   await selectFlatList(page);
   const headers = page.locator(".table-headers");
   await expect(headers).toHaveText(/Repo\s*Author\s*Item\s*When/);
 
-  const row = page.locator(".pull-item--table").filter({ hasText: "acme/tools" }).first();
+  const row = page
+    .locator(".pull-item--table")
+    .filter({ has: page.locator(".repo-chip__label", { hasText: /^tools$/ }) })
+    .first();
   await expect(row).toBeVisible();
   // One line per pull request, with each cell under its column header.
   await expect(row.locator(".meta-row")).toHaveCount(0);

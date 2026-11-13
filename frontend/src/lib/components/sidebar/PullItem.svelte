@@ -3,13 +3,13 @@
    * Column tracks for table rows and the list's column headers, so both line up. Repo and
    * Author give up width before the title does in a narrow sidebar.
    */
-  export function pullTableColumns(showRepo: boolean): string {
+  export function pullTableColumns(showRepo: boolean, compact = false): string {
     return [
-      showRepo ? "minmax(0, min(140px, 26%))" : "",
-      "minmax(0, min(96px, 15%))",
+      showRepo ? `minmax(0, min(${compact ? 60 : 96}px, 18%))` : "",
+      compact ? "" : "minmax(0, min(64px, 12%))",
       "minmax(0, 1fr)",
       // Fixed so every row's times share one right edge.
-      "3.5rem",
+      compact ? "" : "3.5rem",
       "20px",
     ].filter(Boolean).join(" ");
   }
@@ -44,6 +44,7 @@
     multiSelected?: boolean;
     /** One-line row in the list's table columns instead of the two-line row. */
     table?: boolean;
+    compact?: boolean;
     onclick: (event: MouseEvent) => void;
     oncontextmenu?: (event: MouseEvent) => void;
   }
@@ -55,6 +56,7 @@
     repoLabel,
     multiSelected = false,
     table = false,
+    compact = false,
     onclick,
     oncontextmenu,
   }: Props = $props();
@@ -132,7 +134,8 @@
 <button
   class="pull-item pr-list-row"
   class:pull-item--table={table}
-  style:grid-template-columns={table ? pullTableColumns(showRepo) : undefined}
+  class:pull-item--compact-table={table && compact}
+  style:grid-template-columns={table ? pullTableColumns(showRepo, compact) : undefined}
   class:selected
   class:active-worktree={isActiveWorktree}
   class:multi-selected={multiSelected}
@@ -151,7 +154,7 @@
           class="repo-chip"
           style={`color: ${hashColor(repoColorKey)}; background: color-mix(in srgb, ${hashColor(repoColorKey)} 15%, transparent);`}
         >
-          <span class="repo-chip__label" title={repoLabel}>{repoLabel}</span>
+          <span class="repo-chip__label" title={`${pr.repo.platform_host}/${pr.repo.repo_path || `${pr.repo.owner}/${pr.repo.name}`}`}>{pr.repo.name}</span>
         </Chip>
         <RepoPrivateIcon isPrivate={pr.repo.private} />
       </span>
@@ -346,6 +349,23 @@
     gap: 6px;
     flex-shrink: 0;
     margin-left: auto;
+  }
+
+  .pull-item--compact-table {
+    column-gap: var(--space-2);
+  }
+
+  .pull-item--compact-table .cell--author,
+  .pull-item--compact-table .cell--time {
+    display: none;
+  }
+
+  .pull-item--compact-table .cell--title {
+    gap: var(--space-2);
+  }
+
+  .pull-item--compact-table .row-status {
+    gap: var(--space-1);
   }
 
   .cell--time {

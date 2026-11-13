@@ -14421,9 +14421,10 @@ func (c *Client) GetArchiveSnapshotWithResponse(ctx context.Context, options *Ge
 	var err error
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":         {Style: "form", Explode: &[]bool{false}[0]},
-		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
-		"start":       {Style: "form", Explode: &[]bool{false}[0]},
+		"end":                {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope":        {Style: "form", Explode: &[]bool{false}[0]},
+		"pull_request_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":              {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -42870,9 +42871,10 @@ func (c *Client) GetArchiveReportRaw(ctx context.Context, httpClient *http.Clien
 func (c *Client) GetArchiveSnapshotRaw(ctx context.Context, httpClient *http.Client, options *GetArchiveSnapshotRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":         {Style: "form", Explode: &[]bool{false}[0]},
-		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
-		"start":       {Style: "form", Explode: &[]bool{false}[0]},
+		"end":                {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope":        {Style: "form", Explode: &[]bool{false}[0]},
+		"pull_request_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":              {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -50227,9 +50229,10 @@ func NewGetArchiveSnapshotRequest(ctx context.Context, baseURL string, options *
 	c := NewClient(apiClient)
 
 	queryEncoding := map[string]runtime.QueryEncoding{
-		"end":         {Style: "form", Explode: &[]bool{false}[0]},
-		"issue_scope": {Style: "form", Explode: &[]bool{false}[0]},
-		"start":       {Style: "form", Explode: &[]bool{false}[0]},
+		"end":                {Style: "form", Explode: &[]bool{false}[0]},
+		"issue_scope":        {Style: "form", Explode: &[]bool{false}[0]},
+		"pull_request_scope": {Style: "form", Explode: &[]bool{false}[0]},
+		"start":              {Style: "form", Explode: &[]bool{false}[0]},
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/archive/snapshot",
@@ -57931,6 +57934,12 @@ const (
 	ArchiveSnapshotIssueScopeOpen ArchiveSnapshotIssueScope = "open"
 )
 
+type ArchiveSnapshotPullRequestScope string
+
+const (
+	ArchiveSnapshotPullRequestScopeRecentlyClosed ArchiveSnapshotPullRequestScope = "recently_closed"
+)
+
 type ArchiveStatusResponseCollectionMode string
 
 const (
@@ -58333,6 +58342,13 @@ type ListActivityThreadEventsQueryItemType string
 const (
 	ListActivityThreadEventsQueryItemTypeIssue ListActivityThreadEventsQueryItemType = "issue"
 	ListActivityThreadEventsQueryItemTypePr    ListActivityThreadEventsQueryItemType = "pr"
+)
+
+// GetArchiveSnapshotQueryPullRequestScope Include open pull requests and those closed or merged within 30 days before observed_at, with references in either direction, including references outside the window.
+type GetArchiveSnapshotQueryPullRequestScope string
+
+const (
+	GetArchiveSnapshotQueryPullRequestScopeRecentlyClosed GetArchiveSnapshotQueryPullRequestScope = "recently_closed"
 )
 
 // GetArchiveSnapshotQueryIssueScope Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window.
@@ -61038,6 +61054,9 @@ type GetArchiveReportQuery struct {
 }
 
 type GetArchiveSnapshotQuery struct {
+	// PullRequestScope Include open pull requests and those closed or merged within 30 days before observed_at, with references in either direction, including references outside the window.
+	PullRequestScope *GetArchiveSnapshotQueryPullRequestScope `json:"pull_request_scope,omitempty"`
+
 	// IssueScope Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window.
 	IssueScope *GetArchiveSnapshotQueryIssueScope `json:"issue_scope,omitempty"`
 
@@ -67730,14 +67749,15 @@ type ArchiveSnapshot struct {
 	End    time.Time `json:"end"`
 
 	// IssueScope When open, includes all cached open issues and linked closed context regardless of creation time.
-	IssueScope   *ArchiveSnapshotIssueScope `json:"issue_scope,omitempty"`
-	Issues       []SnapshotItem             `json:"issues"`
-	ObservedAt   time.Time                  `json:"observed_at"`
-	PullRequests []SnapshotPullRequest      `json:"pull_requests"`
-	Relations    []SnapshotRelation         `json:"relations"`
-	Repositories []SnapshotRepository       `json:"repositories"`
-	Schema1      string                     `json:"schema"`
-	Start        time.Time                  `json:"start"`
+	IssueScope       *ArchiveSnapshotIssueScope       `json:"issue_scope,omitempty"`
+	Issues           []SnapshotItem                   `json:"issues"`
+	ObservedAt       time.Time                        `json:"observed_at"`
+	PullRequestScope *ArchiveSnapshotPullRequestScope `json:"pull_request_scope,omitempty"`
+	PullRequests     []SnapshotPullRequest            `json:"pull_requests"`
+	Relations        []SnapshotRelation               `json:"relations"`
+	Repositories     []SnapshotRepository             `json:"repositories"`
+	Schema1          string                           `json:"schema"`
+	Start            time.Time                        `json:"start"`
 }
 
 type ArchiveStatusResponse struct {
@@ -71203,11 +71223,29 @@ type Snapshot struct {
 	Worktrees             []WorktreeSummary  `json:"worktrees"`
 }
 
+type SnapshotAction struct {
+	Actor      string    `json:"actor"`
+	Kind       string    `json:"kind"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
 type SnapshotCheck struct {
 	Conclusion string `json:"conclusion"`
 	Name       string `json:"name"`
 	Status     string `json:"status"`
 	URL        string `json:"url"`
+}
+
+type SnapshotComment struct {
+	Author            string  `json:"author"`
+	AuthorAssociation *string `json:"author_association"`
+
+	// Body Full comment text within the snapshot byte budget.
+	Body          string    `json:"body"`
+	BodyTruncated bool      `json:"body_truncated"`
+	CreatedAt     time.Time `json:"created_at"`
+	ID            string    `json:"id"`
+	URL           string    `json:"url"`
 }
 
 type SnapshotCoverage struct {
@@ -71262,14 +71300,20 @@ type SnapshotPullRequest struct {
 	CheckState        string          `json:"check_state"`
 	Checks            []SnapshotCheck `json:"checks"`
 	ClosedAt          *time.Time      `json:"closed_at,omitempty"`
-	CreatedAt         time.Time       `json:"created_at"`
-	Deletions         *int64          `json:"deletions"`
+	ClosedBy          *string         `json:"closed_by,omitempty"`
+
+	// Comments For terminal pull requests, comments by the author or known human MEMBER, OWNER, and COLLABORATOR accounts.
+	Comments  []SnapshotComment `json:"comments,omitempty"`
+	CreatedAt time.Time         `json:"created_at"`
+	Deletions *int64            `json:"deletions"`
 
 	// DetailFetchedAt Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
 	DetailFetchedAt *time.Time `json:"detail_fetched_at"`
 	Draft           bool       `json:"draft"`
-	Gaps            []string   `json:"gaps"`
-	HeadBranch      string     `json:"head_branch"`
+
+	// Gaps Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author.
+	Gaps       []string `json:"gaps"`
+	HeadBranch string   `json:"head_branch"`
 
 	// HeadInSameRepository Null when either repository identity is unavailable or the head identity is stale; false means a known different repository.
 	HeadInSameRepository  *bool            `json:"head_in_same_repository"`
@@ -71277,6 +71321,8 @@ type SnapshotPullRequest struct {
 	ID                    string           `json:"id"`
 	Labels                []string         `json:"labels"`
 	LastActivityAt        *time.Time       `json:"last_activity_at"`
+	LastAuthorAction      *SnapshotAction  `json:"last_author_action,omitempty"`
+	LastMaintainerAction  *SnapshotAction  `json:"last_maintainer_action,omitempty"`
 	MergeStatusObservedAt *time.Time       `json:"merge_status_observed_at"`
 	MergeableState        string           `json:"mergeable_state"`
 	Number                int64            `json:"number"`
@@ -71291,7 +71337,9 @@ type SnapshotPullRequest struct {
 }
 
 type SnapshotRelation struct {
-	EvidenceID string    `json:"evidence_id"`
+	EvidenceID string `json:"evidence_id"`
+
+	// Kind pull_request_reference points from the mentioning pull request to the referenced pull request.
 	Kind       string    `json:"kind"`
 	ObservedAt time.Time `json:"observed_at"`
 	SourceID   string    `json:"source_id"`

@@ -1369,6 +1369,10 @@ components:
         observed_at:
           format: date-time
           type: string
+        pull_request_scope:
+          enum:
+            - recently_closed
+          type: string
         pull_requests:
           items:
             $ref: "#/components/schemas/SnapshotPullRequest"
@@ -10090,6 +10094,21 @@ components:
         - sessions
         - workspaces
       type: object
+    SnapshotAction:
+      additionalProperties: false
+      properties:
+        actor:
+          type: string
+        kind:
+          type: string
+        occurred_at:
+          format: date-time
+          type: string
+      required:
+        - kind
+        - actor
+        - occurred_at
+      type: object
     SnapshotCheck:
       additionalProperties: false
       properties:
@@ -10106,6 +10125,36 @@ components:
         - status
         - conclusion
         - url
+      type: object
+    SnapshotComment:
+      additionalProperties: false
+      properties:
+        author:
+          type: string
+        author_association:
+          type:
+            - string
+            - "null"
+        body:
+          description: Full comment text within the snapshot byte budget.
+          type: string
+        body_truncated:
+          type: boolean
+        created_at:
+          format: date-time
+          type: string
+        id:
+          type: string
+        url:
+          type: string
+      required:
+        - id
+        - author
+        - author_association
+        - body
+        - body_truncated
+        - url
+        - created_at
       type: object
     SnapshotCoverage:
       additionalProperties: false
@@ -10277,6 +10326,13 @@ components:
           type:
             - string
             - "null"
+        closed_by:
+          type: string
+        comments:
+          description: For terminal pull requests, comments by the author or known human MEMBER, OWNER, and COLLABORATOR accounts.
+          items:
+            $ref: "#/components/schemas/SnapshotComment"
+          type: array
         created_at:
           format: date-time
           type: string
@@ -10294,6 +10350,7 @@ components:
         draft:
           type: boolean
         gaps:
+          description: Includes comment_author_association_unknown when a comment lacks role evidence and its author cannot be identified as the pull request author.
           items:
             type: string
           type: array
@@ -10317,6 +10374,10 @@ components:
           type:
             - string
             - "null"
+        last_author_action:
+          $ref: "#/components/schemas/SnapshotAction"
+        last_maintainer_action:
+          $ref: "#/components/schemas/SnapshotAction"
         merge_status_observed_at:
           format: date-time
           type:
@@ -10386,6 +10447,7 @@ components:
         evidence_id:
           type: string
         kind:
+          description: pull_request_reference points from the mentioning pull request to the referenced pull request.
           type: string
         observed_at:
           format: date-time
@@ -14244,6 +14306,15 @@ paths:
     get:
       operationId: get-archive-snapshot
       parameters:
+        - description: Include open pull requests and those closed or merged within 30 days before observed_at, with references in either direction, including references outside the window.
+          explode: false
+          in: query
+          name: pull_request_scope
+          schema:
+            description: Include open pull requests and those closed or merged within 30 days before observed_at, with references in either direction, including references outside the window.
+            enum:
+              - recently_closed
+            type: string
         - description: "Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window."
           explode: false
           in: query

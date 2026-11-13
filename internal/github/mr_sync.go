@@ -261,15 +261,16 @@ func (s *Syncer) refreshMRDetailSnapshot(
 	ghPR *gh.PullRequest,
 	lifecyclePersisted *bool,
 ) (bool, error) {
-	if err := s.refreshTimeline(
+	timelineErr := s.refreshTimeline(
 		ctx, repo, mrID, revision, number,
 		livenessHeadForRound(normalized, existing),
-	); err != nil {
-		return false, fmt.Errorf("refresh timeline for MR #%d: %w", number, err)
+	)
+	if errors.Is(timelineErr, errParentSnapshotAdvanced) {
+		return false, timelineErr
 	}
 	if ghPR != nil {
 		if _, err := s.persistMergedTransitionEvent(ctx, mrID, revision, ghPR, normalized.MergedAt); err != nil {
-			return false, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
+			return false, errors.Join(timelineErr, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err))
 		}
 		if lifecyclePersisted != nil {
 			*lifecyclePersisted = true
@@ -281,10 +282,10 @@ func (s *Syncer) refreshMRDetailSnapshot(
 		ctx, repo, mrID, revision, number, ciRulesBranch(normalized), syncMRHeadSHA,
 	)
 	if err != nil {
-		return false, err
+		return false, errors.Join(timelineErr, err)
 	}
 	if !ciApplied {
-		return false, nil
+		return false, timelineErr
 	}
 
 	// Refresh workflow approval state for the current head SHA.
@@ -296,8 +297,8 @@ func (s *Syncer) refreshMRDetailSnapshot(
 	approvalApplied, _ := s.refreshWorkflowApproval(
 		ctx, repo, repoID, number, syncMRHeadSHA, ghPR, normalized,
 	)
-	if !approvalApplied {
-		return false, nil
+	if !approvalApplied || timelineErr != nil {
+		return false, timelineErr
 	}
 
 	// Update ci_had_pending after refreshing CI status.

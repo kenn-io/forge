@@ -101,6 +101,7 @@ type MergeRequest struct {
 	URL                string
 	Title              string
 	Author             string
+	AuthorAccountType  *string
 	AuthorAssociation  *string
 	AuthorDisplayName  string
 	State              string

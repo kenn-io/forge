@@ -1,11 +1,15 @@
 package archive
 
 import (
+	"context"
 	"encoding/json/v2"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/archive/snapshot"
@@ -13,6 +17,7 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 func TestSnapshotReadsConfiguredCachedWork(t *testing.T) {
@@ -503,4 +508,438 @@ func TestSnapshotResponseByteBoundary(t *testing.T) {
 	require.NoError(err)
 	_, err = service.Snapshot(t.Context(), opts)
 	require.ErrorIs(err, snapshot.ErrTooLarge, "one byte above the response budget must fail")
+}
+
+func TestSnapshotCurrentCloser(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	closedAt := now.Add(-time.Minute)
+	id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, State: db.MergeRequestStateClosed, CreatedAt: now.Add(-time.Hour), UpdatedAt: now, ClosedAt: &closedAt, DetailFetchedAt: &now})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{
+		{MergeRequestID: id, EventType: "closed", Author: "old-closer", DedupeKey: "old-close", CreatedAt: now.Add(-3 * time.Minute)},
+		{MergeRequestID: id, EventType: "closed", Author: "current-closer", DedupeKey: "current-close", CreatedAt: closedAt},
+	}))
+	opts := SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"}
+	result, err := service.Snapshot(t.Context(), opts)
+	require.NoError(t, err)
+	require.Equal(t, new("current-closer"), result.PullRequests[0].ClosedBy)
+	_, err = database.WriteDB().ExecContext(t.Context(), `DELETE FROM forge_mr_events WHERE merge_request_id=? AND dedupe_key='current-close'`, id)
+	require.NoError(t, err)
+	result, err = service.Snapshot(t.Context(), opts)
+	require.NoError(t, err)
+	require.Nil(t, result.PullRequests[0].ClosedBy)
+	require.Contains(t, result.PullRequests[0].Gaps, "closer_unknown")
+	closed := now.Add(-time.Minute)
+	mergedID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 2, Number: 2, State: db.MergeRequestStateMerged, ClosedAt: &closed, MergedAt: &closed, CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{
+		{MergeRequestID: mergedID, EventType: "merged", Author: "merger", DedupeKey: "merged", CreatedAt: closed},
+		{MergeRequestID: mergedID, EventType: "closed", Author: "closer", DedupeKey: "closed", CreatedAt: closed},
+	}))
+	result, err = service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 2)
+	assert.Equal(t, new("merger"), result.PullRequests[1].ClosedBy)
+}
+
+func TestSnapshotRecentlyClosedPullRequests(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	closed := now.Add(-30 * 24 * time.Hour)
+	old := closed.Add(-time.Second)
+	original, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Title: "Original", Author: "contributor", State: db.MergeRequestStateClosed, CreatedAt: old, UpdatedAt: now, ClosedAt: &closed})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 2, Number: 2, Title: "Rebuild", Author: "bot", State: db.MergeRequestStateMerged, CreatedAt: old.Add(-20 * 24 * time.Hour), UpdatedAt: now, MergedAt: new(now.Add(-45 * 24 * time.Hour))})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 3, Number: 3, Title: "Old", State: db.MergeRequestStateClosed, CreatedAt: old, UpdatedAt: now, ClosedAt: &old})
+	require.NoError(err)
+	mergedAt := now.Add(-time.Hour)
+	merged, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 4, Number: 4, Title: "Merged", State: db.MergeRequestStateMerged, CreatedAt: old, UpdatedAt: now, MergedAt: &mergedAt})
+	require.NoError(err)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{
+		{MergeRequestID: original, EventType: "cross_referenced", MetadataJSON: `{"source_type":"PullRequest","source_owner":"owner","source_repo":"project","source_number":2,"source_url":"https://github.test/pull/2","is_cross_repository":false}`, DedupeKey: "reference", CreatedAt: now},
+		{MergeRequestID: merged, EventType: "issue_comment", Body: "Unknown author", DedupeKey: "empty-author", CreatedAt: now},
+	}))
+	options := SnapshotOptions{Start: now.Add(-time.Hour), End: now}
+	normal, err := service.Snapshot(t.Context(), options)
+	require.NoError(err)
+	require.Empty(normal.PullRequests)
+	require.Empty(normal.Relations)
+	options.PullRequestScope = "recently_closed"
+	result, err := service.Snapshot(t.Context(), options)
+	require.NoError(err)
+	require.Equal("recently_closed", result.PullRequestScope)
+	require.Len(result.PullRequests, 2)
+	require.Equal(&mergedAt, result.PullRequests[1].ClosedAt)
+	require.Empty(result.PullRequests[1].Comments)
+	require.Contains(result.PullRequests[1].Gaps, "comment_author_association_unknown")
+	require.Equal(db.MergeRequestStateClosed, db.MergeRequestState(result.PullRequests[0].State))
+	require.Equal(&closed, result.PullRequests[0].ClosedAt)
+	require.Len(result.Relations, 1)
+	require.Equal(strings.TrimSuffix(result.PullRequests[0].ID, ":1")+":2", result.Relations[0].SourceID)
+	require.Equal(result.PullRequests[0].ID, result.Relations[0].TargetID)
+	require.Equal("https://github.test/pull/2", result.Relations[0].URL)
+}
+
+func TestSnapshotReferenceFromRecentSourceKeepsRootWindow(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	old := now.Add(-45 * 24 * time.Hour)
+	original, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, State: db.MergeRequestStateClosed, CreatedAt: old, UpdatedAt: now, ClosedAt: &old})
+	require.NoError(t, err)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 2, Number: 2, State: db.MergeRequestStateOpen, CreatedAt: old, UpdatedAt: now})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: original, EventType: "cross_referenced", MetadataJSON: `{"source_type":"PullRequest","source_number":2,"source_url":"https://github.test/pull/2","is_cross_repository":false}`, DedupeKey: "reference", CreatedAt: now}}))
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: old, End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	require.Len(t, result.Relations, 1)
+	assert.Equal(t, result.PullRequests[0].ID, result.Relations[0].SourceID)
+	assert.Equal(t, strings.TrimSuffix(result.PullRequests[0].ID, ":2")+":1", result.Relations[0].TargetID)
+}
+
+func newPullScopeSnapshotFixture(t *testing.T) (*db.DB, *Service, int64, time.Time) {
+	t.Helper()
+	now := archiveTestTime()
+	database := dbtest.Open(t)
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "project")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	registry, err := platform.NewRegistry(newArchiveServiceProvider(ref.Platform, ref.Host))
+	require.NoError(t, err)
+	return database, newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now), repoID, now
+}
+
+func TestSnapshotContributorBodyClassification(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	body := strings.Repeat("x", 8200) + " footer"
+	for i, fixture := range []struct {
+		author      string
+		association *string
+		account     *string
+	}{
+		{"contributor", new("CONTRIBUTOR"), new("user")},
+		{"author", nil, new("bot")},
+		{"author", new("CONTRIBUTOR"), nil},
+	} {
+		_, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: int64(i + 1), Number: i + 1, Author: fixture.author, AuthorAssociation: fixture.association, AuthorAccountType: fixture.account, Body: body, State: db.MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
+		require.NoError(t, err)
+	}
+	normal, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
+	require.NoError(t, err)
+	require.Len(t, normal.PullRequests, 3)
+	assert.Equal(t, "author", normal.PullRequests[1].Author)
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 3)
+	assert.Equal(t, body, result.PullRequests[0].Body)
+	assert.False(t, result.PullRequests[0].BodyTruncated)
+	assert.Equal(t, "author[bot]", result.PullRequests[1].Author)
+	assert.NotContains(t, result.PullRequests[1].Gaps, "contributor_classification_unknown")
+	assert.True(t, result.PullRequests[1].BodyTruncated)
+	assert.True(t, result.PullRequests[2].BodyTruncated)
+	assert.Contains(t, result.PullRequests[2].Gaps, "contributor_classification_unknown")
+}
+
+func TestSnapshotStaleDetailMarksActivityIncomplete(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	stale := now.Add(-time.Hour)
+	for i, fetched := range []*time.Time{&stale, &now, nil} {
+		_, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: int64(i + 1), Number: i + 1, Author: "author", State: db.MergeRequestStateOpen, CreatedAt: stale, UpdatedAt: now, DetailFetchedAt: fetched})
+		require.NoError(t, err)
+	}
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: stale, End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 3)
+	assert.Contains(t, result.PullRequests[0].Gaps, "activity_incomplete")
+	assert.NotContains(t, result.PullRequests[1].Gaps, "activity_incomplete")
+	assert.Contains(t, result.PullRequests[2].Gaps, "activity_incomplete")
+}
+
+func TestSnapshotCrossRepositoryReferenceFromRoot(t *testing.T) {
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	first := archiveServiceRef(platform.KindGitHub, "github.test", "project-a")
+	second := archiveServiceRef(platform.KindGitHub, "github.test", "project-b")
+	first.Key = platform.RepositoryIDKey(101)
+	second.Key = platform.RepositoryIDKey(202)
+	firstID := archiveServiceSeedRepo(t, database, first)
+	secondID := archiveServiceSeedRepo(t, database, second)
+	registry, err := platform.NewRegistry(newArchiveServiceProvider(first.Platform, first.Host))
+	require.NoError(t, err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{first, second}, nil, now)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: firstID, PlatformID: 1, Number: 1, State: db.MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
+	require.NoError(t, err)
+	old := now.Add(-24 * time.Hour)
+	target, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: secondID, PlatformID: 2, Number: 2, State: db.MergeRequestStateClosed, ClosedAt: &old, CreatedAt: old, UpdatedAt: now})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: target, EventType: "cross_referenced", DedupeKey: "ref", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_number":1,"source_repo_id":101,"source_owner":"old-owner","source_repo":"old-name","is_cross_repository":true}`}}))
+	for _, refs := range [][]platform.RepoRef{{first}, {second}, nil} {
+		result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed", Repositories: refs})
+		require.NoError(t, err)
+		require.Len(t, result.Relations, 1)
+		assert.Equal(t, "github:github.test:101:pull_request:1", result.Relations[0].SourceID)
+		assert.Equal(t, "github:github.test:202:pull_request:2", result.Relations[0].TargetID)
+	}
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{
+		{MergeRequestID: target, EventType: "cross_referenced", DedupeKey: "uncached", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_number":3,"source_repo_id":9876543210,"source_url":"https://github.test/other/repo/pull/3","is_cross_repository":true}`},
+		{MergeRequestID: target, EventType: "cross_referenced", DedupeKey: "unknown", CreatedAt: now, MetadataJSON: `{"source_type":"PullRequest","source_number":4,"is_cross_repository":true}`},
+	}))
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed", Repositories: []platform.RepoRef{second}})
+	require.NoError(t, err)
+	require.Len(t, result.Relations, 2)
+	assert.Equal(t, "github:github.test:9876543210:pull_request:3", result.Relations[0].SourceID)
+	assert.Equal(t, "github:github.test:202:pull_request:2", result.Relations[0].TargetID)
+	require.Len(t, result.PullRequests, 1)
+	assert.Contains(t, result.PullRequests[0].Gaps, "reference_identity_unknown")
+}
+
+func TestSnapshotActionRoleEvidence(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", State: db.MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{
+		{MergeRequestID: id, EventType: "issue_comment", Author: "maintainer", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "human", CreatedAt: now.Add(-3 * time.Minute)},
+		{MergeRequestID: id, EventType: "issue_comment", Author: "author", AuthorAssociation: new("CONTRIBUTOR"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "author", CreatedAt: now.Add(-time.Minute)},
+	}))
+	assignment := platformgithub.NormalizeTimelineEvent(platform.RepoRef{}, 1, platformgithub.PullRequestTimelineEvent{NodeID: "assignment", EventType: "assigned", Actor: "maintainer", ActorAccountType: "User", Assignee: "maintainer", CreatedAt: now})
+	require.NotNil(t, assignment)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: assignment.EventType, Author: assignment.Author, AuthorAssociation: assignment.AuthorAssociation, MetadataJSON: assignment.MetadataJSON, DedupeKey: assignment.DedupeKey, CreatedAt: assignment.CreatedAt}}))
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	assert.Equal(t, &snapshot.SnapshotAction{Kind: "comment", Actor: "author", OccurredAt: now.Add(-time.Minute)}, result.PullRequests[0].LastAuthorAction)
+	assert.Equal(t, &snapshot.SnapshotAction{Kind: "assigned", Actor: "maintainer", OccurredAt: now}, result.PullRequests[0].LastMaintainerAction)
+	assert.NotContains(t, result.PullRequests[0].Gaps, "actor_role_unknown")
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: "assigned", Author: "unknown", MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "unknown", CreatedAt: now.Add(time.Minute)}}))
+	result, err = service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	assert.Contains(t, result.PullRequests[0].Gaps, "actor_role_unknown")
+}
+
+func TestSnapshotPushRoleEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name, actor, kind, authorRole string
+		unlinked                      bool
+	}{
+		{"maintainer commit", "maintainer", "commit", "CONTRIBUTOR", false},
+		{"maintainer force push", "maintainer", "force_push", "CONTRIBUTOR", false},
+		{"author commit", "author", "commit", "CONTRIBUTOR", false},
+		{"unclassified author commit", "author", "commit", "", false},
+		{"unlinked author signature", "author", "commit", "CONTRIBUTOR", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			database, service, repoID, now := newPullScopeSnapshotFixture(t)
+			id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", AuthorAssociation: &tc.authorRole, AuthorAccountType: new("user"), PlatformHeadSHA: "head", State: db.MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
+			require.NoError(t, err)
+			require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: "maintainer", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "comment", CreatedAt: now.Add(-time.Minute)}}))
+			var action platform.MergeRequestEvent
+			if tc.kind == "commit" {
+				commit := &gh.RepositoryCommit{SHA: new("head"), Commit: &gh.Commit{Committer: &gh.CommitAuthor{Name: &tc.actor, Date: &gh.Timestamp{Time: now}}}}
+				if !tc.unlinked {
+					commit.Committer = &gh.User{Login: &tc.actor, Type: new("User")}
+				}
+				action = platformgithub.NormalizeCommitEvent(platform.RepoRef{}, 1, commit)
+			} else {
+				action = *platformgithub.NormalizeTimelineEvent(platform.RepoRef{}, 1, platformgithub.PullRequestTimelineEvent{NodeID: "push", EventType: "force_push", Actor: tc.actor, ActorAccountType: "User", CreatedAt: now})
+			}
+			require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: action.EventType, Author: action.Author, AuthorAssociation: action.AuthorAssociation, Summary: action.Summary, MetadataJSON: action.MetadataJSON, DedupeKey: action.DedupeKey, CreatedAt: action.CreatedAt}}))
+			result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+			require.NoError(t, err)
+			require.Len(t, result.PullRequests, 1)
+			want := &snapshot.SnapshotAction{Kind: "push", Actor: tc.actor, OccurredAt: now}
+			if tc.kind == "force_push" {
+				want.Kind = "force_push"
+			}
+			if tc.unlinked {
+				assert.Nil(t, result.PullRequests[0].LastAuthorAction)
+			} else if tc.actor == "author" {
+				assert.Equal(t, want, result.PullRequests[0].LastAuthorAction)
+			} else {
+				assert.Equal(t, want, result.PullRequests[0].LastMaintainerAction)
+			}
+			assert.Equal(t, tc.unlinked || tc.authorRole == "", slices.Contains(result.PullRequests[0].Gaps, "actor_role_unknown"))
+		})
+	}
+}
+
+func TestDefaultSnapshotWithOpenAndClosedPullComments(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	events := make([]db.MREvent, 0, 31000)
+	closedAt := now.Add(-time.Minute)
+	for i := range 1500 {
+		state := db.MergeRequestStateOpen
+		var closed *time.Time
+		if i >= 750 {
+			state = db.MergeRequestStateClosed
+			closed = &closedAt
+		}
+		id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: int64(i + 1), Number: i + 1, Author: "author", State: state, ClosedAt: closed, CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
+		require.NoError(t, err)
+		count := 20
+		if i < 1000 {
+			count++
+		}
+		for j := range count {
+			events = append(events, db.MREvent{MergeRequestID: id, EventType: "issue_comment", Author: "maintainer", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: fmt.Sprintf("comment-%d", j), CreatedAt: now})
+		}
+	}
+	require.NoError(t, database.UpsertMREvents(t.Context(), events))
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	started := time.Now()
+	result, err := service.Snapshot(ctx, SnapshotOptions{Start: now.Add(-time.Hour), End: now})
+	t.Logf("default snapshot duration: %s", time.Since(started))
+	require.NoError(t, err)
+	assert.Len(t, result.PullRequests, 750)
+}
+
+func TestSnapshotIncludesCachedMemberClosingCommentWithoutAccountType(t *testing.T) {
+	for _, tc := range []struct {
+		name, author, association, metadata          string
+		comment, action, unknown, associationUnknown bool
+	}{
+		{"author", "contributor", "CONTRIBUTOR", `{"actor_account_type":"user"}`, true, false, false, false},
+		{"contributor", "other", "CONTRIBUTOR", `{"actor_account_type":"user"}`, false, false, false, false},
+		{"member", "maintainer", "MEMBER", "", true, false, true, false},
+		{"owner", "maintainer", "OWNER", "", true, false, true, false},
+		{"collaborator", "maintainer", "COLLABORATOR", "", true, false, true, false},
+		{"typed bot", "maintainer", "MEMBER", `{"actor_account_type":"bot"}`, false, false, false, false},
+		{"suffixed bot", "maintainer[bot]", "MEMBER", "", false, false, false, false},
+		{"unknown association", "maintainer", "", "", false, false, true, true},
+		{"typed user", "maintainer", "MEMBER", `{"actor_account_type":"user"}`, true, true, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			database, service, repoID, now := newPullScopeSnapshotFixture(t)
+			closed := now.Add(-time.Hour)
+			id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "contributor", State: db.MergeRequestStateClosed, CreatedAt: now.Add(-60 * 24 * time.Hour), UpdatedAt: now, ClosedAt: &closed})
+			require.NoError(t, err)
+			require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: tc.author, AuthorAssociation: &tc.association, MetadataJSON: tc.metadata, Body: "Closing because the replacement covers this change.", DedupeKey: "closing-comment", CreatedAt: closed}}))
+			result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+			require.NoError(t, err)
+			require.Len(t, result.PullRequests, 1)
+			pull := result.PullRequests[0]
+			if tc.comment {
+				require.Len(t, pull.Comments, 1)
+				assert.Equal(t, "Closing because the replacement covers this change.", pull.Comments[0].Body)
+			} else {
+				assert.Empty(t, pull.Comments)
+			}
+			assert.Equal(t, tc.action, pull.LastMaintainerAction != nil)
+			assert.Equal(t, tc.unknown, slices.Contains(pull.Gaps, "actor_role_unknown"))
+			assert.Equal(t, tc.associationUnknown, slices.Contains(pull.Gaps, "comment_author_association_unknown"))
+		})
+	}
+}
+
+func TestSnapshotCachedActorTypes(t *testing.T) {
+	for _, kind := range []string{"review", "assigned", "force_push"} {
+		for _, account := range []string{"", "user", "bot"} {
+			t.Run(kind+"/"+account, func(t *testing.T) {
+				database, service, repoID, now := newPullScopeSnapshotFixture(t)
+				closed := now.Add(-time.Minute)
+				id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", State: db.MergeRequestStateClosed, CreatedAt: now.Add(-time.Hour), UpdatedAt: now, ClosedAt: &closed})
+				require.NoError(t, err)
+				old := now.Add(-45 * 24 * time.Hour)
+				evidenceID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 2, Number: 2, Author: "other", State: db.MergeRequestStateClosed, CreatedAt: old, UpdatedAt: old, ClosedAt: &old})
+				require.NoError(t, err)
+				require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: evidenceID, EventType: "issue_comment", Author: "automation", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "role-evidence", CreatedAt: old}}))
+				metadata := ""
+				if account != "" {
+					metadata = `{"actor_account_type":"` + account + `"}`
+				}
+				var association *string
+				if kind == "review" {
+					association = new("MEMBER")
+				}
+				require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: kind, Author: "automation", AuthorAssociation: association, MetadataJSON: metadata, DedupeKey: kind, CreatedAt: now}}))
+				result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+				require.NoError(t, err)
+				require.Len(t, result.PullRequests, 1)
+				pull := result.PullRequests[0]
+				if account == "user" {
+					assert.Equal(t, &snapshot.SnapshotAction{Kind: kind, Actor: "automation", OccurredAt: now}, pull.LastMaintainerAction)
+				} else {
+					assert.Nil(t, pull.LastMaintainerAction)
+				}
+				assert.Equal(t, account == "", slices.Contains(pull.Gaps, "actor_role_unknown"))
+			})
+		}
+	}
+}
+
+func TestSnapshotGraphQLBotAuthorDefault(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	gql := &platformgithub.GraphQLPR{DatabaseId: 1, Number: 1, State: "OPEN", Author: platformgithub.GraphQLIssueAuthor{Login: "automation", Typename: "Bot"}, CreatedAt: now, UpdatedAt: now}
+	pr, err := platformgithub.NormalizePullRequest(platform.RepoRef{}, platformgithub.AdaptPR(gql))
+	require.NoError(t, err)
+	_, err = database.UpsertMergeRequest(t.Context(), platformdb.DBMergeRequest(repoID, pr))
+	require.NoError(t, err)
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	assert.Equal(t, "automation", result.PullRequests[0].Author)
+	result, err = service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	assert.Equal(t, "automation[bot]", result.PullRequests[0].Author)
+}
+
+func TestSnapshotUnknownAuthorActionBeforeMaintainer(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", AuthorAccountType: new("user"), AuthorAssociation: new("CONTRIBUTOR"), State: db.MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{
+		{MergeRequestID: id, EventType: "issue_comment", Author: "author", DedupeKey: "author", CreatedAt: now.Add(-time.Minute)},
+		{MergeRequestID: id, EventType: "issue_comment", Author: "maintainer", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "maintainer", CreatedAt: now},
+	}))
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	assert.Nil(t, result.PullRequests[0].LastAuthorAction)
+	assert.Equal(t, &snapshot.SnapshotAction{Kind: "comment", Actor: "maintainer", OccurredAt: now}, result.PullRequests[0].LastMaintainerAction)
+	assert.Contains(t, result.PullRequests[0].Gaps, "actor_role_unknown")
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: "author", MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "known-author", CreatedAt: now}}))
+	result, err = service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	assert.NotContains(t, result.PullRequests[0].Gaps, "actor_role_unknown")
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: "author", DedupeKey: "unknown-tie", CreatedAt: now}}))
+	result, err = service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	assert.Contains(t, result.PullRequests[0].Gaps, "actor_role_unknown")
+}
+
+func TestSnapshotBotLifecycleActor(t *testing.T) {
+	for _, state := range []string{"closed", "merged"} {
+		t.Run(state, func(t *testing.T) {
+			database, service, repoID, now := newPullScopeSnapshotFixture(t)
+			terminal := now.Add(-time.Minute)
+			mr := &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", State: db.MergeRequestState(state), CreatedAt: now.Add(-time.Hour), UpdatedAt: now, ClosedAt: &terminal}
+			if state == "merged" {
+				mr.MergedAt = &terminal
+			}
+			id, err := database.UpsertMergeRequest(t.Context(), mr)
+			require.NoError(t, err)
+			event := platformgithub.NormalizeTimelineEvent(platform.RepoRef{}, 1, platformgithub.PullRequestTimelineEvent{NodeID: "terminal", EventType: state, Actor: "automation", ActorAccountType: "Bot", CreatedAt: terminal})
+			require.NotNil(t, event)
+			require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{platformdb.DBMREvent(id, *event)}))
+			result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+			require.NoError(t, err)
+			require.Len(t, result.PullRequests, 1)
+			assert.Equal(t, new("automation[bot]"), result.PullRequests[0].ClosedBy)
+		})
+	}
+}
+
+func TestSnapshotAuthorActionWithoutRoleReportsGap(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", AuthorAccountType: new("user"), State: db.MergeRequestStateOpen, CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: "author", MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "comment", CreatedAt: now}}))
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	assert.Equal(t, &snapshot.SnapshotAction{Kind: "comment", Actor: "author", OccurredAt: now}, result.PullRequests[0].LastAuthorAction)
+	assert.Contains(t, result.PullRequests[0].Gaps, "actor_role_unknown")
 }

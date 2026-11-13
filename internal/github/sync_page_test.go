@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 func pageSyncGitFixture(t *testing.T) (remote, work, base, head string) {
@@ -24,6 +25,67 @@ func pageSyncGitFixture(t *testing.T) (remote, work, base, head string) {
 	base = syncActivityCommitAndPush(t, work, "base.txt", "base", "base", "main")
 	head = syncActivityCommitAndPush(t, work, "feature.txt", "feature", "feature", "feature")
 	return remote, work, base, head
+}
+
+func TestMRDetailTimelineRecovery(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		recovery bool
+	}{
+		{name: "page 304"},
+		{name: "fetchMRDetail full response"},
+		{name: "fetchMRDetail 304", recovery: true},
+		{name: "watched sync 304", recovery: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			f := newPageSyncFixture(t)
+			f.client.notModified = tc.name != "fetchMRDetail full response"
+			if tc.recovery {
+				_, err := f.syncer.db.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET detail_fetched_at = NULL WHERE id = ?", f.before.ID)
+				require.NoError(t, err)
+			}
+			f.client.timelineEventsErr = errors.New("timeline unavailable")
+			if !tc.recovery {
+				f.client.checkRuns[0].Conclusion = new("failure")
+				f.client.workflowRuns = []*gh.WorkflowRun{{ID: new(int64(7)), HeadSHA: &f.head, Event: new("pull_request"), PullRequests: []*gh.PullRequest{{Number: new(1)}}}}
+			}
+			sync := func() error {
+				switch tc.name {
+				case "page 304":
+					return f.syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1)
+				case "watched sync 304":
+					return f.syncer.syncMRWithWatchedRef(ctx, WatchedMR{Owner: "owner", Name: "repo", Number: 1, PlatformHost: "github.com"})
+				}
+				_, err := f.syncer.fetchMRDetail(ctx, f.repo, f.repoID, 1)
+				return err
+			}
+			require.ErrorContains(t, sync(), "timeline unavailable")
+			stored, err := f.syncer.db.GetMergeRequestByRepoIDAndNumber(ctx, f.repoID, 1)
+			require.NoError(t, err)
+			assert.Nil(t, stored.DetailFetchedAt)
+			if !tc.recovery {
+				if tc.name == "page 304" {
+					assert.Equal(t, "failure", stored.CIStatus)
+				}
+				assert.True(t, stored.WorkflowApprovalRequired)
+				return
+			}
+
+			f.client.timelineEventsErr = nil
+			f.client.timelineEvents = []platformgithub.PullRequestTimelineEvent{{NodeID: "event-1", EventType: "closed", Actor: "alice", CreatedAt: time.Now().UTC()}}
+			commentChecks := f.client.listIssueCommentsIfChangedCalls.Load()
+			require.NoError(t, sync())
+			assert.Equal(t, commentChecks, f.client.listIssueCommentsIfChangedCalls.Load())
+			stored, err = f.syncer.db.GetMergeRequestByRepoIDAndNumber(ctx, f.repoID, 1)
+			require.NoError(t, err)
+			assert.NotNil(t, stored.DetailFetchedAt)
+			events, err := f.syncer.db.ListMREvents(ctx, stored.ID)
+			require.NoError(t, err)
+			require.Len(t, events, 1)
+			assert.Equal(t, "closed", events[0].EventType)
+		})
+	}
 }
 
 type pageSyncFixture struct {

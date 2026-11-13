@@ -759,7 +759,7 @@ func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
 	assert.Zero(provider.calls.Load())
 }
 
-func TestAPIArchiveSnapshotOpenIssueScope(t *testing.T) {
+func TestAPIArchiveSnapshotScopeOptions(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
@@ -794,6 +794,21 @@ func TestAPIArchiveSnapshotOpenIssueScope(t *testing.T) {
 	require.Error(err)
 	require.NotNil(rejected.Error)
 	assert.Equal(generated.ProblemErrorCodeValidationError, rejected.Error.Code)
+	query.IssueScope = nil
+	pullScope := generated.GetArchiveSnapshotQueryPullRequestScopeRecentlyClosed
+	query.PullRequestScope = &pullScope
+	pulls, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
+	require.NoError(err)
+	require.NotNil(pulls.JSON200)
+	require.NotNil(pulls.JSON200.PullRequestScope)
+	assert.Equal(generated.ArchiveSnapshotPullRequestScopeRecentlyClosed, *pulls.JSON200.PullRequestScope)
+	pullScope = "unsupported"
+	rejected, err = client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
+	require.Error(err)
+	require.NotNil(rejected.Error)
+	assert.Equal(generated.ProblemErrorCodeValidationError, rejected.Error.Code)
+	require.NotNil(rejected.Error.Status)
+	assert.EqualValues(http.StatusUnprocessableEntity, *rejected.Error.Status)
 	assert.Zero(provider.calls.Load())
 }
 

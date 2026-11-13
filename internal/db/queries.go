@@ -1553,7 +1553,7 @@ func upsertMergeRequestSnapshot(
 ) (int64, int64, bool, error) {
 	result, err := executor.ExecContext(ctx, `
 		INSERT INTO forge_merge_requests
-		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_association, author_display_name,
+		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_account_type, author_association, author_display_name,
 		     state, is_draft, is_locked, body, head_branch, base_branch,
 		     platform_head_sha, platform_base_sha, head_repo_clone_url,
 		     additions, deletions, files_changed, merge_commit_sha, comment_count,
@@ -1564,13 +1564,14 @@ func upsertMergeRequestSnapshot(
 		     last_activity_at, merged_at, closed_at, mergeable_state, mergeable_state_observed_at,
 		     assignees_json, reviewers_json, auto_merge_enabled, head_repo_identity_stale,
 		     snapshot_revision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id          = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), forge_merge_requests.platform_external_id),
 		    url                  = excluded.url,
 		    title                = excluded.title,
 		    author               = excluded.author,
+		    author_account_type = CASE WHEN forge_merge_requests.author = excluded.author AND excluded.author_account_type IS NULL THEN forge_merge_requests.author_account_type ELSE excluded.author_account_type END,
 		    author_association = CASE WHEN forge_merge_requests.author = excluded.author THEN COALESCE(excluded.author_association, forge_merge_requests.author_association) ELSE excluded.author_association END,
 		    author_display_name  = excluded.author_display_name,
 		    state                = excluded.state,
@@ -1622,7 +1623,7 @@ func upsertMergeRequestSnapshot(
 		    snapshot_revision    = forge_merge_requests.snapshot_revision + 1
 		WHERE excluded.updated_at >= forge_merge_requests.updated_at`,
 		mr.RepoID, mr.PlatformID, mr.PlatformExternalID, mr.Number, mr.URL, mr.Title,
-		mr.Author, mr.AuthorAssociation, mr.AuthorDisplayName,
+		mr.Author, mr.AuthorAccountType, mr.AuthorAssociation, mr.AuthorDisplayName,
 		mr.State, mr.IsDraft, mr.IsLocked, mr.Body, mr.HeadBranch, mr.BaseBranch,
 		mr.PlatformHeadSHA, mr.PlatformBaseSHA, mr.HeadRepoCloneURL,
 		mr.Additions, mr.Deletions, mr.FilesChanged, mr.MergeCommitSHA,
@@ -2463,10 +2464,11 @@ func (d *DB) UpsertMergedActorEvent(
 		case err == nil:
 			if _, updateErr := tx.ExecContext(ctx, `
 				UPDATE forge_mr_events
-				SET author = ?,
+				SET metadata_json = CASE WHEN lower(author) <> lower(?) AND json_valid(metadata_json) THEN json_remove(metadata_json,'$.actor_account_type') ELSE metadata_json END,
+				    author = ?,
 				    summary = CASE WHEN TRIM(summary) = '' THEN ? ELSE summary END,
 				    created_at = ?
-				WHERE id = ?`, event.Author, event.Summary, event.CreatedAt, authoredID); updateErr != nil {
+				WHERE id = ?`, event.Author, event.Author, event.Summary, event.CreatedAt, authoredID); updateErr != nil {
 				return fmt.Errorf("align authored merged event: %w", updateErr)
 			}
 			if _, deleteErr := tx.ExecContext(ctx, `
@@ -2491,7 +2493,8 @@ func (d *DB) UpsertMergedActorEvent(
 		case err == nil:
 			if _, err := tx.ExecContext(ctx, `
 				UPDATE forge_mr_events
-				SET author = ?,
+				SET metadata_json = CASE WHEN json_valid(metadata_json) THEN json_remove(metadata_json,'$.actor_account_type') ELSE metadata_json END,
+				    author = ?,
 				    summary = CASE WHEN TRIM(summary) = '' THEN ? ELSE summary END,
 				    created_at = ?
 				WHERE id = ?`, event.Author, event.Summary, event.CreatedAt, actorlessID); err != nil {

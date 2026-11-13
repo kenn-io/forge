@@ -24,7 +24,8 @@ func (c *Client) ListPullRequestTimelineEvents(
 							TypeName string `json:"__typename"`
 							ID       string `json:"id"`
 							Actor    *struct {
-								Login string `json:"login"`
+								TypeName string `json:"__typename"`
+								Login    string `json:"login"`
 							} `json:"actor"`
 							Assignee *struct {
 								TypeName string `json:"__typename"`
@@ -56,7 +57,8 @@ func (c *Client) ListPullRequestTimelineEvents(
 									Owner *struct {
 										Login string `json:"login"`
 									} `json:"owner"`
-									Name string `json:"name"`
+									Name       string       `json:"name"`
+									DatabaseID GraphQLInt64 `json:"databaseId"`
 								} `json:"repository"`
 							} `json:"source"`
 							IsCrossRepository bool `json:"isCrossRepository"`
@@ -192,6 +194,7 @@ func (c *Client) ListPullRequestTimelineEvents(
 			}
 			if node.Actor != nil {
 				event.Actor = node.Actor.Login
+				event.ActorAccountType = node.Actor.TypeName
 			}
 			if node.Assignee != nil {
 				event.Assignee = node.Assignee.Login
@@ -215,6 +218,7 @@ func (c *Client) ListPullRequestTimelineEvents(
 				event.SourceURL = node.Source.URL
 				if node.Source.Repository != nil {
 					event.SourceRepo = node.Source.Repository.Name
+					event.SourceRepoID = int64(node.Source.Repository.DatabaseID)
 					if node.Source.Repository.Owner != nil {
 						event.SourceOwner = node.Source.Repository.Owner.Login
 					}
@@ -262,7 +266,8 @@ func (c *Client) ListIssueTimelineEvents(
 									Owner *struct {
 										Login string `json:"login"`
 									} `json:"owner"`
-									Name string `json:"name"`
+									Name       string       `json:"name"`
+									DatabaseID GraphQLInt64 `json:"databaseId"`
 								} `json:"repository"`
 							} `json:"source"`
 							IsCrossRepository bool `json:"isCrossRepository"`
@@ -390,6 +395,7 @@ func (c *Client) ListIssueTimelineEvents(
 				event.SourceURL = node.Source.URL
 				if node.Source.Repository != nil {
 					event.SourceRepo = node.Source.Repository.Name
+					event.SourceRepoID = int64(node.Source.Repository.DatabaseID)
 					if node.Source.Repository.Owner != nil {
 						event.SourceOwner = node.Source.Repository.Owner.Login
 					}

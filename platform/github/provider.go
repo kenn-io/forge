@@ -710,6 +710,7 @@ func (p *Provider) ListMergeRequestEvents(
 			NodeID:               timelineEvent.NodeID,
 			EventType:            timelineEvent.EventType,
 			Actor:                timelineEvent.Actor,
+			ActorAccountType:     timelineEvent.ActorAccountType,
 			Assignee:             timelineEvent.Assignee,
 			CreatedAt:            timelineEvent.CreatedAt,
 			DeletedCommentAuthor: timelineEvent.DeletedCommentAuthor,
@@ -723,6 +724,7 @@ func (p *Provider) ListMergeRequestEvents(
 			SourceType:           timelineEvent.SourceType,
 			SourceOwner:          timelineEvent.SourceOwner,
 			SourceRepo:           timelineEvent.SourceRepo,
+			SourceRepoID:         timelineEvent.SourceRepoID,
 			SourceNumber:         timelineEvent.SourceNumber,
 			SourceTitle:          timelineEvent.SourceTitle,
 			SourceURL:            timelineEvent.SourceURL,
@@ -937,6 +939,7 @@ func (p *Provider) ListIssueEvents(
 			SourceType:        timelineEvent.SourceType,
 			SourceOwner:       timelineEvent.SourceOwner,
 			SourceRepo:        timelineEvent.SourceRepo,
+			SourceRepoID:      timelineEvent.SourceRepoID,
 			SourceNumber:      timelineEvent.SourceNumber,
 			SourceTitle:       timelineEvent.SourceTitle,
 			SourceURL:         timelineEvent.SourceURL,
@@ -1526,9 +1529,9 @@ func GithubReviewThreadComment(
 		DirectURL:         comment.URL,
 		Range:             GithubReviewLineRange(thread, comment),
 		Resolved:          thread.IsResolved,
-		MetadataJSON: NormalizeCommentVisibilityMetadata(CommentVisibility{
+		MetadataJSON: WithActorAccountType(NormalizeCommentVisibilityMetadata(CommentVisibility{
 			Hidden: comment.IsMinimized, Reason: comment.MinimizedReason,
-		}),
+		}), comment.AuthorAccountType),
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
 	}

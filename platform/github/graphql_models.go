@@ -18,7 +18,7 @@ type GraphQLPR struct {
 	Locked            bool
 	Body              string
 	URL               string
-	Author            struct{ Login string }
+	Author            GraphQLIssueAuthor
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	MergedAt          *time.Time
@@ -130,7 +130,7 @@ func (r GraphQLReviewRequest) Login() string {
 type GraphQLComment struct {
 	DatabaseId        int64
 	FullDatabaseId    GraphQLInt64
-	Author            struct{ Login string }
+	Author            GraphQLActorRef
 	AuthorAssociation *string
 	Body              string
 	URL               string `graphql:"url"`
@@ -175,7 +175,7 @@ type GraphQLReviewThreadComment struct {
 	SubjectType       string
 	DiffHunk          string
 	URL               string `graphql:"url"`
-	Author            struct{ Login string }
+	Author            GraphQLActorRef
 	Commit            *struct {
 		OID string `graphql:"oid"`
 	}
@@ -194,7 +194,7 @@ type GraphQLReviewThreadComment struct {
 type GraphQLReview struct {
 	AuthorAssociation *string
 	DatabaseId        int64
-	Author            struct{ Login string }
+	Author            GraphQLActorRef
 	Body              string
 	State             string
 	SubmittedAt       time.Time
@@ -250,7 +250,8 @@ type GraphQLNodeFragment struct {
 }
 
 type GraphQLActorRef struct {
-	Login string
+	Typename string `graphql:"__typename"`
+	Login    string
 }
 
 type GraphQLHeadRefForcePushedEvent struct {
@@ -292,7 +293,8 @@ type GraphQLReferencedIssueOrPR struct {
 	Title      string
 	URL        string `graphql:"url"`
 	Repository struct {
-		Owner struct {
+		DatabaseId int64 `graphql:"databaseId"`
+		Owner      struct {
 			Login string
 		}
 		Name string
@@ -421,6 +423,14 @@ type GraphQLStatusContextFields struct {
 	TargetURL string `graphql:"targetUrl"`
 }
 
+// BotLogin marks GraphQL bot logins for display.
+func BotLogin(login, typename string) string {
+	if typename == "Bot" && !strings.HasSuffix(login, "[bot]") {
+		return login + "[bot]"
+	}
+	return login
+}
+
 func AdaptPR(gql *GraphQLPR) *gh.PullRequest {
 	state := StateToREST(gql.State)
 	pr := &gh.PullRequest{
@@ -434,7 +444,7 @@ func AdaptPR(gql *GraphQLPR) *gh.PullRequest {
 		HTMLURL:           new(gql.URL),
 		Additions:         new(gql.Additions),
 		Deletions:         new(gql.Deletions),
-		User:              &gh.User{Login: new(gql.Author.Login)},
+		User:              &gh.User{Login: new(gql.Author.Login), Type: new(gql.Author.Typename)},
 		AuthorAssociation: gql.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		Head: &gh.PullRequestBranch{
 			Ref: new(gql.HeadRefName),

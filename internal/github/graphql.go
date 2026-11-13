@@ -111,10 +111,7 @@ type gqlIssueCommentPageQuery struct {
 
 func adaptIssue(gql *platformgithub.GraphQLIssue) *gh.Issue {
 	state := platformgithub.StateToREST(gql.State)
-	authorLogin := gql.Author.Login
-	if gql.Author.Typename == "Bot" && !strings.HasSuffix(authorLogin, "[bot]") {
-		authorLogin += "[bot]"
-	}
+	authorLogin := platformgithub.BotLogin(gql.Author.Login, gql.Author.Typename)
 	issue := &gh.Issue{
 		ID:                new(gql.DatabaseId),
 		Number:            new(gql.Number),
@@ -149,7 +146,7 @@ func adaptComment(gql *platformgithub.GraphQLComment) *gh.IssueComment {
 		ID:                new(platformgithub.FirstPositiveInt64(int64(gql.FullDatabaseId), gql.DatabaseId)),
 		Body:              new(gql.Body),
 		HTMLURL:           new(gql.URL),
-		User:              &gh.User{Login: new(gql.Author.Login)},
+		User:              &gh.User{Login: new(gql.Author.Login), Type: new(gql.Author.Typename)},
 		AuthorAssociation: gql.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from GraphQL.
 		CreatedAt:         &created,
 		UpdatedAt:         &updated,
@@ -162,7 +159,7 @@ func adaptReview(gql *platformgithub.GraphQLReview) *gh.PullRequestReview {
 		ID:                new(gql.DatabaseId),
 		Body:              new(gql.Body),
 		State:             new(gql.State),
-		User:              &gh.User{Login: new(gql.Author.Login)},
+		User:              &gh.User{Login: new(gql.Author.Login), Type: new(gql.Author.Typename)},
 		AuthorAssociation: gql.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 		SubmittedAt:       &submitted,
 	}
@@ -184,10 +181,10 @@ func adaptCommit(gql *platformgithub.GraphQLCommitNode) *gh.RepositoryCommit {
 		},
 	}
 	if gql.Commit.Author.User != nil {
-		c.Author = &gh.User{Login: new(gql.Commit.Author.User.Login)}
+		c.Author = &gh.User{Login: new(gql.Commit.Author.User.Login), Type: new("User")}
 	}
 	if gql.Commit.Committer.User != nil {
-		c.Committer = &gh.User{Login: new(gql.Commit.Committer.User.Login)}
+		c.Committer = &gh.User{Login: new(gql.Commit.Committer.User.Login), Type: new("User")}
 	}
 	return c
 }
@@ -336,6 +333,7 @@ func platformReviewThreadsFromGQL(threads []platformgithub.GraphQLReviewThread) 
 				SubjectType:       comment.SubjectType,
 				Body:              comment.Body,
 				AuthorLogin:       comment.Author.Login,
+				AuthorAccountType: comment.Author.Typename,
 				AuthorAssociation: comment.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 				Path:              comment.Path,
 				Line:              comment.Line,
@@ -1182,6 +1180,7 @@ func adaptPullRequestTimelineEvent(gql *platformgithub.GraphQLPullRequestTimelin
 		event.CreatedAt = src.CreatedAt
 		if src.Actor != nil {
 			event.Actor = src.Actor.Login
+			event.ActorAccountType = src.Actor.Typename
 		}
 		if src.BeforeCommit != nil {
 			event.BeforeSHA = src.BeforeCommit.OID
@@ -1198,6 +1197,7 @@ func adaptPullRequestTimelineEvent(gql *platformgithub.GraphQLPullRequestTimelin
 		event.CreatedAt = src.CreatedAt
 		if src.Actor != nil {
 			event.Actor = src.Actor.Login
+			event.ActorAccountType = src.Actor.Typename
 		}
 		if src.DeletedCommentAuthor != nil {
 			event.DeletedCommentAuthor = src.DeletedCommentAuthor.Login
@@ -1212,6 +1212,7 @@ func adaptPullRequestTimelineEvent(gql *platformgithub.GraphQLPullRequestTimelin
 		event.CurrentTitle = src.CurrentTitle
 		if src.Actor != nil {
 			event.Actor = src.Actor.Login
+			event.ActorAccountType = src.Actor.Typename
 		}
 	case "BaseRefChangedEvent":
 		src := gql.BaseRefChangedEvent
@@ -1221,6 +1222,7 @@ func adaptPullRequestTimelineEvent(gql *platformgithub.GraphQLPullRequestTimelin
 		event.CurrentRefName = src.CurrentRefName
 		if src.Actor != nil {
 			event.Actor = src.Actor.Login
+			event.ActorAccountType = src.Actor.Typename
 		}
 	case "AssignedEvent":
 		copyAssignmentEvent(&event, "assigned", gql.AssignedEvent)
@@ -1246,6 +1248,7 @@ func copyAssignmentEvent(event *platformgithub.PullRequestTimelineEvent, eventTy
 	event.CreatedAt = src.CreatedAt
 	if src.Actor != nil {
 		event.Actor = src.Actor.Login
+		event.ActorAccountType = src.Actor.Typename
 	}
 }
 
@@ -1254,6 +1257,10 @@ func copyLifecycleEvent(event *platformgithub.PullRequestTimelineEvent, eventTyp
 	event.CreatedAt = src.CreatedAt
 	if src.Actor != nil {
 		event.Actor = src.Actor.Login
+		if eventType == "closed" {
+			event.Actor = platformgithub.BotLogin(event.Actor, src.Actor.Typename)
+		}
+		event.ActorAccountType = src.Actor.Typename
 	}
 }
 
@@ -1264,6 +1271,7 @@ func copyCrossReferencedEvent(event *platformgithub.PullRequestTimelineEvent, sr
 	event.WillCloseTarget = src.WillCloseTarget
 	if src.Actor != nil {
 		event.Actor = src.Actor.Login
+		event.ActorAccountType = src.Actor.Typename
 	}
 	event.SourceType = src.Source.Typename
 	switch src.Source.Typename {
@@ -1280,4 +1288,5 @@ func copyReferencedSubject(event *platformgithub.PullRequestTimelineEvent, sourc
 	event.SourceURL = source.URL
 	event.SourceOwner = source.Repository.Owner.Login
 	event.SourceRepo = source.Repository.Name
+	event.SourceRepoID = source.Repository.DatabaseId
 }

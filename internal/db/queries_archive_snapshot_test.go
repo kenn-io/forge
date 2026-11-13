@@ -142,6 +142,20 @@ func TestSnapshotActivitySelection(t *testing.T) {
 	assert.Equal(t, now.Add(-2*time.Minute), activity[2].OccurredAt)
 	assert.Equal(t, "unknown", activity[3].Class)
 	assert.Equal(t, "author", activity[3].Actor)
+	require.NoError(t, tx.Rollback())
+	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: githubMR, EventType: "issue_comment", Author: "author", AuthorAssociation: new("COLLABORATOR"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "collaborator-author", CreatedAt: now.Add(-time.Minute)}}))
+	tx, err = database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback() }()
+	activity, err = LoadArchiveSnapshotActivity(t.Context(), tx, []int64{githubMR})
+	require.NoError(t, err)
+	require.Len(t, activity, 3)
+	assert.Equal(t, "collaborator", activity[0].Actor)
+	assert.Equal(t, "maintainer", activity[0].Class)
+	assert.Equal(t, now.Add(-150*time.Second), activity[0].OccurredAt)
+	assert.Equal(t, "author", activity[1].Actor)
+	assert.Equal(t, "author", activity[1].Class)
+	assert.Equal(t, now.Add(-time.Minute), activity[1].OccurredAt)
 }
 
 func TestCommentVisibilityRefreshPreservesActorType(t *testing.T) {

@@ -149,7 +149,7 @@ const archiveSnapshotActivity = `activity_candidates AS (
  AND (e.event_type<>'commit' OR (p.platform_head_sha<>'' AND (e.summary=p.platform_head_sha OR e.platform_external_id=p.platform_head_sha)))
  ), classified_activity AS (
  SELECT *, 'author' AS class FROM activity_candidates WHERE human<>0 AND author<>'' AND lower(author)=lower(pull_author)
- UNION ALL SELECT *, 'maintainer' FROM activity_candidates WHERE human=1 AND upper(author_association) IN ('MEMBER','OWNER','COLLABORATOR')
+ UNION ALL SELECT *, 'maintainer' FROM activity_candidates WHERE human=1 AND (upper(author_association) IN ('MEMBER','OWNER') OR (upper(author_association)='COLLABORATOR' AND lower(author)<>lower(pull_author)))
  UNION ALL SELECT *, 'unknown' FROM activity_candidates WHERE human<>0 AND (human=-1 OR author_association IS NULL OR author_association='')
  ), activity AS (
  SELECT * FROM (SELECT *,row_number() OVER (PARTITION BY merge_request_id,class ORDER BY created_at DESC,id DESC) AS rank FROM classified_activity) WHERE rank=1

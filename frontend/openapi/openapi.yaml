@@ -10136,7 +10136,7 @@ components:
             - string
             - "null"
         body:
-          description: Truncated to at most 2048 bytes at a valid UTF-8 boundary.
+          description: Full comment text within the snapshot byte budget.
           type: string
         body_truncated:
           type: boolean
@@ -14306,12 +14306,12 @@ paths:
     get:
       operationId: get-archive-snapshot
       parameters:
-        - description: Include open pull requests and those closed or merged within 30 days before observed_at, with same-repository references in either direction, including references outside the window.
+        - description: Include open pull requests and those closed or merged within 30 days before observed_at, with references in either direction, including references outside the window.
           explode: false
           in: query
           name: pull_request_scope
           schema:
-            description: Include open pull requests and those closed or merged within 30 days before observed_at, with same-repository references in either direction, including references outside the window.
+            description: Include open pull requests and those closed or merged within 30 days before observed_at, with references in either direction, including references outside the window.
             enum:
               - recently_closed
             type: string

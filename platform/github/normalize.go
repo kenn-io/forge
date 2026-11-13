@@ -330,6 +330,7 @@ func NormalizeTimelineEvent(
 			SourceType:        event.SourceType,
 			SourceOwner:       event.SourceOwner,
 			SourceRepo:        event.SourceRepo,
+			SourceRepoID:      event.SourceRepoID,
 			SourceNumber:      event.SourceNumber,
 			SourceTitle:       event.SourceTitle,
 			SourceURL:         event.SourceURL,
@@ -445,6 +446,7 @@ func NormalizeIssueTimelineEvent(
 			SourceType:        event.SourceType,
 			SourceOwner:       event.SourceOwner,
 			SourceRepo:        event.SourceRepo,
+			SourceRepoID:      event.SourceRepoID,
 			SourceNumber:      event.SourceNumber,
 			SourceTitle:       event.SourceTitle,
 			SourceURL:         event.SourceURL,
@@ -539,6 +541,7 @@ type crossReferenceMetadata struct {
 	SourceType        string `json:"source_type"`
 	SourceOwner       string `json:"source_owner"`
 	SourceRepo        string `json:"source_repo"`
+	SourceRepoID      int64  `json:"source_repo_id,omitempty"`
 	SourceNumber      int    `json:"source_number"`
 	SourceTitle       string `json:"source_title"`
 	SourceURL         string `json:"source_url"`

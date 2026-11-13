@@ -50,9 +50,9 @@ For the same resolved repository, `pull_request` and the archive snapshot's
 never `node_id`) as a JSON integer, and Bitbucket Cloud sets
 `bitbucket_repository_uuid` instead (`platform/repository_key.go::RepositoryKey`).
 
-Archive snapshot consumers use `pull_request_scope=recently_closed` to include open pull requests and those closed or merged within 30 days before `observed_at`. Relations point from the mentioning pull request to the referenced pull request, including references to pull requests outside that window without adding their rows.
+Archive snapshot consumers use `pull_request_scope=recently_closed` to include open pull requests and those closed or merged within 30 days before `observed_at`. Relations point from the mentioning pull request to the referenced pull request, including references to pull requests outside that window without adding their rows. Cross-repository references use the source repository's provider ID; missing source identity adds `reference_identity_unknown`.
 
-The scope includes full bodies for known non-bot contributors, and terminal pull request comments by their author and MEMBER/OWNER accounts. Unknown contributor classification leaves the body truncated and adds `contributor_classification_unknown`; comments with unknown roles add `comment_author_association_unknown`. GitHub bot authors receive a `[bot]` suffix in this scope. Comment bodies are limited to 2,048 bytes at a valid UTF-8 boundary.
+The scope includes full bodies for known non-bot contributors, and terminal pull request comments by their author and MEMBER/OWNER accounts. Unknown contributor classification leaves the body truncated and adds `contributor_classification_unknown`; comments with unknown roles add `comment_author_association_unknown`. GitHub bot authors receive a `[bot]` suffix in this scope. Eligible comment bodies remain complete within the snapshot byte budget.
 
 The scope reports the current closer and the latest author and maintainer actions. `closer_unknown`, `actor_role_unknown`, and `activity_incomplete` identify missing evidence. Actions include comments, reviews, assignments, and pushes; commit actions match the cached head SHA.
 

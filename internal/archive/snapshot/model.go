@@ -130,7 +130,7 @@ type SnapshotComment struct {
 	ID                string    `json:"id"`
 	Author            string    `json:"author"`
 	AuthorAssociation *string   `json:"author_association"`
-	Body              string    `json:"body" doc:"Truncated to at most 2048 bytes at a valid UTF-8 boundary."`
+	Body              string    `json:"body" doc:"Full comment text within the snapshot byte budget."`
 	BodyTruncated     bool      `json:"body_truncated"`
 	URL               string    `json:"url"`
 	CreatedAt         time.Time `json:"created_at"`

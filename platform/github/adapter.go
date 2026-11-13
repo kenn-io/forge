@@ -35,6 +35,7 @@ type PullRequestTimelineEvent struct {
 	SourceType           string
 	SourceOwner          string
 	SourceRepo           string
+	SourceRepoID         int64
 	SourceNumber         int
 	SourceTitle          string
 	SourceURL            string

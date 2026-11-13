@@ -292,7 +292,8 @@ type GraphQLReferencedIssueOrPR struct {
 	Title      string
 	URL        string `graphql:"url"`
 	Repository struct {
-		Owner struct {
+		DatabaseId int64 `graphql:"databaseId"`
+		Owner      struct {
 			Login string
 		}
 		Name string

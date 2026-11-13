@@ -910,7 +910,7 @@ func TestGraphQLFetcherFetchRepoIssuesUsesIssueTimelineFragments(t *testing.T) {
 					"number":22,
 					"title":"Fix issue",
 					"url":"https://github.com/owner/repo/pull/22",
-					"repository":{"owner":{"login":"owner"},"name":"repo"}
+					"repository":{"owner":{"login":"owner"},"name":"repo","databaseId":1987654321}
 				}
 			},{
 				"__typename":"ClosedEvent",
@@ -940,6 +940,7 @@ func TestGraphQLFetcherFetchRepoIssuesUsesIssueTimelineFragments(t *testing.T) {
 	assert.Equal("bob", result.Issues[0].TimelineEvents[0].Assignee)
 	assert.Equal("cross_referenced", result.Issues[0].TimelineEvents[1].EventType)
 	assert.Equal(22, result.Issues[0].TimelineEvents[1].SourceNumber)
+	assert.Equal(int64(1987654321), result.Issues[0].TimelineEvents[1].SourceRepoID)
 	assert.Equal("Fix issue", result.Issues[0].TimelineEvents[1].SourceTitle)
 	assert.Equal("closed", result.Issues[0].TimelineEvents[2].EventType)
 	assert.Equal("closer", result.Issues[0].TimelineEvents[2].Actor)

@@ -141,8 +141,8 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		repo := repos[row.RepoID]
 		bodyLimit := 8192
 		knownBot := strings.Contains(strings.ToLower(row.Author), "[bot]") || (row.AuthorAccountType != nil && strings.EqualFold(*row.AuthorAccountType, "bot"))
-		classificationUnknown := !knownBot && (row.Author == "" || row.AuthorAssociation == nil || *row.AuthorAssociation == "" || (repo.Platform == string(platform.KindGitHub) && (row.AuthorAccountType == nil || *row.AuthorAccountType == "")))
-		if opts.PullRequestScope == "recently_closed" && row.Kind == "pull_request" && !classificationUnknown && !strings.Contains(strings.ToLower(row.Author), "[bot]") && !strings.EqualFold(*row.AuthorAssociation, "MEMBER") && !strings.EqualFold(*row.AuthorAssociation, "OWNER") && (row.AuthorAccountType == nil || !strings.EqualFold(*row.AuthorAccountType, "bot")) {
+		classificationUnknown := !knownBot && (row.Author == "" || row.AuthorAssociation == nil || *row.AuthorAssociation == "" || (repo.Platform == string(platform.KindGitHub) && (row.AuthorAccountType == nil || (!strings.EqualFold(*row.AuthorAccountType, "user") && !strings.EqualFold(*row.AuthorAccountType, "organization")))))
+		if opts.PullRequestScope == "recently_closed" && row.Kind == "pull_request" && !classificationUnknown && !knownBot && !strings.EqualFold(*row.AuthorAssociation, "MEMBER") && !strings.EqualFold(*row.AuthorAssociation, "OWNER") && (row.AuthorAccountType == nil || !strings.EqualFold(*row.AuthorAccountType, "bot")) {
 			bodyLimit = snapshot.MaxBytes
 		}
 		body, cut := snapshotText(row.Body, bodyLimit)
@@ -183,6 +183,9 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			}
 			if row.AuthorAccountType != nil && strings.EqualFold(*row.AuthorAccountType, "bot") && !strings.HasSuffix(strings.ToLower(pull.Author), "[bot]") {
 				pull.Author += "[bot]"
+			}
+			if row.ReferenceIdentityUnknown {
+				pull.Gaps = append(pull.Gaps, "reference_identity_unknown")
 			}
 			if row.CommentAuthorAssociationUnknown {
 				pull.Gaps = append(pull.Gaps, "comment_author_association_unknown")
@@ -245,9 +248,15 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		for _, row := range lifecycle {
 			pull := &result.PullRequests[pullPositions[row.MergeRequestID]]
-			pull.ClosedBy = nil
-			if terminal := terminalTimes[row.MergeRequestID]; row.Kind == pull.State && terminal != nil && row.OccurredAt.Equal(*terminal) && row.Actor != "" {
-				pull.ClosedBy = new(row.Actor)
+			terminal := terminalTimes[row.MergeRequestID]
+			switch row.Kind {
+			case "reopened":
+				pull.ClosedBy = nil
+			case pull.State:
+				pull.ClosedBy = nil
+				if terminal != nil && row.OccurredAt.Equal(*terminal) && row.Actor != "" {
+					pull.ClosedBy = new(row.Actor)
+				}
 			}
 		}
 		for i := range result.PullRequests {
@@ -265,21 +274,14 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		for _, row := range activity {
 			pull := &result.PullRequests[pullPositions[row.MergeRequestID]]
-			if row.Actor == "" {
-				if !slices.Contains(pull.Gaps, "actor_role_unknown") {
-					pull.Gaps = append(pull.Gaps, "actor_role_unknown")
-				}
+			if row.Class == "unknown" {
+				pull.Gaps = append(pull.Gaps, "actor_role_unknown")
 				continue
 			}
 			action := &snapshot.SnapshotAction{Kind: row.Kind, Actor: row.Actor, OccurredAt: row.OccurredAt.UTC()}
-			if strings.EqualFold(row.Actor, pull.Author) || strings.EqualFold(row.Actor+"[bot]", pull.Author) {
+			if row.Class == "author" {
 				pull.LastAuthorAction = action
-			}
-			if row.ActorAssociation == nil || *row.ActorAssociation == "" {
-				if !slices.Contains(pull.Gaps, "actor_role_unknown") {
-					pull.Gaps = append(pull.Gaps, "actor_role_unknown")
-				}
-			} else if strings.EqualFold(*row.ActorAssociation, "MEMBER") || strings.EqualFold(*row.ActorAssociation, "OWNER") {
+			} else {
 				pull.LastMaintainerAction = action
 			}
 		}
@@ -289,12 +291,18 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		for _, row := range comments {
 			pull := &result.PullRequests[pullPositions[row.MergeRequestID]]
-			body, cut := snapshotText(row.Body, 2048)
+			body, cut := snapshotText(row.Body, snapshot.MaxBytes)
 			pull.Comments = append(pull.Comments, snapshot.SnapshotComment{ID: pull.ID + "/comment/" + url.QueryEscape(row.Key), Author: row.Author, AuthorAssociation: row.AuthorAssociation, Body: body, BodyTruncated: cut, URL: row.URL, CreatedAt: row.CreatedAt.UTC()})
 		}
 		for _, ref := range refs {
 			repoID := snapshotRepositoryID(repos[ref.RepoID])
-			sourceID := repoID + ":pull_request:" + strconv.Itoa(ref.SourceNumber)
+			sourceRepoID := repoID
+			if ref.SourceProviderID > 0 {
+				repo := repos[ref.RepoID]
+				repo.Key = platform.RepositoryIDKey(ref.SourceProviderID)
+				sourceRepoID = snapshotRepositoryID(repo)
+			}
+			sourceID := sourceRepoID + ":pull_request:" + strconv.Itoa(ref.SourceNumber)
 			targetID := repoID + ":pull_request:" + strconv.Itoa(ref.TargetNumber)
 			result.Relations = append(result.Relations, snapshot.SnapshotRelation{SourceID: sourceID, TargetID: targetID, Kind: "pull_request_reference", EvidenceID: targetID + "/reference/" + url.QueryEscape(ref.Key), URL: ref.URL, ObservedAt: ref.ObservedAt.UTC()})
 		}

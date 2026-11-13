@@ -1280,4 +1280,5 @@ func copyReferencedSubject(event *platformgithub.PullRequestTimelineEvent, sourc
 	event.SourceURL = source.URL
 	event.SourceOwner = source.Repository.Owner.Login
 	event.SourceRepo = source.Repository.Name
+	event.SourceRepoID = source.Repository.DatabaseId
 }

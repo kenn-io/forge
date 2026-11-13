@@ -340,6 +340,7 @@ func TestNormalizeTimelineEventCrossReferenced(t *testing.T) {
 		SourceType:        "Issue",
 		SourceOwner:       "other",
 		SourceRepo:        "repo",
+		SourceRepoID:      9876543210,
 		SourceNumber:      77,
 		SourceTitle:       "Related bug",
 		SourceURL:         "https://github.com/other/repo/issues/77",
@@ -356,6 +357,7 @@ func TestNormalizeTimelineEventCrossReferenced(t *testing.T) {
 	assert.Equal("timeline-CRE_1", event.DedupeKey)
 	assert.Contains(event.MetadataJSON, `"source_title":"Related bug"`)
 	assert.Contains(event.MetadataJSON, `"is_cross_repository":true`)
+	assert.Contains(event.MetadataJSON, `"source_repo_id":9876543210`)
 }
 
 func TestNormalizeTimelineEventCommentDeleted(t *testing.T) {

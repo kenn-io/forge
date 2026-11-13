@@ -56,7 +56,8 @@ func (c *Client) ListPullRequestTimelineEvents(
 									Owner *struct {
 										Login string `json:"login"`
 									} `json:"owner"`
-									Name string `json:"name"`
+									Name       string       `json:"name"`
+									DatabaseID GraphQLInt64 `json:"databaseId"`
 								} `json:"repository"`
 							} `json:"source"`
 							IsCrossRepository bool `json:"isCrossRepository"`
@@ -215,6 +216,7 @@ func (c *Client) ListPullRequestTimelineEvents(
 				event.SourceURL = node.Source.URL
 				if node.Source.Repository != nil {
 					event.SourceRepo = node.Source.Repository.Name
+					event.SourceRepoID = int64(node.Source.Repository.DatabaseID)
 					if node.Source.Repository.Owner != nil {
 						event.SourceOwner = node.Source.Repository.Owner.Login
 					}
@@ -262,7 +264,8 @@ func (c *Client) ListIssueTimelineEvents(
 									Owner *struct {
 										Login string `json:"login"`
 									} `json:"owner"`
-									Name string `json:"name"`
+									Name       string       `json:"name"`
+									DatabaseID GraphQLInt64 `json:"databaseId"`
 								} `json:"repository"`
 							} `json:"source"`
 							IsCrossRepository bool `json:"isCrossRepository"`
@@ -390,6 +393,7 @@ func (c *Client) ListIssueTimelineEvents(
 				event.SourceURL = node.Source.URL
 				if node.Source.Repository != nil {
 					event.SourceRepo = node.Source.Repository.Name
+					event.SourceRepoID = int64(node.Source.Repository.DatabaseID)
 					if node.Source.Repository.Owner != nil {
 						event.SourceOwner = node.Source.Repository.Owner.Login
 					}

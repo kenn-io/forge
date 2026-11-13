@@ -21,6 +21,7 @@ type ArchiveSnapshotItem struct {
 	Draft                                                bool
 	HeadRepoIdentityStale                                bool
 	CommentAuthorAssociationUnknown                      bool
+	ReferenceIdentityUnknown                             bool
 	HeadSHA, HeadBranch, BaseBranch, HeadRepoCloneURL    string
 	Additions, Deletions                                 int
 	FilesChanged                                         *int
@@ -94,7 +95,7 @@ const archiveSnapshotLinks = `link_candidates AS (
 )`
 
 const (
-	archiveSnapshotCommentBody   = `COALESCE(CAST(substr(CAST(COALESCE(e.body,'') AS BLOB),1,2049) AS TEXT),'')`
+	archiveSnapshotCommentBody   = `COALESCE(CAST(substr(CAST(COALESCE(e.body,'') AS BLOB),1,33554433) AS TEXT),'')`
 	archiveSnapshotCommentFilter = `((p.author <> '' AND e.author=p.author) OR upper(e.author_association) IN ('MEMBER','OWNER'))`
 )
 
@@ -104,21 +105,25 @@ const archiveSnapshotPullScope = `WITH scoped_repos AS (SELECT value AS id FROM 
  SELECT p.id,p.repo_id,p.number FROM forge_merge_requests p JOIN scoped_repos r ON r.id=p.repo_id
  WHERE (p.state='open' OR (? AND p.state IN ('closed','merged') AND COALESCE(p.merged_at,p.closed_at)>=? AND COALESCE(p.merged_at,p.closed_at)<=?)) AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=p.repo_id AND a.item_type='merge_request' AND a.item_number=p.number AND a.lifecycle_state='removed_upstream')
  ), reference_candidates AS (
- SELECT source.id AS source_id, target.id AS target_id, target.repo_id, target.number AS target_number, json_extract(e.metadata_json,'$.source_number') AS source_number, e.dedupe_key,
+ SELECT source.id AS source_id, target.id AS target_id, target.repo_id, target.number AS target_number, json_extract(e.metadata_json,'$.source_number') AS source_number,
+ CASE WHEN json_extract(e.metadata_json,'$.is_cross_repository')=0 THEN 0
+ WHEN r.platform='github' AND json_type(e.metadata_json,'$.source_repo_id')='integer' AND json_extract(e.metadata_json,'$.source_repo_id')>0 THEN json_extract(e.metadata_json,'$.source_repo_id')
+ ELSE NULL END AS source_provider_id, e.dedupe_key,
  COALESCE(json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_url'),'') AS source_url, e.created_at
  FROM forge_mr_events e
  JOIN forge_merge_requests target ON target.id=e.merge_request_id AND target.repo_id=e.repo_id
- JOIN scoped_repos r ON r.id=target.repo_id
- LEFT JOIN forge_merge_requests source ON source.repo_id=e.repo_id AND source.number=json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number')
+ JOIN scoped_repos scoped ON scoped.id=target.repo_id
+ JOIN forge_repos r ON r.id=target.repo_id
+ LEFT JOIN forge_repos sr ON sr.platform=r.platform AND sr.platform_host=r.platform_host AND sr.platform_repo_id=json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_repo_id') AND sr.platform_repo_id>0
+ LEFT JOIN forge_merge_requests source ON source.repo_id=CASE WHEN json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.is_cross_repository')=0 THEN target.repo_id ELSE sr.id END AND source.number=json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number')
  WHERE e.event_type='cross_referenced' AND json_valid(e.metadata_json)
  AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_type')='PullRequest'
- AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.is_cross_repository')=0
  AND json_type(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number')='integer'
  AND json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number')>0
  AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=target.repo_id AND a.item_type='merge_request' AND a.item_number=target.number AND a.lifecycle_state='removed_upstream')
- AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=e.repo_id AND a.item_type='merge_request' AND a.item_number=json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number') AND a.lifecycle_state='removed_upstream')
+ AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=source.repo_id AND a.item_type='merge_request' AND a.item_number=json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.source_number') AND a.lifecycle_state='removed_upstream')
  ), pull_links AS (
- SELECT * FROM reference_candidates c WHERE ? AND (c.source_id IN (SELECT id FROM roots) OR c.target_id IN (SELECT id FROM roots))
+ SELECT * FROM reference_candidates c WHERE ? AND c.source_provider_id IS NOT NULL AND (c.source_id IN (SELECT id FROM roots) OR c.target_id IN (SELECT id FROM roots))
  ), pulls AS (
  SELECT * FROM roots
  )`
@@ -130,22 +135,33 @@ const archiveSnapshotScope = archiveSnapshotPullScope + `, ` + archiveSnapshotLi
  AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=i.repo_id AND a.item_type='issue' AND a.item_number=i.number AND a.lifecycle_state='removed_upstream')
  )`
 
-const archiveSnapshotActivity = `activity AS (
- SELECT e.id,e.merge_request_id,e.author,e.created_at,
+const archiveSnapshotActivity = `association_observations AS (
+ SELECT p.repo_id,e.author,e.author_association AS association,e.created_at AS observed_at,e.id
+ FROM forge_mr_events e JOIN forge_merge_requests p ON p.id=e.merge_request_id
+ WHERE p.repo_id IN (SELECT repo_id FROM pulls) AND e.author<>'' AND e.author_association IS NOT NULL AND e.author_association<>''
+ UNION ALL
+ SELECT p.repo_id,p.author,p.author_association,p.updated_at,p.id FROM forge_merge_requests p
+ WHERE p.repo_id IN (SELECT repo_id FROM pulls) AND p.author<>'' AND p.author_association IS NOT NULL AND p.author_association<>''
+ ), associations AS (
+ SELECT repo_id,author,association FROM (SELECT *,row_number() OVER (PARTITION BY repo_id,author ORDER BY observed_at DESC,id DESC) AS rank FROM association_observations) WHERE rank=1
+ ), activity_candidates AS (
+ SELECT e.id,e.merge_request_id,e.author,e.created_at,p.author AS pull_author,
  CASE e.event_type WHEN 'issue_comment' THEN 'comment' WHEN 'commit' THEN 'push' ELSE e.event_type END AS kind,
- CASE WHEN e.event_type IN ('assigned','unassigned','commit','force_push') THEN
- (SELECT association FROM (
- SELECT x.author_association AS association,x.created_at AS observed_at,x.id FROM forge_mr_events x JOIN forge_merge_requests xp ON xp.id=x.merge_request_id WHERE xp.repo_id=p.repo_id AND x.author=e.author AND x.author_association IS NOT NULL AND x.author_association<>''
- UNION ALL SELECT ap.author_association,ap.updated_at,ap.id FROM forge_merge_requests ap WHERE ap.repo_id=p.repo_id AND ap.author=e.author AND ap.author_association IS NOT NULL AND ap.author_association<>''
- ) ORDER BY observed_at DESC,id DESC LIMIT 1)
- ELSE e.author_association END AS author_association
+ CASE WHEN e.event_type IN ('assigned','unassigned','commit','force_push') THEN a.association ELSE e.author_association END AS author_association
  FROM forge_mr_events e JOIN pulls selected ON selected.id=e.merge_request_id JOIN forge_merge_requests p ON p.id=selected.id
+ LEFT JOIN associations a ON a.repo_id=p.repo_id AND a.author=e.author
  WHERE e.event_type IN ('issue_comment','review','review_comment','assigned','unassigned','commit','force_push')
  AND (e.event_type<>'commit' OR (p.platform_head_sha<>'' AND e.summary=p.platform_head_sha))
+ ), classified_activity AS (
+ SELECT *, 'author' AS class FROM activity_candidates WHERE author<>'' AND lower(author)=lower(pull_author)
+ UNION ALL SELECT *, 'maintainer' FROM activity_candidates WHERE author<>'' AND upper(author_association) IN ('MEMBER','OWNER')
+ UNION ALL SELECT *, 'unknown' FROM activity_candidates WHERE author='' OR author_association IS NULL OR author_association=''
+ ), activity AS (
+ SELECT * FROM (SELECT *,row_number() OVER (PARTITION BY merge_request_id,class ORDER BY created_at DESC,id DESC) AS rank FROM classified_activity) WHERE rank=1
  )`
 
 // The same expression limits both the preflight measurement and the loaded text.
-const archiveSnapshotBody = `COALESCE(CAST(substr(CAST(COALESCE(p.body,'') AS BLOB),1,CASE WHEN ? AND p.author<>'' AND instr(lower(p.author),'[bot]')=0 AND p.author_association IS NOT NULL AND p.author_association<>'' AND upper(p.author_association) NOT IN ('MEMBER','OWNER') AND (r.platform<>'github' OR (p.author_account_type IS NOT NULL AND p.author_account_type<>'' AND lower(p.author_account_type)<>'bot')) THEN 33554433 ELSE 8193 END) AS TEXT),'')`
+const archiveSnapshotBody = `COALESCE(CAST(substr(CAST(COALESCE(p.body,'') AS BLOB),1,CASE WHEN ? AND p.author<>'' AND instr(lower(p.author),'[bot]')=0 AND p.author_association IS NOT NULL AND p.author_association<>'' AND upper(p.author_association) NOT IN ('MEMBER','OWNER') AND (r.platform<>'github' OR (p.author_account_type IS NOT NULL AND p.author_account_type<>'' AND lower(p.author_account_type) IN ('user','organization'))) THEN 33554433 ELSE 8193 END) AS TEXT),'')`
 
 // MeasureArchiveSnapshot bounds records and projected text without loading bodies
 // into Go. Include all variable text, including checks, labels and review metadata.
@@ -177,7 +193,7 @@ func MeasureArchiveSnapshot(ctx context.Context, tx *sql.Tx, repoIDs []int64, st
  UNION ALL
  SELECT length(CAST(json_array(source_url,dedupe_key) AS BLOB)) FROM pull_links WHERE ?
  UNION ALL
- SELECT length(CAST(json_array(kind,author,author_association) AS BLOB)) FROM activity WHERE ?
+ SELECT length(CAST(json_array(kind,author,author_association) AS BLOB)) FROM activity WHERE ? AND class<>'unknown'
  ) SELECT count(*),COALESCE(sum(bytes),0) FROM texts`, string(ids), recentPulls, observedAt.Add(-30*24*time.Hour).UTC(), observedAt.UTC(), recentPulls, openIssuesOnly, start.UTC(), end.UTC(), recentPulls, recentPulls, recentPulls, recentPulls).Scan(&result.Records, &result.TextBytes)
 	if err != nil {
 		return result, fmt.Errorf("measure archive snapshot: %w", err)
@@ -195,13 +211,14 @@ func LoadArchiveSnapshotItems(ctx context.Context, tx *sql.Tx, repoIDs []int64, 
  (SELECT json_group_array(l.name) FROM forge_merge_request_labels ml JOIN forge_labels l ON l.id=ml.label_id WHERE ml.merge_request_id=p.id),
  p.is_draft,COALESCE(p.platform_head_sha,''),COALESCE(p.head_branch,''),COALESCE(p.base_branch,''),COALESCE(p.head_repo_clone_url,''),p.head_repo_identity_stale,p.additions,p.deletions,p.files_changed,COALESCE(p.review_decision,''),COALESCE(p.ci_status,''),COALESCE(p.ci_checks_json,''),COALESCE(p.mergeable_state,''),
  p.assignees_json,p.reviewers_json,p.last_activity_at,p.closed_at,p.merged_at,p.ci_observed_at,p.review_decision_observed_at,p.mergeable_state_observed_at,
- EXISTS (SELECT 1 FROM forge_mr_events e WHERE e.merge_request_id=p.id AND p.state IN ('closed','merged') AND e.event_type='issue_comment' AND (p.author = '' OR e.author != p.author) AND (e.author_association IS NULL OR e.author_association=''))
+ EXISTS (SELECT 1 FROM forge_mr_events e WHERE e.merge_request_id=p.id AND p.state IN ('closed','merged') AND e.event_type='issue_comment' AND (p.author = '' OR e.author != p.author) AND (e.author_association IS NULL OR e.author_association='')),
+ EXISTS (SELECT 1 FROM reference_candidates c WHERE c.target_id=p.id AND c.source_provider_id IS NULL)
  FROM forge_merge_requests p JOIN pulls selected ON selected.id=p.id JOIN forge_repos r ON r.id=p.repo_id
  UNION ALL
  SELECT i.id,i.repo_id,'issue',i.number,COALESCE(i.url,''),i.title,i.author,i.state,COALESCE(CAST(substr(CAST(COALESCE(i.body,'') AS BLOB),1,8193) AS TEXT),''),NULL,i.author_association,i.created_at,i.updated_at,i.detail_fetched_at,
  (SELECT json_group_array(l.name) FROM forge_issue_labels il JOIN forge_labels l ON l.id=il.label_id WHERE il.issue_id=i.id),
  0,'','','','',0,0,0,NULL,'','','','',
- i.assignees_json,'',i.last_activity_at,i.closed_at,NULL,NULL,NULL,NULL,0
+ i.assignees_json,'',i.last_activity_at,i.closed_at,NULL,NULL,NULL,NULL,0,0
  FROM forge_issues i JOIN issues selected ON selected.id=i.id
  ORDER BY 2,3,4`, string(ids), recentPulls, observedAt.Add(-30*24*time.Hour).UTC(), observedAt.UTC(), recentPulls, openIssuesOnly, start.UTC(), end.UTC(), recentPulls)
 	if err != nil {
@@ -211,7 +228,7 @@ func LoadArchiveSnapshotItems(ctx context.Context, tx *sql.Tx, repoIDs []int64, 
 	result := []ArchiveSnapshotItem{}
 	for rows.Next() {
 		var item ArchiveSnapshotItem
-		if err := rows.Scan(&item.ID, &item.RepoID, &item.Kind, &item.Number, &item.URL, &item.Title, &item.Author, &item.State, &item.Body, &item.AuthorAccountType, &item.AuthorAssociation, &item.CreatedAt, &item.UpdatedAt, &item.DetailFetchedAt, &item.LabelsJSON, &item.Draft, &item.HeadSHA, &item.HeadBranch, &item.BaseBranch, &item.HeadRepoCloneURL, &item.HeadRepoIdentityStale, &item.Additions, &item.Deletions, &item.FilesChanged, &item.ReviewDecision, &item.CIStatus, &item.ChecksJSON, &item.MergeableState, &item.AssigneesJSON, &item.ReviewersJSON, &item.LastActivityAt, &item.ClosedAt, &item.MergedAt, &item.CIObservedAt, &item.ReviewDecisionObservedAt, &item.MergeableStateObservedAt, &item.CommentAuthorAssociationUnknown); err != nil {
+		if err := rows.Scan(&item.ID, &item.RepoID, &item.Kind, &item.Number, &item.URL, &item.Title, &item.Author, &item.State, &item.Body, &item.AuthorAccountType, &item.AuthorAssociation, &item.CreatedAt, &item.UpdatedAt, &item.DetailFetchedAt, &item.LabelsJSON, &item.Draft, &item.HeadSHA, &item.HeadBranch, &item.BaseBranch, &item.HeadRepoCloneURL, &item.HeadRepoIdentityStale, &item.Additions, &item.Deletions, &item.FilesChanged, &item.ReviewDecision, &item.CIStatus, &item.ChecksJSON, &item.MergeableState, &item.AssigneesJSON, &item.ReviewersJSON, &item.LastActivityAt, &item.ClosedAt, &item.MergedAt, &item.CIObservedAt, &item.ReviewDecisionObservedAt, &item.MergeableStateObservedAt, &item.CommentAuthorAssociationUnknown, &item.ReferenceIdentityUnknown); err != nil {
 			return nil, fmt.Errorf("scan snapshot item: %w", err)
 		}
 		result = append(result, item)
@@ -293,7 +310,7 @@ func LoadArchiveSnapshotPullEvidence(ctx context.Context, tx *sql.Tx, repoIDs, m
 	if err != nil {
 		return nil, nil, err
 	}
-	refsRows, err := tx.QueryContext(ctx, archiveSnapshotPullScope+` SELECT repo_id,source_number,target_number,source_url,dedupe_key,created_at FROM pull_links ORDER BY target_id,source_id,dedupe_key`, string(repos), true, observedAt.Add(-30*24*time.Hour).UTC(), observedAt.UTC(), true)
+	refsRows, err := tx.QueryContext(ctx, archiveSnapshotPullScope+` SELECT repo_id,source_provider_id,source_number,target_number,source_url,dedupe_key,created_at FROM pull_links ORDER BY target_id,source_id,dedupe_key`, string(repos), true, observedAt.Add(-30*24*time.Hour).UTC(), observedAt.UTC(), true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -301,7 +318,7 @@ func LoadArchiveSnapshotPullEvidence(ctx context.Context, tx *sql.Tx, repoIDs, m
 	var refs []ArchiveSnapshotPullReference
 	for refsRows.Next() {
 		var r ArchiveSnapshotPullReference
-		if err := refsRows.Scan(&r.RepoID, &r.SourceNumber, &r.TargetNumber, &r.URL, &r.Key, &r.ObservedAt); err != nil {
+		if err := refsRows.Scan(&r.RepoID, &r.SourceProviderID, &r.SourceNumber, &r.TargetNumber, &r.URL, &r.Key, &r.ObservedAt); err != nil {
 			return nil, nil, err
 		}
 		refs = append(refs, r)
@@ -310,7 +327,7 @@ func LoadArchiveSnapshotPullEvidence(ctx context.Context, tx *sql.Tx, repoIDs, m
 }
 
 type ArchiveSnapshotPullReference struct {
-	RepoID                     int64
+	RepoID, SourceProviderID   int64
 	SourceNumber, TargetNumber int
 	URL, Key                   string
 	ObservedAt                 time.Time
@@ -318,7 +335,7 @@ type ArchiveSnapshotPullReference struct {
 
 type ArchiveSnapshotActivity struct {
 	MergeRequestID                           int64
-	Kind, Actor, Subject                     string
+	Kind, Actor, Subject, Class              string
 	ActorAssociation, ActorType, SubjectType *string
 	OccurredAt                               time.Time
 }
@@ -328,7 +345,7 @@ func LoadArchiveSnapshotActivity(ctx context.Context, tx *sql.Tx, mrIDs []int64)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `WITH pulls AS (SELECT id FROM forge_merge_requests WHERE id IN (SELECT value FROM json_each(?))), `+archiveSnapshotActivity+` SELECT merge_request_id,kind,author,author_association,created_at FROM activity ORDER BY merge_request_id,created_at,id`, string(ids))
+	rows, err := tx.QueryContext(ctx, `WITH pulls AS (SELECT id,repo_id,number FROM forge_merge_requests WHERE id IN (SELECT value FROM json_each(?))), `+archiveSnapshotActivity+` SELECT merge_request_id,kind,author,author_association,created_at,class FROM activity ORDER BY merge_request_id,created_at,id`, string(ids))
 	if err != nil {
 		return nil, fmt.Errorf("load snapshot activity: %w", err)
 	}
@@ -336,7 +353,7 @@ func LoadArchiveSnapshotActivity(ctx context.Context, tx *sql.Tx, mrIDs []int64)
 	var result []ArchiveSnapshotActivity
 	for rows.Next() {
 		var a ArchiveSnapshotActivity
-		if err := rows.Scan(&a.MergeRequestID, &a.Kind, &a.Actor, &a.ActorAssociation, &a.OccurredAt); err != nil {
+		if err := rows.Scan(&a.MergeRequestID, &a.Kind, &a.Actor, &a.ActorAssociation, &a.OccurredAt, &a.Class); err != nil {
 			return nil, err
 		}
 		result = append(result, a)

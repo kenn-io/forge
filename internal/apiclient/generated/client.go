@@ -58344,7 +58344,7 @@ const (
 	ListActivityThreadEventsQueryItemTypePr    ListActivityThreadEventsQueryItemType = "pr"
 )
 
-// GetArchiveSnapshotQueryPullRequestScope Include open pull requests and those closed or merged within 30 days before observed_at, with same-repository references in either direction, including references outside the window.
+// GetArchiveSnapshotQueryPullRequestScope Include open pull requests and those closed or merged within 30 days before observed_at, with references in either direction, including references outside the window.
 type GetArchiveSnapshotQueryPullRequestScope string
 
 const (
@@ -61054,7 +61054,7 @@ type GetArchiveReportQuery struct {
 }
 
 type GetArchiveSnapshotQuery struct {
-	// PullRequestScope Include open pull requests and those closed or merged within 30 days before observed_at, with same-repository references in either direction, including references outside the window.
+	// PullRequestScope Include open pull requests and those closed or merged within 30 days before observed_at, with references in either direction, including references outside the window.
 	PullRequestScope *GetArchiveSnapshotQueryPullRequestScope `json:"pull_request_scope,omitempty"`
 
 	// IssueScope Optional: open includes all cached open issues regardless of age, plus issues linked to open pull requests. Omit for the creation window.
@@ -71240,7 +71240,7 @@ type SnapshotComment struct {
 	Author            string  `json:"author"`
 	AuthorAssociation *string `json:"author_association"`
 
-	// Body Truncated to at most 2048 bytes at a valid UTF-8 boundary.
+	// Body Full comment text within the snapshot byte budget.
 	Body          string    `json:"body"`
 	BodyTruncated bool      `json:"body_truncated"`
 	CreatedAt     time.Time `json:"created_at"`

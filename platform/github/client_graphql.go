@@ -44,6 +44,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
                 repository {
                   owner { login }
                   name
+                  databaseId
                 }
               }
               ... on PullRequest {
@@ -53,6 +54,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
                 repository {
                   owner { login }
                   name
+                  databaseId
                 }
               }
             }
@@ -141,6 +143,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
                 repository {
                   owner { login }
                   name
+                  databaseId
                 }
               }
               ... on PullRequest {
@@ -150,6 +153,7 @@ query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
                 repository {
                   owner { login }
                   name
+                  databaseId
                 }
               }
             }

@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.27.4+-00ADD8?logo=go" alt="Go 1.27.4+"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Elastic_2.0-yellow.svg" alt="License: Elastic 2.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://forge.kenn.io"><img src="https://img.shields.io/badge/Docs-forge.kenn.io-blue" alt="Docs"></a>
 </p>
 
@@ -130,7 +130,6 @@ setup, supported queries, and debug logging.
 - [GitHub CLI shim](docs/gh-shim.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
-kenn-forge is licensed under the [Elastic License 2.0](LICENSE). Contributions
-made before the relicense remain available under the MIT License; see
-[NOTICE](NOTICE). Contact [Kenn Software](https://kenn.io) at info@kenn.io for
-commercial licensing.
+kenn-forge is licensed under the [MIT License](LICENSE). Copyright (c) 2026
+[Kenn Software, Inc.](https://kenn.io). See [NOTICE](NOTICE) for earlier
+contributor attribution.

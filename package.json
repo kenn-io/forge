@@ -1,6 +1,6 @@
 {
   "private": true,
-  "license": "Elastic-2.0",
+  "license": "MIT",
   "workspaces": [
     "frontend",
     "packages/*"

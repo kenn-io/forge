@@ -1,8 +1,8 @@
 [project]
 site_name = "Kenn Forge"
 site_description = "Integrated agent workspace with local-first code forge sync"
-site_author = "Kenn Software LLC"
-copyright = 'Copyright &copy; 2026 <a href="https://kenn.io">Kenn Software LLC</a>. Elastic License 2.0.'
+site_author = "Kenn Software, Inc."
+copyright = 'Copyright &copy; 2026 <a href="https://kenn.io">Kenn Software, Inc.</a> · MIT License.'
 site_url = "https://forge.kenn.io/docs/"
 docs_dir = "docs"
 site_dir = "site/docs"

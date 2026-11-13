@@ -2,7 +2,7 @@
   "name": "kenn-forge-mobile",
   "version": "0.1.0",
   "private": true,
-  "license": "Elastic-2.0",
+  "license": "MIT",
   "main": "index.ts",
   "scripts": {
     "start": "node node_modules/expo/bin/cli start",

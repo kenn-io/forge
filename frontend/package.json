@@ -2,7 +2,7 @@
   "name": "kenn-forge-frontend",
   "version": "0.1.0",
   "private": true,
-  "license": "Elastic-2.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "node ../node_modules/vite-plus/bin/vp dev",

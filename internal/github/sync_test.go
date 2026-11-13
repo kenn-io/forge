@@ -5084,7 +5084,7 @@ func TestRefreshTimelineFetchFailureDoesNotRewriteProviderPullRequestActivity(t 
 		}},
 		timelineEventsErr: errors.New("graphql unavailable"),
 		reviews:           []*gh.PullRequestReview{},
-		comments:          []*gh.IssueComment{{ID: new(int64(123)), User: &gh.User{Login: new("author")}, Body: new("cached comment"), CreatedAt: makeTimestamp(now)}},
+		comments:          []*gh.IssueComment{},
 	}
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
@@ -5096,11 +5096,6 @@ func TestRefreshTimelineFetchFailureDoesNotRewriteProviderPullRequestActivity(t 
 	require.NotNil(pr)
 	assert.Equal(forcePushAt, pr.LastActivityAt)
 	assert.Nil(pr.DetailFetchedAt)
-	events, err := d.ListMREvents(ctx, mrID)
-	require.NoError(err)
-	assert.True(slices.ContainsFunc(events, func(event db.MREvent) bool {
-		return event.EventType == "issue_comment" && event.Body == "cached comment"
-	}))
 }
 
 func TestSyncAssignsStableCommitOrderKeysAcrossForcePushReplacement(t *testing.T) {

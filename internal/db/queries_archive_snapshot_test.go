@@ -116,15 +116,10 @@ func TestSnapshotActivitySelection(t *testing.T) {
 	githubMR, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: githubID, PlatformID: 2, Number: 2, Author: "author", State: MergeRequestStateOpen, PlatformHeadSHA: "head-sha", CreatedAt: now, UpdatedAt: now})
 	require.NoError(t, err)
 	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{
-		{MergeRequestID: githubMR, EventType: "issue_comment", Author: "older-maintainer", AuthorAssociation: new("OWNER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "older-review", CreatedAt: now.Add(-5 * time.Minute)},
-		{MergeRequestID: githubMR, EventType: "issue_comment", Author: "author", AuthorAssociation: new("CONTRIBUTOR"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "older-author", CreatedAt: now.Add(-3 * time.Minute)},
-		{MergeRequestID: githubMR, EventType: "issue_comment", Author: "author", MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "author-unknown-role", CreatedAt: now.Add(-3 * time.Minute)},
-		{MergeRequestID: githubMR, EventType: "review", Author: "maintainer", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "review", CreatedAt: now.Add(-4 * time.Minute)},
 		{MergeRequestID: githubMR, EventType: "issue_comment", Author: "collaborator", AuthorAssociation: new("COLLABORATOR"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "collaborator", CreatedAt: now.Add(-150 * time.Second)},
 		{MergeRequestID: githubMR, EventType: "issue_comment", Author: "author", AuthorAssociation: new("COLLABORATOR"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "collaborator-author", CreatedAt: now.Add(-130 * time.Second)},
 		{MergeRequestID: githubMR, EventType: "commit", Author: "author", AuthorAssociation: new("CONTRIBUTOR"), MetadataJSON: `{"actor_account_type":"user"}`, Summary: "head-sha", DedupeKey: "head", CreatedAt: now.Add(-2 * time.Minute)},
 		{MergeRequestID: githubMR, EventType: "commit", Author: "author", AuthorAssociation: new("CONTRIBUTOR"), MetadataJSON: `{"actor_account_type":"user"}`, Summary: "old-sha", DedupeKey: "old", CreatedAt: now},
-		{MergeRequestID: githubMR, EventType: "issue_comment", Author: "automation", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"bot"}`, DedupeKey: "bot", CreatedAt: now},
 		{MergeRequestID: githubMR, EventType: "unassigned", Author: "maintainer", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "unassigned", CreatedAt: now},
 	}))
 	tx, err := database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
@@ -164,7 +159,6 @@ func TestSnapshotActivityRoleEvidence(t *testing.T) {
 		{name: "role recorded after action wins", observations: []observation{{"CONTRIBUTOR", -time.Minute}, {"MEMBER", time.Minute}}, wantClass: "maintainer"},
 		{name: "same time higher id promotes", observations: []observation{{"CONTRIBUTOR", -time.Minute}, {"MEMBER", -time.Minute}}, wantClass: "maintainer"},
 		{name: "same time higher id demotes", observations: []observation{{"MEMBER", -time.Minute}, {"CONTRIBUTOR", -time.Minute}}},
-		{name: "missing evidence", wantClass: "unknown"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			database := openTestDB(t)

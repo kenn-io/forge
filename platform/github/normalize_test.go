@@ -79,7 +79,7 @@ func TestNormalizeCommitEventUsesCommitterForRebasedCommit(t *testing.T) {
 func TestNormalizeCommitEventFallbacks(t *testing.T) {
 	authoredAt := time.Date(2026, 9, 3, 2, 21, 43, 0, time.UTC)
 	committedAt := time.Date(2026, 9, 3, 4, 52, 4, 0, time.UTC)
-	user := func(login string) *gh.User { return &gh.User{Login: new(login)} }
+	user := func(login, accountType string) *gh.User { return &gh.User{Login: new(login), Type: new(accountType)} }
 	signature := func(name string, date time.Time) *gh.CommitAuthor {
 		return &gh.CommitAuthor{Name: new(name), Date: &gh.Timestamp{Time: date}}
 	}
@@ -96,18 +96,18 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 	}{
 		{
 			name:            "associated committer login is preferred",
-			author:          user("original-author"),
-			committer:       user("rebase-committer"),
+			author:          user("original-author", ""),
+			committer:       user("rebase-committer", "Bot"),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: signature("rebase-name", committedAt),
 			wantAuthor:      "rebase-committer",
 			wantCreatedAt:   committedAt,
-			wantMetadata:    `{"commit_author":"original-author"}`,
+			wantMetadata:    `{"actor_account_type":"bot","commit_author":"original-author"}`,
 		},
 		{
 			name:            "web-flow committer is displayed as reported",
-			author:          user("original-author"),
-			committer:       user("web-flow"),
+			author:          user("original-author", ""),
+			committer:       user("web-flow", ""),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: signature("web-flow", committedAt),
 			wantAuthor:      "web-flow",
@@ -116,16 +116,16 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 		},
 		{
 			name:            "linked author wins over unlinked committer signature",
-			author:          user("original-author"),
+			author:          user("original-author", "User"),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: signature("rebase-committer", committedAt),
 			wantAuthor:      "original-author",
 			wantCreatedAt:   committedAt,
-			wantMetadata:    `{"commit_author":"original-author"}`,
+			wantMetadata:    `{"actor_account_type":"user","commit_author":"original-author"}`,
 		},
 		{
 			name:          "author login is used when committer identity is absent",
-			author:        user("original-author"),
+			author:        user("original-author", ""),
 			commitAuthor:  signature("original-name", authoredAt),
 			wantAuthor:    "original-author",
 			wantCreatedAt: authoredAt,
@@ -140,8 +140,8 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 		},
 		{
 			name:            "author date is used when committer date is absent",
-			author:          user("original-author"),
-			committer:       user("rebase-committer"),
+			author:          user("original-author", ""),
+			committer:       user("rebase-committer", ""),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: &gh.CommitAuthor{Name: new("rebase-name")},
 			wantAuthor:      "rebase-committer",
@@ -150,7 +150,7 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 		},
 		{
 			name:            "committer date is used without committer identity",
-			author:          user("original-author"),
+			author:          user("original-author", ""),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: &gh.CommitAuthor{Date: &gh.Timestamp{Time: committedAt}},
 			wantAuthor:      "original-author",
@@ -159,8 +159,8 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 		},
 		{
 			name:            "same normalized identity preserves known author",
-			author:          user("alice"),
-			committer:       user("alice"),
+			author:          user("alice", ""),
+			committer:       user("alice", ""),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: signature("committer-name", committedAt),
 			wantAuthor:      "alice",
@@ -186,7 +186,11 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 			assert := assert.New(t)
 			assert.Equal(tc.wantAuthor, event.Author)
 			assert.Equal(tc.wantCreatedAt, event.CreatedAt)
-			assert.Equal(tc.wantMetadata, event.MetadataJSON)
+			if tc.wantMetadata == "" {
+				assert.Empty(event.MetadataJSON)
+			} else {
+				assert.JSONEq(tc.wantMetadata, event.MetadataJSON)
+			}
 		})
 	}
 }
@@ -416,21 +420,4 @@ func TestNormalizeCommentAndReviewRetainActorType(t *testing.T) {
 	assert.Contains(t, review.MetadataJSON, `"actor_account_type":"user"`)
 	reviewComment := NormalizeReviewCommentEvent(platform.RepoRef{}, 1, &gh.PullRequestComment{User: &gh.User{Type: new("User")}})
 	assert.JSONEq(t, `{"actor_account_type":"user"}`, reviewComment.MetadataJSON)
-}
-
-func TestNormalizeCommitEventUsesLinkedActorType(t *testing.T) {
-	for _, tc := range []struct {
-		name                    string
-		committer               *gh.User
-		wantActor, wantMetadata string
-	}{
-		{"linked author", nil, "author", `{"commit_author":"author","actor_account_type":"user"}`},
-		{"linked committer", &gh.User{Login: new("committer"), Type: new("Bot")}, "committer", `{"commit_author":"author","actor_account_type":"bot"}`},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			event := NormalizeCommitEvent(platform.RepoRef{}, 1, &gh.RepositoryCommit{Author: &gh.User{Login: new("author"), Type: new("User")}, Committer: tc.committer, Commit: &gh.Commit{Committer: &gh.CommitAuthor{Name: new("signature")}}})
-			assert.Equal(t, tc.wantActor, event.Author)
-			assert.JSONEq(t, tc.wantMetadata, event.MetadataJSON)
-		})
-	}
 }

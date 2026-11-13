@@ -98,7 +98,8 @@ const archiveSnapshotLinks = `link_candidates AS (
 const (
 	archiveSnapshotCommentBody   = `COALESCE(CAST(substr(CAST(COALESCE(e.body,'') AS BLOB),1,33554433) AS TEXT),'')`
 	archiveSnapshotCommentFilter = `((p.author <> '' AND lower(e.author)=lower(p.author)) OR (upper(e.author_association) IN ('MEMBER','OWNER','COLLABORATOR') AND ` + archiveSnapshotHumanActor + `))`
-	archiveSnapshotHumanActor    = `(e.author<>'' AND instr(lower(e.author),'[bot]')=0 AND lower(COALESCE(json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.actor_account_type'),'')) IN ('user','organization'))`
+	archiveSnapshotHumanActor    = `(e.author<>'' AND instr(lower(e.author),'[bot]')=0 AND lower(COALESCE(json_extract(` + archiveSnapshotMetadata + `,'$.actor_account_type'),'')) IN ('user','organization'))`
+	archiveSnapshotMetadata      = `CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END`
 )
 
 // All three snapshot queries share the root-anchored pull and relation set.
@@ -140,17 +141,24 @@ const archiveSnapshotScope = archiveSnapshotPullScope + `, ` + archiveSnapshotLi
  AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=i.repo_id AND a.item_type='issue' AND a.item_number=i.number AND a.lifecycle_state='removed_upstream')
  )`
 
-const archiveSnapshotActivity = `activity_candidates AS (
- SELECT e.id,e.merge_request_id,e.author,e.created_at,p.author AS pull_author,e.author_association,
+const archiveSnapshotActivity = `activity_events AS MATERIALIZED (
+ SELECT e.id,e.repo_id,e.merge_request_id,e.author,e.created_at,p.author AS pull_author,NULLIF(p.author_association,'') AS pull_role,e.author_association,
  CASE e.event_type WHEN 'issue_comment' THEN 'comment' WHEN 'commit' THEN 'push' ELSE e.event_type END AS kind,
- CASE WHEN lower(e.author)=lower(p.author) AND lower(COALESCE(p.author_account_type,''))='bot' THEN 0 WHEN ` + archiveSnapshotHumanActor + ` THEN 1 WHEN instr(lower(e.author),'[bot]')>0 OR lower(COALESCE(json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.actor_account_type'),''))='bot' THEN 0 ELSE -1 END AS human
+ CASE WHEN lower(e.author)=lower(p.author) AND lower(COALESCE(p.author_account_type,''))='bot' THEN 0 WHEN ` + archiveSnapshotHumanActor + ` THEN 1 WHEN instr(lower(e.author),'[bot]')>0 OR lower(COALESCE(json_extract(` + archiveSnapshotMetadata + `,'$.actor_account_type'),''))='bot' THEN 0 ELSE -1 END AS human
  FROM forge_mr_events e JOIN pulls selected ON selected.id=e.merge_request_id JOIN forge_merge_requests p ON p.id=selected.id
  WHERE e.event_type IN ('issue_comment','review','review_comment','assigned','commit','force_push')
  AND (e.event_type<>'commit' OR (p.platform_head_sha<>'' AND (e.summary=p.platform_head_sha OR e.platform_external_id=p.platform_head_sha)))
+ ), actor_roles AS MATERIALIZED (
+ SELECT repo_id,author,(SELECT r.author_association FROM forge_mr_events r WHERE r.repo_id=a.repo_id AND r.author=a.author AND r.author_association<>''
+ ORDER BY r.created_at DESC,r.id DESC LIMIT 1) AS role
+ FROM (SELECT DISTINCT repo_id,author FROM activity_events WHERE human=1 AND COALESCE(author_association,'')='') a
+ ), activity_candidates AS (
+ SELECT e.*,COALESCE(NULLIF(e.author_association,''),r.role,CASE WHEN lower(e.author)=lower(e.pull_author) THEN e.pull_role END) AS role
+ FROM activity_events e LEFT JOIN actor_roles r ON r.repo_id=e.repo_id AND r.author=e.author
  ), classified_activity AS (
  SELECT *, 'author' AS class FROM activity_candidates WHERE human<>0 AND author<>'' AND lower(author)=lower(pull_author)
- UNION ALL SELECT *, 'maintainer' FROM activity_candidates WHERE human=1 AND (upper(author_association) IN ('MEMBER','OWNER') OR (upper(author_association)='COLLABORATOR' AND lower(author)<>lower(pull_author)))
- UNION ALL SELECT *, 'unknown' FROM activity_candidates WHERE human<>0 AND (human=-1 OR author_association IS NULL OR author_association='')
+ UNION ALL SELECT *, 'maintainer' FROM activity_candidates WHERE human=1 AND (upper(role) IN ('MEMBER','OWNER') OR (upper(role)='COLLABORATOR' AND lower(author)<>lower(pull_author)))
+ UNION ALL SELECT *, 'unknown' FROM activity_candidates WHERE human<>0 AND NOT (author<>'' AND lower(author)=lower(pull_author)) AND (human=-1 OR role IS NULL OR role='')
  ), activity AS (
  SELECT * FROM (SELECT *,row_number() OVER (PARTITION BY merge_request_id,class ORDER BY created_at DESC,id DESC) AS rank FROM classified_activity) WHERE rank=1
  )`
@@ -171,7 +179,7 @@ func MeasureArchiveSnapshot(ctx context.Context, tx *sql.Tx, repoIDs []int64, st
  `+archiveSnapshotBody+`,p.platform_head_sha,p.head_branch,p.base_branch,p.head_repo_clone_url,
  p.review_decision,p.ci_status,p.ci_checks_json,p.mergeable_state,p.assignees_json,p.reviewers_json,
  (SELECT json_group_array(l.name) FROM forge_merge_request_labels ml JOIN forge_labels l ON l.id=ml.label_id WHERE ml.merge_request_id=p.id)) AS BLOB)) AS bytes
- FROM forge_merge_requests p JOIN pulls selected ON selected.id=p.id JOIN forge_repos r ON r.id=p.repo_id
+ FROM forge_merge_requests p JOIN pulls selected ON selected.id=p.id
  UNION ALL
  SELECT length(CAST(json_array(i.url,i.title,i.author,i.author_association,i.state,COALESCE(CAST(substr(CAST(COALESCE(i.body,'') AS BLOB),1,8193) AS TEXT),''),i.assignees_json,
  (SELECT json_group_array(l.name) FROM forge_issue_labels il JOIN forge_labels l ON l.id=il.label_id WHERE il.issue_id=i.id)) AS BLOB))
@@ -208,7 +216,7 @@ func LoadArchiveSnapshotItems(ctx context.Context, tx *sql.Tx, repoIDs []int64, 
  p.assignees_json,p.reviewers_json,p.last_activity_at,p.closed_at,p.merged_at,p.ci_observed_at,p.review_decision_observed_at,p.mergeable_state_observed_at,
  EXISTS (SELECT 1 FROM forge_mr_events e WHERE e.merge_request_id=p.id AND p.state IN ('closed','merged') AND e.event_type='issue_comment' AND (p.author = '' OR lower(e.author) != lower(p.author)) AND NOT COALESCE(`+archiveSnapshotCommentFilter+`,0) AND (e.author_association IS NULL OR e.author_association='' OR (upper(e.author_association) IN ('MEMBER','OWNER','COLLABORATOR') AND NOT `+archiveSnapshotHumanActor+` AND instr(lower(e.author),'[bot]')=0 AND lower(COALESCE(json_extract(CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END,'$.actor_account_type'),''))<>'bot'))),
  EXISTS (SELECT 1 FROM reference_candidates c WHERE c.target_id=p.id AND c.source_provider_id IS NULL),selected.body_class
- FROM forge_merge_requests p JOIN pulls selected ON selected.id=p.id JOIN forge_repos r ON r.id=p.repo_id
+ FROM forge_merge_requests p JOIN pulls selected ON selected.id=p.id
  UNION ALL
  SELECT i.id,i.repo_id,'issue',i.number,COALESCE(i.url,''),i.title,i.author,i.state,COALESCE(CAST(substr(CAST(COALESCE(i.body,'') AS BLOB),1,8193) AS TEXT),''),NULL,i.author_association,i.created_at,i.updated_at,i.detail_fetched_at,
  (SELECT json_group_array(l.name) FROM forge_issue_labels il JOIN forge_labels l ON l.id=il.label_id WHERE il.issue_id=i.id),
@@ -331,10 +339,10 @@ type ArchiveSnapshotPullReference struct {
 }
 
 type ArchiveSnapshotActivity struct {
-	ID, MergeRequestID                       int64
-	Kind, Actor, Subject, Class              string
-	ActorAssociation, ActorType, SubjectType *string
-	OccurredAt                               time.Time
+	ID, MergeRequestID int64
+	Kind, Actor, Class string
+	ActorAssociation   *string
+	OccurredAt         time.Time
 }
 
 func LoadArchiveSnapshotActivity(ctx context.Context, tx *sql.Tx, mrIDs []int64) ([]ArchiveSnapshotActivity, error) {

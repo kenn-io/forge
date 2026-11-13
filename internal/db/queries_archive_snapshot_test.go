@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -131,7 +132,7 @@ func TestSnapshotActivitySelection(t *testing.T) {
 	defer func() { _ = tx.Rollback() }()
 	activity, err := LoadArchiveSnapshotActivity(t.Context(), tx, []int64{id, githubMR})
 	require.NoError(t, err)
-	require.Len(t, activity, 4)
+	require.Len(t, activity, 3)
 	assert.Equal(t, "push", activity[0].Kind)
 	assert.Equal(t, "Commit Author", activity[0].Actor)
 	assert.Equal(t, "unknown", activity[0].Class)
@@ -142,8 +143,62 @@ func TestSnapshotActivitySelection(t *testing.T) {
 	assert.Equal(t, "author", activity[2].Class)
 	assert.Equal(t, "push", activity[2].Kind)
 	assert.Equal(t, now.Add(-2*time.Minute), activity[2].OccurredAt)
-	assert.Equal(t, "unknown", activity[3].Class)
-	assert.Equal(t, "author", activity[3].Actor)
+}
+
+func TestSnapshotActivityRoleEvidence(t *testing.T) {
+	type observation struct {
+		role string
+		at   time.Duration
+	}
+	for _, tc := range []struct {
+		name         string
+		observations []observation
+		actionRole   string
+		otherRepo    bool
+		wantClass    string
+	}{
+		{name: "same repository", observations: []observation{{"MEMBER", -time.Minute}}, wantClass: "maintainer"},
+		{name: "other repository", observations: []observation{{"MEMBER", -time.Minute}}, otherRepo: true, wantClass: "unknown"},
+		{name: "explicit role wins", observations: []observation{{"MEMBER", -time.Minute}}, actionRole: "CONTRIBUTOR"},
+		{name: "newer evidence wins", observations: []observation{{"MEMBER", -2 * time.Minute}, {"CONTRIBUTOR", -time.Minute}}},
+		{name: "role recorded after action wins", observations: []observation{{"CONTRIBUTOR", -time.Minute}, {"MEMBER", time.Minute}}, wantClass: "maintainer"},
+		{name: "same time higher id promotes", observations: []observation{{"CONTRIBUTOR", -time.Minute}, {"MEMBER", -time.Minute}}, wantClass: "maintainer"},
+		{name: "same time higher id demotes", observations: []observation{{"MEMBER", -time.Minute}, {"CONTRIBUTOR", -time.Minute}}},
+		{name: "missing evidence", wantClass: "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			database := openTestDB(t)
+			now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+			repo := insertArchiveReportRepo(t, database, RepoIdentity{Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: "one"})
+			evidenceRepo := repo
+			if tc.otherRepo {
+				evidenceRepo = insertArchiveReportRepo(t, database, RepoIdentity{Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: "two"})
+			}
+			id := insertArchiveReportMR(t, database, repo, 1, "mr-1", "Target", "author", now)
+			other := insertArchiveReportMR(t, database, evidenceRepo, 2, "mr-2", "Evidence", "author", now)
+			// Separate upserts give later observations higher IDs.
+			for i, obs := range tc.observations {
+				require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: other, EventType: "issue_comment", Author: "actor", AuthorAssociation: &obs.role, MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: fmt.Sprintf("evidence-%d", i), CreatedAt: now.Add(obs.at)}}))
+			}
+			var role *string
+			if tc.actionRole != "" {
+				role = &tc.actionRole
+			}
+			require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: id, EventType: "assigned", Author: "actor", AuthorAssociation: role, MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "action", CreatedAt: now}}))
+			tx, err := database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
+			require.NoError(t, err)
+			defer func() { _ = tx.Rollback() }()
+			activity, err := LoadArchiveSnapshotActivity(t.Context(), tx, []int64{id})
+			require.NoError(t, err)
+			if tc.wantClass == "" {
+				assert.Empty(t, activity)
+				return
+			}
+			require.Len(t, activity, 1)
+			assert.Equal(t, tc.wantClass, activity[0].Class)
+			assert.Equal(t, "assigned", activity[0].Kind)
+		})
+	}
 }
 
 func TestCommentVisibilityRefreshPreservesActorType(t *testing.T) {

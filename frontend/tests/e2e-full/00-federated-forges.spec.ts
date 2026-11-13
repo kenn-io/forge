@@ -147,3 +147,24 @@ test("keeps local execution visible through a strict hub outage and recovers", a
   await expect(pullRow(page, "Add widget caching layer")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Hub unavailable" })).toHaveCount(0);
 });
+
+test("clears the hub banner once the hub answers after a read timed out", async ({ page, request }) => {
+  const fixture = federation();
+  await page.clock.install();
+  await openAuthenticated(page, fixture.spoke_a_url, fixture.spoke_a_token, "/pulls");
+  await expect(pullRow(page, "Add widget caching layer")).toBeVisible();
+
+  // Reads fail while the spoke's hub event stream stays connected, so the
+  // spoke never reports a hub disconnect. Moving within the open tab, unlike
+  // a reload, keeps the browser's event stream and its resume cursor.
+  const timeOut = await request.post(`${fixture.control_url}/hub/reads-time-out`);
+  expect(timeOut.status(), await timeOut.text()).toBe(200);
+  await page.getByRole("button", { name: "Worklists", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Hub unavailable" })).toBeVisible();
+
+  const online = await request.post(`${fixture.control_url}/hub/online`);
+  expect(online.status(), await online.text()).toBe(200);
+  await page.clock.fastForward("00:31");
+  await expect(page.getByRole("heading", { name: "Hub unavailable" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sync", exact: true })).toBeEnabled();
+});

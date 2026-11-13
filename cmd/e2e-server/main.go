@@ -3456,6 +3456,9 @@ type e2eFederationHandlerBox struct {
 type e2eFederationSwitch struct {
 	current atomic.Pointer[e2eFederationHandlerBox]
 	offline atomic.Bool
+	// readsTimeOut fails provider reads the way a spoke's hub client
+	// timeout does while the spoke's hub event stream and tunnel stay up.
+	readsTimeOut atomic.Bool
 }
 
 func newE2EFederationSwitch() *e2eFederationSwitch {
@@ -3478,6 +3481,17 @@ func (s *e2eFederationSwitch) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			"status": http.StatusServiceUnavailable,
 			"code":   "hubUnavailable",
 			"detail": "the federated e2e hub is offline",
+		})
+		return
+	}
+	if s.readsTimeOut.Load() &&
+		r.URL.Path != "/api/v1/federation/events" && r.URL.Path != "/api/v1/federation/tunnel" {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.MarshalWrite(w, map[string]any{
+			"status": http.StatusServiceUnavailable,
+			"code":   "hubUnavailable",
+			"detail": "the federated e2e hub read timed out",
 		})
 		return
 	}
@@ -3520,7 +3534,11 @@ func runFederatedForgesE2E(
 			writeFederatedE2EControlResponse(w, "offline")
 		case "/hub/online":
 			hubSwitch.offline.Store(false)
+			hubSwitch.readsTimeOut.Store(false)
 			writeFederatedE2EControlResponse(w, "online")
+		case "/hub/reads-time-out":
+			hubSwitch.readsTimeOut.Store(true)
+			writeFederatedE2EControlResponse(w, "reads-time-out")
 		default:
 			http.NotFound(w, r)
 		}

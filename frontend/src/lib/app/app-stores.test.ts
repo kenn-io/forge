@@ -590,6 +590,73 @@ describe("app store composition", () => {
     await vi.waitFor(() => expect(composition.stores.sync.getProviderAvailable()).toBe(false));
   });
 
+  describe("after a read times out while the hub stream stays connected", () => {
+    const hubUnavailable = () =>
+      new Response(JSON.stringify({ title: "Hub unavailable", status: 503, code: "hubUnavailable" }), {
+        status: 503,
+        headers: { "content-type": "application/problem+json" },
+      });
+
+    function stubHub(hubAnswers: () => boolean) {
+      const reads: string[] = [];
+      const api = createMockApiFetch();
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+        reads.push(url.pathname);
+        return hubAnswers() ? api.fetch(input, init) : hubUnavailable();
+      });
+      return reads;
+    }
+
+    async function raiseBannerFromTimedOutRead(composition: ReturnType<typeof createAppStores>) {
+      runtime.runCommand(composition.stores.events.streamEffect, {
+        operation: "test provider events",
+        safeContext: {},
+        onFailure: () => {},
+      });
+      await vi.waitFor(() => expect(eventSources).toHaveLength(1));
+      emit(eventSources[0]!, "data_changed", {});
+      await vi.waitFor(() => expect(composition.stores.sync.getProviderAvailable()).toBe(false));
+    }
+
+    it("refreshes the list and clears the banner once the sync status poll reaches the hub", async () => {
+      let hubAnswers = false;
+      const reads = stubHub(() => hubAnswers);
+      const composition = createAppStores({ runtime, getPage: () => "pulls" });
+      await raiseBannerFromTimedOutRead(composition);
+
+      hubAnswers = true;
+      const readsBeforePoll = reads.length;
+      runtime.runCommand(composition.stores.sync.pollingEffect, {
+        operation: "test sync polling",
+        safeContext: {},
+        onFailure: () => {},
+      });
+
+      await vi.waitFor(() => expect(composition.stores.sync.getProviderAvailable()).toBe(true));
+      expect(reads.slice(readsBeforePoll)).toContain("/api/v1/pulls");
+    });
+
+    it("keeps the banner while the sync status poll still cannot reach the hub", async () => {
+      const reads = stubHub(() => false);
+      const composition = createAppStores({ runtime, getPage: () => "pulls" });
+      await raiseBannerFromTimedOutRead(composition);
+
+      const statusReadsBeforePoll = reads.filter((path) => path === "/api/v1/sync/status").length;
+      runtime.runCommand(composition.stores.sync.pollingEffect, {
+        operation: "test sync polling",
+        safeContext: {},
+        onFailure: () => {},
+      });
+
+      await vi.waitFor(() =>
+        expect(reads.filter((path) => path === "/api/v1/sync/status").length).toBeGreaterThan(statusReadsBeforePoll),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(composition.stores.sync.getProviderAvailable()).toBe(false);
+    });
+  });
+
   it("keeps a data change successful when only the worklist summaries read fails", async () => {
     const failures: string[] = [];
     vi.stubGlobal(

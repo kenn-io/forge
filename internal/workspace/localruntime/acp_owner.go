@@ -55,6 +55,9 @@ type acpSavedSession struct {
 	// LoadSession records that the agent can load this session back, so a
 	// replacement owner keeps the agent's context.
 	LoadSession bool
+	// Base identifies this snapshot; journal records name the snapshot they
+	// extend. See acp_journal.go.
+	Base string `json:",omitempty"`
 }
 
 func (m *Manager) acpSessionPath(key string) string {
@@ -74,72 +77,14 @@ func (m *Manager) ACPReloadable(key string) bool {
 
 // loadACPSaved reads a key's saved ACP session, or nil when none is saved.
 func (m *Manager) loadACPSaved(key string) (*acpSavedSession, error) {
-	data, err := os.ReadFile(m.acpSessionPath(key))
+	saved, err := readACPSaved(m.acpSessionPath(key))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	saved := &acpSavedSession{}
-	if err := json.Unmarshal(data, saved); err != nil {
-		return nil, err
-	}
-	return saved, nil
-}
-
-func (a *ACP) persistLocked() error {
-	if a.recordPath == "" {
-		return nil
-	}
-	a.initializeMessagesLocked()
-	data, err := json.Marshal(acpSavedSession{SessionID: a.sessionID, State: a.state, LoadSession: a.loadSession}, json.Deterministic(true))
-	if err != nil {
-		return err
-	}
-	err = atomicfile.WriteFile(a.recordPath, data, atomicfile.WithPerm(0o600))
-	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
-		return err
-	}
-	a.savedAt, a.savedBytes = time.Now(), len(data)
-	if a.progressSave != nil {
-		// This save already holds the progress the pending one would write.
-		a.progressSave.Stop()
-		a.progressSave = nil
-	}
-	return nil
-}
-
-// acpProgressSaveBytesPerSecond bounds the write rate of streamed-progress
-// saves. Each save rewrites and syncs the whole transcript, so saving on every
-// tool update made a long chat rewrite tens of megabytes every few seconds and
-// starve the disk for everything else on the host.
-const acpProgressSaveBytesPerSecond = 1 << 20
-
-// minProgressSaveInterval is the progress save interval for small chats.
-const minProgressSaveInterval = time.Second
-
-// saveProgressLocked saves streamed agent output no more often than the
-// transcript size allows; a pending save writes the latest state when it
-// fires. Changes that took effect save at once through persistLocked, so a
-// crashed owner loses at most the last interval of streamed output.
-func (a *ACP) saveProgressLocked() {
-	if a.progressSave != nil {
-		return
-	}
-	interval := max(minProgressSaveInterval,
-		time.Duration(a.savedBytes)*time.Second/acpProgressSaveBytesPerSecond)
-	wait := time.Until(a.savedAt.Add(interval))
-	if wait <= 0 {
-		_ = a.persistLocked()
-		return
-	}
-	a.progressSave = time.AfterFunc(wait, func() {
-		a.mu.Lock()
-		defer a.mu.Unlock()
-		a.progressSave = nil
-		_ = a.persistLocked()
-	})
+	return &saved, nil
 }
 
 // saveTakenEffectLocked saves a change that has already taken effect, such
@@ -591,13 +536,7 @@ func (m *Manager) requireACPWorkspace(workspaceID, key string) error {
 }
 
 func (m *Manager) readSavedACP(key string) (acpSavedSession, error) {
-	var saved acpSavedSession
-	data, err := os.ReadFile(m.acpSessionPath(key))
-	if err != nil {
-		return saved, err
-	}
-	err = json.Unmarshal(data, &saved)
-	return saved, err
+	return readACPSaved(m.acpSessionPath(key))
 }
 
 func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (_ *session, err error) {
@@ -819,7 +758,7 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 		if service.park {
 			break
 		}
-		if removeErr := os.Remove(agent.recordPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		if removeErr := removeACPSaved(agent.recordPath); removeErr != nil {
 			err = errors.Join(err, removeErr)
 		}
 	default:
@@ -888,7 +827,7 @@ func (m *Manager) StopDormantACP(ctx context.Context, workspaceID, key string) e
 	if err := m.callACPOwner(ctx, key, "ACP.Stop"); err != nil {
 		return err
 	}
-	if err := os.Remove(m.acpSessionPath(key)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := removeACPSaved(m.acpSessionPath(key)); err != nil {
 		return err
 	}
 	m.mu.Lock()

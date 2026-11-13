@@ -45,10 +45,6 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 		if !a.usageLocked(u.UsageUpdate) {
 			return nil
 		}
-		// The agent's own turn ended; a finished turn saves at once.
-		_ = a.persistLocked()
-		a.changedLocked()
-		return nil
 	case u.Plan != nil:
 		a.state.Plan = acpPlan(u.Plan.Entries)
 	case u.ToolCall != nil:

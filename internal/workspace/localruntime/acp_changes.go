@@ -92,6 +92,22 @@ func (a *ACP) outputOpensTurnLocked() bool {
 	return first >= 0 && *a.state.Messages[first].Turn != (ACPTurn{})
 }
 
+// firstChangeAfterLocked returns the oldest change entry that may be newer
+// than after; callers skip entries at or below it. Walking backwards stops at
+// unchanged history. A coalesced old tool edit is at the tail, so finding it
+// does not scan the rest of the transcript.
+func (a *ACP) firstChangeAfterLocked(after uint64) *list.Element {
+	first := a.messageChanges.Back()
+	for first != nil && a.state.Messages[first.Value.(*acpMessagePosition).index].Version > after {
+		previous := first.Prev()
+		if previous == nil || a.state.Messages[previous.Value.(*acpMessagePosition).index].Version <= after {
+			break
+		}
+		first = previous
+	}
+	return first
+}
+
 // ACPChanges carries latest versions, not positional replacements. More keeps
 // a client reading even when the agent has exited while this batch was pending.
 type ACPChanges struct {
@@ -123,18 +139,8 @@ func (a *ACP) Updates(after uint64) (ACPBatch, error) {
 	state.Messages = nil
 	state.MessageOffset = 0
 	state.MessageCursor = after
-	// Walking backwards stops at unchanged history. A coalesced old tool edit
-	// is at the tail, so finding it does not scan the rest of the transcript.
-	first := a.messageChanges.Back()
-	for first != nil && a.state.Messages[first.Value.(*acpMessagePosition).index].Version > after {
-		previous := first.Prev()
-		if previous == nil || a.state.Messages[previous.Value.(*acpMessagePosition).index].Version <= after {
-			break
-		}
-		first = previous
-	}
 	bytes := 2
-	for entry := first; entry != nil; entry = entry.Next() {
+	for entry := a.firstChangeAfterLocked(after); entry != nil; entry = entry.Next() {
 		index := entry.Value.(*acpMessagePosition).index
 		version := a.state.Messages[index].Version
 		if version <= after {

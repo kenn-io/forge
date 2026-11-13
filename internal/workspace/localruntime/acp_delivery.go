@@ -147,7 +147,7 @@ func (a *ACP) releaseHeldTextLocked() {
 }
 
 func (a *ACP) publishProgressLocked() {
-	a.saveProgressLocked()
+	_ = a.persistLocked()
 	a.changedLocked()
 }
 

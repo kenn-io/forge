@@ -159,17 +159,13 @@ func (a *ACP) tickTurnClock(stop <-chan struct{}) bool {
 	if !exhausted && now.Sub(a.clockSaved) < acpTurnClockSaveInterval {
 		return false
 	}
-	a.clockSaved = now
 	if exhausted {
 		record.Exhausted = true
 		a.stopTurnLocked()
-		if err := a.persistLocked(); err != nil {
-			a.setErrorLocked(err)
-		}
-	} else {
-		// The running count is progress; a long transcript saves it no more
-		// often than other progress.
-		a.saveProgressLocked()
+	}
+	a.clockSaved = now
+	if err := a.persistLocked(); err != nil {
+		a.setErrorLocked(err)
 	}
 	a.changedLocked()
 	return exhausted

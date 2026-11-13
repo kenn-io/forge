@@ -324,8 +324,7 @@ func (a *ACP) endTurnLocked(stopReason string, err error) {
 	a.turnCompleted = true
 	a.clearPendingLocked()
 	a.releaseHeldTextLocked()
-	_ = a.persistLocked()
-	a.changedLocked()
+	a.publishProgressLocked()
 }
 
 // clearPendingLocked answers every open permission and elicitation as

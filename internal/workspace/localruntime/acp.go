@@ -95,12 +95,15 @@ type ACP struct {
 	heldSeq          uint64
 	lastTextDelivery time.Time
 	textDelivery     *time.Timer
-	// savedAt and savedBytes describe the last write of the saved session;
-	// progressSave is the pending streamed-progress save. See
-	// saveProgressLocked.
-	savedAt      time.Time
-	savedBytes   int
-	progressSave *time.Timer
+	// savedBase is the snapshot this owner last wrote; empty until it writes
+	// one. savedCursor and savedMetadata describe what the last save held,
+	// and the byte counts decide when the journal is rewritten as a
+	// snapshot. See acp_journal.go.
+	savedBase     string
+	savedCursor   uint64
+	savedMetadata [32]byte
+	snapshotBytes int
+	journalBytes  int
 	// replaying drops the agent's history replay during session/load: the
 	// saved transcript, not the replay, is the conversation of record.
 	replaying bool
@@ -811,8 +814,7 @@ func (a *ACP) wait() {
 	a.agentTurn = false
 	a.state.QueuePaused = len(a.state.Queue) > 0
 	a.releaseHeldTextLocked()
-	_ = a.persistLocked()
-	a.changedLocked()
+	a.publishProgressLocked()
 	if a.cmd == nil && !a.closing && a.loadSession && a.recordPath != "" {
 		// The shared host went away with its agent. The chat parks so that
 		// reopening it loads the session on a new host, as after an idle park.

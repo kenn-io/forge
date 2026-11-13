@@ -259,7 +259,7 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 		}
 		for i := range result.PullRequests {
 			pull := &result.PullRequests[i]
-			if pull.DetailFetchedAt == nil {
+			if pull.DetailFetchedAt == nil || pull.UpdatedAt.After(*pull.DetailFetchedAt) {
 				pull.Gaps = append(pull.Gaps, "activity_incomplete")
 			}
 			if pull.State != "open" && pull.ClosedBy == nil {

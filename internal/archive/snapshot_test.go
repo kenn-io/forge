@@ -569,6 +569,7 @@ func TestSnapshotRecentlyClosedPullRequests(t *testing.T) {
 	require.Contains(result.PullRequests[1].Gaps, "comment_author_association_unknown")
 	require.Equal(db.MergeRequestStateClosed, db.MergeRequestState(result.PullRequests[0].State))
 	require.Equal(&closed, result.PullRequests[0].ClosedAt)
+	require.Contains(result.PullRequests[0].Gaps, "activity_incomplete")
 	require.Len(result.PullRequests[0].Comments, 3)
 	require.Equal(strings.Repeat("界", 1000), result.PullRequests[0].Comments[0].Body)
 	require.False(result.PullRequests[0].Comments[0].BodyTruncated)
@@ -631,8 +632,22 @@ func TestSnapshotContributorBodyAndLatestActions(t *testing.T) {
 	require.Len(t, expanded.PullRequests, 1)
 	assert.Equal(t, body, expanded.PullRequests[0].Body)
 	assert.False(t, expanded.PullRequests[0].BodyTruncated)
+	assert.NotContains(t, expanded.PullRequests[0].Gaps, "activity_incomplete")
 	assert.Equal(t, &snapshot.SnapshotAction{Kind: "push", Actor: "contributor", OccurredAt: now.Add(-2 * time.Minute)}, expanded.PullRequests[0].LastAuthorAction)
 	assert.Equal(t, &snapshot.SnapshotAction{Kind: "review", Actor: "maintainer", OccurredAt: now.Add(-4 * time.Minute)}, expanded.PullRequests[0].LastMaintainerAction)
+}
+
+func TestSnapshotStaleDetailMarksActivityIncomplete(t *testing.T) {
+	database, service, repoID, now := newPullScopeSnapshotFixture(t)
+	fetched := now.Add(-time.Hour)
+	id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", State: db.MergeRequestStateOpen, CreatedAt: fetched, UpdatedAt: now, DetailFetchedAt: &fetched})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: "author", DedupeKey: "comment", CreatedAt: fetched}}))
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: fetched, End: now, PullRequestScope: "recently_closed"})
+	require.NoError(t, err)
+	require.Len(t, result.PullRequests, 1)
+	assert.Equal(t, &snapshot.SnapshotAction{Kind: "comment", Actor: "author", OccurredAt: fetched}, result.PullRequests[0].LastAuthorAction)
+	assert.Contains(t, result.PullRequests[0].Gaps, "activity_incomplete")
 }
 
 func TestSnapshotBotWithoutAssociationAndUnknownAccountType(t *testing.T) {

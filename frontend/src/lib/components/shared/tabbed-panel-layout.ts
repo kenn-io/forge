@@ -97,6 +97,45 @@ export function firstTabbedPanelLeaf(node: TabbedPanelNode | null): TabbedPanelL
   return firstTabbedPanelLeaf(node.first) ?? firstTabbedPanelLeaf(node.second);
 }
 
+/**
+ * The leaf that shares the given edge of a leaf, or null when that edge is the
+ * tree's own border. Where the neighboring side is itself split, the leaf
+ * touching the shared edge wins; across that edge the first (top or left) one does.
+ */
+export function adjacentTabbedPanelLeaf(
+  node: TabbedPanelNode | null,
+  leafID: string,
+  edge: TabbedPanelSplitEdge,
+): TabbedPanelLeaf | null {
+  const { direction, placement } = tabbedPanelSplitPlacementForEdge(edge);
+  const path = pathToTabbedPanelLeaf(node, leafID);
+  if (path === null) return null;
+  // Walk up from the leaf: the closest split along the edge's axis with the leaf
+  // on the near side is the one whose other half borders it.
+  for (let index = path.length - 1; index >= 0; index--) {
+    const { split, inFirst } = path[index]!;
+    if (split.direction !== direction || inFirst !== (placement === "after")) continue;
+    let current: TabbedPanelNode = inFirst ? split.second : split.first;
+    while (current.type === "split") {
+      current = current.direction === direction && placement === "before" ? current.second : current.first;
+    }
+    return current;
+  }
+  return null;
+}
+
+function pathToTabbedPanelLeaf(
+  node: TabbedPanelNode | null,
+  leafID: string,
+): { split: TabbedPanelSplit; inFirst: boolean }[] | null {
+  if (!node) return null;
+  if (node.type === "leaf") return node.id === leafID ? [] : null;
+  const first = pathToTabbedPanelLeaf(node.first, leafID);
+  if (first !== null) return [{ split: node, inFirst: true }, ...first];
+  const second = pathToTabbedPanelLeaf(node.second, leafID);
+  return second === null ? null : [{ split: node, inFirst: false }, ...second];
+}
+
 export function findTabbedPanelLeafByTab(node: TabbedPanelNode | null, tabKey: string): TabbedPanelLeaf | null {
   if (!node) return null;
   if (node.type === "leaf") {

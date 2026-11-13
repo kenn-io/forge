@@ -1,5 +1,6 @@
 import {
   activateTabbedPanelTab,
+  adjacentTabbedPanelLeaf,
   appendTabbedPanelTabToLeaf,
   insertTabbedPanelTab,
   collectTabbedPanelLeafIDs,
@@ -480,8 +481,16 @@ export function detailLaunchInsertTarget(
 ): TabbedPanelInsertTarget | null {
   const render = layout.paneRender();
   if (render === null || render.flattened) return null;
-  if (!render.onScreenTabs.some((tab) => layout.leafIDForTab(tab) === leaf.id)) return null;
+  const onScreen = (leafID: string) => render.onScreenTabs.some((tab) => layout.leafIDForTab(tab) === leafID);
+  if (!onScreen(leaf.id)) return null;
   if (leaf.edge === undefined) return { kind: "tab", leafID: leaf.id };
+  // A pane already on that side, such as Files changed beside Conversation, takes
+  // the session as a tab: splitting would squeeze a third column between them.
+  // Not the workspace pane, which the session tab would cover.
+  const neighbor = adjacentTabbedPanelLeaf(layout.renderTree(render.editableTabs), leaf.id, leaf.edge);
+  if (neighbor !== null && !neighbor.tabs.includes("workspace") && onScreen(neighbor.id)) {
+    return { kind: "tab", leafID: neighbor.id };
+  }
   return { kind: "split", leafID: leaf.id, ...tabbedPanelSplitPlacementForEdge(leaf.edge) };
 }
 

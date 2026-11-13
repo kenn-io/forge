@@ -553,8 +553,10 @@ func TestSpawnWorkspaceWithAgentRejectsIncompleteKataSource(t *testing.T) {
 	for name, source := range map[string]*workspaceSourceInput{
 		"missing kata":  {Type: "kata"},
 		"missing issue": {Type: "kata", Kata: &WorkspaceKataTarget{DaemonID: "local", ProjectUID: "p"}},
-		"mixed": {Type: "kata", Kata: &WorkspaceKataTarget{DaemonID: "local", ProjectUID: "p", IssueUID: "i"},
-			AdHoc: &adHocWorkspaceSource{}},
+		"mixed": {
+			Type: "kata", Kata: &WorkspaceKataTarget{DaemonID: "local", ProjectUID: "p", IssueUID: "i"},
+			AdHoc: &adHocWorkspaceSource{},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{

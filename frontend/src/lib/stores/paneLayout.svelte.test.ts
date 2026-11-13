@@ -467,6 +467,66 @@ describe("detail session placement", () => {
     });
   });
 
+  it("opens as the active tab of a pane already on the chosen side instead of adding a third column", () => {
+    const layout = getPaneLayoutStore("prs");
+    const detailLeaf = layout.leafIDForTab("conversation")!;
+    layout.splitTab("files", detailLeaf, "horizontal", "after");
+    layout.notePaneRender({ ...rendered, onScreenTabs: ["conversation", "files", "workspace"] });
+    const filesLeaf = layout.leafIDForTab("files")!;
+
+    const leaf = detailSessionLaunchLeaf("prs", "right")!;
+    const target = detailLaunchInsertTarget(layout, leaf)!;
+    expect(layout.promoteTab(AGENT_PANE, target)).toBe(true);
+
+    expect(layout.leafIDForTab(AGENT_PANE)).toBe(filesLeaf);
+    expect(layout.isTabActive(AGENT_PANE)).toBe(true);
+    // Nothing on the left, so that side still splits.
+    expect(detailLaunchInsertTarget(layout, { ...leaf, edge: "left" })).toEqual({
+      kind: "split",
+      leafID: detailLeaf,
+      direction: "horizontal",
+      placement: "before",
+    });
+  });
+
+  it("splits rather than covering the workspace pane on the chosen side", () => {
+    const layout = getPaneLayoutStore("prs");
+    const detailLeaf = layout.leafIDForTab("conversation")!;
+    layout.splitTab("workspace", detailLeaf, "horizontal", "after");
+    layout.notePaneRender(rendered);
+
+    expect(detailLaunchInsertTarget(layout, { surface: "detail", id: detailLeaf, edge: "right" })).toEqual({
+      kind: "split",
+      leafID: detailLeaf,
+      direction: "horizontal",
+      placement: "after",
+    });
+  });
+
+  it("splits when the pane actually beside Conversation is the workspace, even with another pane above it", () => {
+    const layout = getPaneLayoutStore("prs");
+    const detailLeaf = layout.leafIDForTab("conversation")!;
+    // | kata         | files     |
+    // | conversation | workspace |
+    layout.splitTab("workspace", detailLeaf, "horizontal", "after");
+    layout.splitTab("files", layout.leafIDForTab("workspace")!, "vertical", "before");
+    layout.splitTab("kata", detailLeaf, "vertical", "before");
+    layout.notePaneRender({ ...rendered, onScreenTabs: ["kata", "conversation", "files", "workspace"] });
+
+    // The top-left pane does border Files changed.
+    const kataLeaf = layout.leafIDForTab("kata")!;
+    expect(detailLaunchInsertTarget(layout, { surface: "detail", id: kataLeaf, edge: "right" })).toEqual({
+      kind: "tab",
+      leafID: layout.leafIDForTab("files"),
+    });
+    expect(detailLaunchInsertTarget(layout, { surface: "detail", id: detailLeaf, edge: "right" })).toEqual({
+      kind: "split",
+      leafID: detailLeaf,
+      direction: "horizontal",
+      placement: "after",
+    });
+  });
+
   it("anchors on the Conversation pane that holds the header, not on the pane focused last", () => {
     const layout = getPaneLayoutStore("prs");
     layout.splitTab("files", layout.leafIDForTab("conversation")!, "horizontal", "before");

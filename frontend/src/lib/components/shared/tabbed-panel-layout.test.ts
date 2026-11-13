@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   FLATTENED_TABBED_PANEL_LEAF_ID,
+  adjacentTabbedPanelLeaf,
   collectTabbedPanelLeafIDs,
   createTabbedPanelLeaf,
   defaultTabbedPanelLayout,
@@ -14,6 +15,7 @@ import {
   findTabbedPanelLeafByTab,
   splitTabbedPanelTabIntoLeaf,
   type TabbedPanelLayoutState,
+  type TabbedPanelNode,
 } from "./tabbed-panel-layout";
 import { isSessionPaneKey, sessionPaneKey } from "../../stores/session-pane-key.js";
 
@@ -85,6 +87,81 @@ describe("dynamic panes kept but never reinserted", () => {
     const parsed = parseTabbedPanelLayout(serializeTabbedPanelLayout(state), TABS, undefined, isSessionPaneKey);
     expect(collectTabbedPanelTabKeys(parsed.tree)).toContain(AGENT_PANE);
     expect(parsed.lastFocusedTabKey).toBe(AGENT_PANE);
+  });
+});
+
+describe("adjacent leaf", () => {
+  const leaf = (id: string): TabbedPanelNode => ({ type: "leaf", id, tabs: [id], activeTabKey: id });
+  const split = (
+    id: string,
+    direction: "horizontal" | "vertical",
+    first: TabbedPanelNode,
+    second: TabbedPanelNode,
+  ): TabbedPanelNode => ({ type: "split", id, direction, ratio: 0.5, first, second });
+
+  // | a | b | c |   with c split into c1 over c2, and the whole row over w.
+  const tree = split(
+    "root",
+    "vertical",
+    split(
+      "row",
+      "horizontal",
+      leaf("a"),
+      split("bc", "horizontal", leaf("b"), split("c", "vertical", leaf("c1"), leaf("c2"))),
+    ),
+    leaf("w"),
+  );
+
+  it("finds the leaf touching the shared edge", () => {
+    expect(adjacentTabbedPanelLeaf(tree, "a", "right")?.id).toBe("b");
+    expect(adjacentTabbedPanelLeaf(tree, "b", "right")?.id).toBe("c1");
+    expect(adjacentTabbedPanelLeaf(tree, "c2", "left")?.id).toBe("b");
+    expect(adjacentTabbedPanelLeaf(tree, "c1", "bottom")?.id).toBe("c2");
+    expect(adjacentTabbedPanelLeaf(tree, "w", "top")?.id).toBe("a");
+  });
+
+  it("picks only a leaf that overlaps the leaf's stretch of the shared edge", () => {
+    const at = (ratio: number, first: TabbedPanelNode, second: TabbedPanelNode, direction: "horizontal" | "vertical") =>
+      ({ ...split(`${first.id}-${second.id}`, direction, first, second), ratio }) as TabbedPanelNode;
+    // | k  | f |      Both columns stacked independently.
+    // | c  | w |
+    const columns = split(
+      "cols",
+      "horizontal",
+      split("left", "vertical", leaf("k"), leaf("c")),
+      split("right", "vertical", leaf("f"), leaf("w")),
+    );
+    expect(adjacentTabbedPanelLeaf(columns, "c", "right")?.id).toBe("w");
+    expect(adjacentTabbedPanelLeaf(columns, "k", "right")?.id).toBe("f");
+    expect(adjacentTabbedPanelLeaf(columns, "w", "left")?.id).toBe("c");
+
+    // Left column cut at 0.2, right at 0.8: c spans 0.2-1, so f (0-0.8) overlaps it first.
+    const uneven = at(
+      0.5,
+      at(0.2, leaf("k"), leaf("c"), "vertical"),
+      at(0.8, leaf("f"), leaf("w"), "vertical"),
+      "horizontal",
+    );
+    expect(adjacentTabbedPanelLeaf(uneven, "c", "right")?.id).toBe("f");
+    // k spans 0-0.2, which only f overlaps.
+    expect(adjacentTabbedPanelLeaf(uneven, "k", "right")?.id).toBe("f");
+
+    // The same layout turned sideways, for the top and bottom edges.
+    const rows = split(
+      "rows",
+      "vertical",
+      split("top", "horizontal", leaf("k"), leaf("c")),
+      split("bottom", "horizontal", leaf("f"), leaf("w")),
+    );
+    expect(adjacentTabbedPanelLeaf(rows, "w", "top")?.id).toBe("c");
+    expect(adjacentTabbedPanelLeaf(rows, "c", "bottom")?.id).toBe("w");
+  });
+
+  it("returns null at the tree border or for an unknown leaf", () => {
+    expect(adjacentTabbedPanelLeaf(tree, "a", "left")).toBeNull();
+    expect(adjacentTabbedPanelLeaf(tree, "c1", "right")).toBeNull();
+    expect(adjacentTabbedPanelLeaf(tree, "w", "bottom")).toBeNull();
+    expect(adjacentTabbedPanelLeaf(tree, "missing", "right")).toBeNull();
   });
 });
 

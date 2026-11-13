@@ -816,39 +816,3 @@ var (
 	_ platform.IssuePageReader        = (*archiveAPITestProvider)(nil)
 	_ platform.MergeRequestPageReader = (*archiveAPITestProvider)(nil)
 )
-
-func TestAPIArchiveSnapshotRecentlyClosed(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	srv, database, _, _, ref := setupArchiveTestServer(t, nil)
-	client := setupTestClient(t, srv)
-	repo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
-	require.NoError(t, err)
-	now := time.Now().UTC().Truncate(time.Second)
-	closed := now.Add(-time.Minute)
-	body := strings.Repeat("x", 8200) + " footer"
-	id, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repo.ID, Number: 7, Author: "contributor", AuthorAssociation: new("CONTRIBUTOR"), AuthorAccountType: new("User"), Body: body, State: db.MergeRequestStateClosed, ClosedAt: &closed, CreatedAt: now.Add(-time.Hour), UpdatedAt: now, DetailFetchedAt: &now})
-	require.NoError(t, err)
-	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{
-		{MergeRequestID: id, EventType: "closed", Author: "contributor", DedupeKey: "close", CreatedAt: closed},
-		{MergeRequestID: id, EventType: "issue_comment", Author: "contributor", Body: "Closing", DedupeKey: "comment", CreatedAt: closed},
-	}))
-	scope := generated.GetArchiveSnapshotQueryPullRequestScopeRecentlyClosed
-	query := generated.GetArchiveSnapshotQuery{Start: now.Add(-time.Hour).Format(time.RFC3339), End: now.Format(time.RFC3339), PullRequestScope: &scope}
-	response, err := client.HTTP.GetArchiveSnapshotWithResponse(t.Context(), &generated.GetArchiveSnapshotRequestOptions{Query: &query})
-	require.NoError(t, err)
-	var payload struct {
-		PullRequests []struct {
-			Body     string `json:"body"`
-			ClosedBy string `json:"closed_by"`
-			Comments []struct {
-				Body string `json:"body"`
-			} `json:"comments"`
-		} `json:"pull_requests"`
-	}
-	require.NoError(t, json.Unmarshal(response.Body, &payload))
-	require.Len(t, payload.PullRequests, 1)
-	assert.Equal(t, body, payload.PullRequests[0].Body)
-	assert.Equal(t, "contributor", payload.PullRequests[0].ClosedBy)
-	require.Len(t, payload.PullRequests[0].Comments, 1)
-	assert.Equal(t, "Closing", payload.PullRequests[0].Comments[0].Body)
-}

@@ -74,7 +74,8 @@ func TestSnapshotMeasurementCountsFullContributorBodies(t *testing.T) {
 	database := openTestDB(t)
 	now := time.Now().UTC()
 	repoID := insertArchiveReportRepo(t, database, RepoIdentity{Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: "widget"})
-	id, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", AuthorAssociation: new("CONTRIBUTOR"), AuthorAccountType: new("User"), State: MergeRequestStateOpen, Body: strings.Repeat("x", 12000), CreatedAt: now, UpdatedAt: now})
+	closed := now.Add(-time.Minute)
+	id, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", AuthorAssociation: new("CONTRIBUTOR"), AuthorAccountType: new("user"), State: MergeRequestStateClosed, ClosedAt: &closed, Body: strings.Repeat("x", 12000), CreatedAt: now.Add(-time.Hour), UpdatedAt: now})
 	require.NoError(t, err)
 	measure := func(recent bool) ArchiveReportMeasurement {
 		tx, err := database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
@@ -86,10 +87,18 @@ func TestSnapshotMeasurementCountsFullContributorBodies(t *testing.T) {
 	}
 	before := measure(true)
 	assert.Greater(t, before.TextBytes, measure(false).TextBytes+int64(3700))
-	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: "author", Body: "comment", DedupeKey: "comment", CreatedAt: now}}))
+	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{
+		{MergeRequestID: id, EventType: "assigned", Author: "author", DedupeKey: "assigned-1", CreatedAt: now},
+		{MergeRequestID: id, EventType: "assigned", Author: "author", DedupeKey: "assigned-2", CreatedAt: now},
+		{MergeRequestID: id, EventType: "assigned", Author: "author", DedupeKey: "assigned-3", CreatedAt: now},
+	}))
+	actions := measure(true)
+	assert.Equal(t, before.Records+1, actions.Records)
+	comment := strings.Repeat("x", 12000)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: id, EventType: "issue_comment", Author: "author", Body: comment, DedupeKey: "comment", CreatedAt: now}}))
 	after := measure(true)
-	assert.Greater(t, after.Records, before.Records)
-	assert.Greater(t, after.TextBytes, before.TextBytes)
+	assert.Equal(t, actions.Records+1, after.Records)
+	assert.GreaterOrEqual(t, after.TextBytes-actions.TextBytes, int64(len(comment)))
 }
 
 func TestCommentVisibilityRefreshPreservesActorType(t *testing.T) {

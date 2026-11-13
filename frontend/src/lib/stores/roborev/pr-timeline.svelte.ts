@@ -5,7 +5,6 @@ import { executeGeneratedApiRequest } from "../../api/generated-api.js";
 import { configuredRoborevBasePath } from "../../api/runtime-base.js";
 import type { AppExecution, AppRuntime } from "../../app/runtime.js";
 import type { StoreInstances } from "../../types.js";
-import type { ProviderTimelineEntry } from "../../components/roborev/pr-review-timeline.js";
 import { createDaemonStore } from "./daemon.svelte.js";
 import { createJobsStore } from "./jobs.svelte.js";
 import { createLogStore } from "./log.svelte.js";
@@ -40,7 +39,8 @@ export function createPRRoborevTimeline(opts: PRRoborevTimelineOptions) {
   let loading = $state(false);
   let loadError = $state<string | null>(null);
   let unavailable = $state<LocalReviewsUnavailable | null>(null);
-  let openProviderEntry = $state.raw<ProviderTimelineEntry | null>(null);
+  // The open review is held by key so the drawer shows the comment's latest version.
+  let openProviderKey = $state<string | null>(null);
   let execution: AppExecution<void, never> | null = null;
   let loadedWorkspaceId: string | null | undefined;
 
@@ -127,17 +127,17 @@ export function createPRRoborevTimeline(opts: PRRoborevTimelineOptions) {
   }
 
   function openLocal(jobId: number): void {
-    openProviderEntry = null;
+    openProviderKey = null;
     jobs.selectJob(jobId);
   }
 
-  function openProvider(entry: ProviderTimelineEntry): void {
+  function openProvider(key: string): void {
     jobs.deselectJob();
-    openProviderEntry = entry;
+    openProviderKey = key;
   }
 
   function closeProvider(): void {
-    openProviderEntry = null;
+    openProviderKey = null;
   }
 
   /** Forgets everything read for the previous pull request. */
@@ -149,7 +149,7 @@ export function createPRRoborevTimeline(opts: PRRoborevTimelineOptions) {
     loading = false;
     loadError = null;
     unavailable = null;
-    openProviderEntry = null;
+    openProviderKey = null;
     jobs.deselectJob();
   }
 
@@ -174,7 +174,7 @@ export function createPRRoborevTimeline(opts: PRRoborevTimelineOptions) {
     getUnavailable: () => unavailable,
     getDaemonEndpoint: () => daemon.getEndpoint(),
     getSelectedJobId: () => jobs.getSelectedJobId(),
-    getOpenProviderEntry: () => openProviderEntry,
+    getOpenProviderKey: () => openProviderKey,
     load,
     reload,
     openLocal,

@@ -2896,6 +2896,7 @@
             headSha={detail.platform_head_sha}
             workspaceId={detail.workspace?.status === "ready" ? detail.workspace.id : null}
             workspacePending={detail.workspace != null && detail.workspace.status !== "ready"}
+            onRefresh={refreshDetail}
           />
         {/if}
       </div>
@@ -3962,7 +3963,7 @@
           </div>
         </div>
         </ScrollBox>
-        <PRReviewTimelineDrawer timeline={roborevTimeline} />
+        <PRReviewTimelineDrawer timeline={roborevTimeline} events={detail.events} headSha={detail.platform_head_sha} />
       {/if}
     </div>
   {/if}

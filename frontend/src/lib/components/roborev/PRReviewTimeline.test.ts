@@ -108,9 +108,14 @@ function stubServer(options: { daemonAvailable: boolean }): URL[] {
   return calls;
 }
 
-function renderTimeline(workspaceId: string | null, workspacePending = false) {
+function renderTimeline(
+  workspaceId: string | null,
+  workspacePending = false,
+  events: PREvent[] = [providerComment],
+  onRefresh = () => {},
+) {
   return render(PRReviewTimelineTestHarness, {
-    props: { runtime, timelineProps: { events: [providerComment], headSha: HEAD, workspaceId, workspacePending } },
+    props: { runtime, onRefresh, timelineProps: { events, headSha: HEAD, workspaceId, workspacePending } },
   });
 }
 
@@ -211,5 +216,59 @@ describe("PRReviewTimeline", () => {
 
     expect(screen.getAllByRole("listitem")).toHaveLength(1);
     expect(calls.filter((url) => url.pathname.includes("roborev"))).toEqual([]);
+  });
+
+  it("refreshes the pull request comments as well as local reviews", async () => {
+    const calls = stubServer({ daemonAvailable: true });
+    const onRefresh = vi.fn();
+    renderTimeline("ws-1", false, [providerComment], onRefresh);
+    await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(2));
+    const listings = () => calls.filter((url) => url.pathname === "/api/roborev/api/jobs").length;
+    const before = listings();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh Roborev reviews" }));
+
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(listings()).toBe(before + 1));
+  });
+
+  it("shows the latest text of an open roborev-ci review after the comment is edited", async () => {
+    stubServer({ daemonAvailable: true });
+    const view = renderTimeline(null);
+    await fireEvent.click(within(screen.getByRole("listitem")).getByRole("button"));
+    await waitFor(() => expect(screen.getByText("Leaks the connection", { exact: false })).toBeTruthy());
+
+    const edited = {
+      ...providerComment,
+      Body: providerComment.Body.replace("Leaks the connection", "Closes the pool twice"),
+    };
+    await view.rerender({
+      runtime,
+      timelineProps: { events: [edited], headSha: HEAD, workspaceId: null, workspacePending: false },
+    });
+
+    await waitFor(() => expect(screen.getByText("Closes the pool twice", { exact: false })).toBeTruthy());
+    expect(screen.queryByText("Leaks the connection", { exact: false })).toBeNull();
+  });
+
+  it("shows a verdict badge in the drawer only when the review body does not state it", async () => {
+    stubServer({ daemonAvailable: true });
+    const truncated: PREvent = {
+      ...providerComment,
+      ID: 32,
+      DedupeKey: "comment-32",
+      CreatedAt: "2026-11-10T20:00:00Z",
+      Body: `${providerComment.Body}\n2 more findings in the full review\n`,
+    };
+    renderTimeline(null, false, [providerComment, truncated]);
+    const drawer = () => screen.getByRole("region", { name: "Review details" });
+    const [stated, partial] = screen.getAllByRole("listitem");
+
+    await fireEvent.click(within(stated as HTMLElement).getByRole("button"));
+    await waitFor(() => expect(within(drawer()).getByText("Leaks the connection", { exact: false })).toBeTruthy());
+    expect(within(drawer()).queryByText("1 finding")).toBeNull();
+
+    await fireEvent.click(within(partial as HTMLElement).getByRole("button"));
+    await waitFor(() => expect(within(drawer()).getByText("3 findings")).toBeTruthy());
   });
 });

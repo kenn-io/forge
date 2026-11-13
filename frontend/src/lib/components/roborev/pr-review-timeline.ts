@@ -35,6 +35,8 @@ export interface ProviderTimelineEntry extends TimelineEntryBase {
   readonly author: string;
   readonly body: string;
   readonly url: string;
+  /** The body states the same verdict and finding count the entry carries. */
+  readonly verdictStated: boolean;
 }
 
 export type RoborevTimelineEntry = LocalTimelineEntry | ProviderTimelineEntry;
@@ -56,20 +58,29 @@ function reviewState(commit: string | null, headSha: string, closed: boolean): R
   return sameCommit(commit, headSha) ? "current" : "superseded";
 }
 
-function providerVerdict(title: string, body: string): Pick<TimelineEntryBase, "verdict" | "findings"> {
+function providerVerdict(
+  title: string,
+  body: string,
+): Pick<ProviderTimelineEntry, "verdict" | "findings" | "verdictStated"> {
   const findings = FINDINGS_VERDICT.exec(body);
   if (findings) {
     const omitted = OMITTED_FINDINGS.exec(body);
-    return { verdict: "findings", findings: Number(findings[1]) + (omitted ? Number(omitted[1]) : 0) };
+    // The verdict line counts only the findings shown, so omitted ones make the totals differ.
+    return {
+      verdict: "findings",
+      findings: Number(findings[1]) + (omitted ? Number(omitted[1]) : 0),
+      verdictStated: omitted === null,
+    };
   }
-  if (CLEAN_VERDICT.test(body) || title === "Pass" || title.startsWith("Review Passed")) {
-    return { verdict: "clean", findings: 0 };
+  if (CLEAN_VERDICT.test(body)) return { verdict: "clean", findings: 0, verdictStated: true };
+  if (title === "Pass" || title.startsWith("Review Passed")) {
+    return { verdict: "clean", findings: 0, verdictStated: false };
   }
-  if (title === "Fail") return { verdict: "findings", findings: null };
+  if (title === "Fail") return { verdict: "findings", findings: null, verdictStated: false };
   if (title.startsWith("Review Failed") || title.startsWith("Review Skipped")) {
-    return { verdict: "failed", findings: null };
+    return { verdict: "failed", findings: null, verdictStated: false };
   }
-  return { verdict: "unknown", findings: null };
+  return { verdict: "unknown", findings: null, verdictStated: false };
 }
 
 // Bitbucket names its pull request comments "comment"; every other provider uses "issue_comment".
@@ -77,6 +88,10 @@ const COMMENT_EVENT_TYPES: ReadonlySet<string> = new Set(["issue_comment", "comm
 
 function isRoborevComment(event: PREvent): boolean {
   return COMMENT_EVENT_TYPES.has(event.EventType) && event.Body.includes(ROBOREV_PR_COMMENT_MARKER);
+}
+
+function providerKey(event: PREvent): string {
+  return `provider:${event.ID}`;
 }
 
 /** Reads a review roborev posted as a pull request comment, or null for any other event. */
@@ -87,7 +102,7 @@ export function providerReviewEntry(event: PREvent, headSha: string): ProviderTi
   const commit = heading[2] ?? null;
   return {
     source: "provider",
-    key: `provider:${event.ID}`,
+    key: providerKey(event),
     at: event.CreatedAt,
     commit,
     ...providerVerdict(heading[1] ?? "", event.Body),
@@ -112,6 +127,18 @@ function jobVerdict(job: ReviewJob): Pick<TimelineEntryBase, "verdict" | "findin
   if (job.verdict === "F" || job.verdict === "fail") return { verdict: "findings", findings };
   if (job.verdict === "P" || job.verdict === "pass") return { verdict: "clean", findings };
   return { verdict: "unknown", findings };
+}
+
+/** The current version of the provider review with this timeline key, or null once it is gone. */
+export function findProviderEntry(
+  events: ReadonlyArray<PREvent>,
+  headSha: string,
+  key: string,
+): ProviderTimelineEntry | null {
+  for (const event of events) {
+    if (providerKey(event) === key) return providerReviewEntry(event, headSha);
+  }
+  return null;
 }
 
 /** Maps a local roborev job to a timeline entry, or null when the job is not a review. */

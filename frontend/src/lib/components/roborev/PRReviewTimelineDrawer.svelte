@@ -7,16 +7,22 @@
   import SidebarStoreScope from "../workspace/SidebarStoreScope.svelte";
   import ReviewContent from "./ReviewContent.svelte";
   import ReviewDrawer from "./ReviewDrawer.svelte";
-  import { roborevVerdictLabel, roborevVerdictTone } from "./pr-review-timeline.js";
+  import type { PREvent } from "../../api/types.js";
+  import { findProviderEntry, roborevVerdictLabel, roborevVerdictTone } from "./pr-review-timeline.js";
 
   interface Props {
     timeline: PRRoborevTimeline;
+    events: ReadonlyArray<PREvent>;
+    headSha: string;
   }
 
-  let { timeline }: Props = $props();
+  let { timeline, events, headSha }: Props = $props();
   const runtime = getAppRuntime();
   let drawerTab = $state<"review" | "log" | "prompt">("review");
-  const providerEntry = $derived(timeline.getOpenProviderEntry());
+  const providerEntry = $derived.by(() => {
+    const key = timeline.getOpenProviderKey();
+    return key === null ? null : findProviderEntry(events, headSha, key);
+  });
 
   $effect(() => {
     const id = timeline.getSelectedJobId();
@@ -48,9 +54,8 @@
     {#snippet header()}
       {#if providerEntry}
         <div class="provider-review-header">
-          <Chip size="sm" tone={roborevVerdictTone(providerEntry)}>{roborevVerdictLabel(providerEntry)}</Chip>
-          {#if providerEntry.commit}
-            <code class="provider-review-commit">{providerEntry.commit.slice(0, 7)}</code>
+          {#if !providerEntry.verdictStated}
+            <Chip size="sm" tone={roborevVerdictTone(providerEntry)}>{roborevVerdictLabel(providerEntry)}</Chip>
           {/if}
           <span class="provider-review-author">{providerEntry.author}</span>
           {#if providerEntry.url}
@@ -75,12 +80,6 @@
     gap: var(--space-3);
     min-width: 0;
     font-size: var(--font-size-sm);
-  }
-
-  .provider-review-commit {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
   }
 
   .provider-review-author {

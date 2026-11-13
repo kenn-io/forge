@@ -21,9 +21,11 @@
     workspaceId: string | null;
     /** The pull request has a workspace on this node that is not ready yet. */
     workspacePending: boolean;
+    /** Refreshes the pull request detail, which carries the roborev-ci comments. */
+    onRefresh: () => void;
   }
 
-  let { timeline, events, headSha, workspaceId, workspacePending }: Props = $props();
+  let { timeline, events, headSha, workspaceId, workspacePending, onRefresh }: Props = $props();
 
   // Showing the panel is the read: there is no polling while it stays open.
   $effect(() => {
@@ -50,12 +52,12 @@
   function isOpen(entry: RoborevTimelineEntry): boolean {
     return entry.source === "local"
       ? timeline.getSelectedJobId() === entry.jobId
-      : timeline.getOpenProviderEntry()?.key === entry.key;
+      : timeline.getOpenProviderKey() === entry.key;
   }
 
   function open(entry: RoborevTimelineEntry): void {
     if (entry.source === "local") timeline.openLocal(entry.jobId);
-    else timeline.openProvider(entry);
+    else timeline.openProvider(entry.key);
   }
 </script>
 
@@ -69,7 +71,10 @@
       ariaLabel="Refresh Roborev reviews"
       title="Refresh Roborev reviews"
       disabled={loading}
-      onclick={() => timeline.reload()}
+      onclick={() => {
+        onRefresh();
+        timeline.reload();
+      }}
     >
       {#if loading}
         <Spinner size={14} label="Loading Roborev reviews" />

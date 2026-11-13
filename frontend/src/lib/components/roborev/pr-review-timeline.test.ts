@@ -51,7 +51,13 @@ describe("providerReviewEntry", () => {
       ),
       HEAD,
     );
-    expect(entry).toMatchObject({ commit: "180f8e3", verdict: "clean", findings: 0, state: "superseded" });
+    expect(entry).toMatchObject({
+      commit: "180f8e3",
+      verdict: "clean",
+      findings: 0,
+      state: "superseded",
+      verdictStated: true,
+    });
   });
 
   it("counts shown and omitted findings", () => {
@@ -62,7 +68,8 @@ describe("providerReviewEntry", () => {
       ),
       HEAD,
     );
-    expect(entry).toMatchObject({ verdict: "findings", findings: 5, state: "current" });
+    // The verdict line says 2, so it does not state the total of 5.
+    expect(entry).toMatchObject({ verdict: "findings", findings: 5, state: "current", verdictStated: false });
   });
 
   it("reads a failed review without a finding count", () => {
@@ -70,7 +77,18 @@ describe("providerReviewEntry", () => {
       comment(13, "<!-- roborev-pr-comment -->\n## roborev: Review Failed (`96027d7`)\n\nAll reviewers failed.\n"),
       HEAD,
     );
-    expect(entry).toMatchObject({ verdict: "failed", findings: null });
+    expect(entry).toMatchObject({ verdict: "failed", findings: null, verdictStated: false });
+  });
+
+  it("states the verdict when every finding is shown", () => {
+    const entry = providerReviewEntry(
+      comment(
+        17,
+        "<!-- roborev-pr-comment -->\n## roborev: Combined Review (`96027d7`)\n\n**Verdict:** Changes require fixes for 1 finding.\n\n### High\n\n- `a.go:1`: bad\n",
+      ),
+      HEAD,
+    );
+    expect(entry).toMatchObject({ verdict: "findings", findings: 1, verdictStated: true });
   });
 
   it("ignores comments without the roborev marker", () => {

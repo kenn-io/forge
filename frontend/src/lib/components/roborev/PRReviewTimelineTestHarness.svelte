@@ -7,9 +7,10 @@
   import PRReviewTimeline from "./PRReviewTimeline.svelte";
   import PRReviewTimelineDrawer from "./PRReviewTimelineDrawer.svelte";
 
-  const { runtime, timelineProps }: {
+  const { runtime, timelineProps, onRefresh = () => {} }: {
     runtime: AppRuntime;
-    timelineProps: Omit<ComponentProps<typeof PRReviewTimeline>, "timeline">;
+    timelineProps: Omit<ComponentProps<typeof PRReviewTimeline>, "timeline" | "onRefresh">;
+    onRefresh?: () => void;
   } = $props();
 
   const appRuntime = untrack(() => runtime);
@@ -22,5 +23,5 @@
   });
 </script>
 
-<PRReviewTimeline {timeline} {...timelineProps} />
-<PRReviewTimelineDrawer {timeline} />
+<PRReviewTimeline {timeline} {...timelineProps} {onRefresh} />
+<PRReviewTimelineDrawer {timeline} events={timelineProps.events} headSha={timelineProps.headSha} />

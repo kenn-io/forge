@@ -15,7 +15,7 @@
   } from "@kenn-io/kit-ui";
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
-  import PullItem from "./PullItem.svelte";
+  import PullItem, { pullTableColumns } from "./PullItem.svelte";
   import ListLoadMore from "./ListLoadMore.svelte";
   import ListCountChip from "./ListCountChip.svelte";
   import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
@@ -106,6 +106,7 @@
   let searchInput = $state(pulls.getSearchQuery() ?? "");
   let searchExecution: AppExecution<void, never> | null = null;
   const visiblePulls = $derived(pulls.getFilteredPulls());
+  const tableLayout = $derived(pulls.getListLayout() === "table");
   const repoLabelFormatter = $derived(
     createRepoLabelFormatter(
       visiblePulls.map((pr) => ({
@@ -591,6 +592,8 @@
             repoPath: pr.repo.repo_path,
           })}
           {showRepo}
+          table={tableLayout}
+          compact={useCompactFilters}
           selected={prSelected}
           multiSelected={pullSelection.has(pr)}
           onclick={(event) => handleRowClick(event, pr)}
@@ -747,6 +750,21 @@
     {:else if visiblePulls.length === 0}
       <p class="state-message">No pull requests found.</p>
     {:else}
+      {#if tableLayout}
+        <div
+          class="table-headers"
+          class:table-headers--sticky={renderedGroups === null}
+          class:table-headers--compact={useCompactFilters}
+          style:grid-template-columns={pullTableColumns(renderedGroups === null, useCompactFilters)}
+          aria-hidden="true"
+        >
+          {#if renderedGroups === null}<span>Repo</span>{/if}
+          <span class="table-header--author">Author</span>
+          <span>Item</span>
+          <span class="table-header--time">When</span>
+          <span></span>
+        </div>
+      {/if}
       {#if renderedGroups !== null}
         {#each renderedGroups.groups as group (group.key)}
           <GroupedSidebarSection
@@ -797,6 +815,40 @@
 />
 
 <style>
+  /* Matches a table row's 3px selection border and side padding so the columns line up. */
+  .table-headers {
+    display: grid;
+    column-gap: 6px;
+    align-items: center;
+    padding: 6px 10px 4px 13px;
+    font-size: var(--font-size-2xs);
+    font-weight: 500;
+    text-transform: var(--label-transform, uppercase);
+    letter-spacing: var(--letter-spacing-label, 0.5px);
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-default);
+    background: var(--sidebar-row-bg, var(--bg-surface));
+  }
+
+  .table-headers--sticky {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  .table-header--time {
+    text-align: right;
+  }
+
+  .table-headers--compact {
+    column-gap: var(--space-2);
+  }
+
+  .table-headers--compact .table-header--author,
+  .table-headers--compact .table-header--time {
+    display: none;
+  }
+
   .stack-row {
     display: flex;
     min-width: 0;

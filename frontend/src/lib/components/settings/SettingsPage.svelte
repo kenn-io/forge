@@ -3,7 +3,7 @@
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
   import { Effect } from "effect";
   import { onMount } from "svelte";
-  import { SearchInput, SettingsLayout, SettingsSection, Toggle, type SettingsCategory } from "@kenn-io/kit-ui";
+  import { SearchInput, SelectDropdown, SettingsLayout, SettingsSection, Toggle, type SettingsCategory } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import type { Settings } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -48,7 +48,7 @@
   const nativeHost = window.ReactNativeWebView;
   let searchQuery = $state("");
   const runtime = getAppRuntime();
-  const { settings: settingsStore } = getStores();
+  const { settings: settingsStore, pulls } = getStores();
   let settings = $state.raw<Settings | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -299,7 +299,18 @@
               }}
             />
           {:else if meta.id === "settings-appearance"}
-            <AppearanceSettings />
+            <div class="appearance-group">
+              <AppearanceSettings />
+              <SelectDropdown
+                title="PR list layout"
+                value={pulls.getListLayout()}
+                options={[
+                  { value: "rows", label: "Two-line rows" },
+                  { value: "table", label: "Table, like Activity" },
+                ]}
+                onchange={(value) => pulls.setListLayout(value === "table" ? "table" : "rows")}
+              />
+            </div>
           {:else if meta.id === "settings-detail"}
             <DetailSettings
               detail={loaded.detail}
@@ -398,6 +409,11 @@
 </div>
 
 <style>
+  .appearance-group {
+    display: grid;
+    gap: 0.75rem;
+  }
+
   .workspace-settings-group + .workspace-settings-group {
     margin-top: var(--space-6);
     padding-top: var(--space-6);

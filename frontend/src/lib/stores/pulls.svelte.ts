@@ -82,6 +82,9 @@ function readErrorMessage(error: ApiProblemError | TransientTransportError): str
   return "Could not reach Kenn Forge";
 }
 
+/** How the PR list shows each pull request: two-line rows, or one-line table rows like Activity's. */
+export type PullListLayout = "rows" | "table";
+
 export function createPullsStore(opts: PullsStoreOptions) {
   const runtime = opts.runtime;
   const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
@@ -108,6 +111,31 @@ export function createPullsStore(opts: PullsStoreOptions) {
     stackTree = value;
     try {
       localStorage.setItem(STACK_TREE_KEY, value ? "1" : "0");
+    } catch {
+      // Keep the view usable when browser storage is unavailable.
+    }
+  }
+
+  // A per-browser display choice, like the theme: Settings > Appearance sets it.
+  const LIST_LAYOUT_KEY = "kenn-forge:pullListLayout";
+  let listLayout = $state<PullListLayout>(readListLayout());
+
+  function readListLayout(): PullListLayout {
+    try {
+      return localStorage.getItem(LIST_LAYOUT_KEY) === "table" ? "table" : "rows";
+    } catch {
+      return "rows";
+    }
+  }
+
+  function getListLayout(): PullListLayout {
+    return listLayout;
+  }
+
+  function setListLayout(value: PullListLayout): void {
+    listLayout = value;
+    try {
+      localStorage.setItem(LIST_LAYOUT_KEY, value);
     } catch {
       // Keep the view usable when browser storage is unavailable.
     }
@@ -743,6 +771,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
     getSidebarRows,
     getStackTree,
     setStackTree,
+    getListLayout,
+    setListLayout,
     toggleStack,
     selectNextPR,
     selectPrevPR,

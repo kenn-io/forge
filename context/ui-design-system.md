@@ -48,6 +48,8 @@ to the application.
   description copy sits left of Edit on every viewport.
 - PR list rows use the workspace indicator only; no separate worktree icon or
   branch-name label.
+- Host names must not displace repository names in PR table cells; dense lists
+  prioritize scanning repositories, with full identities available in tooltips.
 - Repositories the provider reported private show `RepoPrivateIcon` beside their name; public
   and unknown repositories show nothing, and there is no public icon. In a repo chip the lock
   sits outside the chip, because the chip label's ellipsis would wrap it to a second line.

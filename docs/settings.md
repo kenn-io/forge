@@ -23,6 +23,7 @@ a category.
 | Workspace agents | Enable agents and edit the command and arguments used to launch each one. |
 | Fleet federation | Connect remote Forge hosts and control which sessions they share. |
 | Visible modes | Choose which pages appear in the app header. |
+| Appearance | Choose the color theme and contrast, and show the PR list as two-line rows or as a one-line table like Activity. These choices apply only to the browser you set them in. |
 
 Forms save from the panel where you make the change. You can move between
 categories without discarding an unfinished form. Repository actions such as

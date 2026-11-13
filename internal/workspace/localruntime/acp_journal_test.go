@@ -116,9 +116,14 @@ func TestACPSaveAfterAFailedAppendKeepsEverything(t *testing.T) {
 		agent, peer := newScriptedACP(t)
 		agent.recordPath = filepath.Join(t.TempDir(), "session.json")
 		require.NoError(t, agent.Prompt("work", ACPSender{Kind: ACPSenderUser}))
+		// One append succeeds, so the failing one appends to a started
+		// journal rather than starting it over.
+		acpToolCall(t, agent, "saved", acpsdk.ToolCallStatusCompleted)
+		journal := acpJournalPath(agent.recordPath)
+		require.FileExists(t, journal)
 		// A directory where the journal goes makes the next append fail;
 		// it then leaves the partial record an interrupted write would.
-		journal := acpJournalPath(agent.recordPath)
+		require.NoError(t, os.Remove(journal))
 		require.NoError(t, os.Mkdir(journal, 0o700))
 		acpToolCall(t, agent, "lost-append", acpsdk.ToolCallStatusCompleted)
 		require.NoError(t, os.Remove(journal))
@@ -126,6 +131,7 @@ func TestACPSaveAfterAFailedAppendKeepsEverything(t *testing.T) {
 		acpToolCall(t, agent, "next", acpsdk.ToolCallStatusCompleted)
 
 		statuses := savedToolStatuses(t, agent.recordPath)
+		assert.Contains(t, statuses, "saved")
 		assert.Contains(t, statuses, "lost-append")
 		assert.Contains(t, statuses, "next")
 		peer.endTurn(acpsdk.StopReasonEndTurn)

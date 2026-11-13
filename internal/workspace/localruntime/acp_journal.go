@@ -252,20 +252,29 @@ func appendSynced(path string, data []byte, first bool) (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, file.Close()) }()
-	if _, err := file.Write(data); err != nil {
-		return err
+	// A save either leaves its record replayable and succeeds, or fails and
+	// leaves nothing to replay: callers undo a change whose save failed, so
+	// a record that stays behind would bring it back after a reload.
+	info, err := file.Stat()
+	if err != nil {
+		return errors.Join(err, file.Close())
 	}
-	if err := file.Sync(); err != nil {
-		return err
+	_, err = file.Write(data)
+	if err == nil {
+		err = file.Sync()
 	}
-	if !first {
-		return nil
+	if err != nil {
+		return errors.Join(err, file.Truncate(info.Size()), file.Close())
 	}
 	// The record is written and synced, so it replays on reload; the save
 	// happened, as with a snapshot whose directory sync fails.
-	if err := atomicfile.SyncDir(filepath.Dir(path)); err != nil {
-		slog.Warn("sync ACP chat journal directory", "path", path, "err", err)
+	if err := file.Close(); err != nil {
+		slog.Warn("close ACP chat journal", "path", path, "err", err)
+	}
+	if first {
+		if err := atomicfile.SyncDir(filepath.Dir(path)); err != nil {
+			slog.Warn("sync ACP chat journal directory", "path", path, "err", err)
+		}
 	}
 	return nil
 }

@@ -130,7 +130,7 @@ type ListActivityInput struct {
 	HideDrafts        bool     `query:"hide_drafts" doc:"Exclude activity for draft pull requests."`
 	HideMergeQueued   bool     `query:"hide_merge_queued" doc:"Exclude activity for open pull requests in a merge queue or set to merge after CI."`
 	MergeQueued       bool     `query:"merge_queued" doc:"Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued."`
-	Attributes        string   `query:"attributes" doc:"Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, has_workspace, no_workspace, fork, not_fork. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts."`
+	Attributes        string   `query:"attributes" doc:"Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, has_workspace, no_workspace, fork, not_fork, roborev_findings, roborev_clean. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts."`
 	HideDefaultBranch bool     `query:"hide_default_branch"`
 	ActivityItemFilterInput
 	ParentProvider     string
@@ -832,7 +832,7 @@ func ApplyActivityFilters(opts *db.ListActivityOpts, input *ListActivityInput) e
 		for attribute := range strings.SplitSeq(input.Attributes, ",") {
 			switch attribute {
 			case "draft", "not_draft", "approved", "not_approved", "merge_conflicts", "no_merge_conflicts",
-				"failed_ci", "passed_ci", "has_workspace", "no_workspace", "fork", "not_fork":
+				"failed_ci", "passed_ci", "has_workspace", "no_workspace", "fork", "not_fork", "roborev_findings", "roborev_clean":
 			default:
 				return httpapi.Validation("query.attributes", "unknown pull request filter")
 			}

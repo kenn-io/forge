@@ -61026,7 +61026,7 @@ type ListActivityQuery struct {
 	// MergeQueued Keep only activity for open pull requests in a merge queue or set to merge after CI. Wins over hide_merge_queued.
 	MergeQueued *bool `json:"merge_queued,omitempty"`
 
-	// Attributes Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, has_workspace, no_workspace, fork, not_fork. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts.
+	// Attributes Comma-separated pull request filters, as on the pull request list: draft, not_draft, approved, not_approved, merge_conflicts, no_merge_conflicts, failed_ci, passed_ci, has_workspace, no_workspace, fork, not_fork, roborev_findings, roborev_clean. They decide only which pull request activity shows; issue and repository activity always passes. draft wins over hide_drafts.
 	Attributes        *string `json:"attributes,omitempty"`
 	HideDefaultBranch *bool   `json:"hide_default_branch,omitempty"`
 

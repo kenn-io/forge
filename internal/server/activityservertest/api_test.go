@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -726,6 +727,53 @@ func TestAPIListActivityPullFiltersKeepIssuesAndReportHeadRepository(t *testing.
 
 	invalid := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?attributes=ready", nil)
 	assert.Equal(http.StatusBadRequest, invalid.Code, invalid.Body.String())
+}
+
+// The Roborev filters that Activity shares with the pull request list keep only
+// pull request activity whose current head's roborev review matches, and keep issues.
+func TestAPIListActivityRoborevFilters(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServer(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	reviewed := func(number int, verdict string) {
+		head := strings.Repeat(strconv.Itoa(number%10), 40)
+		mrID := serverfake.SeedPR(t, database, "acme", "widget", number,
+			serverfake.WithSeedPRTimes(now.Add(-time.Hour), now.Add(-time.Hour), now.Add(-time.Hour)),
+			serverfake.WithSeedPRHeadSHA(head))
+		if verdict == "" {
+			return
+		}
+		platformID := int64(1000 + number)
+		require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
+			MergeRequestID: mrID, PlatformID: &platformID, EventType: "issue_comment", Author: "roborev-ci",
+			Body:      "<!-- roborev-pr-comment -->\n## roborev: Combined Review (`" + head[:7] + "`)\n\n" + verdict + "\n",
+			CreatedAt: now.Add(-time.Hour), DedupeKey: fmt.Sprintf("roborev-%d", number),
+		}}))
+	}
+	reviewed(91, "**Verdict:** Changes require fixes for 1 finding.")
+	reviewed(92, "**Verdict:** No issues found.")
+	reviewed(93, "")
+	serverfake.SeedIssue(t, database, "acme", "widget", 94, "open")
+
+	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
+	parents := func(query string) []int {
+		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+since+query, nil)
+		require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+		var body itemapi.ActivityResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+		numbers := []int{}
+		for _, subject := range body.ItemActivity {
+			numbers = append(numbers, subject.ItemNumber)
+		}
+		slices.Sort(numbers)
+		return numbers
+	}
+	assert.Equal([]int{91, 94}, parents("&attributes=roborev_findings"))
+	assert.Equal([]int{92, 94}, parents("&attributes=roborev_clean"))
+	assert.Equal([]int{91, 92, 94}, parents("&attributes=roborev_findings,roborev_clean"),
+		"the two verdicts are one pick-one section")
 }
 
 // Activity's server filters reach every projection and the thread-events route. PR attributes

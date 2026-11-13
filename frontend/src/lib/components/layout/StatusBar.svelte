@@ -7,6 +7,8 @@
   import { getStores } from "../../context.js";
   import type { ActivityItem } from "../../api/types.js";
   import { isActivityItemTypeEnabled } from "../../stores/activity.svelte.js";
+  import { matchesLabelFilters } from "../../utils/label-filter.js";
+  import { activityItemVisible, activitySubjectVisible } from "../activityFilters.js";
   import { repoIdentityKey } from "../../utils/repo-label.js";
   import BudgetBars from "./BudgetBars.svelte";
   import BudgetPopover from "./BudgetPopover.svelte";
@@ -71,10 +73,10 @@
   }
 
   const openPulls = $derived(
-    (isWorkspacePage(getPage()) ? workspaceItemSearch.getPulls() : pulls.getPulls()).filter((pr) => pr.State === "open"),
+    (isWorkspacePage(getPage()) ? workspaceItemSearch.getPulls() : pulls.getFilteredPulls()).filter((pr) => pr.State === "open"),
   );
   const openIssues = $derived(
-    (isWorkspacePage(getPage()) ? workspaceItemSearch.getIssues() : issues.getIssues()).filter((issue) => issue.State === "open"),
+    (isWorkspacePage(getPage()) ? workspaceItemSearch.getIssues() : issues.getFilteredIssues()).filter((issue) => issue.State === "open"),
   );
 
   interface RepoBackedItem {
@@ -104,8 +106,6 @@
     repos: number | string;
   }
 
-  const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
-
   function repoKey(item: RepoBackedItem): string {
     const provider = item.repo?.provider ?? "";
     const platformHost = item.repo?.platform_host ?? item.platform_host ?? "";
@@ -125,11 +125,6 @@
 
   function activityItemKey(item: ActivityCountSubject): string {
     return `${repoKey(item)}|${item.item_type}|${item.item_number}`;
-  }
-
-  function isBot(author: string): boolean {
-    const lower = author.toLowerCase();
-    return BOT_SUFFIXES.some((suffix) => lower.endsWith(suffix));
   }
 
   function activityLifecycleState(item: ActivityItem): string {
@@ -158,11 +153,15 @@
     const issueKeys = new Set<string>();
     const repos = new Set<string>();
     const enabledItemTypes = activity.getEnabledItemTypes();
-    const hideBots = activity.getHideBots();
+    const labels = activity.getLabelFilters();
+    // The same row filters the Activity feed applies, so the counts follow its filter menu.
+    const shown = (itemType: string, itemLabels: ActivityItem["labels"], visible: boolean) =>
+      visible
+      && isActivityItemTypeEnabled(itemType, enabledItemTypes)
+      && (labels.size === 0 || matchesLabelFilters(itemLabels, labels));
 
     for (const item of activity.getActivityItems()) {
-      if (hideBots && isBot(item.author)) continue;
-      if (!isActivityItemTypeEnabled(item.item_type, enabledItemTypes)) continue;
+      if (!shown(item.item_type, item.labels, activityItemVisible(activity, item))) continue;
 
       subjects.set(activityItemKey(item), {
         item,
@@ -173,19 +172,27 @@
     // Parent summaries carry the authoritative lifecycle state and replace any
     // event-backed snapshot for the same item.
     for (const subject of activity.getItemActivity()) {
-      if (hideBots && isBot(subject.item_author ?? "")) continue;
-      if (!isActivityItemTypeEnabled(subject.item_type, enabledItemTypes)) continue;
+      if (!shown(subject.item_type, subject.labels, activitySubjectVisible(activity, subject))) continue;
       subjects.set(activityItemKey(subject), {
         item: subject,
         lifecycleState: subject.item_state,
       });
     }
 
+    // A spoke sends workspace rows without labels; like the feed, use the provider rows' labels
+    // for the same item, parents last so they win.
+    const providerLabels = new Map<string, ActivityItem["labels"]>();
+    if (labels.size > 0) {
+      for (const row of [...activity.getActivityItems(), ...activity.getItemActivity()]) {
+        providerLabels.set(activityItemKey(row), row.labels);
+      }
+    }
+
     // Workspace-only subjects are visible threads too, but must not override
     // an authoritative parent or an existing event-backed lifecycle state.
     for (const subject of activity.getWorkspaceActivity()) {
-      if (hideBots && isBot(subject.item_author ?? "")) continue;
-      if (!isActivityItemTypeEnabled(subject.item_type, enabledItemTypes)) continue;
+      const subjectLabels = subject.labels ?? providerLabels.get(activityItemKey(subject));
+      if (!shown(subject.item_type, subjectLabels, activitySubjectVisible(activity, subject))) continue;
       const key = activityItemKey(subject);
       if (!subjects.has(key)) {
         subjects.set(key, {

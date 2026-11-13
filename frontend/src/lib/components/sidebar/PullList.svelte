@@ -193,26 +193,24 @@
     grouping.setHideOrgName(false);
   }
 
-  const toolbarFilterSections = $derived.by(() => [
-    {
-      title: "State",
-      items: pullStateOptions.map((state) => ({
-        id: `state-${state}`,
-        label: pullStateDropdownLabel(state),
-        active: pulls.getFilterState() === state,
-        onSelect: () => setPullState(state),
-      })),
-    },
-    {
-      title: "Group",
-      items: groupingOptions.map((option) => ({
-        id: `group-${option.value}`,
-        label: groupingDropdownLabel(option.value),
-        active: groupingMode === option.value,
-        onSelect: () => grouping.setGroupingMode(option.value),
-      })),
-    },
-  ]);
+  const stateFilterSection = $derived({
+    title: "State",
+    items: pullStateOptions.map((state) => ({
+      id: `state-${state}`,
+      label: pullStateDropdownLabel(state),
+      active: pulls.getFilterState() === state,
+      onSelect: () => setPullState(state),
+    })),
+  });
+  const groupFilterSection = $derived({
+    title: "Group",
+    items: groupingOptions.map((option) => ({
+      id: `group-${option.value}`,
+      label: groupingDropdownLabel(option.value),
+      active: groupingMode === option.value,
+      onSelect: () => grouping.setGroupingMode(option.value),
+    })),
+  });
 
   const labelChoices = $derived(labelFilterChoices(pulls.getPulls(), pulls.getLabelFilters()));
   function attributeFilterItem(option: { value: PullAttributeFilter; label: string }) {
@@ -266,27 +264,31 @@
       title: section.title,
       items: section.options.map(attributeFilterItem),
     })),
-    {
-      title: "View",
-      items: [
-        {
-          id: "stack-tree",
-          label: "Stack tree",
-          active: pulls.getStackTree(),
-          onSelect: () => pulls.setStackTree(!pulls.getStackTree()),
-        },
-        {
-          id: "hide-org-name",
-          label: "Hide org name",
-          active: grouping.getHideOrgName(),
-          onSelect: () => grouping.setHideOrgName(!grouping.getHideOrgName()),
-        },
-      ],
-    },
   ]);
-  const compactFilterSections = $derived.by(() => [
-    ...toolbarFilterSections,
+  const viewFilterSection = $derived({
+    title: "View",
+    items: [
+      {
+        id: "stack-tree",
+        label: "Stack tree",
+        active: pulls.getStackTree(),
+        onSelect: () => pulls.setStackTree(!pulls.getStackTree()),
+      },
+      {
+        id: "hide-org-name",
+        label: "Hide org name",
+        active: grouping.getHideOrgName(),
+        onSelect: () => grouping.setHideOrgName(!grouping.getHideOrgName()),
+      },
+    ],
+  });
+  const prFilterSections = $derived([...localFilterSections, viewFilterSection]);
+  // Layout choices follow the filters, as in the Activity menu.
+  const compactFilterSections = $derived([
+    stateFilterSection,
     ...localFilterSections,
+    groupFilterSection,
+    viewFilterSection,
   ]);
   const hasCompactFilterChanges = $derived(
     pulls.getFilterState() !== "open"
@@ -669,7 +671,7 @@
         title="PR filters"
         active={localViewFilterCount > 0 || pulls.getStackTree()}
         badgeCount={localViewFilterCount}
-        sections={localFilterSections}
+        sections={prFilterSections}
         resetLabel="Clear filters"
         onReset={clearLocalViewFilters}
         minWidth="190px"

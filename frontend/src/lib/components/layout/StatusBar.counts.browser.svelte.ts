@@ -305,6 +305,38 @@ describe("status bar counts", () => {
     await vi.waitFor(() => expect(statusItemTexts()).toEqual(expected), WAIT);
   });
 
+  it("counts only the PRs and issues the list filters keep on their pages", async () => {
+    let stores: StoreInstances | undefined;
+    mounted = await mountStatusBar(
+      "/pulls",
+      [
+        (req) =>
+          req.url.pathname === "/api/v1/pulls"
+            ? jsonResponse([
+                { ...pr(1, "open"), head_repo_kind: "fork" },
+                { ...pr(2, "open", "acme", "tools"), head_repo_kind: "same_repo" },
+              ])
+            : null,
+        (req) =>
+          req.url.pathname === "/api/v1/issues"
+            ? jsonResponse([{ ...issue(1, "open"), labels: [{ name: "bug", color: "d73a4a" }] }, issue(2, "open")])
+            : null,
+      ],
+      (configured) => {
+        stores = configured;
+      },
+    );
+    await vi.waitFor(() => expect(statusItemTexts()).toEqual(["2 PRs", "2 issues", "2 repos"]), WAIT);
+
+    stores!.pulls.cycleAttributeFilter("fork", "not_fork");
+    await vi.waitFor(() => expect(statusItemTexts()).toEqual(["1 PRs", "2 issues", "1 repos"]), WAIT);
+    stores!.pulls.cycleAttributeFilter("fork", "not_fork");
+    await vi.waitFor(() => expect(statusItemTexts()).toEqual(["1 PRs", "2 issues", "2 repos"]), WAIT);
+
+    stores!.issues.cycleLabelFilter("bug");
+    await vi.waitFor(() => expect(statusItemTexts()).toEqual(["1 PRs", "1 issues", "2 repos"]), WAIT);
+  });
+
   it("labels active sync with the shared working status", async () => {
     mounted = await mountStatusBar("/repos", [runningSyncStatus()]);
 

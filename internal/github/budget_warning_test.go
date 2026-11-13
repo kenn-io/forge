@@ -111,7 +111,10 @@ func TestSyncerBudgetWaitDuringDetailReads(t *testing.T) {
 			logs := captureDefaultLogs(t)
 
 			if site == "timeline" {
-				require.ErrorIs(syncer.refreshTimeline(ctx, repo, mrID, mergeRequestSnapshotRevision(t, database, repoID, 1), pr.GetNumber(), ""), platform.ErrSyncBudgetExhausted)
+				require.ErrorIs(
+					syncer.refreshTimeline(ctx, repo, mrID, mergeRequestSnapshotRevision(t, database, repoID, 1), pr.GetNumber(), ""),
+					platform.ErrSyncBudgetExhausted,
+				)
 			} else {
 				syncer.drainDetailQueue(WithSyncBudget(ctx), map[string]bool{"github.com": true}, []RepoRef{repo})
 				assert.Equal(1, detailCalls)

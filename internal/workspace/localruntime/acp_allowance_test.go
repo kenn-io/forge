@@ -488,20 +488,10 @@ func TestACPProgressSavesScaleWithTranscriptSize(t *testing.T) {
 		agent, peer := newScriptedACP(t)
 		agent.recordPath = filepath.Join(t.TempDir(), "session.json")
 		require.NoError(t, agent.Prompt("work", ACPSender{Kind: ACPSenderUser}))
-		savedTools := func() []string {
-			var ids []string
-			for _, message := range readSavedSession(t, agent.recordPath).State.Messages {
-				if message.ToolCallID != "" {
-					ids = append(ids, message.ToolCallID)
-				}
-			}
-			return ids
-		}
+		savedTools := func() []string { return savedToolCalls(t, agent) }
 
 		// A three-megabyte transcript allows one save every three seconds.
-		acpUpdate(t, agent, acpsdk.SessionUpdate{ToolCall: &acpsdk.SessionUpdateToolCall{
-			ToolCallId: "big", Title: string(bytes.Repeat([]byte("x"), 3*acpProgressSaveBytesPerSecond)),
-		}})
+		acpBigToolCall(t, agent, 3)
 		advance(minProgressSaveInterval)
 		require.Equal(t, []string{"big"}, savedTools())
 
@@ -516,6 +506,75 @@ func TestACPProgressSavesScaleWithTranscriptSize(t *testing.T) {
 		peer.endTurn(acpsdk.StopReasonEndTurn)
 		synctest.Wait()
 		assert.Equal(t, []string{"big", "next", "last"}, savedTools(), "the turn's end saves at once")
+	})
+}
+
+// acpBigToolCall streams a tool call that makes the transcript about
+// seconds times acpProgressSaveBytesPerSecond long, so progress saves at
+// most once per that many seconds.
+func acpBigToolCall(t *testing.T, agent *ACP, seconds int) {
+	t.Helper()
+	acpUpdate(t, agent, acpsdk.SessionUpdate{ToolCall: &acpsdk.SessionUpdateToolCall{
+		ToolCallId: "big", Title: string(bytes.Repeat([]byte("x"), seconds*acpProgressSaveBytesPerSecond)),
+	}})
+}
+
+func savedToolCalls(t *testing.T, agent *ACP) []string {
+	t.Helper()
+	var ids []string
+	for _, message := range readSavedSession(t, agent.recordPath).State.Messages {
+		if message.ToolCallID != "" {
+			ids = append(ids, message.ToolCallID)
+		}
+	}
+	return ids
+}
+
+// The turn clock's periodic save keeps to the transcript's progress save
+// interval instead of saving a long transcript every ten seconds.
+func TestACPTurnClockKeepsTheProgressSaveInterval(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		agent.recordPath = filepath.Join(t.TempDir(), "session.json")
+		require.NoError(t, agent.Prompt("work", ACPSender{Kind: ACPSenderUser}))
+		acpBigToolCall(t, agent, 15)
+		advance(minProgressSaveInterval)
+		require.Equal(t, []string{"big"}, savedToolCalls(t, agent))
+
+		acpToolCall(t, agent, "next", acpsdk.ToolCallStatusCompleted)
+		advance(10 * time.Second)
+		assert.Equal(t, []string{"big"}, savedToolCalls(t, agent), "the clock's save waits for the interval")
+		// The saved file is a little over fifteen megabytes.
+		advance(6 * time.Second)
+		assert.Equal(t, []string{"big", "next"}, savedToolCalls(t, agent))
+
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+	})
+}
+
+// A turn the agent started itself ends with its cost report, and that end
+// saves at once like the end of a prompt turn.
+func TestACPAgentTurnEndSavesAtOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		agent.recordPath = filepath.Join(t.TempDir(), "session.json")
+		require.NoError(t, agent.Prompt("run the tests in the background", ACPSender{Kind: ACPSenderUser}))
+		acpTerminalCall(t, agent, "bg")
+		acpBackgrounded(t, agent, "bg")
+		acpTerminalStatus(t, agent, "bg", false)
+		acpTurnCost(t, agent)
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+
+		acpTerminalExit(t, agent, "bg")
+		acpText(t, agent, "Job done.")
+		acpTurnCost(t, agent)
+		var texts []string
+		for _, message := range readSavedSession(t, agent.recordPath).State.Messages {
+			texts = append(texts, message.Text)
+		}
+		assert.Contains(t, texts, "Job done.", "the finished answer is saved")
 	})
 }
 

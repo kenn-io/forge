@@ -62,8 +62,9 @@ func newTailscaleAuthTestServer(t *testing.T) (*httptest.Server, *Server) {
 	srv := New(dbtest.Open(t), nil, nil, "/", nil, ServerOptions{
 		DaemonAccess: authapi.DaemonAccessOptions{
 			Token: "local-secret", RequireAPIAuth: true,
-			TailscaleServeEnabled: true,
-			TailscaleServeUsers:   []string{"user@example.com"},
+			TailscaleServeEnabled:       true,
+			TailscaleServeUsers:         []string{"user@example.com"},
+			TailscaleServeAppCapability: "example.com/cap/forge",
 		},
 	})
 	ts := httptest.NewServer(srv)
@@ -129,20 +130,32 @@ func TestTailscaleServeIdentityRejectsUntrustedRequests(t *testing.T) {
 	require := require.New(t)
 	ts, srv := newTailscaleAuthTestServer(t)
 
+	const (
+		login        = "Tailscale-User-Login"
+		capabilities = "Tailscale-App-Capabilities"
+	)
 	for _, test := range []struct {
 		name   string
+		header string
 		values []string
 	}{
 		{name: "missing"},
-		{name: "wrong user", values: []string{"other@example.com"}},
-		{name: "malformed", values: []string{"User <user@example.com>"}},
-		{name: "combined", values: []string{"user@example.com,other@example.com"}},
-		{name: "repeated", values: []string{"user@example.com", "user@example.com"}},
+		{name: "wrong user", header: login, values: []string{"other@example.com"}},
+		{name: "malformed", header: login, values: []string{"User <user@example.com>"}},
+		{name: "combined", header: login, values: []string{"user@example.com,other@example.com"}},
+		{name: "repeated", header: login, values: []string{"user@example.com", "user@example.com"}},
+		{name: "empty capabilities", header: capabilities, values: []string{""}},
+		{name: "wrong capability", header: capabilities, values: []string{`{"example.com/cap/other":[{}]}`}},
+		{name: "capability prefix", header: capabilities, values: []string{`{"example.com/cap/forge/admin":[{}]}`}},
+		{name: "malformed capabilities", header: capabilities, values: []string{`["example.com/cap/forge"]`}},
+		{name: "repeated capabilities", header: capabilities, values: []string{
+			`{"example.com/cap/forge":[{}]}`, `{"example.com/cap/forge":[{}]}`,
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			response := authGet(t, ts, "/api/v1/snapshot", func(request *http.Request) {
 				for _, value := range test.values {
-					request.Header.Add("Tailscale-User-Login", value)
+					request.Header.Add(test.header, value)
 				}
 			})
 			t.Cleanup(func() {
@@ -158,6 +171,7 @@ func TestTailscaleServeIdentityRejectsUntrustedRequests(t *testing.T) {
 	request.RemoteAddr = "192.0.2.10:43210"
 	request.Host = srv.hostOpts.Load().Bind.String()
 	request.Header.Set("Tailscale-User-Login", "user@example.com")
+	request.Header.Set("Tailscale-App-Capabilities", `{"example.com/cap/forge":[{}]}`)
 	recorder := httptest.NewRecorder()
 	srv.ServeHTTP(recorder, request)
 	require.Equal(http.StatusUnauthorized, recorder.Code)

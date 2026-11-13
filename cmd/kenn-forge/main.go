@@ -514,9 +514,10 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	}
 	daemonAccess := authapi.DaemonAccessOptions{
 		Token: authToken, RequireAPIAuth: cfg.API.RequireAuth,
-		ProofHandler:          daemonProofHandler,
-		TailscaleServeEnabled: cfg.API.TailscaleServe.Enabled,
-		TailscaleServeUsers:   cfg.API.TailscaleServe.AllowedUsers,
+		ProofHandler:                daemonProofHandler,
+		TailscaleServeEnabled:       cfg.API.TailscaleServe.Enabled,
+		TailscaleServeUsers:         cfg.API.TailscaleServe.AllowedUsers,
+		TailscaleServeAppCapability: cfg.API.TailscaleServe.AppCapability,
 	}
 
 	startupOptions := server.ServerOptions{DaemonAccess: daemonAccess, MCPURL: mcpURL, ExecutionWorker: cfg.ExecutionWorker.Enabled}

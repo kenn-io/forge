@@ -265,12 +265,54 @@ Passing `--tailscale-login` replaces the device's own login in the new
 allowlist, so list every login you use. To remove a login, delete it from
 `[api.tailscale_serve] allowed_users` in the config and restart Forge.
 
+Tailscale sends no login for [tagged devices](https://tailscale.com/docs/features/tags),
+such as CI runners and servers, so the allowlist cannot admit them. To let
+them in, grant an [app capability](https://tailscale.com/docs/features/access-control/grants/grants-app-capabilities)
+in your tailnet policy and name it in Forge. Replace the example tags with
+yours, and pick a capability name under a domain you control:
+
+```json
+"grants": [
+  {
+    "src": ["tag:ci"],
+    "dst": ["tag:forge"],
+    "ip": ["tcp:443"],
+    "app": {"example.com/cap/forge": [{}]}
+  }
+]
+```
+
+```toml
+[api.tailscale_serve]
+enabled = true
+allowed_users = ["you@example.com"]
+app_capability = "example.com/cap/forge"
+```
+
+Allowed logins keep working; the capability is a second way in, and
+`allowed_users` may be empty. Serve forwards a capability only when its mapping
+names it, which needs Tailscale 1.92 or later. Publish Forge with the
+capability, using your own HTTPS and Forge ports, then restart Forge:
+
+```sh
+tailscale serve --bg --https=443 --accept-app-caps=example.com/cap/forge http://127.0.0.1:8091
+```
+
+Setup keeps `app_capability` when you run it again, and passes it to Serve
+when it creates the mapping. It leaves an existing mapping as it is.
+
+Every user or device granted the capability gets full access to Forge, the
+same as an allowed login, including agents and terminals on this machine.
+Anyone who can edit the tailnet policy therefore controls who gets that
+access.
+
 Serve publishes on HTTPS port 443 by default. To use another port, such as
 `https://build-a.example.ts.net:8091`, pass `--tailscale-https-port 8091`.
 Running setup again keeps the port of the existing origin.
 
 MCP access through Serve requires explicit `[mcp].enabled = true`. The same
-logins can then reach it at the Serve origin without a token, for example
+logins and capability holders can then reach it at the Serve origin without a
+token, for example
 `https://build-a.example.ts.net/mcp`. The omitted default enables only the
 direct loopback companion.
 

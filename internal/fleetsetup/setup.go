@@ -92,6 +92,9 @@ type Plan struct {
 	ServiceKind        string
 	ServiceLabel       string
 	EnableLinger       bool
+	// TailscaleAppCapability keeps an existing api.tailscale_serve
+	// app_capability and is forwarded when setup creates the Serve mapping.
+	TailscaleAppCapability string
 
 	serveAlreadyConfigured bool
 	tailscaleCommand       string
@@ -316,6 +319,10 @@ func (r *Runner) Plan(ctx context.Context, options Options) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
+	appCapability := ""
+	if options.Tailscale && existing != nil && existing.API.TailscaleServe.Enabled {
+		appCapability = existing.API.TailscaleServe.AppCapability
+	}
 	parsedOrigin, err := url.Parse(origin)
 	if err != nil {
 		return Plan{}, fmt.Errorf("parse public origin: %w", err)
@@ -363,6 +370,7 @@ func (r *Runner) Plan(ctx context.Context, options Options) (Plan, error) {
 		Publication: publication, Host: "127.0.0.1", Port: port,
 		ServicePath: service.Path, ServiceKind: service.Kind,
 		ServiceLabel: service.Label, EnableLinger: enableLinger,
+		TailscaleAppCapability: appCapability,
 		serveAlreadyConfigured: serveState == serveExact,
 		tailscaleCommand:       tailscaleCommand,
 	}
@@ -493,6 +501,7 @@ func configureCandidate(candidate *config.Config, plan Plan) error {
 	if len(plan.TailscaleLogins) > 0 {
 		candidate.API.TailscaleServe = config.TailscaleServeAPI{
 			Enabled: true, AllowedUsers: slices.Clone(plan.TailscaleLogins),
+			AppCapability: plan.TailscaleAppCapability,
 		}
 	}
 	candidate.Fleet.Enabled = true

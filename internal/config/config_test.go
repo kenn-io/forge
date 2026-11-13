@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -748,6 +749,48 @@ allowed_users = [" User-A@Example.COM ", "user-b@example.com"]
 	assert.Equal(want, cfg2.API.TailscaleServe)
 }
 
+func TestLoadRoundTripsTailscaleServeAppCapability(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		block string
+		want  TailscaleServeAPI
+	}{
+		{
+			name:  "capability only",
+			block: `app_capability = " example.com/cap/forge "`,
+			want:  TailscaleServeAPI{Enabled: true, AppCapability: "example.com/cap/forge"},
+		},
+		{
+			name:  "capability with users",
+			block: "allowed_users = [\"user@example.com\"]\napp_capability = \"example.com/cap/forge/admin\"",
+			want: TailscaleServeAPI{
+				Enabled:       true,
+				AllowedUsers:  []string{"user@example.com"},
+				AppCapability: "example.com/cap/forge/admin",
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			assert := assert.New(t)
+			cfg, cfg2 := roundTripConfigString(t, `
+[api]
+require_auth = true
+
+[api.tailscale_serve]
+enabled = true
+`+test.block+"\n")
+
+			assert.Equal(test.want, cfg.API.TailscaleServe)
+			assert.Equal(test.want, cfg2.API.TailscaleServe)
+			encoded, err := json.Marshal(cfg.API.TailscaleServe)
+			require.NoError(t, err)
+			var decoded TailscaleServeAPI
+			require.NoError(t, json.Unmarshal(encoded, &decoded))
+			assert.Equal(test.want, decoded)
+		})
+	}
+}
+
 func TestTailscaleServeUsersRejectInvalidConfiguration(t *testing.T) {
 	for _, test := range []struct {
 		name  string
@@ -760,6 +803,10 @@ func TestTailscaleServeUsersRejectInvalidConfiguration(t *testing.T) {
 		{name: "multiple users in one header", block: "enabled = true\nallowed_users = [\"a@example.com,b@example.com\"]"},
 		{name: "multiple at signs", block: "enabled = true\nallowed_users = [\"a@b@example.com\"]"},
 		{name: "case insensitive duplicate", block: "enabled = true\nallowed_users = [\"USER@example.com\", \"user@example.com\"]"},
+		{name: "blank capability only", block: "enabled = true\napp_capability = \" \""},
+		{name: "capability without name", block: "enabled = true\napp_capability = \"example.com\""},
+		{name: "capability without domain", block: "enabled = true\napp_capability = \"localhost/cap/forge\""},
+		{name: "capability list", block: "enabled = true\napp_capability = \"example.com/cap/a,example.com/cap/b\""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := Load(writeConfig(t, "[api.tailscale_serve]\n"+test.block+"\n"))

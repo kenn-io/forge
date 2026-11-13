@@ -105,8 +105,8 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     label: "Appearance",
     title: "Appearance",
     group: "Navigation",
-    description: "Color theme and contrast on this device",
-    keywords: "theme light dark system contrast e-reader eink e-ink color",
+    description: "Color theme, contrast, and PR list layout on this device",
+    keywords: "theme light dark system contrast e-reader eink e-ink color pr pull request list layout table rows",
   },
   {
     id: "settings-mcp",

@@ -234,10 +234,13 @@ func TestPullRequestAuthorAccountType(t *testing.T) {
 			rest, err := NormalizePullRequest(testRepoRef(), &gh.PullRequest{User: &gh.User{Type: new(tc.input)}})
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, rest.AuthorAccountType)
-			gql := &GraphQLPR{Author: GraphQLIssueAuthor{Typename: tc.input}}
+			gql := &GraphQLPR{Author: GraphQLIssueAuthor{Login: "automation", Typename: tc.input}}
 			fromGraphQL, err := NormalizePullRequest(testRepoRef(), AdaptPR(gql))
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, fromGraphQL.AuthorAccountType)
+			if tc.input == "Bot" {
+				assert.Equal(t, "automation[bot]", fromGraphQL.Author)
+			}
 		})
 	}
 }

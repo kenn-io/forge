@@ -115,11 +115,11 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 			wantMetadata:    `{"commit_author":"original-author"}`,
 		},
 		{
-			name:            "nested committer name is used without associated user",
+			name:            "linked author wins over unlinked committer signature",
 			author:          user("original-author"),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: signature("rebase-committer", committedAt),
-			wantAuthor:      "rebase-committer",
+			wantAuthor:      "original-author",
 			wantCreatedAt:   committedAt,
 			wantMetadata:    `{"commit_author":"original-author"}`,
 		},
@@ -416,4 +416,21 @@ func TestNormalizeCommentAndReviewRetainActorType(t *testing.T) {
 	assert.Contains(t, review.MetadataJSON, `"actor_account_type":"user"`)
 	reviewComment := NormalizeReviewCommentEvent(platform.RepoRef{}, 1, &gh.PullRequestComment{User: &gh.User{Type: new("User")}})
 	assert.JSONEq(t, `{"actor_account_type":"user"}`, reviewComment.MetadataJSON)
+}
+
+func TestNormalizeCommitEventUsesLinkedActorType(t *testing.T) {
+	for _, tc := range []struct {
+		name                    string
+		committer               *gh.User
+		wantActor, wantMetadata string
+	}{
+		{"linked author", nil, "author", `{"commit_author":"author","actor_account_type":"user"}`},
+		{"linked committer", &gh.User{Login: new("committer"), Type: new("Bot")}, "committer", `{"commit_author":"author","actor_account_type":"bot"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			event := NormalizeCommitEvent(platform.RepoRef{}, 1, &gh.RepositoryCommit{Author: &gh.User{Login: new("author"), Type: new("User")}, Committer: tc.committer, Commit: &gh.Commit{Committer: &gh.CommitAuthor{Name: new("signature")}}})
+			assert.Equal(t, tc.wantActor, event.Author)
+			assert.JSONEq(t, tc.wantMetadata, event.MetadataJSON)
+		})
+	}
 }

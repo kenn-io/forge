@@ -174,9 +174,6 @@ func (s *Service) snapshot(ctx context.Context, opts SnapshotOptions, afterCover
 			if row.BodyClass == 2 {
 				pull.Gaps = append(pull.Gaps, "contributor_classification_unknown")
 			}
-			if row.AuthorAccountType != nil && strings.EqualFold(*row.AuthorAccountType, "bot") && !strings.HasSuffix(strings.ToLower(pull.Author), "[bot]") {
-				pull.Author += "[bot]"
-			}
 			if row.ReferenceIdentityUnknown {
 				pull.Gaps = append(pull.Gaps, "reference_identity_unknown")
 			}

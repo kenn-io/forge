@@ -111,10 +111,7 @@ type gqlIssueCommentPageQuery struct {
 
 func adaptIssue(gql *platformgithub.GraphQLIssue) *gh.Issue {
 	state := platformgithub.StateToREST(gql.State)
-	authorLogin := gql.Author.Login
-	if gql.Author.Typename == "Bot" && !strings.HasSuffix(authorLogin, "[bot]") {
-		authorLogin += "[bot]"
-	}
+	authorLogin := platformgithub.BotLogin(gql.Author.Login, gql.Author.Typename)
 	issue := &gh.Issue{
 		ID:                new(gql.DatabaseId),
 		Number:            new(gql.Number),
@@ -1260,6 +1257,9 @@ func copyLifecycleEvent(event *platformgithub.PullRequestTimelineEvent, eventTyp
 	event.CreatedAt = src.CreatedAt
 	if src.Actor != nil {
 		event.Actor = src.Actor.Login
+		if eventType == "closed" {
+			event.Actor = platformgithub.BotLogin(event.Actor, src.Actor.Typename)
+		}
 		event.ActorAccountType = src.Actor.Typename
 	}
 }

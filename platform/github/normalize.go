@@ -243,10 +243,17 @@ func NormalizeCommitEvent(
 		committerSignature = commit.GetCommitter()
 	}
 	author := commitIdentity(c.GetAuthor(), authorSignature)
-	committer := commitIdentity(c.GetCommitter(), committerSignature)
-	actor := committer
-	if actor == "" {
-		actor = author
+	actor := loginOrEmpty(c.GetCommitter())
+	actorType := ""
+	if actor != "" {
+		actorType = c.GetCommitter().GetType()
+	} else if actor = loginOrEmpty(c.GetAuthor()); actor != "" {
+		actorType = c.GetAuthor().GetType()
+	} else {
+		actor = commitIdentity(nil, committerSignature)
+		if actor == "" {
+			actor = commitIdentity(nil, authorSignature)
+		}
 	}
 
 	event := platform.MergeRequestEvent{
@@ -260,10 +267,6 @@ func NormalizeCommitEvent(
 	if author != "" {
 		metadata, _ := json.Marshal(commitEventMetadata{CommitAuthor: author})
 		event.MetadataJSON = string(metadata)
-	}
-	actorType := c.GetCommitter().GetType()
-	if committer == "" {
-		actorType = c.GetAuthor().GetType()
 	}
 	event.MetadataJSON = WithActorAccountType(event.MetadataJSON, actorType)
 	if commit != nil {

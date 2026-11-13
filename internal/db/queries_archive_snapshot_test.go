@@ -92,9 +92,9 @@ func TestSnapshotMeasurementCountsBudget(t *testing.T) {
 	before := measure(true)
 	assert.Equal(t, int64(12000), before.TextBytes-baseline.TextBytes)
 	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{
-		{MergeRequestID: id, EventType: "assigned", Author: "author", DedupeKey: "assigned-1", CreatedAt: now},
-		{MergeRequestID: id, EventType: "assigned", Author: "author", DedupeKey: "assigned-2", CreatedAt: now},
-		{MergeRequestID: id, EventType: "assigned", Author: "author", DedupeKey: "assigned-3", CreatedAt: now},
+		{MergeRequestID: id, EventType: "assigned", Author: "author", MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "assigned-1", CreatedAt: now},
+		{MergeRequestID: id, EventType: "assigned", Author: "author", MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "assigned-2", CreatedAt: now},
+		{MergeRequestID: id, EventType: "assigned", Author: "author", MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "assigned-3", CreatedAt: now},
 	}))
 	actions := measure(true)
 	assert.Equal(t, before.Records+1, actions.Records)

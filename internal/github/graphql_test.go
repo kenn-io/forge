@@ -1462,3 +1462,9 @@ func TestFetchRepoPRsByIDChunksAndDropsClosedNodes(t *testing.T) {
 	}
 	assert.Equal([]int{1, 4, 5, 6, 7, 8, 9, 10, 11}, numbers)
 }
+
+func TestClosedTimelineBotLogin(t *testing.T) {
+	event, ok := adaptPullRequestTimelineEvent(&platformgithub.GraphQLPullRequestTimelineItem{Typename: "ClosedEvent", ClosedEvent: platformgithub.GraphQLLifecycleEvent{Actor: &platformgithub.GraphQLActorRef{Login: "automation", Typename: "Bot"}}})
+	require.True(t, ok)
+	assert.Equal(t, "automation[bot]", event.Actor)
+}

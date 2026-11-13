@@ -291,6 +291,12 @@ func (r *Runner) Plan(ctx context.Context, options Options) (Plan, error) {
 	} else if info.IsDir() || info.Mode()&0o111 == 0 {
 		return Plan{}, fmt.Errorf("kenn-forge binary %q is not executable", binaryPath)
 	}
+	// A kept capability admits tagged devices, so setup then needs no device
+	// login; tagged Forge hosts have none.
+	appCapability := ""
+	if options.Tailscale && existing != nil && existing.API.TailscaleServe.Enabled {
+		appCapability = existing.API.TailscaleServe.AppCapability
+	}
 	publication := publicationExternal
 	origin := strings.TrimSpace(options.Origin)
 	tailnet := tailscaleDiscovery{}
@@ -303,7 +309,8 @@ func (r *Runner) Plan(ctx context.Context, options Options) (Plan, error) {
 			return Plan{}, err
 		}
 		tailnet, err = r.discoverTailscale(
-			ctx, tailscaleCommand, options.TailscaleDNS, len(options.TailscaleLogins) == 0,
+			ctx, tailscaleCommand, options.TailscaleDNS,
+			len(options.TailscaleLogins) == 0 && appCapability == "",
 		)
 		if err != nil {
 			return Plan{}, err
@@ -318,10 +325,6 @@ func (r *Runner) Plan(ctx context.Context, options Options) (Plan, error) {
 	logins, err := planTailscaleLogins(options, tailnet.Login, existing)
 	if err != nil {
 		return Plan{}, err
-	}
-	appCapability := ""
-	if options.Tailscale && existing != nil && existing.API.TailscaleServe.Enabled {
-		appCapability = existing.API.TailscaleServe.AppCapability
 	}
 	parsedOrigin, err := url.Parse(origin)
 	if err != nil {
@@ -498,7 +501,7 @@ func configureCandidate(candidate *config.Config, plan Plan) error {
 	candidate.TrustReverseProxy = false
 	candidate.API.RequireAuth = true
 	candidate.API.TailscaleServe = config.TailscaleServeAPI{}
-	if len(plan.TailscaleLogins) > 0 {
+	if len(plan.TailscaleLogins) > 0 || plan.TailscaleAppCapability != "" {
 		candidate.API.TailscaleServe = config.TailscaleServeAPI{
 			Enabled: true, AllowedUsers: slices.Clone(plan.TailscaleLogins),
 			AppCapability: plan.TailscaleAppCapability,

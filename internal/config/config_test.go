@@ -803,14 +803,27 @@ func TestTailscaleServeUsersRejectInvalidConfiguration(t *testing.T) {
 		{name: "multiple users in one header", block: "enabled = true\nallowed_users = [\"a@example.com,b@example.com\"]"},
 		{name: "multiple at signs", block: "enabled = true\nallowed_users = [\"a@b@example.com\"]"},
 		{name: "case insensitive duplicate", block: "enabled = true\nallowed_users = [\"USER@example.com\", \"user@example.com\"]"},
-		{name: "blank capability only", block: "enabled = true\napp_capability = \" \""},
-		{name: "capability without name", block: "enabled = true\napp_capability = \"example.com\""},
-		{name: "capability without domain", block: "enabled = true\napp_capability = \"localhost/cap/forge\""},
-		{name: "capability list", block: "enabled = true\napp_capability = \"example.com/cap/a,example.com/cap/b\""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := Load(writeConfig(t, "[api.tailscale_serve]\n"+test.block+"\n"))
 			require.ErrorContains(t, err, "api.tailscale_serve")
+		})
+	}
+	for _, test := range []struct {
+		name       string
+		capability string
+	}{
+		{name: "blank capability only", capability: " "},
+		{name: "capability without name", capability: "example.com"},
+		{name: "capability without domain", capability: "localhost/cap/forge"},
+		{name: "capability list", capability: "example.com/cap/a,example.com/cap/b"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, fmt.Sprintf(
+				"[api]\nrequire_auth = true\n[api.tailscale_serve]\nenabled = true\napp_capability = %q\n",
+				test.capability,
+			)))
+			require.ErrorContains(t, err, "app_capability")
 		})
 	}
 }

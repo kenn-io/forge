@@ -270,7 +270,8 @@ Federation peers and the hub event stream live in
   `--origin` leaves ingress to the operator (`internal/fleetsetup/setup.go::configureCandidate`).
 - Serve identity is the tokenless path for people; enrollment and peer traffic keep tokens. Re-runs
   keep allowed logins, `app_capability`, and the HTTPS port; setup forwards the capability only
-  when it creates the Serve mapping. `--origin` never enables identity mode, since only Serve
+  when it creates the Serve mapping, and a kept capability skips device-login discovery because
+  tagged hosts have no login. `--origin` never enables identity mode, since only Serve
   replaces client identity headers (`internal/fleetsetup/setup.go::planTailscaleLogins`).
 - Setup services run as the selected current user with no network-vendor or shell dependency
   (`internal/fleetsetup/service.go`).

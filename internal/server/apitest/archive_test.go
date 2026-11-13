@@ -759,7 +759,7 @@ func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
 	assert.Zero(provider.calls.Load())
 }
 
-func TestAPIArchiveSnapshotOpenIssueScope(t *testing.T) {
+func TestAPIArchiveSnapshotScopeOptions(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)

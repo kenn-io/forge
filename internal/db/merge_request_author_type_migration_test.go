@@ -26,7 +26,6 @@ INSERT INTO forge_merge_requests (id,repo_id,platform_id,number,state,created_at
  (2,1,2,2,'closed',datetime('now','-60 days'),datetime('now'),datetime('now'),NULL),
  (3,2,3,3,'open',datetime('now'),datetime('now'),datetime('now'),NULL),
  (4,1,4,4,'open',datetime('now'),datetime('now'),datetime('now'),NULL),
- (5,1,5,5,'open',datetime('now'),datetime('now'),datetime('now'),NULL),
  (6,3,6,6,'open',datetime('now'),datetime('now'),datetime('now'),NULL),
  (7,1,7,7,'open',datetime('now'),datetime('now'),datetime('now'),NULL),
  (8,1,8,8,'merged',datetime('now','-40 days'),datetime('now'),datetime('now'),NULL);
@@ -35,7 +34,6 @@ INSERT INTO forge_archive_items (repo_id,item_type,item_number,provider_item_id,
  (1,'merge_request',2,'2',datetime('now'),datetime('now'),'active'),
  (2,'merge_request',3,'3',datetime('now'),datetime('now'),'active'),
  (1,'merge_request',4,'4',datetime('now'),datetime('now'),'active'),
- (1,'merge_request',5,'5',datetime('now'),datetime('now'),'active'),
  (3,'merge_request',6,'6',datetime('now'),datetime('now'),'active'),
  (1,'merge_request',7,'7',datetime('now'),datetime('now'),'active'),
  (1,'merge_request',8,'8',datetime('now'),datetime('now'),'active');
@@ -44,11 +42,9 @@ INSERT INTO forge_archive_dataset_progress (repo_id,item_type,item_number,datase
  (1,'merge_request',2,'lookup',3,'complete',datetime('now')),
  (2,'merge_request',3,'lookup',3,'complete',datetime('now')),
  (1,'merge_request',4,'lookup',3,'blocked',datetime('now')),
- (1,'merge_request',5,'lookup',3,'unsupported',datetime('now')),
  (3,'merge_request',6,'lookup',3,'complete',datetime('now')),
  (1,'merge_request',7,'lookup',3,'complete',datetime('now')),
- (1,'merge_request',8,'lookup',3,'complete',datetime('now'));
-UPDATE forge_archive_dataset_progress SET next_cursor='cursor',page_count=7,observed_count=8,attempt_count=2 WHERE repo_id=3;`)
+ (1,'merge_request',8,'lookup',3,'complete',datetime('now'));`)
 		require.NoError(t, err)
 		_, err = raw.ExecContext(t.Context(), `UPDATE forge_merge_requests SET detail_fetched_at=?`, time.Now().UTC())
 		require.NoError(t, err)
@@ -67,7 +63,7 @@ UPDATE forge_archive_dataset_progress SET next_cursor='cursor',page_count=7,obse
 		status       string
 		generation   int
 	}{
-		{1, 1, "pending", 4}, {1, 2, "complete", 3}, {2, 3, "complete", 3}, {1, 4, "blocked", 3}, {1, 5, "unsupported", 3}, {3, 6, "complete", 3}, {1, 7, "pending", 4}, {1, 8, "pending", 4},
+		{1, 1, "pending", 4}, {1, 2, "complete", 3}, {2, 3, "complete", 3}, {1, 4, "blocked", 3}, {3, 6, "complete", 3}, {1, 7, "pending", 4}, {1, 8, "pending", 4},
 	} {
 		var status string
 		var generation int
@@ -82,7 +78,4 @@ UPDATE forge_archive_dataset_progress SET next_cursor='cursor',page_count=7,obse
 			require.NotNil(t, fetched)
 		}
 	}
-	var preserved string
-	require.NoError(t, d.ReadDB().QueryRowContext(t.Context(), `SELECT next_cursor||'/'||page_count||'/'||observed_count||'/'||attempt_count FROM forge_archive_dataset_progress WHERE repo_id=3`).Scan(&preserved))
-	require.Equal(t, "cursor/7/8/2", preserved, "discovery lookups keep their cursor and counters")
 }

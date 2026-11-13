@@ -1406,6 +1406,7 @@ func TestNormalizePR_BotUserDisplayName(t *testing.T) {
 	pr, err := NormalizePR(1, ghPR)
 	require.NoError(t, err)
 
+	assert.Equal(new("bot"), pr.AuthorAccountType)
 	assert.Equal("renovate[bot]", pr.Author)
 	assert.Equal("renovate[bot]", pr.AuthorDisplayName,
 		"bot users should get login as display name")

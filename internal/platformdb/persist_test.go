@@ -84,6 +84,12 @@ func TestPreserveProviderHiddenMetadata(t *testing.T) {
 			want:     `{"actor_account_type":"user","provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`,
 		},
 		{
+			name:     "incoming visibility overrides stored marker",
+			existing: `{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`,
+			incoming: `{"provider_hidden":false}`,
+			want:     `{"provider_hidden":false}`,
+		},
+		{
 			name:     "does not restore visible comments",
 			existing: `{"provider_hidden":false}`,
 			want:     "",

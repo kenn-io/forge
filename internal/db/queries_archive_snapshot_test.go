@@ -111,15 +111,31 @@ func TestSnapshotActivityMatchesGiteaHeadCommit(t *testing.T) {
 	id, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", State: MergeRequestStateOpen, PlatformHeadSHA: "head-sha", CreatedAt: now, UpdatedAt: now})
 	require.NoError(t, err)
 	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: id, PlatformExternalID: "head-sha", EventType: "commit", Author: "Commit Author", Summary: "commit message", DedupeKey: "commit-head", CreatedAt: now}}))
+	githubID := insertArchiveReportRepo(t, database, RepoIdentity{Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: "widget"})
+	githubMR, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: githubID, PlatformID: 2, Number: 2, Author: "author", State: MergeRequestStateOpen, PlatformHeadSHA: "head-sha", CreatedAt: now, UpdatedAt: now})
+	require.NoError(t, err)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{
+		{MergeRequestID: githubMR, EventType: "review", Author: "maintainer", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "review", CreatedAt: now.Add(-4 * time.Minute)},
+		{MergeRequestID: githubMR, EventType: "commit", Author: "author", AuthorAssociation: new("CONTRIBUTOR"), MetadataJSON: `{"actor_account_type":"user"}`, Summary: "head-sha", DedupeKey: "head", CreatedAt: now.Add(-2 * time.Minute)},
+		{MergeRequestID: githubMR, EventType: "commit", Author: "author", AuthorAssociation: new("CONTRIBUTOR"), MetadataJSON: `{"actor_account_type":"user"}`, Summary: "old-sha", DedupeKey: "old", CreatedAt: now},
+		{MergeRequestID: githubMR, EventType: "issue_comment", Author: "automation", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"bot"}`, DedupeKey: "bot", CreatedAt: now},
+		{MergeRequestID: githubMR, EventType: "unassigned", Author: "maintainer", AuthorAssociation: new("MEMBER"), MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "unassigned", CreatedAt: now},
+	}))
 	tx, err := database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback() }()
-	activity, err := LoadArchiveSnapshotActivity(t.Context(), tx, []int64{id})
+	activity, err := LoadArchiveSnapshotActivity(t.Context(), tx, []int64{id, githubMR})
 	require.NoError(t, err)
-	require.Len(t, activity, 1)
+	require.Len(t, activity, 3)
 	assert.Equal(t, "push", activity[0].Kind)
 	assert.Equal(t, "Commit Author", activity[0].Actor)
 	assert.Equal(t, "unknown", activity[0].Class)
+	assert.Equal(t, "maintainer", activity[1].Class)
+	assert.Equal(t, "review", activity[1].Kind)
+	assert.Equal(t, "maintainer", activity[1].Actor)
+	assert.Equal(t, "author", activity[2].Class)
+	assert.Equal(t, "push", activity[2].Kind)
+	assert.Equal(t, now.Add(-2*time.Minute), activity[2].OccurredAt)
 }
 
 func TestCommentVisibilityRefreshPreservesActorType(t *testing.T) {

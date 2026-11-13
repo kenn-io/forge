@@ -156,7 +156,6 @@ func NormalizeCommentEvent(
 	c *gh.IssueComment,
 ) platform.MergeRequestEvent {
 	event := normalizeIssueCommentBase(repo, c)
-	event.MetadataJSON = WithActorAccountType(event.MetadataJSON, c.GetUser().GetType())
 	event.MergeRequestNumber = mrNumber
 	event.DedupeKey = fmt.Sprintf("comment-%d", c.GetID())
 	return event

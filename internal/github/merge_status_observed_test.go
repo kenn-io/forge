@@ -649,7 +649,7 @@ func TestDetailDrainCarriesThenReobservesGitHubReviewAndCI(t *testing.T) {
 				Mergeable: "clean", MergeableAt: sentAt1000,
 			},
 			wantOutcome: mergeStatus{
-				Review: "changes_requested", ReviewAt: seededAt, CI: "failure", CIAt: seededAt,
+				Review: "changes_requested", ReviewAt: seededAt, CI: "success", CIAt: sentAt1002,
 				Mergeable: "clean", MergeableAt: sentAt1000,
 			},
 		},
@@ -661,7 +661,7 @@ func TestDetailDrainCarriesThenReobservesGitHubReviewAndCI(t *testing.T) {
 				Mergeable: "clean", MergeableAt: sentAt1000,
 			},
 			wantOutcome: mergeStatus{
-				Review: "changes_requested", ReviewAt: seededAt,
+				Review: "changes_requested", ReviewAt: seededAt, CI: "success", CIAt: sentAt1002,
 				Mergeable: "clean", MergeableAt: sentAt1000,
 			},
 		},
@@ -779,6 +779,7 @@ func TestUnchangedDetailKeepsReviewAndMergeableAndStampsPendingCI(t *testing.T) 
 	client.notModified = true
 	seedObservedMR(t, d, repoID, "changes_requested", func(mr *db.MergeRequest) {
 		mr.CIHadPending = true
+		mr.DetailFetchedAt = &mr.UpdatedAt
 	})
 
 	_, err := syncer.fetchMRDetail(t.Context(), observedGitHubRepo, repoID, 1)
@@ -818,7 +819,9 @@ func TestUnchangedDetailStoresGitHubReviewDecision(t *testing.T) {
 			if tt.noReviews {
 				client.reviews = nil
 			}
-			seedObservedMR(t, d, repoID, tt.stored)
+			seedObservedMR(t, d, repoID, tt.stored, func(mr *db.MergeRequest) {
+				mr.DetailFetchedAt = &mr.UpdatedAt
+			})
 			var decisionRequestedAt time.Time
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, _ := io.ReadAll(r.Body)

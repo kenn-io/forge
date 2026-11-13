@@ -99,8 +99,8 @@ export function firstTabbedPanelLeaf(node: TabbedPanelNode | null): TabbedPanelL
 
 /**
  * The leaf that shares the given edge of a leaf, or null when that edge is the
- * tree's own border. Where the neighboring side is itself split, the leaf
- * touching the shared edge wins; across that edge the first (top or left) one does.
+ * tree's own border. Where several leaves line that edge, the first (top or
+ * left) one that overlaps the leaf's own stretch of it wins.
  */
 export function adjacentTabbedPanelLeaf(
   node: TabbedPanelNode | null,
@@ -115,9 +115,24 @@ export function adjacentTabbedPanelLeaf(
   for (let index = path.length - 1; index >= 0; index--) {
     const { split, inFirst } = path[index]!;
     if (split.direction !== direction || inFirst !== (placement === "after")) continue;
+    // The stretch of the shared edge the leaf covers, as fractions of the split:
+    // only a leaf overlapping it actually borders the leaf.
+    let [low, high] = [0, 1];
+    for (const step of path.slice(index + 1)) {
+      if (step.split.direction === direction) continue;
+      const cut = low + step.split.ratio * (high - low);
+      [low, high] = step.inFirst ? [low, cut] : [cut, high];
+    }
     let current: TabbedPanelNode = inFirst ? split.second : split.first;
+    let [start, end] = [0, 1];
     while (current.type === "split") {
-      current = current.direction === direction && placement === "before" ? current.second : current.first;
+      if (current.direction === direction) {
+        current = placement === "before" ? current.second : current.first;
+        continue;
+      }
+      const cut = start + current.ratio * (end - start);
+      if (low < cut) [current, end] = [current.first, cut];
+      else [current, start] = [current.second, cut];
     }
     return current;
   }

@@ -108,9 +108,9 @@ func TestSnapshotActivityMatchesGiteaHeadCommit(t *testing.T) {
 	database := openTestDB(t)
 	now := time.Now().UTC()
 	repoID := insertArchiveReportRepo(t, database, RepoIdentity{Platform: "gitea", PlatformHost: "git.example", Owner: "acme", Name: "widget"})
-	id, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", AuthorAccountType: new("user"), State: MergeRequestStateOpen, PlatformHeadSHA: "head-sha", CreatedAt: now, UpdatedAt: now})
+	id, err := database.UpsertMergeRequest(t.Context(), &MergeRequest{RepoID: repoID, PlatformID: 1, Number: 1, Author: "author", State: MergeRequestStateOpen, PlatformHeadSHA: "head-sha", CreatedAt: now, UpdatedAt: now})
 	require.NoError(t, err)
-	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: id, PlatformExternalID: "head-sha", EventType: "commit", Author: "author", AuthorAssociation: new("CONTRIBUTOR"), MetadataJSON: `{"actor_account_type":"user"}`, Summary: "commit message", DedupeKey: "commit-head", CreatedAt: now}}))
+	require.NoError(t, database.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: id, PlatformExternalID: "head-sha", EventType: "commit", Author: "Commit Author", Summary: "commit message", DedupeKey: "commit-head", CreatedAt: now}}))
 	tx, err := database.ReadDB().BeginTx(t.Context(), &sql.TxOptions{ReadOnly: true})
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback() }()
@@ -118,7 +118,8 @@ func TestSnapshotActivityMatchesGiteaHeadCommit(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, activity, 1)
 	assert.Equal(t, "push", activity[0].Kind)
-	assert.Equal(t, "author", activity[0].Class)
+	assert.Equal(t, "Commit Author", activity[0].Actor)
+	assert.Equal(t, "unknown", activity[0].Class)
 }
 
 func TestCommentVisibilityRefreshPreservesActorType(t *testing.T) {

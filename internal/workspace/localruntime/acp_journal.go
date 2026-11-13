@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/json/v2"
 	"errors"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"go.kenn.io/kit/atomicfile"
@@ -181,7 +183,10 @@ func (a *ACP) persistLocked() error {
 	if err != nil {
 		return err
 	}
-	if err := appendSynced(acpJournalPath(a.recordPath), append(line, '\n')); err != nil {
+	if err := appendSynced(acpJournalPath(a.recordPath), append(line, '\n'), a.journalBytes == 0); err != nil {
+		// A partial record would hide every record after it, so the next
+		// save writes a full snapshot instead of appending.
+		a.savedBase = ""
 		return err
 	}
 	a.journalBytes += len(line) + 1
@@ -199,11 +204,14 @@ func (a *ACP) writeSnapshotLocked(metadataSum [32]byte) error {
 	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return err
 	}
-	// The new snapshot holds everything; records left by a failed removal
-	// name the old Base and are skipped.
 	a.savedBase, a.snapshotBytes, a.journalBytes = base, len(data), 0
 	a.savedCursor, a.savedMetadata = a.messageCursor, metadataSum
-	return removeIfExists(acpJournalPath(a.recordPath))
+	// The save is complete once the snapshot is published. Removing the old
+	// journal is cleanup: records it keeps name the old Base and are skipped.
+	if err := removeIfExists(acpJournalPath(a.recordPath)); err != nil {
+		slog.Warn("remove replaced ACP chat journal", "path", acpJournalPath(a.recordPath), "err", err)
+	}
+	return nil
 }
 
 // changedMessagesLocked returns the entries published after cursor, plus the
@@ -230,7 +238,10 @@ func (a *ACP) changedMessagesLocked(cursor uint64) []ACPMessage {
 	return messages
 }
 
-func appendSynced(path string, data []byte) (err error) {
+// appendSynced appends data and syncs it. The first append after a snapshot
+// may create the file, and its directory entry is durable only once the
+// directory is synced too.
+func appendSynced(path string, data []byte, creating bool) (err error) {
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
 	if err != nil {
 		return err
@@ -239,5 +250,11 @@ func appendSynced(path string, data []byte) (err error) {
 	if _, err := file.Write(data); err != nil {
 		return err
 	}
-	return file.Sync()
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if creating {
+		return atomicfile.SyncDir(filepath.Dir(path))
+	}
+	return nil
 }

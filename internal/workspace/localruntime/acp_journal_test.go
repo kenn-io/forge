@@ -109,6 +109,52 @@ func TestACPSavedChatReadsBackAfterJournalAndCompaction(t *testing.T) {
 	})
 }
 
+// A failed append can leave a partial record that hides every record after
+// it, so the save after a failure writes a full snapshot instead.
+func TestACPSaveAfterAFailedAppendKeepsEverything(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		agent.recordPath = filepath.Join(t.TempDir(), "session.json")
+		require.NoError(t, agent.Prompt("work", ACPSender{Kind: ACPSenderUser}))
+		// A directory where the journal goes makes the next append fail;
+		// it then leaves the partial record an interrupted write would.
+		journal := acpJournalPath(agent.recordPath)
+		require.NoError(t, os.Mkdir(journal, 0o700))
+		acpToolCall(t, agent, "lost-append", acpsdk.ToolCallStatusCompleted)
+		require.NoError(t, os.Remove(journal))
+		require.NoError(t, os.WriteFile(journal, []byte(`{"Base":"`), 0o600))
+		acpToolCall(t, agent, "next", acpsdk.ToolCallStatusCompleted)
+
+		statuses := savedToolStatuses(t, agent.recordPath)
+		assert.Contains(t, statuses, "lost-append")
+		assert.Contains(t, statuses, "next")
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+	})
+}
+
+// Removing the old journal is cleanup: once the new snapshot is published
+// the save has happened, even when the removal fails.
+func TestACPSnapshotSaveSucceedsWhenTheOldJournalStays(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, _ := newScriptedACP(t)
+		agent.recordPath = filepath.Join(t.TempDir(), "session.json")
+		journal := acpJournalPath(agent.recordPath)
+		require.NoError(t, os.Mkdir(journal, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(journal, "keep"), nil, 0o600))
+
+		agent.mu.Lock()
+		err := agent.persistLocked()
+		agent.mu.Unlock()
+		require.NoError(t, err)
+		data, err := os.ReadFile(agent.recordPath)
+		require.NoError(t, err)
+		var snapshot acpSavedSession
+		require.NoError(t, json.Unmarshal(data, &snapshot), "the snapshot was published")
+		assert.NotEmpty(t, snapshot.Base)
+	})
+}
+
 // An entry inserted before another reads back in its place, though the
 // journal records it after the entry it precedes.
 func TestACPJournalRestoresInsertedEntriesInPlace(t *testing.T) {

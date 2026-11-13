@@ -117,6 +117,7 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 		{
 			name:            "committer signature is preferred over linked author",
 			author:          user("original-author", "User"),
+			committer:       user("", "Bot"),
 			commitAuthor:    signature("original-name", authoredAt),
 			commitCommitter: signature("rebase-committer", committedAt),
 			wantAuthor:      "rebase-committer",
@@ -125,11 +126,11 @@ func TestNormalizeCommitEventFallbacks(t *testing.T) {
 		},
 		{
 			name:          "author login is used when committer identity is absent",
-			author:        user("original-author", ""),
+			author:        user("original-author", "Bot"),
 			commitAuthor:  signature("original-name", authoredAt),
 			wantAuthor:    "original-author",
 			wantCreatedAt: authoredAt,
-			wantMetadata:  `{"commit_author":"original-author"}`,
+			wantMetadata:  `{"actor_account_type":"bot","commit_author":"original-author"}`,
 		},
 		{
 			name:          "nested author name is used without associated users",

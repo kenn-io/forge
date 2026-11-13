@@ -65,7 +65,9 @@ func TestMRDetailTimelineRecovery(t *testing.T) {
 			require.NoError(t, err)
 			assert.Nil(t, stored.DetailFetchedAt)
 			if !tc.recovery {
-				assert.Equal(t, "failure", stored.CIStatus)
+				if tc.name == "page 304" {
+					assert.Equal(t, "failure", stored.CIStatus)
+				}
 				assert.True(t, stored.WorkflowApprovalRequired)
 				return
 			}

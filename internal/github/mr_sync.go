@@ -265,7 +265,7 @@ func (s *Syncer) refreshMRDetailSnapshot(
 		ctx, repo, mrID, revision, number,
 		livenessHeadForRound(normalized, existing),
 	)
-	if errors.Is(timelineErr, errParentSnapshotAdvanced) || errors.Is(timelineErr, db.ErrRepositoryIdentityChanged) {
+	if errors.Is(timelineErr, errParentSnapshotAdvanced) {
 		return false, timelineErr
 	}
 	if ghPR != nil {

@@ -243,17 +243,14 @@ func NormalizeCommitEvent(
 		committerSignature = commit.GetCommitter()
 	}
 	author := commitIdentity(c.GetAuthor(), authorSignature)
-	actor := loginOrEmpty(c.GetCommitter())
+	actor := commitIdentity(c.GetCommitter(), committerSignature)
 	actorType := ""
-	if actor != "" {
+	if loginOrEmpty(c.GetCommitter()) != "" {
 		actorType = c.GetCommitter().GetType()
-	} else {
-		actor = commitIdentity(nil, committerSignature)
-		if actor == "" {
-			actor = author
-			if loginOrEmpty(c.GetAuthor()) != "" {
-				actorType = c.GetAuthor().GetType()
-			}
+	} else if actor == "" {
+		actor = author
+		if loginOrEmpty(c.GetAuthor()) != "" {
+			actorType = c.GetAuthor().GetType()
 		}
 	}
 

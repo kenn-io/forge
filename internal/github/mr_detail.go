@@ -196,9 +196,6 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 	if errors.Is(timelineErr, errParentSnapshotAdvanced) {
 		return calls, nil
 	}
-	if errors.Is(timelineErr, db.ErrRepositoryIdentityChanged) {
-		return calls, timelineErr
-	}
 	if _, err := s.persistMergedTransitionEvent(ctx, mrID, revision, fullPR, normalized.MergedAt); err != nil {
 		return calls, errors.Join(timelineErr, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err))
 	}
@@ -330,9 +327,6 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 		calls += 4
 		if errors.Is(timelineErr, errParentSnapshotAdvanced) {
 			return calls, nil
-		}
-		if errors.Is(timelineErr, db.ErrRepositoryIdentityChanged) {
-			return calls, timelineErr
 		}
 	} else {
 		// A parent 304 does not cover edited/deleted comments. Once a detail

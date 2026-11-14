@@ -166,3 +166,51 @@ func TestAgentSetupAuthGuidanceAndCursor(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentSetupSelectedConfig(t *testing.T) {
+	home := setupAgentTest(t, "/tmp/forge-test-data")
+	path := filepath.Join(home, "custom config.toml")
+	require.NoError(t, os.WriteFile(path, []byte("data_dir = '/tmp/custom-data'\n"), 0o600))
+	var out bytes.Buffer
+	cmd := newAgentCommand(func(_ context.Context, got string, _ time.Duration) (mcpQuickstartInfo, error) {
+		assert.Equal(t, path, got)
+		return stoppedMCPQuickstart(true, got), nil
+	})
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"setup", "--agent", "claude", "--config", path})
+	require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)
+	data, err := os.ReadFile(filepath.Join(home, "claude", "settings.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), path)
+	assert.Contains(t, out.String(), "then run `kenn-forge agent setup --config '"+path+"' --agent claude`")
+}
+
+func TestAgentSetupPrintStopped(t *testing.T) {
+	setupAgentTest(t, "/tmp/forge-test-data")
+	cmd := newAgentCommand(func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
+		return stoppedMCPQuickstart(true, path), nil
+	})
+	cmd.SetArgs([]string{"setup", "--agent", "claude", "--print"})
+	err := cmd.ExecuteContext(t.Context())
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "Forge daemon isn't running")
+	assert.ErrorContains(t, err, "kenn-forge daemon start")
+}
+
+func TestAgentSetupMalformedConfig(t *testing.T) {
+	home := setupAgentTest(t, "/tmp/forge-test-data")
+	path := filepath.Join(home, "invalid.toml")
+	require.NoError(t, os.WriteFile(path, []byte("[invalid\n"), 0o600))
+	var out bytes.Buffer
+	cmd := newAgentCommand(func(context.Context, string, time.Duration) (mcpQuickstartInfo, error) {
+		return mcpQuickstartInfo{}, nil
+	})
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"setup", "--agent", "claude", "--config", path, "--json", "--check"})
+	require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)
+	var report agentsetup.Report
+	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
+	require.Len(t, report.Rows, 2)
+	assert.Equal(t, "Check the Forge config and retry.", report.Rows[0].NextStep)
+	assert.NotContains(t, report.Rows[0].Reason, "absolute data_dir")
+}

@@ -25,7 +25,10 @@ const (
 	agentHookMarker = "--source " + agentHookSource
 )
 
-var errAgentHookResponse = errors.New("daemon failed to record agent hook")
+var (
+	errAgentHookResponse        = errors.New("daemon failed to record agent hook")
+	errAgentHookRelativeDataDir = errors.New("agent hook install requires an absolute data_dir")
+)
 
 func runAgentHookCLI(args []string, stdin io.Reader, stdout io.Writer) error {
 	cmd := newAgentHookCommand(stdin, stdout)
@@ -279,7 +282,7 @@ func resolveAgentHookTarget(configPath, binary string) (agentHookTarget, error) 
 		return agentHookTarget{}, err
 	}
 	if cfg.DataDirWasRelative() {
-		return agentHookTarget{}, errors.New("agent hook install requires an absolute data_dir")
+		return agentHookTarget{}, errAgentHookRelativeDataDir
 	}
 	absoluteConfigPath, err := filepath.Abs(configPath)
 	if err != nil {

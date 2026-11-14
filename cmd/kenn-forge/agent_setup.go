@@ -2,13 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	shellquote "github.com/kballard/go-shellquote"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/kit/agenthook"
 	"go.kenn.io/kit/agentmcp"
@@ -18,35 +21,83 @@ import (
 func newAgentCommand(load mcpQuickstartLoader) *cobra.Command {
 	group := &cobra.Command{Use: "agent", Short: "Connect agents to Forge", Args: cobra.NoArgs}
 	var setup *cobra.Command
+	configPath := config.DefaultConfigPath()
 	discover := sync.OnceValues(func() (mcpQuickstartInfo, error) {
-		return load(setup.Context(), config.DefaultConfigPath(), 5*time.Second)
+		return load(setup.Context(), configPath, 5*time.Second)
 	})
-	setup = agentsetup.NewCommand(agentsetup.Options{
+	options := agentsetup.Options{
 		SetupCommand: "kenn-forge agent setup",
 		Items: func(agent string) ([]agentsetup.Item, error) {
-			target, err := resolveAgentHookTarget(config.DefaultConfigPath(), "")
+			target, err := resolveAgentHookTarget(configPath, "")
 			var hooks agentsetup.Item
 			if err != nil {
+				nextStep := "Check the Forge config and retry."
+				if errors.Is(err, errAgentHookRelativeDataDir) {
+					nextStep = "Set an absolute data_dir in the Forge config."
+				}
 				hooks = agentsetup.Item{Name: "hooks", Check: func(context.Context) (agentsetup.Status, error) {
-					return agentsetup.Status{State: agentsetup.StateFailed, Reason: err.Error(), NextStep: "Set an absolute data_dir in the Forge config."}, nil
+					return agentsetup.Status{State: agentsetup.StateFailed, Reason: err.Error(), NextStep: nextStep}, nil
 				}}
 			} else {
 				hooks = agentsetup.Hooks(agent, target.options(agenthook.Agent(agent)))
 			}
 			info, discoveryErr := discover()
 			selected, _ := setup.Flags().GetStringSlice("agent")
-			command := "kenn-forge agent setup"
+			command := setupCommand(configPath)
 			if len(selected) > 0 {
 				command += " --agent " + strings.Join(selected, ",")
 			}
-			return []agentsetup.Item{hooks, forgeSetupMCP(agent, info, discoveryErr, command)}, nil
+			return []agentsetup.Item{hooks, forgeSetupMCP(agent, info, discoveryErr, command, configPath)}, nil
 		},
-	})
+	}
+	setup = agentsetup.NewCommand(options)
+	setup.Flags().StringVar(&configPath, "config", configPath, "path to config file")
+	setup.RunE = func(cmd *cobra.Command, args []string) error {
+		options.SetupCommand = setupCommand(configPath)
+		configured := agentsetup.NewCommand(options)
+		var flagErr error
+		cmd.Flags().Visit(func(flag *pflag.Flag) {
+			if flag.Name == "config" || flagErr != nil {
+				return
+			}
+			if flag.Name == "agent" {
+				agents, _ := cmd.Flags().GetStringSlice("agent")
+				for _, agent := range agents {
+					if flagErr = configured.Flags().Set("agent", agent); flagErr != nil {
+						return
+					}
+				}
+				return
+			}
+			flagErr = configured.Flags().Set(flag.Name, flag.Value.String())
+		})
+		if flagErr != nil {
+			return flagErr
+		}
+		configured.SetOut(cmd.OutOrStdout())
+		configured.SetContext(cmd.Context())
+		err := configured.RunE(configured, args)
+		cmd.SilenceErrors, cmd.SilenceUsage = configured.SilenceErrors, configured.SilenceUsage
+		return err
+	}
 	group.AddCommand(setup)
 	return group
 }
 
-func forgeSetupMCP(agent string, info mcpQuickstartInfo, discoveryErr error, command string) agentsetup.Item {
+func setupCommand(configPath string) string {
+	args := []string{"kenn-forge", "agent", "setup"}
+	if configPath != config.DefaultConfigPath() {
+		args = append(args, "--config", configPath)
+	}
+	return shellquote.Join(args...)
+}
+
+func forgeSetupMCP(agent string, info mcpQuickstartInfo, discoveryErr error, command, configPath string) agentsetup.Item {
+	quickstart := []string{"kenn-forge", "mcp", "quickstart"}
+	if configPath != config.DefaultConfigPath() {
+		quickstart = append(quickstart, "--config", configPath)
+	}
+	manualStep := "Run `" + shellquote.Join(quickstart...) + "` for manual setup."
 	if discoveryErr != nil || !info.Active {
 		reason := "Forge MCP isn't active"
 		if discoveryErr != nil {
@@ -56,15 +107,20 @@ func forgeSetupMCP(agent string, info mcpQuickstartInfo, discoveryErr error, com
 		}
 		steps := info.NextSteps
 		if len(steps) == 0 {
-			steps = []string{"Run `kenn-forge mcp quickstart`."}
+			steps = []string{manualStep}
 		}
+		nextStep := strings.Join(steps, " ") + " then run `" + command + "`"
 		return agentsetup.Item{Name: "mcp kenn-forge", Check: func(context.Context) (agentsetup.Status, error) {
-			return agentsetup.Status{State: agentsetup.StateFailed, Reason: reason, NextStep: strings.Join(steps, " ") + " then run `" + command + "`"}, nil
+			return agentsetup.Status{State: agentsetup.StateFailed, Reason: reason, NextStep: nextStep}, nil
+		}, Commands: func() (agenthook.Commands, error) {
+			return agenthook.Commands{}, fmt.Errorf("%s: %s", reason, nextStep)
 		}}
 	}
 	if info.Authentication.Required && agent != "claude" && agent != "codex" {
 		return agentsetup.Item{Name: "mcp kenn-forge", Check: func(context.Context) (agentsetup.Status, error) {
-			return agentsetup.Status{State: agentsetup.StateUnknown, Reason: "Token reference is unavailable for " + agent, NextStep: "Run `kenn-forge mcp quickstart` for manual setup."}, nil
+			return agentsetup.Status{State: agentsetup.StateUnknown, Reason: "Token reference is unavailable for " + agent, NextStep: manualStep}, nil
+		}, Commands: func() (agenthook.Commands, error) {
+			return agenthook.Commands{}, fmt.Errorf("token reference is unavailable for %s: %s", agent, manualStep)
 		}}
 	}
 	server := agentmcp.Server{URL: info.Endpoint}

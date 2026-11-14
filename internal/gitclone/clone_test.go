@@ -111,20 +111,47 @@ func TestIntegrationEnsureCloneTemplateRejectsCommit(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fixture uses a POSIX pre-commit hook")
 	}
-	require := require.New(t)
-	source := gitfixture.NewRepository(t, false)
-	home := gitfixture.ScratchDir(t)
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
-	template := filepath.Join(home, "git template")
-	require.NoError(os.MkdirAll(filepath.Join(template, "hooks"), 0o755))
-	hook := "#!/bin/sh\nif git diff --cached --name-only | grep -qx rejected.txt; then\necho template-rejected-commit >&2\nexit 1\nfi\n"
-	require.NoError(os.WriteFile(filepath.Join(template, "hooks", "pre-commit"), []byte(hook), 0o755))
-	_, _, err := gitsafe.UserConfigRunner(t, home, os.Getenv("XDG_CONFIG_HOME")).Run(
-		t.Context(), home, nil, "config", "--global", "init.templateDir", template,
-	)
-	require.NoError(err)
-	assertManagedCloneRejectsCommit(t, source.Dir)
+	for _, producer := range []string{"hand-written", "pre-commit"} {
+		t.Run(producer, func(t *testing.T) {
+			require := require.New(t)
+			var preCommit string
+			if producer == "pre-commit" {
+				var err error
+				preCommit, err = exec.LookPath("pre-commit")
+				if err != nil {
+					t.Skip("pre-commit unavailable; real framework template compatibility unverified")
+				}
+			}
+			source := gitfixture.NewRepository(t, false)
+			if preCommit != "" {
+				source.Write(t, ".pre-commit-config.yaml", "repos:\n- repo: local\n  hooks:\n  - id: reject-fixture\n    name: reject fixture\n    language: system\n    entry: sh -c 'echo template-rejected-commit >&2; exit 1'\n")
+				source.Stage(t, ".pre-commit-config.yaml")
+				gitfixture.Run(t, source.Dir, "commit", "-m", "configure local check")
+			}
+			home := gitfixture.ScratchDir(t)
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+			template := filepath.Join(home, "git template")
+			if preCommit != "" {
+				template = filepath.Join(home, "template")
+				t.Setenv("PRE_COMMIT_HOME", filepath.Join(home, "pre-commit-cache"))
+			}
+			user := gitsafe.UserConfigRunner(t, home, os.Getenv("XDG_CONFIG_HOME"))
+			_, _, err := user.Run(t.Context(), home, nil, "config", "--global", "init.templateDir", template)
+			require.NoError(err)
+			if preCommit != "" {
+				cmd := procutil.CommandContext(t.Context(), preCommit, "init-templatedir", template)
+				cmd.Dir, cmd.Env = home, user.Env
+				out, err := cmd.CombinedOutput()
+				require.NoError(err, "%s", out)
+			} else {
+				require.NoError(os.MkdirAll(filepath.Join(template, "hooks"), 0o755))
+				hook := "#!/bin/sh\nif git diff --cached --name-only | grep -qx rejected.txt; then\necho template-rejected-commit >&2\nexit 1\nfi\n"
+				require.NoError(os.WriteFile(filepath.Join(template, "hooks", "pre-commit"), []byte(hook), 0o755))
+			}
+			assertManagedCloneRejectsCommit(t, source.Dir)
+		})
+	}
 }
 
 func assertManagedCloneRejectsCommit(t *testing.T, remote string) {
@@ -1313,34 +1340,6 @@ func TestIntegrationClonesForContextListsEveryRouteOfOneIdentity(t *testing.T) {
 	missing, err := mgr.ClonesForContext(WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1003)}), "gitlab")
 	require.NoError(err)
 	assert.Empty(missing)
-}
-
-func TestIntegrationEnsureClonePreCommitTemplate(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fixture uses a POSIX local pre-commit check")
-	}
-	preCommit, err := exec.LookPath("pre-commit")
-	if err != nil {
-		t.Skip("pre-commit unavailable; real framework template compatibility unverified")
-	}
-	require := require.New(t)
-	source := gitfixture.NewRepository(t, false)
-	source.Write(t, ".pre-commit-config.yaml", "repos:\n- repo: local\n  hooks:\n  - id: reject-fixture\n    name: reject fixture\n    language: system\n    entry: sh -c 'echo template-rejected-commit >&2; exit 1'\n")
-	source.Stage(t, ".pre-commit-config.yaml")
-	gitfixture.Run(t, source.Dir, "commit", "-m", "configure local check")
-	home := gitfixture.ScratchDir(t)
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
-	t.Setenv("PRE_COMMIT_HOME", filepath.Join(home, "pre-commit-cache"))
-	user := gitsafe.UserConfigRunner(t, home, os.Getenv("XDG_CONFIG_HOME"))
-	template := filepath.Join(home, "template")
-	_, _, err = user.Run(t.Context(), home, nil, "config", "--global", "init.templateDir", template)
-	require.NoError(err)
-	cmd := procutil.CommandContext(t.Context(), preCommit, "init-templatedir", template)
-	cmd.Dir, cmd.Env = home, user.Env
-	out, err := cmd.CombinedOutput()
-	require.NoError(err, "%s", out)
-	assertManagedCloneRejectsCommit(t, source.Dir)
 }
 
 func TestIntegrationUserTemplateDir(t *testing.T) {

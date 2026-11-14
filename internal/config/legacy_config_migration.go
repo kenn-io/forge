@@ -104,6 +104,9 @@ func migrateLegacyConfig(configPath string) error {
 // daemon start would create, without writing anything beside it.
 func LoadPending(path string) (*Config, error) {
 	cfg, err := Load(path)
+	if err == nil {
+		return cfg, nil
+	}
 	if !errors.Is(err, os.ErrNotExist) || filepath.Clean(path) != filepath.Clean(DefaultConfigPath()) {
 		return cfg, err
 	}
@@ -121,7 +124,8 @@ func LoadPending(path string) (*Config, error) {
 			body, _ = transformLegacyConfig(source, oldHome, DefaultDataDir())
 		}
 	}
-	if cfg, err = decodeConfig(path, body, Overrides{}); err != nil {
+	cfg, err = decodeConfig(path, body, Overrides{})
+	if err != nil {
 		return cfg, err
 	}
 	return cfg, cfg.validate()

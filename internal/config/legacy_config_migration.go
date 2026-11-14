@@ -29,25 +29,12 @@ func migrateLegacyConfig(configPath string) error {
 	oldHome := legacyDefaultHome()
 	newHome := DefaultDataDir()
 	markerPath := filepath.Join(newHome, legacyConfigMigrationMarker)
-	markerVersion, err := readLegacyConfigMigrationMarker(markerPath)
-	if err != nil {
+	source, markerVersion, err := readLegacyConfigSource(oldHome, newHome)
+	if err != nil || source == nil {
 		return err
-	}
-	if markerVersion == "v2\n" {
-		return nil
 	}
 
 	sourcePath := filepath.Join(oldHome, "config.toml")
-	source, err := os.ReadFile(sourcePath)
-	if errors.Is(err, os.ErrNotExist) {
-		if markerVersion == "v1\n" {
-			return fmt.Errorf("complete legacy config migration from %s: source config is missing", sourcePath)
-		}
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("read legacy config %s: %w", sourcePath, err)
-	}
 	sourceInfo, err := os.Stat(sourcePath)
 	if err != nil {
 		return fmt.Errorf("inspect legacy config %s: %w", sourcePath, err)
@@ -123,24 +110,42 @@ func LoadPending(path string) (*Config, error) {
 	body := []byte(defaultConfigContents())
 	if os.Getenv("KENN_FORGE_HOME") == "" {
 		oldHome := legacyDefaultHome()
-		marker, err := readLegacyConfigMigrationMarker(filepath.Join(DefaultDataDir(), legacyConfigMigrationMarker))
+		source, marker, err := readLegacyConfigSource(oldHome, DefaultDataDir())
 		if err != nil {
 			return nil, err
 		}
-		if source, err := os.ReadFile(filepath.Join(oldHome, "config.toml")); err == nil && marker != "v2\n" {
+		if marker == "v1\n" {
+			return nil, fmt.Errorf("complete legacy config migration to %s: %w", path, os.ErrNotExist)
+		}
+		if source != nil {
 			body, _ = transformLegacyConfig(source, oldHome, DefaultDataDir())
 		}
 	}
-	dir, err := os.MkdirTemp("", "forge-pending-config-")
+	if cfg, err = decodeConfig(path, body, Overrides{}); err != nil {
+		return cfg, err
+	}
+	return cfg, cfg.validate()
+}
+
+// readLegacyConfigSource returns the legacy config a daemon start would
+// migrate, or nil when none is pending, along with the migration marker.
+func readLegacyConfigSource(oldHome, newHome string) ([]byte, string, error) {
+	markerVersion, err := readLegacyConfigMigrationMarker(filepath.Join(newHome, legacyConfigMigrationMarker))
+	if err != nil || markerVersion == "v2\n" {
+		return nil, markerVersion, err
+	}
+	sourcePath := filepath.Join(oldHome, "config.toml")
+	source, err := os.ReadFile(sourcePath)
+	if errors.Is(err, os.ErrNotExist) {
+		if markerVersion == "v1\n" {
+			return nil, markerVersion, fmt.Errorf("complete legacy config migration from %s: source config is missing", sourcePath)
+		}
+		return nil, markerVersion, nil
+	}
 	if err != nil {
-		return nil, fmt.Errorf("preview first-start config: %w", err)
+		return nil, markerVersion, fmt.Errorf("read legacy config %s: %w", sourcePath, err)
 	}
-	defer os.RemoveAll(dir)
-	pending := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(pending, body, 0o600); err != nil {
-		return nil, fmt.Errorf("preview first-start config: %w", err)
-	}
-	return Load(pending)
+	return source, markerVersion, nil
 }
 
 func transformLegacyConfig(body []byte, oldHome, newHome string) ([]byte, error) {

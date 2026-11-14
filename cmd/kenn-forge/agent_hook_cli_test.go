@@ -453,6 +453,48 @@ func TestSetupHookBeforeLegacyMigration(t *testing.T) {
 	assert.Equal(t, cfg.DataDir, target.home)
 }
 
+func TestPendingConfigMatchesFirstStart(t *testing.T) {
+	for _, tc := range []struct {
+		name, marker, legacy string
+		directory            bool
+	}{
+		{name: "incomplete migration without source", marker: "v1\n"},
+		{name: "legacy source is a directory", directory: true},
+		{name: "relative token file", legacy: "[[repos]]\nowner = 'acme'\nname = 'widgets'\ntoken_file = 'tokens/repo.token'\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("KENN_FORGE_HOME", "")
+			t.Setenv("KENN_FORGE_DATA_DIR", "")
+			require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
+			legacy := filepath.Join(home, ".config", "middleman")
+			if tc.marker != "" {
+				require.NoError(t, os.MkdirAll(config.DefaultDataDir(), 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(config.DefaultDataDir(), ".legacy-config-migrated"), []byte(tc.marker), 0o600))
+			}
+			if tc.directory {
+				require.NoError(t, os.MkdirAll(filepath.Join(legacy, "config.toml"), 0o700))
+			} else if tc.legacy != "" {
+				require.NoError(t, os.MkdirAll(filepath.Join(legacy, "tokens"), 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(legacy, "config.toml"), []byte(tc.legacy), 0o600))
+				require.NoError(t, os.WriteFile(filepath.Join(legacy, "tokens", "repo.token"), []byte("example"), 0o600))
+			}
+			path := config.DefaultConfigPath()
+			pending, previewErr := config.LoadPending(path)
+			assert.NoFileExists(t, path)
+			actual, startErr := config.LoadOrCreate(path)
+			if startErr != nil {
+				require.Error(t, previewErr)
+				return
+			}
+			require.NoError(t, previewErr)
+			require.Len(t, pending.Repos, 1)
+			assert.Equal(t, actual.Repos[0].TokenFile, pending.Repos[0].TokenFile)
+		})
+	}
+}
+
 func TestSetupHookHelper(t *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
 		return

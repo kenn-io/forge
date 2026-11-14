@@ -217,3 +217,13 @@ func TestAgentSetupCursor(t *testing.T) {
 	_, err = os.Stat(filepath.Join(home, ".cursor", "mcp.json"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
+
+func TestAgentSetupCursorPrintAuthGuidance(t *testing.T) {
+	setupAgentTest(t, "/tmp/forge-test-data")
+	info := daemonMCPQuickstart(mcpSettingsInfo{Enabled: true, ActiveURL: "http://127.0.0.1:8091/mcp", ActiveRequiresAuth: true}, "/tmp/token")
+	cmd := newAgentCommand(func(context.Context, string, time.Duration) (mcpQuickstartInfo, error) { return info, nil })
+	cmd.SetArgs([]string{"setup", "--agent", "cursor", "--print"})
+	err := cmd.ExecuteContext(t.Context())
+	require.ErrorContains(t, err, "token reference is unavailable for cursor")
+	require.ErrorContains(t, err, "kenn-forge mcp quickstart")
+}

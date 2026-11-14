@@ -132,9 +132,6 @@ func forgeSetupMCP(agent string, info mcpQuickstartInfo, discoveryErr error, com
 	item.Check = func(ctx context.Context) (agentsetup.Status, error) {
 		status, err := check(ctx)
 		if (status.State == agentsetup.StateFailed || status.State == agentsetup.StateUnknown) && info.Authentication.Required && os.Getenv(mcpTokenEnvironment) == "" {
-			if status.NextStep == "" {
-				status.NextStep = command
-			}
 			status.NextStep += fmt.Sprintf("; export %s from %s", mcpTokenEnvironment, info.Authentication.TokenPath)
 		}
 		return status, err

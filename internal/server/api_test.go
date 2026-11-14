@@ -7467,7 +7467,10 @@ func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) { //noli
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + originalShell.Key + "/terminal?cols=80&rows=24"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -7567,6 +7570,7 @@ func workspaceTerminalWriteRead(
 
 	conn, resp, err := workspaceTerminalDial(ctx, serverURL, workspaceID)
 	if err != nil && resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
 		body, readErr := io.ReadAll(resp.Body)
 		require.NoError(t, readErr)
 		require.NoError(t, err, string(body))
@@ -7676,7 +7680,10 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key +
 		"/terminal?cols=177&rows=41"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 

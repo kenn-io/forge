@@ -293,6 +293,7 @@ func TestStartupSwitchHeldStreamOutlivesReadTimeout(t *testing.T) {
 			if err != nil {
 				return
 			}
+			defer response.Body.Close()
 			_, _ = io.Copy(io.Discard, response.Body)
 		}()
 		synctest.Wait()

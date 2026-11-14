@@ -1578,7 +1578,7 @@ func TestWorkspaceListReturnsWhileSubprocessCapacityIsHeld(t *testing.T) { //nol
 	}
 	listDone := make(chan listResult, 1)
 	go func() {
-		resp, listErr := client.HTTP.ListWorkspacesRaw(ctx, client.Transport)
+		resp, listErr := client.HTTP.ListWorkspacesRaw(ctx, client.Transport) //nolint:bodyclose // the receiver closes the body after reading listDone.
 		listDone <- listResult{resp: resp, err: listErr}
 	}()
 

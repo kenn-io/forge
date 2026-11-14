@@ -311,7 +311,10 @@ func TestACPChatServesReferencedImagesOnConnectAndReload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
 	defer server.Close()
 	for range 2 {
-		conn, _, dialErr := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+		conn, resp, dialErr := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+		if dialErr != nil && resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
 		require.NoError(dialErr)
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		_, data, readErr := conn.Read(ctx)
@@ -384,7 +387,10 @@ func TestACPChatReadsStopWhileAPromptStalls(t *testing.T) {
 	defer close(chat.release)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
 	defer server.Close()
-	conn, _, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	conn, resp, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(t, err)
 	defer conn.CloseNow()
 
@@ -418,7 +424,10 @@ func TestACPChatAnswersHistoryRequests(t *testing.T) {
 	chat := &historyChat{stallingChat{release: make(chan struct{}), cancelled: make(chan struct{}), done: make(chan struct{})}, make(chan localruntime.ACPHistoryRequest, 1)}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
 	defer server.Close()
-	conn, _, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	conn, resp, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(t, err)
 	defer conn.CloseNow()
 
@@ -442,7 +451,10 @@ func TestACPChatErrorsNameTheFailedCommand(t *testing.T) {
 	chat := &failingChat{stallingChat{release: make(chan struct{}), cancelled: make(chan struct{}), done: make(chan struct{})}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
 	defer server.Close()
-	conn, _, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	conn, resp, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(t, err)
 	defer conn.CloseNow()
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
@@ -471,7 +483,10 @@ func TestACPChatAcknowledgesAcceptedPrompts(t *testing.T) {
 	chat := &acceptingChat{stallingChat{release: make(chan struct{}), cancelled: make(chan struct{}), done: make(chan struct{})}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
 	defer server.Close()
-	conn, _, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	conn, resp, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(t, err)
 	defer conn.CloseNow()
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)

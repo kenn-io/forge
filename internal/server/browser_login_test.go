@@ -129,7 +129,6 @@ func (f *browserLoginFixture) do(
 	}}
 	response, err := client.Do(request)
 	require.NoError(t, err)
-	t.Cleanup(func() { response.Body.Close() })
 	return response
 }
 
@@ -137,6 +136,7 @@ func (f *browserLoginFixture) issueTicket(t *testing.T) browserloginapi.BrowserL
 	t.Helper()
 	response := f.do(t, http.MethodPost, "/api/v1/federation/browser-login-tickets",
 		func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+f.peerToken) })
+	defer response.Body.Close()
 	require.Equal(t, http.StatusOK, response.StatusCode)
 	var ticket browserloginapi.BrowserLoginTicketBody
 	require.NoError(t, json.NewDecoder(response.Body).Decode(&ticket))
@@ -148,6 +148,7 @@ func (f *browserLoginFixture) signIn(t *testing.T) *http.Cookie {
 	t.Helper()
 	ticket := f.issueTicket(t)
 	response := f.do(t, http.MethodGet, "/?login_ticket="+ticket.Ticket, nil)
+	defer response.Body.Close()
 	require.Equal(t, http.StatusSeeOther, response.StatusCode)
 	cookie := browserSessionCookie(response)
 	require.NotNil(t, cookie)
@@ -156,9 +157,11 @@ func (f *browserLoginFixture) signIn(t *testing.T) *http.Cookie {
 
 func (f *browserLoginFixture) snapshotStatus(t *testing.T, cookie *http.Cookie) int {
 	t.Helper()
-	return f.do(t, http.MethodGet, "/api/v1/snapshot", func(r *http.Request) {
+	response := f.do(t, http.MethodGet, "/api/v1/snapshot", func(r *http.Request) {
 		r.AddCookie(cookie)
-	}).StatusCode
+	})
+	defer response.Body.Close()
+	return response.StatusCode
 }
 
 func browserSessionCookie(response *http.Response) *http.Cookie {
@@ -179,6 +182,7 @@ func TestBrowserLoginTicketBootstrapsSession(t *testing.T) {
 	ticket := hub.issueTicket(t)
 	response := hub.do(t, http.MethodGet,
 		"/pulls/github/acme/widget/7?state=open&login_ticket="+ticket.Ticket, nil)
+	defer response.Body.Close()
 	require.Equal(http.StatusSeeOther, response.StatusCode)
 	assert.Equal("/pulls/github/acme/widget/7?state=open", response.Header.Get("Location"))
 	cookie := browserSessionCookie(response)
@@ -195,16 +199,19 @@ func TestBrowserLoginTicketBootstrapsSession(t *testing.T) {
 	}), "the ticket itself is not a session")
 
 	reused := hub.do(t, http.MethodGet, "/?login_ticket="+ticket.Ticket, nil)
+	defer reused.Body.Close()
 	assert.Equal(http.StatusForbidden, reused.StatusCode)
 	assert.Nil(browserSessionCookie(reused))
 
 	bogus := hub.do(t, http.MethodGet, "/?login_ticket=not-a-ticket", nil)
+	defer bogus.Body.Close()
 	assert.Equal(http.StatusForbidden, bogus.StatusCode)
 	assert.Nil(browserSessionCookie(bogus))
 
 	expired := hub.issueTicket(t)
 	hub.clock.Set(expired.ExpiresAt)
 	late := hub.do(t, http.MethodGet, "/?login_ticket="+expired.Ticket, nil)
+	defer late.Body.Close()
 	assert.Equal(http.StatusForbidden, late.StatusCode)
 	assert.Nil(browserSessionCookie(late))
 }
@@ -216,6 +223,7 @@ func TestBrowserLoginRedirectStaysSameOrigin(t *testing.T) {
 	hub := newBrowserLoginHub(t, authapi.HostCheckOptions{})
 	ticket := hub.issueTicket(t)
 	response := hub.do(t, http.MethodGet, "//evil.example/path?login_ticket="+ticket.Ticket, nil)
+	defer response.Body.Close()
 	require.Equal(http.StatusSeeOther, response.StatusCode)
 	location, err := url.Parse(response.Header.Get("Location"))
 	require.NoError(err)
@@ -253,6 +261,7 @@ func TestBrowserSessionCookieSecureFollowsTrustedScheme(t *testing.T) {
 			}
 			ticket := hub.issueTicket(t)
 			response := hub.do(t, http.MethodGet, "/?login_ticket="+ticket.Ticket, decorate)
+			defer response.Body.Close()
 			require.Equal(t, http.StatusSeeOther, response.StatusCode)
 			cookie := browserSessionCookie(response)
 			require.NotNil(t, cookie)
@@ -291,6 +300,7 @@ func TestBrowserSessionEndsWithIssuingPeerEnrollment(t *testing.T) {
 	assert.Equal(http.StatusUnauthorized, hub.snapshotStatus(t, cookie),
 		"revocation ends the peer's browser sessions")
 	late := hub.do(t, http.MethodGet, "/?login_ticket="+pending.Ticket, nil)
+	defer late.Body.Close()
 	assert.Equal(http.StatusForbidden, late.StatusCode,
 		"a ticket issued before revocation cannot sign in afterward")
 	assert.Nil(browserSessionCookie(late))
@@ -302,14 +312,16 @@ func TestBrowserSessionRejectsCrossOriginWebSocket(t *testing.T) {
 	hub := newBrowserLoginHub(t, authapi.HostCheckOptions{})
 	cookie := hub.signIn(t)
 	upgrade := func(origin string) int {
-		return hub.do(t, http.MethodGet, "/ws/v1/workspaces/ws-1/terminal", func(r *http.Request) {
+		response := hub.do(t, http.MethodGet, "/ws/v1/workspaces/ws-1/terminal", func(r *http.Request) {
 			r.AddCookie(cookie)
 			r.Header.Set("Origin", origin)
 			r.Header.Set("Connection", "Upgrade")
 			r.Header.Set("Upgrade", "websocket")
 			r.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
 			r.Header.Set("Sec-WebSocket-Version", "13")
-		}).StatusCode
+		})
+		defer response.Body.Close()
+		return response.StatusCode
 	}
 	hostURL, err := url.Parse(hub.ts.URL)
 	require.NoError(t, err)

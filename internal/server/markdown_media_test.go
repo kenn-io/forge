@@ -345,7 +345,7 @@ func getMarkdownMedia(t *testing.T, baseURL string) (*http.Response, error) {
 	}
 	got := make(chan result, 1)
 	go func() {
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req) //nolint:bodyclose // ownership passes through got to the receiving test cleanup.
 		got <- result{resp, err}
 	}()
 	select {
@@ -364,7 +364,7 @@ func TestMarkdownMediaRouteSendsHeadersBeforeUpstreamSendsBody(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	ts, _ := pipedMediaHTTPServer(t)
 
-	resp, err := getMarkdownMedia(t, ts.URL)
+	resp, err := getMarkdownMedia(t, ts.URL) //nolint:bodyclose // getMarkdownMedia owns response cleanup through t.Cleanup.
 
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -374,7 +374,7 @@ func TestMarkdownMediaRouteSendsHeadersBeforeUpstreamSendsBody(t *testing.T) {
 func TestMarkdownMediaRouteAbortsWhenUpstreamFailsMidStream(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	ts, upstream := pipedMediaHTTPServer(t)
-	resp, err := getMarkdownMedia(t, ts.URL)
+	resp, err := getMarkdownMedia(t, ts.URL) //nolint:bodyclose // getMarkdownMedia owns response cleanup through t.Cleanup.
 	require.NoError(t, err)
 
 	_, _ = io.WriteString(upstream, "partial")
@@ -392,7 +392,7 @@ func TestServerShutdownEndsActiveMarkdownMediaStream(t *testing.T) {
 	require.NoError(t, err)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
-	resp, err := getMarkdownMedia(t, "http://"+ln.Addr().String())
+	resp, err := getMarkdownMedia(t, "http://"+ln.Addr().String()) //nolint:bodyclose // getMarkdownMedia owns response cleanup through t.Cleanup.
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)

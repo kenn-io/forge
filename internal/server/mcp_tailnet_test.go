@@ -22,7 +22,7 @@ import (
 
 func tailnetMCPInitialize(
 	t *testing.T, url string, decorate func(*http.Request),
-) *http.Response {
+) int {
 	t.Helper()
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url+"/mcp", strings.NewReader(
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{`+
@@ -37,8 +37,8 @@ func tailnetMCPInitialize(
 	}
 	response, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)
-	t.Cleanup(func() { response.Body.Close() })
-	return response
+	defer response.Body.Close()
+	return response.StatusCode
 }
 
 // newTailnetMCPTestServer serves the main listener on loopback with a public
@@ -102,7 +102,7 @@ func TestTailnetMCPAcceptsAllowedTailscaleServeUserWithoutBearer(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			response := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
+			status := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
 				request.Host = publicHost
 				if test.login != "" {
 					request.Header.Set("Tailscale-User-Login", test.login)
@@ -114,7 +114,7 @@ func TestTailnetMCPAcceptsAllowedTailscaleServeUserWithoutBearer(t *testing.T) {
 					request.Header.Set("Origin", test.origin)
 				}
 			})
-			assert.Equal(t, test.expected, response.StatusCode)
+			assert.Equal(t, test.expected, status)
 		})
 	}
 }
@@ -128,11 +128,11 @@ func TestTailnetMCPRequiresTailscaleIdentityMode(t *testing.T) {
 	t.Cleanup(func() { _ = mcp.Close() })
 	srv.SetTailnetMCPHandler(mcp.TailnetHTTPHandler())
 
-	response := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
+	status := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
 		request.Header.Set("Tailscale-User-Login", "user@example.com")
 	})
 
-	assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
+	assert.Equal(t, http.StatusUnauthorized, status)
 }
 
 func TestMainListenerMCPAcceptsDaemonBearer(t *testing.T) {
@@ -158,7 +158,7 @@ func TestMainListenerMCPAcceptsDaemonBearer(t *testing.T) {
 			}
 			for _, test := range tests {
 				t.Run(test.name, func(t *testing.T) {
-					response := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
+					status := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
 						request.Host = publicHost
 						if test.header != "" {
 							request.Header.Set("Authorization", test.header)
@@ -167,7 +167,7 @@ func TestMainListenerMCPAcceptsDaemonBearer(t *testing.T) {
 							request.Header.Set("Origin", test.origin)
 						}
 					})
-					assert.Equal(t, test.expected, response.StatusCode)
+					assert.Equal(t, test.expected, status)
 				})
 			}
 		})
@@ -177,23 +177,23 @@ func TestMainListenerMCPAcceptsDaemonBearer(t *testing.T) {
 func TestMainListenerMCPRejectsBearerWhenDaemonTokenEmpty(t *testing.T) {
 	ts, publicHost := newMainMCPTestServer(t, authapi.DaemonAccessOptions{}, true)
 
-	response := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
+	status := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
 		request.Host = publicHost
 		request.Header.Set("Authorization", "Bearer ")
 	})
 
-	assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
+	assert.Equal(t, http.StatusUnauthorized, status)
 }
 
 func TestMainListenerMCPRejectsDisallowedHostBeforeBearer(t *testing.T) {
 	ts, _ := newMainMCPTestServer(t, authapi.DaemonAccessOptions{Token: "local-secret"}, true)
 
-	response := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
+	status := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
 		request.Host = "rebound.example:80"
 		request.Header.Set("Authorization", "Bearer local-secret")
 	})
 
-	assert.Equal(t, http.StatusForbidden, response.StatusCode)
+	assert.Equal(t, http.StatusForbidden, status)
 }
 
 func TestMainListenerMCPAcceptsDaemonBearerUnderBasePath(t *testing.T) {
@@ -218,19 +218,19 @@ func TestMainListenerMCPAcceptsDaemonBearerUnderBasePath(t *testing.T) {
 	})
 	rejected := tailnetMCPInitialize(t, ts.URL+"/forge", nil)
 
-	assert.Equal(t, http.StatusOK, accepted.StatusCode)
-	assert.Equal(t, http.StatusUnauthorized, rejected.StatusCode)
+	assert.Equal(t, http.StatusOK, accepted)
+	assert.Equal(t, http.StatusUnauthorized, rejected)
 }
 
 func TestMainListenerMCPWithoutHandlerReturnsNotFound(t *testing.T) {
 	ts, publicHost := newMainMCPTestServer(t, authapi.DaemonAccessOptions{Token: "local-secret"}, false)
 
-	response := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
+	status := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
 		request.Host = publicHost
 		request.Header.Set("Authorization", "Bearer local-secret")
 	})
 
-	assert.Equal(t, http.StatusNotFound, response.StatusCode)
+	assert.Equal(t, http.StatusNotFound, status)
 }
 
 func newSharedPortMCPTestServer(
@@ -282,7 +282,7 @@ func TestMainListenerMCPAppliesCompanionPolicyWhenSharingPort(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			response := tailnetMCPInitialize(t, ts.URL+"/forge", func(request *http.Request) {
+			status := tailnetMCPInitialize(t, ts.URL+"/forge", func(request *http.Request) {
 				if test.host != "" {
 					request.Host = test.host
 				}
@@ -290,7 +290,7 @@ func TestMainListenerMCPAppliesCompanionPolicyWhenSharingPort(t *testing.T) {
 					request.Header.Set(name, value)
 				}
 			})
-			assert.Equal(t, test.expected, response.StatusCode)
+			assert.Equal(t, test.expected, status)
 		})
 	}
 }
@@ -301,9 +301,9 @@ func TestMainListenerSharedMCPWorksWithTrustedReverseProxy(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	ts, _, _ := newSharedPortMCPTestServer(t, true)
 
-	response := tailnetMCPInitialize(t, ts.URL+"/forge", nil)
+	status := tailnetMCPInitialize(t, ts.URL+"/forge", nil)
 
-	assert.Equal(t, http.StatusOK, response.StatusCode)
+	assert.Equal(t, http.StatusOK, status)
 }
 
 func TestDaemonPingAdvertisesMCPOnTheCallersOrigin(t *testing.T) {

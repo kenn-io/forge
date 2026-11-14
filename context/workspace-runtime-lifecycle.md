@@ -278,9 +278,9 @@ Processes on the execution host:
 
 ### Terminal sessions
 
-- The base workspace tmux session is durable backend state, but production terminal panes are
-  pooled runtime sessions; the primary terminal endpoint is not a mounted SPA workflow
-  (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`).
+- The local base workspace terminal is durable backend state, shared by phone’s Workspace
+  choice and the standalone desktop Workspace workflow tab. It stays available while runtime
+  discovery is pending or fails; embedded detail panes and remote hosts remain session-only.
 - Launched agent and shell sessions are not durable after natural exit.
 - The shell drawer is a singleton per workspace; a tmux-backed shell survives server restarts
   until it exits or the workspace is deleted.

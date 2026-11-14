@@ -47,6 +47,8 @@
   } from "../../api/types.js";
   import {
     workspaceSessionWebSocketPath,
+    workspaceTmuxWebSocketPath,
+    workspaceBaseSessionKey,
     type WorkspaceRuntimeState,
   } from "../../api/workspace-runtime.js";
   import {
@@ -711,9 +713,29 @@
   const workspaceLive = $derived(
     workspace?.id === workspaceId && selectedWorkspaceHostKey(workspace) === workspaceHostKey,
   );
+  const embeddedWorkspace = $derived(paneSurface !== undefined);
   const runtimeLive = $derived(
     runtime !== null && runtimeForId === workspaceId && runtimeForHostKey === workspaceHostKey && workspaceLive,
   );
+  // The standalone Workspaces view exposes the same durable terminal as phone.
+  // Detail panes keep their compact session-only layout and promotion behavior.
+  const baseTerminalHostKey = $derived(
+    workspaceLive && workspace?.status === "ready" && workspaceHostKey === undefined && !embeddedWorkspace
+      ? sessionHostKey(workspaceId, undefined, workspaceBaseSessionKey(workspaceId), workspace.created_at)
+      : null,
+  );
+  const workflowLive = $derived(runtimeLive || baseTerminalHostKey !== null);
+  $effect(() => {
+    if (baseTerminalHostKey === null) return;
+    untrack(() => {
+      terminalLayout = {
+        ...terminalLayout,
+        workflowTree: normalizeWorkflowTree(terminalLayout.workflowTree, [
+          ...collectWorkflowTabKeys(terminalLayout.workflowTree), "home",
+        ]),
+      };
+    });
+  });
   // A workspace counts on its own visible page or when something launches in it;
   // automatic display beside a PR or issue does not.
   function reportWorkspaceLaunch(): void {
@@ -799,7 +821,7 @@
   );
   const renderedWorkspaceInputRegion = $derived.by<WorkspaceInputRegion | null>(() => {
     if (!hostVisible) return null;
-    if (workspaceInputRegion === "workflow" && !runtimeLive) return null;
+    if (workspaceInputRegion === "workflow" && !workflowLive) return null;
     if (
       workspaceInputRegion === "details" &&
       (!workspaceDetailsReady || hideRightSidebar || !sidebarOpen)
@@ -813,7 +835,7 @@
   });
 
   $effect.pre(() => {
-    const workflowVisible = hostVisible && runtimeLive;
+    const workflowVisible = hostVisible && workflowLive;
     const detailsVisible =
       hostVisible && workspaceDetailsReady && !hideRightSidebar && sidebarOpen;
     const terminalVisible = hostVisible && terminalLayout.dock === "bottom";
@@ -990,7 +1012,6 @@
     untrack(() => publishHostedSessions(key, sessions));
   });
 
-  const embeddedWorkspace = $derived(paneSurface !== undefined);
   const workspaceErrorVisible = $derived(hostVisible && (!embeddedWorkspace || pendingWorkspaceLaunch(workspaceId, workspaceHostKey) !== null));
 
   // `auto` records who opened it: an overlay the view raised over an empty pane is
@@ -1147,7 +1168,8 @@
       return;
     }
     const tabs = workflowTabDescriptors;
-    const activeMissing = !tabs.some((tab) => tab.key === activeTabKey) &&
+    const activeMissing = (activeTabKey === "home" && lastRequestedTabKey === null && restoredTabKey === null && runtimeSessions.length > 0 && tabs[0]?.key !== "home") ||
+      !tabs.some((tab) => tab.key === activeTabKey) &&
       !promotedSessionKeys.has(sessionKeyFromWorkflowTab(activeTabKey) ?? "") &&
       !(activeTabKey === "terminal" && runtimeSessions.some((session) => sessionRegion(session) === "terminal"));
     const workspaceKey = viewWorkspaceKey;
@@ -1161,7 +1183,7 @@
       if (tabs.length > 0 && activeMissing) selectWorkspaceTab(tabs[0]!.key, false);
       // A docked terminal is not a workflow tab but is very much on screen, so an
       // empty strip alone does not mean the workspace has nothing to show.
-      if (tabs.length > 0 || anySession) {
+      if (tabs.some((tab) => tab.key !== "home") || anySession) {
         // Take back what the view opened, and only that: a reconnect, a relaunch,
         // or a first runtime load that lands before its sessions do all report zero
         // sessions for a moment, and an auto-opened launcher left over that gap
@@ -1218,7 +1240,8 @@
     // is looking at reported as inactive, which took the promote command away from
     // the only session there was to promote.
     soleEmbeddedSession?.key ??
-      sessionKeyFromWorkflowTab(activeTabKey) ??
+      (activeTabKey === "home" && baseTerminalHostKey !== null
+        ? workspaceBaseSessionKey(workspaceId) : sessionKeyFromWorkflowTab(activeTabKey)) ??
       (terminalLayout.open ? terminalLayout.activeSessionKey : null),
   );
 
@@ -1462,6 +1485,9 @@
         closable: true,
       });
     }
+    if (baseTerminalHostKey !== null) {
+      tabs.push({ key: "home", label: "Workspace", kind: "plain_shell" });
+    }
     return tabs;
   });
   const renderedWorkflowTree = $derived(
@@ -1607,7 +1633,8 @@
   function activeWorkflowSessionKeys(node: WorkflowNode | null): string[] {
     if (node === null) return [];
     if (node.type === "leaf") {
-      const sessionKey = sessionKeyFromWorkflowTab(node.activeTabKey);
+      const sessionKey = node.activeTabKey === "home" && baseTerminalHostKey !== null
+        ? workspaceBaseSessionKey(workspaceId) : sessionKeyFromWorkflowTab(node.activeTabKey);
       return sessionKey === null ? [] : [sessionKey];
     }
     return [...activeWorkflowSessionKeys(node.first), ...activeWorkflowSessionKeys(node.second)];
@@ -1623,8 +1650,9 @@
    * one, and any interaction that re-selected the tab fixed it by accident.
    */
   $effect(() => {
-    if (!runtimeLive) return;
+    if (!workflowLive) return;
     const live = new Set(runtimeSessions.map((session) => session.key));
+    if (baseTerminalHostKey !== null) live.add(workspaceBaseSessionKey(workspaceId));
     const showing = activeWorkflowSessionKeys(renderedWorkflowTree).filter((key) => live.has(key));
     // Untracked: mountSessionTerminal writes the mounted list that the tree's own
     // descriptors read, and it is a no-op for a session already mounted, so this
@@ -1931,6 +1959,17 @@
   $effect(() => {
     const prefix = sessionHostPrefix(workspaceId, workspaceHostKey);
     const desired = new Map<SessionHostKey, MountedSession>();
+    if (baseTerminalHostKey !== null && mountedSessionKeys.includes(workspaceBaseSessionKey(workspaceId))) {
+      desired.set(baseTerminalHostKey, {
+        hostKey: baseTerminalHostKey,
+        websocketPath: workspaceTmuxWebSocketPath(workspaceId),
+        status: "running",
+        label: "Workspace",
+        reconnectOnExit: true,
+        cursorWheelInput: false,
+        disabled: actionsBlocked,
+      });
+    }
     for (const session of runtimeSessions) {
       // A promoted session is on screen in a detail pane, which renders its slot
       // but cannot mount it: only this view knows the websocket path, the
@@ -1966,6 +2005,7 @@
     const liveGenerationKeys = runtimeLive && runtimeSnapshotAuthoritative
       ? new Set(runtimeSessions.map(sessionHostKeyFor))
       : null;
+    if (baseTerminalHostKey !== null) liveGenerationKeys?.add(baseTerminalHostKey);
     untrack(() => {
       releaseOwnedSessions(prefix);
       if (desired.size > 0) ownedSessionPrefixes.add(prefix);
@@ -2172,6 +2212,8 @@
         keys.push(workflowTabKeyForSession(session.key));
       }
     }
+    // Keep local placement while details load or embedded rendering temporarily hides it.
+    if (workspaceHostKey === undefined) keys.push("home");
     return keys;
   }
 
@@ -2672,7 +2714,7 @@
           else if (sessionRegion(selected) === "terminal") restoreWorkspaceTabSelection(activeTabKey);
         }
         mountedSessionKeys = mountedSessionKeys.filter(
-          (key) => data.sessions.some((session) => session.key === key),
+          (key) => key === workspaceBaseSessionKey(id) || data.sessions.some((session) => session.key === key),
         );
         if (admission !== undefined) reconcileQueuedWorkspaceLaunch(data);
         return data;
@@ -5118,7 +5160,7 @@
                 ondragover={handleWorkflowDragOver}
                 ondrop={handleWorkflowDrop}
               >
-                {#if !runtimeLive}
+                {#if !workflowLive}
                   <div class="state-message">
                     <Spinner size={18} />
                     <span>Loading workspace runtime...</span>
@@ -5191,7 +5233,9 @@
                         </div>
                       {/snippet}
                       {#snippet renderTab(tabKey, active)}
-                        {#if tabKey === "terminal"}
+                        {#if tabKey === "home" && baseTerminalHostKey !== null}
+                          <SessionTerminalSlot hostKey={baseTerminalHostKey} visible={active && hostVisible} />
+                        {:else if tabKey === "terminal"}
                           <DockedTerminalPanel
                             {workspaceId}
                             {workspaceHostKey}

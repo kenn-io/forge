@@ -25,7 +25,16 @@ const (
 	roborevShortSHALength  = 7
 )
 
-// roborevHeadVerdictSQL is the verdict of the newest roborev comment that reviews
+// roborevPublisherSQL matches comments that roborev's CI integration posted, so a
+// commenter who copies its format cannot change a verdict. The integration is the
+// roborev-ci GitHub App. GitHub's REST API reports its login as "roborev-ci[bot]",
+// which no user account can register. The GraphQL API reports the bare
+// "roborev-ci", which a user could own, so that form also needs the Bot account
+// type that sync stored from GitHub.
+const roborevPublisherSQL = `(lower(e.author) = 'roborev-ci[bot]' OR (lower(e.author) = 'roborev-ci'
+	AND CASE WHEN json_valid(e.metadata_json) THEN json_extract(e.metadata_json, '$.actor_account_type') END = 'bot'))`
+
+// roborevHeadVerdictSQL is the verdict of the newest roborev-ci comment that reviews
 // the pull request's stored head: findings, clean, or an empty string when that
 // review has no verdict line (a failed, skipped, or unstructured review). It is NULL when no
 // comment reviews the stored head, which covers a PR with no review, a head whose
@@ -44,6 +53,7 @@ func roborevHeadVerdictSQL(alias string) string {
 		FROM forge_mr_events e
 		WHERE e.merge_request_id = %[6]s.id
 		  AND e.event_type IN ('issue_comment', 'comment')
+		  AND %[12]s
 		  AND length(%[6]s.platform_head_sha) >= %[7]d
 		  AND substr(e.body, 1, %[8]d) = '%[9]s'
 		  AND substr(e.body, %[10]s - %[11]d, %[11]d) = '(`+"`"+`' || lower(substr(%[6]s.platform_head_sha, 1, %[7]d)) || '`+"`"+`)'
@@ -54,6 +64,7 @@ func roborevHeadVerdictSQL(alias string) string {
 		alias, roborevShortSHALength,
 		len(roborevCommentPrefix), roborevCommentPrefix,
 		blankLine, roborevShortSHALength+4,
+		roborevPublisherSQL,
 	)
 }
 

@@ -9306,7 +9306,7 @@ func TestAPIPullRoborevFilterAndVerdictFollowHeadReview(t *testing.T) {
 		}
 		platformID := int64(number)
 		require.NoError(t, database.UpsertMREvents(ctx, []db.MREvent{{
-			MergeRequestID: id, PlatformID: &platformID, EventType: "issue_comment", Author: "roborev-ci",
+			MergeRequestID: id, PlatformID: &platformID, EventType: "issue_comment", Author: "roborev-ci[bot]",
 			Body:      "<!-- roborev-pr-comment -->\n## roborev: Combined Review (`" + reviewed + "`)\n\n" + verdict + "\n",
 			CreatedAt: now, DedupeKey: fmt.Sprintf("roborev-%d", number),
 		}}))

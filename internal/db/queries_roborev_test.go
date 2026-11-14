@@ -26,6 +26,8 @@ func TestRoborevHeadVerdictFiltersAndRows(t *testing.T) {
 	const head = "abc1234def5678abc1234def5678abc1234def56"
 	type comment struct {
 		eventType, body string
+		// author defaults to the roborev-ci App's REST login.
+		author, metadata string
 	}
 	onHead := func(body string) string { return fmt.Sprintf(body, "abc1234") }
 	for _, tc := range []struct {
@@ -33,27 +35,45 @@ func TestRoborevHeadVerdictFiltersAndRows(t *testing.T) {
 		comments []comment // oldest first
 		want     string
 	}{
-		{name: "findings on head", comments: []comment{{"issue_comment", onHead(roborevFindingsBody)}}, want: "findings"},
-		{name: "clean on head", comments: []comment{{"issue_comment", onHead(roborevCleanBody)}}, want: "clean"},
-		{name: "no issues on head", comments: []comment{{"issue_comment", onHead(roborevNoIssuesBody)}}, want: "clean"},
+		{name: "findings on head", comments: []comment{{eventType: "issue_comment", body: onHead(roborevFindingsBody)}}, want: "findings"},
+		{name: "clean on head", comments: []comment{{eventType: "issue_comment", body: onHead(roborevCleanBody)}}, want: "clean"},
+		{name: "no issues on head", comments: []comment{{eventType: "issue_comment", body: onHead(roborevNoIssuesBody)}}, want: "clean"},
 		{name: "older head had findings, head is clean", comments: []comment{
-			{"issue_comment", fmt.Sprintf(roborevFindingsBody, "0000000")},
-			{"issue_comment", onHead(roborevCleanBody)},
+			{eventType: "issue_comment", body: fmt.Sprintf(roborevFindingsBody, "0000000")},
+			{eventType: "issue_comment", body: onHead(roborevCleanBody)},
 		}, want: "clean"},
 		{name: "head review pending after older findings", comments: []comment{
-			{"issue_comment", fmt.Sprintf(roborevFindingsBody, "0000000")},
+			{eventType: "issue_comment", body: fmt.Sprintf(roborevFindingsBody, "0000000")},
 		}},
 		{name: "review of a commit not stored as head", comments: []comment{
-			{"issue_comment", onHead(roborevCleanBody)},
-			{"issue_comment", fmt.Sprintf(roborevFindingsBody, "fff9999")},
+			{eventType: "issue_comment", body: onHead(roborevCleanBody)},
+			{eventType: "issue_comment", body: fmt.Sprintf(roborevFindingsBody, "fff9999")},
 		}, want: "clean"},
 		{name: "newest head review failed", comments: []comment{
-			{"issue_comment", onHead(roborevFindingsBody)},
-			{"issue_comment", onHead(roborevFailedBody)},
+			{eventType: "issue_comment", body: onHead(roborevFindingsBody)},
+			{eventType: "issue_comment", body: onHead(roborevFailedBody)},
 		}},
-		{name: "quoted roborev comment", comments: []comment{{"issue_comment", "> " + onHead(roborevFindingsBody)}}},
+		{name: "quoted roborev comment", comments: []comment{{eventType: "issue_comment", body: "> " + onHead(roborevFindingsBody)}}},
 		{name: "no comments"},
-		{name: "provider comment event", comments: []comment{{"comment", onHead(roborevFindingsBody)}}, want: "findings"},
+		{name: "provider comment event", comments: []comment{{eventType: "comment", body: onHead(roborevFindingsBody)}}, want: "findings"},
+		{name: "newer genuine review on the same head", comments: []comment{
+			{eventType: "issue_comment", body: onHead(roborevFindingsBody)},
+			{eventType: "issue_comment", body: onHead(roborevCleanBody)},
+		}, want: "clean"},
+		{name: "newer copy from another commenter", comments: []comment{
+			{eventType: "issue_comment", body: onHead(roborevFindingsBody)},
+			{eventType: "issue_comment", body: onHead(roborevCleanBody), author: "mallory", metadata: `{"actor_account_type":"user"}`},
+		}, want: "findings"},
+		{name: "GraphQL login with bot account type", comments: []comment{
+			{eventType: "issue_comment", body: onHead(roborevFindingsBody), author: "roborev-ci", metadata: `{"actor_account_type":"bot"}`},
+		}, want: "findings"},
+		{name: "user account named like the app", comments: []comment{
+			{eventType: "issue_comment", body: onHead(roborevFindingsBody)},
+			{eventType: "issue_comment", body: onHead(roborevCleanBody), author: "roborev-ci", metadata: `{"actor_account_type":"user"}`},
+		}, want: "findings"},
+		{name: "app-named login without an account type", comments: []comment{
+			{eventType: "issue_comment", body: onHead(roborevCleanBody), author: "roborev-ci"},
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -65,9 +85,13 @@ func TestRoborevHeadVerdictFiltersAndRows(t *testing.T) {
 			require.NoError(t, err)
 			for i, c := range tc.comments {
 				platformID := int64(100 + i)
+				author := c.author
+				if author == "" {
+					author = "roborev-ci[bot]"
+				}
 				require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{{
 					MergeRequestID: mrID, PlatformID: &platformID, EventType: c.eventType,
-					Author: "roborev-ci", Body: c.body,
+					Author: author, Body: c.body, MetadataJSON: c.metadata,
 					CreatedAt: baseTime().Add(time.Duration(i) * time.Minute),
 					DedupeKey: fmt.Sprintf("comment-%d", i),
 				}}))

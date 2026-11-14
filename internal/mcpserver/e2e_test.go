@@ -548,7 +548,7 @@ func TestMCPPullContextsReportMergeQueuesAndFilterRoborev(t *testing.T) {
 			head, repoID, number).Scan(&pullID))
 		platformID := int64(number)
 		require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
-			MergeRequestID: pullID, PlatformID: &platformID, EventType: "issue_comment", Author: "roborev-ci",
+			MergeRequestID: pullID, PlatformID: &platformID, EventType: "issue_comment", Author: "roborev-ci[bot]",
 			Body:      "<!-- roborev-pr-comment -->\n## roborev: Combined Review (`" + head[:7] + "`)\n\n" + verdict + "\n",
 			CreatedAt: now, DedupeKey: fmt.Sprintf("roborev-%d", number),
 		}}))

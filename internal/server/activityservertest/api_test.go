@@ -747,7 +747,7 @@ func TestAPIListActivityRoborevFilters(t *testing.T) {
 		}
 		platformID := int64(1000 + number)
 		require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{
-			MergeRequestID: mrID, PlatformID: &platformID, EventType: "issue_comment", Author: "roborev-ci",
+			MergeRequestID: mrID, PlatformID: &platformID, EventType: "issue_comment", Author: "roborev-ci[bot]",
 			Body:      "<!-- roborev-pr-comment -->\n## roborev: Combined Review (`" + head[:7] + "`)\n\n" + verdict + "\n",
 			CreatedAt: now.Add(-time.Hour), DedupeKey: fmt.Sprintf("roborev-%d", number),
 		}}))

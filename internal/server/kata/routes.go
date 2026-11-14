@@ -2,6 +2,7 @@ package kata
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -147,8 +148,15 @@ func (h *Handler) selectKataDaemonForID(requestedID string) (katacatalog.Daemon,
 		}
 	}
 	if configured == nil {
+		ids := make([]string, 0, len(catalog.Daemons))
+		for _, d := range catalog.Daemons {
+			ids = append(ids, d.ID)
+		}
 		return katacatalog.Daemon{}, httpapi.NewProblem(
-			http.StatusBadRequest, httpapi.CodeBadRequest, "unknown Kata daemon", map[string]any{"daemon": id},
+			http.StatusBadRequest, httpapi.CodeBadRequest,
+			fmt.Sprintf("unknown Kata daemon %q; configured daemon IDs: %s (default %s)",
+				id, strings.Join(ids, ", "), effectiveKataDefaultID(catalog.Daemons)),
+			map[string]any{"daemon": id, "daemons": ids},
 		)
 	}
 

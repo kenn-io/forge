@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -18,6 +19,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/tokenauth"
 	providerplatform "go.kenn.io/forge/platform"
@@ -102,6 +105,48 @@ func TestIntegrationEnsureClone(t *testing.T) {
 	// Second call should be a no-op fetch, not re-clone.
 	err = mgr.EnsureClone(ctx, "github", "github.com", "testowner", "testrepo", remote)
 	require.NoError(t, err)
+}
+
+func TestIntegrationEnsureCloneTemplateRejectsCommit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture uses a POSIX pre-commit hook")
+	}
+	require := require.New(t)
+	source := gitfixture.NewRepository(t, false)
+	home := gitfixture.ScratchDir(t)
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	template := filepath.Join(home, "git template")
+	require.NoError(os.MkdirAll(filepath.Join(template, "hooks"), 0o755))
+	hook := "#!/bin/sh\nif git diff --cached --name-only | grep -qx rejected.txt; then\necho template-rejected-commit >&2\nexit 1\nfi\n"
+	require.NoError(os.WriteFile(filepath.Join(template, "hooks", "pre-commit"), []byte(hook), 0o755))
+	_, _, err := gitsafe.UserConfigRunner(t, home, os.Getenv("XDG_CONFIG_HOME")).Run(
+		t.Context(), home, nil, "config", "--global", "init.templateDir", template,
+	)
+	require.NoError(err)
+	assertManagedCloneRejectsCommit(t, source.Dir)
+}
+
+func assertManagedCloneRejectsCommit(t *testing.T, remote string) {
+	t.Helper()
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr := New(gitfixture.ScratchDir(t), nil)
+	t.Cleanup(mgr.Wait)
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
+	clone, err := mgr.ClonePath("github", "github.com", "acme", "widgets")
+	require.NoError(err)
+	checkout := filepath.Join(gitfixture.ScratchDir(t), "workspace")
+	gitfixture.Run(t, clone, "worktree", "add", "-b", "workspace", checkout, "main")
+	gitfixture.Run(t, checkout, "config", "user.name", "Fixture")
+	gitfixture.Run(t, checkout, "config", "user.email", "fixture@example.invalid")
+	before := gitfixture.SHA(t, checkout, "HEAD")
+	require.NoError(os.WriteFile(filepath.Join(checkout, "rejected.txt"), []byte("reject\n"), 0o644))
+	gitfixture.Run(t, checkout, "add", "rejected.txt")
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), checkout, nil, "commit", "-m", "rejected fixture")
+	require.Error(err, "a newly managed clone must retain the user's pre-commit check: %s%s", out, stderr)
+	assert.Contains(string(out)+string(stderr), "template-rejected-commit")
+	assert.Equal(before, gitfixture.SHA(t, checkout, "HEAD"))
 }
 
 func TestIntegrationCloneFetchWaitsForWorktreeCreation(t *testing.T) {
@@ -1268,4 +1313,145 @@ func TestIntegrationClonesForContextListsEveryRouteOfOneIdentity(t *testing.T) {
 	missing, err := mgr.ClonesForContext(WithRepositoryIdentity(t.Context(), providerplatform.RepositoryIdentity{Key: providerplatform.RepositoryIDKey(1003)}), "gitlab")
 	require.NoError(err)
 	assert.Empty(missing)
+}
+
+func TestIntegrationEnsureClonePreCommitTemplate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture uses a POSIX local pre-commit check")
+	}
+	preCommit, err := exec.LookPath("pre-commit")
+	if err != nil {
+		t.Skip("pre-commit unavailable; real framework template compatibility unverified")
+	}
+	require := require.New(t)
+	source := gitfixture.NewRepository(t, false)
+	source.Write(t, ".pre-commit-config.yaml", "repos:\n- repo: local\n  hooks:\n  - id: reject-fixture\n    name: reject fixture\n    language: system\n    entry: sh -c 'echo template-rejected-commit >&2; exit 1'\n")
+	source.Stage(t, ".pre-commit-config.yaml")
+	gitfixture.Run(t, source.Dir, "commit", "-m", "configure local check")
+	home := gitfixture.ScratchDir(t)
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	t.Setenv("PRE_COMMIT_HOME", filepath.Join(home, "pre-commit-cache"))
+	user := gitsafe.UserConfigRunner(t, home, os.Getenv("XDG_CONFIG_HOME"))
+	template := filepath.Join(home, "template")
+	_, _, err = user.Run(t.Context(), home, nil, "config", "--global", "init.templateDir", template)
+	require.NoError(err)
+	cmd := procutil.CommandContext(t.Context(), preCommit, "init-templatedir", template)
+	cmd.Dir, cmd.Env = home, user.Env
+	out, err := cmd.CombinedOutput()
+	require.NoError(err, "%s", out)
+	assertManagedCloneRejectsCommit(t, source.Dir)
+}
+
+func TestIntegrationUserTemplateDir(t *testing.T) {
+	source := gitfixture.NewRepository(t, false)
+	gitfixture.Run(t, source.Dir, "config", "init.templateDir", "repository-local")
+	t.Chdir(source.Dir)
+	for _, tc := range []struct {
+		name, value                      string
+		present, include, xdg, malformed bool
+	}{
+		{name: "absent"},
+		{name: "empty", present: true},
+		{name: "spaces", value: "~/git template", present: true},
+		{name: "path bytes", value: "~/git template \n", present: true},
+		{name: "include", value: "~/included template", present: true, include: true},
+		{name: "xdg", value: "~/xdg template", present: true, xdg: true},
+		{name: "malformed", malformed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			home := gitfixture.ScratchDir(t)
+			xdg := filepath.Join(home, "xdg")
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", xdg)
+			user := gitsafe.UserConfigRunner(t, home, xdg)
+			configPath := filepath.Join(home, ".gitconfig")
+			if tc.xdg {
+				configPath = filepath.Join(xdg, "git", "config")
+				require.NoError(os.MkdirAll(filepath.Dir(configPath), 0o755))
+			}
+			if tc.include {
+				_, _, err := user.Run(t.Context(), home, nil, "config", "--global", "include.path", "included.config")
+				require.NoError(err)
+				configPath = filepath.Join(home, "included.config")
+			}
+			if tc.present {
+				_, _, err := user.Run(t.Context(), home, nil, "config", "--file", configPath, "init.templateDir", tc.value)
+				require.NoError(err)
+			}
+			if tc.malformed {
+				require.NoError(os.WriteFile(configPath, []byte("[invalid\n"), 0o600))
+			}
+			// Neither inherited overrides nor repository-local settings select the template.
+			t.Setenv("GIT_TEMPLATE_DIR", filepath.Join(home, "injected"))
+			t.Setenv("GIT_CONFIG_COUNT", "1")
+			t.Setenv("GIT_CONFIG_KEY_0", "init.templateDir")
+			t.Setenv("GIT_CONFIG_VALUE_0", "injected")
+			t.Setenv("GIT_CONFIG_PARAMETERS", "'init.templateDir=injected'")
+			t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+			got, err := userTemplateDir(t.Context())
+			if tc.malformed {
+				require.ErrorContains(err, "read user Git template directory")
+				return
+			}
+			require.NoError(err)
+			if !tc.present {
+				assert.Nil(t, got)
+				return
+			}
+			require.NotNil(got)
+			want := tc.value
+			if relative, ok := strings.CutPrefix(want, "~/"); ok {
+				want = filepath.Join(home, relative)
+			}
+			assert.Equal(t, want, *got)
+		})
+	}
+}
+
+func TestIntegrationEnsureCloneTemplateBoundaries(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	source := gitfixture.NewRepository(t, false)
+	home := gitfixture.ScratchDir(t)
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	user := gitsafe.UserConfigRunner(t, home, os.Getenv("XDG_CONFIG_HOME"))
+	template := filepath.Join(home, "template")
+	require.NoError(os.MkdirAll(filepath.Join(template, "hooks"), 0o755))
+	hookPath := filepath.Join(template, "hooks", "pre-commit")
+	require.NoError(os.WriteFile(hookPath, []byte("original template"), 0o644))
+	for key, value := range map[string]string{
+		"init.templateDir":    template,
+		"core.hooksPath":      filepath.Join(home, "other-hooks"),
+		"protocol.file.allow": "never",
+	} {
+		_, _, err := user.Run(t.Context(), home, nil, "config", "--global", key, value)
+		require.NoError(err)
+	}
+	mgr := New(gitfixture.ScratchDir(t), nil)
+	t.Cleanup(mgr.Wait)
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", source.Dir))
+	clone, err := mgr.ClonePath("github", "github.com", "acme", "widgets")
+	require.NoError(err)
+	_, _, err = gitsafe.Runner().Run(t.Context(), clone, nil, "config", "--local", "--get", "core.hooksPath")
+	assert.True(gitcmd.IsExitCode(err, 1), "unrelated global config must not be copied")
+	require.NoError(os.WriteFile(hookPath, []byte("changed template"), 0o644))
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", source.Dir))
+	got, err := os.ReadFile(filepath.Join(clone, "hooks", "pre-commit"))
+	require.NoError(err)
+	assert.Equal("original template", string(got))
+	repo := RepoBrowserRepoRef{Provider: "github", Host: "github.com", Owner: "acme", Name: "widgets", RepoPath: "acme/widgets", RemoteURL: source.Dir}
+	require.NoError(mgr.EnsureRepoBrowserClone(t.Context(), repo))
+	browser, err := mgr.repoBrowserClonePath(repo)
+	require.NoError(err)
+	assert.NoFileExists(filepath.Join(browser, "hooks", "pre-commit"))
+	// Neither existing managed clones nor browser refreshes read the template again.
+	require.NoError(os.WriteFile(filepath.Join(home, ".gitconfig"), []byte("[invalid\n"), 0o600))
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", source.Dir))
+	require.NoError(mgr.RefreshRepoBrowserClone(t.Context(), repo))
+	assert.NoFileExists(filepath.Join(browser, "hooks", "pre-commit"))
+	err = mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "new-clone", source.Dir)
+	require.ErrorContains(err, "read user Git template directory")
 }

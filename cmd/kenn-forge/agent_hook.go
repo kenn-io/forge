@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -276,20 +275,16 @@ type agentHookTarget struct {
 }
 
 func resolveAgentHookTarget(configPath, binary string) (agentHookTarget, error) {
-	cfg, err := config.Load(configPath)
-	if err != nil && (!errors.Is(err, os.ErrNotExist) || configPath != config.DefaultConfigPath()) {
+	cfg, err := config.LoadPending(configPath)
+	if err != nil {
 		return agentHookTarget{}, err
 	}
-	if cfg != nil && cfg.DataDirWasRelative() {
+	if cfg.DataDirWasRelative() {
 		return agentHookTarget{}, errors.New("agent hook install requires an absolute data_dir")
 	}
 	absoluteConfigPath, err := filepath.Abs(configPath)
 	if err != nil {
 		return agentHookTarget{}, fmt.Errorf("resolve agent hook config path: %w", err)
-	}
-	home, err := agentHookHome(cfg)
-	if err != nil {
-		return agentHookTarget{}, err
 	}
 	executable := strings.TrimSpace(binary)
 	if executable == "" {
@@ -298,7 +293,7 @@ func resolveAgentHookTarget(configPath, binary string) (agentHookTarget, error) 
 			return agentHookTarget{}, fmt.Errorf("resolve kenn-forge executable: %w", err)
 		}
 	}
-	return agentHookTarget{configPath: absoluteConfigPath, executable: executable, home: home}, nil
+	return agentHookTarget{configPath: absoluteConfigPath, executable: executable, home: cfg.DataDir}, nil
 }
 
 func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOptions {
@@ -319,16 +314,4 @@ func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOp
 		Marker: agentHookMarker,
 		Hooks:  hooks,
 	}
-}
-
-// agentHookHome returns the data directory selected when the hook is installed,
-// including before the daemon creates the default config.
-func agentHookHome(cfg *config.Config) (string, error) {
-	if cfg != nil {
-		return cfg.DataDir, nil
-	}
-	if dataDir := os.Getenv("KENN_FORGE_DATA_DIR"); dataDir != "" && !filepath.IsAbs(dataDir) {
-		return "", errors.New("agent hook install requires an absolute data_dir")
-	}
-	return config.CanonicalDataDir(cmp.Or(os.Getenv("KENN_FORGE_DATA_DIR"), config.DefaultDataDir()))
 }

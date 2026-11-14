@@ -411,6 +411,48 @@ func TestSetupHookStableAfterConfigCreation(t *testing.T) {
 	assert.Equal(t, before, after)
 }
 
+func TestSetupHookBeforeFirstStartInvalidEnvironment(t *testing.T) {
+	for _, tc := range []struct {
+		name, home, dataDir string
+		setData             bool
+	}{
+		{name: "relative home", home: "relative"},
+		{name: "empty data directory", setData: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			t.Setenv("HOME", dir)
+			t.Setenv("KENN_FORGE_HOME", tc.home)
+			t.Setenv("KENN_FORGE_DATA_DIR", tc.dataDir)
+			if !tc.setData {
+				require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
+			}
+			_, err := resolveAgentHookTarget(config.DefaultConfigPath(), "/usr/bin/kenn-forge")
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestSetupHookBeforeLegacyMigration(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("KENN_FORGE_HOME", "")
+	t.Setenv("KENN_FORGE_DATA_DIR", "")
+	require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
+	legacy := filepath.Join(home, ".config", "middleman")
+	require.NoError(t, os.MkdirAll(legacy, 0o700))
+	want := filepath.Join(home, "selected")
+	require.NoError(t, os.WriteFile(filepath.Join(legacy, "config.toml"), fmt.Appendf(nil, "data_dir = %q\n", want), 0o600))
+	path := config.DefaultConfigPath()
+	target, err := resolveAgentHookTarget(path, "/usr/bin/kenn-forge")
+	require.NoError(t, err)
+	assert.NoFileExists(t, path)
+	cfg, err := config.LoadOrCreate(path)
+	require.NoError(t, err)
+	assert.Equal(t, cfg.DataDir, target.home)
+}
+
 func TestSetupHookHelper(t *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
 		return

@@ -113,6 +113,36 @@ func migrateLegacyConfig(configPath string) error {
 	return writeLegacyConfigMigrationMarker(markerPath)
 }
 
+// LoadPending loads path, or for a missing default config the one the first
+// daemon start would create, without writing anything beside it.
+func LoadPending(path string) (*Config, error) {
+	cfg, err := Load(path)
+	if !errors.Is(err, os.ErrNotExist) || filepath.Clean(path) != filepath.Clean(DefaultConfigPath()) {
+		return cfg, err
+	}
+	body := []byte(defaultConfigContents())
+	if os.Getenv("KENN_FORGE_HOME") == "" {
+		oldHome := legacyDefaultHome()
+		marker, err := readLegacyConfigMigrationMarker(filepath.Join(DefaultDataDir(), legacyConfigMigrationMarker))
+		if err != nil {
+			return nil, err
+		}
+		if source, err := os.ReadFile(filepath.Join(oldHome, "config.toml")); err == nil && marker != "v2\n" {
+			body, _ = transformLegacyConfig(source, oldHome, DefaultDataDir())
+		}
+	}
+	dir, err := os.MkdirTemp("", "forge-pending-config-")
+	if err != nil {
+		return nil, fmt.Errorf("preview first-start config: %w", err)
+	}
+	defer os.RemoveAll(dir)
+	pending := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(pending, body, 0o600); err != nil {
+		return nil, fmt.Errorf("preview first-start config: %w", err)
+	}
+	return Load(pending)
+}
+
 func transformLegacyConfig(body []byte, oldHome, newHome string) ([]byte, error) {
 	out := bytes.Clone(body)
 	for _, replacement := range legacyConfigValueReplacements {

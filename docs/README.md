@@ -62,6 +62,10 @@ Chromium. Generate a complete replacement set with:
 make docs-screenshots
 ```
 
+With `DOCS_SCREENSHOTS_OUTPUT` set, `make docs-screenshots` runs the same
+generator inside `docs/screenshots/Dockerfile` and writes the complete set to
+`$DOCS_SCREENSHOTS_OUTPUT/assets`; the host then needs only Bash and Docker.
+
 Set `OUTPUT_DIR=/tmp/kenn-forge-docs-assets` to write elsewhere. Review the
 complete set, then replace the root contents of the orphan `docs-assets` branch
 and push that branch. Record the resulting full commit SHA in

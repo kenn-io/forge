@@ -227,8 +227,15 @@ docs-check: frontend-deps docs-build
 	node scripts/verify-docs-site.mjs
 
 # Generate the complete screenshot set for publication on docs-assets.
+# With DOCS_SCREENSHOTS_OUTPUT set, write the published docs-assets set to
+# $(DOCS_SCREENSHOTS_OUTPUT)/assets using only Docker on the host.
+ifdef DOCS_SCREENSHOTS_OUTPUT
+docs-screenshots:
+	bash docs/screenshots/run-in-docker.sh "$(DOCS_SCREENSHOTS_OUTPUT)"
+else
 docs-screenshots: frontend-deps
 	node scripts/generate-docs-screenshots.mjs $(OUTPUT_DIR)
+endif
 
 # Reproduce Vercel's remote static docs build after its install command has
 # populated the repository-local uv tool directory.

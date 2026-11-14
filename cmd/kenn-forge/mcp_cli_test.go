@@ -49,6 +49,16 @@ func TestMCPQuickstartStoppedGuidesSetup(t *testing.T) {
 	assert.Contains(t, output.String(), "kenn-forge agent setup")
 }
 
+func TestMCPQuickstartGuidesSetupWithSelectedConfig(t *testing.T) {
+	var output bytes.Buffer
+	cmd := newMCPCommand(&output, func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
+		return stoppedMCPQuickstart(true, path), nil
+	})
+	cmd.SetArgs([]string{"quickstart", "--config", "/tmp/custom config.toml"})
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, output.String(), "kenn-forge agent setup --config '/tmp/custom config.toml'")
+}
+
 func TestStoppedMCPQuickstartEnablesBeforeStarting(t *testing.T) {
 	info := stoppedMCPQuickstart(false, "")
 	require.Len(t, info.NextSteps, 2)

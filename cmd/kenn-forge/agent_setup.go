@@ -93,11 +93,7 @@ func setupCommand(configPath string) string {
 }
 
 func forgeSetupMCP(agent string, info mcpQuickstartInfo, discoveryErr error, command, configPath string) agentsetup.Item {
-	quickstart := []string{"kenn-forge", "mcp", "quickstart"}
-	if configPath != config.DefaultConfigPath() {
-		quickstart = append(quickstart, "--config", configPath)
-	}
-	manualStep := "Run `" + shellquote.Join(quickstart...) + "` for manual setup."
+	manualStep := manualSetupStep(configPath, discoveryErr)
 	if discoveryErr != nil || !info.Active {
 		reason := "Forge MCP isn't active"
 		if discoveryErr != nil {
@@ -105,11 +101,7 @@ func forgeSetupMCP(agent string, info mcpQuickstartInfo, discoveryErr error, com
 		} else if info.pid == 0 {
 			reason = "Forge daemon isn't running"
 		}
-		steps := info.NextSteps
-		if len(steps) == 0 {
-			steps = []string{manualStep}
-		}
-		nextStep := strings.Join(steps, " ") + " then run `" + command + "`"
+		nextStep := setupNextStep(info.NextSteps, manualStep, command)
 		return agentsetup.Item{Name: "mcp kenn-forge", Check: func(context.Context) (agentsetup.Status, error) {
 			return agentsetup.Status{State: agentsetup.StateFailed, Reason: reason, NextStep: nextStep}, nil
 		}, Commands: func() (agenthook.Commands, error) {
@@ -123,20 +115,57 @@ func forgeSetupMCP(agent string, info mcpQuickstartInfo, discoveryErr error, com
 			return agenthook.Commands{}, fmt.Errorf("token reference is unavailable for %s: %s", agent, manualStep)
 		}}
 	}
+	return withTokenGuidance(agentsetup.MCP(agent, "kenn-forge", forgeMCPServer(info)), info)
+}
+
+func manualSetupStep(configPath string, discoveryErr error) string {
+	if discoveryErr != nil {
+		return "Check the Forge config and daemon."
+	}
+	quickstart := []string{"kenn-forge", "mcp", "quickstart"}
+	if configPath != config.DefaultConfigPath() {
+		quickstart = append(quickstart, "--config", configPath)
+	}
+	return "Run `" + shellquote.Join(quickstart...) + "` for manual setup."
+}
+
+func setupNextStep(steps []string, manualStep, command string) string {
+	if len(steps) == 0 {
+		steps = []string{manualStep}
+	}
+	return strings.TrimSuffix(strings.Join(steps, " "), ".") + ", then run `" + command + "`."
+}
+
+func forgeMCPServer(info mcpQuickstartInfo) agentmcp.Server {
 	server := agentmcp.Server{URL: info.Endpoint}
 	if info.Authentication.Required {
 		server.BearerTokenEnvVar = mcpTokenEnvironment
 	} else {
 		server.PreviousBearerTokenEnvVar = mcpTokenEnvironment
 	}
-	item := agentsetup.MCP(agent, "kenn-forge", server)
-	check := item.Check
+	return server
+}
+
+// withTokenGuidance tells a user whose shell lacks the token where to find it,
+// both in check results and in the manual commands printed by --print.
+func withTokenGuidance(item agentsetup.Item, info mcpQuickstartInfo) agentsetup.Item {
+	if !info.Authentication.Required || os.Getenv(mcpTokenEnvironment) != "" {
+		return item
+	}
+	check, commands := item.Check, item.Commands
+	path := info.Authentication.TokenPath
 	item.Check = func(ctx context.Context) (agentsetup.Status, error) {
 		status, err := check(ctx)
-		if (status.State == agentsetup.StateFailed || status.State == agentsetup.StateUnknown) && info.Authentication.Required && os.Getenv(mcpTokenEnvironment) == "" {
-			status.NextStep += fmt.Sprintf("; export %s from %s", mcpTokenEnvironment, info.Authentication.TokenPath)
+		if status.State == agentsetup.StateFailed || status.State == agentsetup.StateUnknown {
+			status.NextStep += fmt.Sprintf("; export %s from %s", mcpTokenEnvironment, path)
 		}
 		return status, err
+	}
+	item.Commands = func() (agenthook.Commands, error) {
+		cmds, err := commands()
+		cmds.POSIX = fmt.Sprintf("export %s=\"$(cat %s)\"\n%s", mcpTokenEnvironment, shellquote.Join(path), cmds.POSIX)
+		cmds.PowerShell = fmt.Sprintf("$env:%s = (Get-Content -Raw '%s').Trim()\n%s", mcpTokenEnvironment, path, cmds.PowerShell)
+		return cmds, err
 	}
 	return item
 }

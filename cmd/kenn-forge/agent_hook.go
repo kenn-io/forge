@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
@@ -304,31 +303,18 @@ func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOp
 	for _, event := range profile.SupportedEvents {
 		hooks = append(hooks, agenthook.Hook{Event: event, Timeout: 2 * time.Second})
 	}
+	// --home pins the home selected at install time, so a later agent
+	// process with a different KENN_FORGE_HOME still finds the selected daemon.
 	return agenthook.InstallOptions{
 		Executable: target.executable,
-		Arguments:  target.runArguments(agent),
-		Marker:     agentHookMarker,
-		Hooks:      hooks,
+		Arguments: []string{
+			"agent-hook", "run",
+			"--agent", string(agent),
+			"--config", target.configPath,
+			"--source", agentHookSource,
+			"--home", config.DefaultDataDir(),
+		},
+		Marker: agentHookMarker,
+		Hooks:  hooks,
 	}
-}
-
-// runArguments pins the home selected at install time, so a later agent
-// process with a different KENN_FORGE_HOME still finds the selected daemon.
-func (target agentHookTarget) runArguments(agent agenthook.Agent) []string {
-	args := []string{
-		"agent-hook", "run",
-		"--agent", string(agent),
-		"--config", target.configPath,
-		"--source", agentHookSource,
-	}
-	return append(args, "--home", config.DefaultDataDir())
-}
-
-func addAgentHookRunFlags(run *cobra.Command, agent, configPath, source *string) {
-	run.Flags().StringVar(agent, "agent", "", "agent hook integration")
-	run.Flags().StringVar(configPath, "config", config.DefaultConfigPath(), "kenn-forge config path")
-	run.Flags().StringVar(source, "source", "", "hook source marker")
-	run.Flags().Func("home", "kenn-forge home selected at install", func(home string) error {
-		return os.Setenv("KENN_FORGE_HOME", home)
-	})
 }

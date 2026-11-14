@@ -153,10 +153,6 @@ kenn-forge docs remove-folder project
 
 These commands manage `[[doc_folders]]` in the selected config file.
 
-## Connect Claude Code and Codex
-
-Run `kenn-forge agent setup` to install hooks and register the running daemon's MCP endpoint. Use `--check` to check readiness and `--print` for manual MCP commands. Review Codex hooks in `/hooks`.
-
 ## Install agent activity hooks
 
 ```sh

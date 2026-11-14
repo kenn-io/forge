@@ -24,10 +24,7 @@ const (
 	agentHookMarker = "--source " + agentHookSource
 )
 
-var (
-	errAgentHookResponse        = errors.New("daemon failed to record agent hook")
-	errAgentHookRelativeDataDir = errors.New("agent hook install requires an absolute data_dir")
-)
+var errAgentHookResponse = errors.New("daemon failed to record agent hook")
 
 func runAgentHookCLI(args []string, stdin io.Reader, stdout io.Writer) error {
 	cmd := newAgentHookCommand(stdin, stdout)
@@ -277,11 +274,11 @@ type agentHookTarget struct {
 
 func resolveAgentHookTarget(configPath, binary string) (agentHookTarget, error) {
 	cfg, err := config.Load(configPath)
-	if err != nil {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return agentHookTarget{}, err
 	}
-	if cfg.DataDirWasRelative() {
-		return agentHookTarget{}, errAgentHookRelativeDataDir
+	if cfg != nil && cfg.DataDirWasRelative() {
+		return agentHookTarget{}, errors.New("agent hook install requires an absolute data_dir")
 	}
 	absoluteConfigPath, err := filepath.Abs(configPath)
 	if err != nil {
@@ -303,8 +300,6 @@ func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOp
 	for _, event := range profile.SupportedEvents {
 		hooks = append(hooks, agenthook.Hook{Event: event, Timeout: 2 * time.Second})
 	}
-	// --home pins the home selected at install time, so a later agent
-	// process with a different KENN_FORGE_HOME still finds the selected daemon.
 	return agenthook.InstallOptions{
 		Executable: target.executable,
 		Arguments: []string{
@@ -312,7 +307,6 @@ func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOp
 			"--agent", string(agent),
 			"--config", target.configPath,
 			"--source", agentHookSource,
-			"--home", config.DefaultDataDir(),
 		},
 		Marker: agentHookMarker,
 		Hooks:  hooks,

@@ -1,12 +1,10 @@
 # Kenn Forge MCP
 
 Connect installed Claude Code and Codex clients with `kenn-forge agent setup`.
-Use `--agent` to select a client and `--config` to select a Forge configuration.
 Run `kenn-forge agent setup --check` to check the connection, or use `--print`
 to print manual registration commands. In Codex, open `/hooks` and review the
 installed hooks. Outside Forge-launched terminals, export `KENN_FORGE_API_TOKEN`
 from the reported `token_path` when authentication is enabled.
-Set `KENN_FORGE_HOME` before running setup when Forge uses a different home directory.
 
 Forge can expose cached maintainer workflows to local MCP clients from the
 running daemon. The companion reads the same in-process repository, activity,
@@ -80,10 +78,11 @@ The command returns an array with `pid`, `transport: "http"`, `url`,
 including when saved settings require a restart. A stopped daemon or inactive
 companion returns `[]`; the command never starts either. Use `--config` to
 select another configuration and `--timeout` to set the daemon request timeout.
-Token contents never appear in the output.
+Token contents never appear in the output. For client setup instructions and
+restart guidance, use `kenn-forge mcp quickstart`.
 
-For other clients, run `kenn-forge mcp quickstart` and use the HTTP URL. For
-clients that accept a JSON server catalog, the shape is typically similar to:
+Configure your MCP client with the HTTP URL. For clients that accept a JSON
+server catalog, the shape is typically similar to:
 
 ```json
 {

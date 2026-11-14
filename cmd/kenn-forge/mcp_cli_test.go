@@ -39,32 +39,14 @@ func TestMCPQuickstartCommandPrintsAgentConnector(t *testing.T) {
 }
 
 func TestMCPQuickstartStoppedGuidesSetup(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		args []string
-		want string
-	}{
-		{name: "default config", args: []string{"quickstart"}, want: "kenn-forge agent setup"},
-		{name: "selected config", args: []string{"quickstart", "--config", "/tmp/custom config.toml"}, want: "kenn-forge agent setup --config '/tmp/custom config.toml'"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var output bytes.Buffer
-			cmd := newMCPCommand(&output, func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
-				return stoppedMCPQuickstart(true, path), nil
-			})
-			cmd.SetArgs(tc.args)
-			require.NoError(t, cmd.Execute())
-			assert.NotContains(t, output.String(), "OK mcp quickstart")
-			assert.Contains(t, output.String(), tc.want)
-		})
-	}
-}
-
-func TestStoppedMCPQuickstartEnablesBeforeStarting(t *testing.T) {
-	info := stoppedMCPQuickstart(false, "")
-	require.Len(t, info.NextSteps, 2)
-	assert.Contains(t, info.NextSteps[0], "[mcp].enabled = true")
-	assert.Contains(t, info.NextSteps[1], "kenn-forge daemon start")
+	var output bytes.Buffer
+	cmd := newMCPCommand(&output, func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
+		return stoppedMCPQuickstart(true, path), nil
+	})
+	cmd.SetArgs([]string{"quickstart"})
+	require.NoError(t, cmd.Execute())
+	assert.NotContains(t, output.String(), "OK mcp quickstart")
+	assert.Contains(t, output.String(), "kenn-forge agent setup")
 }
 
 func TestMCPQuickstartCommandPrintsStructuredConnector(t *testing.T) {

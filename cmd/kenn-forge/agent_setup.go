@@ -27,7 +27,7 @@ func newAgentCommand(load mcpQuickstartLoader) *cobra.Command {
 			var hooks agentsetup.Item
 			if err != nil {
 				hooks = agentsetup.Item{Name: "hooks", Check: func(context.Context) (agentsetup.Status, error) {
-					return agentsetup.Status{State: agentsetup.StateFailed, Reason: err.Error(), NextStep: "Check the Forge config and retry."}, nil
+					return agentsetup.Status{State: agentsetup.StateFailed, Reason: err.Error(), NextStep: "Check the Forge data directory and config, then retry."}, nil
 				}}
 			} else {
 				hooks = agentsetup.Hooks(agent, target.options(agenthook.Agent(agent)))

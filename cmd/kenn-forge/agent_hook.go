@@ -335,7 +335,7 @@ func agentHookHome(cfg *config.Config) (string, error) {
 			return "", errAgentHookRelativeDataDir
 		}
 	}
-	home, err := filepath.Abs(home)
+	home, err := config.CanonicalDataDir(home)
 	if err != nil {
 		return "", fmt.Errorf("resolve agent hook home: %w", err)
 	}

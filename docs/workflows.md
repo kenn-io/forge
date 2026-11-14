@@ -136,13 +136,14 @@ Workspaces use tmux-backed sessions for durable attachment. Launch more shells
 or agents from the workspace header. Promote a session into the detail layout
 when you want it beside discussion or files.
 
-Install lifecycle hooks to show agent activity in workspace rows:
+Connect Claude Code and Codex and show their activity in workspace rows:
 
 ```sh
-kenn-forge agent-hook install
+kenn-forge agent setup
 ```
 
-Use `--agent NAME` to limit installation. Active work, approval requests, and
+Use `kenn-forge agent-hook install` to install hooks for all supported agents,
+or add `--agent NAME` to select one. Active work, approval requests, and
 input requests update while the sidebar is open. Hook reports stay active until
 the agent session ends or its terminal runtime is removed. Terminal-based activity
 detection resumes when the report clears.

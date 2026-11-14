@@ -74,7 +74,7 @@ func TestAgentSetupRelativeDataDir(t *testing.T) {
 	require.Len(t, report.Rows, 2)
 	assert.Equal(t, agentsetup.StateFailed, report.Rows[0].State)
 	assert.Contains(t, report.Rows[0].Reason, "absolute data_dir")
-	assert.Equal(t, "Check the Forge config and retry.", report.Rows[0].NextStep)
+	assert.Equal(t, "Check the Forge data directory and config, then retry.", report.Rows[0].NextStep)
 	data, err := os.ReadFile(filepath.Join(home, "codex", "config.toml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(data), info.Endpoint)

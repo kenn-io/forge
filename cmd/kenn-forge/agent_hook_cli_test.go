@@ -391,6 +391,28 @@ func TestSetupHookKeepsSelectedHome(t *testing.T) {
 	}
 }
 
+func TestSetupHookStableAfterConfigCreation(t *testing.T) {
+	home := setupAgentTest(t, "/tmp/unused")
+	dataDir := filepath.Join(home, "data")
+	require.NoError(t, os.Mkdir(dataDir, 0o700))
+	alias := filepath.Join(home, "alias")
+	if err := os.Symlink(dataDir, alias); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	t.Setenv("KENN_FORGE_HOME", alias)
+	require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
+	configPath := config.DefaultConfigPath()
+	require.NoError(t, installAgentHooks("install", configPath, "codex", "/usr/bin/kenn-forge", io.Discard))
+	hooksPath := filepath.Join(home, "codex", "hooks.json")
+	before, err := os.ReadFile(hooksPath)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(configPath, []byte(""), 0o600))
+	require.NoError(t, installAgentHooks("install", configPath, "codex", "/usr/bin/kenn-forge", io.Discard))
+	after, err := os.ReadFile(hooksPath)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+}
+
 func TestSetupHookHelper(t *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
 		return

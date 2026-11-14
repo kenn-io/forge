@@ -101,3 +101,16 @@ enabled = true
 	_, err = os.Stat(runtimelock.LockPath(dataDir))
 	assert.ErrorIs(err, os.ErrNotExist)
 }
+
+func TestMCPCommandsRejectMissingConfig(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "missing.toml")
+	for _, action := range []string{"quickstart", "status"} {
+		t.Run(action, func(t *testing.T) {
+			var output bytes.Buffer
+			cmd := newMCPCommand(&output, loadMCPQuickstart)
+			cmd.SetArgs([]string{action, "--config", configPath})
+			require.ErrorIs(t, cmd.Execute(), os.ErrNotExist)
+			assert.Empty(t, output.String())
+		})
+	}
+}

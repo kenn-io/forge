@@ -193,6 +193,19 @@ func TestAgentHookInstallRejectsRelativeDataDirectory(t *testing.T) {
 	assert.ErrorIs(statErr, os.ErrNotExist)
 }
 
+func TestAgentHookInstallRejectsMissingConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CODEX_HOME", filepath.Join(dir, "codex"))
+	configPath := filepath.Join(dir, "missing.toml")
+
+	err := runAgentHookInstall("install", []string{
+		"--config", configPath, "--agent", "codex", "--binary", "/opt/kenn-forge",
+	}, io.Discard)
+
+	require.ErrorIs(t, err, os.ErrNotExist)
+	assert.NoFileExists(t, filepath.Join(dir, "codex", "hooks.json"))
+}
+
 func TestAgentHookRunIgnoresMalformedHookFlags(t *testing.T) {
 	var stdout bytes.Buffer
 

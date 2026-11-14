@@ -112,7 +112,7 @@ func loadMCPQuickstart(
 	timeout time.Duration,
 ) (mcpQuickstartInfo, error) {
 	cfg, err := config.Load(configPath)
-	if errors.Is(err, fs.ErrNotExist) {
+	if errors.Is(err, fs.ErrNotExist) && configPath == config.DefaultConfigPath() {
 		return stoppedMCPQuickstart(true, configPath), nil
 	}
 	if err != nil {

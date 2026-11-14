@@ -1932,7 +1932,7 @@ test.describe("inline workspace pane continuity", () => {
       await selectTopBarTab(page, "Workspaces");
       await expect(page).toHaveURL(new RegExp(`/terminal/${workspace.id}$`));
 
-      const backInTab = page.locator(".workspace-tab-slot .terminal-container");
+      const backInTab = page.locator(".workspace-tab-slot .terminal-panel.open .terminal-container");
       await expect(witness).toBeVisible();
       await expect(backInTab).toHaveAttribute("data-continuity", "witness");
       // The same session must still accept input after the second

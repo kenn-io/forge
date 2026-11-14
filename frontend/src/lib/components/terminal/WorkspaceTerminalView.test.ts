@@ -78,6 +78,10 @@ const mocks = vi.hoisted(() => ({
 
 let sockets: MockWebSocket[] = [];
 
+function runtimeSockets(): MockWebSocket[] {
+  return sockets.filter((socket) => socket.url.includes("/runtime/sessions/"));
+}
+
 class MockWebSocket extends EventTarget {
   static OPEN = 1;
   readyState = 1;
@@ -276,7 +280,8 @@ vi.mock("../../api/generated-api.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../../api/workspace-runtime.js", () => ({
+vi.mock("../../api/workspace-runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../api/workspace-runtime.js")>()),
   workspaceSessionWebSocketPath: (workspaceId: string, sessionKey: string) =>
     `/ws/v1/workspaces/${workspaceId}/runtime/sessions/${sessionKey}/terminal`,
   workspaceTmuxWebSocketPath: (workspaceId: string) => `/ws/v1/workspaces/${workspaceId}/terminal`,
@@ -314,6 +319,7 @@ import {
   mountedSessions,
   resetSessionHostForTest,
   sessionHostPrefix,
+  sessionHostKey,
 } from "../../stores/session-host.svelte.ts";
 import {
   activeHostedSession,
@@ -857,6 +863,224 @@ describe("WorkspaceTerminalView", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("uses terminal zoom after focusing Workspace beside a docked chat", async () => {
+    const chat = { ...reviewerSession, kind: "acp", display_region: "terminal" };
+    mocks.getWorkspaceRuntime.mockResolvedValue({ launch_targets: [], sessions: [chat] });
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+    localStorage.setItem(
+      "kenn-forge-workspace-terminal-layout:ws-1",
+      JSON.stringify({
+        ...JSON.parse(persistedTerminalLayout("tabs")),
+        open: true,
+      }),
+    );
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("tab", { name: "Workspace", exact: true });
+    const dock = await screen.findByRole("group", { name: "Reviewer split drop targets" });
+    await fireEvent.focusIn(dock);
+    expect(screen.getByRole("button", { name: "Increase ACP font size" })).toBeTruthy();
+    const basePane = document.querySelector<HTMLElement>('[data-pane-key="home"]')!;
+    expect(basePane).not.toBeNull();
+    await fireEvent.focusIn(basePane);
+    const increase = screen.getByRole("button", { name: "Increase terminal font size" });
+    await fireEvent.focusOut(basePane, { relatedTarget: increase });
+    increase.focus();
+    await fireEvent.click(increase);
+    await waitFor(() =>
+      expect(mocks.mockUpdateSettings).toHaveBeenCalledWith({
+        terminal: expect.objectContaining({ font_size: 15 }),
+      }),
+    );
+    expect(mocks.mockSetACPSettings).not.toHaveBeenCalled();
+  });
+
+  it("restores Workspace split when runtime arrives before workspace details", async () => {
+    const detail = deferred<Response>();
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: Request | URL | string, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      return new URL(url, "http://localhost").pathname === "/api/v1/workspaces/ws-1"
+        ? detail.promise
+        : originalFetch(input, init);
+    });
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+    localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout(runningSession.key));
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(localStorage.getItem("kenn-forge-workspace-terminal-layout:ws-1")).toContain("session:ws-1:helper"),
+    );
+    // Release details after the independently fetched runtime has settled.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    detail.resolve(Response.json(workspaceResponse));
+    await screen.findByRole("tab", { name: "Workspace", exact: true });
+    await screen.findByRole("tab", { name: "Helper" });
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem("kenn-forge-workspace-terminal-layout:ws-1")!).workflowTree).toMatchObject(
+        { type: "split" },
+      ),
+    );
+    await waitFor(() => expect(sockets).toHaveLength(2));
+    const base = sockets.find((socket) => new URL(socket.url).pathname === "/ws/v1/workspaces/ws-1/terminal")!;
+    expect(base).toBeDefined();
+    base.onopen();
+    await fireEvent.click(screen.getByRole("tab", { name: "Helper" }));
+    await fireEvent.click(screen.getByRole("tab", { name: "Workspace", exact: true }));
+    await view.rerender({ workspaceId: "" });
+    await view.rerender({ workspaceId: "ws-1" });
+    await screen.findByRole("tab", { name: "Workspace", exact: true });
+    expect(sockets.filter((socket) => new URL(socket.url).pathname === "/ws/v1/workspaces/ws-1/terminal")).toHaveLength(
+      1,
+    );
+    expect(base.close).not.toHaveBeenCalled();
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+  });
+
+  it("preserves the Workspace split through a changed runtime in an embedded detail", async () => {
+    const storageKey = "kenn-forge-workspace-terminal-layout:ws-1";
+    const saved = JSON.parse(persistedSplitWorkflowLayout(runningSession.key));
+    saved.workflowTree.ratio = 0.37;
+    localStorage.setItem(storageKey, JSON.stringify(saved));
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+    const eventSources = installEventSourceRecorder();
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("tab", { name: "Workspace", exact: true });
+    await screen.findByRole("tab", { name: "Helper" });
+    const storedTree = () => JSON.parse(localStorage.getItem(storageKey)!).workflowTree;
+    const expectedPlacement = {
+      type: "split",
+      id: "wf-split",
+      direction: "horizontal",
+      ratio: 0.37,
+      first: { type: "leaf", id: "wf-home", tabs: expect.arrayContaining(["home"]) },
+      second: { type: "leaf", id: "wf-session", tabs: expect.arrayContaining([`session:${runningSession.key}`]) },
+    };
+    await waitFor(() => expect(storedTree()).toMatchObject(expectedPlacement));
+
+    claimForPrs();
+    noteWorkspacePaneRendered("prs");
+    await view.rerender({ workspaceId: "ws-1", paneSurface: "prs" });
+    await waitFor(() => expect(screen.queryByRole("tab", { name: "Workspace", exact: true })).toBeNull());
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+    const priorReads = mocks.getWorkspaceRuntime.mock.calls.length;
+    await waitFor(() => expect(latestWorkspaceEventListeners(eventSources)["reconnect.stale"]).toBeTypeOf("function"));
+    latestWorkspaceEventListeners(eventSources)["reconnect.stale"]?.();
+    await waitFor(() => expect(mocks.getWorkspaceRuntime.mock.calls.length).toBeGreaterThan(priorReads));
+    // Prove the changed snapshot was applied, while allowing the new session's normal insertion.
+    await waitFor(() => expect(localStorage.getItem(storageKey)).toContain(`session:${reviewerSession.key}`));
+    expect(screen.queryByRole("tab", { name: "Workspace", exact: true })).toBeNull();
+    expect(storedTree()).toMatchObject(expectedPlacement);
+
+    await view.rerender({ workspaceId: "ws-1", paneSurface: undefined });
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Workspace", exact: true }).getAttribute("aria-selected")).toBe("true"),
+    );
+    expect(screen.getByRole("tab", { name: "Helper" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getAllByRole("tablist", { name: "Workflow group tabs" })).toHaveLength(2);
+    expect(storedTree()).toMatchObject(expectedPlacement);
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+  });
+
+  it.each(["pending", "failed"] as const)(
+    "keeps the shared Workspace base terminal available when discovery is %s",
+    async (discovery) => {
+      if (discovery === "pending") {
+        mocks.getWorkspaceRuntime.mockReturnValue(new Promise(() => undefined));
+      } else {
+        mocks.getWorkspaceRuntime.mockImplementation(async () =>
+          Response.json(
+            {
+              status: 503,
+              code: "serviceUnavailable",
+              detail: "Runtime discovery unavailable",
+            },
+            { status: 503 },
+          ),
+        );
+      }
+      localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hideWorkspaceList: true } });
+
+      const tab = await screen.findByRole("tab", { name: "Workspace", exact: true });
+      expect(tab.getAttribute("aria-selected")).toBe("true");
+      await waitFor(() =>
+        expect(mountedSessions()).toContainEqual(
+          expect.objectContaining({
+            hostKey: sessionHostKey("ws-1", undefined, "ws-1:@workspace", workspaceResponse.created_at),
+            websocketPath: "/ws/v1/workspaces/ws-1/terminal",
+            label: "Workspace",
+            reconnectOnExit: true,
+          }),
+        ),
+      );
+      expect(screen.queryByRole("button", { name: "Rename Workspace" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Close Workspace" })).toBeNull();
+      await waitFor(() =>
+        expect(sockets.some((socket) => new URL(socket.url).pathname.endsWith("/workspaces/ws-1/terminal"))).toBe(true),
+      );
+      if (discovery === "failed") {
+        await waitFor(() =>
+          expect(document.querySelector(".runtime-error")?.textContent).toContain("Runtime discovery unavailable"),
+        );
+      } else {
+        await waitFor(() => expect(sockets[0]?.runListenersAttached).toBe(true));
+        sockets[0]!.onopen();
+        sockets[0]!.onmessage(new MessageEvent("message", { data: JSON.stringify({ type: "exited", code: 0 }) }));
+        await waitFor(() => expect(sockets).toHaveLength(2), { timeout: 4_000 });
+        expect(mountedSessions()).toHaveLength(1);
+        expect(tab.getAttribute("aria-selected")).toBe("true");
+      }
+      expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps launched sessions first and reuses Workspace across switching, polling, and reopening", async () => {
+    localStorage.removeItem("kenn-forge-workspace-active-tab:ws-1");
+    const intervalCallbacks: Array<{ callback: () => void; delay: number | undefined }> = [];
+    capturePollingIntervals(intervalCallbacks);
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Helper" }).getAttribute("aria-selected")).toBe("true"));
+    await fireEvent.click(screen.getByRole("tab", { name: "Workspace", exact: true }));
+    await waitFor(() =>
+      expect(
+        sockets.filter((socket) => new URL(socket.url).pathname.endsWith("/workspaces/ws-1/terminal")),
+      ).toHaveLength(1),
+    );
+    const base = sockets.find((socket) => new URL(socket.url).pathname.endsWith("/workspaces/ws-1/terminal"))!;
+    base.onopen();
+    await fireEvent.click(screen.getByRole("tab", { name: "Helper" }));
+    await fireEvent.click(screen.getByRole("tab", { name: "Workspace", exact: true }));
+    await fireEvent.keyDown(window, { key: "Escape" });
+    intervalCallbacks[0]!.callback();
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
+    await view.rerender({ workspaceId: "" });
+    await waitFor(() => expect(screen.queryByRole("tab", { name: "Workspace", exact: true })).toBeNull());
+    await view.rerender({ workspaceId: "ws-1" });
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "Workspace", exact: true }).getAttribute("aria-selected")).toBe("true"),
+    );
+    expect(base.close).not.toHaveBeenCalled();
+    expect(sockets.filter((socket) => new URL(socket.url).pathname.endsWith("/workspaces/ws-1/terminal"))).toHaveLength(
+      1,
+    );
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+  });
+
+  it.each(["member", "devbox:remote"])("does not offer a local Workspace terminal on %s", async (host) => {
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: Request | URL | string, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (new URL(url, "http://localhost").pathname.endsWith("/workspaces/ws-1/runtime")) {
+        return Response.json(runtimeWithStaleSession());
+      }
+      return originalFetch(input, init);
+    });
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", workspaceHostKey: host } });
+    await screen.findByRole("tab", { name: "Helper" });
+    expect(screen.queryByRole("tab", { name: "Workspace", exact: true })).toBeNull();
+    expect(mountedSessions().some((session) => session.hostKey.includes("@workspace"))).toBe(false);
   });
 
   it.each([
@@ -1726,27 +1950,36 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.getByLabelText(label).classList.contains(className)).toBe(true);
   });
 
-  it("keeps the remaining agent visible when the selected terminal exits", async () => {
-    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
-    render(WorkspaceTerminalView, {
-      props: {
-        workspaceId: "ws-1",
-      },
-    });
-
-    await screen.findByRole("region", { name: "Workflow panes" });
-    await waitFor(() => expect(sockets).toHaveLength(1));
-
-    sockets[0]!.onmessage?.(
-      new MessageEvent("message", {
-        data: JSON.stringify({ type: "exited", code: 0 }),
-      }),
-    );
-
-    await waitFor(() => expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull());
-    expect(screen.getByRole("tab", { name: /Reviewer/ }).getAttribute("aria-selected")).toBe("true");
-    expect(localStorage.getItem("kenn-forge-workspace-active-tab:ws-1")).toBe("session:ws-1:reviewer");
-  });
+  it.each([0, 1])(
+    "selects the fallback with %s remaining agents when the selected terminal exits",
+    async (remaining) => {
+      mocks.getWorkspaceRuntime.mockResolvedValue(
+        remaining ? runtimeWithTwoWorkflowSessions() : runtimeWithStaleSession(),
+      );
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+      await screen.findByRole("region", { name: "Workflow panes" });
+      await screen.findByRole("tab", { name: "Helper" });
+      await waitFor(() => expect(runtimeSockets()).toHaveLength(1));
+      if (remaining === 0) mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      runtimeSockets()[0]!.onmessage(
+        new MessageEvent("message", {
+          data: JSON.stringify({ type: "exited", code: 0 }),
+        }),
+      );
+      await waitFor(() => expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull());
+      await waitFor(() =>
+        expect(
+          screen
+            .getByRole("tab", { name: remaining ? "Reviewer" : "Workspace", exact: true })
+            .getAttribute("aria-selected"),
+        ).toBe("true"),
+      );
+      expect(localStorage.getItem("kenn-forge-workspace-active-tab:ws-1")).toBe(
+        remaining ? "session:ws-1:reviewer" : "home",
+      );
+      expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+    },
+  );
 
   it("hides pane workspace info until the selected workspace loads", async () => {
     serveAnyWorkspace();
@@ -2763,24 +2996,30 @@ describe("WorkspaceTerminalView", () => {
     );
     const { rerender } = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
     await screen.findByRole("tab", { name: /Helper/ });
-    await waitFor(() => expect(sockets).toHaveLength(1));
-    sockets[0]!.onopen();
+    await waitFor(() => expect(runtimeSockets()).toHaveLength(1));
+    runtimeSockets()[0]!.onopen();
     await rerender({ workspaceId: "ws-2" });
     await screen.findByRole("button", { name: "Workspace info" });
-    sockets[0]!.onclose(new CloseEvent("close"));
-    await waitFor(() => expect(mountedSessions()).toHaveLength(0));
+    runtimeSockets()[0]!.onclose(new CloseEvent("close"));
+    await waitFor(() =>
+      expect(mountedSessions().filter((session) => session.websocketPath.includes("/runtime/sessions/"))).toHaveLength(
+        0,
+      ),
+    );
 
     const refreshedRuntime = deferred<ReturnType<typeof runtimeWithStaleSession>>();
     mocks.getWorkspaceRuntime.mockReturnValue(refreshedRuntime.promise);
     await rerender({ workspaceId: "ws-1" });
     await screen.findByRole("tab", { name: /Helper/ });
-    expect(mountedSessions()).toHaveLength(0);
-    expect(sockets).toHaveLength(1);
+    expect(mountedSessions().filter((session) => session.websocketPath.includes("/runtime/sessions/"))).toHaveLength(0);
+    expect(runtimeSockets()).toHaveLength(1);
 
     refreshedRuntime.resolve(runtimeWithSession("2026-04-29T00:05:00Z"));
-    await waitFor(() => expect(sockets).toHaveLength(2));
+    await waitFor(() => expect(runtimeSockets()).toHaveLength(2));
     expect(screen.getByRole("tab", { name: /Helper/ }).getAttribute("aria-selected")).toBe("true");
-    expect(mountedSessions()[0]?.hostKey).toContain("00%3A05%3A00Z");
+    expect(
+      mountedSessions().filter((session) => session.websocketPath.includes("/runtime/sessions/"))[0]?.hostKey,
+    ).toContain("00%3A05%3A00Z");
   });
 
   it("forgets a restored workspace when the refresh reports it deleted", async () => {
@@ -2851,9 +3090,9 @@ describe("WorkspaceTerminalView", () => {
     await screen.findByRole("button", { name: "Refresh workspace details" });
     initialRuntime.resolve(runtimeWithStaleSession());
     await screen.findByRole("tab", { name: /Helper/ });
-    await waitFor(() => expect(sockets).toHaveLength(1));
+    await waitFor(() => expect(runtimeSockets()).toHaveLength(1));
 
-    sockets[0]!.onmessage?.(
+    runtimeSockets()[0]!.onmessage?.(
       new MessageEvent("message", {
         data: JSON.stringify({ type: "exited", code: 0 }),
       }),
@@ -3276,10 +3515,10 @@ describe("WorkspaceTerminalView", () => {
       name: "Open terminal panel",
     });
     await fireEvent.click(terminalButton);
-    await waitFor(() => expect(sockets).toHaveLength(1));
+    await waitFor(() => expect(runtimeSockets()).toHaveLength(1));
     expect(screen.queryByLabelText("Terminal selector")).toBeNull();
 
-    sockets[0]!.onmessage?.(
+    runtimeSockets()[0]!.onmessage?.(
       new MessageEvent("message", {
         data: JSON.stringify({ type: "exited", code: 0 }),
       }),
@@ -3308,7 +3547,7 @@ describe("WorkspaceTerminalView", () => {
         name: "Open terminal panel",
       }),
     );
-    await waitFor(() => expect(sockets).toHaveLength(1));
+    await waitFor(() => expect(runtimeSockets()).toHaveLength(1));
 
     await fireEvent.click(screen.getByRole("button", { name: "Close Shell" }));
 
@@ -3337,7 +3576,7 @@ describe("WorkspaceTerminalView", () => {
     });
 
     await fireEvent.click(await screen.findByRole("button", { name: "Open terminal panel" }));
-    await waitFor(() => expect(sockets).toHaveLength(1));
+    await waitFor(() => expect(runtimeSockets()).toHaveLength(1));
     await fireEvent.click(screen.getByRole("button", { name: "Close Shell" }));
     const confirm = await screen.findByRole("dialog", { name: "Stop Shell?" });
     const stalledRefresh = deferred<ReturnType<typeof runtimeWithTwoTerminalSessions>>();
@@ -3449,15 +3688,15 @@ describe("WorkspaceTerminalView", () => {
       name: "Open terminal panel",
     });
     await fireEvent.click(terminalButton);
-    await waitFor(() => expect(sockets).toHaveLength(1));
+    await waitFor(() => expect(runtimeSockets()).toHaveLength(1));
 
-    sockets[0]!.onmessage?.(
+    runtimeSockets()[0]!.onmessage?.(
       new MessageEvent("message", {
         data: JSON.stringify({ type: "exited", code: 0 }),
       }),
     );
     await screen.findByRole("button", { name: "Open terminal panel" });
-    expect(sockets).toHaveLength(1);
+    expect(runtimeSockets()).toHaveLength(1);
   });
 
   it("reconnects terminal panes when selecting another shell", async () => {
@@ -3632,9 +3871,9 @@ describe("WorkspaceTerminalView", () => {
       name: "Open terminal panel",
     });
     await fireEvent.click(terminalButton);
-    await waitFor(() => expect(sockets).toHaveLength(1));
+    await waitFor(() => expect(runtimeSockets()).toHaveLength(1));
 
-    sockets[0]!.onmessage?.(
+    runtimeSockets()[0]!.onmessage?.(
       new MessageEvent("message", {
         data: JSON.stringify({ type: "exited", code: 0 }),
       }),
@@ -3643,13 +3882,13 @@ describe("WorkspaceTerminalView", () => {
 
     await fireEvent.click(screen.getAllByRole("button", { name: "New terminal" })[0]!);
     freshRefresh.resolve(runtimeWithTerminalSession(relaunchedShellSession));
-    await waitFor(() => expect(sockets.some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(true));
+    await waitFor(() => expect(runtimeSockets().some((socket) => socket.url.includes("ws-1_shell_b"))).toBe(true));
 
     staleRefresh.resolve(runtimeWithTerminalSession());
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(sockets.filter((socket) => socket.url.includes("ws-1_shell_a"))).toHaveLength(1);
-    expect(sockets.filter((socket) => socket.url.includes("ws-1_shell_b"))).toHaveLength(1);
+    expect(runtimeSockets().filter((socket) => socket.url.includes("ws-1_shell_a"))).toHaveLength(1);
+    expect(runtimeSockets().filter((socket) => socket.url.includes("ws-1_shell_b"))).toHaveLength(1);
   });
 
   it("moves a workflow shell back into the terminal panel", async () => {
@@ -3667,7 +3906,7 @@ describe("WorkspaceTerminalView", () => {
         name: "Open terminal panel",
       }),
     );
-    await waitFor(() => expect(sockets).toHaveLength(1));
+    await waitFor(() => expect(runtimeSockets()).toHaveLength(1));
     expect(screen.getByRole("button", { name: "Focus Shell" }).getAttribute("draggable")).toBe("true");
     await fireEvent.click(screen.getByRole("button", { name: "Move Shell to workflow" }));
 
@@ -3693,8 +3932,8 @@ describe("WorkspaceTerminalView", () => {
         name: "Open terminal panel",
       }),
     );
-    await waitFor(() => expect(sockets).toHaveLength(1));
-    const socket = sockets[0]!;
+    await waitFor(() => expect(runtimeSockets()).toHaveLength(1));
+    const socket = runtimeSockets()[0]!;
     expect(socket.url).toContain("ws-1_shell_a");
 
     await fireEvent.click(screen.getByRole("button", { name: "Move Shell to workflow" }));
@@ -3705,7 +3944,7 @@ describe("WorkspaceTerminalView", () => {
     // One tmux attachment from start to finish. Both regions render the same
     // pooled terminal, so moving between them reparents it instead of tearing
     // the shell down and reattaching to a scrollback-less new one.
-    expect(sockets.filter((candidate) => candidate.url.includes("ws-1_shell_a"))).toHaveLength(1);
+    expect(runtimeSockets().filter((candidate) => candidate.url.includes("ws-1_shell_a"))).toHaveLength(1);
     expect(socket.close).not.toHaveBeenCalled();
   });
 
@@ -3724,15 +3963,20 @@ describe("WorkspaceTerminalView", () => {
         name: "Open terminal panel",
       }),
     );
-    await waitFor(() => expect(sockets).toHaveLength(1));
-    sockets[0]!.onopen();
-    const hostKey = mountedSessions()[0]!.hostKey;
+    await waitFor(() => expect(runtimeSockets()).toHaveLength(1));
+    runtimeSockets()[0]!.onopen();
+    const hostKey = mountedSessions().filter((session) => session.websocketPath.includes("/runtime/sessions/"))[0]!
+      .hostKey;
 
     await fireEvent.click(screen.getAllByRole("button", { name: "Close terminal panel" })[0]!);
 
     await waitFor(() => expect(isSessionClaimed(hostKey)).toBe(false));
-    expect(mountedSessions().some((session) => session.hostKey === hostKey)).toBe(true);
-    expect(sockets[0]!.close).not.toHaveBeenCalled();
+    expect(
+      mountedSessions()
+        .filter((session) => session.websocketPath.includes("/runtime/sessions/"))
+        .some((session) => session.hostKey === hostKey),
+    ).toBe(true);
+    expect(runtimeSockets()[0]!.close).not.toHaveBeenCalled();
   });
 
   it("shows a workspace sidebar collapse button", async () => {
@@ -6490,7 +6734,18 @@ describe("WorkspaceTerminalView", () => {
           .map(([data]) => (typeof data === "string" ? data : new TextDecoder().decode(data as Uint8Array)))
           .join(""),
       ).not.toContain("Review this change");
-      expect(within(strip).getAllByRole("tab")).toHaveLength(1);
+      expect(
+        within(strip)
+          .getAllByRole("tab")
+          .map((tab) => tab.textContent?.trim())
+          .sort(),
+      ).toEqual(["Helper", "Workspace"]);
+      expect(
+        within(strip)
+          .getByRole("tab", { name: /Helper/ })
+          .getAttribute("aria-selected"),
+      ).toBe("true");
+      expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
     });
 
     it("focuses the terminal once the prompt is delivered, unless the user is typing elsewhere", async () => {
@@ -7012,7 +7267,7 @@ describe("WorkspaceTerminalView", () => {
       });
       const execution = runCommand.mock.results.at(-1)!.value;
       const firstView = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
-      await screen.findByText("Loading workspace runtime...");
+      await screen.findByText("Launching helper...");
       const placed = JSON.parse(localStorage.getItem(storageKey)!);
       expect(placed.workflowMode).toBe("grid");
       firstView.unmount();

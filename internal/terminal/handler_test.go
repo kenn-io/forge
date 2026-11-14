@@ -79,25 +79,39 @@ func TestHandlerWorkspaceNotReady(t *testing.T) {
 	assert.Contains(rec.Body.String(), "not ready")
 }
 
-func TestHandlerRejectsConcurrentWorkspaceTerminals(t *testing.T) {
+func TestHandlerSharesAttachmentsAndExcludesIdleStop(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-
 	h := &Handler{}
-	release, err := h.claimTerminalSlot("ws-1")
+	phone, err := h.claimTerminalSlot("ws-1", false)
 	require.NoError(err)
-	assert.NotNil(release)
+	desktop, err := h.claimTerminalSlot("ws-1", false)
+	require.NoError(err)
+	assert.Equal(2, h.active["ws-1"].attachments)
 
-	release2, err := h.claimTerminalSlot("ws-1")
+	stop, err := h.claimTerminalSlot("ws-1", true)
 	require.Error(err)
-	assert.Nil(release2)
-
-	release()
-
-	release3, err := h.claimTerminalSlot("ws-1")
+	assert.Nil(stop)
+	phone()
+	phone()
+	assert.Equal(1, h.active["ws-1"].attachments, "release is idempotent")
+	stop, err = h.claimTerminalSlot("ws-1", true)
+	require.Error(err)
+	assert.Nil(stop, "one remaining attachment still prevents idle stop")
+	desktop()
+	assert.Empty(h.active)
+	stop, err = h.claimTerminalSlot("ws-1", true)
 	require.NoError(err)
-	assert.NotNil(release3)
-	release3()
+	attach, err := h.claimTerminalSlot("ws-1", false)
+	require.Error(err)
+	assert.Nil(attach)
+	stop()
+	stop()
+	assert.Empty(h.active)
+	reattach, err := h.claimTerminalSlot("ws-1", false)
+	require.NoError(err)
+	reattach()
+	assert.Empty(h.active)
 }
 
 type blockingStopPtyOwnerClient struct {
@@ -138,17 +152,17 @@ func TestStopUnattachedTerminalReservesOnlyWorkspaceSlot(t *testing.T) {
 
 	require.True(h.mu.TryLock(), "stopping a terminal must release the shared admission lock")
 	h.mu.Unlock()
-	release, err := h.claimTerminalSlot(ws.ID)
+	release, err := h.claimTerminalSlot(ws.ID, false)
 	require.Error(err)
 	require.Nil(release)
-	releaseOther, err := h.claimTerminalSlot("ws-2")
+	releaseOther, err := h.claimTerminalSlot("ws-2", false)
 	require.NoError(err)
 	releaseOther()
 	require.NoError(h.StopUnattachedTerminal(t.Context(), ws))
 
 	unblock()
 	require.NoError(<-done)
-	release, err = h.claimTerminalSlot(ws.ID)
+	release, err = h.claimTerminalSlot(ws.ID, false)
 	require.NoError(err)
 	release()
 }
@@ -222,10 +236,10 @@ func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
+	terminalURL := "ws" + strings.TrimPrefix(server.URL, "http") +
+		"/api/v1/workspaces/" + ws.ID + "/terminal"
 	conn, resp, err := websocket.Dial(
-		t.Context(),
-		"ws"+strings.TrimPrefix(server.URL, "http")+
-			"/api/v1/workspaces/"+ws.ID+"/terminal",
+		t.Context(), terminalURL,
 		&websocket.DialOptions{
 			CompressionMode: websocket.CompressionContextTakeover,
 		},
@@ -238,6 +252,10 @@ func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 	)
 
 	require.Contains(readWebSocketUntil(t, conn, "ready"), "ready")
+	second, _, err := websocket.Dial(t.Context(), terminalURL, nil)
+	require.NoError(err)
+	defer second.Close(websocket.StatusNormalClosure, "done")
+	require.Contains(readWebSocketUntil(t, second, "ready"), "ready")
 	require.NoError(conn.Write(
 		t.Context(), websocket.MessageText,
 		[]byte(terminalwebsocket.HeartbeatMessage),
@@ -261,6 +279,11 @@ func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 		[]byte("printf 'got:hello size:'; stty size\n"),
 	))
 	require.Contains(readWebSocketUntil(t, conn, "got:hello size:33 101"), "got:hello size:33 101")
+	require.Contains(readWebSocketUntil(t, second, "got:hello size:33 101"), "got:hello size:33 101")
+	require.NoError(conn.Close(websocket.StatusNormalClosure, "phone detached"))
+	require.NoError(second.Write(t.Context(), websocket.MessageBinary,
+		[]byte("printf 'after:%s\\n' first-close\n")))
+	require.Contains(readWebSocketUntil(t, second, "after:first-close"), "after:first-close")
 }
 
 func TestHandleControlAppliesResizeClaim(t *testing.T) {
@@ -372,4 +395,33 @@ func readWebSocketUntil(
 			return builder.String()
 		}
 	}
+}
+
+func TestHandlerDesktopCanAttachWhilePhoneOwnsWorkspace(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	mgr := workspacetest.NewManager(t, d, t.TempDir())
+	ws := &workspace.Workspace{
+		ID: "shared-workspace", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+		GitHeadRef: "feature/test", WorktreePath: t.TempDir(),
+		TmuxSession: "forge-shared-workspace", Status: "ready", TerminalBackend: workspace.TerminalBackendTmux,
+	}
+	require.NoError(d.InsertWorkspace(t.Context(), ws))
+	handler := &Handler{Workspaces: mgr}
+	// The phone already owns a claim. Exercise desktop admission without
+	// needing a websocket or subprocess; rejection precedes both backend paths.
+	releasePhone, err := handler.claimTerminalSlot(ws.ID, false)
+	require.NoError(err)
+	defer releasePhone()
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"/ws/v1/workspaces/"+ws.ID+"/terminal", nil)
+	request.SetPathValue("id", ws.ID)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	require.Equal(http.StatusUpgradeRequired, recorder.Code,
+		"desktop must reach websocket upgrade while phone remains attached: %s", recorder.Body.String())
+	require.Contains(recorder.Body.String(), `Connection header "" does not contain Upgrade`)
+	require.Equal(1, handler.active[ws.ID].attachments, "the rejected handshake releases only its own claim")
 }

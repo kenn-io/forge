@@ -6382,7 +6382,7 @@ test.describe("delayed-response navigation", () => {
 
     await page.goto(`/terminal/${wsA.id}`);
     // A's session tab should be visible.
-    await expect(page.locator(".workspace-stage .tabbed-panel-tab-panel")).not.toHaveCount(0);
+    await expect(page.getByRole("tab", { name: sessionA.label, exact: true })).toBeVisible();
 
     await page
       .locator(".workspace-list-sidebar .ws-row", {
@@ -6390,17 +6390,22 @@ test.describe("delayed-response navigation", () => {
       })
       .click();
 
-    // The header should have moved to B as soon as wsB's
-    // workspace GET resolves. But because B's runtime fetch is
-    // still in flight, the workspace stage must show the
-    // "Loading workspace runtime..." state, not A's session
-    // panes.
+    // B's own base terminal remains available while its runtime request
+    // is held, without exposing A's session tabs or panes.
     await expect(page.locator(".terminal-main .header-name")).toContainText(wsB.mr_title);
-    await expect(page.locator(".workspace-stage .state-message")).toContainText("Loading workspace runtime");
+    await expect(page.getByRole("tab", { name: "Workspace", exact: true })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: sessionA.label, exact: true })).toHaveCount(0);
+    await expect(page.locator(`.workspace-stage [data-pane-key="session:${sessionA.key}"]`)).toHaveCount(0);
 
+    const runtimeResponse = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === `/api/v1/workspaces/${wsB.id}/runtime`,
+    );
     releaseBRuntime();
+    await runtimeResponse;
 
-    // Once B's runtime resolves, the loading state goes away.
+    // B stays usable after discovery resolves without resurrecting A.
+    await expect(page.getByRole("tab", { name: "Workspace", exact: true })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: sessionA.label, exact: true })).toHaveCount(0);
     await expect(page.locator(".workspace-stage .state-message")).toHaveCount(0);
   });
 

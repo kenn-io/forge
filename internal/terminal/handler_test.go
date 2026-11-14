@@ -364,14 +364,24 @@ func TestProcessExitCode(t *testing.T) {
 	assert.Equal(-1, processExitCode(errors.New("wait failed")))
 }
 
-func TestParseGeometryFallsBack(t *testing.T) {
-	req := httptest.NewRequestWithContext(t.Context(),
-		http.MethodGet, "/?cols=bad&rows=0", nil,
-	)
-	geometry := parseGeometry(req)
-	assert := assert.New(t)
-	assert.Equal(120, geometry.Cols)
-	assert.Equal(30, geometry.Rows)
+func TestParseGeometryPreservesResizeAuthority(t *testing.T) {
+	for _, tc := range []struct {
+		name, query string
+		cols, rows  int
+	}{
+		{name: "inactive attachment"},
+		{name: "invalid dimensions", query: "?cols=bad&rows=0"},
+		{name: "visible attachment", query: "?cols=91&rows=27", cols: 91, rows: 27},
+		{name: "partial dimensions", query: "?cols=91", cols: 91},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/"+tc.query, nil)
+			geometry := parseGeometry(req)
+			assert := assert.New(t)
+			assert.Equal(tc.cols, geometry.Cols)
+			assert.Equal(tc.rows, geometry.Rows)
+		})
+	}
 }
 
 func readWebSocketUntil(

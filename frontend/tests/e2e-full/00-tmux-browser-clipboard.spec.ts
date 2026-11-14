@@ -300,6 +300,8 @@ function observeTerminalOutput(page: Page): {
     closed: boolean;
   }> = [];
   page.on("websocket", (socket) => {
+    const socketUrl = new URL(socket.url());
+    if (!socketUrl.pathname.includes("/runtime/sessions/") || !socketUrl.pathname.endsWith("/terminal")) return;
     const stream = {
       output: "",
       input: "",
@@ -309,7 +311,6 @@ function observeTerminalOutput(page: Page): {
       closed: false,
     };
     streams.push(stream);
-    const socketUrl = new URL(socket.url());
     const initialColumns = Number.parseInt(socketUrl.searchParams.get("cols") ?? "", 10);
     const initialRows = Number.parseInt(socketUrl.searchParams.get("rows") ?? "", 10);
     if (Number.isFinite(initialColumns) && initialColumns > 0) {

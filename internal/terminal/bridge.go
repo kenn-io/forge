@@ -119,8 +119,8 @@ func handleControl(ptmx *os.File, msg *controlMsg) {
 
 func parseGeometry(r *http.Request) ptysize.Geometry {
 	return ptysize.Normalize(ptysize.Geometry{
-		Cols:        parseIntParam(r, "cols", 120),
-		Rows:        parseIntParam(r, "rows", 30),
+		Cols:        parseIntParam(r, "cols", 0),
+		Rows:        parseIntParam(r, "rows", 0),
 		PixelWidth:  parseIntParam(r, "pixel_width", 0),
 		PixelHeight: parseIntParam(r, "pixel_height", 0),
 	})

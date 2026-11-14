@@ -1652,7 +1652,7 @@
   $effect(() => {
     if (!workflowLive) return;
     const live = new Set(runtimeSessions.map((session) => session.key));
-    if (baseTerminalHostKey !== null) live.add(workspaceBaseSessionKey(workspaceId));
+    if (baseTerminalHostKey !== null && hostVisible) live.add(workspaceBaseSessionKey(workspaceId));
     const showing = activeWorkflowSessionKeys(renderedWorkflowTree).filter((key) => live.has(key));
     // Untracked: mountSessionTerminal writes the mounted list that the tree's own
     // descriptors read, and it is a no-op for a session already mounted, so this
@@ -5290,9 +5290,10 @@
                           {@const session = runtimeSessions.find(
                             (candidate) => candidate.key === sessionKey,
                           )}
-                          {#if session && isSessionTerminalMounted(session.key)}
+                          {@const hostKey = session ? sessionHostKeyFor(session) : null}
+                          {#if session && hostKey !== null && isSessionTerminalMounted(session.key)}
                             <SessionTerminalSlot
-                              hostKey={sessionHostKeyFor(session)}
+                              hostKey={hostKey}
                               visible={active && hostVisible}
                             />
                           {/if}

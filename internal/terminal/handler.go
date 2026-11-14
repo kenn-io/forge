@@ -226,6 +226,14 @@ func (h *Handler) ServeHTTP(
 	}
 	defer releaseProc()
 
+	// A new tmux client needs a size. A shared PTY owner instead preserves its
+	// current size when an inactive browser attaches without resize authority.
+	if geometry.Cols == 0 {
+		geometry.Cols = 120
+	}
+	if geometry.Rows == 0 {
+		geometry.Rows = 30
+	}
 	winSize := ptysize.Winsize(geometry)
 	ptmx, err := pty.StartWithSize(cmd, winSize)
 	if err != nil {

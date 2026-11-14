@@ -93,6 +93,8 @@ function hasCommand(command: string, args: string[] = ["--version"]): boolean {
 function observeTerminalControlFrames(page: Page): TerminalControlFrame[] {
   const frames: TerminalControlFrame[] = [];
   page.on("websocket", (socket) => {
+    const pathname = new URL(socket.url()).pathname;
+    if (!pathname.includes("/runtime/sessions/") || !pathname.endsWith("/terminal")) return;
     socket.on("framesent", ({ payload }) => {
       if (typeof payload !== "string") return;
       try {
@@ -977,7 +979,11 @@ test.describe("inline workspace pane continuity", () => {
       ).length;
 
       await workflow.getByRole("button", { name: "Close Terminal", exact: true }).click();
-      await expect(workflow.getByRole("button", { name: "Open terminal panel", exact: true })).toBeVisible();
+      await expect(terminalTab).toHaveAttribute("aria-selected", "false");
+      await expect(workflow.getByRole("tab", { name: "Workspace", exact: true })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
       await expect
         .poll(() => controlFrames.filter((frame) => frame.type === "resize_active" && frame.active === false).length, {
           timeout: 15_000,

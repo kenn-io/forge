@@ -866,6 +866,75 @@ describe("WorkspaceTerminalView", () => {
     vi.unstubAllGlobals();
   });
 
+  it("does not start a base terminal while an unused embedded workspace is parked", async () => {
+    mocks.getWorkspaceRuntime.mockResolvedValue({ launch_targets: [], sessions: [] });
+    claimForPrs();
+    noteWorkspacePaneRendered("prs");
+    const view = render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", paneSurface: "prs", hostVisible: true },
+    });
+    await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalled());
+    await waitFor(() => expect(hostedWorkspaceControls()?.workspaceKey).toContain("ws-1"));
+    expect(sockets).toHaveLength(0);
+
+    await view.rerender({ workspaceId: "ws-1", paneSurface: undefined, hostVisible: false });
+    await screen.findByRole("tab", { name: "Workspace", exact: true });
+    await tick();
+    expect(sockets).toHaveLength(0);
+    expect(mountedSessions()).toHaveLength(0);
+
+    await view.rerender({ workspaceId: "ws-1", hostVisible: true });
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    const base = sockets[0]!;
+    expect(new URL(base.url).pathname).toBe("/ws/v1/workspaces/ws-1/terminal");
+    base.onopen();
+    await view.rerender({ workspaceId: "ws-1", hostVisible: false });
+    await view.rerender({ workspaceId: "ws-1", hostVisible: true });
+    expect(sockets).toHaveLength(1);
+    expect(base.close).not.toHaveBeenCalled();
+    await view.rerender({ workspaceId: "ws-1", paneSurface: "prs", hostVisible: true });
+    await waitFor(() => expect(mountedSessions()).toHaveLength(0));
+    await view.rerender({ workspaceId: "ws-1", paneSurface: undefined, hostVisible: false });
+    await tick();
+    expect(mountedSessions()).toHaveLength(0);
+    expect(sockets).toHaveLength(1);
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+  });
+
+  it("keeps workflow slots renderable through repeated workspace switches", async () => {
+    serveAnyWorkspace();
+    claimForPrs();
+    noteWorkspacePaneRendered("prs");
+    mocks.getWorkspaceRuntime.mockImplementation(async (id: string) => ({
+      launch_targets: [],
+      sessions: [runningSession, reviewerSession].map((session) => ({
+        ...session,
+        key: `${id}:${session.target_key}`,
+        workspace_id: id,
+      })),
+    }));
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
+    const expectSession = async (id: string) => {
+      await waitFor(() =>
+        expect(screen.getByRole("tab", { name: "Helper" }).getAttribute("aria-selected")).toBe("true"),
+      );
+      await waitFor(() =>
+        expect(document.querySelector(`[data-pane-key="session:${id}:helper"] [data-session-host]`)).not.toBeNull(),
+      );
+    };
+    await expectSession("ws-1");
+    await waitFor(() => expect(runtimeSockets()).toHaveLength(1));
+    await view.rerender({ workspaceId: "ws-1", paneSurface: undefined, hostVisible: false });
+    await view.rerender({ workspaceId: "ws-2", paneSurface: "prs", hostVisible: true });
+    await expectSession("ws-2");
+    await waitFor(() => expect(runtimeSockets()).toHaveLength(2));
+    await view.rerender({ workspaceId: "ws-2", paneSurface: undefined, hostVisible: false });
+    await view.rerender({ workspaceId: "ws-1", paneSurface: "prs", hostVisible: true });
+    await expectSession("ws-1");
+    expect(runtimeSockets()).toHaveLength(2);
+    expect(runtimeSockets().every((socket) => socket.close.mock.calls.length === 0)).toBe(true);
+  });
+
   it("uses terminal zoom after focusing Workspace beside a docked chat", async () => {
     const chat = { ...reviewerSession, kind: "acp", display_region: "terminal" };
     mocks.getWorkspaceRuntime.mockResolvedValue({ launch_targets: [], sessions: [chat] });

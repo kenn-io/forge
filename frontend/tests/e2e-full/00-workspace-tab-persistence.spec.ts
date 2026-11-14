@@ -155,14 +155,14 @@ test.describe("workspace tab persistence", () => {
       await page.goto(`${isolatedServer.info.base_url}/terminal/${createdWorkspace.id}`);
 
       const workflow = page.getByRole("region", { name: "Workflow panes" });
-      const panes = workflow.locator(".tabbed-panel-tab-panel");
+      const panes = workflow.locator('[data-pane-key="terminal"]');
       const terminalTab = workflow.getByRole("tab", { name: "Terminal" });
 
       await expect(page.getByRole("region", { name: "Session launcher" })).toBeVisible();
       await openTerminalWorkflowTab(page);
       await expect(panes).toHaveCount(1);
       await expect(terminalTab).toHaveAttribute("aria-selected", "true");
-      const terminalPane = workflow.locator(".tabbed-panel-tab-panel.active");
+      const terminalPane = panes;
       await terminalPane.evaluate((el) => el.setAttribute("data-test-terminal-id", "preserved"));
 
       await page.getByRole("button", { name: "Workspace info", exact: true }).click();

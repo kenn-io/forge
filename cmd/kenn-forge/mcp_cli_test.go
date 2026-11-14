@@ -46,8 +46,14 @@ func TestMCPQuickstartStoppedGuidesSetup(t *testing.T) {
 	cmd.SetArgs([]string{"quickstart"})
 	require.NoError(t, cmd.Execute())
 	assert.NotContains(t, output.String(), "OK mcp quickstart")
-	assert.Contains(t, output.String(), "kenn-forge daemon start")
 	assert.Contains(t, output.String(), "kenn-forge agent setup")
+}
+
+func TestStoppedMCPQuickstartEnablesBeforeStarting(t *testing.T) {
+	info := stoppedMCPQuickstart(false, "")
+	require.Len(t, info.NextSteps, 2)
+	assert.Contains(t, info.NextSteps[0], "[mcp].enabled = true")
+	assert.Contains(t, info.NextSteps[1], "kenn-forge daemon start")
 }
 
 func TestMCPQuickstartCommandPrintsStructuredConnector(t *testing.T) {

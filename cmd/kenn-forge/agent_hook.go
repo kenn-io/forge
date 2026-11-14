@@ -327,5 +327,8 @@ func agentHookHome(cfg *config.Config) (string, error) {
 	if cfg != nil {
 		return cfg.DataDir, nil
 	}
+	if dataDir := os.Getenv("KENN_FORGE_DATA_DIR"); dataDir != "" && !filepath.IsAbs(dataDir) {
+		return "", errors.New("agent hook install requires an absolute data_dir")
+	}
 	return config.CanonicalDataDir(cmp.Or(os.Getenv("KENN_FORGE_DATA_DIR"), config.DefaultDataDir()))
 }

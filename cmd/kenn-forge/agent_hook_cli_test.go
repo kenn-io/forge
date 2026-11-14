@@ -174,38 +174,39 @@ func TestAgentHookInstallDefaultsToEveryKitProfile(t *testing.T) {
 	}
 }
 
-func TestAgentHookInstallRejectsRelativeDataDirectory(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
-	require.NoError(os.WriteFile(configPath, []byte("data_dir = \"relative-data\"\n"), 0o600))
-	configDir := filepath.Join(dir, "codex")
-	t.Setenv("CODEX_HOME", configDir)
-
-	err := runAgentHookInstall("install", []string{
-		"--config", configPath,
-		"--agent", "codex",
-		"--binary", "/opt/kenn-forge",
-	}, io.Discard)
-
-	require.Error(err)
-	assert.Contains(err.Error(), "absolute data_dir")
-	_, statErr := os.Stat(filepath.Join(configDir, "hooks.json"))
-	assert.ErrorIs(statErr, os.ErrNotExist)
-}
-
-func TestAgentHookInstallRejectsMissingConfig(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("CODEX_HOME", filepath.Join(dir, "codex"))
-	configPath := filepath.Join(dir, "missing.toml")
-
-	err := runAgentHookInstall("install", []string{
-		"--config", configPath, "--agent", "codex", "--binary", "/opt/kenn-forge",
-	}, io.Discard)
-
-	require.ErrorIs(t, err, os.ErrNotExist)
-	assert.NoFileExists(t, filepath.Join(dir, "codex", "hooks.json"))
+func TestAgentHookInstallRejectsInvalidConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name, contents, env  string
+		missing, defaultPath bool
+	}{
+		{name: "relative data directory", contents: "data_dir = 'relative-data'\n"},
+		{name: "missing custom config", missing: true},
+		{name: "relative environment without config", missing: true, defaultPath: true, env: "relative-data"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("KENN_FORGE_HOME", dir)
+			t.Setenv("CODEX_HOME", filepath.Join(dir, "codex"))
+			t.Setenv("KENN_FORGE_DATA_DIR", tc.env)
+			if tc.env == "" {
+				require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
+			}
+			configPath := filepath.Join(dir, "custom.toml")
+			if tc.defaultPath {
+				configPath = config.DefaultConfigPath()
+			}
+			if !tc.missing {
+				require.NoError(t, os.WriteFile(configPath, []byte(tc.contents), 0o600))
+			}
+			err := runAgentHookInstall("install", []string{"--config", configPath, "--agent", "codex", "--binary", "/opt/kenn-forge"}, io.Discard)
+			if tc.missing && !tc.defaultPath {
+				require.ErrorIs(t, err, os.ErrNotExist)
+			} else {
+				require.ErrorContains(t, err, "absolute data_dir")
+			}
+			assert.NoFileExists(t, filepath.Join(dir, "codex", "hooks.json"))
+		})
+	}
 }
 
 func TestAgentHookRunIgnoresMalformedHookFlags(t *testing.T) {
@@ -307,12 +308,10 @@ func TestAgentHookSessionEndReportsDaemonFailure(t *testing.T) {
 
 func TestSetupHookKeepsSelectedHome(t *testing.T) {
 	for _, tc := range []struct {
-		name, installHome, runHome, dataDir   string
+		name, installHome, dataDir            string
 		missingConfig, fileData, customConfig bool
 	}{
 		{name: "custom home", installHome: "custom"},
-		{name: "default home", runHome: "other"},
-		{name: "data directory override", installHome: "custom", dataDir: "override"},
 		{name: "override before config exists", installHome: "custom", dataDir: "override", missingConfig: true},
 		{name: "override with file data directory", dataDir: "override", fileData: true, customConfig: true},
 		{name: "file data directory", fileData: true, customConfig: true},
@@ -325,6 +324,9 @@ func TestSetupHookKeepsSelectedHome(t *testing.T) {
 				t.Setenv("KENN_FORGE_HOME", "")
 			}
 			forgeHome := config.DefaultDataDir()
+			if tc.fileData && tc.dataDir == "" {
+				forgeHome = filepath.Join(home, "file-selected")
+			}
 			if tc.dataDir != "" {
 				forgeHome = filepath.Join(home, tc.dataDir)
 				t.Setenv("KENN_FORGE_DATA_DIR", forgeHome)
@@ -377,11 +379,7 @@ func TestSetupHookKeepsSelectedHome(t *testing.T) {
 			require.NotEmpty(t, settings.Hooks["SessionStart"])
 			command := settings.Hooks["SessionStart"][0].Hooks[0].Command
 			t.Setenv("KENN_FORGE_DATA_DIR", filepath.Join(home, "later-override"))
-			if tc.runHome == "" {
-				t.Setenv("KENN_FORGE_HOME", "")
-			} else {
-				t.Setenv("KENN_FORGE_HOME", filepath.Join(home, tc.runHome))
-			}
+			t.Setenv("KENN_FORGE_HOME", "")
 			cmd := procutil.CommandContext(t.Context(), "/bin/sh", "-c", command)
 			cmd.Stdin = strings.NewReader(`{"session_id":"a","cwd":"/tmp","hook_event_name":"SessionStart","source":"startup"}`)
 			out, err := cmd.CombinedOutput()

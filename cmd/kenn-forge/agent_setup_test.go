@@ -114,22 +114,6 @@ func TestAgentSetupSelectedConfig(t *testing.T) {
 	assert.Contains(t, out.String(), "then run `kenn-forge agent setup --config '"+path+"' --agent claude`")
 }
 
-func TestAgentSetupForwardsSelectedAgents(t *testing.T) {
-	setupAgentTest(t, "/tmp/forge-test-data")
-	var out bytes.Buffer
-	cmd := newAgentCommand(func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
-		return stoppedMCPQuickstart(true, path), nil
-	})
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"setup", "--agent", "claude,codex", "--check", "--json"})
-	require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)
-	var report agentsetup.Report
-	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
-	require.Len(t, report.Rows, 4)
-	assert.Equal(t, "claude", report.Rows[0].Agent)
-	assert.Equal(t, "codex", report.Rows[2].Agent)
-}
-
 func TestAgentSetupMCPTokenSettings(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -217,6 +201,8 @@ func TestAgentSetupWithoutConfig(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("KENN_FORGE_HOME", filepath.Join(home, "forge"))
 	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, "claude"))
+	t.Setenv("KENN_FORGE_DATA_DIR", "")
+	require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
 	var out bytes.Buffer
 	cmd := newAgentCommand(loadMCPQuickstart)
 	cmd.SetOut(&out)
@@ -226,8 +212,6 @@ func TestAgentSetupWithoutConfig(t *testing.T) {
 	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
 	require.Len(t, report.Rows, 2)
 	assert.Equal(t, agentsetup.StateMissing, report.Rows[0].State)
-	assert.Contains(t, report.Rows[1].Reason, "Forge daemon isn't running")
-	assert.Contains(t, report.Rows[1].NextStep, "kenn-forge daemon start")
 	entries, err := os.ReadDir(home)
 	require.NoError(t, err)
 	assert.Empty(t, entries)

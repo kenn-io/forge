@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/runtimelock"
 )
 
@@ -44,7 +45,7 @@ func TestMCPQuickstartStoppedGuidesSetup(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "default", args: []string{"quickstart"}, want: "kenn-forge agent setup"},
+		{name: "default", args: []string{"quickstart"}, want: "Run `kenn-forge agent setup` to connect"},
 		{name: "custom", args: []string{"quickstart", "--config", "/tmp/custom config.toml"}, want: "kenn-forge agent setup --config '/tmp/custom config.toml'"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -113,8 +114,29 @@ enabled = true
 	assert.ErrorIs(err, os.ErrNotExist)
 }
 
-func TestLoadMCPQuickstartRejectsMissingConfig(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "missing.toml")
-	_, err := loadMCPQuickstart(t.Context(), configPath, time.Second)
-	require.ErrorIs(t, err, os.ErrNotExist)
+func TestLoadMCPQuickstartMissingConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		defaultPath bool
+	}{
+		{name: "default", defaultPath: true},
+		{name: "custom"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("KENN_FORGE_HOME", dir)
+			configPath := filepath.Join(dir, "missing.toml")
+			if tc.defaultPath {
+				configPath = config.DefaultConfigPath()
+			}
+			info, err := loadMCPQuickstart(t.Context(), configPath, time.Second)
+			if !tc.defaultPath {
+				require.ErrorIs(t, err, os.ErrNotExist)
+				return
+			}
+			require.NoError(t, err)
+			assert.False(t, info.Active)
+			assert.Contains(t, info.NextSteps, "Start the Forge daemon with `kenn-forge daemon start`.")
+		})
+	}
 }

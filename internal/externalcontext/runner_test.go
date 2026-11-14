@@ -79,6 +79,10 @@ func TestExternalContextHelper(t *testing.T) {
 	default:
 		summary := request.Operation + ":" + request.PullRequest.HeadSHA + ":" + request.ActionID
 		result := ExternalContextResult{Card: &ExternalContextCard{Status: "success", Summary: summary, ResultHeadSHA: request.PullRequest.HeadSHA, RefreshAfterSeconds: 1}}
+		if mode == "card" {
+			result.Card.Summary += os.Getenv("KENN_FORGE_ROBOREV_AUTH_KEY")
+			result.Card.Markdown = os.Getenv("FORGE_TEST_ADAPTER_TEXT")
+		}
 		require.NoError(t, json.MarshalWrite(os.Stdout, result))
 	}
 	os.Exit(0)
@@ -113,6 +117,8 @@ func invocations(t *testing.T, dir string) []os.DirEntry {
 
 func TestReadProtocolCacheAndAction(t *testing.T) {
 	assert := assert.New(t)
+	t.Setenv("KENN_FORGE_ROBOREV_AUTH_KEY", "forge-adapter-secret")
+	t.Setenv("FORGE_TEST_ADAPTER_TEXT", "adapter context")
 	source, dir := fixtureSource(t, "card")
 	runner := New([]config.ExternalContextSource{source})
 	t.Cleanup(runner.Close)
@@ -121,6 +127,7 @@ func TestReadProtocolCacheAndAction(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result.Card)
 	assert.Equal("read:head-one:", result.Card.Summary)
+	assert.Equal("adapter context", result.Card.Markdown)
 	assert.Equal(5, result.Card.RefreshAfterSeconds)
 	files := invocations(t, dir)
 	require.Len(t, files, 1)
@@ -137,6 +144,7 @@ func TestReadProtocolCacheAndAction(t *testing.T) {
 	result, err = runner.Action(t.Context(), "metrics", pull, "run", "")
 	require.NoError(t, err)
 	assert.Equal("action:head-one:run", result.Card.Summary)
+	assert.Equal("adapter context", result.Card.Markdown)
 	assert.Len(invocations(t, dir), 3)
 	_, err = runner.Read(t.Context(), "metrics", pull, false)
 	require.NoError(t, err)

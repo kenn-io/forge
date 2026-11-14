@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/apiclient/roborev"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/procutil"
@@ -1931,9 +1932,11 @@ fi
 			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 			var ws *Workspace
+			key := strings.Repeat("ab", 32)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				assert.Equal(http.MethodGet, r.Method)
 				assert.Equal("/api/repos", r.URL.Path)
+				assert.Equal("Bearer "+key, r.Header.Get("Authorization"))
 				if tt.deactivateRepo {
 					_, deactivateErr := d.DeactivateRepository(ctx, platform.RepositoryIdentity{
 						Provider: "github", PlatformHost: platformHost,
@@ -1945,7 +1948,7 @@ fi
 				case "registered":
 					_ = json.NewEncoder(w).Encode(map[string]any{
 						"repos":       []map[string]string{{"root_path": ws.WorktreePath}},
-						"total_count": 0,
+						"total_count": 1,
 					})
 				case "malformed":
 					_, _ = w.Write([]byte("{"))
@@ -1963,7 +1966,7 @@ fi
 				}
 			}))
 			t.Cleanup(server.Close)
-			mgr.SetRoborevEndpoint(server.URL)
+			mgr.SetRoborevEndpoint(server.URL, roborev.NewHTTPClient(server.URL, key))
 			var invalidations atomic.Int32
 			mgr.SetRoborevRepositoryInvalidator(func() { invalidations.Add(1) })
 
@@ -2101,7 +2104,7 @@ chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
 	}))
 	t.Cleanup(server.Close)
 	t.Cleanup(release)
-	mgr.SetRoborevEndpoint(server.URL)
+	mgr.SetRoborevEndpoint(server.URL, roborev.NewHTTPClient(server.URL, ""))
 
 	firstDone := make(chan error, 1)
 	go func() {

@@ -1,12 +1,18 @@
 package config
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/tokenauth"
 )
 
 func runtimeConfigFile(t *testing.T, contents string) string {
@@ -139,4 +145,59 @@ func TestSaveWithoutRuntimeOverlaysCanReplaceMalformedFile(t *testing.T) {
 	saved, err := Load(path)
 	require.NoError(t, err)
 	assert.True(t, saved.AirplaneMode)
+}
+
+func TestRoborevAuthKeyValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name, key, endpoint string
+		invalid             bool
+		fromEnv             bool
+	}{
+		{name: "disabled"},
+		{name: "base path", key: strings.Repeat("ab", 32), endpoint: "https://review.example/base"},
+		{name: "query", key: strings.Repeat("ab", 32), endpoint: "https://review.example/base?tenant=one", invalid: true},
+		{name: "fragment from env", key: strings.Repeat("ab", 32), endpoint: "https://review.example/base#section", invalid: true, fromEnv: true},
+		{name: "keyless query and fragment from env", endpoint: "https://review.example/base?tenant=one#section", fromEnv: true},
+		{name: "default endpoint", key: strings.Repeat("ab", 32), invalid: true},
+		{name: "relative endpoint", key: strings.Repeat("ab", 32), endpoint: "/review", invalid: true},
+		{name: "userinfo", key: strings.Repeat("ab", 32), endpoint: "https://user:password@review.example", invalid: true},
+		{name: "uppercase", key: strings.Repeat("AB", 32), endpoint: "http://review.example", invalid: true},
+		{name: "nonhex", key: strings.Repeat("gg", 32), endpoint: "http://review.example", invalid: true},
+		{name: "short", key: "short-secret", endpoint: "http://review.example", invalid: true},
+		{name: "whitespace", key: strings.Repeat("ab", 32) + "\n", endpoint: "http://review.example", invalid: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("KENN_FORGE_ROBOREV_AUTH_KEY", tc.key)
+			if tc.fromEnv {
+				t.Setenv("KENN_FORGE_ROBOREV_ENDPOINT", tc.endpoint)
+			}
+			cfg, err := Load(runtimeConfigFile(t, fmt.Sprintf("[roborev]\nendpoint=%q\n", tc.endpoint)))
+			if tc.invalid {
+				require.Error(t, err)
+				assert.NotContains(t, err.Error(), tc.key)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.key, cfg.RoborevAuthKey())
+			assert.Equal(t, tc.endpoint, cfg.Roborev.Endpoint)
+		})
+	}
+}
+
+func TestRoborevAuthKeyRemainsPrivate(t *testing.T) {
+	assert := assert.New(t)
+	key := strings.Repeat("ac", 32)
+	t.Setenv("KENN_FORGE_ROBOREV_AUTH_KEY", key)
+	path := runtimeConfigFile(t, "[roborev]\nendpoint=\"https://review.example\"\n")
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	require.NoError(t, cfg.Save(path))
+	saved, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.NotContains(string(saved), key)
+	var logs bytes.Buffer
+	logger := slog.New(tokenauth.NewRedactingHandler(slog.NewTextHandler(&logs, nil)))
+	logger.Error("daemon failed", "err", errors.New("rejected "+key))
+	assert.NotContains(logs.String(), key)
+	assert.Contains(logs.String(), "[REDACTED]")
 }

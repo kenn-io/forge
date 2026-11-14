@@ -3832,6 +3832,7 @@ func TestSessionEnvironmentStripsCredentials(t *testing.T) {
 		"PATH=/usr/bin",
 		"HOME=/home/me",
 		"KENN_FORGE_GITHUB_TOKEN=secret-1",
+		"KENN_FORGE_ROBOREV_AUTH_KEY=secret-roborev",
 		"GITHUB_TOKEN=secret-2",
 		"GH_TOKEN=secret-3",
 		"GITHUB_PAT=secret-4",

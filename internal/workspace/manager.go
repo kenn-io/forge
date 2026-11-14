@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -88,6 +89,7 @@ type Manager struct {
 	// reconciliation writer against the held read lock.
 	beforeHeadRepoSnapshotRepoLookup func()
 	roborevEndpoint                  string
+	roborevClient                    *http.Client
 	roborevRepositoryInvalidator     func()
 }
 
@@ -294,8 +296,9 @@ func (m *Manager) SetRequireProviderCredential(required bool) {
 
 // SetRoborevEndpoint binds the startup-scoped daemon endpoint used for
 // managed-clone initialization. Endpoint edits require a server restart.
-func (m *Manager) SetRoborevEndpoint(endpoint string) {
+func (m *Manager) SetRoborevEndpoint(endpoint string, client *http.Client) {
 	m.roborevEndpoint = endpoint
+	m.roborevClient = client
 }
 
 // SetRoborevRepositoryInvalidator configures the cache invalidation callback
@@ -6018,7 +6021,9 @@ func workspaceGitCommand(
 	// kit's automation defaults: no inherited GIT_* hook state, no global or
 	// system config, and no terminal prompts. Callers remain responsible for
 	// wrapping commands in procutil when they need the shared capacity guard.
-	return gitcmd.New().Command(ctx, dir, args...)
+	runner := gitcmd.New()
+	runner.Env = procutil.RemoveEnvironmentVariable(runner.Env, "KENN_FORGE_ROBOREV_AUTH_KEY")
+	return runner.Command(ctx, dir, args...)
 }
 
 func (m *Manager) nextAvailableBranchName(ctx context.Context, dir, branch string) (string, error) {

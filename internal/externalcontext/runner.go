@@ -249,6 +249,7 @@ func (r *Runner) invoke(source config.ExternalContextSource, pull PullRequest, o
 	}
 	cmd := procutil.CommandContext(ctx, source.Command[0], source.Command[1:]...)
 	cmd.Dir = "/"
+	cmd.Env = procutil.RemoveEnvironmentVariable(cmd.Environ(), "KENN_FORGE_ROBOREV_AUTH_KEY")
 	cmd.Stdin = bytes.NewReader(input)
 	cmd.WaitDelay = 100 * time.Millisecond
 	stdout := &limitedOutput{limit: stdoutLimit, cancel: cancel}

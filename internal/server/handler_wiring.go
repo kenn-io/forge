@@ -1,6 +1,7 @@
 package server
 
 import (
+	roborevclient "go.kenn.io/forge/internal/apiclient/roborev"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/activityapi"
 	"go.kenn.io/forge/internal/server/archiveapi"
@@ -130,8 +131,14 @@ func (s *Server) wireHandlers() {
 		TokenSources:    &s.tokenSources,
 		NewGitHubClient: &s.newGitHubClient,
 	}
+	roborevConfig := s.cfg
+	if roborevConfig == nil {
+		roborevConfig = &config.Config{}
+	}
+	roborevEndpoint := roborevConfig.RoborevEndpoint()
 	s.roborevapi = &roborevapi.Handlers{
-		Cfg:                 &s.cfg,
+		Endpoint:            roborevEndpoint,
+		Client:              roborevclient.NewHTTPClient(roborevEndpoint, roborevConfig.RoborevAuthKey()),
 		RoborevRepositories: &s.roborevRepositories,
 	}
 	s.routepolicy = &routepolicy.Handlers{

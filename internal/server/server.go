@@ -649,13 +649,10 @@ func newServer(
 			s.syncevents.BroadcastHubConnection(false)
 		}
 	}
-	roborevConfig := cfg
-	if roborevConfig == nil {
-		roborevConfig = &config.Config{}
-	}
 	s.roborevRepositories = roborevapi.NewRoborevRepositoryProbe(
 		s.bgCtx,
-		roborevConfig.RoborevEndpoint(),
+		s.roborevapi.Endpoint,
+		s.roborevapi.Client,
 		streamapi.WorkspaceConfigSnapshot(cfg, nil).KnownPlatformHosts,
 	)
 	if syncer != nil {
@@ -856,7 +853,7 @@ func newServer(
 		s.workspaces.SetIssueBranchSlugEnabled(
 			cfg.IssueWorkspaceBranchSlugEnabled(),
 		)
-		s.workspaces.SetRoborevEndpoint(roborevConfig.RoborevEndpoint())
+		s.workspaces.SetRoborevEndpoint(s.roborevapi.Endpoint, s.roborevapi.Client)
 		s.workspaces.SetRoborevRepositoryInvalidator(s.roborevRepositories.Invalidate)
 		s.workspaces.SetWorktreeBasePathResolver(s.settingsapi.WorktreeBasePathForRepo)
 		ptyOwnerDir := options.PtyOwnerDir

@@ -9,16 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
-	"go.kenn.io/forge/internal/tracing"
 )
 
 // roborevProxy returns an HTTP handler that reverse-proxies requests
 // to the roborev daemon. It strips the /api/roborev prefix before
 // forwarding and streams SSE/NDJSON responses without buffering.
-func roborevProxy(target string) http.Handler {
+func roborevProxy(target string, transport http.RoundTripper) http.Handler {
 	targetURL, err := url.Parse(target)
 	if err != nil {
 		// Static config value; if it's invalid, fail visibly.
@@ -28,8 +26,15 @@ func roborevProxy(target string) http.Handler {
 	proxy := &httputil.ReverseProxy{
 		// Flush immediately for streaming responses (SSE, NDJSON).
 		FlushInterval: -1,
+		Transport:     transport,
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(targetURL)
+			r.Out.Header.Del("Authorization")
+			r.Out.Header.Del("Cookie")
+			r.Out.Header.Del("Tailscale-User-Login")
+			r.Out.Header.Del("Tailscale-User-Name")
+			r.Out.Header.Del("Tailscale-User-Profile-Pic")
+			r.Out.Header.Del("Tailscale-App-Capabilities")
 		},
 		ErrorHandler: func(
 			w http.ResponseWriter, _ *http.Request, _ error,
@@ -57,11 +62,7 @@ type roborevStatusOutput = httpapi.BodyOutput[RoborevStatusResponse]
 func (s *Handlers) GetRoborevStatus(
 	ctx context.Context, _ *struct{},
 ) (*roborevStatusOutput, error) {
-	cfg := (*s.Cfg)
-	if cfg == nil {
-		cfg = &config.Config{}
-	}
-	endpoint := cfg.RoborevEndpoint()
+	endpoint := s.Endpoint
 	// Sanitize: strip credentials and path, expose
 	// only scheme + host for the UI error message.
 	sanitized := "(configured endpoint)"
@@ -74,18 +75,22 @@ func (s *Handlers) GetRoborevStatus(
 	}
 	resp := RoborevStatusResponse{Endpoint: sanitized}
 
-	client := &http.Client{Timeout: 2 * time.Second, Transport: tracing.HTTPTransport(nil)}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
 	statusURL := strings.TrimRight(endpoint, "/") + "/api/status"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil)
 	if err != nil {
 		return &roborevStatusOutput{Body: resp}, nil
 	}
-	statusResp, err := client.Do(req)
+	statusResp, err := s.Client.Do(req)
 	if err != nil {
 		return &roborevStatusOutput{Body: resp}, nil
 	}
 	defer statusResp.Body.Close()
+	if statusResp.StatusCode < 200 || statusResp.StatusCode >= 300 {
+		return &roborevStatusOutput{Body: resp}, nil
+	}
 
 	var body struct {
 		Version string `json:"version"`

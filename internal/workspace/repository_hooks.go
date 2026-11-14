@@ -23,7 +23,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"go.kenn.io/forge/internal/procutil"
-	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/kit/atomicfile"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitworktree "go.kenn.io/kit/git/worktree"
@@ -838,7 +837,7 @@ type roborevRegistrationInventory struct {
 }
 
 func confirmRoborevRegistration(
-	ctx context.Context, endpoint, workspacePath string,
+	ctx context.Context, client *http.Client, endpoint, workspacePath string,
 ) error {
 	requestCtx, cancel := context.WithTimeout(ctx, repositoryHookCommandTimeout)
 	defer cancel()
@@ -846,7 +845,7 @@ func confirmRoborevRegistration(
 	if err != nil {
 		return fmt.Errorf("build Roborev registration request: %w", err)
 	}
-	response, err := (&http.Client{Timeout: repositoryHookCommandTimeout, Transport: tracing.HTTPTransport(nil)}).Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return fmt.Errorf("confirm Roborev registration: %w", err)
 	}
@@ -884,7 +883,7 @@ func (m *Manager) setupManagedRepositoryHooks(
 			return err
 		}
 		if err := confirmRoborevRegistration(
-			ctx, m.roborevEndpoint, ws.WorktreePath,
+			ctx, m.roborevClient, m.roborevEndpoint, ws.WorktreePath,
 		); err != nil {
 			return errors.Join(err, checkpoint.restore())
 		}

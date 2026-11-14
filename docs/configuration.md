@@ -441,6 +441,30 @@ also change it under **Settings → Workspaces** without restarting. When it is
 enabled, the endpoint must use loopback HTTP (`127.0.0.1`, `localhost`, or
 `[::1]`) because Forge passes it to the Roborev CLI during workspace setup.
 
+For a daemon using native shared-key authentication, set
+`KENN_FORGE_ROBOREV_AUTH_KEY` in Forge's service environment to its exact
+64-character lowercase hexadecimal key. Also explicitly set `[roborev].endpoint`
+or `KENN_FORGE_ROBOREV_ENDPOINT` to an absolute HTTP(S) URL without userinfo, a
+query, or a fragment. A base path is supported. Forge refuses redirects on
+authenticated requests and connects directly to cleartext HTTP endpoints,
+bypassing forward proxies. Use HTTPS for remote bearer transport with ordinary
+server-certificate verification and a certificate trusted by Forge.
+Client-certificate configuration for mutual TLS is a follow-up. An incorrect
+key makes the Reviews status show the daemon as unavailable.
+
+Every caller admitted by Forge can invoke Roborev job actions through this
+connection. With Forge authentication disabled, this includes every caller
+that can reach Forge.
+
+An unset or empty key keeps authentication disabled. The key is environment-only
+and stays out of saved configuration, settings responses, workspace session
+environments, and generated context.
+
+The endpoint and key are bound at startup. Restart Forge through its supervisor
+after changing either. To rotate, stop Roborev using its old credentials, update
+its native key and Forge's service environment, then restart both services through
+their respective supervisors.
+
 See [Integrations](integrations.md#review-roborev-jobs) for the Reviews panel
 workflow.
 
@@ -907,6 +931,7 @@ Startup settings accept these environment variables:
 | `KENN_FORGE_REQUIRE_AUTH` | Require bearer authentication |
 | `KENN_FORGE_TRUST_REVERSE_PROXY` | Validate forwarded Host as well as backend Host |
 | `KENN_FORGE_ROBOREV_ENDPOINT` | Absolute HTTP(S) URL of a separate Roborev service |
+| `KENN_FORGE_ROBOREV_AUTH_KEY` | Native Roborev key: exactly 64 lowercase hex characters; requires an explicit endpoint |
 | `KENN_FORGE_DATA_DIR` | Data directory |
 | `KENN_FORGE_HOME` | Configuration/discovery home |
 

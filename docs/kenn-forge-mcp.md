@@ -6,6 +6,9 @@ to print manual registration commands. Outside Forge-launched terminals, export
 `KENN_FORGE_API_TOKEN` from the reported `token_path` when authentication is
 enabled.
 
+After upgrading Forge, rerun setup to update existing hooks. Review the updated
+Codex hooks in `/hooks`.
+
 Forge can expose cached maintainer workflows to local MCP clients from the
 running daemon. The companion reads the same in-process repository, activity,
 workflow, and workspace services as the UI. It does not force provider refreshes

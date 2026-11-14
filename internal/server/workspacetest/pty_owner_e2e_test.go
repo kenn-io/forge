@@ -597,15 +597,14 @@ func TestWorkspaceRuntimePlainShellUsesPtyOwnerWhenTmuxUnavailableE2E(t *testing
 	)
 }
 
-func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
+func TestRustPtyManagerSharesConcurrentAttachmentsE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("concurrent attach coverage is exercised by the Rust owner tests on Windows")
+		t.Skip("test fixture uses /bin/sh")
 	}
 	requirePTYAvailable(t)
 	runParallelWorkspacePTYTest(t)
 
 	require := require.New(t)
-	assert := assert.New(t)
 
 	managerPath := buildRustPtyManagerForTest(t)
 	ptyOwnerDir := longRustPtyOwnerDirForTest(t)
@@ -644,27 +643,43 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 		t.Context(), session,
 		ptysize.Geometry{Cols: 100, Rows: 20},
 	)
-	if second != nil {
-		second.Close()
+	require.NoError(err)
+	defer second.Close()
+	require.Contains(
+		readPtyOwnerOutputUntil(t, second.Output, "got:before-second"),
+		"got:before-second",
+	)
+	for _, input := range []*ptyowner.Attachment{first, second} {
+		marker := "from-first"
+		if input == second {
+			marker = "from-second"
+		}
+		require.NoError(input.Write([]byte(marker + "\r")))
+		for _, output := range []*ptyowner.Attachment{first, second} {
+			require.Contains(
+				readPtyOwnerOutputUntil(t, output.Output, "got:"+marker),
+				"got:"+marker,
+			)
+		}
 	}
-	require.Error(err)
-	assert.Contains(err.Error(), "already has an active attachment")
 
 	first.Close()
-	var third *ptyowner.Attachment
-	require.Eventually(func() bool {
-		var attachErr error
-		third, attachErr = client.Attach(
-			t.Context(), session,
-			ptysize.Geometry{Cols: 80, Rows: 24},
-		)
-		return attachErr == nil
-	}, 2*time.Second, 20*time.Millisecond)
-	defer third.Close()
-	require.NoError(third.Write([]byte("after-close\n")))
+	require.NoError(second.Write([]byte("after-close\r")))
 	require.Contains(
-		readPtyOwnerOutputUntil(t, third.Output, "got:after-close"),
+		readPtyOwnerOutputUntil(t, second.Output, "got:after-close"),
 		"got:after-close",
+	)
+	second.Close()
+	third, err := client.Attach(
+		t.Context(), session,
+		ptysize.Geometry{Cols: 80, Rows: 24},
+	)
+	require.NoError(err)
+	defer third.Close()
+	require.NoError(third.Write([]byte("after-reconnect\r")))
+	require.Contains(
+		readPtyOwnerOutputUntil(t, third.Output, "got:after-reconnect"),
+		"got:after-reconnect",
 	)
 }
 

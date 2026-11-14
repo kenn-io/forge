@@ -162,7 +162,8 @@ internal/server/spokeapi                 spoke-to-hub forwarding (`HubProviderSo
 - The phone view reads lists and opens items in phone detail; marking,
   dismissing, bulk actions, and copying links stay on desktop. It shares the
   last-list memory and the Open/Closed/All choice with the desktop rail
-  (`frontend/src/lib/views/MobileWorklistView.svelte`).
+  (`frontend/src/lib/views/MobileWorklistView.svelte`). Its search uses the
+  rail's query syntax and lasts for the page, so Back from an item keeps it.
 - An import that finishes after the maintainer left the page does not navigate.
 - `/worklists` reopens the last list shown in this browser, else the newest;
   arriving on a list reopens its last open item while still shown, else its

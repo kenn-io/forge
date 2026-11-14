@@ -92,6 +92,28 @@ describe("MobileWorklistView", () => {
     expect(readWorklistStateFilter()).toBe("all");
   });
 
+  it("filters rows by search and keeps the search after Back remounts the list", async () => {
+    renderView("/m/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+
+    const input = screen.getByRole("searchbox", { name: "Filter worklist items" });
+    await fireEvent.input(input, { target: { value: "theme" } });
+    expect(rowTitles()).toEqual(["Theme toggle does not stick"]);
+
+    cleanup();
+    renderView("/m/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toEqual(["Theme toggle does not stick"]));
+
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Filter worklist items" }), {
+      target: { value: "no such item" },
+    });
+    expect(screen.getByText("No items match this search.")).toBeTruthy();
+
+    // The search lives for the page; clear it for later tests.
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Filter worklist items" }), { target: { value: "" } });
+    expect(rowTitles()).toHaveLength(3);
+  });
+
   it("opens an item in phone detail that returns to this list", async () => {
     renderView("/m/worklists/5", server);
     await waitFor(() => expect(rowTitles()).toHaveLength(3));

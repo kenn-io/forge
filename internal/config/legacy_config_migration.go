@@ -29,25 +29,12 @@ func migrateLegacyConfig(configPath string) error {
 	oldHome := legacyDefaultHome()
 	newHome := DefaultDataDir()
 	markerPath := filepath.Join(newHome, legacyConfigMigrationMarker)
-	markerVersion, err := readLegacyConfigMigrationMarker(markerPath)
-	if err != nil {
+	source, markerVersion, err := readLegacyConfigSource(oldHome, newHome)
+	if err != nil || source == nil {
 		return err
-	}
-	if markerVersion == "v2\n" {
-		return nil
 	}
 
 	sourcePath := filepath.Join(oldHome, "config.toml")
-	source, err := os.ReadFile(sourcePath)
-	if errors.Is(err, os.ErrNotExist) {
-		if markerVersion == "v1\n" {
-			return fmt.Errorf("complete legacy config migration from %s: source config is missing", sourcePath)
-		}
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("read legacy config %s: %w", sourcePath, err)
-	}
 	sourceInfo, err := os.Stat(sourcePath)
 	if err != nil {
 		return fmt.Errorf("inspect legacy config %s: %w", sourcePath, err)
@@ -111,6 +98,58 @@ func migrateLegacyConfig(configPath string) error {
 	}
 
 	return writeLegacyConfigMigrationMarker(markerPath)
+}
+
+// LoadPending loads path, or for a missing default config the one the first
+// daemon start would create, without writing anything beside it.
+func LoadPending(path string) (*Config, error) {
+	cfg, err := Load(path)
+	if err == nil {
+		return cfg, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) || filepath.Clean(path) != filepath.Clean(DefaultConfigPath()) {
+		return cfg, err
+	}
+	body := []byte(defaultConfigContents())
+	if os.Getenv("KENN_FORGE_HOME") == "" {
+		oldHome := legacyDefaultHome()
+		source, marker, err := readLegacyConfigSource(oldHome, DefaultDataDir())
+		if err != nil {
+			return nil, err
+		}
+		if marker == "v1\n" {
+			return nil, fmt.Errorf("complete legacy config migration to %s: %w", path, os.ErrNotExist)
+		}
+		if source != nil {
+			body, _ = transformLegacyConfig(source, oldHome, DefaultDataDir())
+		}
+	}
+	cfg, err = decodeConfig(path, body, Overrides{})
+	if err != nil {
+		return cfg, err
+	}
+	return cfg, cfg.validate()
+}
+
+// readLegacyConfigSource returns the legacy config a daemon start would
+// migrate, or nil when none is pending, along with the migration marker.
+func readLegacyConfigSource(oldHome, newHome string) ([]byte, string, error) {
+	markerVersion, err := readLegacyConfigMigrationMarker(filepath.Join(newHome, legacyConfigMigrationMarker))
+	if err != nil || markerVersion == "v2\n" {
+		return nil, markerVersion, err
+	}
+	sourcePath := filepath.Join(oldHome, "config.toml")
+	source, err := os.ReadFile(sourcePath)
+	if errors.Is(err, os.ErrNotExist) {
+		if markerVersion == "v1\n" {
+			return nil, markerVersion, fmt.Errorf("complete legacy config migration from %s: source config is missing", sourcePath)
+		}
+		return nil, markerVersion, nil
+	}
+	if err != nil {
+		return nil, markerVersion, fmt.Errorf("read legacy config %s: %w", sourcePath, err)
+	}
+	return source, markerVersion, nil
 }
 
 func transformLegacyConfig(body []byte, oldHome, newHome string) ([]byte, error) {

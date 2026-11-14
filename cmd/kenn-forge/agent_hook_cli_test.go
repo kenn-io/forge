@@ -16,6 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/kit/agenthook"
 )
@@ -172,25 +174,39 @@ func TestAgentHookInstallDefaultsToEveryKitProfile(t *testing.T) {
 	}
 }
 
-func TestAgentHookInstallRejectsRelativeDataDirectory(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
-	require.NoError(os.WriteFile(configPath, []byte("data_dir = \"relative-data\"\n"), 0o600))
-	configDir := filepath.Join(dir, "codex")
-	t.Setenv("CODEX_HOME", configDir)
-
-	err := runAgentHookInstall("install", []string{
-		"--config", configPath,
-		"--agent", "codex",
-		"--binary", "/opt/kenn-forge",
-	}, io.Discard)
-
-	require.Error(err)
-	assert.Contains(err.Error(), "absolute data_dir")
-	_, statErr := os.Stat(filepath.Join(configDir, "hooks.json"))
-	assert.ErrorIs(statErr, os.ErrNotExist)
+func TestAgentHookInstallRejectsInvalidConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name, contents, env  string
+		missing, defaultPath bool
+	}{
+		{name: "relative data directory", contents: "data_dir = 'relative-data'\n"},
+		{name: "missing custom config", missing: true},
+		{name: "relative environment without config", missing: true, defaultPath: true, env: "relative-data"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("KENN_FORGE_HOME", dir)
+			t.Setenv("CODEX_HOME", filepath.Join(dir, "codex"))
+			t.Setenv("KENN_FORGE_DATA_DIR", tc.env)
+			if tc.env == "" {
+				require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
+			}
+			configPath := filepath.Join(dir, "custom.toml")
+			if tc.defaultPath {
+				configPath = config.DefaultConfigPath()
+			}
+			if !tc.missing {
+				require.NoError(t, os.WriteFile(configPath, []byte(tc.contents), 0o600))
+			}
+			err := runAgentHookInstall("install", []string{"--config", configPath, "--agent", "codex", "--binary", "/opt/kenn-forge"}, io.Discard)
+			if tc.missing && !tc.defaultPath {
+				require.ErrorIs(t, err, os.ErrNotExist)
+			} else {
+				require.ErrorContains(t, err, "absolute data_dir")
+			}
+			assert.NoFileExists(t, filepath.Join(dir, "codex", "hooks.json"))
+		})
+	}
 }
 
 func TestAgentHookRunIgnoresMalformedHookFlags(t *testing.T) {
@@ -288,4 +304,207 @@ func TestAgentHookSessionEndReportsDaemonFailure(t *testing.T) {
 	}
 	server.Close()
 	require.NoError(t, receive("SessionEnd"), "an unreachable daemon must not fail the hook")
+}
+
+func TestSetupHookKeepsSelectedHome(t *testing.T) {
+	for _, tc := range []struct {
+		name, installHome, dataDir            string
+		missingConfig, fileData, customConfig bool
+	}{
+		{name: "custom home", installHome: "custom"},
+		{name: "override before config exists", installHome: "custom", dataDir: "override", missingConfig: true},
+		{name: "override with file data directory", dataDir: "override", fileData: true, customConfig: true},
+		{name: "file data directory", fileData: true, customConfig: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := setupAgentTest(t, "/tmp/unused")
+			t.Setenv("KENN_FORGE_DATA_DIR", "")
+			require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
+			if tc.installHome == "" {
+				t.Setenv("KENN_FORGE_HOME", "")
+			}
+			forgeHome := config.DefaultDataDir()
+			if tc.fileData && tc.dataDir == "" {
+				forgeHome = filepath.Join(home, "file-selected")
+			}
+			if tc.dataDir != "" {
+				forgeHome = filepath.Join(home, tc.dataDir)
+				t.Setenv("KENN_FORGE_DATA_DIR", forgeHome)
+			}
+			configPath := config.DefaultConfigPath()
+			if tc.customConfig {
+				configPath = filepath.Join(home, "custom.toml")
+			}
+			require.NoError(t, os.MkdirAll(forgeHome, 0o700))
+			fileData := ""
+			if tc.fileData {
+				fileDir := forgeHome
+				if tc.dataDir != "" {
+					fileDir = filepath.Join(home, "file-data")
+				}
+				fileData = fmt.Sprintf("data_dir = %q\n", fileDir)
+			}
+			require.NoError(t, os.WriteFile(configPath, []byte(fileData), 0o600))
+			if tc.missingConfig {
+				require.NoError(t, os.Remove(configPath))
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
+				_, _ = io.WriteString(w, `{"hook_output":{"hookSpecificOutput":{"additionalContext":"delivered"}}}`)
+			}))
+			t.Cleanup(server.Close)
+			lock, err := runtimelock.Acquire(t.Context(), forgeHome)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = lock.Release() })
+			require.NoError(t, lock.WriteMetadata(runtimelock.Metadata{PID: os.Getpid(), ListenAddr: strings.TrimPrefix(server.URL, "http://")}))
+			require.NoError(t, os.WriteFile(filepath.Join(forgeHome, "auth_token"), []byte("test-token"), 0o600))
+			exe, err := os.Executable()
+			require.NoError(t, err)
+			wrapper := filepath.Join(home, "hook-wrapper")
+			require.NoError(t, os.WriteFile(wrapper, fmt.Appendf(nil, "#!/bin/sh\nGO_WANT_HELPER_PROCESS=1 exec %q -test.run=^TestSetupHookHelper$ -- \"$@\"\n", exe), 0o700))
+			require.NoError(t, installAgentHooks("install", configPath, "claude", wrapper, io.Discard))
+			if tc.missingConfig {
+				require.NoError(t, os.WriteFile(configPath, []byte(""), 0o600))
+			}
+			data, err := os.ReadFile(filepath.Join(home, "claude", "settings.json"))
+			require.NoError(t, err)
+			var settings struct {
+				Hooks map[string][]struct {
+					Hooks []struct {
+						Command string `json:"command"`
+					} `json:"hooks"`
+				} `json:"hooks"`
+			}
+			require.NoError(t, json.Unmarshal(data, &settings))
+			require.NotEmpty(t, settings.Hooks["SessionStart"])
+			command := settings.Hooks["SessionStart"][0].Hooks[0].Command
+			t.Setenv("KENN_FORGE_DATA_DIR", filepath.Join(home, "later-override"))
+			t.Setenv("KENN_FORGE_HOME", "")
+			cmd := procutil.CommandContext(t.Context(), "/bin/sh", "-c", command)
+			cmd.Stdin = strings.NewReader(`{"session_id":"a","cwd":"/tmp","hook_event_name":"SessionStart","source":"startup"}`)
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+			assert.Contains(t, string(out), "delivered")
+		})
+	}
+}
+
+func TestSetupHookStableAfterConfigCreation(t *testing.T) {
+	home := setupAgentTest(t, "/tmp/unused")
+	dataDir := filepath.Join(home, "data")
+	require.NoError(t, os.Mkdir(dataDir, 0o700))
+	alias := filepath.Join(home, "alias")
+	if err := os.Symlink(dataDir, alias); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	t.Setenv("KENN_FORGE_HOME", alias)
+	require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
+	configPath := config.DefaultConfigPath()
+	require.NoError(t, installAgentHooks("install", configPath, "codex", "/usr/bin/kenn-forge", io.Discard))
+	hooksPath := filepath.Join(home, "codex", "hooks.json")
+	before, err := os.ReadFile(hooksPath)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(configPath, []byte(""), 0o600))
+	require.NoError(t, installAgentHooks("install", configPath, "codex", "/usr/bin/kenn-forge", io.Discard))
+	after, err := os.ReadFile(hooksPath)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+}
+
+func TestSetupHookBeforeFirstStartInvalidEnvironment(t *testing.T) {
+	for _, tc := range []struct {
+		name, home, dataDir string
+		setData             bool
+	}{
+		{name: "relative home", home: "relative"},
+		{name: "empty data directory", setData: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Chdir(dir)
+			t.Setenv("HOME", dir)
+			t.Setenv("KENN_FORGE_HOME", tc.home)
+			t.Setenv("KENN_FORGE_DATA_DIR", tc.dataDir)
+			if !tc.setData {
+				require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
+			}
+			_, err := resolveAgentHookTarget(config.DefaultConfigPath(), "/usr/bin/kenn-forge")
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestSetupHookBeforeLegacyMigration(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("KENN_FORGE_HOME", "")
+	t.Setenv("KENN_FORGE_DATA_DIR", "")
+	require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
+	legacy := filepath.Join(home, ".config", "middleman")
+	require.NoError(t, os.MkdirAll(legacy, 0o700))
+	want := filepath.Join(home, "selected")
+	require.NoError(t, os.WriteFile(filepath.Join(legacy, "config.toml"), fmt.Appendf(nil, "data_dir = %q\n", want), 0o600))
+	path := config.DefaultConfigPath()
+	target, err := resolveAgentHookTarget(path, "/usr/bin/kenn-forge")
+	require.NoError(t, err)
+	assert.NoFileExists(t, path)
+	cfg, err := config.LoadOrCreate(path)
+	require.NoError(t, err)
+	assert.Equal(t, cfg.DataDir, target.home)
+}
+
+func TestPendingConfigMatchesFirstStart(t *testing.T) {
+	for _, tc := range []struct {
+		name, marker, legacy string
+		directory            bool
+	}{
+		{name: "incomplete migration without source", marker: "v1\n"},
+		{name: "legacy source is a directory", directory: true},
+		{name: "relative token file", legacy: "[[repos]]\nowner = 'acme'\nname = 'widgets'\ntoken_file = 'tokens/repo.token'\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("KENN_FORGE_HOME", "")
+			t.Setenv("KENN_FORGE_DATA_DIR", "")
+			require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
+			legacy := filepath.Join(home, ".config", "middleman")
+			if tc.marker != "" {
+				require.NoError(t, os.MkdirAll(config.DefaultDataDir(), 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(config.DefaultDataDir(), ".legacy-config-migrated"), []byte(tc.marker), 0o600))
+			}
+			if tc.directory {
+				require.NoError(t, os.MkdirAll(filepath.Join(legacy, "config.toml"), 0o700))
+			} else if tc.legacy != "" {
+				require.NoError(t, os.MkdirAll(filepath.Join(legacy, "tokens"), 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(legacy, "config.toml"), []byte(tc.legacy), 0o600))
+				require.NoError(t, os.WriteFile(filepath.Join(legacy, "tokens", "repo.token"), []byte("example"), 0o600))
+			}
+			path := config.DefaultConfigPath()
+			pending, previewErr := config.LoadPending(path)
+			assert.NoFileExists(t, path)
+			actual, startErr := config.LoadOrCreate(path)
+			if startErr != nil {
+				require.Error(t, previewErr)
+				return
+			}
+			require.NoError(t, previewErr)
+			require.Len(t, pending.Repos, 1)
+			assert.Equal(t, actual.Repos[0].TokenFile, pending.Repos[0].TokenFile)
+		})
+	}
+}
+
+func TestSetupHookHelper(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	for i, arg := range os.Args {
+		if arg == "--" {
+			if err := runAgentHookCLI(os.Args[i+2:], os.Stdin, os.Stdout); err != nil {
+				os.Exit(1)
+			}
+			os.Exit(0)
+		}
+	}
 }

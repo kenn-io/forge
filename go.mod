@@ -42,7 +42,7 @@ require (
 	github.com/yuin/goldmark/v2 v2.1.14
 	gitlab.com/gitlab-org/api/client-go/v3 v3.40.2
 	go.kenn.io/kata v0.23.0
-	go.kenn.io/kit v0.51.0
+	go.kenn.io/kit v0.53.1
 	go.kenn.io/kwt v0.9.6
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
 	go.opentelemetry.io/otel v1.47.0
@@ -90,6 +90,7 @@ require (
 	github.com/containerd/ttrpc v1.2.8 // indirect
 	github.com/containerd/typeurl/v2 v2.3.0 // indirect
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
+	github.com/creachadair/tomledit v0.0.29 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/danielgtaylor/mexpr v1.10.1 // indirect
 	github.com/davidmz/go-pageant v1.0.2 // indirect
@@ -220,6 +221,7 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pathologize v1.1.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
+	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f // indirect
 	github.com/tilt-dev/fsnotify v1.4.8-0.20220602155310-fff9c274a375 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect

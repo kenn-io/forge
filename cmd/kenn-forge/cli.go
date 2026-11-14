@@ -71,6 +71,7 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 		newConfigCommand(opts.Stdout),
 		newDocsCommand(opts.Stdout),
 		newArchiveCommand(opts.Stdout, time.Now),
+		newAgentCommand(loadMCPQuickstart),
 		newAgentHookCommand(opts.Stdin, opts.Stdout),
 		newDaemonCommand(opts.DaemonRunner),
 		newFleetCommand(fleetCLIOptions{
@@ -180,6 +181,9 @@ func newAgentHookCommand(stdin io.Reader, stdout io.Writer) *cobra.Command {
 	run.Flags().StringVar(&agent, "agent", "", "agent hook integration")
 	run.Flags().StringVar(&configPath, "config", config.DefaultConfigPath(), "kenn-forge config path")
 	run.Flags().StringVar(&source, "source", "", "hook source marker")
+	run.Flags().Func("home", "kenn-forge home selected at install", func(home string) error {
+		return os.Setenv("KENN_FORGE_DATA_DIR", home)
+	})
 	cmd.AddCommand(run)
 
 	for _, action := range []string{"install", "uninstall"} {

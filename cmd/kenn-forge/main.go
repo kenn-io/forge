@@ -51,6 +51,7 @@ import (
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/web"
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/kit/agentsetup"
 	"go.kenn.io/kit/daemon"
 )
 
@@ -175,6 +176,9 @@ func runMain() int {
 	}()
 
 	if err := runCLI(cliArgs(os.Args), os.Stdout); err != nil {
+		if errors.Is(err, agentsetup.ErrNotReady) {
+			return 1
+		}
 		if exit, ok := errors.AsType[*ghcli.ExitError](err); ok {
 			return exit.Code
 		}

@@ -238,41 +238,13 @@ func installAgentHooks(action, configPath, rawAgent, binary string, stdout io.Wr
 		return nil
 	}
 
-	cfg, err := config.Load(configPath)
+	target, err := resolveAgentHookTarget(configPath, binary)
 	if err != nil {
 		return err
 	}
-	if cfg.DataDirWasRelative() {
-		return errors.New("agent hook install requires an absolute data_dir")
-	}
-	absoluteConfigPath, err := filepath.Abs(configPath)
-	if err != nil {
-		return fmt.Errorf("resolve agent hook config path: %w", err)
-	}
-	executable := strings.TrimSpace(binary)
-	if executable == "" {
-		executable, err = os.Executable()
-		if err != nil {
-			return fmt.Errorf("resolve kenn-forge executable: %w", err)
-		}
-	}
 	for _, agent := range agents {
 		profile, _ := agenthook.LookupProfile(agent)
-		hooks := make([]agenthook.Hook, 0, len(profile.SupportedEvents))
-		for _, event := range profile.SupportedEvents {
-			hooks = append(hooks, agenthook.Hook{Event: event, Timeout: 2 * time.Second})
-		}
-		result, err := agenthook.Install(agent, agenthook.InstallOptions{
-			Executable: executable,
-			Arguments: []string{
-				"agent-hook", "run",
-				"--agent", string(agent),
-				"--config", absoluteConfigPath,
-				"--source", agentHookSource,
-			},
-			Marker: agentHookMarker,
-			Hooks:  hooks,
-		})
+		result, err := agenthook.Install(agent, target.options(agent))
 		if err != nil {
 			return err
 		}
@@ -294,4 +266,52 @@ func installAgentHooks(action, configPath, rawAgent, binary string, stdout io.Wr
 		}
 	}
 	return nil
+}
+
+type agentHookTarget struct {
+	configPath string
+	executable string
+	home       string
+}
+
+func resolveAgentHookTarget(configPath, binary string) (agentHookTarget, error) {
+	cfg, err := config.LoadPending(configPath)
+	if err != nil {
+		return agentHookTarget{}, err
+	}
+	if cfg.DataDirWasRelative() {
+		return agentHookTarget{}, errors.New("agent hook install requires an absolute data_dir")
+	}
+	absoluteConfigPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return agentHookTarget{}, fmt.Errorf("resolve agent hook config path: %w", err)
+	}
+	executable := strings.TrimSpace(binary)
+	if executable == "" {
+		executable, err = os.Executable()
+		if err != nil {
+			return agentHookTarget{}, fmt.Errorf("resolve kenn-forge executable: %w", err)
+		}
+	}
+	return agentHookTarget{configPath: absoluteConfigPath, executable: executable, home: cfg.DataDir}, nil
+}
+
+func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOptions {
+	profile, _ := agenthook.LookupProfile(agent)
+	hooks := make([]agenthook.Hook, 0, len(profile.SupportedEvents))
+	for _, event := range profile.SupportedEvents {
+		hooks = append(hooks, agenthook.Hook{Event: event, Timeout: 2 * time.Second})
+	}
+	return agenthook.InstallOptions{
+		Executable: target.executable,
+		Arguments: []string{
+			"agent-hook", "run",
+			"--agent", string(agent),
+			"--config", target.configPath,
+			"--source", agentHookSource,
+			"--home", target.home,
+		},
+		Marker: agentHookMarker,
+		Hooks:  hooks,
+	}
 }

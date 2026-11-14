@@ -280,7 +280,7 @@ type agentHookTarget struct {
 
 func resolveAgentHookTarget(configPath, binary string) (agentHookTarget, error) {
 	cfg, err := config.Load(configPath)
-	if err != nil && !(errors.Is(err, os.ErrNotExist) && configPath == config.DefaultConfigPath()) {
+	if err != nil && (!errors.Is(err, os.ErrNotExist) || configPath != config.DefaultConfigPath()) {
 		return agentHookTarget{}, err
 	}
 	if cfg != nil && cfg.DataDirWasRelative() {

@@ -93,7 +93,7 @@ func TestAgentSetupRelativeDataDir(t *testing.T) {
 	require.Len(t, report.Rows, 2)
 	assert.Equal(t, agentsetup.StateFailed, report.Rows[0].State)
 	assert.Contains(t, report.Rows[0].Reason, "absolute data_dir")
-	assert.Equal(t, "Set an absolute data_dir in the Forge config.", report.Rows[0].NextStep)
+	assert.Equal(t, "Check the Forge config and retry.", report.Rows[0].NextStep)
 	data, err := os.ReadFile(filepath.Join(home, "codex", "config.toml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(data), info.Endpoint)
@@ -133,27 +133,6 @@ func TestAgentSetupSelectedConfig(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(data), path)
 	assert.Contains(t, out.String(), "then run `kenn-forge agent setup --config '"+path+"' --agent claude`")
-}
-
-func TestAgentSetupLoadsDaemonOnce(t *testing.T) {
-	home := setupAgentTest(t, "/tmp/forge-test-data")
-	bin := filepath.Join(home, "bin")
-	require.NoError(t, os.MkdirAll(bin, 0o700))
-	for _, name := range []string{"claude", "codex"} {
-		require.NoError(t, os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\nexit 1\n"), 0o700))
-	}
-	info := daemonMCPQuickstart(mcpSettingsInfo{Enabled: true, ActiveURL: "http://127.0.0.1:8091/mcp", ActiveRequiresAuth: true}, "/tmp/token")
-	calls := 0
-	loader := func(context.Context, string, time.Duration) (mcpQuickstartInfo, error) { calls++; return info, nil }
-	var out bytes.Buffer
-	cmd := newAgentCommand(loader)
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"setup", "--json"})
-	require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)
-	var report agentsetup.Report
-	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
-	require.Len(t, report.Rows, 4)
-	assert.Equal(t, 1, calls)
 }
 
 func TestAgentSetupForwardsSelectedAgents(t *testing.T) {

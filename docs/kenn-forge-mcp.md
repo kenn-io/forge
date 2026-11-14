@@ -2,8 +2,7 @@
 
 Connect installed Claude Code and Codex clients with `kenn-forge agent setup`.
 Run `kenn-forge agent setup --check` to check the connection, or use `--print`
-to print manual registration commands. In Codex, open `/hooks` and review the
-installed hooks. Outside Forge-launched terminals, export `KENN_FORGE_API_TOKEN`
+to print manual registration commands. Outside Forge-launched terminals, export `KENN_FORGE_API_TOKEN`
 from the reported `token_path` when authentication is enabled.
 
 Forge can expose cached maintainer workflows to local MCP clients from the

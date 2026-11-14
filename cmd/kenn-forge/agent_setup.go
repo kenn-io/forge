@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	shellquote "github.com/kballard/go-shellquote"
@@ -22,26 +20,19 @@ func newAgentCommand(load mcpQuickstartLoader) *cobra.Command {
 	group := &cobra.Command{Use: "agent", Short: "Connect agents to Forge", Args: cobra.NoArgs}
 	var setup *cobra.Command
 	configPath := config.DefaultConfigPath()
-	discover := sync.OnceValues(func() (mcpQuickstartInfo, error) {
-		return load(setup.Context(), configPath, 5*time.Second)
-	})
 	options := agentsetup.Options{
 		SetupCommand: "kenn-forge agent setup",
 		Items: func(agent string) ([]agentsetup.Item, error) {
 			target, err := resolveAgentHookTarget(configPath, "")
 			var hooks agentsetup.Item
 			if err != nil {
-				nextStep := "Check the Forge config and retry."
-				if errors.Is(err, errAgentHookRelativeDataDir) {
-					nextStep = "Set an absolute data_dir in the Forge config."
-				}
 				hooks = agentsetup.Item{Name: "hooks", Check: func(context.Context) (agentsetup.Status, error) {
-					return agentsetup.Status{State: agentsetup.StateFailed, Reason: err.Error(), NextStep: nextStep}, nil
+					return agentsetup.Status{State: agentsetup.StateFailed, Reason: err.Error(), NextStep: "Check the Forge config and retry."}, nil
 				}}
 			} else {
 				hooks = agentsetup.Hooks(agent, target.options(agenthook.Agent(agent)))
 			}
-			info, discoveryErr := discover()
+			info, discoveryErr := load(setup.Context(), configPath, 5*time.Second)
 			selected, _ := setup.Flags().GetStringSlice("agent")
 			command := setupCommand(configPath)
 			if len(selected) > 0 {

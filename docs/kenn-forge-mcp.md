@@ -225,7 +225,9 @@ must report a supported hook session for the handoff to complete.
 Call `kenn_forge_spawn_workspace_with_agent` with one source:
 
 - a provider-aware pull request or issue; or
-- a provider-aware repository with an optional ad-hoc branch.
+- a provider-aware repository with an optional ad-hoc branch; or
+- a Kata task (`source.type` `kata` with `daemon_id`, `project_uid` and
+  `issue_uid`), which creates the same Kata-task workspace as the UI.
 
 The tool creates or reuses a workspace, launches a new agent runtime, submits
 one initial message, and then waits for the resulting live hook session. It does

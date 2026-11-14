@@ -529,6 +529,44 @@ func TestSpawnWorkspaceWithAgentCreatesIssueAndAdHocWorkspaces(t *testing.T) {
 	})
 }
 
+func TestSpawnWorkspaceWithAgentCreatesKataTaskWorkspace(t *testing.T) {
+	backend := successfulSpawnBackend("ws-kata", "runtime-kata", "coding-kata")
+	backend.createKataWorkspaceFn = func(_ context.Context, target WorkspaceKataTarget) (Workspace, error) {
+		assert.Equal(t, WorkspaceKataTarget{DaemonID: "local", ProjectUID: "project-a", IssueUID: "task-a"}, target)
+		return Workspace{ID: "ws-kata", Status: "ready", Created: true}, nil
+	}
+	s := newMCPTestServer(t, backend)
+
+	out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
+		Source: &workspaceSourceInput{Type: "kata", Kata: &WorkspaceKataTarget{
+			DaemonID: " local ", ProjectUID: "project-a", IssueUID: "task-a",
+		}},
+		AgentTarget: "codex", InitialMessage: "start work", Timeout: "2s",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "ws-kata", out.Workspace.ID)
+	assert.False(t, out.Workspace.Reused)
+}
+
+func TestSpawnWorkspaceWithAgentRejectsIncompleteKataSource(t *testing.T) {
+	s := newMCPTestServer(t, successfulSpawnBackend("ws", "rt", "cs"))
+	for name, source := range map[string]*workspaceSourceInput{
+		"missing kata":  {Type: "kata"},
+		"missing issue": {Type: "kata", Kata: &WorkspaceKataTarget{DaemonID: "local", ProjectUID: "p"}},
+		"mixed": {
+			Type: "kata", Kata: &WorkspaceKataTarget{DaemonID: "local", ProjectUID: "p", IssueUID: "i"},
+			AdHoc: &adHocWorkspaceSource{},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
+				Source: source, AgentTarget: "codex", InitialMessage: "go", Timeout: "2s",
+			})
+			require.Error(t, err)
+		})
+	}
+}
+
 func TestSpawnWorkspaceWithAgentRetriesMultilineMessageUntilInputModeIsReady(t *testing.T) {
 	assert := assert.New(t)
 	backend := successfulSpawnBackend("ws-paste", "runtime-paste", "coding-paste")

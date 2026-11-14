@@ -25,7 +25,10 @@ const (
 	agentHookMarker = "--source " + agentHookSource
 )
 
-var errAgentHookResponse = errors.New("daemon failed to record agent hook")
+var (
+	errAgentHookResponse        = errors.New("daemon failed to record agent hook")
+	errAgentHookRelativeDataDir = errors.New("agent hook install requires an absolute data_dir")
+)
 
 func runAgentHookCLI(args []string, stdin io.Reader, stdout io.Writer) error {
 	cmd := newAgentHookCommand(stdin, stdout)
@@ -271,6 +274,7 @@ func installAgentHooks(action, configPath, rawAgent, binary string, stdout io.Wr
 type agentHookTarget struct {
 	configPath string
 	executable string
+	home       string
 }
 
 func resolveAgentHookTarget(configPath, binary string) (agentHookTarget, error) {
@@ -279,11 +283,15 @@ func resolveAgentHookTarget(configPath, binary string) (agentHookTarget, error) 
 		return agentHookTarget{}, err
 	}
 	if cfg != nil && cfg.DataDirWasRelative() {
-		return agentHookTarget{}, errors.New("agent hook install requires an absolute data_dir")
+		return agentHookTarget{}, errAgentHookRelativeDataDir
 	}
 	absoluteConfigPath, err := filepath.Abs(configPath)
 	if err != nil {
 		return agentHookTarget{}, fmt.Errorf("resolve agent hook config path: %w", err)
+	}
+	home, err := filepath.Abs(config.DefaultDataDir())
+	if err != nil {
+		return agentHookTarget{}, fmt.Errorf("resolve agent hook home: %w", err)
 	}
 	executable := strings.TrimSpace(binary)
 	if executable == "" {
@@ -292,7 +300,7 @@ func resolveAgentHookTarget(configPath, binary string) (agentHookTarget, error) 
 			return agentHookTarget{}, fmt.Errorf("resolve kenn-forge executable: %w", err)
 		}
 	}
-	return agentHookTarget{configPath: absoluteConfigPath, executable: executable}, nil
+	return agentHookTarget{configPath: absoluteConfigPath, executable: executable, home: home}, nil
 }
 
 func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOptions {
@@ -308,6 +316,7 @@ func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOp
 			"--agent", string(agent),
 			"--config", target.configPath,
 			"--source", agentHookSource,
+			"--home", target.home,
 		},
 		Marker: agentHookMarker,
 		Hooks:  hooks,

@@ -71,6 +71,7 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 		newConfigCommand(opts.Stdout),
 		newDocsCommand(opts.Stdout),
 		newArchiveCommand(opts.Stdout, time.Now),
+		newAgentCommand(loadMCPQuickstart),
 		newAgentHookCommand(opts.Stdin, opts.Stdout),
 		newDaemonCommand(opts.DaemonRunner),
 		newFleetCommand(fleetCLIOptions{

@@ -38,6 +38,18 @@ func TestMCPQuickstartCommandPrintsAgentConnector(t *testing.T) {
 	assert.Contains(text, `"Authorization": "Bearer ${KENN_FORGE_API_TOKEN}"`)
 }
 
+func TestMCPQuickstartStoppedGuidesSetup(t *testing.T) {
+	var output bytes.Buffer
+	cmd := newMCPCommand(&output, func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
+		return stoppedMCPQuickstart(true, path), nil
+	})
+	cmd.SetArgs([]string{"quickstart"})
+	require.NoError(t, cmd.Execute())
+	assert.NotContains(t, output.String(), "OK mcp quickstart")
+	assert.Contains(t, output.String(), "kenn-forge daemon start")
+	assert.Contains(t, output.String(), "kenn-forge agent setup")
+}
+
 func TestMCPQuickstartCommandPrintsStructuredConnector(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

@@ -82,7 +82,8 @@ discovery                           runtime record `mcp_listen_addr`; `/api/ping
 - Settings shows saved MCP config separately from the boot-active endpoint. Saving never
   hot-restarts the companion; report restart drift and give token-file guidance, never the bearer
   (`internal/server/settings_handlers.go::Server.buildLocalSettingsResponse`).
-- `kenn-forge mcp quickstart` is the canonical agent discovery path; it exposes token paths and
+- `kenn-forge agent setup` registers and checks agent connections; `kenn-forge mcp quickstart`
+  discovers the endpoint and exposes token paths and
   environment placeholders, never bearer contents (`cmd/kenn-forge/mcp_cli.go::newMCPCommand`).
 - The companion listener serves only `/mcp` over stateless Streamable HTTP. Auth follows
   `[api].require_auth`; it requires a direct loopback peer and authority, no forwarding headers, and

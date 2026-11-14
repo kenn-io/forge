@@ -106,6 +106,8 @@ github.com/containerd/typeurl/v2 v2.3.0/go.mod h1:Qk+PAdUYArVj41TnGi6rJ+48RF0Pkc
 github.com/cpuguy83/dockercfg v0.3.2 h1:DlJTyZGBDlXqUZ2Dk2Q3xHs/FtnooJJVaad2S9GKorA=
 github.com/cpuguy83/dockercfg v0.3.2/go.mod h1:sugsbF4//dDlL/i+S+rtpIWp+5h0BHJHfjj5/jFyUJc=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
+github.com/creachadair/tomledit v0.0.29 h1:dB5CbdwJMpn/fmfAPTAAleXF/KJwY0Ggc1eL/zvZRgk=
+github.com/creachadair/tomledit v0.0.29/go.mod h1:4SoTXxzHgvzHRMIJPw+o6zK/yXii4VjLrb6/3gCQnyA=
 github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
 github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
 github.com/cyberphone/json-canonicalization v0.0.0-20241213102144-19d51d7fe467 h1:uX1JmpONuD549D73r6cgnxyUu18Zb7yHAy5AYU0Pm4Q=
@@ -540,6 +542,8 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/subosito/gotenv v1.6.0 h1:9NlTDc1FTs4qu0DDq7AEtTPNw6SVm7uBMsUCUjABIf8=
 github.com/subosito/gotenv v1.6.0/go.mod h1:Dk4QP5c2W3ibzajGcXpNraDfq2IrhjMIvMSWPKKo0FU=
+github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f h1:9hiVElpCmKzsBKQHkBqZ8LGzt82iLfM8egxr4sew+Ys=
+github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f/go.mod h1:8/zr1Tv0+cKpVtGCEB/7YfRXr2TszsMxMXLaT8YuBgU=
 github.com/testcontainers/testcontainers-go v0.44.0 h1:/Fwh6HY1mIikhnm9e7HwoxGycx0lzRAE0f5VQpjFxzI=
 github.com/testcontainers/testcontainers-go v0.44.0/go.mod h1:IcnwQrYTO86xHXu5bvMaBH7ATlbS3Qn1M1QWW3c66rE=
 github.com/testcontainers/testcontainers-go/modules/compose v0.44.0 h1:8YcW51jhgpkkiRVe10Wj9TCBthJmoNpU2fK5WSf7TQ8=
@@ -593,6 +597,8 @@ go.kenn.io/kata v0.23.0 h1:gIxDLGJOJUy01QvSuDpMGQFXOo0YIRxQf72TErY6dY4=
 go.kenn.io/kata v0.23.0/go.mod h1:DaPzNVWqCn8Y//W5yhZQwAxuD0Zs5Dn7wH280anDlfg=
 go.kenn.io/kit v0.51.0 h1:LtZGNYOmkkMg8JcBclxTJP83MIQ4uwgzcVVsRGzBTww=
 go.kenn.io/kit v0.51.0/go.mod h1:ps/bK19BCQUZGo1aRuK2XdFoCf7gPO5jmWFqPn8Ngns=
+go.kenn.io/kit v0.53.0 h1:CbBK28C/4ESbw9bwVQ7HJp6EGQiDI+DLSvUOSvWlqdU=
+go.kenn.io/kit v0.53.0/go.mod h1:PZ/4Ybn+VM+KQXnyAYLD8TTIfEbssd+8YbLgdqvrcVU=
 go.kenn.io/kwt v0.9.6 h1:0QD+PuAIfyIMZe88IoGwtzKaB80iDdTmsch8ouxGgvw=
 go.kenn.io/kwt v0.9.6/go.mod h1:aKg6/rrsyQFgoYs4IBA5g8WR2PbKJHLcOEMDgxjgMvo=
 go.opencensus.io v0.24.0 h1:y73uSU6J157QMP2kn2r30vwW1A2W2WFwSCGnAVxeaD0=

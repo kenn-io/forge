@@ -310,15 +310,6 @@ func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOp
 	for _, event := range profile.SupportedEvents {
 		hooks = append(hooks, agenthook.Hook{Event: event, Timeout: 2 * time.Second})
 	}
-	return agenthook.InstallOptions{
-		Executable: target.executable,
-		Arguments:  target.arguments(agent),
-		Marker:     agentHookMarker,
-		Hooks:      hooks,
-	}
-}
-
-func (target agentHookTarget) arguments(agent agenthook.Agent) []string {
 	args := []string{
 		"agent-hook", "run",
 		"--agent", string(agent),
@@ -328,7 +319,12 @@ func (target agentHookTarget) arguments(agent agenthook.Agent) []string {
 	if target.home != "" {
 		args = append(args, "--home", target.home)
 	}
-	return args
+	return agenthook.InstallOptions{
+		Executable: target.executable,
+		Arguments:  args,
+		Marker:     agentHookMarker,
+		Hooks:      hooks,
+	}
 }
 
 // agentHookHome returns the Forge home to pin in the hook, or "" when the

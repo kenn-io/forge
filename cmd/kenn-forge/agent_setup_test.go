@@ -156,6 +156,26 @@ func TestAgentSetupLoadsDaemonOnce(t *testing.T) {
 	assert.Equal(t, 1, calls)
 }
 
+func TestAgentSetupForwardsSelectedAgents(t *testing.T) {
+	for _, args := range [][]string{{"--agent", "claude,codex"}, {"--agent", "claude", "--agent", "codex"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			setupAgentTest(t, "/tmp/forge-test-data")
+			var out bytes.Buffer
+			cmd := newAgentCommand(func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
+				return stoppedMCPQuickstart(true, path), nil
+			})
+			cmd.SetOut(&out)
+			cmd.SetArgs(append(append([]string{"setup"}, args...), "--check", "--json"))
+			require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)
+			var report agentsetup.Report
+			require.NoError(t, json.Unmarshal(out.Bytes(), &report))
+			require.Len(t, report.Rows, 4)
+			assert.Equal(t, "claude", report.Rows[0].Agent)
+			assert.Equal(t, "codex", report.Rows[2].Agent)
+		})
+	}
+}
+
 func TestAgentSetupMCPTokenSettings(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

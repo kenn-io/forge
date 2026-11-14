@@ -24,12 +24,22 @@ import (
 
 func TestAgentHookInstallPreservesCodexCommandWithExplicitDataDir(t *testing.T) {
 	home := setupAgentTest(t, "/tmp/forge-test-data")
+	t.Setenv("KENN_FORGE_DATA_DIR", filepath.Join(home, "override"))
 	configPath := filepath.Join(home, "forge", "config.toml")
 	require.NoError(t, installAgentHooks("install", configPath, "codex", "/usr/bin/kenn-forge", io.Discard))
 	data, err := os.ReadFile(filepath.Join(home, "codex", "hooks.json"))
 	require.NoError(t, err)
 	assert.Contains(t, string(data), "--config "+configPath+" --source kenn-forge-agent-activity")
 	assert.NotContains(t, string(data), "--home")
+}
+
+func TestAgentHookInstallPinsHomeWithEmptyDataDir(t *testing.T) {
+	home := setupAgentTest(t, "")
+	configPath := filepath.Join(home, "forge", "config.toml")
+	require.NoError(t, installAgentHooks("install", configPath, "codex", "/usr/bin/kenn-forge", io.Discard))
+	data, err := os.ReadFile(filepath.Join(home, "codex", "hooks.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "--home "+filepath.Join(home, "forge"))
 }
 
 func TestAgentHookRunRelaysLifecyclePayloadToDaemon(t *testing.T) {

@@ -326,19 +326,33 @@ func TestAgentHookSessionEndReportsDaemonFailure(t *testing.T) {
 }
 
 func TestSetupHookKeepsSelectedHome(t *testing.T) {
-	for _, tc := range []struct{ name, installHome, runHome string }{
-		{"custom home", "custom", ""},
-		{"default home", "", "other"},
+	for _, tc := range []struct {
+		name, installHome, runHome, dataDir string
+		missingConfig                       bool
+	}{
+		{name: "custom home", installHome: "custom"},
+		{name: "default home", runHome: "other"},
+		{name: "data directory override", installHome: "custom", dataDir: "override"},
+		{name: "override before config exists", installHome: "custom", dataDir: "override", missingConfig: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := setupAgentTest(t, "/tmp/unused")
+			t.Setenv("KENN_FORGE_DATA_DIR", "")
+			require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
 			if tc.installHome == "" {
 				t.Setenv("KENN_FORGE_HOME", "")
 			}
 			forgeHome := config.DefaultDataDir()
+			if tc.dataDir != "" {
+				forgeHome = filepath.Join(home, tc.dataDir)
+				t.Setenv("KENN_FORGE_DATA_DIR", forgeHome)
+			}
 			configPath := config.DefaultConfigPath()
 			require.NoError(t, os.MkdirAll(forgeHome, 0o700))
 			require.NoError(t, os.WriteFile(configPath, []byte(""), 0o600))
+			if tc.missingConfig {
+				require.NoError(t, os.Remove(configPath))
+			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				_, _ = io.WriteString(w, `{"hook_output":{"hookSpecificOutput":{"additionalContext":"delivered"}}}`)
 			}))
@@ -352,6 +366,9 @@ func TestSetupHookKeepsSelectedHome(t *testing.T) {
 			wrapper := filepath.Join(home, "hook-wrapper")
 			require.NoError(t, os.WriteFile(wrapper, fmt.Appendf(nil, "#!/bin/sh\nGO_WANT_HELPER_PROCESS=1 exec %q -test.run=^TestSetupHookHelper$ -- \"$@\"\n", exe), 0o700))
 			require.NoError(t, installAgentHooks("install", configPath, "claude", wrapper, io.Discard))
+			if tc.missingConfig {
+				require.NoError(t, os.WriteFile(configPath, []byte(""), 0o600))
+			}
 			data, err := os.ReadFile(filepath.Join(home, "claude", "settings.json"))
 			require.NoError(t, err)
 			var settings struct {
@@ -364,6 +381,7 @@ func TestSetupHookKeepsSelectedHome(t *testing.T) {
 			require.NoError(t, json.Unmarshal(data, &settings))
 			require.NotEmpty(t, settings.Hooks["SessionStart"])
 			command := settings.Hooks["SessionStart"][0].Hooks[0].Command
+			require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
 			if tc.runHome == "" {
 				t.Setenv("KENN_FORGE_HOME", "")
 			} else {

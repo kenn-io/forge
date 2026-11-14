@@ -290,7 +290,7 @@ func resolveAgentHookTarget(configPath, binary string) (agentHookTarget, error) 
 	if err != nil {
 		return agentHookTarget{}, fmt.Errorf("resolve agent hook config path: %w", err)
 	}
-	home, err := agentHookHome(configPath)
+	home, err := agentHookHome(configPath, cfg)
 	if err != nil {
 		return agentHookTarget{}, err
 	}
@@ -329,14 +329,23 @@ func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOp
 
 // agentHookHome returns the Forge home to pin in the hook, or "" when the
 // config sets its own data_dir, which already identifies the runtime.
-func agentHookHome(configPath string) (string, error) {
+func agentHookHome(configPath string, cfg *config.Config) (string, error) {
 	var file struct {
 		DataDir string `toml:"data_dir"`
 	}
 	if _, err := toml.DecodeFile(configPath, &file); err == nil && file.DataDir != "" {
 		return "", nil
 	}
-	home, err := filepath.Abs(config.DefaultDataDir())
+	home := config.DefaultDataDir()
+	if cfg != nil {
+		home = cfg.DataDir
+	} else if dataDir := os.Getenv("KENN_FORGE_DATA_DIR"); dataDir != "" {
+		home = dataDir
+		if !filepath.IsAbs(home) {
+			return "", errAgentHookRelativeDataDir
+		}
+	}
+	home, err := filepath.Abs(home)
 	if err != nil {
 		return "", fmt.Errorf("resolve agent hook home: %w", err)
 	}

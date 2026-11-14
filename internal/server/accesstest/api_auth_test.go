@@ -3,6 +3,7 @@ package accesstest
 import (
 	"encoding/json"
 	"fmt"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -247,6 +248,63 @@ func TestTailscaleServeIdentityAuthorizesGatedTransports(t *testing.T) {
 		}
 	})
 	assert.NotEqual(http.StatusUnauthorized, response.StatusCode)
+}
+
+// TestTailscaleServeAppCapabilityAuthorizesWithoutLogin pins that tagged
+// devices, which Serve forwards with a capability header but no login, reach
+// gated routes, and that the capability adds to the login allowlist rather
+// than replacing it.
+func TestTailscaleServeAppCapabilityAuthorizesWithoutLogin(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	const (
+		capability = "example.com/cap/forge"
+		granted    = `{"example.com/cap/forge":[{}]}`
+	)
+	// Serve encodes non-ASCII capability JSON with mime.QEncoding, which
+	// splits long values into several encoded words.
+	encoded := mime.QEncoding.Encode("utf-8",
+		`{"example.com/cap/forge":[{"note":"Zoë's büild agent, tagged for CI"}]}`)
+	require.Contains(t, encoded, "?= =?utf-8?q?")
+	newServer := func(enabled bool, users []string) *httptest.Server {
+		srv := server.New(dbtest.Open(t), nil, nil, "/", nil, server.ServerOptions{
+			DaemonAccess: authapi.DaemonAccessOptions{
+				Token: "local-secret", RequireAPIAuth: true,
+				TailscaleServeEnabled:       enabled,
+				TailscaleServeUsers:         users,
+				TailscaleServeAppCapability: capability,
+			},
+		})
+		ts := httptest.NewServer(srv)
+		t.Cleanup(ts.Close)
+		return ts
+	}
+	capabilityOnly := newServer(true, nil)
+	both := newServer(true, []string{"user@example.com"})
+	disabled := newServer(false, []string{"user@example.com"})
+
+	for _, test := range []struct {
+		name    string
+		ts      *httptest.Server
+		headers map[string]string
+		want    int
+	}{
+		{"capability", capabilityOnly, map[string]string{"Tailscale-App-Capabilities": granted}, http.StatusOK},
+		{"encoded capability", capabilityOnly, map[string]string{"Tailscale-App-Capabilities": encoded}, http.StatusOK},
+		{"login without allowlist", capabilityOnly, map[string]string{"Tailscale-User-Login": "user@example.com"}, http.StatusUnauthorized},
+		{"login with both configured", both, map[string]string{"Tailscale-User-Login": "user@example.com"}, http.StatusOK},
+		{"capability with both configured", both, map[string]string{"Tailscale-App-Capabilities": granted}, http.StatusOK},
+		{"disabled", disabled, map[string]string{"Tailscale-App-Capabilities": granted}, http.StatusUnauthorized},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := authGet(t, test.ts, "/api/v1/snapshot", func(request *http.Request) {
+				for name, value := range test.headers {
+					request.Header.Set(name, value)
+				}
+			})
+			t.Cleanup(func() { _ = response.Body.Close() })
+			assert.Equal(t, test.want, response.StatusCode)
+		})
+	}
 }
 
 func TestFederationCredentialTakesPrecedenceOverTailscaleServeIdentity(t *testing.T) {

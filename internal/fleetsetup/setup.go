@@ -92,6 +92,9 @@ type Plan struct {
 	ServiceKind        string
 	ServiceLabel       string
 	EnableLinger       bool
+	// TailscaleAppCapability keeps an existing api.tailscale_serve
+	// app_capability and is forwarded when setup creates the Serve mapping.
+	TailscaleAppCapability string
 
 	serveAlreadyConfigured bool
 	tailscaleCommand       string
@@ -288,6 +291,12 @@ func (r *Runner) Plan(ctx context.Context, options Options) (Plan, error) {
 	} else if info.IsDir() || info.Mode()&0o111 == 0 {
 		return Plan{}, fmt.Errorf("kenn-forge binary %q is not executable", binaryPath)
 	}
+	// A kept capability admits tagged devices, so setup then needs no device
+	// login; tagged Forge hosts have none.
+	appCapability := ""
+	if options.Tailscale && existing != nil && existing.API.TailscaleServe.Enabled {
+		appCapability = existing.API.TailscaleServe.AppCapability
+	}
 	publication := publicationExternal
 	origin := strings.TrimSpace(options.Origin)
 	tailnet := tailscaleDiscovery{}
@@ -300,7 +309,8 @@ func (r *Runner) Plan(ctx context.Context, options Options) (Plan, error) {
 			return Plan{}, err
 		}
 		tailnet, err = r.discoverTailscale(
-			ctx, tailscaleCommand, options.TailscaleDNS, len(options.TailscaleLogins) == 0,
+			ctx, tailscaleCommand, options.TailscaleDNS,
+			len(options.TailscaleLogins) == 0 && appCapability == "",
 		)
 		if err != nil {
 			return Plan{}, err
@@ -363,6 +373,7 @@ func (r *Runner) Plan(ctx context.Context, options Options) (Plan, error) {
 		Publication: publication, Host: "127.0.0.1", Port: port,
 		ServicePath: service.Path, ServiceKind: service.Kind,
 		ServiceLabel: service.Label, EnableLinger: enableLinger,
+		TailscaleAppCapability: appCapability,
 		serveAlreadyConfigured: serveState == serveExact,
 		tailscaleCommand:       tailscaleCommand,
 	}
@@ -490,9 +501,10 @@ func configureCandidate(candidate *config.Config, plan Plan) error {
 	candidate.TrustReverseProxy = false
 	candidate.API.RequireAuth = true
 	candidate.API.TailscaleServe = config.TailscaleServeAPI{}
-	if len(plan.TailscaleLogins) > 0 {
+	if len(plan.TailscaleLogins) > 0 || plan.TailscaleAppCapability != "" {
 		candidate.API.TailscaleServe = config.TailscaleServeAPI{
 			Enabled: true, AllowedUsers: slices.Clone(plan.TailscaleLogins),
+			AppCapability: plan.TailscaleAppCapability,
 		}
 	}
 	candidate.Fleet.Enabled = true

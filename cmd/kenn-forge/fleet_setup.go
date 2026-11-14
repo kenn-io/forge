@@ -100,6 +100,9 @@ func writeFleetSetupPlan(writer io.Writer, plan fleetsetup.Plan) error {
 	if len(plan.TailscaleLogins) > 0 {
 		lines = append(lines, [2]string{"Allowed logins", strings.Join(plan.TailscaleLogins, ", ")})
 	}
+	if plan.TailscaleAppCapability != "" {
+		lines = append(lines, [2]string{"App capability", plan.TailscaleAppCapability})
+	}
 	if _, err := fmt.Fprintln(writer, "Forge fleet setup plan:"); err != nil {
 		return err
 	}

@@ -259,15 +259,19 @@ Federation peers and the hub event stream live in
   or query identity (`internal/server/activityapi/huma_routes.go::Handlers.UnsetStarred`).
 - Loopback TCP is the required cross-platform transport; Unix sockets and named pipes are not.
   Background startup rejects non-loopback listeners (`cmd/kenn-forge/start_background.go::validateBackgroundConfig`).
-- `[api.tailscale_serve]` requires API auth and one allowlisted identity header; it trusts local
-  processes, so it suits only trusted hosts. Policy edits need restart and never change federation
-  credentials (`internal/server/authapi/daemon_access.go::DaemonRequestPolicy.AcceptsTailscaleServeUser`).
+- `[api.tailscale_serve]` requires API auth and either one allowlisted login header or one
+  capability header containing `app_capability`; the two paths are independent and both grant the
+  full local-user principal. It trusts local processes, so it suits only trusted hosts. Policy edits
+  need restart and never change federation credentials
+  (`internal/server/authapi/daemon_access.go::DaemonRequestPolicy.AcceptsTailscaleServeUser`).
 - Browser WebSocket origins, including peer-issued `forge_session` cookies, must use HTTPS and match
   the requested Forge authority (`internal/server/authapi/api_auth.go::BrowserWebSocketOriginAllowed`).
 - `fleet setup` keeps Forge on loopback with API auth; `--tailscale` owns one Serve mapping, while
   `--origin` leaves ingress to the operator (`internal/fleetsetup/setup.go::configureCandidate`).
 - Serve identity is the tokenless path for people; enrollment and peer traffic keep tokens. Re-runs
-  keep allowed logins and the HTTPS port. `--origin` never enables identity mode, since only Serve
+  keep allowed logins, `app_capability`, and the HTTPS port; setup forwards the capability only
+  when it creates the Serve mapping, and a kept capability skips device-login discovery because
+  tagged hosts have no login. `--origin` never enables identity mode, since only Serve
   replaces client identity headers (`internal/fleetsetup/setup.go::planTailscaleLogins`).
 - Setup services run as the selected current user with no network-vendor or shell dependency
   (`internal/fleetsetup/service.go`).

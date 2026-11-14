@@ -1192,6 +1192,10 @@ type API struct {
 type TailscaleServeAPI struct {
 	Enabled      bool     `toml:"enabled,omitempty" json:"enabled,omitempty"`
 	AllowedUsers []string `toml:"allowed_users,omitempty" json:"allowed_users,omitempty"`
+	// AppCapability names a Tailscale app capability whose holders, including
+	// tagged devices that send no login header, get the same full access as an
+	// allowed user. Serve must forward it with --accept-app-caps.
+	AppCapability string `toml:"app_capability,omitempty" json:"app_capability,omitempty"`
 }
 
 // SSEBufferSizeOrDefault returns the configured SSE replay ring size,
@@ -2097,11 +2101,24 @@ func (t *TailscaleServeAPI) Validate() error {
 		seen[login] = struct{}{}
 		t.AllowedUsers[index] = login
 	}
-	if t.Enabled && len(t.AllowedUsers) == 0 {
-		return errors.New("api.tailscale_serve.enabled requires at least one allowed user")
+	t.AppCapability = strings.TrimSpace(t.AppCapability)
+	if t.AppCapability != "" && !tailscaleAppCapabilityPattern.MatchString(t.AppCapability) {
+		return fmt.Errorf(
+			"api.tailscale_serve.app_capability %q must have the form {domain}/{name}",
+			t.AppCapability,
+		)
+	}
+	if t.Enabled && len(t.AllowedUsers) == 0 && t.AppCapability == "" {
+		return errors.New("api.tailscale_serve.enabled requires allowed_users or app_capability")
 	}
 	return nil
 }
+
+// tailscaleAppCapabilityPattern is the app capability name grammar that
+// `tailscale serve --accept-app-caps` enforces (tailscale cmd/tailscale/cli
+// validAppCap): a fully qualified domain, a slash, then a name that may
+// contain further slashes.
+var tailscaleAppCapabilityPattern = regexp.MustCompile(`^([\pL\pN-]+\.)+[\pL\pN-]+/[\pL\pN-/]+$`)
 
 // NormalizeTailscaleLogin returns the exact case-insensitive login identity
 // used by Tailscale Serve. Forge accepts the email-shaped login names emitted

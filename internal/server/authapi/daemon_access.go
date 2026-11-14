@@ -1,6 +1,9 @@
 package authapi
 
 import (
+	"encoding/json/jsontext"
+	"encoding/json/v2"
+	"mime"
 	"net/http"
 	"strings"
 
@@ -10,19 +13,21 @@ import (
 
 // DaemonAccessOptions configures startup-bound daemon authentication and proof.
 type DaemonAccessOptions struct {
-	Token                 string
-	RequireAPIAuth        bool
-	ProofHandler          http.Handler
-	TailscaleServeEnabled bool
-	TailscaleServeUsers   []string
+	Token                       string
+	RequireAPIAuth              bool
+	ProofHandler                http.Handler
+	TailscaleServeEnabled       bool
+	TailscaleServeUsers         []string
+	TailscaleServeAppCapability string
 }
 
 type DaemonRequestPolicy struct {
-	Token                 string
-	RequireAPIAuth        bool
-	proof                 http.Handler
-	tailscaleServeEnabled bool
-	tailscaleServeUsers   map[string]struct{}
+	Token                       string
+	RequireAPIAuth              bool
+	proof                       http.Handler
+	tailscaleServeEnabled       bool
+	tailscaleServeUsers         map[string]struct{}
+	tailscaleServeAppCapability string
 }
 
 type daemonRequestAdmission struct {
@@ -36,11 +41,12 @@ func NewDaemonRequestPolicy(options DaemonAccessOptions) DaemonRequestPolicy {
 		users[login] = struct{}{}
 	}
 	return DaemonRequestPolicy{
-		Token:                 options.Token,
-		RequireAPIAuth:        options.RequireAPIAuth,
-		proof:                 options.ProofHandler,
-		tailscaleServeEnabled: options.TailscaleServeEnabled,
-		tailscaleServeUsers:   users,
+		Token:                       options.Token,
+		RequireAPIAuth:              options.RequireAPIAuth,
+		proof:                       options.ProofHandler,
+		tailscaleServeEnabled:       options.TailscaleServeEnabled,
+		tailscaleServeUsers:         users,
+		tailscaleServeAppCapability: options.TailscaleServeAppCapability,
 	}
 }
 
@@ -48,11 +54,18 @@ func (p DaemonRequestPolicy) TailscaleServeEnabled() bool {
 	return p.tailscaleServeEnabled
 }
 
+// AcceptsTailscaleServeUser reports whether a loopback request proxied by
+// Tailscale Serve carries an allowlisted login or the configured app
+// capability. Either grants the full local-user principal.
 func (p DaemonRequestPolicy) AcceptsTailscaleServeUser(r *http.Request) bool {
 	if !p.tailscaleServeEnabled || !IsLoopbackRemoteAddr(r.RemoteAddr) {
 		return false
 	}
-	values := r.Header.Values("Tailscale-User-Login")
+	return p.allowsTailscaleLogin(r.Header) || p.hasTailscaleAppCapability(r.Header)
+}
+
+func (p DaemonRequestPolicy) allowsTailscaleLogin(header http.Header) bool {
+	values := header.Values("Tailscale-User-Login")
 	if len(values) != 1 {
 		return false
 	}
@@ -62,6 +75,29 @@ func (p DaemonRequestPolicy) AcceptsTailscaleServeUser(r *http.Request) bool {
 	}
 	_, allowed := p.tailscaleServeUsers[login]
 	return allowed
+}
+
+// hasTailscaleAppCapability reports whether Serve's capability header, a JSON
+// object keyed by capability name that Serve RFC 2047 Q-encodes when it holds
+// non-ASCII text, contains the configured capability.
+func (p DaemonRequestPolicy) hasTailscaleAppCapability(header http.Header) bool {
+	if p.tailscaleServeAppCapability == "" {
+		return false
+	}
+	values := header.Values("Tailscale-App-Capabilities")
+	if len(values) != 1 {
+		return false
+	}
+	decoded, err := new(mime.WordDecoder).DecodeHeader(values[0])
+	if err != nil {
+		return false
+	}
+	var capabilities map[string]jsontext.Value
+	if err := json.Unmarshal([]byte(decoded), &capabilities); err != nil {
+		return false
+	}
+	_, granted := capabilities[p.tailscaleServeAppCapability]
+	return granted
 }
 
 func (p DaemonRequestPolicy) Admit(

@@ -56,7 +56,8 @@ Runtime discovery publishes the resolved MCP listener and URL, and
 file path.
 
 While MCP is enabled, `/mcp` on the main listener also accepts daemon bearer
-holders and, with `[api.tailscale_serve]`, allowlisted Serve users. `/api/ping`
+holders and, with `[api.tailscale_serve]`, allowlisted Serve users and holders
+of its `app_capability`. `/api/ping`
 reports `mcp_url` on the origin the caller used, so a client that reaches Forge
 through Tailscale Serve discovers the Serve URL.
 

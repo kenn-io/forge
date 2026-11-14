@@ -662,6 +662,54 @@ func TestTailscaleSetupKeepsPreviouslyAllowedLogins(t *testing.T) {
 	assert.Equal(t, []string{"phone@example.net", "operator@example.com"}, plan.TailscaleLogins)
 }
 
+func TestTailscaleSetupKeepsAndForwardsAppCapability(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	runner, root, commands := testRunner(t, "linux")
+	run := runner.deps.run
+	runner.deps.run = func(ctx context.Context, name string, args ...string) (commandResult, error) {
+		if name == "tailscale" && slices.Equal(args, []string{"status", "--json"}) {
+			return commandResult{stdout: []byte(`{
+  "BackendState":"Running",
+  "Self":{"DNSName":"forge-spoke.example.ts.net.","UserID":7},
+  "User":{},
+  "CertDomains":["forge-spoke.example.ts.net"]
+}`)}, nil
+		}
+		return run(ctx, name, args...)
+	}
+	dataDir, err := config.CanonicalDataDir(filepath.Join(root, "forge"))
+	require.NoError(err)
+	require.NoError(os.MkdirAll(dataDir, 0o700))
+	configPath := filepath.Join(dataDir, "config.toml")
+	cfg := &config.Config{DataDir: dataDir, Host: "127.0.0.1", Port: 8091}
+	cfg.API.RequireAuth = true
+	cfg.API.TailscaleServe = config.TailscaleServeAPI{
+		Enabled: true, AppCapability: "example.com/cap/forge",
+	}
+	require.NoError(cfg.Save(configPath))
+
+	plan, err := runner.Plan(t.Context(), Options{
+		Role: RoleHub, ConfigPath: configPath, DataDir: dataDir, Tailscale: true,
+	})
+	require.NoError(err)
+	candidate := &config.Config{DataDir: dataDir}
+	require.NoError(configureCandidate(candidate, plan))
+	require.NoError(runner.applyServe(t.Context(), plan, &transaction{}))
+	external, err := runner.Plan(t.Context(), Options{
+		Role: RoleHub, ConfigPath: configPath, DataDir: dataDir,
+		Origin: "https://forge.internal.example",
+	})
+	require.NoError(err)
+
+	assert.True(candidate.API.TailscaleServe.Enabled)
+	assert.Empty(candidate.API.TailscaleServe.AllowedUsers)
+	assert.Equal("example.com/cap/forge", candidate.API.TailscaleServe.AppCapability)
+	assert.Contains(*commands,
+		"tailscale serve --yes --bg --https=443 --accept-app-caps=example.com/cap/forge http://127.0.0.1:8091")
+	assert.Empty(external.TailscaleAppCapability)
+}
+
 func TestTailscaleSetupAllowsExplicitLoginsWithoutDeviceUser(t *testing.T) {
 	runner, root, _ := testRunner(t, "linux")
 	run := runner.deps.run

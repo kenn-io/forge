@@ -154,9 +154,11 @@ func (r *Runner) applyServe(ctx context.Context, plan Plan, transaction *transac
 	}
 	target := fmt.Sprintf("http://127.0.0.1:%d", plan.Port)
 	httpsFlag := fmt.Sprintf("--https=%d", plan.TailscaleHTTPSPort)
-	if _, err := r.deps.run(
-		ctx, command, "serve", "--yes", "--bg", httpsFlag, target,
-	); err != nil {
+	args := []string{"serve", "--yes", "--bg", httpsFlag}
+	if plan.TailscaleAppCapability != "" {
+		args = append(args, "--accept-app-caps="+plan.TailscaleAppCapability)
+	}
+	if _, err := r.deps.run(ctx, command, append(args, target)...); err != nil {
 		return fmt.Errorf("configure Tailscale Serve: %w", err)
 	}
 	transaction.record(func(ctx context.Context) error {

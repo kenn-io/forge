@@ -648,7 +648,9 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 	waitForWorkspaceActivity(t, client, ctx, createResp.JSON202.ID, func(activity workspaceActivityResponse) bool {
 		return activity.TmuxActivitySource == "none" && activity.TmuxLastOutputAt == nil
 	})
-	since := time.Now().UTC().Format(time.RFC3339Nano)
+	// Provider activity is seeded at CreatedAt. Start at the next whole second
+	// to exclude it using the same precision as terminal activity timestamps.
+	since := mr.CreatedAt.Add(time.Second).Format(time.RFC3339)
 	setTmuxRecorderPaneOutput(t, record, "workspace-only activity")
 
 	params := &generated.ListActivityAuthorsQuery{Since: &since}
@@ -703,6 +705,15 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 	srv.cfg.Fleet.Enabled = true
 	srv.cfgMu.Unlock()
 
+	repo, err := database.GetRepoByIdentity(
+		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(mr)
+
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(t.Context(), &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
 		Provider: "github", PlatformHost: "github.com",
 		Owner: "acme", Name: "widget", MrNumber: 1,
@@ -738,7 +749,9 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 	srv.providerProxy = routepolicy.NewProviderProxy(providerClient, t.Context())
 	srv.providerRouteSpoke = true
 
-	since := time.Now().UTC().Format(time.RFC3339Nano)
+	// Provider activity is seeded at CreatedAt. Start at the next whole second
+	// to exclude it using the same precision as terminal activity timestamps.
+	since := mr.CreatedAt.Add(time.Second).Format(time.RFC3339)
 	setTmuxRecorderPaneOutput(t, record, "workspace-only activity")
 	var response *generated.ListActivityResp
 	require.Eventually(func() bool {
@@ -752,15 +765,6 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 	require.NotNil(response)
 	require.Len(response.JSON200.WorkspaceActivity, 1)
 	require.Equal(createResp.JSON202.ID, response.JSON200.WorkspaceActivity[0].Workspace.ID)
-
-	repo, err := database.GetRepoByIdentity(
-		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
-	)
-	require.NoError(err)
-	require.NotNil(repo)
-	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 1)
-	require.NoError(err)
-	require.NotNil(mr)
 	authors, err := client.HTTP.ListActivityAuthorsWithResponse(t.Context(), &generated.ListActivityAuthorsRequestOptions{Query: &generated.ListActivityAuthorsQuery{Since: &since}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, authors.StatusCode)
@@ -808,7 +812,9 @@ func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
 	waitForWorkspaceActivity(t, client, ctx, workspaceID, func(activity workspaceActivityResponse) bool {
 		return activity.TmuxActivitySource == "none" && activity.TmuxLastOutputAt == nil
 	})
-	since := time.Now().UTC().Format(time.RFC3339Nano)
+	// Provider activity is seeded at CreatedAt. Start at the next whole second
+	// to exclude it using the same precision as terminal activity timestamps.
+	since := mr.CreatedAt.Add(time.Second).Format(time.RFC3339)
 	setTmuxRecorderPaneOutput(t, record, "changed output")
 
 	for _, search := range []string{"1", "#1"} {

@@ -85,7 +85,10 @@ func serveTracedChat(t *testing.T, chat workspaceChat) (string, *websocket.Conn,
 	mux := http.NewServeMux()
 	mux.HandleFunc("/workspaces/{id}/sessions/{session_key}", func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) })
 	server := httptest.NewServer(mux)
-	conn, _, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/workspaces/ws-trace/sessions/"+key, nil)
+	conn, resp, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/workspaces/ws-trace/sessions/"+key, nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(t, err)
 	return key, conn, func() { _ = conn.CloseNow(); server.Close() }
 }

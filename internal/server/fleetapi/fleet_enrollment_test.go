@@ -356,7 +356,6 @@ func joinFromLocal(
 					"enrollment_token": token,
 				}, "",
 			)
-			t.Cleanup(func() { _ = response.Body.Close() })
 			return response
 		},
 	}
@@ -381,6 +380,7 @@ func TestFleetJoinKeepsRevokedLocalEnrollmentWhenHubRefuses(t *testing.T) {
 	spoke := fixture.spoke
 
 	response := fixture.join("unknown-enrollment-token")
+	defer response.Body.Close()
 	require.Equal(http.StatusUnauthorized, response.StatusCode)
 	local, ok := spoke.enrollments.Local()
 	require.True(ok)
@@ -407,7 +407,9 @@ func TestFleetJoinReplacingRevokedEnrollmentResumesAfterLostReply(t *testing.T) 
 	})
 
 	spoke := fixture.spoke
-	require.Equal(http.StatusServiceUnavailable, fixture.join(fixture.newToken()).StatusCode)
+	failed := fixture.join(fixture.newToken())
+	defer failed.Body.Close()
+	require.Equal(http.StatusServiceUnavailable, failed.StatusCode)
 	revoked, ok := spoke.enrollments.Local()
 	require.True(ok)
 	assert.Equal(federation.EnrollmentRevoked, revoked.State)
@@ -415,6 +417,7 @@ func TestFleetJoinReplacingRevokedEnrollmentResumesAfterLostReply(t *testing.T) 
 
 	// The hub accepted the lost join, so a retry with a new token resumes it.
 	response := fixture.join(fixture.newToken())
+	defer response.Body.Close()
 	require.Equal(http.StatusOK, response.StatusCode)
 	var local federation.LocalEnrollment
 	require.NoError(json.NewDecoder(response.Body).Decode(&local))
@@ -434,6 +437,7 @@ func TestFleetJoinReplacesPendingEnrollmentTheHubDropped(t *testing.T) {
 	spoke := fixture.spoke
 
 	response := fixture.join(fixture.newToken())
+	defer response.Body.Close()
 	require.Equal(http.StatusOK, response.StatusCode)
 	local, ok := spoke.enrollments.Local()
 	require.True(ok)
@@ -460,6 +464,7 @@ func TestFleetJoinStartsAgainWhenTheHubRevokedItsReplacement(t *testing.T) {
 	require.NoError(fixture.hub.enrollments.Revoke(t.Context(), revokedReplacement))
 
 	response := fixture.join(fixture.newToken())
+	defer response.Body.Close()
 	require.Equal(http.StatusOK, response.StatusCode)
 	local, ok := fixture.spoke.enrollments.Local()
 	require.True(ok)
@@ -478,6 +483,7 @@ func TestFleetJoinFinishesRevocationCleanupThatFailedEarlier(t *testing.T) {
 	require.NoError(err)
 
 	response := fixture.join(fixture.newToken())
+	defer response.Body.Close()
 	require.Equal(http.StatusOK, response.StatusCode)
 	local, ok := fixture.spoke.enrollments.Local()
 	require.True(ok)

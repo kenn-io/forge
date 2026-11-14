@@ -168,9 +168,12 @@ func TestHTTPTransportSkipsLongLivedStreams(t *testing.T) {
 	t.Run("websocket", func(t *testing.T) {
 		require := require.New(t)
 		ctx, caller, recorder := startCaller(t)
-		conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), &websocket.DialOptions{
+		conn, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), &websocket.DialOptions{
 			HTTPClient: &http.Client{Transport: PeerHTTPTransport(nil)},
 		})
+		if err != nil && resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
 		require.NoError(err)
 		require.NoError(conn.Write(ctx, websocket.MessageText, []byte("ping")))
 		_, echoed, err := conn.Read(ctx)

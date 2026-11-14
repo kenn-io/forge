@@ -464,7 +464,10 @@ func TestDevboxTerminalsBypassDefaultHTTPProxy(t *testing.T) { //nolint:parallel
 	direct := &http.Transport{}
 	t.Cleanup(direct.CloseIdleConnections)
 	for _, path := range []string{"/workspaces/work-a/terminal", "/workspaces/work-a/runtime/sessions/session-a/terminal"} {
-		conn, _, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/compute-a"+path+"?protocol=acp", nil, &http.Client{Transport: direct})
+		conn, resp, err := terminalwebsocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/devboxes/compute-a"+path+"?protocol=acp", nil, &http.Client{Transport: direct})
+		if err != nil && resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
 		require.NoError(err)
 		_, message, err := conn.Read(t.Context())
 		require.NoError(err)

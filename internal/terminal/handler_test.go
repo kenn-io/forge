@@ -230,6 +230,9 @@ func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 			CompressionMode: websocket.CompressionContextTakeover,
 		},
 	)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 	require.Contains(
@@ -313,9 +316,12 @@ func TestWSToPTYAnswersHeartbeat(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	conn, _, err := websocket.Dial(
+	conn, resp, err := websocket.Dial(
 		ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil,
 	)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	require.NoError(conn.Write(
 		ctx, websocket.MessageText,

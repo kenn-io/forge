@@ -403,8 +403,11 @@ func (s *Server) registerDevboxTerminalAPI(api huma.API) {
 			transport := &http.Transport{Proxy: nil, ResponseHeaderTimeout: 30 * time.Second}
 			defer transport.CloseIdleConnections()
 			client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-			peer, _, err := terminalwebsocket.Dial(r.Context(), endpoint, http.Header{"Authorization": {"Bearer " + token}}, client)
+			peer, response, err := terminalwebsocket.Dial(r.Context(), endpoint, http.Header{"Authorization": {"Bearer " + token}}, client)
 			if err != nil {
+				if response != nil && response.Body != nil {
+					_ = response.Body.Close()
+				}
 				http.Error(w, "devbox terminal unavailable; reconnect and retry attachment", http.StatusBadGateway)
 				return
 			}

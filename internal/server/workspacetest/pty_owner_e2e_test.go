@@ -153,7 +153,10 @@ func TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E(t *testing.T) { //noli
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key + "/terminal?cols=80&rows=24"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -209,14 +212,20 @@ func TestWorkspaceRuntimeResizeOwnerFollowsLatestDeliberateClientE2E(t *testing.
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key + "/terminal"
-	first, _, err := websocket.Dial(
+	first, resp, err := websocket.Dial(
 		ctx, wsURL+"?cols=80&rows=24&resize_active=1", nil,
 	)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	defer first.Close(websocket.StatusNormalClosure, "done")
-	second, _, err := websocket.Dial(
+	second, resp, err := websocket.Dial(
 		ctx, wsURL+"?cols=100&rows=30&resize_active=1", nil,
 	)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	defer second.Close(websocket.StatusNormalClosure, "done")
 
@@ -290,7 +299,10 @@ func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key + "/terminal"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -332,7 +344,10 @@ func TestWorkspaceRuntimeSessionTerminalWebSocketBasePathE2E(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/kenn-forge/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key + "/terminal"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -372,12 +387,18 @@ func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
 		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key + "/terminal"
 
-	primingConn, _, err := websocket.Dial(ctx, wsURL, nil)
+	primingConn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	workspaceTerminalConnWriteRead(t, ctx, primingConn, "prime\n", "codex screen")
 	require.NoError(primingConn.Close(websocket.StatusNormalClosure, "primed"))
 
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -467,7 +488,10 @@ func TestWorkspaceRuntimeSessionTerminalAppliesInitialSizeE2E(t *testing.T) {
 		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key +
 		"/terminal?cols=177&rows=41"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -589,7 +613,10 @@ func TestWorkspaceRuntimePlainShellUsesPtyOwnerWhenTmuxUnavailableE2E(t *testing
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + session.Key + "/terminal?cols=80&rows=24"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -698,16 +725,12 @@ func TestWorkspacePtyOwnerTerminalRejectsConcurrentAttachmentsE2E(t *testing.T) 
 	require.NoError(err)
 	defer first.Close(websocket.StatusNormalClosure, "done")
 
-	second, resp, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.ID, "")
+	second, status, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.ID, "")
 	require.Error(err)
 	if second != nil {
 		second.Close(websocket.StatusNormalClosure, "done")
 	}
-	require.NotNil(resp)
-	assert.Equal(http.StatusConflict, resp.StatusCode)
-	if resp.Body != nil {
-		resp.Body.Close()
-	}
+	assert.Equal(http.StatusConflict, status)
 
 	require.NoError(first.Close(websocket.StatusNormalClosure, "done"))
 	third := workspaceTerminalDialEventually(t, ctx, ts.URL, ws.ID)
@@ -865,7 +888,10 @@ func TestWorkspaceRuntimePlainShellTerminalWebSocketE2E(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + shell.Key + "/terminal?cols=80&rows=24"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
@@ -920,7 +946,10 @@ func TestWorkspaceRuntimePlainShellAfterExitStartsFreshE2E(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/ws/v1/workspaces/" + ws.ID +
 		"/runtime/sessions/" + first.Key + "/terminal?cols=80&rows=24"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("exit\n")))
 	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -1137,13 +1166,21 @@ func workspaceTerminalDialWithQuery(
 	serverURL string,
 	workspaceID string,
 	query string,
-) (*websocket.Conn, *http.Response, error) {
+) (*websocket.Conn, int, error) {
 	wsURL := "ws" + strings.TrimPrefix(serverURL, "http") +
 		"/api/v1/workspaces/" + workspaceID + "/terminal"
 	if query != "" {
 		wsURL += "?" + query
 	}
-	return websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	status := 0
+	if resp != nil {
+		status = resp.StatusCode
+	}
+	return conn, status, err
 }
 
 func workspaceTerminalDialEventually(
@@ -1156,16 +1193,12 @@ func workspaceTerminalDialEventually(
 
 	var conn *websocket.Conn
 	require.Eventually(t, func() bool {
-		var resp *http.Response
 		var err error
-		conn, resp, err = workspaceTerminalDialWithQuery(
+		conn, _, err = workspaceTerminalDialWithQuery(
 			ctx, serverURL, workspaceID, "",
 		)
 		if err != nil && conn != nil {
 			conn.Close(websocket.StatusNormalClosure, "done")
-		}
-		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
 		}
 		return err == nil
 	}, 2*time.Second, 20*time.Millisecond)

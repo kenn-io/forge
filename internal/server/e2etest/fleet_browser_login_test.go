@@ -22,10 +22,11 @@ type fleetBrowserLogin struct {
 }
 
 // browserRequest sends one request the way a browser would: no redirect
-// following, and only the credentials the caller attaches.
+// following, and only the credentials the caller attaches. It closes the body
+// and returns the response metadata alongside the bytes it read.
 func (f *federatedForgesFixture) browserRequest(
 	t *testing.T, method, target, body string, decorate func(*http.Request),
-) (*http.Response, []byte) {
+) (http.Response, []byte) {
 	t.Helper()
 	var reader io.Reader
 	if body != "" {
@@ -48,13 +49,13 @@ func (f *federatedForgesFixture) browserRequest(
 	defer response.Body.Close()
 	payload, err := io.ReadAll(response.Body)
 	require.NoError(t, err)
-	return response, payload
+	return http.Response{StatusCode: response.StatusCode, Header: response.Header}, payload
 }
 
 func (f *federatedForgesFixture) requestBrowserLogin(
 	t *testing.T, source *federatedDaemonFixture, nodeID, body string,
 	credential func(*http.Request),
-) (*http.Response, []byte) {
+) (http.Response, []byte) {
 	t.Helper()
 	return f.browserRequest(t, http.MethodPost,
 		source.HTTP.URL+"/api/v1/fleet/hosts/"+url.PathEscape(nodeID)+"/browser-login",
@@ -88,7 +89,7 @@ func (f *federatedForgesFixture) followBrowserLogin(
 	return "", nil
 }
 
-func decodeBrowserLogin(t *testing.T, response *http.Response, body []byte) fleetBrowserLogin {
+func decodeBrowserLogin(t *testing.T, response http.Response, body []byte) fleetBrowserLogin {
 	t.Helper()
 	require.Equal(t, http.StatusOK, response.StatusCode, string(body))
 	var login fleetBrowserLogin

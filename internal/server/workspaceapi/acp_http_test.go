@@ -88,7 +88,10 @@ func (f *chatFixture) chatSocket(ctx context.Context) *websocket.Conn {
 	f.handler.RegisterTerminal(humago.New(mux, huma.DefaultConfig("test", "1")))
 	server := httptest.NewServer(mux)
 	f.t.Cleanup(server.Close)
-	conn, _, err := terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/workspaces/workspace/runtime/sessions/"+chatKey+"/terminal?protocol=acp", nil, nil) //nolint:bodyclose // upgraded response has no body
+	conn, response, err := terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/workspaces/workspace/runtime/sessions/"+chatKey+"/terminal?protocol=acp", nil, nil)
+	if err != nil && response != nil && response.Body != nil {
+		_ = response.Body.Close()
+	}
 	require.NoError(f.t, err)
 	f.t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
 	return conn

@@ -18,7 +18,7 @@ func TestRunHidesBackgroundWindows(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	//nolint:forbidigo,noctx // This test verifies Run configures an externally-created Cmd.
+	//nolint:noctx // This test verifies Run configures an externally-created Cmd.
 	cmd := exec.Command("cmd.exe", "/c", "exit 0")
 
 	err := Run(t.Context(), cmd, "hidden subprocess test")

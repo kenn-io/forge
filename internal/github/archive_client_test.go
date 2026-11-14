@@ -171,6 +171,7 @@ func TestGitHubArchiveRESTErrorsCarryProviderClassification(t *testing.T) {
 		}, want: platform.ErrRateLimited, wantReset: &resetAt},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -217,6 +218,7 @@ func TestGitHubArchiveGraphQLErrorsCarryProviderClassification(t *testing.T) {
 		}, want: platform.ErrRateLimited, wantReset: &resetAt},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

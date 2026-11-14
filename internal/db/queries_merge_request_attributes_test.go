@@ -38,6 +38,7 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 		{"missing conclusion", "success", `[{"status":"completed"}]`, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			d := openTestDB(t)
 			repo := insertTestRepo(t, d, "acme", "ci")
 			mr := testMR(repo, 1)
@@ -64,6 +65,7 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 		})
 	}
 	t.Run("review draft and locked ready", func(t *testing.T) {
+		t.Parallel()
 		d := openTestDB(t)
 		repo := insertTestRepo(t, d, "acme", "review")
 		for n := 1; n <= 4; n++ {
@@ -97,6 +99,7 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 		}
 	})
 	t.Run("merge queue", func(t *testing.T) {
+		t.Parallel()
 		d := openTestDB(t)
 		repo := insertTestRepo(t, d, "acme", "queue")
 		now := baseTime()
@@ -127,6 +130,7 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 		assert.Equal(t, []int{2, 1}, []int{rows[0].Number, rows[1].Number})
 	})
 	t.Run("merge queued", func(t *testing.T) {
+		t.Parallel()
 		d := openTestDB(t)
 		repo := insertTestRepo(t, d, "acme", "merging")
 		now := baseTime()
@@ -182,6 +186,7 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 		}
 	})
 	t.Run("narrowing with inclusion", func(t *testing.T) {
+		t.Parallel()
 		d := openTestDB(t)
 		repo := insertTestRepo(t, d, "acme", "filters")
 		// 1-3 involve the viewer and fail CI; 4 only fails CI and 5 only involves the viewer.
@@ -225,6 +230,7 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 		}
 	})
 	t.Run("stack conflicts", func(t *testing.T) {
+		t.Parallel()
 		for _, tc := range []struct {
 			name, sql string
 			want      []int

@@ -215,8 +215,6 @@ func (preemptingAdmission) Admit(
 
 func TestRunPassReportsProviderAttemptedDeferralsAsWork(t *testing.T) {
 	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
 	now := archiveTestTime()
 	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
 
@@ -225,6 +223,9 @@ func TestRunPassReportsProviderAttemptedDeferralsAsWork(t *testing.T) {
 		"budget deferral":  platform.ErrArchiveAttemptBudget,
 	} {
 		t.Run(name+" after a provider request", func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			require := require.New(t)
 			database := dbtest.Open(t)
 			archiveServiceSeedRepo(t, database, ref)
 			provider := newArchiveServiceProvider(ref.Platform, ref.Host)
@@ -244,6 +245,9 @@ func TestRunPassReportsProviderAttemptedDeferralsAsWork(t *testing.T) {
 	}
 
 	t.Run("request preempted by live work", func(t *testing.T) {
+		t.Parallel()
+		assert := assert.New(t)
+		require := require.New(t)
 		database := dbtest.Open(t)
 		archiveServiceSeedRepo(t, database, ref)
 		provider := newArchiveServiceProvider(ref.Platform, ref.Host)

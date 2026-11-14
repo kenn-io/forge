@@ -136,7 +136,7 @@ func TestPutWorklistReplacesItemsAndResetsRecordedState(t *testing.T) {
 	}
 }
 
-func TestPutWorklistRejectsMissingWorklistAndUnknownItems(t *testing.T) {
+func TestPutWorklistRejectsMissingWorklistAndUnknownItems(t *testing.T) { //nolint:tparallel // subtests attempt writes to the same worklist before the parent checks that its title and items are unchanged.
 	t.Parallel()
 	d := openTestDB(t)
 	ctx := t.Context()

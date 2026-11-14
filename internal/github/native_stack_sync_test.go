@@ -165,6 +165,7 @@ func TestRefreshGitHubNativeStackCacheStopsAfterTargetIsFoundOrPassed(t *testing
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			database := openTestDB(t)
@@ -275,6 +276,7 @@ func TestRefreshGitHubNativeStackCacheRefetchesUnobservableMembersOnSchedule(t *
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			database := openTestDB(t)
@@ -336,6 +338,7 @@ func TestRefreshGitHubNativeStackCacheExpiresConfirmationsReusedByNotModified(t 
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			database := openTestDB(t)

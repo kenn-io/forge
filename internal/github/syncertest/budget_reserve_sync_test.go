@@ -27,11 +27,9 @@ import (
 func TestEssentialReserveKeepsDiscoveryAliveAfterOptionalExhaustion(t *testing.T) {
 	t.Parallel()
 
-	assert := assert.New(t)
-	require := require.New(t)
-
 	run := func(t *testing.T, budget *ghclient.SyncBudget) *string {
 		t.Helper()
+		require := require.New(t)
 		ctx := t.Context()
 		d := openTestDB(t)
 
@@ -125,17 +123,19 @@ func TestEssentialReserveKeepsDiscoveryAliveAfterOptionalExhaustion(t *testing.T
 	}
 
 	t.Run("control without reserve stays starved", func(t *testing.T) {
+		t.Parallel()
 		title := run(t, ghclient.NewSyncBudget(200))
-		assert.Nil(title,
+		assert.Nil(t, title,
 			"without a reserve the exhausted ceiling must block discovery — "+
 				"a non-nil result means this test no longer discriminates")
 	})
 
 	t.Run("essential reserve discovers the new MR", func(t *testing.T) {
+		t.Parallel()
 		title := run(t, ghclient.NewSyncBudgetWithEssentialReserve(200))
-		require.NotNil(title,
+		require.NotNil(t, title,
 			"discovery must survive optional budget exhaustion")
-		assert.Equal("newly opened MR", *title)
+		assert.Equal(t, "newly opened MR", *title)
 	})
 }
 

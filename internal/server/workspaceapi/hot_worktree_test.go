@@ -29,6 +29,7 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 	t.Parallel()
 	for _, previousWorkspace := range []string{"existing", "deleted", "pre-library spare"} {
 		t.Run(previousWorkspace, func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			root := t.TempDir()
 			remote := filepath.Join(root, "acme", "widget.git")

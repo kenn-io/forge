@@ -266,7 +266,7 @@ func (q mergeRequestPlanQueryer) QueryContext(ctx context.Context, query string,
 	return q.queryer.QueryContext(ctx, query, args...)
 }
 
-func TestListStarredItemsQueryPlan(t *testing.T) {
+func TestListStarredItemsQueryPlan(t *testing.T) { //nolint:tparallel // subtests share the seeded starred-item database and query-plan fixture.
 	t.Parallel()
 	d := openTestDB(t)
 	repo := insertTestRepo(t, d, "acme", "tracked")
@@ -333,7 +333,7 @@ func TestListStarredItemsQueryPlan(t *testing.T) {
 	}
 }
 
-func TestListPagesManyRepositories(t *testing.T) {
+func TestListPagesManyRepositories(t *testing.T) { //nolint:tparallel // subtests share the many-repository database, statistics, and query-plan fixture.
 	t.Parallel()
 	d := openTestDB(t)
 	var repos []int64
@@ -423,7 +423,7 @@ func TestListPagesManyRepositories(t *testing.T) {
 	}
 }
 
-func TestListUnpagedOpenItemsAllowedRepositoryPlans(t *testing.T) {
+func TestListUnpagedOpenItemsAllowedRepositoryPlans(t *testing.T) { //nolint:tparallel // subtests share the many-repository database, statistics, and query-plan fixture.
 	t.Parallel()
 	d := openTestDB(t)
 	var repos []int64
@@ -466,7 +466,7 @@ func TestListUnpagedOpenItemsAllowedRepositoryPlans(t *testing.T) {
 	})
 }
 
-func TestListMergeRequestsCreatedQueryPlan(t *testing.T) {
+func TestListMergeRequestsCreatedQueryPlan(t *testing.T) { //nolint:tparallel // subtests must finish before Optimize changes the shared database statistics.
 	t.Parallel()
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -518,7 +518,7 @@ func TestListMergeRequestsCreatedQueryPlan(t *testing.T) {
 	}
 }
 
-func TestListMergeRequestsPageQueryPlan(t *testing.T) {
+func TestListMergeRequestsPageQueryPlan(t *testing.T) { //nolint:tparallel // subtests share the seeded large/small-repository database and query-plan fixture.
 	t.Parallel()
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -631,7 +631,7 @@ func (q numbersPlanQueryer) QueryContext(ctx context.Context, query string, args
 	return q.queryer.QueryContext(ctx, query, args...)
 }
 
-func TestListItemsByNumbersQueryPlan(t *testing.T) {
+func TestListItemsByNumbersQueryPlan(t *testing.T) { //nolint:tparallel // subtests share the seeded pull-request/issue database and number-filter fixture.
 	t.Parallel()
 	d := openTestDB(t)
 	repo := insertTestRepo(t, d, "acme", "large")

@@ -30,6 +30,7 @@ func TestClaimArchiveItemQueryPlan(t *testing.T) {
 	t.Parallel()
 	for _, state := range []string{"pending", "newest_pending", "complete"} {
 		t.Run(state, func(t *testing.T) {
+			t.Parallel()
 			d := openTestDB(t)
 			ctx := t.Context()
 			repoID := insertTestRepo(t, d, "acme", "archive")
@@ -1497,6 +1498,7 @@ func TestArchiveDeriveProgressStatusAndOrderedPhases(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			state := base
 			if tt.mutateState != nil {

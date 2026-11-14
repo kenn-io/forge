@@ -15,7 +15,6 @@ var testNow = time.Date(2026, 4, 8, 12, 0, 0, 0, time.UTC)
 func TestQueueItemWorstCaseCost(t *testing.T) {
 	t.Parallel()
 
-	assert := assert.New(t)
 	tests := []struct {
 		name string
 		item QueueItem
@@ -28,6 +27,8 @@ func TestQueueItemWorstCaseCost(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
 			assert.Equal(test.want, test.item.WorstCaseCost())
 		})
 	}

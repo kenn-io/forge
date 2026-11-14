@@ -118,6 +118,7 @@ func TestRelayProtocolWarningSurvivesReconnectUntilValidHint(t *testing.T) {
 	t.Parallel()
 	for _, failure := range []string{"payload", "version"} {
 		t.Run(failure, func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			database := openTestDB(t)
 			syncer := NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)

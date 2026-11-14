@@ -40,6 +40,7 @@ linters:
     # Tests
     - testifylint
     - usetesting
+    - tparallel
     - testableexamples
     # Policy
     - forbidigo

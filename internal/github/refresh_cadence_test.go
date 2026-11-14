@@ -55,6 +55,7 @@ func TestDailyIssueCheckRefreshesCommentsEvenWhenParentIsUnchanged(t *testing.T)
 
 	for _, fail := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "failure stays overdue"}[fail], func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			assert := assert.New(t)
 			ctx := t.Context()
@@ -103,6 +104,7 @@ func TestSyncChecksCommentsOncePerCycleAfterUnchangedDetail(t *testing.T) {
 		for _, listUnchanged := range []bool{false, true} {
 			listResult := map[bool]string{false: "list 200", true: "list 304"}[listUnchanged]
 			t.Run(kind+"/"+listResult, func(t *testing.T) {
+				t.Parallel()
 				require := require.New(t)
 				assert := assert.New(t)
 				ctx := t.Context()

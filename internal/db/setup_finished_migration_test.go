@@ -10,6 +10,7 @@ import (
 )
 
 func TestSetupFinishedMigrationMarksExistingInstalls(t *testing.T) {
+	t.Parallel()
 	const repo = `INSERT INTO forge_repos (
 		id, platform, platform_host, platform_repo_id,
 		owner, name, repo_path, owner_key, name_key, repo_path_key, lifecycle_state

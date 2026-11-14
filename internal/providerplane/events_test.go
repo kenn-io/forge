@@ -39,6 +39,7 @@ func TestEventClientDeliversWorkflowDispatchProgress(t *testing.T) {
 	t.Parallel()
 	for _, status := range []string{"unresolved", "located", "updated", "timed_out"} {
 		t.Run(status, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			payload := `{"dispatch_id":"dispatch-1","status":"` + status + `","run":{"id":"run-1"}}`

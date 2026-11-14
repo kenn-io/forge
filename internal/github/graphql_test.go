@@ -115,6 +115,7 @@ func TestConvertGQLCommentsPreservesMinimizedVisibility(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			visibility := tt.convert()
 			require.Contains(t, visibility, fullDatabaseID)
 			assert.Equal(t, platformgithub.CommentVisibility{Hidden: true, Reason: "OFF_TOPIC"}, visibility[fullDatabaseID])
@@ -151,6 +152,7 @@ func TestConvertGQLCommentsRecordsObservedVisibleComments(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			visibility := tt.convert()
 			require.Contains(t, visibility, int64(74))
 			assert.Equal(t, platformgithub.CommentVisibility{}, visibility[74])
@@ -238,6 +240,7 @@ func TestGraphQLFetcherPaginatesCommentVisibility(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var cursor string
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var request struct {
@@ -291,6 +294,7 @@ func TestGraphQLFetcherFetchesCurrentCommentVisibility(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, _ := io.ReadAll(r.Body)
 				assert.Contains(t, string(body), tt.queryKey)

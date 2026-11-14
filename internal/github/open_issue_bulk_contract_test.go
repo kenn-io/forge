@@ -70,6 +70,7 @@ func TestGitHubListOpenIssuesRejectsMalformedBulkResults(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			provider := newTestGitHubProvider(t, "github.com",
@@ -85,6 +86,7 @@ func TestGitHubListOpenIssuesRejectsMalformedBulkResults(t *testing.T) {
 	}
 
 	t.Run("well-formed list passes", func(t *testing.T) {
+		t.Parallel()
 		provider := newTestGitHubProvider(t, "github.com",
 			&mockClient{openIssues: []*gh.Issue{
 				bulkTestIssue(1, "https://api.github.com/repos/acme/widget"),

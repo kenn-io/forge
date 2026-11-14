@@ -53,7 +53,7 @@ func TestRecordHotMergeRequestViewMaintainsPersistedMRU(t *testing.T) {
 	}, got)
 }
 
-func TestHotMergeRequestTerminalEviction(t *testing.T) {
+func TestHotMergeRequestTerminalEviction(t *testing.T) { //nolint:tparallel // subtests mutate the same database hot-merge-request fixture.
 	t.Parallel()
 
 	require := require.New(t)

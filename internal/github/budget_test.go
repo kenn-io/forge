@@ -66,6 +66,7 @@ func TestSyncBudgetPacesOptionalAdmissionThroughTheWindow(t *testing.T) {
 		{"archive", (*SyncBudget).TrySpendArchive},
 	} {
 		t.Run(tc.name+" spend preserves live pace and flat ceiling", func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			b := NewSyncBudgetWithEssentialReserve(500)
 			now := b.windowStart.Add(10 * time.Minute)
@@ -181,7 +182,7 @@ func TestLocalArchiveSpendAvailablePreservesLiveFloor(t *testing.T) {
 	assert.Equal(22, budget.Remaining())
 }
 
-func TestSyncBudgetArchiveAdmissionRampsTowardReset(t *testing.T) {
+func TestSyncBudgetArchiveAdmissionRampsTowardReset(t *testing.T) { //nolint:tparallel // Subtests spend one shared budget in order before the parent checks its accumulated total.
 	t.Parallel()
 
 	assert := assert.New(t)

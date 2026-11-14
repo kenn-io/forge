@@ -12,7 +12,7 @@ import (
 
 // Exercise the real test binary, including TestMain, with hostile inherited Git
 // state pointing only at disposable fixtures. Never probe the developer's config.
-func TestCommitFixtureIgnoresInheritedGitState(t *testing.T) {
+func TestCommitFixtureIgnoresInheritedGitState(t *testing.T) { //nolint:tparallel // subprocess probes share the inherited repository, index, and protected configuration snapshots.
 	t.Parallel()
 	parent, originalHead, externalHome, globalConfig, systemConfig, executable, protected := arrangeInheritedGitFixture(t)
 	root := filepath.Dir(parent)

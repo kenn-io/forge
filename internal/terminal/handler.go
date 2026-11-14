@@ -35,7 +35,13 @@ type Handler struct {
 	Typed func(workspaceID string)
 
 	mu     sync.Mutex
-	active map[string]int
+	active map[string]*terminalSlot
+}
+
+// Attachments share the running process; idle stop must exclude every attachment.
+type terminalSlot struct {
+	attachments int
+	stopping    bool
 }
 
 func (h *Handler) ServeHTTP(
@@ -106,7 +112,7 @@ func (h *Handler) ServeHTTP(
 		"rows", rows,
 	)
 
-	releaseTerminal, err := h.claimTerminalSlot(id)
+	releaseTerminal, err := h.claimTerminalSlot(id, false)
 	if err != nil {
 		logWebsocketDebug(
 			"workspace terminal rejected: slot unavailable",
@@ -454,7 +460,7 @@ func writeTerminalExit(conn *websocket.Conn, exitCode int) {
 
 // StopUnattachedTerminal claims the workspace slot so an attach cannot restart it mid-pass.
 func (h *Handler) StopUnattachedTerminal(ctx context.Context, ws *db.Workspace) error {
-	release, err := h.claimTerminalSlot(ws.ID)
+	release, err := h.claimTerminalSlot(ws.ID, true)
 	if err != nil {
 		return nil
 	}
@@ -463,38 +469,49 @@ func (h *Handler) StopUnattachedTerminal(ctx context.Context, ws *db.Workspace) 
 }
 
 func (h *Handler) claimTerminalSlot(
-	id string,
+	id string, stopping bool,
 ) (func(), error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.active == nil {
-		h.active = make(map[string]int)
+		h.active = make(map[string]*terminalSlot)
 	}
-	if h.active[id] > 0 {
+	slot := h.active[id]
+	if slot == nil {
+		slot = &terminalSlot{}
+	}
+	if slot.stopping || (stopping && slot.attachments > 0) {
 		return nil, errors.New("workspace terminal already active")
 	}
-	h.active[id]++
-	active := h.active[id]
+	slot.stopping = stopping
+	if !stopping {
+		slot.attachments++
+	}
+	h.active[id] = slot
 	logWebsocketDebug(
 		"workspace terminal slot claimed",
 		"workspace_id", id,
-		"active", active,
+		"active", slot.attachments,
+		"stopping", slot.stopping,
 	)
 	var once sync.Once
 	return func() {
 		once.Do(func() {
 			h.mu.Lock()
 			defer h.mu.Unlock()
-			h.active[id]--
-			active := h.active[id]
-			if active <= 0 {
+			if stopping {
+				slot.stopping = false
+			} else {
+				slot.attachments--
+			}
+			if slot.attachments == 0 && !slot.stopping {
 				delete(h.active, id)
-				active = 0
 			}
 			logWebsocketDebug(
 				"workspace terminal slot released",
 				"workspace_id", id,
-				"active", active,
+				"active", slot.attachments,
+				"stopping", slot.stopping,
 			)
 		})
 	}, nil

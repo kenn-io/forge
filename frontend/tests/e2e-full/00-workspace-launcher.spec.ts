@@ -264,7 +264,9 @@ test.describe("embedded workspace launcher", () => {
         await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
         await page.getByRole("region", { name: "Session launcher" }).getByRole("button", { name: "Shell" }).click();
 
-        const terminal = page.locator(".workspace-tab-slot .terminal-container");
+        const terminal = page.locator(
+          '.workspace-tab-slot [data-pane-key^="session:"] .terminal-container, .workspace-tab-slot [data-pane-key="terminal"] .terminal-container',
+        );
         await expect(terminal).toBeVisible();
         await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
         await expect

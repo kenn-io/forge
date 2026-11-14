@@ -30,3 +30,7 @@ export function workspaceSessionWebSocketPath(workspaceId: string, sessionKey: s
 export function workspaceTmuxWebSocketPath(workspaceId: string, hostKey?: string): string {
   return `${wsBaseUrl()}${executionHostPrefix(hostKey)}/workspaces/${encodeURIComponent(workspaceId)}` + "/terminal";
 }
+
+export function workspaceBaseSessionKey(workspaceId: string): string {
+  return `${workspaceId}:@workspace`;
+}

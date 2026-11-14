@@ -2825,7 +2825,9 @@ test.describe("workspace launcher", () => {
     release();
 
     await expect(panel).toBeHidden();
-    await expect(page.locator(".terminal-container .xterm-helper-textarea")).toBeFocused();
+    await expect(
+      page.locator('[data-pane-key="session:ws-123:codex"] .terminal-container .xterm-helper-textarea'),
+    ).toBeFocused();
   });
 
   test("a failed launch reports its error and leaves the launching card usable", async ({ page }) => {
@@ -2854,8 +2856,17 @@ test.describe("workspace launcher", () => {
     ).toBeVisible();
   });
 
-  test("shows launch choices without attaching a terminal in an empty workspace", async ({ page }) => {
+  test("shows launch choices without launching a runtime session in an empty workspace", async ({ page }) => {
     const terminalSockets: string[] = [];
+    const sessionLaunches: string[] = [];
+    page.on("request", (request) => {
+      if (
+        request.method() === "POST" &&
+        new URL(request.url()).pathname === "/api/v1/workspaces/ws-123/runtime/sessions"
+      ) {
+        sessionLaunches.push(request.url());
+      }
+    });
     page.on("websocket", (socket) => {
       const url = socket.url();
       if (url.includes("/terminal")) {
@@ -2875,7 +2886,11 @@ test.describe("workspace launcher", () => {
       }),
     ).toBeVisible();
     await expect(page.getByText("Plain shell")).toHaveCount(0);
-    await expect.poll(() => terminalSockets.length).toBe(0);
+    await expect
+      .poll(() => terminalSockets.map((url) => new URL(url).pathname))
+      .toContain("/ws/v1/workspaces/ws-123/terminal");
+    expect(terminalSockets.filter((url) => url.includes("/runtime/sessions/"))).toHaveLength(0);
+    expect(sessionLaunches).toHaveLength(0);
   });
 
   test("shows a restored runtime session immediately", async ({ page }) => {
@@ -2918,7 +2933,7 @@ test.describe("workspace launcher", () => {
 
     const tabs = page.getByRole("region", { name: "Workflow panes" });
     await expect(tabs.getByRole("tab", { name: "Codex" })).toBeVisible();
-    await expect(page.locator(".terminal-container")).toBeVisible();
+    await expect(page.locator('[data-pane-key="session:ws-123:codex"] .terminal-container')).toBeVisible();
     await expect
       .poll(async () => {
         const urls = await page.evaluate(() =>
@@ -2968,7 +2983,7 @@ test.describe("workspace launcher", () => {
     await workflow.getByRole("button", { name: "Move Codex to terminal" }).click();
 
     await expect(workflow.getByRole("tab", { name: "Terminal" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator(".tabbed-panel-leaf .terminal-container")).toBeVisible();
+    await expect(workflow.locator('[data-pane-key="terminal"] .terminal-container')).toBeVisible();
   });
 
   test("keeps a closed top-docked terminal reachable when terminal sessions exist", async ({ page }) => {
@@ -3001,14 +3016,20 @@ test.describe("workspace launcher", () => {
     const terminalTab = workflow.getByRole("tab", {
       name: "Terminal",
     });
+    const workspaceTab = workflow.getByRole("tab", { name: "Workspace", exact: true });
+    const terminalPane = workflow.locator('[data-pane-key="terminal"]');
+    await expect(workspaceTab).toHaveAttribute("aria-selected", "true");
+    await expect(workflow.locator('[data-pane-key="home"] .terminal-container')).toBeVisible();
     await expect(terminalTab).toBeVisible();
-    await expect(terminalTab).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator(".tabbed-panel-leaf .terminal-container")).toHaveCount(0);
+    await expect(terminalTab).toHaveAttribute("aria-selected", "false");
+    await expect(terminalPane.locator(".terminal-container")).toHaveCount(0);
 
-    await workflow.getByRole("button", { name: "Open terminal panel", exact: true }).click();
+    await terminalTab.click();
 
+    await expect(workspaceTab).toHaveAttribute("aria-selected", "false");
     await expect(terminalTab).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator(".tabbed-panel-leaf .terminal-container")).toBeVisible();
+    await expect(terminalPane.getByRole("button", { name: "Close terminal panel", exact: true }).first()).toBeVisible();
+    await expect(terminalPane.locator(".terminal-container")).toBeVisible();
   });
 
   test("applies a workflow preset that restores the Shell workflow tab", async ({ page }) => {
@@ -3031,7 +3052,7 @@ test.describe("workspace launcher", () => {
       name: "Workflow panes",
     });
     await expect(workflow.getByRole("tab", { name: "Shell" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.locator(".tabbed-panel-leaf .terminal-container")).toBeVisible();
+    await expect(workflow.locator('[data-pane-key="session:ws-123:plain_shell"] .terminal-container')).toBeVisible();
   });
 
   test("renders workflow panes flush with the workspace stage", async ({ page }) => {
@@ -3364,7 +3385,7 @@ test.describe("workspace launcher", () => {
 
     const tabs = page.getByRole("region", { name: "Workflow panes" });
     await expect(tabs.getByRole("tab", { name: "Codex" })).toBeVisible();
-    await expect(page.locator(".terminal-container")).toBeVisible();
+    await expect(page.locator('[data-pane-key="session:ws-123:codex"] .terminal-container')).toBeVisible();
   });
 
   test("xterm workspace terminal sends resize frames after viewport changes", async ({ page }) => {
@@ -3450,7 +3471,7 @@ test.describe("workspace launcher", () => {
     await expect(launchTarget).toBeVisible();
     await launchTarget.click();
 
-    await expect(page.locator(".terminal-container .xterm")).toBeVisible();
+    await expect(page.locator('[data-pane-key="session:ws-123:codex"] .terminal-container .xterm')).toBeVisible();
     await page.evaluate(() => {
       for (const socket of (
         window as unknown as {
@@ -3470,18 +3491,21 @@ test.describe("workspace launcher", () => {
             window as unknown as {
               __kenn_forgeRecordedTerminalSockets: Array<{
                 sent: unknown[];
+                url: string;
               }>;
             }
-          ).__kenn_forgeRecordedTerminalSockets.some((socket) =>
-            socket.sent.some((frame) => {
-              if (typeof frame !== "string") return false;
-              try {
-                return JSON.parse(frame).type === "claim_resize";
-              } catch {
-                return false;
-              }
-            }),
-          ),
+          ).__kenn_forgeRecordedTerminalSockets
+            .filter((socket) => socket.url.includes("/runtime/sessions/ws-123%3Acodex/terminal"))
+            .some((socket) =>
+              socket.sent.some((frame) => {
+                if (typeof frame !== "string") return false;
+                try {
+                  return JSON.parse(frame).type === "claim_resize";
+                } catch {
+                  return false;
+                }
+              }),
+            ),
         ),
       )
       .toBe(true);
@@ -3507,19 +3531,22 @@ test.describe("workspace launcher", () => {
             window as unknown as {
               __kenn_forgeRecordedTerminalSockets: Array<{
                 sent: unknown[];
+                url: string;
               }>;
             }
-          ).__kenn_forgeRecordedTerminalSockets.some((socket) =>
-            socket.sent.some((frame) => {
-              if (typeof frame !== "string") return false;
-              try {
-                const type = JSON.parse(frame).type;
-                return type === "resize" || type === "claim_resize";
-              } catch {
-                return false;
-              }
-            }),
-          ),
+          ).__kenn_forgeRecordedTerminalSockets
+            .filter((socket) => socket.url.includes("/runtime/sessions/ws-123%3Acodex/terminal"))
+            .some((socket) =>
+              socket.sent.some((frame) => {
+                if (typeof frame !== "string") return false;
+                try {
+                  const type = JSON.parse(frame).type;
+                  return type === "resize" || type === "claim_resize";
+                } catch {
+                  return false;
+                }
+              }),
+            ),
         ),
       )
       .toBe(true);
@@ -3596,7 +3623,7 @@ test.describe("workspace launcher", () => {
     });
     await page.getByRole("button", { name: "Codex" }).click();
 
-    await expect(page.locator(".terminal-container .xterm")).toBeVisible();
+    await expect(page.locator('[data-pane-key="session:ws-123:codex"] .terminal-container .xterm')).toBeVisible();
     await expect
       .poll(() =>
         page.evaluate(() =>
@@ -3606,7 +3633,9 @@ test.describe("workspace launcher", () => {
         ),
       )
       .toBe(true);
-    await expect(page.locator(".terminal-container .xterm-screen canvas")).toHaveCount(0);
+    await expect(
+      page.locator('[data-pane-key="session:ws-123:codex"] .terminal-container .xterm-screen canvas'),
+    ).toHaveCount(0);
   });
 
   test("xterm workspace terminal normalizes Windows multiline paste as one payload", async ({ page }) => {
@@ -3684,7 +3713,7 @@ test.describe("workspace launcher", () => {
     await expect(launchTarget).toBeVisible();
     await launchTarget.click();
 
-    await expect(page.locator(".terminal-container .xterm")).toBeVisible();
+    await expect(page.locator('[data-pane-key="session:ws-123:codex"] .terminal-container .xterm')).toBeVisible();
     await page.evaluate(() => {
       for (const socket of (
         window as unknown as {
@@ -3697,7 +3726,7 @@ test.describe("workspace launcher", () => {
       }
     });
 
-    const terminal = page.locator(".terminal-container").first();
+    const terminal = page.locator('[data-pane-key="session:ws-123:codex"] .terminal-container');
     await terminal.evaluate((element) => {
       const event = new Event("paste", {
         bubbles: true,
@@ -3719,9 +3748,11 @@ test.describe("workspace launcher", () => {
             window as unknown as {
               __kenn_forgeRecordedTerminalSockets: Array<{
                 sent: unknown[];
+                url: string;
               }>;
             }
           ).__kenn_forgeRecordedTerminalSockets
+            .filter((socket) => socket.url.includes("/runtime/sessions/ws-123%3Acodex/terminal"))
             .flatMap((socket) => socket.sent)
             .map((frame) => (Array.isArray(frame) ? decoder.decode(new Uint8Array(frame)) : frame));
         }),

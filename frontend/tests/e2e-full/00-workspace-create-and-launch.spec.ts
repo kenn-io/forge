@@ -946,7 +946,10 @@ test.describe("workspace create-and-launch full stack", () => {
     }
   });
 
-  test("phone local base terminal survives pending and failed runtime discovery", async ({ page, browser }) => {
+  test("phone and desktop share the base terminal through pending and failed runtime discovery", async ({
+    page,
+    browser,
+  }) => {
     test.skip(
       !hasCommand("git") || !hasCommand("tmux", ["-V"]) || !hasCommand("sh", ["-c", ":"]),
       "git, tmux, and sh are required for the real workspace runtime flow",
@@ -965,29 +968,37 @@ test.describe("workspace create-and-launch full stack", () => {
       phoneContext = await browser.newContext({ ...devices["Pixel 7"] });
       const phonePage = await phoneContext.newPage();
       await trackSessionWebSockets(phonePage);
+      await trackSessionWebSockets(page);
+      let phoneOutput = "";
+      let desktopOutput = "";
+      phonePage.on("websocket", (socket) =>
+        socket.on("framereceived", ({ payload }) => {
+          phoneOutput += payload.toString();
+        }),
+      );
+      page.on("websocket", (socket) =>
+        socket.on("framereceived", ({ payload }) => {
+          desktopOutput += payload.toString();
+        }),
+      );
       const runtimeGate = new Promise<void>((resolve) => {
         releaseRuntime = resolve;
       });
       // Match the path alone: the showing page adds ?viewing=true.
-      await phonePage.route(
-        (url) => /^\/api\/v1\/workspaces\/[^/]+\/runtime$/.test(url.pathname),
-        async (route) => {
-          if (route.request().method() !== "GET") {
-            await route.continue();
-            return;
-          }
-          await runtimeGate;
-          await route.fulfill({
-            status: 503,
-            contentType: "application/problem+json",
-            body: JSON.stringify({
-              status: 503,
-              code: "serviceUnavailable",
-              detail: "runtime discovery unavailable",
-            }),
-          });
-        },
-      );
+      const runtimeRoute = async (route: import("@playwright/test").Route) => {
+        if (route.request().method() !== "GET") {
+          await route.continue();
+          return;
+        }
+        await runtimeGate;
+        await route.fulfill({
+          status: 503,
+          contentType: "application/problem+json",
+          body: JSON.stringify({ status: 503, code: "serviceUnavailable", detail: "runtime discovery unavailable" }),
+        });
+      };
+      await page.route((url) => /^\/api\/v1\/workspaces\/[^/]+\/runtime$/.test(url.pathname), runtimeRoute);
+      await phonePage.route((url) => /^\/api\/v1\/workspaces\/[^/]+\/runtime$/.test(url.pathname), runtimeRoute);
 
       const createResponsePromise = phonePage.waitForResponse(
         (response) =>
@@ -1016,28 +1027,50 @@ test.describe("workspace create-and-launch full stack", () => {
 
       const input = phonePage.getByRole("textbox", { name: "Terminal command" });
       await phonePage.getByRole("button", { name: "Open terminal composer" }).tap();
-      await input.fill("printf 'base-before-runtime\\n'");
+      await input.fill(
+        `sh -c 'printf "shared-base-process:%s\\n" "$$"; while read line; do printf "shared-base-reply:%s:%s\\n" "$$" "$line"; done'`,
+      );
       await phonePage.getByRole("button", { name: "Send terminal input" }).tap();
-      await expect
-        .poll(async () =>
-          (await workspaceBaseWebSockets(phonePage, created.id))
-            .flatMap((socket) => socket.sent)
-            .some((frame) => frame.includes("base-before-runtime")),
-        )
-        .toBe(true);
+      await expect.poll(() => phoneOutput).toMatch(/shared-base-process:\d+/);
+      const processId = /shared-base-process:(\d+)/.exec(phoneOutput)![1]!;
+      await page.goto(`${server.info.base_url}/terminal/${created.id}`);
+      const workspaceTab = page.getByRole("tab", { name: "Workspace", exact: true });
+      await expect(workspaceTab).toHaveAttribute("aria-selected", "true");
+      await expect.poll(() => desktopOutput).toContain(`shared-base-process:${processId}`);
+      const desktopInput = page.locator(".workspace-stage .xterm-helper-textarea");
+      await desktopInput.focus();
+      await page.keyboard.type("desktop-joined");
+      await page.keyboard.press("Enter");
+      await expect.poll(() => desktopOutput).toContain(`shared-base-reply:${processId}:desktop-joined`);
+      await expect.poll(() => phoneOutput).toContain(`shared-base-reply:${processId}:desktop-joined`);
+      expect(await runtimeTargets(api, created.id)).toEqual([]);
+      expect(await persistedRuntimeTargets(api, created.id)).toEqual([]);
+      await page.screenshot({ path: test.info().outputPath("workspace-base-desktop.png") });
 
       releaseRuntime();
       runtimeReleased = true;
       await expect(phonePage.getByText("Runtime sessions unavailable")).toBeVisible();
-      await input.fill("printf 'base-after-runtime-failure\\n'");
+      await expect(page.getByText("runtime discovery unavailable", { exact: true })).toBeVisible();
+      await input.fill("phone-after-failure");
       await phonePage.getByRole("button", { name: "Send terminal input" }).tap();
+      await expect.poll(() => desktopOutput).toContain(`shared-base-reply:${processId}:phone-after-failure`);
+      await page.reload();
+      await expect(workspaceTab).toHaveAttribute("aria-selected", "true");
+      await page.keyboard.press("Escape");
+      await desktopInput.focus();
+      // The init-script log starts fresh on reload, unlike the accumulated output buffer.
       await expect
         .poll(async () =>
-          (await workspaceBaseWebSockets(phonePage, created.id))
-            .flatMap((socket) => socket.sent)
-            .some((frame) => frame.includes("base-after-runtime-failure")),
+          (await workspaceBaseWebSockets(page, created.id)).some(
+            (entry) =>
+              !entry.closed && entry.sent.some((frame) => /"type":"(?:claim_resize|resize|refresh)"/.test(frame)),
+          ),
         )
         .toBe(true);
+      await page.keyboard.type("desktop-reopened");
+      await page.keyboard.press("Enter");
+      await expect.poll(() => phoneOutput).toContain(`shared-base-reply:${processId}:desktop-reopened`);
+      expect(await runtimeTargets(api, created.id)).toEqual([]);
     } finally {
       if (!runtimeReleased) releaseRuntime();
       await phoneContext?.close();

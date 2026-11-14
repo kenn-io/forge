@@ -350,6 +350,8 @@ func newProviderStateSpoke(
 }
 
 func serveHubAggregate(t *testing.T, aggregate fleet.NeutralSnapshot) http.HandlerFunc {
+	t.Helper()
+
 	return func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		assert.NoError(t, json.NewEncoder(writer).Encode(aggregate))

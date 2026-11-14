@@ -850,6 +850,8 @@ func TestStuckTerminalRestoreLeavesTimeForAgents(t *testing.T) {
 }
 
 func testStuckTerminalRestoreLeavesTimeForAgents(t *testing.T, agentWorkspace string) {
+	t.Helper()
+
 	require := require.New(t)
 	ctx := t.Context()
 	tmuxPath, err := exec.LookPath("tmux")

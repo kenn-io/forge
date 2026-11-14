@@ -190,7 +190,7 @@ func TestAPIMergePR405ReturnsGitHubMessage(t *testing.T) {
 	mock := &serverfake.MockGH{
 		MergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
 			return nil, &gh.ErrorResponse{
-				Response: &http.Response{StatusCode: 405},
+				Response: &http.Response{StatusCode: http.StatusMethodNotAllowed},
 				Message:  "Pull Request is not mergeable",
 			}
 		},
@@ -220,7 +220,7 @@ func TestAPIMergePR409ReturnsGitHubMessage(t *testing.T) {
 	mock := &serverfake.MockGH{
 		MergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
 			return nil, &gh.ErrorResponse{
-				Response: &http.Response{StatusCode: 409},
+				Response: &http.Response{StatusCode: http.StatusConflict},
 				Message:  "Head branch was modified",
 			}
 		},
@@ -249,7 +249,7 @@ func TestAPIMergePRNetworkErrorReturns502(t *testing.T) {
 
 	mock := &serverfake.MockGH{
 		MergePullRequestFn: func(_ context.Context, _, _ string, _ int, _, _, _ string) (*gh.PullRequestMergeResult, error) {
-			return nil, fmt.Errorf("connection refused")
+			return nil, errors.New("connection refused")
 		},
 	}
 
@@ -935,7 +935,7 @@ func TestAPIApproveWorkflowsReturnsUnderlyingApprovalErrorAfterPartialFailure(t 
 		ApproveWorkflowRunFn: func(_ context.Context, _, _ string, runID int64) error {
 			approvedRunIDs = append(approvedRunIDs, runID)
 			if runID == 92 {
-				return fmt.Errorf("permission denied")
+				return errors.New("permission denied")
 			}
 			return nil
 		},
@@ -1610,7 +1610,7 @@ func TestAPIEditPRCommentRejectsNilProviderPayload(t *testing.T) {
 	}}))
 	client := servertest.SetupTestClient(t, srv)
 
-	resp, err := client.HTTP.EditPrCommentWithResponse(t.Context(), &generated.EditPrCommentRequestOptions{PathParams: &generated.EditPrCommentPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1), CommentID: int64(commentID)}, Body: &generated.EditPrCommentBody{Body: "edited body"}})
+	resp, err := client.HTTP.EditPrCommentWithResponse(t.Context(), &generated.EditPrCommentRequestOptions{PathParams: &generated.EditPrCommentPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1), CommentID: commentID}, Body: &generated.EditPrCommentBody{Body: "edited body"}})
 	require.Error(err)
 	require.NotNil(resp)
 	require.Equal(http.StatusBadGateway, resp.StatusCode)
@@ -3072,7 +3072,7 @@ func TestAPIForgejoSyncPersistsCompleteLargeReviewDatasetBeforeSuccess(t *testin
 	provider.ReviewThreads = make([]platform.MergeRequestReviewThread, 101)
 	for i := range provider.ReviewThreads {
 		line := i + 1
-		id := fmt.Sprintf("%d", line)
+		id := strconv.Itoa(line)
 		provider.ReviewThreads[i] = platform.MergeRequestReviewThread{
 			ProviderThreadID: "thread-" + id, ProviderReviewID: "review-" + id,
 			ProviderCommentID: "comment-" + id, Body: "inline note " + id,

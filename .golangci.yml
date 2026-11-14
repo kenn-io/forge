@@ -25,21 +25,27 @@ linters:
     - noctx
     - durationcheck
     - exhaustive
+    - gocritic
     - makezero
     - reassign
     - copyloopvar
     # Modern and idiomatic Go
     - modernize
     - intrange
+    - usestdlibvars
+    - perfsprint
+    - unconvert
     - wastedassign
     - predeclared
     - errname
     - iface
     - recvcheck
+    - mirror
     - exptostd
     # Tests
     - testifylint
     - usetesting
+    - thelper
     - testableexamples
     # Policy
     - forbidigo
@@ -85,7 +91,7 @@ linters:
     nolintlint:
       require-explanation: true
       require-specific: true
-      allow-unused: true
+      allow-unused: false
     importas:
       no-unaliased: true
       alias:

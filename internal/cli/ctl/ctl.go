@@ -13,6 +13,7 @@ import (
 	pathpkg "path"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -541,7 +542,7 @@ func listSummaries[T, S any](cmd *cobra.Command, fetch listFetcher, stdout io.Wr
 	offset, _ := cmd.Flags().GetInt("offset")
 	query := collectChangedQuery(cmd, nil)
 	if limit > 0 {
-		query.Set("limit", fmt.Sprint(limit+1))
+		query.Set("limit", strconv.Itoa(limit+1))
 	}
 	current, body, err := fetch(cmd.Context(), http.MethodGet, path, query, nil)
 	if err != nil {

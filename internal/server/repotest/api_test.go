@@ -377,7 +377,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 	issueDirect := int64(11)
 	issueAsync := int64(12)
 
-	prResp, err := client.HTTP.SyncPullOnHostWithResponse(ctx, &generated.SyncPullOnHostRequestOptions{PathParams: &generated.SyncPullOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: int64(mrDirect)}})
+	prResp, err := client.HTTP.SyncPullOnHostWithResponse(ctx, &generated.SyncPullOnHostRequestOptions{PathParams: &generated.SyncPullOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: mrDirect}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, prResp.StatusCode, string(prResp.Body))
 	require.NotNil(prResp.JSON200)
@@ -386,7 +386,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 	assert.Equal("Sync direct provider MR", prResp.JSON200.MergeRequest.Title)
 	assert.Len(prResp.JSON200.Events, 1)
 
-	issueResp, err := client.HTTP.SyncIssueOnHostWithResponse(ctx, &generated.SyncIssueOnHostRequestOptions{PathParams: &generated.SyncIssueOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: int64(issueDirect)}})
+	issueResp, err := client.HTTP.SyncIssueOnHostWithResponse(ctx, &generated.SyncIssueOnHostRequestOptions{PathParams: &generated.SyncIssueOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: issueDirect}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, issueResp.StatusCode, string(issueResp.Body))
 	require.NotNil(issueResp.JSON200)
@@ -395,7 +395,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 	assert.Equal("Sync direct provider issue", issueResp.JSON200.Issue.Title)
 	assert.Len(issueResp.JSON200.Events, 1)
 
-	asyncPRResp, err := client.HTTP.EnqueuePrSyncOnHostWithResponse(ctx, &generated.EnqueuePrSyncOnHostRequestOptions{PathParams: &generated.EnqueuePrSyncOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: int64(mrAsync)}})
+	asyncPRResp, err := client.HTTP.EnqueuePrSyncOnHostWithResponse(ctx, &generated.EnqueuePrSyncOnHostRequestOptions{PathParams: &generated.EnqueuePrSyncOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: mrAsync}})
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, asyncPRResp.StatusCode, string(asyncPRResp.Body))
 	require.Eventually(func() bool {
@@ -407,7 +407,7 @@ func TestProviderRefSyncEndpointsUseGitLabNestedRepoPath(t *testing.T) {
 		return rowErr == nil && mr != nil && mr.Title == "Sync async provider MR"
 	}, 2*time.Second, 20*time.Millisecond)
 
-	asyncIssueResp, err := client.HTTP.EnqueueIssueSyncOnHostWithResponse(ctx, &generated.EnqueueIssueSyncOnHostRequestOptions{PathParams: &generated.EnqueueIssueSyncOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: int64(issueAsync)}})
+	asyncIssueResp, err := client.HTTP.EnqueueIssueSyncOnHostWithResponse(ctx, &generated.EnqueueIssueSyncOnHostRequestOptions{PathParams: &generated.EnqueueIssueSyncOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: issueAsync}})
 	require.NoError(err)
 	require.Equal(http.StatusAccepted, asyncIssueResp.StatusCode, string(asyncIssueResp.Body))
 	require.Eventually(func() bool {
@@ -1254,7 +1254,7 @@ func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
 	mock := &serverfake.MockGH{
 		GetIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
 			return nil, &gh.ErrorResponse{
-				Response: &http.Response{StatusCode: 404},
+				Response: &http.Response{StatusCode: http.StatusNotFound},
 				Message:  "Not Found",
 			}
 		},
@@ -1277,7 +1277,7 @@ func TestResolveItem_GitHubServerError(t *testing.T) {
 	mock := &serverfake.MockGH{
 		GetIssueFn: func(_ context.Context, _, _ string, _ int) (*gh.Issue, error) {
 			return nil, &gh.ErrorResponse{
-				Response: &http.Response{StatusCode: 500},
+				Response: &http.Response{StatusCode: http.StatusInternalServerError},
 				Message:  "Internal Server Error",
 			}
 		},
@@ -2024,7 +2024,7 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	commentID := *mrEvents[0].PlatformID
 	assert.Equal("Looks good", mrEvents[0].Body)
 
-	editCommentResp, err := client.HTTP.EditPrCommentOnHostWithResponse(ctx, &generated.EditPrCommentOnHostRequestOptions{PathParams: &generated.EditPrCommentOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7), CommentID: int64(commentID)}, Body: &generated.EditPrCommentOnHostBody{Body: "Still good"}})
+	editCommentResp, err := client.HTTP.EditPrCommentOnHostWithResponse(ctx, &generated.EditPrCommentOnHostRequestOptions{PathParams: &generated.EditPrCommentOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7), CommentID: commentID}, Body: &generated.EditPrCommentOnHostBody{Body: "Still good"}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, editCommentResp.StatusCode)
 	mrEvents, err = database.ListMREvents(ctx, mrSeven.ID)
@@ -2090,7 +2090,7 @@ func TestAPIGitealikeMutationsPersistThroughServer(t *testing.T) {
 	issueCommentID := *issueEvents[0].PlatformID
 	assert.Equal("Confirmed", issueEvents[0].Body)
 
-	editIssueCommentResp, err := client.HTTP.EditIssueCommentOnHostWithResponse(ctx, &generated.EditIssueCommentOnHostRequestOptions{PathParams: &generated.EditIssueCommentOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(8), CommentID: int64(issueCommentID)}, Body: &generated.EditIssueCommentOnHostBody{Body: "Confirmed again"}})
+	editIssueCommentResp, err := client.HTTP.EditIssueCommentOnHostWithResponse(ctx, &generated.EditIssueCommentOnHostRequestOptions{PathParams: &generated.EditIssueCommentOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(8), CommentID: issueCommentID}, Body: &generated.EditIssueCommentOnHostBody{Body: "Confirmed again"}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, editIssueCommentResp.StatusCode)
 	issueEvents, err = database.ListIssueEvents(ctx, issueEight.ID)

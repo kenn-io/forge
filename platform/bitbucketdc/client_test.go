@@ -22,6 +22,8 @@ func (credential) Invalidate(string)                       {}
 var ref = platform.RepoRef{Platform: platform.KindBitbucket, Host: "bitbucket.example.com", Owner: "PROJECT", Name: "widgets", Key: platform.RepositoryIDKey(42)}
 
 func client(t *testing.T, handler func(*http.Request) (int, string)) *bitbucketdc.Client {
+	t.Helper()
+
 	assert := assert.New(t)
 	t.Helper()
 	c, err := bitbucketdc.NewClient(ref.Host, credential("user:token"), platform.RoundTripFunc(func(r *http.Request) (*http.Response, error) {

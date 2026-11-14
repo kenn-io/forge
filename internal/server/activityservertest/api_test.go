@@ -74,6 +74,8 @@ func setupTestServerWithMock(t *testing.T, mock *serverfake.MockGH) (*server.Ser
 func setupTestServerWithRepos(
 	t *testing.T, mock *serverfake.MockGH, repos []ghclient.RepoRef,
 ) (*server.Server, *db.DB, *ghclient.Syncer) {
+	t.Helper()
+
 	return setupTestServerWithReposAndOptions(t, mock, repos, server.ServerOptions{})
 }
 

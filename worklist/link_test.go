@@ -144,6 +144,8 @@ func TestFragmentRefusesAListTooLargeForForgeToRead(t *testing.T) {
 // oversizedFragment encodes, without Fragment's own bound, a list whose
 // fragment is longer than Forge accepts.
 func oversizedFragment(t *testing.T) string {
+	t.Helper()
+
 	data, err := json.Marshal(incompressibleList())
 	require.NoError(t, err)
 	var buf bytes.Buffer

@@ -30,7 +30,7 @@ func bulkPRRefreshTargets(
 	ids = make([]string, 0, len(listed))
 	for _, item := range listed {
 		row, found := byNumber[item.Number]
-		if !found || storedBehindList(row, item.UpdatedAt, string(item.State), item.HeadSHA, item.BaseSHA) ||
+		if !found || storedBehindList(row, item.UpdatedAt, item.State, item.HeadSHA, item.BaseSHA) ||
 			row.DetailFetchedAt == nil || now.Sub(*row.DetailFetchedAt) > defaultRefetchInterval {
 			ids = append(ids, item.PlatformExternalID)
 		} else {

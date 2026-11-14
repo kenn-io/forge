@@ -35,6 +35,8 @@ import (
 func setupTestServerWithConfig(
 	t *testing.T,
 ) (*server.Server, *db.DB, string) {
+	t.Helper()
+
 	return setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
@@ -52,6 +54,8 @@ func setupTestServerWithConfigContent(
 	cfgContent string,
 	mock *serverfake.MockGH,
 ) (*server.Server, *db.DB, string) {
+	t.Helper()
+
 	return setupTestServerWithConfigContentAndOptions(
 		t, cfgContent, mock, server.ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)

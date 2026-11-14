@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -71,8 +72,8 @@ func TestGitAccessFailureReasonClassifiesOnlyCredentialFailures(t *testing.T) {
 		{name: "missing token", err: fmt.Errorf("resolve: %w", tokenauth.ErrMissingToken), want: GitAccessCredentialUnavailable},
 		{name: "missing route", err: fmt.Errorf("resolve: %w", &MissingRouteError{Host: "github.com", Owner: "acme", Name: "widget"}), want: GitAccessCredentialUnavailable},
 		{name: "required credential", err: fmt.Errorf("clone: %w", gitclone.ErrCredentialUnavailable), want: GitAccessCredentialUnavailable},
-		{name: "rejected token", err: fmt.Errorf("git clone --bare: fatal: Authentication failed for 'https://github.com/acme/widget.git/'"), want: GitAccessAuthenticationFailed},
-		{name: "network", err: fmt.Errorf("git fetch: Could not resolve host: github.com"), want: ""},
+		{name: "rejected token", err: errors.New("git clone --bare: fatal: Authentication failed for 'https://github.com/acme/widget.git/'"), want: GitAccessAuthenticationFailed},
+		{name: "network", err: errors.New("git fetch: Could not resolve host: github.com"), want: ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -481,7 +481,7 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	providerName := "gitlab"
 	providerHost := "gitlab.example.com:8443"
 	mrNumber := int64(7)
-	pullResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: int64(mrNumber)}})
+	pullResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: mrNumber}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, pullResp.StatusCode)
 	require.NotNil(pullResp.JSON200)
@@ -492,7 +492,7 @@ func TestGitLabSyncCoversRepositoryItemsEventsOverviewAndCI(t *testing.T) {
 	assert.Len(pullResp.JSON200.Events, 1)
 
 	issueNumber := int64(11)
-	issueResp, err := client.HTTP.GetIssueOnHostWithResponse(ctx, &generated.GetIssueOnHostRequestOptions{PathParams: &generated.GetIssueOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: int64(issueNumber)}})
+	issueResp, err := client.HTTP.GetIssueOnHostWithResponse(ctx, &generated.GetIssueOnHostRequestOptions{PathParams: &generated.GetIssueOnHostPath{PlatformHost: providerHost, Provider: providerName, Owner: "Group/SubGroup", Name: "Project.Special", Number: issueNumber}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, issueResp.StatusCode)
 	require.NotNil(issueResp.JSON200)

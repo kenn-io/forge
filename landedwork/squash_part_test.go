@@ -118,7 +118,8 @@ func TestRebaseOfPartOfListedSourceIsNotASquash(t *testing.T) {
 				r.Run("cherry-pick", id)
 			}
 			f.head = r.Head()
-			f.source = append(source, late)
+			f.source = source
+			f.source = append(f.source, late)
 			ctx, p := f.prepare(t)
 			e := fixtureEvidence(f, p, "")
 			e.Candidates[0].MethodEvidence = ""

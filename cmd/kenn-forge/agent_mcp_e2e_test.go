@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -126,7 +127,7 @@ func TestAgentMCPLoopbackWithPublicListenerE2E(t *testing.T) {
 			require.NoError(t, err)
 			client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 10 * time.Second}
 			t.Cleanup(client.CloseIdleConnections)
-			url := fmt.Sprintf("http://%s/forge/api/v1/settings/agents/test-acp", net.JoinHostPort(tc.host, fmt.Sprint(port)))
+			url := fmt.Sprintf("http://%s/forge/api/v1/settings/agents/test-acp", net.JoinHostPort(tc.host, strconv.Itoa(port)))
 			payload, err := json.Marshal(map[string]any{"command": []string{executable, "-test.run=^TestACPAgentMCPHelper$"}})
 			require.NoError(t, err)
 			var result struct {

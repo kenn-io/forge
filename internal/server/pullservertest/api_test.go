@@ -52,6 +52,8 @@ func setupTestServerWithMock(t *testing.T, mock *serverfake.MockGH) (*server.Ser
 func setupTestServerWithRepos(
 	t *testing.T, mock *serverfake.MockGH, repos []ghclient.RepoRef,
 ) (*server.Server, *db.DB, *ghclient.Syncer) {
+	t.Helper()
+
 	return setupTestServerWithReposAndOptions(t, mock, repos, server.ServerOptions{})
 }
 
@@ -654,7 +656,7 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 	assert.Zero(restCommentCalls.Load())
-	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
@@ -699,7 +701,7 @@ func TestE2EPRDetailPersistsCombinedGraphQLDiscussions(t *testing.T) {
 	reviewThreadsPageInfo = `{"hasNextPage":true,"endCursor":"thread-cursor"}`
 	syncer.RunOnce(ctx)
 	assert.Zero(restCommentCalls.Load())
-	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
@@ -840,7 +842,7 @@ func TestE2EGraphQLBulkSyncPersistsWorkflowApprovalForForkPR(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
@@ -950,7 +952,7 @@ func TestE2EGraphQLBulkSyncKeepsNewestCICheckBySuiteCreatedAt(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)

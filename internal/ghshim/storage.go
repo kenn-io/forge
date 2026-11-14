@@ -2,7 +2,7 @@ package ghshim
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"go.kenn.io/forge/internal/db"
 )
@@ -18,12 +18,12 @@ func Read(ctx context.Context, database *db.DB, repo db.Repo, q Query) ([]byte, 
 			return nil, err
 		}
 		if pr == nil {
-			return nil, fmt.Errorf("pull request is not stored")
+			return nil, errors.New("pull request is not stored")
 		}
 		pulls = []db.MergeRequest{*pr}
 	} else {
 		if repo.LastSyncCompletedAt == nil || repo.LastSyncError != "" {
-			return nil, fmt.Errorf("repository inventory is unavailable")
+			return nil, errors.New("repository inventory is unavailable")
 		}
 		if q.State != "open" {
 			states, err := database.ListArchiveRepoStates(ctx, []int64{repo.ID})
@@ -35,7 +35,7 @@ func Read(ctx context.Context, database *db.DB, repo db.Repo, q Query) ([]byte, 
 			// point where every discovered pull request has a stored row.
 			if len(states) != 1 || states[0].CollectionMode != db.ArchiveCollectionModeFull ||
 				states[0].InitialCompletedAt == nil {
-				return nil, fmt.Errorf("historical inventory is incomplete")
+				return nil, errors.New("historical inventory is incomplete")
 			}
 		}
 		// ProviderState follows gh: merge times mean merged, and locking leaves state unchanged.

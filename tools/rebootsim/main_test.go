@@ -24,14 +24,20 @@ func TestSeedRefusesDestinationsInsideRepositories(t *testing.T) {
 	t.Parallel()
 	cases := map[string]func(t *testing.T, repo *gitfixture.Repository) string{
 		"data folder inside a checkout": func(t *testing.T, repo *gitfixture.Repository) string {
+			t.Helper()
+
 			return mkdir(t, filepath.Join(repo.Dir, "data"))
 		},
 		"symlinked data folder": func(t *testing.T, repo *gitfixture.Repository) string {
+			t.Helper()
+
 			link := filepath.Join(t.TempDir(), "data")
 			require.NoError(t, os.Symlink(mkdir(t, filepath.Join(repo.Dir, "data")), link))
 			return link
 		},
 		"symlinked fixture folder": func(t *testing.T, repo *gitfixture.Repository) string {
+			t.Helper()
+
 			data := t.TempDir()
 			mkdir(t, filepath.Join(data, "worktrees"))
 			require.NoError(t, os.Symlink(mkdir(t, filepath.Join(repo.Dir, "sim")),
@@ -39,6 +45,8 @@ func TestSeedRefusesDestinationsInsideRepositories(t *testing.T) {
 			return data
 		},
 		"linked worktree": func(t *testing.T, repo *gitfixture.Repository) string {
+			t.Helper()
+
 			worktree := filepath.Join(t.TempDir(), "linked")
 			gitfixture.Run(t, repo.Dir, "worktree", "add", "-b", "linked", worktree)
 			return mkdir(t, filepath.Join(worktree, "data"))

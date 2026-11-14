@@ -348,7 +348,7 @@ func TestAPIEditIssueCommentRejectsNilProviderPayload(t *testing.T) {
 	}}))
 	client := servertest.SetupTestClient(t, srv)
 
-	resp, err := client.HTTP.EditIssueCommentWithResponse(t.Context(), &generated.EditIssueCommentRequestOptions{PathParams: &generated.EditIssueCommentPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5), CommentID: int64(commentID)}, Body: &generated.EditIssueCommentBody{Body: "edited body"}})
+	resp, err := client.HTTP.EditIssueCommentWithResponse(t.Context(), &generated.EditIssueCommentRequestOptions{PathParams: &generated.EditIssueCommentPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(5), CommentID: commentID}, Body: &generated.EditIssueCommentBody{Body: "edited body"}})
 	require.Error(err)
 	require.NotNil(resp)
 	require.Equal(http.StatusBadGateway, resp.StatusCode)

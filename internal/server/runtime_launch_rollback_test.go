@@ -711,6 +711,8 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 					"/worktrees/" + worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
+				t.Helper()
+
 				return serverfake.MustMarshal(t, map[string]any{"target_key": "helper"})
 			},
 		},
@@ -721,6 +723,8 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 					"/worktrees/" + worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
+				t.Helper()
+
 				return serverfake.MustMarshal(t, map[string]any{
 					"session_key": "surface:project:rollback:command",
 					"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
@@ -803,6 +807,8 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailurePreservesReusedTmuxSessio
 					"/worktrees/" + worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
+				t.Helper()
+
 				return serverfake.MustMarshal(t, map[string]any{
 					"session_key": "surface:project:rollback:reused",
 					"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
@@ -995,6 +1001,8 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 				return "/api/v1/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
+				t.Helper()
+
 				return serverfake.MustMarshal(t, map[string]any{
 					"session_key": "surface:exit-race:host",
 					"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},
@@ -1040,6 +1048,8 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 					"/worktrees/" + fixture.worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
+				t.Helper()
+
 				return serverfake.MustMarshal(t, map[string]any{"target_key": "helper"})
 			},
 			scope: func(fixture runtimeLaunchRollbackFixture) string {
@@ -1061,6 +1071,8 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 					"/worktrees/" + fixture.worktreeID + "/runtime/sessions"
 			},
 			body: func(t *testing.T) []byte {
+				t.Helper()
+
 				return serverfake.MustMarshal(t, map[string]any{
 					"session_key": "surface:exit-race:project",
 					"command":     []string{"/bin/sh", "-lc", "exec sleep 60"},

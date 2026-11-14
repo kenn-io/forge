@@ -111,7 +111,7 @@ func effectiveLegacyDatabaseDestination(configuredDir string) (string, error) {
 		return configuredDir, nil
 	}
 	if strings.TrimSpace(dataDir) == "" {
-		return "", fmt.Errorf("KENN_FORGE_DATA_DIR must not be empty")
+		return "", errors.New("KENN_FORGE_DATA_DIR must not be empty")
 	}
 	return CanonicalDataDir(dataDir)
 }

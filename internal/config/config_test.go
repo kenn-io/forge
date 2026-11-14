@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -247,7 +248,7 @@ func TestMCPSharesMainListenerOnlyWhenSocketsCollide(t *testing.T) {
 
 func TestMCPConfigRoundTrip(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
-		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
 			cfg, saved := roundTripConfigString(t, fmt.Sprintf("host = \"127.0.0.1\"\n[mcp]\nenabled = %t\nport = 9192\ndiff_cache_mb = 256\n", enabled))
 			assert.Equal(t, enabled, cfg.MCPEnabled())
 			assert.Equal(t, MCP{Enabled: new(enabled), Port: 9192, DiffCacheMB: 256}, saved.MCP)

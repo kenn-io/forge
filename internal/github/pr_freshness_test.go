@@ -71,6 +71,8 @@ func (s *freshnessGraphQLServer) set(update func(*freshnessGraphQLServer)) {
 }
 
 func (s *freshnessGraphQLServer) handler(t *testing.T) http.Handler {
+	t.Helper()
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Query     string         `json:"query"`

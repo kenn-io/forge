@@ -2013,6 +2013,8 @@ func SeedStackedPR(
 	owner, name string, number int,
 	head, base string, state db.MergeRequestState, ci, review string,
 ) int64 {
+	t.Helper()
+
 	return SeedStackedPRState(t, database, owner, name, number, head, base, state, ci, review, false, "")
 }
 
@@ -2022,6 +2024,8 @@ func SeedStackedPRDraft(
 	head, base string, state db.MergeRequestState, ci, review string,
 	isDraft bool,
 ) int64 {
+	t.Helper()
+
 	return SeedStackedPRState(t, database, owner, name, number, head, base, state, ci, review, isDraft, "")
 }
 

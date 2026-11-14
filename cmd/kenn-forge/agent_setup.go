@@ -164,7 +164,7 @@ func withTokenGuidance(item agentsetup.Item, info mcpQuickstartInfo) agentsetup.
 	item.Commands = func() (agenthook.Commands, error) {
 		cmds, err := commands()
 		cmds.POSIX = fmt.Sprintf("export %s=\"$(cat %s)\"\n%s", mcpTokenEnvironment, shellquote.Join(path), cmds.POSIX)
-		cmds.PowerShell = fmt.Sprintf("$env:%s = (Get-Content -Raw '%s').Trim()\n%s", mcpTokenEnvironment, path, cmds.PowerShell)
+		cmds.PowerShell = fmt.Sprintf("$env:%s = (Get-Content -Raw -LiteralPath '%s').Trim()\n%s", mcpTokenEnvironment, strings.ReplaceAll(path, "'", "''"), cmds.PowerShell)
 		return cmds, err
 	}
 	return item

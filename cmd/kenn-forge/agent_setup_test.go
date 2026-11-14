@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -337,6 +338,30 @@ func TestAgentSetupAuthGuidance(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, out, "export KENN_FORGE_API_TOKEN=\"$(cat /tmp/token)\"")
 	})
+}
+
+func TestAgentSetupPowerShellTokenPath(t *testing.T) {
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		t.Skip("pwsh is not installed")
+	}
+	t.Setenv(mcpTokenEnvironment, "")
+	for _, name := range []string{"token's file", "token[1]"} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), name)
+			require.NoError(t, os.WriteFile(path, []byte("example-token\n"), 0o600))
+			info := daemonMCPQuickstart(mcpSettingsInfo{Enabled: true, ActiveURL: "http://127.0.0.1:8091/mcp", ActiveRequiresAuth: true}, path)
+			item := forgeSetupMCP("codex", info, nil, "kenn-forge agent setup", config.DefaultConfigPath())
+			commands, err := item.Commands()
+			require.NoError(t, err)
+			line, _, found := strings.Cut(commands.PowerShell, "\n")
+			require.True(t, found)
+			cmd := procutil.CommandContext(t.Context(), pwsh, "-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference = 'Stop'\n"+line+"\n[Console]::Write($env:KENN_FORGE_API_TOKEN)")
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+			assert.Equal(t, "example-token", string(out))
+		})
+	}
 }
 
 func TestAgentSetupCursor(t *testing.T) {

@@ -12,10 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/apiclient/generated"
-	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/daemonclient"
+
+	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/kit/agenthook"
 )
 

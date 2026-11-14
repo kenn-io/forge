@@ -181,7 +181,6 @@ func newAgentHookCommand(stdin io.Reader, stdout io.Writer) *cobra.Command {
 	run.Flags().StringVar(&agent, "agent", "", "agent hook integration")
 	run.Flags().StringVar(&configPath, "config", config.DefaultConfigPath(), "kenn-forge config path")
 	run.Flags().StringVar(&source, "source", "", "hook source marker")
-
 	cmd.AddCommand(run)
 
 	for _, action := range []string{"install", "uninstall"} {

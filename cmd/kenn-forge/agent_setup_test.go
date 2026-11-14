@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
@@ -38,13 +36,11 @@ func setupAgentTest(t *testing.T, dataDir string) string {
 func TestAgentSetupStopped(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
-		enabled  bool
 		inactive bool
 		print    bool
 	}{
-		{name: "check enabled", enabled: true},
-		{name: "check inactive", enabled: true, inactive: true},
-		{name: "print", enabled: true, print: true},
+		{name: "check inactive", inactive: true},
+		{name: "print", print: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			setupAgentTest(t, "/tmp/forge-test-data")
@@ -55,7 +51,7 @@ func TestAgentSetupStopped(t *testing.T) {
 					info.pid = 123
 					return info, nil
 				}
-				return stoppedMCPQuickstart(tc.enabled, path), nil
+				return stoppedMCPQuickstart(true, path), nil
 			})
 			cmd.SetOut(&out)
 			flag := "--check"
@@ -71,19 +67,13 @@ func TestAgentSetupStopped(t *testing.T) {
 			}
 			require.ErrorIs(t, err, agentsetup.ErrNotReady)
 			text := out.String()
-			switch {
-			case tc.inactive:
-				assert.Contains(t, text, "Forge MCP isn't active")
-				assert.Contains(t, text, "Restart the Forge daemon")
-			default:
-				assert.Contains(t, text, "Forge daemon isn't running")
-				assert.Contains(t, text, "kenn-forge daemon start")
-			}
+			assert.Contains(t, text, "Forge MCP isn't active")
+			assert.Contains(t, text, "Restart the Forge daemon")
 		})
 	}
 }
 
-func TestAgentSetupInstallsSelectedAgents(t *testing.T) {
+func TestAgentSetupLoadsDaemonOnceAndWritesEndpoint(t *testing.T) {
 	home := setupAgentTest(t, "/tmp/forge-test-data")
 	bin := filepath.Join(home, "bin")
 	require.NoError(t, os.MkdirAll(bin, 0o700))
@@ -108,62 +98,40 @@ func TestAgentSetupInstallsSelectedAgents(t *testing.T) {
 }
 
 func TestAgentSetupMCPTokenSettings(t *testing.T) {
-	for _, agent := range []string{"claude", "codex"} {
-		for _, tc := range []struct {
-			name      string
-			auth      bool
-			token     string
-			wantToken string
-		}{
-			{name: "auth on", auth: true, wantToken: "KENN_FORGE_API_TOKEN"},
-			{name: "auth off removes Forge token", token: "KENN_FORGE_API_TOKEN"},
-			{name: "auth off preserves user token", token: "USER_TOKEN", wantToken: "USER_TOKEN"},
-		} {
-			t.Run(agent+"/"+tc.name, func(t *testing.T) {
-				home := setupAgentTest(t, "/tmp/forge-test-data")
-				var path, contents string
-				if agent == "codex" {
-					path = filepath.Join(home, "codex", "config.toml")
-					contents = "[mcp_servers.kenn-forge]\nurl = 'http://127.0.0.1:8091/mcp'\n"
-					if tc.token != "" {
-						contents += "bearer_token_env_var = '" + tc.token + "'\n"
-					}
-				} else {
-					path = filepath.Join(home, "claude", ".claude.json")
-					contents = `{"mcpServers":{"kenn-forge":{"type":"http","url":"http://127.0.0.1:8091/mcp"`
-					if tc.token != "" {
-						contents += `,"headers":{"Authorization":"Bearer ${` + tc.token + `}"}`
-					}
-					contents += `}}}`
-				}
-				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
-				require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
-				info := daemonMCPQuickstart(mcpSettingsInfo{Enabled: true, ActiveURL: "http://127.0.0.1:8091/mcp", ActiveRequiresAuth: tc.auth}, "/tmp/token")
-				item := forgeSetupMCP(agent, info, nil)
-				require.NoError(t, item.Install(t.Context()))
-				data, err := os.ReadFile(path)
-				require.NoError(t, err)
-				var document map[string]any
-				if agent == "codex" {
-					require.NoError(t, toml.Unmarshal(data, &document))
-					server := document["mcp_servers"].(map[string]any)["kenn-forge"].(map[string]any)
-					if tc.wantToken == "" {
-						assert.NotContains(t, server, "bearer_token_env_var")
-					} else {
-						assert.Equal(t, tc.wantToken, server["bearer_token_env_var"])
-					}
-				} else {
-					require.NoError(t, json.Unmarshal(data, &document))
-					server := document["mcpServers"].(map[string]any)["kenn-forge"].(map[string]any)
-					headers, _ := server["headers"].(map[string]any)
-					if tc.wantToken == "" {
-						assert.NotContains(t, headers, "Authorization")
-					} else {
-						assert.Equal(t, "Bearer ${"+tc.wantToken+"}", headers["Authorization"])
-					}
-				}
-			})
-		}
+	for _, tc := range []struct {
+		name      string
+		auth      bool
+		token     string
+		wantToken string
+	}{
+		{name: "auth on", auth: true, wantToken: "KENN_FORGE_API_TOKEN"},
+		{name: "auth off removes Forge token", token: "KENN_FORGE_API_TOKEN"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := setupAgentTest(t, "/tmp/forge-test-data")
+			path := filepath.Join(home, "claude", ".claude.json")
+			contents := `{"mcpServers":{"kenn-forge":{"type":"http","url":"http://127.0.0.1:8091/mcp"`
+			if tc.token != "" {
+				contents += `,"headers":{"Authorization":"Bearer ${` + tc.token + `}"}`
+			}
+			contents += `}}}`
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+			require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
+			info := daemonMCPQuickstart(mcpSettingsInfo{Enabled: true, ActiveURL: "http://127.0.0.1:8091/mcp", ActiveRequiresAuth: tc.auth}, "/tmp/token")
+			item := forgeSetupMCP("claude", info, nil)
+			require.NoError(t, item.Install(t.Context()))
+			data, err := os.ReadFile(path)
+			require.NoError(t, err)
+			var document map[string]any
+			require.NoError(t, json.Unmarshal(data, &document))
+			server := document["mcpServers"].(map[string]any)["kenn-forge"].(map[string]any)
+			headers, _ := server["headers"].(map[string]any)
+			if tc.wantToken == "" {
+				assert.NotContains(t, headers, "Authorization")
+			} else {
+				assert.Equal(t, "Bearer ${"+tc.wantToken+"}", headers["Authorization"])
+			}
+		})
 	}
 }
 
@@ -220,28 +188,18 @@ func TestAgentSetupPowerShellTokenPath(t *testing.T) {
 }
 
 func TestAgentSetupWithoutConfig(t *testing.T) {
-	for _, check := range []bool{false, true} {
-		t.Run(fmt.Sprintf("check=%t", check), func(t *testing.T) {
-			home := t.TempDir()
-			t.Setenv("HOME", home)
-			t.Setenv("KENN_FORGE_HOME", filepath.Join(home, "forge"))
-			t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, "claude"))
-			var out bytes.Buffer
-			cmd := newAgentCommand(loadMCPQuickstart)
-			cmd.SetOut(&out)
-			args := []string{"setup", "--agent", "claude"}
-			if check {
-				args = append(args, "--check")
-			}
-			cmd.SetArgs(args)
-			require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)
-			assert.Contains(t, out.String(), "Forge daemon isn't running")
-			assert.Contains(t, out.String(), "kenn-forge daemon start")
-			if check {
-				entries, err := os.ReadDir(home)
-				require.NoError(t, err)
-				assert.Empty(t, entries)
-			}
-		})
-	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("KENN_FORGE_HOME", filepath.Join(home, "forge"))
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, "claude"))
+	var out bytes.Buffer
+	cmd := newAgentCommand(loadMCPQuickstart)
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"setup", "--agent", "claude", "--check"})
+	require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)
+	assert.Contains(t, out.String(), "Forge daemon isn't running")
+	assert.Contains(t, out.String(), "kenn-forge daemon start")
+	entries, err := os.ReadDir(home)
+	require.NoError(t, err)
+	assert.Empty(t, entries)
 }

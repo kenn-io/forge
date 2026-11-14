@@ -221,7 +221,7 @@ func TestAgentHookRunFailsOpenForMalformedPayload(t *testing.T) {
 	assert.Empty(t, stdout.String())
 }
 
-func TestAgentHookSessionEndReportsDaemonFailure(t *testing.T) {
+func TestAgentHookSessionEndReportsDaemonFailure(t *testing.T) { //nolint:tparallel // subtests change the shared HTTP server response before the final unreachable-daemon check.
 	t.Parallel()
 	var mu sync.Mutex
 	var status int

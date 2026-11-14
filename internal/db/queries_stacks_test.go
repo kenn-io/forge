@@ -81,6 +81,7 @@ func TestStackMembersRenumberAfterRemovedMembersAreFiltered(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			d := openTestDB(t)
 			ctx := t.Context()
@@ -421,7 +422,7 @@ func TestGetStackForPR(t *testing.T) {
 	assert.Nil(stack2)
 }
 
-func TestStackDetectionReaders(t *testing.T) {
+func TestStackDetectionReaders(t *testing.T) { //nolint:tparallel // subtests share the seeded stack database with the parent reader checks.
 	t.Parallel()
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -494,7 +495,7 @@ func TestStackDetectionReaders(t *testing.T) {
 	}
 }
 
-func TestStackDetectionQueryPlans(t *testing.T) {
+func TestStackDetectionQueryPlans(t *testing.T) { //nolint:tparallel // subtests inspect the most recently used entry in the shared database statement cache.
 	t.Parallel()
 	for _, optimize := range []bool{false, true} {
 		d := openTestDB(t)

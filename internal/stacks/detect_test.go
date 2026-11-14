@@ -767,6 +767,7 @@ func TestLoadDetectionPRsMatchesFullHistory(t *testing.T) {
 		}, want: [][]int{{1, 2, 3}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			d := openTestDB(t)
 			ctx := t.Context()
 			repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
@@ -831,6 +832,7 @@ func TestLoadDetectionPRsIgnoresUnlinkedHistory(t *testing.T) {
 		}(), want: []int{1, 2, 3}, checkAfter: []int{100}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			d := openTestDB(t)
 			ctx := t.Context()
 			repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
@@ -914,6 +916,7 @@ func TestLoadDetectionPRsFetchesHeadGroupsOnce(t *testing.T) {
 		}, "b", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			d := openTestDB(t)
 			ctx := t.Context()
 			repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))

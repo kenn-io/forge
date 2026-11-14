@@ -15,6 +15,7 @@ import (
 const shareReadWrite = windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE
 
 func TestStoreRemoveWithOpenReports(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name           string
 		share          uint32
@@ -74,6 +75,7 @@ func TestStoreRemoveWithOpenReports(t *testing.T) {
 }
 
 func TestStoreRemoveWithLockedLegacyReports(t *testing.T) {
+	t.Parallel()
 	const (
 		currentMissing   = "missing"
 		currentRemovable = "removable"
@@ -168,6 +170,7 @@ func TestStoreRemoveWithLockedLegacyReports(t *testing.T) {
 }
 
 func TestStoreSessionEndAfterLegacyReportEmptied(t *testing.T) {
+	t.Parallel()
 	t.Run("repeated", func(t *testing.T) {
 		t.Parallel()
 		store, cwd, legacy, release := emptyLockedLegacyReportForTest(t)

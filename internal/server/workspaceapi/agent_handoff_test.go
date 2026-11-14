@@ -138,7 +138,7 @@ func TestAgentHandoffLaunchesAndDeliversPrompt(t *testing.T) {
 	assert.Equal(body.Session.Key, sessions[0].Key)
 }
 
-func TestAgentHandoffDeliversToLiveSessionWithoutLaunching(t *testing.T) {
+func TestAgentHandoffDeliversToLiveSessionWithoutLaunching(t *testing.T) { //nolint:tparallel // subtests share the live agent and shell PTYs checked by the parent after every rejected request.
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
@@ -328,7 +328,7 @@ func TestAgentHandoffRetriesUntilAgentInputModeIsReady(t *testing.T) {
 	assert.Equal("\x1b[200~triage this\x1b[201~\r", string(pty.written()))
 }
 
-func TestAgentHandoffRejectsInvalidInputBeforeWaiting(t *testing.T) {
+func TestAgentHandoffRejectsInvalidInputBeforeWaiting(t *testing.T) { //nolint:tparallel // subtests share the pending-workspace runtime checked by the parent after all rejected requests.
 	t.Parallel()
 	assert := assert.New(t)
 	fixture := newAgentHandoffFixture(t, "creating")
@@ -436,6 +436,7 @@ func TestAgentHandoffSurvivesClientCancellationWhileWaiting(t *testing.T) {
 }
 
 func TestAgentHandoffCancelsOnShutdown(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name                string
 		cancelBeforeRequest bool
@@ -522,6 +523,7 @@ func TestAgentHandoffDeliveryPreservesCancellationCause(t *testing.T) {
 	t.Parallel()
 	for _, cause := range []error{context.DeadlineExceeded, context.Canceled} {
 		t.Run(cause.Error(), func(t *testing.T) {
+			t.Parallel()
 			fixture := newAgentHandoffFixture(t, "ready")
 			ctx, cancel := context.WithCancelCause(t.Context())
 			cancel(cause)

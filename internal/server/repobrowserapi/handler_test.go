@@ -685,7 +685,7 @@ func TestRepoBrowserStartupRefreshSeedsExistingClone(t *testing.T) {
 	assert.Equal("# Updated\n", body.Blob.Content)
 }
 
-func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T) {
+func TestRepoBrowserStartupRefreshHonorsDisabledBackgroundMonitors(t *testing.T) { //nolint:tparallel // subtests restart servers against the same database and managed clone directory.
 	require := require.New(t)
 	acquireRepoBrowserTestSlot(t)
 

@@ -15,7 +15,7 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-func TestListActivity(t *testing.T) {
+func TestListActivity(t *testing.T) { //nolint:tparallel // later subtests observe activity rows inserted into the shared database by earlier subtests.
 	t.Parallel()
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -821,6 +821,7 @@ func TestListActivityVisibilityFiltersApplyBeforeLimit(t *testing.T) {
 	t.Parallel()
 
 	t.Run("hide closed merged uses notification subject state and keeps unknown state", func(t *testing.T) {
+		t.Parallel()
 		require := require.New(t)
 		assert := assert.New(t)
 		d := openTestDB(t)
@@ -884,6 +885,7 @@ func TestListActivityVisibilityFiltersApplyBeforeLimit(t *testing.T) {
 	})
 
 	t.Run("hide bots tests event actors and parent authors", func(t *testing.T) {
+		t.Parallel()
 		require := require.New(t)
 		assert := assert.New(t)
 		d := openTestDB(t)
@@ -923,6 +925,7 @@ func TestListActivityVisibilityFiltersApplyBeforeLimit(t *testing.T) {
 	})
 
 	t.Run("hide drafts drops draft pull request events, notifications, and subjects", func(t *testing.T) {
+		t.Parallel()
 		require := require.New(t)
 		assert := assert.New(t)
 		d := openTestDB(t)
@@ -2028,7 +2031,6 @@ func activityBodies(items []ActivityItem) []string {
 func TestParseDBTime(t *testing.T) {
 	t.Parallel()
 
-	assert := assert.New(t)
 	tests := []struct {
 		name  string
 		input string
@@ -2072,6 +2074,8 @@ func TestParseDBTime(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
 			got, err := parseDBTime(tc.input)
 			require.NoError(t, err)
 			assert.True(tc.want.Equal(got),
@@ -2080,6 +2084,8 @@ func TestParseDBTime(t *testing.T) {
 	}
 
 	t.Run("parsed values use UTC location", func(t *testing.T) {
+		t.Parallel()
+		assert := assert.New(t)
 		got, err := parseDBTime("2026-04-10 18:48:35 -0400 EDT")
 		require.NoError(t, err)
 		assert.Equal(time.UTC, got.Location())
@@ -2090,6 +2096,8 @@ func TestParseDBTime(t *testing.T) {
 	})
 
 	t.Run("invalid format returns error", func(t *testing.T) {
+		t.Parallel()
+		assert := assert.New(t)
 		_, err := parseDBTime("not-a-date")
 		assert.Error(err)
 	})
@@ -2477,7 +2485,7 @@ func TestListActivityAuthors(t *testing.T) {
 	require.Empty(authors, "explicit repo scope must intersect the allowed repo scope")
 }
 
-func TestListActivityAuthorsRankLatestRenderedParentActivity(t *testing.T) {
+func TestListActivityAuthorsRankLatestRenderedParentActivity(t *testing.T) { //nolint:tparallel // subtests share the seeded parent-activity database and its statement cache.
 	t.Parallel()
 
 	d := openTestDB(t)
@@ -2791,6 +2799,7 @@ func TestListActivityNotificationUsesLinkedParentMetadata(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			assert := assert.New(t)
 			d := openTestDB(t)
@@ -3013,6 +3022,7 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 		{name: "shared SHA keeps PR authors and prefers latest detail sync", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", sharedSHA: true, prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			d := openTestDB(t)
 			provider := tc.provider
 			if provider == "" {
@@ -3081,6 +3091,7 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 		{name: "shared SHA", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", sharedSHA: true, searchCounts: map[string]int{"original-login": 2, "!original-login": 1}},
 	} {
 		t.Run("search/"+tc.name, func(t *testing.T) {
+			t.Parallel()
 			d := openTestDB(t)
 			repoID := insertTestRepo(t, d, "acme", "widgets")
 			mrID := insertTestMR(t, d, repoID, 1, "Cached pull", baseTime())
@@ -3123,7 +3134,7 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 	}
 }
 
-func TestListActivityNewestDay(t *testing.T) {
+func TestListActivityNewestDay(t *testing.T) { //nolint:tparallel // subtests share the seeded activity database and prepared-query fixture.
 	t.Parallel()
 	d := openTestDB(t)
 	ctx := t.Context()
@@ -3203,7 +3214,7 @@ func TestListActivityNewestDay(t *testing.T) {
 	}
 }
 
-func TestActivityOlderReadAvoidsCursorORPlan(t *testing.T) {
+func TestActivityOlderReadAvoidsCursorORPlan(t *testing.T) { //nolint:tparallel // subtests share the seeded activity database and prepared-query fixture.
 	t.Parallel()
 	d := openTestDB(t)
 	now := time.Now().UTC()
@@ -3450,6 +3461,7 @@ func TestActivityWindowAfterDuplicateRepositoryConversion(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []string{"pr", "issue"} {
 		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			d := openTestDB(t)
 			ctx := t.Context()
@@ -3511,6 +3523,7 @@ func TestListCollapsedActivityProjectionSignalMatchesExactWindow(t *testing.T) {
 				continue
 			}
 			t.Run(kind+"/"+signal, func(t *testing.T) {
+				t.Parallel()
 				require := require.New(t)
 				assert := assert.New(t)
 				d := openTestDB(t)

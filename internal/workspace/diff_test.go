@@ -114,7 +114,7 @@ func TestReadAllWithContextStopsBetweenReads(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
-func TestReadUntrackedFileContentRejectsIntermediateSymlink(t *testing.T) {
+func TestReadUntrackedFileContentRejectsIntermediateSymlink(t *testing.T) { //nolint:tparallel // subtests share the worktree/symlink fixture and its parent-bound require assertions.
 	t.Parallel()
 	require := require.New(t)
 

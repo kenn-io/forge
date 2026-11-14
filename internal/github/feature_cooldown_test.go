@@ -249,6 +249,7 @@ func TestIndexReaderResolutionFailureAbandonsExpiredFeatureProbeReservation(t *t
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			database := openTestDB(t)
 			now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
@@ -774,6 +775,7 @@ func TestCommentRefreshWithoutProviderAttemptAbandonsExpiredFeatureProbeReservat
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			ctx := t.Context()
 			database := openTestDB(t)

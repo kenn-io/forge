@@ -21,6 +21,7 @@ import (
 )
 
 func TestHotWorktreeCanceledCheckout(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("fixture uses a POSIX smudge filter")
 	}
@@ -260,6 +261,7 @@ func TestHotWorktreeClaimsLatestRevisionOnlyOnce(t *testing.T) {
 }
 
 func TestHotWorktreePreservesChangedSpare(t *testing.T) {
+	t.Parallel()
 	for _, change := range []string{"tracked", "ignored", "branch", "foreign"} {
 		t.Run(change, func(t *testing.T) {
 			t.Parallel()
@@ -301,6 +303,7 @@ func TestHotWorktreePreservesChangedSpare(t *testing.T) {
 // A PR whose preferred branch is unavailable falls back to Forge's synthetic
 // names; those checkouts must still claim a prepared spare.
 func TestHotWorktreeClaimedByFallbackCheckout(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		name, existing, want string
 	}{
@@ -346,6 +349,7 @@ func TestHotWorktreeClaimedByFallbackCheckout(t *testing.T) {
 // upgrade, each spare must still end up in a workspace instead of blocking or
 // being thrown away.
 func TestHotWorktreeAdoptsSparesLeftByEarlierForge(t *testing.T) {
+	t.Parallel()
 	for _, state := range []string{"registered", "preparing", "ready"} {
 		t.Run(state, func(t *testing.T) {
 			t.Parallel()

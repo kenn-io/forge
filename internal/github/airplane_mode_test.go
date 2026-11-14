@@ -71,6 +71,7 @@ func TestAirplaneModeDropsQueuedAutomaticSyncAndKeepsManualScope(t *testing.T) {
 	t.Parallel()
 
 	t.Run("airplane mode drops queued startup retries", func(t *testing.T) {
+		t.Parallel()
 		synctest.Test(t, func(t *testing.T) {
 			d := openTestDB(t)
 			repos := []RepoRef{
@@ -115,6 +116,7 @@ func TestAirplaneModeDropsQueuedAutomaticSyncAndKeepsManualScope(t *testing.T) {
 
 	for _, queuedManual := range []bool{false, true} {
 		t.Run(map[bool]string{false: "automatic", true: "manual"}[queuedManual], func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			repos := []RepoRef{
 				{Owner: "acme", Name: "selected", PlatformHost: "github.com"},

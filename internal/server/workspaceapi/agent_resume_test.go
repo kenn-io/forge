@@ -128,6 +128,7 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss(t *testing.
 	t.Parallel()
 	for _, status := range []string{"ready", "creating", "error", "unavailable", "fairness", "stopped", "identity-email", "identity-helper"} {
 		t.Run(status, func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			assert := assert.New(t)
 			ctx := t.Context()

@@ -106,6 +106,7 @@ func TestRoutedClientExplicitlyImplementsOwnerBearingClientMethods(t *testing.T)
 
 	for _, target := range interfaces {
 		t.Run(target.name, func(t *testing.T) {
+			t.Parallel()
 			sourceFile, err := parser.ParseFile(files, target.file, nil, 0)
 			require.NoError(t, err)
 			var missing []string

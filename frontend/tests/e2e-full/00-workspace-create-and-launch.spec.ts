@@ -1024,7 +1024,7 @@ test.describe("workspace create-and-launch full stack", () => {
       await expect
         .poll(async () =>
           (await workspaceBaseWebSockets(phonePage, created.id)).filter(
-            (entry) => !entry.closed && entry.sent.some((frame) => frame.includes('"type":"claim_resize"')),
+            (entry) => !entry.closed && entry.sent.includes('{"type":"heartbeat"}'),
           ),
         )
         .toHaveLength(1);
@@ -1046,7 +1046,7 @@ test.describe("workspace create-and-launch full stack", () => {
       await expect
         .poll(async () =>
           (await workspaceBaseWebSockets(page, created.id)).some(
-            (entry) => !entry.closed && entry.sent.some((frame) => frame.includes('"type":"claim_resize"')),
+            (entry) => !entry.closed && entry.sent.includes('{"type":"heartbeat"}'),
           ),
         )
         .toBe(true);
@@ -1073,7 +1073,7 @@ test.describe("workspace create-and-launch full stack", () => {
       await expect
         .poll(async () =>
           (await workspaceBaseWebSockets(page, created.id)).some(
-            (entry) => !entry.closed && entry.sent.some((frame) => frame.includes('"type":"claim_resize"')),
+            (entry) => !entry.closed && entry.sent.includes('{"type":"heartbeat"}'),
           ),
         )
         .toBe(true);

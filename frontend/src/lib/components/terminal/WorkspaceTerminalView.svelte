@@ -5290,10 +5290,9 @@
                           {@const session = runtimeSessions.find(
                             (candidate) => candidate.key === sessionKey,
                           )}
-                          {@const hostKey = session ? sessionHostKeyFor(session) : null}
-                          {#if session && hostKey !== null && isSessionTerminalMounted(session.key)}
+                          {#if session && isSessionTerminalMounted(session.key)}
                             <SessionTerminalSlot
-                              hostKey={hostKey}
+                              hostKey={sessionHostKeyFor(session)}
                               visible={active && hostVisible}
                             />
                           {/if}

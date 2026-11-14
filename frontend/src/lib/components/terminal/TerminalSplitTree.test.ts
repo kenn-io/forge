@@ -2,7 +2,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { clearActiveTabbedPanelDrag, readTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
 import { sessionPaneKey } from "../../stores/session-pane-key.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { ComponentProps } from "svelte";
+import { tick, type ComponentProps } from "svelte";
+import { SvelteMap } from "svelte/reactivity";
 import AppRuntimeHarness from "../../../test/AppRuntimeHarness.svelte";
 import TerminalSplitTree from "./TerminalSplitTree.svelte";
 import type { PaneNode } from "./terminal-layout";
@@ -123,6 +124,31 @@ describe("TerminalSplitTree", () => {
       const key = sessionHostKey("ws-1", undefined, session.key, session.created_at);
       expect(isSessionSlotVisible(key), session.label).toBe(true);
     }
+  });
+
+  it("releases the old slot when navigation removes its session", async () => {
+    const session = sessions[0]!;
+    const currentSessions = new SvelteMap([["current", sessions]]);
+    render(AppRuntimeHarness, {
+      props: {
+        component: TerminalSplitTree,
+        workspaceId: "ws-1",
+        node: split(),
+        get sessions() {
+          return currentSessions.get("current") ?? [];
+        },
+        displayLabels: {},
+        activeSessionKey: session.key,
+      },
+    });
+    const hostKey = sessionHostKey("ws-1", undefined, session.key, session.created_at);
+    expect(isSessionSlotVisible(hostKey)).toBe(true);
+
+    currentSessions.set("current", []);
+    await tick();
+
+    expect(screen.getAllByText("Session unavailable")).toHaveLength(2);
+    expect(isSessionSlotVisible(hostKey)).toBe(false);
   });
 
   it("uses the launch target harness icon in an agent pane header", () => {

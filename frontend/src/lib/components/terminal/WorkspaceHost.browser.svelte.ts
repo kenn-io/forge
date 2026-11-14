@@ -5,6 +5,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vite-plus/test"
 import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
+import { createSettingsStore } from "../../stores/settings.svelte.js";
 
 import { STORES_KEY } from "../../context.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
@@ -111,6 +112,7 @@ function waitForReparent(): Promise<void> {
 }
 
 const settingsStore = {
+  ...createSettingsStore(),
   getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
   getQuickActions: () => [],
   getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,

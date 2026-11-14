@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/daemonclient"
 
@@ -290,7 +289,7 @@ func resolveAgentHookTarget(configPath, binary string) (agentHookTarget, error) 
 	if err != nil {
 		return agentHookTarget{}, fmt.Errorf("resolve agent hook config path: %w", err)
 	}
-	home, err := agentHookHome(configPath, cfg)
+	home, err := agentHookHome(cfg)
 	if err != nil {
 		return agentHookTarget{}, err
 	}
@@ -329,11 +328,8 @@ func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOp
 
 // agentHookHome returns the Forge home to pin in the hook, or "" when the
 // config sets its own data_dir, which already identifies the runtime.
-func agentHookHome(configPath string, cfg *config.Config) (string, error) {
-	var file struct {
-		DataDir string `toml:"data_dir"`
-	}
-	if _, err := toml.DecodeFile(configPath, &file); err == nil && file.DataDir != "" {
+func agentHookHome(cfg *config.Config) (string, error) {
+	if cfg != nil && cfg.RuntimeSources()["data_dir"] == "file" {
 		return "", nil
 	}
 	home := config.DefaultDataDir()

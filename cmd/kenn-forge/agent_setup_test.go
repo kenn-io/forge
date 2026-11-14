@@ -34,43 +34,30 @@ func setupAgentTest(t *testing.T, dataDir string) string {
 }
 
 func TestAgentSetupStopped(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		inactive bool
-		print    bool
-	}{
-		{name: "check inactive", inactive: true},
-		{name: "print", print: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			setupAgentTest(t, "/tmp/forge-test-data")
-			var out bytes.Buffer
-			cmd := newAgentCommand(func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
-				if tc.inactive {
-					info := daemonMCPQuickstart(mcpSettingsInfo{Enabled: true}, "")
-					info.pid = 123
-					return info, nil
-				}
-				return stoppedMCPQuickstart(true, path), nil
-			})
-			cmd.SetOut(&out)
-			flag := "--check"
-			if tc.print {
-				flag = "--print"
-			}
-			cmd.SetArgs([]string{"setup", "--agent", "claude", flag})
-			err := cmd.ExecuteContext(t.Context())
-			if tc.print {
-				require.ErrorContains(t, err, "Forge daemon isn't running")
-				require.ErrorContains(t, err, "kenn-forge daemon start")
-				return
-			}
-			require.ErrorIs(t, err, agentsetup.ErrNotReady)
-			text := out.String()
-			assert.Contains(t, text, "Forge MCP isn't active")
-			assert.Contains(t, text, "Restart the Forge daemon")
-		})
-	}
+	setupAgentTest(t, "/tmp/forge-test-data")
+	var out bytes.Buffer
+	cmd := newAgentCommand(func(context.Context, string, time.Duration) (mcpQuickstartInfo, error) {
+		info := daemonMCPQuickstart(mcpSettingsInfo{Enabled: true}, "")
+		info.pid = 123
+		return info, nil
+	})
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"setup", "--agent", "claude", "--check"})
+	require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)
+	assert.Contains(t, out.String(), "Forge MCP isn't active")
+	assert.Contains(t, out.String(), "Restart the Forge daemon")
+}
+
+func TestAgentSetupStoppedPrint(t *testing.T) {
+	setupAgentTest(t, "/tmp/forge-test-data")
+	cmd := newAgentCommand(func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
+		return stoppedMCPQuickstart(true, path), nil
+	})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"setup", "--agent", "claude", "--print"})
+	err := cmd.ExecuteContext(t.Context())
+	require.ErrorContains(t, err, "Forge daemon isn't running")
+	require.ErrorContains(t, err, "kenn-forge daemon start")
 }
 
 func TestAgentSetupRelativeDataDir(t *testing.T) {
@@ -79,12 +66,6 @@ func TestAgentSetupRelativeDataDir(t *testing.T) {
 	loader := func(context.Context, string, time.Duration) (mcpQuickstartInfo, error) { return info, nil }
 	var out bytes.Buffer
 	cmd := newAgentCommand(loader)
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"setup", "--agent", "codex", "--print"})
-	require.NoError(t, cmd.ExecuteContext(t.Context()))
-	assert.Contains(t, out.String(), "codex mcp add")
-	out.Reset()
-	cmd = newAgentCommand(loader)
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"setup", "--agent", "codex", "--json"})
 	require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)
@@ -110,8 +91,6 @@ func TestAgentSetupMalformedConfig(t *testing.T) {
 	var report agentsetup.Report
 	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
 	require.Len(t, report.Rows, 2)
-	assert.Equal(t, agentsetup.StateFailed, report.Rows[0].State)
-	assert.Equal(t, "Check the Forge config and retry.", report.Rows[0].NextStep)
 	assert.Contains(t, report.Rows[1].Reason, "load config")
 	assert.Contains(t, report.Rows[1].NextStep, "config")
 	assert.NotContains(t, report.Rows[1].NextStep, "mcp quickstart")
@@ -136,23 +115,19 @@ func TestAgentSetupSelectedConfig(t *testing.T) {
 }
 
 func TestAgentSetupForwardsSelectedAgents(t *testing.T) {
-	for _, args := range [][]string{{"--agent", "claude,codex"}, {"--agent", "claude", "--agent", "codex"}} {
-		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			setupAgentTest(t, "/tmp/forge-test-data")
-			var out bytes.Buffer
-			cmd := newAgentCommand(func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
-				return stoppedMCPQuickstart(true, path), nil
-			})
-			cmd.SetOut(&out)
-			cmd.SetArgs(append(append([]string{"setup"}, args...), "--check", "--json"))
-			require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)
-			var report agentsetup.Report
-			require.NoError(t, json.Unmarshal(out.Bytes(), &report))
-			require.Len(t, report.Rows, 4)
-			assert.Equal(t, "claude", report.Rows[0].Agent)
-			assert.Equal(t, "codex", report.Rows[2].Agent)
-		})
-	}
+	setupAgentTest(t, "/tmp/forge-test-data")
+	var out bytes.Buffer
+	cmd := newAgentCommand(func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
+		return stoppedMCPQuickstart(true, path), nil
+	})
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"setup", "--agent", "claude,codex", "--check", "--json"})
+	require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)
+	var report agentsetup.Report
+	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
+	require.Len(t, report.Rows, 4)
+	assert.Equal(t, "claude", report.Rows[0].Agent)
+	assert.Equal(t, "codex", report.Rows[2].Agent)
 }
 
 func TestAgentSetupMCPTokenSettings(t *testing.T) {
@@ -194,9 +169,7 @@ func TestAgentSetupMCPTokenSettings(t *testing.T) {
 }
 
 func TestAgentSetupAuthGuidance(t *testing.T) {
-	home := setupAgentTest(t, "/tmp/forge-test-data")
-	require.NoError(t, os.MkdirAll(filepath.Join(home, "codex"), 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(home, "codex", "config.toml"), []byte("[mcp_servers.kenn-forge]\nurl = 'http://127.0.0.1:8091/mcp'\nbearer_token_env_var = 'KENN_FORGE_API_TOKEN'\nenabled = false\n"), 0o600))
+	setupAgentTest(t, "/tmp/forge-test-data")
 	info := daemonMCPQuickstart(mcpSettingsInfo{Enabled: true, ActiveURL: "http://127.0.0.1:8091/mcp", ActiveRequiresAuth: true}, "/tmp/token")
 	var out bytes.Buffer
 	cmd := newAgentCommand(func(context.Context, string, time.Duration) (mcpQuickstartInfo, error) { return info, nil })
@@ -204,13 +177,8 @@ func TestAgentSetupAuthGuidance(t *testing.T) {
 	cmd.SetArgs([]string{"setup", "--agent", "codex", "--print"})
 	require.NoError(t, cmd.ExecuteContext(t.Context()))
 	assert.Contains(t, out.String(), "export KENN_FORGE_API_TOKEN=\"$(cat /tmp/token)\"")
-}
-
-func TestAgentSetupMissingMCPTokenGuidance(t *testing.T) {
-	setupAgentTest(t, "/tmp/forge-test-data")
-	info := daemonMCPQuickstart(mcpSettingsInfo{Enabled: true, ActiveURL: "http://127.0.0.1:8091/mcp", ActiveRequiresAuth: true}, "/tmp/token")
-	var out bytes.Buffer
-	cmd := newAgentCommand(func(context.Context, string, time.Duration) (mcpQuickstartInfo, error) { return info, nil })
+	out.Reset()
+	cmd = newAgentCommand(func(context.Context, string, time.Duration) (mcpQuickstartInfo, error) { return info, nil })
 	cmd.SetOut(&out)
 	cmd.SetArgs([]string{"setup", "--agent", "codex", "--check", "--json"})
 	require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)

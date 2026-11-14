@@ -22,17 +22,6 @@ import (
 	"go.kenn.io/kit/agenthook"
 )
 
-func TestAgentHookInstallPreservesCodexCommandWithExplicitDataDir(t *testing.T) {
-	home := setupAgentTest(t, "/tmp/forge-test-data")
-	t.Setenv("KENN_FORGE_DATA_DIR", filepath.Join(home, "override"))
-	configPath := filepath.Join(home, "forge", "config.toml")
-	require.NoError(t, installAgentHooks("install", configPath, "codex", "/usr/bin/kenn-forge", io.Discard))
-	data, err := os.ReadFile(filepath.Join(home, "codex", "hooks.json"))
-	require.NoError(t, err)
-	assert.Contains(t, string(data), "--config "+configPath+" --source kenn-forge-agent-activity")
-	assert.NotContains(t, string(data), "--home")
-}
-
 func TestAgentHookRunRelaysLifecyclePayloadToDaemon(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -318,13 +307,15 @@ func TestAgentHookSessionEndReportsDaemonFailure(t *testing.T) {
 
 func TestSetupHookKeepsSelectedHome(t *testing.T) {
 	for _, tc := range []struct {
-		name, installHome, runHome, dataDir string
-		missingConfig                       bool
+		name, installHome, runHome, dataDir   string
+		missingConfig, fileData, customConfig bool
 	}{
 		{name: "custom home", installHome: "custom"},
 		{name: "default home", runHome: "other"},
 		{name: "data directory override", installHome: "custom", dataDir: "override"},
 		{name: "override before config exists", installHome: "custom", dataDir: "override", missingConfig: true},
+		{name: "override with file data directory", dataDir: "override", fileData: true, customConfig: true},
+		{name: "file data directory", fileData: true, customConfig: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := setupAgentTest(t, "/tmp/unused")
@@ -339,12 +330,24 @@ func TestSetupHookKeepsSelectedHome(t *testing.T) {
 				t.Setenv("KENN_FORGE_DATA_DIR", forgeHome)
 			}
 			configPath := config.DefaultConfigPath()
+			if tc.customConfig {
+				configPath = filepath.Join(home, "custom.toml")
+			}
 			require.NoError(t, os.MkdirAll(forgeHome, 0o700))
-			require.NoError(t, os.WriteFile(configPath, []byte(""), 0o600))
+			fileData := ""
+			if tc.fileData {
+				fileDir := forgeHome
+				if tc.dataDir != "" {
+					fileDir = filepath.Join(home, "file-data")
+				}
+				fileData = fmt.Sprintf("data_dir = %q\n", fileDir)
+			}
+			require.NoError(t, os.WriteFile(configPath, []byte(fileData), 0o600))
 			if tc.missingConfig {
 				require.NoError(t, os.Remove(configPath))
 			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "Bearer test-token", r.Header.Get("Authorization"))
 				_, _ = io.WriteString(w, `{"hook_output":{"hookSpecificOutput":{"additionalContext":"delivered"}}}`)
 			}))
 			t.Cleanup(server.Close)
@@ -352,6 +355,7 @@ func TestSetupHookKeepsSelectedHome(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = lock.Release() })
 			require.NoError(t, lock.WriteMetadata(runtimelock.Metadata{PID: os.Getpid(), ListenAddr: strings.TrimPrefix(server.URL, "http://")}))
+			require.NoError(t, os.WriteFile(filepath.Join(forgeHome, "auth_token"), []byte("test-token"), 0o600))
 			exe, err := os.Executable()
 			require.NoError(t, err)
 			wrapper := filepath.Join(home, "hook-wrapper")
@@ -372,7 +376,12 @@ func TestSetupHookKeepsSelectedHome(t *testing.T) {
 			require.NoError(t, json.Unmarshal(data, &settings))
 			require.NotEmpty(t, settings.Hooks["SessionStart"])
 			command := settings.Hooks["SessionStart"][0].Hooks[0].Command
-			require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
+			if tc.fileData && tc.dataDir == "" {
+				assert.NotContains(t, command, "--home")
+				require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
+			} else {
+				t.Setenv("KENN_FORGE_DATA_DIR", filepath.Join(home, "later-override"))
+			}
 			if tc.runHome == "" {
 				t.Setenv("KENN_FORGE_HOME", "")
 			} else {

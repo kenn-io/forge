@@ -12,8 +12,12 @@ image=forge-docs-screenshots
 mkdir -p "$output"
 output="$(cd "$output" && pwd -P)"
 docker build -t "$image" "$script_dir"
-# Run as the caller so every generated file stays removable without root. The
-# generator only replaces directories under the temporary directory.
+# Run as the caller so every generated file stays removable without root.
+# Install and build in a copy inside the container, so the checkout's own
+# node_modules and build output stay untouched.
 docker run --rm --init --user "$(id -u):$(id -g)" -e HOME=/tmp \
-    -v "$repo_root:/src" -v "$output:/tmp/out" -w /src "$image" \
-    bash -c 'bun install && node scripts/generate-docs-screenshots.mjs /tmp/out/assets'
+    -v "$repo_root:/src:ro" -v "$output:/tmp/out" "$image" \
+    bash -c 'mkdir /tmp/work &&
+        tar -C /src --exclude=node_modules -cf - . | tar -C /tmp/work -xf - &&
+        cd /tmp/work && bun install &&
+        node scripts/generate-docs-screenshots.mjs /tmp/out/assets'

@@ -314,9 +314,7 @@ func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOp
 		"--agent", string(agent),
 		"--config", target.configPath,
 		"--source", agentHookSource,
-	}
-	if target.home != "" {
-		args = append(args, "--home", target.home)
+		"--home", target.home,
 	}
 	return agenthook.InstallOptions{
 		Executable: target.executable,
@@ -326,12 +324,8 @@ func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOp
 	}
 }
 
-// agentHookHome returns the Forge home to pin in the hook, or "" when the
-// config sets its own data_dir, which already identifies the runtime.
+// agentHookHome returns the data directory selected when the hook is installed.
 func agentHookHome(cfg *config.Config) (string, error) {
-	if cfg != nil && cfg.RuntimeSources()["data_dir"] == "file" {
-		return "", nil
-	}
 	home := config.DefaultDataDir()
 	if cfg != nil {
 		home = cfg.DataDir

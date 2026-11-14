@@ -376,12 +376,7 @@ func TestSetupHookKeepsSelectedHome(t *testing.T) {
 			require.NoError(t, json.Unmarshal(data, &settings))
 			require.NotEmpty(t, settings.Hooks["SessionStart"])
 			command := settings.Hooks["SessionStart"][0].Hooks[0].Command
-			if tc.fileData && tc.dataDir == "" {
-				assert.NotContains(t, command, "--home")
-				require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
-			} else {
-				t.Setenv("KENN_FORGE_DATA_DIR", filepath.Join(home, "later-override"))
-			}
+			t.Setenv("KENN_FORGE_DATA_DIR", filepath.Join(home, "later-override"))
 			if tc.runHome == "" {
 				t.Setenv("KENN_FORGE_HOME", "")
 			} else {

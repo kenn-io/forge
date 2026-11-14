@@ -113,7 +113,7 @@ func registerCommands(root *cobra.Command, deps commandDeps) {
 		if err != nil {
 			return cliConfig{}, nil, err
 		}
-		requestURL, err := apiURL(current.server, path, query)
+		requestURL, err := APIURL(current.server, path, query)
 		if err != nil {
 			return cliConfig{}, nil, err
 		}
@@ -268,7 +268,8 @@ func resolveServer(cfg *viper.Viper) (string, error) {
 	return "http://" + forgeCfg.ListenAddr(), nil
 }
 
-func apiURL(server, rawPath string, query url.Values) (string, error) {
+// APIURL scopes a relative request path to the Forge API under the server base URL.
+func APIURL(server, rawPath string, query url.Values) (string, error) {
 	parsed, err := url.Parse(rawPath)
 	if err != nil {
 		return "", fmt.Errorf("invalid API path %q: %w", rawPath, err)
@@ -334,7 +335,7 @@ func pathSegmentHasTraversal(decoded string) bool {
 }
 
 func mustAPIURL(server, path string, query url.Values) string {
-	u, err := apiURL(server, path, query)
+	u, err := APIURL(server, path, query)
 	if err != nil {
 		panic(err)
 	}

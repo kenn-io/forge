@@ -1022,7 +1022,11 @@ test.describe("workspace create-and-launch full stack", () => {
       });
       await expect(phonePage.locator(".mobile-workspace-terminal__stage")).toBeVisible();
       await expect
-        .poll(async () => (await workspaceBaseWebSockets(phonePage, created.id)).filter((entry) => !entry.closed))
+        .poll(async () =>
+          (await workspaceBaseWebSockets(phonePage, created.id)).filter(
+            (entry) => !entry.closed && entry.sent.some((frame) => frame.includes('"type":"claim_resize"')),
+          ),
+        )
         .toHaveLength(1);
 
       const input = phonePage.getByRole("textbox", { name: "Terminal command" });
@@ -1039,6 +1043,13 @@ test.describe("workspace create-and-launch full stack", () => {
       await expect.poll(() => desktopOutput).toContain(`shared-base-process:${processId}`);
       const desktopInput = page.locator(".workspace-stage .xterm-helper-textarea");
       await desktopInput.focus();
+      await expect
+        .poll(async () =>
+          (await workspaceBaseWebSockets(page, created.id)).some(
+            (entry) => !entry.closed && entry.sent.some((frame) => frame.includes('"type":"claim_resize"')),
+          ),
+        )
+        .toBe(true);
       await page.keyboard.type("desktop-joined");
       await page.keyboard.press("Enter");
       await expect.poll(() => desktopOutput).toContain(`shared-base-reply:${processId}:desktop-joined`);
@@ -1062,8 +1073,7 @@ test.describe("workspace create-and-launch full stack", () => {
       await expect
         .poll(async () =>
           (await workspaceBaseWebSockets(page, created.id)).some(
-            (entry) =>
-              !entry.closed && entry.sent.some((frame) => /"type":"(?:claim_resize|resize|refresh)"/.test(frame)),
+            (entry) => !entry.closed && entry.sent.some((frame) => frame.includes('"type":"claim_resize"')),
           ),
         )
         .toBe(true);

@@ -124,16 +124,35 @@ func TestAgentSetupHookConfigErrors(t *testing.T) {
 			require.Len(t, report.Rows, 2)
 			assert.Equal(t, agentsetup.StateFailed, report.Rows[0].State)
 			if tc.malformed {
-				assert.Contains(t, report.Rows[0].NextStep, "Fix the Forge config")
+				assert.Equal(t, "Check the Forge config and retry.", report.Rows[0].NextStep)
 				assert.Contains(t, report.Rows[1].Reason, "load config")
 			} else {
 				assert.Contains(t, report.Rows[0].Reason, "absolute data_dir")
+				assert.Equal(t, "Set an absolute data_dir in the Forge config.", report.Rows[0].NextStep)
 				data, err := os.ReadFile(filepath.Join(home, "codex", "config.toml"))
 				require.NoError(t, err)
 				assert.Contains(t, string(data), info.Endpoint)
 			}
 		})
 	}
+}
+
+func TestAgentSetupSelectedConfig(t *testing.T) {
+	home := setupAgentTest(t, "/tmp/forge-test-data")
+	path := filepath.Join(home, "custom config.toml")
+	require.NoError(t, os.WriteFile(path, []byte("data_dir = '/tmp/custom-data'\n"), 0o600))
+	var out bytes.Buffer
+	cmd := newAgentCommand(func(_ context.Context, got string, _ time.Duration) (mcpQuickstartInfo, error) {
+		assert.Equal(t, path, got)
+		return stoppedMCPQuickstart(true, got), nil
+	})
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"setup", "--agent", "claude", "--config", path})
+	require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)
+	data, err := os.ReadFile(filepath.Join(home, "claude", "settings.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), path)
+	assert.Contains(t, out.String(), "then run `kenn-forge agent setup --config '"+path+"' --agent claude`")
 }
 
 func TestAgentSetupInstallsSelectedAgents(t *testing.T) {

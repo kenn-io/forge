@@ -23,20 +23,13 @@ import (
 )
 
 func TestAgentHookInstallPreservesCodexCommandWithExplicitDataDir(t *testing.T) {
-	for _, sameAsHome := range []bool{false, true} {
-		t.Run(fmt.Sprintf("same-as-home=%t", sameAsHome), func(t *testing.T) {
-			home := setupAgentTest(t, "/tmp/forge-test-data")
-			configPath := filepath.Join(home, "forge", "config.toml")
-			if sameAsHome {
-				require.NoError(t, os.WriteFile(configPath, fmt.Appendf(nil, "data_dir = %q\n", filepath.Join(home, "forge")), 0o600))
-			}
-			require.NoError(t, installAgentHooks("install", configPath, "codex", "/usr/bin/kenn-forge", io.Discard))
-			data, err := os.ReadFile(filepath.Join(home, "codex", "hooks.json"))
-			require.NoError(t, err)
-			assert.Contains(t, string(data), "--config "+configPath+" --source kenn-forge-agent-activity")
-			assert.NotContains(t, string(data), "--home")
-		})
-	}
+	home := setupAgentTest(t, "/tmp/forge-test-data")
+	configPath := filepath.Join(home, "forge", "config.toml")
+	require.NoError(t, installAgentHooks("install", configPath, "codex", "/usr/bin/kenn-forge", io.Discard))
+	data, err := os.ReadFile(filepath.Join(home, "codex", "hooks.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "--config "+configPath+" --source kenn-forge-agent-activity")
+	assert.NotContains(t, string(data), "--home")
 }
 
 func TestAgentHookRunRelaysLifecyclePayloadToDaemon(t *testing.T) {

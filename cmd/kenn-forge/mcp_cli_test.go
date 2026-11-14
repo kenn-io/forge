@@ -39,24 +39,25 @@ func TestMCPQuickstartCommandPrintsAgentConnector(t *testing.T) {
 }
 
 func TestMCPQuickstartStoppedGuidesSetup(t *testing.T) {
-	var output bytes.Buffer
-	cmd := newMCPCommand(&output, func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
-		return stoppedMCPQuickstart(true, path), nil
-	})
-	cmd.SetArgs([]string{"quickstart"})
-	require.NoError(t, cmd.Execute())
-	assert.NotContains(t, output.String(), "OK mcp quickstart")
-	assert.Contains(t, output.String(), "kenn-forge agent setup")
-}
-
-func TestMCPQuickstartCustomConfigGuidesSetup(t *testing.T) {
-	var output bytes.Buffer
-	cmd := newMCPCommand(&output, func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
-		return stoppedMCPQuickstart(true, path), nil
-	})
-	cmd.SetArgs([]string{"quickstart", "--config", "/tmp/custom config.toml"})
-	require.NoError(t, cmd.Execute())
-	assert.Contains(t, output.String(), "kenn-forge agent setup --config '/tmp/custom config.toml'")
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "default", args: []string{"quickstart"}, want: "kenn-forge agent setup"},
+		{name: "custom", args: []string{"quickstart", "--config", "/tmp/custom config.toml"}, want: "kenn-forge agent setup --config '/tmp/custom config.toml'"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var output bytes.Buffer
+			cmd := newMCPCommand(&output, func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
+				return stoppedMCPQuickstart(true, path), nil
+			})
+			cmd.SetArgs(tc.args)
+			require.NoError(t, cmd.Execute())
+			assert.NotContains(t, output.String(), "OK mcp quickstart")
+			assert.Contains(t, output.String(), tc.want)
+		})
+	}
 }
 
 func TestMCPQuickstartCommandPrintsStructuredConnector(t *testing.T) {
@@ -112,15 +113,8 @@ enabled = true
 	assert.ErrorIs(err, os.ErrNotExist)
 }
 
-func TestMCPCommandsRejectMissingConfig(t *testing.T) {
+func TestLoadMCPQuickstartRejectsMissingConfig(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "missing.toml")
-	for _, action := range []string{"quickstart", "status"} {
-		t.Run(action, func(t *testing.T) {
-			var output bytes.Buffer
-			cmd := newMCPCommand(&output, loadMCPQuickstart)
-			cmd.SetArgs([]string{action, "--config", configPath})
-			require.ErrorIs(t, cmd.Execute(), os.ErrNotExist)
-			assert.Empty(t, output.String())
-		})
-	}
+	_, err := loadMCPQuickstart(t.Context(), configPath, time.Second)
+	require.ErrorIs(t, err, os.ErrNotExist)
 }

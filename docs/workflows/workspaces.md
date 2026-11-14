@@ -92,14 +92,13 @@ session. Use the session controls when you intend to stop a process.
 
 ## Show agent state in the sidebar
 
-Connect Claude Code and Codex to Forge:
+Install lifecycle hooks for the agents Forge supports:
 
 ```sh
-kenn-forge agent setup
+kenn-forge agent-hook install
 ```
 
-Use `kenn-forge agent-hook install` to install hooks for all supported agents,
-or add `--agent NAME` to select one. The sidebar can then show when
+Use `--agent NAME` to install one agent's hook. The sidebar can then show when
 an agent is working, waiting for approval, waiting for input, or done. Without
 fresh hook reports, Forge falls back to tmux activity.
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -25,10 +26,7 @@ const (
 	agentHookMarker = "--source " + agentHookSource
 )
 
-var (
-	errAgentHookResponse        = errors.New("daemon failed to record agent hook")
-	errAgentHookRelativeDataDir = errors.New("agent hook install requires an absolute data_dir")
-)
+var errAgentHookResponse = errors.New("daemon failed to record agent hook")
 
 func runAgentHookCLI(args []string, stdin io.Reader, stdout io.Writer) error {
 	cmd := newAgentHookCommand(stdin, stdout)
@@ -283,7 +281,7 @@ func resolveAgentHookTarget(configPath, binary string) (agentHookTarget, error) 
 		return agentHookTarget{}, err
 	}
 	if cfg != nil && cfg.DataDirWasRelative() {
-		return agentHookTarget{}, errAgentHookRelativeDataDir
+		return agentHookTarget{}, errors.New("agent hook install requires an absolute data_dir")
 	}
 	absoluteConfigPath, err := filepath.Abs(configPath)
 	if err != nil {
@@ -309,35 +307,25 @@ func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOp
 	for _, event := range profile.SupportedEvents {
 		hooks = append(hooks, agenthook.Hook{Event: event, Timeout: 2 * time.Second})
 	}
-	args := []string{
-		"agent-hook", "run",
-		"--agent", string(agent),
-		"--config", target.configPath,
-		"--source", agentHookSource,
-		"--home", target.home,
-	}
 	return agenthook.InstallOptions{
 		Executable: target.executable,
-		Arguments:  args,
-		Marker:     agentHookMarker,
-		Hooks:      hooks,
+		Arguments: []string{
+			"agent-hook", "run",
+			"--agent", string(agent),
+			"--config", target.configPath,
+			"--source", agentHookSource,
+			"--home", target.home,
+		},
+		Marker: agentHookMarker,
+		Hooks:  hooks,
 	}
 }
 
-// agentHookHome returns the data directory selected when the hook is installed.
+// agentHookHome returns the data directory selected when the hook is installed,
+// including before the daemon creates the default config.
 func agentHookHome(cfg *config.Config) (string, error) {
-	home := config.DefaultDataDir()
 	if cfg != nil {
-		home = cfg.DataDir
-	} else if dataDir := os.Getenv("KENN_FORGE_DATA_DIR"); dataDir != "" {
-		home = dataDir
-		if !filepath.IsAbs(home) {
-			return "", errAgentHookRelativeDataDir
-		}
+		return cfg.DataDir, nil
 	}
-	home, err := config.CanonicalDataDir(home)
-	if err != nil {
-		return "", fmt.Errorf("resolve agent hook home: %w", err)
-	}
-	return home, nil
+	return config.CanonicalDataDir(cmp.Or(os.Getenv("KENN_FORGE_DATA_DIR"), config.DefaultDataDir()))
 }

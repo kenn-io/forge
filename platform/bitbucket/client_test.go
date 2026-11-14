@@ -29,7 +29,6 @@ func client(t *testing.T, token string, handle func(*http.Request) (int, string)
 	t.Helper()
 
 	assert := assert.New(t)
-	t.Helper()
 	c, err := bitbucket.NewClient("bitbucket.org", credential(token), platform.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		assert.Equal("api.bitbucket.org", r.URL.Host)
 		code, body := handle(r)

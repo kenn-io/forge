@@ -72,6 +72,7 @@ async function mockPulls(page: Page) {
           enqueued_at: "2026-03-30T14:00:00Z",
           observed_at: "2026-03-30T14:00:00Z",
         },
+        roborev_verdict: "clean",
       }),
       pull(11, "Draft parser cleanup", {
         labels: [
@@ -88,6 +89,7 @@ async function mockPulls(page: Page) {
         CIStatus: "failure",
         workspace: { id: "ws-12", status: "ready" },
         deferred_merge_pending: true,
+        roborev_verdict: "findings",
       }),
       pull(13, "Ready conflict resolver", {
         MergeableState: "dirty",
@@ -160,6 +162,27 @@ test("PR filters all apply and each pair of opposites is pick-one", async ({ pag
   await draft.click();
   await filterPanel.getByRole("button", { name: "Approved", exact: true }).click();
   await expect(rows).toHaveText([/Approved review queue/]);
+});
+
+test("the Roborev row keeps reviewed PRs only, with findings or without", async ({ page }) => {
+  await mockPulls(page);
+  await page.goto("/pulls");
+
+  const rows = page.locator(".pr-list-row");
+  await expect(rows).toHaveCount(4);
+  await openPrFilters(page);
+  const roborev = page.locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", {
+    hasText: "Roborev findings",
+  });
+
+  await roborev.click();
+  await expect(rows).toHaveText([/Ready failed workflow/]);
+  // Excluding findings keeps the clean review; PRs without a head review match neither side.
+  await roborev.click();
+  await expect(roborev).toHaveAccessibleName(/, excluded$/);
+  await expect(rows).toHaveText([/Approved review queue/]);
+  await roborev.click();
+  await expect(rows).toHaveCount(4);
 });
 
 test("a condition row cycles through required, excluded, and off", async ({ page }) => {

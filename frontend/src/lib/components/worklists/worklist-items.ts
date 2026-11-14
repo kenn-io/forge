@@ -266,6 +266,7 @@ export const WORKLIST_FILTER_SECTIONS: readonly (readonly WorklistItemFilter[])[
   ["draft", "ready"],
   ["approved", "not_approved"],
   ["passed_ci", "failed_ci"],
+  ["roborev_clean", "roborev_findings"],
   ["merge_conflicts", "no_merge_conflicts"],
   ["has_workspace", "no_workspace"],
 ];

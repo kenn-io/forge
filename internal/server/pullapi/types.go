@@ -27,6 +27,9 @@ type MergeRequestResponse struct {
 	LastWorkspaceActivityAt string                     `json:"last_workspace_activity_at,omitempty" format:"date-time"`
 	DetailLoaded            bool                       `json:"detail_loaded"`
 	DetailFetchedAt         string                     `json:"detail_fetched_at,omitempty"`
+	// RoborevVerdict summarizes the newest roborev PR comment that reviews the
+	// current head, so list rows can filter on it.
+	RoborevVerdict string `json:"roborev_verdict,omitempty" enum:"findings,clean" doc:"Verdict of the newest roborev comment that reviews the current head: findings or clean. Omitted when no comment reviews the current head (no review yet, the head's review still pending or running, or a review of a commit sync has not stored as the head) and when that review has no verdict line (failed, skipped, or unstructured)."`
 	// Stack is present only when the pull request belongs to a stack with more
 	// than one visible member, so list rows can show a stack indicator without
 	// loading the full stack context.

@@ -152,6 +152,9 @@ type ItemListQuery struct {
 	// MergeQueue keeps only pull requests in a merge queue or removed from
 	// one and not queued again.
 	MergeQueue bool
+	// Roborev keeps only pull requests whose current head's roborev verdict
+	// is "findings" or "clean"; empty is unrestricted.
+	Roborev    string
 	Repository RepositoryIdentity
 	State      string
 	Text       string

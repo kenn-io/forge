@@ -200,6 +200,8 @@
         { value: "involves_me", opposite: "not_involves_me", label: "Involves me" },
         { value: "approved", opposite: "not_approved", label: "Approved" },
         { value: "has_workspace", opposite: "no_workspace", label: "Has workspace" },
+        // Excluded means the head's review found nothing; a head with no review matches neither.
+        { value: "roborev_findings", opposite: "roborev_clean", label: "Roborev findings" },
       ],
     },
     {

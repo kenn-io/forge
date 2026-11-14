@@ -66,6 +66,10 @@ Repository-wide PR scans:
   Set `include_events: true` for review-comment excerpts and full stack health;
   Forge then reads individual cached details internally. `event_limit` defaults
   to 5 per PR. Descriptions require `include_body: true`.
+- Pass `roborev: "findings"` or `roborev: "clean"` for PRs whose newest
+  roborev PR comment that reviews the current head reports findings, or none.
+  A head with no review yet, or whose review is still running or failed,
+  matches neither.
 - For merge queues, pass `merge_queue: true`, with or without a repo filter.
   `pull_status.merge_queue` gives the base branch, 1-based position, entry
   state, and estimated time to merge; `pull_status.merge_queue_removal` gives

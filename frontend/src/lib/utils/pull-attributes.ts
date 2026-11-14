@@ -13,6 +13,8 @@ export type PullAttributeFilter =
   | "no_merge_conflicts"
   | "failed_ci"
   | "passed_ci"
+  | "roborev_findings"
+  | "roborev_clean"
   | "has_workspace"
   | "no_workspace"
   | "merge_queued"
@@ -70,6 +72,7 @@ export const PULL_ATTRIBUTE_SECTIONS: readonly (readonly PullAttributeFilter[])[
   ["draft", "not_draft", "ready"],
   ["approved", "not_approved"],
   ["passed_ci", "failed_ci"],
+  ["roborev_clean", "roborev_findings"],
   ["merge_conflicts", "no_merge_conflicts"],
   ["merge_queued", "not_merge_queued"],
   ["has_workspace", "no_workspace"],
@@ -109,6 +112,12 @@ export function pullMatchesAttribute(pr: PullRequest, filter: PullAttributeFilte
   }
   if (filter === "passed_ci") {
     return hasPassedCI(pr);
+  }
+  if (filter === "roborev_findings") {
+    return pr.roborev_verdict === "findings";
+  }
+  if (filter === "roborev_clean") {
+    return pr.roborev_verdict === "clean";
   }
   return pr.workspace !== undefined;
 }

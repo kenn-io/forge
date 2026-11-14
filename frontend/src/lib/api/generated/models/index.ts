@@ -638,6 +638,7 @@ export * from "./mergeRequestDetailResponseHeadRepoKind.ts";
 export * from "./mergeRequestEventResponse.ts";
 export * from "./mergeRequestResponse.ts";
 export * from "./mergeRequestResponseHeadRepoKind.ts";
+export * from "./mergeRequestResponseRoborevVerdict.ts";
 export * from "./mergeRequestResponseState.ts";
 export * from "./mergeRequestState.ts";
 export * from "./mergeRequestSummary.ts";

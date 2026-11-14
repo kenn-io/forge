@@ -276,6 +276,13 @@ and back.
   rows always pass (maintainer decision; `internal/db/queries_activity.go::activityPullAttributeClause`).
 - Phones show a three-state filter as an Any/Yes/No choice, since a switch has no third state, and a
   pick-one section as one select (`frontend/src/lib/components/shared/FilterSectionsPanel.svelte`).
+- `Roborev findings` is one three-state row whose excluded side means the head's review found
+  nothing, so a PR with no head verdict matches neither side (maintainer decision). It reads the
+  synced PR comments of the roborev-ci GitHub App account, not local roborev daemon jobs, which carry
+  no PR, and ignores copies of its format from other commenters (maintainer decision). The verdict is
+  the newest such comment naming the stored head's short SHA. A PR with no review, a head whose review
+  is pending, running, failed, or skipped, and a review of a commit sync has not stored as the head
+  match neither side (`internal/db/queries_roborev.go::roborevHeadVerdictSQL`).
 - `Unassigned` matches only PR/issue subjects with an empty synchronized assignee set; its opposite
   matches every other subject, including a PR whose assignees never synchronized.
 - `Referenced by PR` is a browser-local Issues preference, default off, exposed in every issue-filter

@@ -184,6 +184,19 @@ describe("worklistItemMatchesFilters", () => {
     expect(matching(items, ["involves_me", "no_workspace"])).toEqual([]);
   });
 
+  it("matches either roborev verdict when both are selected, and neither for an unreviewed head", () => {
+    const items = [
+      pull(1, { roborev_verdict: "findings" }),
+      pull(2, { roborev_verdict: "clean" }),
+      pull(3, {}),
+      issue(4, {}),
+    ];
+
+    expect(matching(items, ["roborev_findings"])).toEqual([1]);
+    expect(matching(items, ["roborev_clean"])).toEqual([2]);
+    expect(matching(items, ["roborev_findings", "roborev_clean"])).toEqual([1, 2]);
+  });
+
   it("matches issues by involvement and workspace but never by pull request attributes", () => {
     const items = [
       issue(1, {}, { involves_viewer: true }),

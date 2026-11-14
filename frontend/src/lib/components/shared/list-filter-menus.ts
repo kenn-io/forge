@@ -214,6 +214,8 @@ const PULL_CONDITIONS: { value: PullAttributeFilter; opposite: PullAttributeFilt
   { value: "merge_queued", opposite: "not_merge_queued", label: "Merge queued" },
   { value: "has_workspace", opposite: "no_workspace", label: "Has workspace" },
   { value: "fork", opposite: "not_fork", label: "From fork" },
+  // Excluded means the head's review found nothing; a head with no review matches neither.
+  { value: "roborev_findings", opposite: "roborev_clean", label: "Roborev findings" },
 ];
 
 const PULL_PICK_ONE: { title: string; options: { value: PullAttributeFilter; label: string }[] }[] = [

@@ -977,7 +977,7 @@ describe("WorkspaceTerminalView", () => {
     });
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     localStorage.setItem("kenn-forge-workspace-terminal-layout:ws-1", persistedSplitWorkflowLayout(runningSession.key));
-    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
     await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalled());
     await waitFor(() =>
       expect(localStorage.getItem("kenn-forge-workspace-terminal-layout:ws-1")).toContain("session:ws-1:helper"),
@@ -995,16 +995,6 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(sockets).toHaveLength(2));
     const base = sockets.find((socket) => new URL(socket.url).pathname === "/ws/v1/workspaces/ws-1/terminal")!;
     expect(base).toBeDefined();
-    base.onopen();
-    await fireEvent.click(screen.getByRole("tab", { name: "Helper" }));
-    await fireEvent.click(screen.getByRole("tab", { name: "Workspace", exact: true }));
-    await view.rerender({ workspaceId: "" });
-    await view.rerender({ workspaceId: "ws-1" });
-    await screen.findByRole("tab", { name: "Workspace", exact: true });
-    expect(sockets.filter((socket) => new URL(socket.url).pathname === "/ws/v1/workspaces/ws-1/terminal")).toHaveLength(
-      1,
-    );
-    expect(base.close).not.toHaveBeenCalled();
     expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
   });
 

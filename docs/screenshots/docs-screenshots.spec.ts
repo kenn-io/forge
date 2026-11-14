@@ -431,13 +431,14 @@ async function showPullSelectionMenu(page: Page): Promise<void> {
 }
 
 async function showThreadedActivity(page: Page): Promise<void> {
-  const panel = page.locator(".activity-filters__panel");
-  await page.locator(".activity-feed .activity-filters__trigger").click();
+  const trigger = page.locator(".activity-feed .kit-filter-dropdown__btn");
+  const panel = page.locator(".kit-filter-dropdown__panel");
+  await trigger.click();
   await expect(panel).toBeVisible();
-  await panel.locator(".activity-filters__item", { hasText: "Threaded" }).click();
+  await panel.getByRole("button", { name: "Threaded", exact: true }).click();
   await page.keyboard.press("Escape");
   await expect(panel).toBeHidden();
-  await page.locator(".activity-feed .activity-filters__trigger").blur();
+  await trigger.blur();
   await expect(page.locator(".threaded-view .repo-header").first()).toBeVisible();
   await waitForIdleSync(page);
 }

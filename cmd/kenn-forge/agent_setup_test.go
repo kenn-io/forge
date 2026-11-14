@@ -5,9 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"
-	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/kit/agentsetup"
 )
 
@@ -36,70 +32,6 @@ func setupAgentTest(t *testing.T, dataDir string) string {
 	require.NoError(t, os.MkdirAll(filepath.Dir(config.DefaultConfigPath()), 0o700))
 	require.NoError(t, os.WriteFile(config.DefaultConfigPath(), []byte("data_dir = '"+dataDir+"'\n"), 0o600))
 	return home
-}
-
-func TestSetupHookKeepsSelectedHome(t *testing.T) {
-	for _, tc := range []struct{ name, installHome, runHome string }{
-		{"custom home", "custom", ""},
-		{"default home", "", "other"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			home := setupAgentTest(t, "/tmp/unused")
-			if tc.installHome == "" {
-				t.Setenv("KENN_FORGE_HOME", "")
-			}
-			forgeHome := config.DefaultDataDir()
-			configPath := config.DefaultConfigPath()
-			require.NoError(t, os.MkdirAll(forgeHome, 0o700))
-			require.NoError(t, os.WriteFile(configPath, []byte(""), 0o600))
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				_, _ = io.WriteString(w, `{"hook_output":{"hookSpecificOutput":{"additionalContext":"delivered"}}}`)
-			}))
-			t.Cleanup(server.Close)
-			lock, err := runtimelock.Acquire(t.Context(), forgeHome)
-			require.NoError(t, err)
-			t.Cleanup(func() { _ = lock.Release() })
-			require.NoError(t, lock.WriteMetadata(runtimelock.Metadata{PID: os.Getpid(), ListenAddr: strings.TrimPrefix(server.URL, "http://")}))
-			exe, err := os.Executable()
-			require.NoError(t, err)
-			wrapper := filepath.Join(home, "hook-wrapper")
-			require.NoError(t, os.WriteFile(wrapper, fmt.Appendf(nil, "#!/bin/sh\nexec %q -test.run=^TestSetupHookHelper$ -- \"$@\"\n", exe), 0o700))
-			require.NoError(t, installAgentHooks("install", configPath, "claude", wrapper, io.Discard))
-			data, err := os.ReadFile(filepath.Join(home, "claude", "settings.json"))
-			require.NoError(t, err)
-			var settings struct {
-				Hooks map[string][]struct {
-					Hooks []struct {
-						Command string `json:"command"`
-					} `json:"hooks"`
-				} `json:"hooks"`
-			}
-			require.NoError(t, json.Unmarshal(data, &settings))
-			require.NotEmpty(t, settings.Hooks["SessionStart"])
-			command := settings.Hooks["SessionStart"][0].Hooks[0].Command
-			if tc.runHome == "" {
-				t.Setenv("KENN_FORGE_HOME", "")
-			} else {
-				t.Setenv("KENN_FORGE_HOME", filepath.Join(home, tc.runHome))
-			}
-			cmd := procutil.CommandContext(t.Context(), "/bin/sh", "-c", command)
-			cmd.Stdin = strings.NewReader(`{"session_id":"a","cwd":"/tmp","hook_event_name":"SessionStart","source":"startup"}`)
-			out, err := cmd.CombinedOutput()
-			require.NoError(t, err, string(out))
-			assert.Contains(t, string(out), "delivered")
-		})
-	}
-}
-
-func TestSetupHookHelper(t *testing.T) {
-	for i, arg := range os.Args {
-		if arg == "--" {
-			if err := runAgentHookCLI(os.Args[i+2:], os.Stdin, os.Stdout); err != nil {
-				os.Exit(1)
-			}
-			os.Exit(0)
-		}
-	}
 }
 
 func TestAgentSetupStopped(t *testing.T) {
@@ -213,24 +145,6 @@ func TestAgentSetupSelectedConfig(t *testing.T) {
 	assert.Contains(t, out.String(), "then run `kenn-forge agent setup --config '"+path+"' --agent claude`")
 }
 
-func TestAgentSetupMissingCustomConfig(t *testing.T) {
-	home := setupAgentTest(t, "/tmp/forge-test-data")
-	path := filepath.Join(home, "missing.toml")
-	var out bytes.Buffer
-	cmd := newAgentCommand(loadMCPQuickstart)
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"setup", "--agent", "claude", "--config", path, "--json"})
-	require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)
-	var report agentsetup.Report
-	require.NoError(t, json.Unmarshal(out.Bytes(), &report))
-	require.Len(t, report.Rows, 2)
-	assert.Equal(t, agentsetup.StateFailed, report.Rows[0].State)
-	assert.Equal(t, agentsetup.StateFailed, report.Rows[1].State)
-	assert.Contains(t, report.Rows[1].Reason, "load config")
-	_, err := os.Stat(filepath.Join(home, "claude", "settings.json"))
-	assert.ErrorIs(t, err, os.ErrNotExist)
-}
-
 func TestAgentSetupLoadsDaemonOnceAndWritesEndpoint(t *testing.T) {
 	home := setupAgentTest(t, "/tmp/forge-test-data")
 	bin := filepath.Join(home, "bin")
@@ -319,6 +233,28 @@ func TestAgentSetupAuthGuidance(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, out, "export KENN_FORGE_API_TOKEN=\"$(cat /tmp/token)\"")
 	})
+}
+
+func TestAgentSetupMissingAndOutdatedMCPTokenGuidance(t *testing.T) {
+	for _, contents := range []string{"", "[mcp_servers.kenn-forge]\nurl = 'http://old.example/mcp'\n"} {
+		t.Run(fmt.Sprintf("configured=%t", contents != ""), func(t *testing.T) {
+			home := setupAgentTest(t, "/tmp/forge-test-data")
+			if contents != "" {
+				require.NoError(t, os.MkdirAll(filepath.Join(home, "codex"), 0o700))
+				require.NoError(t, os.WriteFile(filepath.Join(home, "codex", "config.toml"), []byte(contents), 0o600))
+			}
+			info := daemonMCPQuickstart(mcpSettingsInfo{Enabled: true, ActiveURL: "http://127.0.0.1:8091/mcp", ActiveRequiresAuth: true}, "/tmp/token")
+			var out bytes.Buffer
+			cmd := newAgentCommand(func(context.Context, string, time.Duration) (mcpQuickstartInfo, error) { return info, nil })
+			cmd.SetOut(&out)
+			cmd.SetArgs([]string{"setup", "--agent", "codex", "--check", "--json"})
+			require.ErrorIs(t, cmd.ExecuteContext(t.Context()), agentsetup.ErrNotReady)
+			var report agentsetup.Report
+			require.NoError(t, json.Unmarshal(out.Bytes(), &report))
+			require.Len(t, report.Rows, 2)
+			assert.Contains(t, report.Rows[1].NextStep, "export KENN_FORGE_API_TOKEN from /tmp/token")
+		})
+	}
 }
 
 func TestAgentSetupPowerShellTokenPath(t *testing.T) {

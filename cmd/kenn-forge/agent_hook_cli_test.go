@@ -16,9 +16,28 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/kit/agenthook"
 )
+
+func TestAgentHookInstallPreservesCodexCommandWithExplicitDataDir(t *testing.T) {
+	for _, sameAsHome := range []bool{false, true} {
+		t.Run(fmt.Sprintf("same-as-home=%t", sameAsHome), func(t *testing.T) {
+			home := setupAgentTest(t, "/tmp/forge-test-data")
+			configPath := filepath.Join(home, "forge", "config.toml")
+			if sameAsHome {
+				require.NoError(t, os.WriteFile(configPath, fmt.Appendf(nil, "data_dir = %q\n", filepath.Join(home, "forge")), 0o600))
+			}
+			require.NoError(t, installAgentHooks("install", configPath, "codex", "/usr/bin/kenn-forge", io.Discard))
+			data, err := os.ReadFile(filepath.Join(home, "codex", "hooks.json"))
+			require.NoError(t, err)
+			assert.Contains(t, string(data), "--config "+configPath+" --source kenn-forge-agent-activity")
+			assert.NotContains(t, string(data), "--home")
+		})
+	}
+}
 
 func TestAgentHookRunRelaysLifecyclePayloadToDaemon(t *testing.T) {
 	assert := assert.New(t)
@@ -301,4 +320,71 @@ func TestAgentHookSessionEndReportsDaemonFailure(t *testing.T) {
 	}
 	server.Close()
 	require.NoError(t, receive("SessionEnd"), "an unreachable daemon must not fail the hook")
+}
+
+func TestSetupHookKeepsSelectedHome(t *testing.T) {
+	for _, tc := range []struct{ name, installHome, runHome string }{
+		{"custom home", "custom", ""},
+		{"default home", "", "other"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := setupAgentTest(t, "/tmp/unused")
+			if tc.installHome == "" {
+				t.Setenv("KENN_FORGE_HOME", "")
+			}
+			forgeHome := config.DefaultDataDir()
+			configPath := config.DefaultConfigPath()
+			require.NoError(t, os.MkdirAll(forgeHome, 0o700))
+			require.NoError(t, os.WriteFile(configPath, []byte(""), 0o600))
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.WriteString(w, `{"hook_output":{"hookSpecificOutput":{"additionalContext":"delivered"}}}`)
+			}))
+			t.Cleanup(server.Close)
+			lock, err := runtimelock.Acquire(t.Context(), forgeHome)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = lock.Release() })
+			require.NoError(t, lock.WriteMetadata(runtimelock.Metadata{PID: os.Getpid(), ListenAddr: strings.TrimPrefix(server.URL, "http://")}))
+			exe, err := os.Executable()
+			require.NoError(t, err)
+			wrapper := filepath.Join(home, "hook-wrapper")
+			require.NoError(t, os.WriteFile(wrapper, fmt.Appendf(nil, "#!/bin/sh\nGO_WANT_HELPER_PROCESS=1 exec %q -test.run=^TestSetupHookHelper$ -- \"$@\"\n", exe), 0o700))
+			require.NoError(t, installAgentHooks("install", configPath, "claude", wrapper, io.Discard))
+			data, err := os.ReadFile(filepath.Join(home, "claude", "settings.json"))
+			require.NoError(t, err)
+			var settings struct {
+				Hooks map[string][]struct {
+					Hooks []struct {
+						Command string `json:"command"`
+					} `json:"hooks"`
+				} `json:"hooks"`
+			}
+			require.NoError(t, json.Unmarshal(data, &settings))
+			require.NotEmpty(t, settings.Hooks["SessionStart"])
+			command := settings.Hooks["SessionStart"][0].Hooks[0].Command
+			if tc.runHome == "" {
+				t.Setenv("KENN_FORGE_HOME", "")
+			} else {
+				t.Setenv("KENN_FORGE_HOME", filepath.Join(home, tc.runHome))
+			}
+			cmd := procutil.CommandContext(t.Context(), "/bin/sh", "-c", command)
+			cmd.Stdin = strings.NewReader(`{"session_id":"a","cwd":"/tmp","hook_event_name":"SessionStart","source":"startup"}`)
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+			assert.Contains(t, string(out), "delivered")
+		})
+	}
+}
+
+func TestSetupHookHelper(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	for i, arg := range os.Args {
+		if arg == "--" {
+			if err := runAgentHookCLI(os.Args[i+2:], os.Stdin, os.Stdout); err != nil {
+				os.Exit(1)
+			}
+			os.Exit(0)
+		}
+	}
 }

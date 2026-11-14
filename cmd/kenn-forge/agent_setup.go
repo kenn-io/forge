@@ -149,7 +149,7 @@ func withTokenGuidance(item agentsetup.Item, info mcpQuickstartInfo) agentsetup.
 	path := info.Authentication.TokenPath
 	item.Check = func(ctx context.Context) (agentsetup.Status, error) {
 		status, err := check(ctx)
-		if status.State == agentsetup.StateFailed || status.State == agentsetup.StateUnknown {
+		if status.State != agentsetup.StateOK {
 			status.NextStep += fmt.Sprintf("; export %s from %s", mcpTokenEnvironment, path)
 		}
 		return status, err
@@ -160,5 +160,6 @@ func withTokenGuidance(item agentsetup.Item, info mcpQuickstartInfo) agentsetup.
 		cmds.PowerShell = fmt.Sprintf("$env:%s = (Get-Content -Raw -LiteralPath '%s').Trim()\n%s", mcpTokenEnvironment, strings.ReplaceAll(path, "'", "''"), cmds.PowerShell)
 		return cmds, err
 	}
-	return item
+	// A fresh Item drops the library's retry-only next step so the token hint survives.
+	return agentsetup.Item{Name: item.Name, Install: item.Install, Check: item.Check, Commands: item.Commands}
 }

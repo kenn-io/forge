@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/daemonclient"
 
@@ -289,9 +290,9 @@ func resolveAgentHookTarget(configPath, binary string) (agentHookTarget, error) 
 	if err != nil {
 		return agentHookTarget{}, fmt.Errorf("resolve agent hook config path: %w", err)
 	}
-	home, err := filepath.Abs(config.DefaultDataDir())
+	home, err := agentHookHome(configPath)
 	if err != nil {
-		return agentHookTarget{}, fmt.Errorf("resolve agent hook home: %w", err)
+		return agentHookTarget{}, err
 	}
 	executable := strings.TrimSpace(binary)
 	if executable == "" {
@@ -311,14 +312,37 @@ func (target agentHookTarget) options(agent agenthook.Agent) agenthook.InstallOp
 	}
 	return agenthook.InstallOptions{
 		Executable: target.executable,
-		Arguments: []string{
-			"agent-hook", "run",
-			"--agent", string(agent),
-			"--config", target.configPath,
-			"--source", agentHookSource,
-			"--home", target.home,
-		},
-		Marker: agentHookMarker,
-		Hooks:  hooks,
+		Arguments:  target.arguments(agent),
+		Marker:     agentHookMarker,
+		Hooks:      hooks,
 	}
+}
+
+func (target agentHookTarget) arguments(agent agenthook.Agent) []string {
+	args := []string{
+		"agent-hook", "run",
+		"--agent", string(agent),
+		"--config", target.configPath,
+		"--source", agentHookSource,
+	}
+	if target.home != "" {
+		args = append(args, "--home", target.home)
+	}
+	return args
+}
+
+// agentHookHome returns the Forge home to pin in the hook, or "" when the
+// config sets its own data_dir, which already identifies the runtime.
+func agentHookHome(configPath string) (string, error) {
+	var file struct {
+		DataDir string `toml:"data_dir"`
+	}
+	if _, err := toml.DecodeFile(configPath, &file); err == nil && file.DataDir != "" {
+		return "", nil
+	}
+	home, err := filepath.Abs(config.DefaultDataDir())
+	if err != nil {
+		return "", fmt.Errorf("resolve agent hook home: %w", err)
+	}
+	return home, nil
 }

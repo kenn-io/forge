@@ -269,89 +269,61 @@ func TestWorkspaceRuntimeResizeOwnerFollowsLatestDeliberateClientE2E(t *testing.
 }
 
 func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
-	runParallelWorkspacePTYTest(t)
+	t.Parallel()
 
-	require := require.New(t)
-	disableTmuxAgentSessions := false
-	cfg := &config.Config{Agents: []config.Agent{{
-		Key:     "helper",
-		Label:   "Helper",
-		Command: workspaceRuntimeHelperCommand("echo"),
-	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
-	fixture := setupWorkspaceServerFixture(t, cfg, server.ServerOptions{
-		DisableWorkspaceBackgroundMonitors: true,
-		HostCheckAllowLoopbackAnyPort:      true,
-		PtyOwnerInProcess:                  true,
-	})
-	ctx := t.Context()
-	ws := createReadyWorkspace(t, ctx, fixture.client)
-
-	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
-		TargetKey: "helper",
-	}})
-	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode)
-	require.NotNil(launchResp.JSON200)
-	session := launchResp.JSON200
-
-	ts := httptest.NewServer(fixture.server)
-	t.Cleanup(ts.Close)
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.ID +
-		"/runtime/sessions/" + session.Key + "/terminal"
-	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
-	if err != nil && resp != nil && resp.Body != nil {
-		_ = resp.Body.Close()
+	tests := []struct {
+		name     string
+		basePath string
+	}{
+		{name: "root"},
+		{name: "prefixed", basePath: "/kenn-forge/"},
 	}
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runParallelWorkspacePTYTest(t)
 
-	workspaceTerminalConnWriteRead(t, ctx, conn, "ping\n", "echo:ping")
-}
+			require := require.New(t)
+			disableTmuxAgentSessions := false
+			cfg := &config.Config{
+				BasePath: test.basePath,
+				Agents: []config.Agent{{
+					Key:     "helper",
+					Label:   "Helper",
+					Command: workspaceRuntimeHelperCommand("echo"),
+				}},
+				Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions},
+			}
+			fixture := setupWorkspaceServerFixture(t, cfg, server.ServerOptions{
+				DisableWorkspaceBackgroundMonitors: true,
+				HostCheckAllowLoopbackAnyPort:      true,
+				PtyOwnerInProcess:                  true,
+			})
+			ctx := t.Context()
+			ws := createReadyWorkspace(t, ctx, fixture.client)
 
-func TestWorkspaceRuntimeSessionTerminalWebSocketBasePathE2E(t *testing.T) {
-	runParallelWorkspacePTYTest(t)
+			launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
+				TargetKey: "helper",
+			}})
+			require.NoError(err)
+			require.Equal(http.StatusOK, launchResp.StatusCode)
+			require.NotNil(launchResp.JSON200)
+			session := launchResp.JSON200
 
-	require := require.New(t)
-	disableTmuxAgentSessions := false
-	cfg := &config.Config{
-		BasePath: "/kenn-forge/",
-		Agents: []config.Agent{{
-			Key:     "helper",
-			Label:   "Helper",
-			Command: workspaceRuntimeHelperCommand("echo"),
-		}},
-		Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions},
+			ts := httptest.NewServer(fixture.server)
+			t.Cleanup(ts.Close)
+			wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + strings.TrimSuffix(test.basePath, "/") +
+				"/ws/v1/workspaces/" + ws.ID +
+				"/runtime/sessions/" + session.Key + "/terminal"
+			conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+			if err != nil && resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+			require.NoError(err)
+			defer conn.Close(websocket.StatusNormalClosure, "done")
+
+			workspaceTerminalConnWriteRead(t, ctx, conn, "ping\n", "echo:ping")
+		})
 	}
-	fixture := setupWorkspaceServerFixture(t, cfg, server.ServerOptions{
-		DisableWorkspaceBackgroundMonitors: true,
-		HostCheckAllowLoopbackAnyPort:      true,
-		PtyOwnerInProcess:                  true,
-	})
-	ctx := t.Context()
-	ws := createReadyWorkspace(t, ctx, fixture.client)
-
-	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
-		TargetKey: "helper",
-	}})
-	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode)
-	require.NotNil(launchResp.JSON200)
-	session := launchResp.JSON200
-
-	ts := httptest.NewServer(fixture.server)
-	t.Cleanup(ts.Close)
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/kenn-forge/ws/v1/workspaces/" + ws.ID +
-		"/runtime/sessions/" + session.Key + "/terminal"
-	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
-	if err != nil && resp != nil && resp.Body != nil {
-		_ = resp.Body.Close()
-	}
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-
-	workspaceTerminalConnWriteRead(t, ctx, conn, "ping\n", "echo:ping")
 }
 
 func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {

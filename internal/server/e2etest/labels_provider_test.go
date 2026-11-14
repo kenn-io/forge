@@ -214,6 +214,8 @@ func gitlabAssignedLabelsJSON(body map[string]any) (string, bool) {
 }
 
 func (f *fakeGitLabAPI) handler(t *testing.T) http.Handler {
+	t.Helper()
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		key := r.Method + " " + r.URL.EscapedPath()
@@ -554,6 +556,8 @@ func (f *fakeGitealikeAPI) labelsForIDs(ids []int64) []fakeGitealikeLabel {
 }
 
 func (f *fakeGitealikeAPI) handler(t *testing.T) http.Handler {
+	t.Helper()
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {

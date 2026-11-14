@@ -65,6 +65,8 @@ func setupTestServerWithMock(t *testing.T, mock *serverfake.MockGH) (*server.Ser
 func setupTestServerWithRepos(
 	t *testing.T, mock *serverfake.MockGH, repos []ghclient.RepoRef,
 ) (*server.Server, *db.DB, *ghclient.Syncer) {
+	t.Helper()
+
 	return setupTestServerWithReposAndOptions(t, mock, repos, server.ServerOptions{})
 }
 
@@ -194,7 +196,7 @@ func TestAPIGitHubSyncPersistsReviewThreadsThroughPullDetail(t *testing.T) {
 
 	require.NoError(syncer.SyncMR(ctx, "acme", "widget", prNumber))
 
-	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
@@ -663,7 +665,7 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
@@ -682,7 +684,7 @@ func TestE2EPRDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
@@ -794,7 +796,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
@@ -808,7 +810,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenPRListIsUnchanged(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
@@ -942,7 +944,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(targetNumber))}})
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(targetNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
@@ -955,7 +957,7 @@ func TestE2EPRDetailRemovesDeletedCommentWhenAnotherPRChanges(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(targetNumber))}})
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(targetNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
@@ -1040,7 +1042,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	require.NoError(syncer.SyncMR(ctx, "acme", "widget", prNumber))
 
-	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
@@ -1055,7 +1057,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	require.NoError(syncer.SyncMR(ctx, "acme", "widget", prNumber))
 
-	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
@@ -1162,7 +1164,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
@@ -1177,7 +1179,7 @@ func TestE2EPRDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
@@ -1293,7 +1295,7 @@ func TestE2EGraphQLBulkSyncAppliesAuthoritativeReviewDecisionOverIncompleteRevie
 
 	// First pass persists the APPROVED decision through the real pipeline.
 	syncer.RunOnce(ctx)
-	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	firstResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
@@ -1307,7 +1309,7 @@ func TestE2EGraphQLBulkSyncAppliesAuthoritativeReviewDecisionOverIncompleteRevie
 	currentReviewsConn = `{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"review-cursor"}}`
 
 	syncer.RunOnce(ctx)
-	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	secondResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)

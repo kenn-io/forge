@@ -34,11 +34,14 @@ func TestGHShimPassesUnsupportedCallsToRealGH(t *testing.T) {
 		logged  [][]string
 	}{
 		{
-			name:    "gh symlink",
-			install: func(t *testing.T, dir string) { require.NoError(t, os.Symlink(bin, filepath.Join(dir, "gh"))) },
-			args:    []string{"pr", "list", "-L5", "--jq", ".[].number"},
-			want:    "pr\nlist\n-L5\n--jq\n.[].number\n",
-			logged:  [][]string{{"pr", "list", "-L5", "--jq", ".[].number"}},
+			name: "gh symlink",
+			install: func(t *testing.T, dir string) {
+				t.Helper()
+				require.NoError(t, os.Symlink(bin, filepath.Join(dir, "gh")))
+			},
+			args:   []string{"pr", "list", "-L5", "--jq", ".[].number"},
+			want:   "pr\nlist\n-L5\n--jq\n.[].number\n",
+			logged: [][]string{{"pr", "list", "-L5", "--jq", ".[].number"}},
 		},
 		{
 			name:   "gh subcommand",
@@ -107,6 +110,8 @@ func TestGHShimPassesUnsupportedCallsToRealGH(t *testing.T) {
 // regression fails the test instead of spawning processes without bound.
 func writeGHWrapper(bin, prefix, extraArg string, maxHops int) func(*testing.T, string) {
 	return func(t *testing.T, dir string) {
+		t.Helper()
+
 		script := fmt.Sprintf("#!/bin/sh\nhops=$((${TEST_GH_HOPS:-0}+1))\n[ \"$hops\" -gt %d ] && exit 99\nexport TEST_GH_HOPS=$hops\n%s'%s' gh \"$@\" %s\n", maxHops, prefix, bin, extraArg)
 		require.NoError(t, os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o700))
 	}

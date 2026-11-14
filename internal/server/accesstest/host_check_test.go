@@ -29,6 +29,8 @@ import (
 // resolveHostCheckOptions over both the cfg=nil fallback and the
 // test-friendly AllowLoopbackAnyPort relaxation.
 func setupHostCheckServer(t *testing.T, opts authapi.HostCheckOptions) *server.Server {
+	t.Helper()
+
 	return setupHostCheckServerWithToken(t, opts, "")
 }
 

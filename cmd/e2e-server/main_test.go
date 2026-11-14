@@ -855,7 +855,7 @@ func TestRunCancellationStopsPrivateTmuxBeforeShutdown(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not available")
 	}
-	//nolint:usetesting // unix socket path length requires a short OS temp root
+	// unix socket path length requires a short OS temp root
 	tmuxDir, err := os.MkdirTemp("/tmp", "kf-e2e-tmux-")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(tmuxDir) })
@@ -914,7 +914,7 @@ func TestE2EServerTestMainStopsPrivateTmuxOnSIGTERM(t *testing.T) {
 	}
 
 	require := require.New(t)
-	//nolint:usetesting // unix socket path length requires a short OS temp root
+	// unix socket path length requires a short OS temp root
 	tmuxDir, err := os.MkdirTemp("/tmp", "kf-e2e-tmux-")
 	require.NoError(err)
 	t.Cleanup(func() { _ = os.RemoveAll(tmuxDir) })
@@ -1060,7 +1060,7 @@ func TestResetStopsOldPrivateTmuxServerBeforeReturning(t *testing.T) {
 		t.Skip("tmux not available")
 	}
 	require := require.New(t)
-	//nolint:usetesting // unix socket path length requires a short OS temp root
+	// unix socket path length requires a short OS temp root
 	tmuxDir, err := os.MkdirTemp("/tmp", "kf-e2e-tmux-")
 	require.NoError(err)
 	t.Cleanup(func() { _ = os.RemoveAll(tmuxDir) })

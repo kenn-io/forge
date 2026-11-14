@@ -4,6 +4,7 @@ package pathidentity
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -33,7 +34,7 @@ func CanonicalExisting(path string) (string, error) {
 	}
 	pathBytes, _, found := bytes.Cut(buffer, []byte{0})
 	if !found {
-		return "", fmt.Errorf("get path from file handle: unterminated path")
+		return "", errors.New("get path from file handle: unterminated path")
 	}
 	return string(pathBytes), nil
 }

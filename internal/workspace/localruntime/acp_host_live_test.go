@@ -42,6 +42,8 @@ func TestLiveACPSharedHost(t *testing.T) {
 }
 
 func liveACPSharedHost(t *testing.T, command []string) {
+	t.Helper()
+
 	t.Setenv("KENN_FORGE_ACP_HOST_FIXTURE", "1")
 	dir := t.TempDir()
 	markers := map[string]string{"alpha": "alpha-7731", "bravo": "bravo-2290"}

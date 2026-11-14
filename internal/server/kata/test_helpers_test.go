@@ -89,12 +89,16 @@ func setupTestServerWithConfigContent(
 	cfgContent string,
 	_ *mockGH,
 ) (*Server, *db.DB, string) {
+	t.Helper()
+
 	return setupTestServerWithConfigContentAndOptions(
 		t, cfgContent, nil, ServerOptions{},
 	)
 }
 
 func setupTestServerWithConfig(t *testing.T) (*Server, *db.DB, string) {
+	t.Helper()
+
 	return setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"

@@ -2908,7 +2908,8 @@ func TestSessionSubscribeReplayTruncationPreservesControlBoundary(t *testing.T) 
 					s := &session{subscribers: make(map[chan []byte]struct{})}
 					prefix := bytes.Repeat([]byte("x"), buffer.size-maxSessionOutputReplay-2)
 					prefix = append(prefix, []byte(tc.marker)...)
-					output := append(prefix, bytes.Repeat([]byte("x"), buffer.size-len(prefix))...)
+					output := prefix
+					output = append(output, bytes.Repeat([]byte("x"), buffer.size-len(output))...)
 					s.broadcast(output)
 
 					ch, cancel := s.subscribe()

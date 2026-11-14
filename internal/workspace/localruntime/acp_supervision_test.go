@@ -421,7 +421,8 @@ func TestACPSteeringPreservesIDsBeforeOversizedOutput(t *testing.T) {
 	require.NoError(t, err)
 	var frame map[string]ACPHistory
 	require.NoError(t, json.Unmarshal(data, &frame))
-	messages := append(frame["history"].Messages, after.Messages...)
+	messages := frame["history"].Messages
+	messages = append(messages, after.Messages...)
 	require.Len(t, messages, 3)
 	assert.Equal(t, "first", messages[0].SubmissionID)
 	assert.Equal(t, "steer", messages[1].SubmissionID)

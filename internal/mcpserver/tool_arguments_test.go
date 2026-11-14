@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -113,11 +114,11 @@ func ignoredArgumentsMeta(t *testing.T, result *mcp.CallToolResult) []string {
 }
 
 func toolResultText(result *mcp.CallToolResult) string {
-	var text string
+	var text strings.Builder
 	for _, content := range result.Content {
 		if block, ok := content.(*mcp.TextContent); ok {
-			text += block.Text + "\n"
+			text.WriteString(block.Text + "\n")
 		}
 	}
-	return text
+	return text.String()
 }

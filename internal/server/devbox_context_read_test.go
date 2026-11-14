@@ -105,10 +105,10 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		renewal := r.Method == "PUT" && r.URL.Path == "/api/v1/worker/workspaces/work-a/context"
+		renewal := r.Method == http.MethodPut && r.URL.Path == "/api/v1/worker/workspaces/work-a/context"
 		if renewal {
 			renewals.Add(1)
-		} else if r.Method == "GET" && r.URL.Path != "/api/v1/workspaces/work-a" {
+		} else if r.Method == http.MethodGet && r.URL.Path != "/api/v1/workspaces/work-a" {
 			reads.Add(1)
 		}
 		workerMux.ServeHTTP(w, r)

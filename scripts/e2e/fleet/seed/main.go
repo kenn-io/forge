@@ -52,7 +52,7 @@ func run(ctx context.Context, args []string) error {
 	switch db.MergeRequestState(*pullState) {
 	case db.MergeRequestStateOpen, db.MergeRequestStateClosed, db.MergeRequestStateMerged:
 	default:
-		return fmt.Errorf("-pull-state must be open, closed, or merged")
+		return errors.New("-pull-state must be open, closed, or merged")
 	}
 	if *cloneURL == "" {
 		*cloneURL = filepath.Join(filepath.Dir(*worktreePath), "origin.git")

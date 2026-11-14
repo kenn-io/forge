@@ -43,6 +43,8 @@ func automaticEvidence(f fixture, p *landedwork.Interval, method string) landedw
 // Another change on the target already made the first source edit to a.txt,
 // alongside unrelated work. The squash adds only the rest.
 func independentOverlap(t *testing.T) fixture {
+	t.Helper()
+
 	r, start := newOverlapRepo(t)
 	f := fixture{repo: r}
 	r.Checkout("-b", "topic", start)
@@ -66,6 +68,8 @@ func TestSquashWithEditsAlreadyOnTarget(t *testing.T) {
 		"independent overlap": independentOverlap,
 		// A one-commit source owns only the squash commit under every method.
 		"single commit": func(t *testing.T) fixture {
+			t.Helper()
+
 			r, start := newOverlapRepo(t)
 			f := fixture{repo: r}
 			r.Checkout("-b", "topic", start)
@@ -83,6 +87,8 @@ func TestSquashWithEditsAlreadyOnTarget(t *testing.T) {
 		// rebase replays source commits in order, so it cannot produce an
 		// earlier source edit after a later one.
 		"later edit landed first": func(t *testing.T) fixture {
+			t.Helper()
+
 			r, start := newOverlapRepo(t)
 			f := fixture{repo: r}
 			r.Checkout("-b", "topic", start)

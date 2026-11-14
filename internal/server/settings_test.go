@@ -48,6 +48,8 @@ import (
 func setupTestServerWithConfig(
 	t *testing.T,
 ) (*Server, *db.DB, string, *ghclient.Syncer) {
+	t.Helper()
+
 	return setupTestServerWithConfigContent(t, serverfake.DefaultTestConfigContent, &serverfake.MockGH{})
 }
 

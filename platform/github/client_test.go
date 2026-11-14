@@ -126,7 +126,7 @@ func TestViewerPermissionOverlayRevalidatesWithETag(t *testing.T) {
 	viewerPush := true
 	var validators []string
 	read := &http.Client{Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(
 			`{"id":17,"name":"project-a","owner":{"login":"team-a"},"permissions":{"push":false}}`,
 		)), Request: req}, nil
 	})}
@@ -142,7 +142,7 @@ func TestViewerPermissionOverlayRevalidatesWithETag(t *testing.T) {
 			`{"id":17,"permissions":{"push":%t},"allow_squash_merge":true,"allow_merge_commit":false,"allow_rebase_merge":false}`,
 			viewerPush,
 		)
-		return &http.Response{StatusCode: 200, Header: header, Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
+		return &http.Response{StatusCode: http.StatusOK, Header: header, Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
 	})}
 	client, err := github.NewClient(github.ClientConfig{
 		Host: "github.com", Read: read, Write: write, Notifications: write, Clock: time.Now,

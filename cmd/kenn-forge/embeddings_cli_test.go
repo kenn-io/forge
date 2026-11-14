@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -74,7 +74,7 @@ func TestLocalEmbeddingsSwitchPreservesSelectionDuringConcurrentEdit(t *testing.
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	for _, compatible := range []bool{true, false} {
-		t.Run(fmt.Sprint(compatible), func(t *testing.T) {
+		t.Run(strconv.FormatBool(compatible), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
 			require.NoError(t, config.EnsureDefault(path))
 			initial, err := config.Load(path)
@@ -121,7 +121,7 @@ func TestLocalEmbeddingsSwitchPreservesSelectionDuringConcurrentEdit(t *testing.
 
 func TestLocalEmbeddingsDownloadFailureAndNoninteractiveRefusal(t *testing.T) {
 	for _, yes := range []bool{false, true} {
-		t.Run(fmt.Sprint(yes), func(t *testing.T) {
+		t.Run(strconv.FormatBool(yes), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
 			original := "[embeddings]\nbase_url = \"http://127.0.0.1:1234/v1\"\nmodel = \"other\"\ndims = 768\n"
 			require.NoError(t, os.WriteFile(path, []byte(original), 0o600))

@@ -4,7 +4,7 @@ package ghshim
 import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
-	"fmt"
+	"errors"
 	"io"
 	"slices"
 	"strconv"
@@ -98,7 +98,7 @@ func Encode(q Query, pulls []db.MergeRequest) ([]byte, error) {
 	for _, pr := range pulls {
 		for _, field := range q.Fields {
 			if (field == "headRefOid" && pr.PlatformHeadSHA == "") || (field == "createdAt" && pr.CreatedAt.IsZero()) || (field == "updatedAt" && pr.UpdatedAt.IsZero()) || (field == "url" && pr.URL == "") || (field == "title" && strings.TrimSpace(pr.Title) == "") || (field == "mergedAt" && pr.State == db.MergeRequestStateMerged && pr.MergedAt == nil) || (field == "closedAt" && pullState(pr) != db.MergeRequestStateOpen && pr.ClosedAt == nil) {
-				return nil, fmt.Errorf("requested field is not stored")
+				return nil, errors.New("requested field is not stored")
 			}
 		}
 	}

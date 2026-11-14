@@ -459,7 +459,7 @@ func TestAPIEnqueuePRSyncQueuesOneRerun(t *testing.T) {
 				}
 			}
 
-			id := int64(2000 + call)
+			id := (2000 + call)
 			sha := fmt.Sprintf("head-%d", call)
 			state := "open"
 			title := "Async synced PR"
@@ -969,7 +969,7 @@ func TestAPISyncPRSanitizesDiffFailureWarning(t *testing.T) {
 	_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	client := servertest.SetupTestClient(t, srv)
-	resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	// Diff-sync failures are non-fatal: the handler must return 200
 	// with the PR row and a warning, not a 502.
@@ -3202,6 +3202,8 @@ func seedStackedPRMergeable(
 	owner, name string, number int,
 	head, base string, state db.MergeRequestState, ci, review, mergeableState string,
 ) int64 {
+	t.Helper()
+
 	return serverfake.SeedStackedPRState(t, database, owner, name, number, head, base, state, ci, review, false, mergeableState)
 }
 
@@ -3717,7 +3719,7 @@ func TestCICheckDedupLatestRunWinsE2E(t *testing.T) {
 		serverfake.WithSeedPRTimes(older, older, older),
 	)
 
-	resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)

@@ -58,6 +58,8 @@ func setupTestServerWithMock(t *testing.T, mock *serverfake.MockGH) (*server.Ser
 func setupTestServerWithRepos(
 	t *testing.T, mock *serverfake.MockGH, repos []ghclient.RepoRef,
 ) (*server.Server, *db.DB, *ghclient.Syncer) {
+	t.Helper()
+
 	return setupTestServerWithReposAndOptions(t, mock, repos, server.ServerOptions{})
 }
 
@@ -402,7 +404,7 @@ func TestE2EGraphQLIssueSyncThroughAPI(t *testing.T) {
 	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		if bytes.Contains(body, []byte("pullRequests")) {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequests":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`))
 			return
@@ -681,7 +683,7 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 	gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		if bytes.Contains(body, []byte("issue(number:")) {
 			_, _ = w.Write([]byte(`{"data":{"repository":{"issue":{"comments":{"nodes":[{
 				"databaseId":902,
@@ -723,7 +725,7 @@ func TestE2EGraphQLIssueSyncTrustsTotalCount(t *testing.T) {
 		ListOpenPRsErr: &gh.ErrorResponse{
 			Response: &http.Response{StatusCode: http.StatusNotModified},
 		},
-		ListIssueCommentsErr: fmt.Errorf("transient comments failure"),
+		ListIssueCommentsErr: errors.New("transient comments failure"),
 		ListOpenIssuesFn: func(_ context.Context, _, _ string) ([]*gh.Issue, error) {
 			return []*gh.Issue{{
 				ID:        &issueID,
@@ -876,7 +878,7 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
@@ -895,7 +897,7 @@ func TestE2EIssueDetailRefreshesEditedCommentBody(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
@@ -991,7 +993,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 
 	syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
@@ -1005,7 +1007,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenIssueListIsUnchanged(t *testing.
 
 	syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
@@ -1130,7 +1132,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 
 	syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(targetNumber))}})
+	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(targetNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
@@ -1143,7 +1145,7 @@ func TestE2EIssueDetailRemovesDeletedCommentWhenAnotherIssueChanges(t *testing.T
 
 	syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(targetNumber))}})
+	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(targetNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
@@ -1220,7 +1222,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	require.NoError(syncer.SyncIssue(ctx, "acme", "widget", issueNumber))
 
-	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
@@ -1235,7 +1237,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnFullRefresh(t *testing.T) {
 
 	require.NoError(syncer.SyncIssue(ctx, "acme", "widget", issueNumber))
 
-	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
@@ -1335,7 +1337,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
@@ -1351,7 +1353,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
@@ -1519,7 +1521,7 @@ func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *
 	syncer.RunOnce(ctx)
 	assert.Zero(restCommentCalls.Load())
 
-	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	firstResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, firstResp.StatusCode)
 	require.NotNil(firstResp.JSON200)
@@ -1540,7 +1542,7 @@ func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *
 	syncer.RunOnce(ctx)
 	assert.Equal(int32(1), restCommentCalls.Load())
 
-	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	secondResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, secondResp.StatusCode)
 	require.NotNil(secondResp.JSON200)
@@ -1687,7 +1689,7 @@ func TestE2EGraphQLBulkSyncPersistsIssueTimelineEvents(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	resp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
@@ -1858,7 +1860,7 @@ func TestE2EGraphQLBulkSyncPersistsIssueLifecycleTimelineAfterReopen(t *testing.
 	phase = "closed"
 	syncer.RunOnce(ctx)
 
-	closedResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	closedResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, closedResp.StatusCode)
 	require.NotNil(closedResp.JSON200)
@@ -1869,7 +1871,7 @@ func TestE2EGraphQLBulkSyncPersistsIssueLifecycleTimelineAfterReopen(t *testing.
 	phase = "reopened"
 	syncer.RunOnce(ctx)
 
-	reopenedResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(issueNumber))}})
+	reopenedResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, reopenedResp.StatusCode)
 	require.NotNil(reopenedResp.JSON200)

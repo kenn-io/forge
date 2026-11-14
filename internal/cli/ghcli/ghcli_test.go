@@ -72,7 +72,7 @@ func assertDaemonDiscovery(t *testing.T, dir, configPath, runtimeBasePath, wantB
 		assert.Equal("Bearer "+token, r.Header.Get("Authorization"))
 		var q ghshim.Query
 		if !assert.NoError(json.NewDecoder(r.Body).Decode(&q)) {
-			http.Error(w, "bad query", 400)
+			http.Error(w, "bad query", http.StatusBadRequest)
 			return
 		}
 		assert.Equal("widget", q.Repo)

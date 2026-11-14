@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"net/url"
@@ -78,7 +79,7 @@ func (c *Config) RuntimeSources() map[string]string {
 func parseRuntimePort(value string) (int, error) {
 	port, err := strconv.Atoi(value)
 	if err != nil || port < 1 || port > 65535 {
-		return 0, fmt.Errorf("KENN_FORGE_PORT must be an integer between 1 and 65535")
+		return 0, errors.New("KENN_FORGE_PORT must be an integer between 1 and 65535")
 	}
 	return port, nil
 }

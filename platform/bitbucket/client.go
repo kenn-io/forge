@@ -97,15 +97,15 @@ func classify(err error) error {
 	}
 	var code platform.PlatformErrorCode
 	switch response.StatusCode {
-	case 400:
+	case http.StatusBadRequest:
 		code = platform.ErrCodeInvalidArgument
-	case 401, 403:
+	case http.StatusUnauthorized, http.StatusForbidden:
 		code = platform.ErrCodePermissionDenied
-	case 404:
+	case http.StatusNotFound:
 		code = platform.ErrCodeNotFound
-	case 409:
+	case http.StatusConflict:
 		code = platform.ErrCodeConflict
-	case 429:
+	case http.StatusTooManyRequests:
 		code = platform.ErrCodeRateLimited
 	default:
 		return err

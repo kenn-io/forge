@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
@@ -180,6 +181,63 @@ func TestAgentSetupInstallsSelectedAgents(t *testing.T) {
 	claude, err := os.ReadFile(filepath.Join(home, "claude", ".claude.json"))
 	require.NoError(t, err)
 	assert.Contains(t, string(claude), info.Endpoint)
+}
+
+func TestAgentSetupPreservesMCPSettings(t *testing.T) {
+	for _, agent := range []string{"claude", "codex"} {
+		for _, tc := range []struct {
+			name      string
+			auth      bool
+			token     string
+			wantToken string
+		}{
+			{name: "auth on", auth: true, wantToken: "KENN_FORGE_API_TOKEN"},
+			{name: "auth off removes Forge token", token: "KENN_FORGE_API_TOKEN"},
+			{name: "auth off preserves user token", token: "USER_TOKEN", wantToken: "USER_TOKEN"},
+		} {
+			t.Run(agent+"/"+tc.name, func(t *testing.T) {
+				home := setupAgentTest(t, "/tmp/forge-test-data")
+				var path, contents string
+				if agent == "codex" {
+					path = filepath.Join(home, "codex", "config.toml")
+					contents = "[mcp_servers.kenn-forge]\nurl = 'http://127.0.0.1:8091/mcp'\nenabled = false\nbearer_token_env_var = '" + tc.token + "'\n[mcp_servers.kenn-forge.http_headers]\nX-User = 'keep'\n"
+				} else {
+					path = filepath.Join(home, "claude", ".claude.json")
+					contents = `{"mcpServers":{"kenn-forge":{"type":"http","url":"http://127.0.0.1:8091/mcp","timeout":"keep","headers":{"X-User":"keep","Authorization":"Bearer ${` + tc.token + `}"}}}}`
+				}
+				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+				require.NoError(t, os.WriteFile(path, []byte(contents), 0o600))
+				info := daemonMCPQuickstart(mcpSettingsInfo{Enabled: true, ActiveURL: "http://127.0.0.1:8091/mcp", ActiveRequiresAuth: tc.auth}, "/tmp/token")
+				item := forgeSetupMCP(agent, info, nil, "kenn-forge agent setup", config.DefaultConfigPath())
+				require.NoError(t, item.Install(t.Context()))
+				data, err := os.ReadFile(path)
+				require.NoError(t, err)
+				var document map[string]any
+				if agent == "codex" {
+					require.NoError(t, toml.Unmarshal(data, &document))
+					server := document["mcp_servers"].(map[string]any)["kenn-forge"].(map[string]any)
+					assert.Equal(t, false, server["enabled"])
+					assert.Equal(t, "keep", server["http_headers"].(map[string]any)["X-User"])
+					if tc.wantToken == "" {
+						assert.NotContains(t, server, "bearer_token_env_var")
+					} else {
+						assert.Equal(t, tc.wantToken, server["bearer_token_env_var"])
+					}
+				} else {
+					require.NoError(t, json.Unmarshal(data, &document))
+					server := document["mcpServers"].(map[string]any)["kenn-forge"].(map[string]any)
+					assert.Equal(t, "keep", server["timeout"])
+					headers := server["headers"].(map[string]any)
+					assert.Equal(t, "keep", headers["X-User"])
+					if tc.wantToken == "" {
+						assert.NotContains(t, headers, "Authorization")
+					} else {
+						assert.Equal(t, "Bearer ${"+tc.wantToken+"}", headers["Authorization"])
+					}
+				}
+			})
+		}
+	}
 }
 
 func TestAgentSetupAuthGuidance(t *testing.T) {

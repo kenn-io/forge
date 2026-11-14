@@ -126,6 +126,8 @@ func forgeSetupMCP(agent string, info mcpQuickstartInfo, discoveryErr error, com
 	server := agentmcp.Server{URL: info.Endpoint}
 	if info.Authentication.Required {
 		server.BearerTokenEnvVar = mcpTokenEnvironment
+	} else {
+		server.PreviousBearerTokenEnvVar = mcpTokenEnvironment
 	}
 	item := agentsetup.MCP(agent, "kenn-forge", server)
 	check := item.Check

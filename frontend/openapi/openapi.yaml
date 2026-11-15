@@ -7792,6 +7792,12 @@ components:
     RateLimitResourceStatus:
       additionalProperties: false
       properties:
+        archive_reserved:
+          format: int64
+          type: integer
+        attempt_cost:
+          format: int64
+          type: integer
         known:
           type: boolean
         limit:

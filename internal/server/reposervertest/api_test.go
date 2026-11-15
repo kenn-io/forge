@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -653,6 +654,12 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 		userIdentity, ghclient.QuotaResourceREST,
 		ghclient.Rate{Limit: 5000, Remaining: 4900, Reset: reset},
 	)
+	// One response spent three points, which archive reserves per attempt.
+	registry.ObserveHeaders(appIdentity, ghclient.QuotaResourceREST, http.Header{
+		"X-Ratelimit-Limit":     []string{"15000"},
+		"X-Ratelimit-Remaining": []string{"14897"},
+		"X-Ratelimit-Reset":     []string{strconv.FormatInt(reset.Unix(), 10)},
+	})
 	budget := ghclient.NewSyncBudgetWithEssentialReserve(3001)
 	transport := ghclient.WrapSyncBudgetTransport(serverfake.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Request: req}, nil
@@ -699,7 +706,8 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 	require.True(ok)
 	user, ok := body.ProviderPools["github:github.com:user:7"]
 	require.True(ok)
-	assert.Equal(14900, app.REST.Remaining)
+	assert.Equal(14897, app.REST.Remaining)
+	assert.Equal(3, app.REST.AttemptCost)
 	assert.Equal(9900, app.GraphQL.Remaining)
 	assert.Equal(4900, user.REST.Remaining)
 	assert.False(user.GraphQL.Known)

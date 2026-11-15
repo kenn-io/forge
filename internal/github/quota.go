@@ -32,7 +32,10 @@ type QuotaPool struct {
 	UpdatedAt   time.Time
 	Requests    int
 	AttemptCost int // largest observed Remaining decrease per response in this window
-	Known       bool
+	// Reserved is the archive spend reserved in this window that no response
+	// has confirmed yet. Reads fill it in; the registry keeps it separately.
+	Reserved int
+	Known    bool
 }
 
 type quotaKey struct {
@@ -56,6 +59,25 @@ type QuotaRegistry struct {
 	pools        map[quotaKey]QuotaPool
 	reservations map[quotaReservationKey]int
 	now          func() time.Time
+}
+
+// quotaResetJitter is how far apart two reset times may be and still name one
+// quota window. GitHub's reset header can differ by a second between responses
+// in the same window, while the next window resets about an hour later.
+const quotaResetJitter = 5 * time.Second
+
+// compareQuotaWindow orders the window an observed reset names against the
+// current one: negative for an earlier window, zero for the same window, and
+// positive for a later one.
+func compareQuotaWindow(observed, current time.Time) int {
+	switch difference := observed.Sub(current); {
+	case difference < -quotaResetJitter:
+		return -1
+	case difference > quotaResetJitter:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func NewQuotaRegistry() *QuotaRegistry {
@@ -84,14 +106,17 @@ func (r *QuotaRegistry) ObserveHeaders(
 		reset := rate.Reset.UTC()
 		// Responses complete out of order, so a header issued earlier can
 		// arrive after a later one. The reset timestamp orders them: an older
-		// window says nothing about the current one and is dropped, an equal
+		// window says nothing about the current one and is dropped, the same
 		// window may only lower the count because the provider's remaining
 		// only falls inside a window, and a later window is a fresh quota that
 		// replaces the pool. /rate_limit snapshots still reconcile either way.
+		// The pool keeps its first reset time for the whole window, because
+		// archive reservations are keyed by it.
+		window := compareQuotaWindow(reset, pool.ResetAt)
 		switch {
-		case pool.Known && reset.Before(pool.ResetAt):
+		case pool.Known && window < 0:
 			// Drop the observation, but the request itself still happened.
-		case pool.Known && reset.Equal(pool.ResetAt):
+		case pool.Known && window == 0:
 			if rate.Remaining < pool.Remaining {
 				pool.AttemptCost = max(pool.AttemptCost, pool.Remaining-rate.Remaining)
 				pool.Remaining = rate.Remaining
@@ -137,20 +162,22 @@ func (r *QuotaRegistry) UpdateSnapshot(
 	// the truth, refreshes are claimed so only one is in flight per credential,
 	// and it is how a pool that headers clamped too low recovers before the
 	// window rolls.
-	if pool.Known && known && reset.Before(pool.ResetAt) {
+	window := compareQuotaWindow(reset, pool.ResetAt)
+	if pool.Known && known && window < 0 {
 		r.pools[key] = pool
 		r.mu.Unlock()
 		return
 	}
-	if !pool.Known || !known || !reset.Equal(pool.ResetAt) {
+	sameWindow := pool.Known && known && window == 0
+	if !sameWindow {
 		pool.AttemptCost = 1
+		pool.ResetAt = reset
 	}
-	if known && (!pool.Known || reset.After(pool.ResetAt)) {
+	if known && (!pool.Known || window > 0) {
 		r.clearReservationsBeforeLocked(key, reset)
 	}
 	pool.Limit = rate.Limit
 	pool.Remaining = rate.Remaining
-	pool.ResetAt = reset
 	pool.UpdatedAt = r.now().UTC()
 	pool.Known = known
 	r.pools[key] = pool
@@ -164,8 +191,10 @@ func (r *QuotaRegistry) Get(
 	if r == nil {
 		return QuotaPool{}, false
 	}
+	key := newQuotaKey(identity, resource)
 	r.mu.RLock()
-	pool, ok := r.pools[newQuotaKey(identity, resource)]
+	pool, ok := r.pools[key]
+	pool.Reserved = r.reservedLocked(key, pool)
 	r.mu.RUnlock()
 	return pool, ok
 }
@@ -176,7 +205,8 @@ func (r *QuotaRegistry) Snapshot() []QuotaPool {
 	}
 	r.mu.RLock()
 	pools := make([]QuotaPool, 0, len(r.pools))
-	for _, pool := range r.pools {
+	for key, pool := range r.pools {
+		pool.Reserved = r.reservedLocked(key, pool)
 		pools = append(pools, pool)
 	}
 	r.mu.RUnlock()
@@ -393,7 +423,7 @@ func (r *QuotaRegistry) reconcileArchiveReservation(
 	observedReset time.Time,
 ) {
 	if r == nil || reservation.cost <= 0 || observedReset.IsZero() ||
-		observedReset.Before(reservation.key.resetAt) {
+		compareQuotaWindow(observedReset, reservation.key.resetAt) < 0 {
 		return
 	}
 	r.mu.Lock()
@@ -420,11 +450,14 @@ func (r *QuotaRegistry) releaseArchiveReservationLocked(reservation quotaReserva
 }
 
 func (r *QuotaRegistry) effectiveRemainingLocked(key quotaKey, pool QuotaPool) int {
-	reserved := r.reservations[quotaReservationKey{
+	return max(pool.Remaining-r.reservedLocked(key, pool), 0)
+}
+
+func (r *QuotaRegistry) reservedLocked(key quotaKey, pool QuotaPool) int {
+	return r.reservations[quotaReservationKey{
 		quotaKey: key,
 		resetAt:  pool.ResetAt.UTC(),
 	}]
-	return max(pool.Remaining-reserved, 0)
 }
 
 func (r *QuotaRegistry) clearReservationsBeforeLocked(key quotaKey, reset time.Time) {
@@ -446,7 +479,7 @@ func (r *QuotaRegistry) raiseAttemptCost(
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	pool, ok := r.pools[key]
-	if !ok || !pool.Known || !pool.ResetAt.Equal(resetAt) ||
+	if !ok || !pool.Known || compareQuotaWindow(resetAt, pool.ResetAt) != 0 ||
 		cost <= pool.AttemptCost {
 		return
 	}

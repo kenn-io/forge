@@ -70439,11 +70439,13 @@ type RateLimitHostStatus struct {
 }
 
 type RateLimitResourceStatus struct {
-	Known     bool   `json:"known"`
-	Limit     int64  `json:"limit"`
-	Remaining int64  `json:"remaining"`
-	Requests  int64  `json:"requests"`
-	ResetAt   string `json:"reset_at"`
+	ArchiveReserved *int64 `json:"archive_reserved,omitempty"`
+	AttemptCost     *int64 `json:"attempt_cost,omitempty"`
+	Known           bool   `json:"known"`
+	Limit           int64  `json:"limit"`
+	Remaining       int64  `json:"remaining"`
+	Requests        int64  `json:"requests"`
+	ResetAt         string `json:"reset_at"`
 }
 
 type RateLimitsResponse struct {

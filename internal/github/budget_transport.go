@@ -154,19 +154,18 @@ func reconcileArchiveProviderAttempt(
 	actualCost := reservation.cost
 	if observed, ok := rateFromQuotaHeaders(header); ok {
 		observedReset := observed.Reset.UTC()
-		if observedReset.After(reservation.before.ResetAt) ||
-			(observedReset.Equal(reservation.before.ResetAt) &&
-				observed.Remaining <= reservation.before.Remaining) {
+		window := compareQuotaWindow(observedReset, reservation.before.ResetAt)
+		if window > 0 ||
+			(window == 0 && observed.Remaining <= reservation.before.Remaining) {
 			registry.reconcileArchiveReservation(reservation.quota, observedReset)
 		}
 		switch {
-		case observedReset.Equal(reservation.before.ResetAt) &&
-			observed.Remaining < reservation.before.Remaining:
+		case window == 0 && observed.Remaining < reservation.before.Remaining:
 			actualCost = max(
 				actualCost,
 				reservation.before.Remaining-observed.Remaining,
 			)
-		case observedReset.After(reservation.before.ResetAt):
+		case window > 0:
 			actualCost = max(
 				actualCost,
 				observed.Limit-observed.Remaining,

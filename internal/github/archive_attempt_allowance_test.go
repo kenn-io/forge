@@ -329,6 +329,9 @@ func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *
 	window, ok = registry.PacingWindow(identity, resources)
 	require.True(ok)
 	assert.Equal(ArchiveProviderReserve(5000), window.Remaining)
+	pool, ok := registry.Get(identity, QuotaResourceREST)
+	require.True(ok)
+	assert.Equal(1, pool.Reserved)
 	require.ErrorIs(request(), platform.ErrArchiveAttemptBudget)
 	assert.Equal(int32(1), calls.Load())
 }
@@ -519,4 +522,65 @@ func TestArchiveProviderAttemptAllowanceRechecksEveryRequiredPool(t *testing.T) 
 	require.ErrorIs(err, platform.ErrArchiveAttemptBudget)
 	assert.Zero(calls.Load())
 	assert.Zero(budget.ArchiveSpent())
+}
+
+// GitHub's reset header can name a second later or earlier between responses
+// in one window. Treating that second as a new window inflated the learned
+// attempt cost to the whole window's spend and dropped every later header as
+// stale, so archive stopped minutes into each window with most quota unused.
+func TestArchiveProviderAttemptsSurviveResetJitterWithinOneWindow(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	reset := now.Add(30 * time.Minute)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	identity := IdentityKey{Host: "github.com", Principal: "installation:7"}
+	resources := []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
+	for _, resource := range resources {
+		registry.UpdateSnapshot(identity, resource, Rate{
+			Limit: 5000, Remaining: 4000, Reset: reset,
+		})
+	}
+
+	remaining := 4000
+	var calls atomic.Int32
+	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		call := calls.Add(1)
+		remaining--
+		responseReset := reset
+		if call == 1 {
+			responseReset = reset.Add(time.Second)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("{}")),
+			Header:     quotaTestHeaders(5000, remaining, responseReset),
+			Request:    req,
+		}, nil
+	})
+	transport := &quotaTransport{
+		base: WrapSyncBudgetTransport(base, NewSyncBudget(100000)), registry: registry,
+		identity: identity, resource: QuotaResourceREST,
+	}
+	for range 20 {
+		ctx := WithArchiveProviderAttemptAllowance(
+			WithArchiveSyncBudget(t.Context()), 2, identity, resources,
+		)
+		req, err := http.NewRequestWithContext(
+			ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil,
+		)
+		require.NoError(err)
+		resp, err := transport.RoundTrip(req)
+		require.NoError(err)
+		resp.Body.Close()
+	}
+
+	pool, ok := registry.Get(identity, QuotaResourceREST)
+	require.True(ok)
+	assert.Equal(1, pool.AttemptCost)
+	assert.Equal(3980, pool.Remaining)
+	assert.Equal(0, pool.Reserved)
 }

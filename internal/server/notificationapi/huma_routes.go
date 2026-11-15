@@ -92,6 +92,7 @@ func (s *Handlers) GetRateLimits(
 			resource := itemapi.RateLimitResourceStatus{
 				Remaining: pool.Remaining, Limit: pool.Limit,
 				Known: pool.Known && pool.ResetAt.After(now), Requests: pool.Requests,
+				AttemptCost: pool.AttemptCost, ArchiveReserved: pool.Reserved,
 			}
 			if !pool.ResetAt.IsZero() {
 				resource.ResetAt = itemapi.FormatUTCRFC3339(pool.ResetAt)

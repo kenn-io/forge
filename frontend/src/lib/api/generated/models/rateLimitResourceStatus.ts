@@ -3,6 +3,8 @@
  */
 
 export interface RateLimitResourceStatus {
+  archive_reserved?: number;
+  attempt_cost?: number;
   known: boolean;
   limit: number;
   remaining: number;

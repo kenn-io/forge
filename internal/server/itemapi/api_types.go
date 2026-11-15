@@ -198,6 +198,11 @@ type RateLimitResourceStatus struct {
 	ResetAt   string `json:"reset_at"`
 	Known     bool   `json:"known"`
 	Requests  int    `json:"requests"`
+	// AttemptCost is the quota one archive request reserves in this window.
+	AttemptCost int `json:"attempt_cost,omitempty"`
+	// ArchiveReserved is archive spend reserved in this window that no
+	// response has confirmed yet; archive admission subtracts it from Remaining.
+	ArchiveReserved int `json:"archive_reserved,omitempty"`
 }
 
 // rateLimitHostStatus is one credential principal's provider-side quota on one

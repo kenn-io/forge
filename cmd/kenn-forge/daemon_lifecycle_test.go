@@ -358,6 +358,8 @@ func TestDaemonStopDoesNotEscalateAfterGracefulTimeout(t *testing.T) {
 			name: "exit timeout",
 			err:  fmt.Errorf("wait for daemon exit: %w", context.DeadlineExceeded),
 			checkError: func(t *testing.T, err error) {
+				t.Helper()
+
 				require.ErrorContains(t, err, "will not force-kill")
 				require.ErrorContains(t, err, "terminate it manually")
 			},
@@ -366,6 +368,8 @@ func TestDaemonStopDoesNotEscalateAfterGracefulTimeout(t *testing.T) {
 			name: "proof timeout",
 			err:  &daemon.UnreachableError{Record: record, Endpoint: record.Endpoint(), Err: context.DeadlineExceeded},
 			checkError: func(t *testing.T, err error) {
+				t.Helper()
+
 				require.ErrorContains(t, err, "stop process 41:")
 				require.ErrorIs(t, err, daemon.ErrDaemonUnreachable)
 				assert.NotContains(t, err.Error(), "will not force-kill")
@@ -415,6 +419,8 @@ func TestDaemonRestartValidatesBeforeSignaling(t *testing.T) {
 			host:      "192.0.2.1",
 			wantError: "loopback TCP listener",
 			checkEvents: func(t *testing.T, events []string) {
+				t.Helper()
+
 				assert.Empty(t, events)
 			},
 		},
@@ -424,6 +430,8 @@ func TestDaemonRestartValidatesBeforeSignaling(t *testing.T) {
 			nodeIDErr: errors.New("invalid node ID"),
 			wantError: "invalid node ID",
 			checkEvents: func(t *testing.T, events []string) {
+				t.Helper()
+
 				assert.NotContains(t, events, "stop")
 			},
 		},

@@ -9,16 +9,16 @@ import (
 	"go.kenn.io/forge/internal/db"
 )
 
-func newWorkspaceTestManager(t testing.TB, database *db.DB, root string) *Manager {
-	t.Helper()
+func newWorkspaceTestManager(tb testing.TB, database *db.DB, root string) *Manager {
+	tb.Helper()
 	coordinator, err := NewRepositoryCoordinator(root)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	return NewManager(database, root, coordinator)
 }
 
-func newTestRepositoryCoordinator(t testing.TB) *worktree.Coordinator {
-	t.Helper()
-	coordinator, err := NewRepositoryCoordinator(t.TempDir())
-	require.NoError(t, err)
+func newTestRepositoryCoordinator(tb testing.TB) *worktree.Coordinator {
+	tb.Helper()
+	coordinator, err := NewRepositoryCoordinator(tb.TempDir())
+	require.NoError(tb, err)
 	return coordinator
 }

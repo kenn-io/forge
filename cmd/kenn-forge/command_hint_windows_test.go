@@ -24,7 +24,7 @@ func TestWindowsCommandHint(t *testing.T) {
 			cmd.Env = append(os.Environ(), "FORGE_COMMAND_RECORDER=1")
 			output, err := cmd.CombinedOutput()
 			require.NoError(t, err, "%s", output)
-			assert.Contains(t, string(output), fmt.Sprintf(`ARGS:%s`, mustJSON(t, []string{"--config", path, "--timeout", "1m0s"})))
+			assert.Contains(t, string(output), "ARGS:"+mustJSON(t, []string{"--config", path, "--timeout", "1m0s"}))
 		})
 	}
 }

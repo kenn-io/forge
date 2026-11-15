@@ -299,6 +299,8 @@ func SetupTestServerWithClonesAndServer(t *testing.T) (
 func SetupTestServerWithConfig(
 	t *testing.T,
 ) (*server.Server, *db.DB, string, *ghclient.Syncer) {
+	t.Helper()
+
 	return SetupTestServerWithConfigContent(t, serverfake.DefaultTestConfigContent, &serverfake.MockGH{})
 }
 
@@ -307,6 +309,8 @@ func SetupTestServerWithConfigContent(
 	cfgContent string,
 	mock *serverfake.MockGH,
 ) (*server.Server, *db.DB, string, *ghclient.Syncer) {
+	t.Helper()
+
 	return SetupTestServerWithConfigContentAndOptions(
 		t, cfgContent, mock, server.ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
@@ -354,6 +358,8 @@ func SetupTestServerWithMock(t *testing.T, mock *serverfake.MockGH) (*server.Ser
 func SetupTestServerWithRepos(
 	t *testing.T, mock *serverfake.MockGH, repos []ghclient.RepoRef,
 ) (*server.Server, *db.DB) {
+	t.Helper()
+
 	return SetupTestServerWithReposAndOptions(t, mock, repos, server.ServerOptions{})
 }
 

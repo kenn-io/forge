@@ -201,7 +201,8 @@ func scanMergeQueueState(scan func(...any) error, leading ...any) (MergeQueueSta
 	var enqueuedAt, removedAt sql.NullTime
 	var estimate sql.NullInt64
 	var failedChecks string
-	dest := append(leading,
+	dest := leading
+	dest = append(dest,
 		&state.Number, &state.BaseBranch, &state.Enabled, &state.MergeMethod, &state.Queued,
 		&state.Position, &state.State, &enqueuedAt, &estimate,
 		&removedAt, &state.RemovalReason, &failedChecks, &state.ObservedAt,

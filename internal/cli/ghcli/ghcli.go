@@ -162,7 +162,7 @@ func realGH(skip []string) (string, error) {
 			return abs, nil
 		}
 	}
-	return "", fmt.Errorf("kenn-forge gh: real gh not found; set FORGE_GH_REAL to its executable path")
+	return "", errors.New("kenn-forge gh: real gh not found; set FORGE_GH_REAL to its executable path")
 }
 
 func resolveRepo(ctx context.Context, q *ghshim.Query, repo string) bool {

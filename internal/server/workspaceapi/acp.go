@@ -373,7 +373,7 @@ func chatStartError(err error, label string) error {
 	case errors.Is(err, localruntime.ErrACPOwnerUnresponsive):
 		return errors.New(acpOwnerUnresponsiveMessage) //nolint:staticcheck // ST1005: the chat shows this text verbatim as full sentences.
 	case errors.Is(err, localruntime.ErrACPAgentStartTimeout):
-		return errors.New(cmp.Or(label, "The agent") + " took too long to start. Try again.") //nolint:staticcheck // ST1005: the chat shows this text verbatim as full sentences.
+		return errors.New(cmp.Or(label, "The agent") + " took too long to start. Try again.") // the chat shows this text verbatim as full sentences.
 	}
 	return err
 }

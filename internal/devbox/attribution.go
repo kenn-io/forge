@@ -77,7 +77,7 @@ func (c *Connections) CheckAttribution(ctx context.Context, id string, state Pus
 	// Use a complete external URL so the API contract checker cannot confuse
 	// a GitHub path prefix with Forge's repository routes.
 	endpoint := fmt.Sprintf("https://api.github.com/repos/%s/%s/commits/%s", url.PathEscape(owner), url.PathEscape(name), url.PathEscape(state.Branch))
-	request, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return result
 	}

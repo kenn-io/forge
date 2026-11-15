@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net/http"
 	"slices"
 	"sort"
 	"strconv"
@@ -787,7 +788,7 @@ func (s *Handlers) ResolveItem(
 		}
 		if ghErr, ok := errors.AsType[*gh.ErrorResponse](err); ok {
 			if ghErr.Response != nil &&
-				ghErr.Response.StatusCode == 404 {
+				ghErr.Response.StatusCode == http.StatusNotFound {
 				return nil, httpapi.NotFound(httpapi.CodeNotFound,
 					"item not found: "+err.Error(), nil)
 			}

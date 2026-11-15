@@ -3,7 +3,7 @@ package fleetapi
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -212,10 +212,10 @@ func (h *Handler) requestBrowserLoginTicket(
 		return browserLoginTicket{}, err
 	}
 	if !validBrowserLoginTicket(ticket.Ticket) {
-		return browserLoginTicket{}, fmt.Errorf("peer returned an invalid login ticket")
+		return browserLoginTicket{}, errors.New("peer returned an invalid login ticket")
 	}
 	if ticket.ExpiresAt.IsZero() {
-		return browserLoginTicket{}, fmt.Errorf("peer returned a login ticket without an expiry")
+		return browserLoginTicket{}, errors.New("peer returned a login ticket without an expiry")
 	}
 	return ticket, nil
 }

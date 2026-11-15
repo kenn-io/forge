@@ -230,6 +230,8 @@ func TestProjectWorktreeRuntimeAttachSpecRejectsNonOwnedSession(t *testing.T) {
 }
 
 func setupProjectWorktreeRuntimeTest(t *testing.T) (*server.Server, string, string) {
+	t.Helper()
+
 	return setupProjectWorktreeRuntimeTestWithTmux(t, nil)
 }
 

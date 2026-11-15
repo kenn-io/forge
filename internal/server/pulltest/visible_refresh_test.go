@@ -32,6 +32,8 @@ type visibleProbeServer struct {
 }
 
 func (s *visibleProbeServer) handler(t *testing.T) http.Handler {
+	t.Helper()
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Query     string         `json:"query"`

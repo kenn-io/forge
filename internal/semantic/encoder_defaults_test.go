@@ -179,7 +179,7 @@ func TestBuiltinQueryRunsBetweenDocumentBatches(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { _, err := enc.documents(t.Context(), docs); done <- err }()
 	<-firstStarted
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second) //nolint:kennlint // deadlinetest: query must finish while indexing is blocked
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second) // query must finish while indexing is blocked
 	defer cancel()
 	queryDone := make(chan error, 1)
 	go func() { _, err := enc.query(ctx, "query"); queryDone <- err }()

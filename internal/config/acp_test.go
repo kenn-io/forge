@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -39,7 +40,7 @@ func TestACPFontSizeValidation(t *testing.T) {
 	}{
 		{0, 13}, {8, 8}, {32, 32}, {-1, 0}, {7, 0}, {33, 0},
 	} {
-		t.Run(fmt.Sprint(tt.size), func(t *testing.T) {
+		t.Run(strconv.Itoa(tt.size), func(t *testing.T) {
 			cfg, err := Load(writeConfig(t, fmt.Sprintf("[acp]\nfont_size = %d\n", tt.size)))
 			if tt.want == 0 {
 				require.ErrorContains(t, err, "acp.font_size")

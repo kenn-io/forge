@@ -49,7 +49,8 @@ func TestCodexACPProbeUsesLaunchContext(t *testing.T) {
 			if tc.wantCommand != nil {
 				tc.wantCommand[0] = tc.command[0]
 			}
-			env := append(tc.env, `CODEX_CONFIG={"model":"example-model"}`)
+			env := tc.env
+			env = append(env, `CODEX_CONFIG={"model":"example-model"}`)
 			codexEffectiveAccess = func(ctx context.Context, command, gotEnv []string, cwd string, config map[string]any) (string, string, error) {
 				calls++
 				assert.Equal(tc.wantCommand, command)

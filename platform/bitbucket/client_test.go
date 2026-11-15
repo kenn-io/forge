@@ -26,8 +26,9 @@ var cloudRepositoryUUID = uuid.MustParse("11111111-1111-4111-8111-111111111111")
 var ref = platform.RepoRef{Platform: platform.KindBitbucket, Host: "bitbucket.org", Owner: "team", Name: "widgets", Key: platform.RepositoryUUIDKey(cloudRepositoryUUID)}
 
 func client(t *testing.T, token string, handle func(*http.Request) (int, string)) *bitbucket.Client {
-	assert := assert.New(t)
 	t.Helper()
+
+	assert := assert.New(t)
 	c, err := bitbucket.NewClient("bitbucket.org", credential(token), platform.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		assert.Equal("api.bitbucket.org", r.URL.Host)
 		code, body := handle(r)

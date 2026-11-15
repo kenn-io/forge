@@ -27,6 +27,8 @@ type fakeAsyncMerge struct {
 // assertPollSpacing checks every gap between consecutive requests: never
 // faster than GitHub's documented once a second, never slower than 5s.
 func (f *fakeAsyncMerge) assertPollSpacing(t *testing.T) {
+	t.Helper()
+
 	for i := 1; i < len(f.requests); i++ {
 		gap := f.requests[i].Sub(f.requests[i-1])
 		assert.GreaterOrEqual(t, gap, time.Second, "request %d", i)
@@ -59,6 +61,8 @@ func (f *fakeAsyncMerge) roundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func (f *fakeAsyncMerge) client(t *testing.T) *github.Client {
+	t.Helper()
+
 	httpClient := &http.Client{Transport: platform.RoundTripFunc(f.roundTrip)}
 	client, err := github.NewClient(github.ClientConfig{
 		Host: "github.com", Read: httpClient, Write: httpClient, Notifications: httpClient,

@@ -90,7 +90,7 @@ func TestPermissionInventoryReuseExpiryAndCredentialChange(t *testing.T) {
 			default:
 				require.FailNow(t, "unexpected endpoint", "%s", r.URL)
 			}
-			return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
 		}), nil)
 		require.NoError(t, err)
 		repos, err := c.ListRepositories(t.Context(), "PROJECT", platform.RepositoryListOptions{})

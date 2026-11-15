@@ -584,6 +584,8 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 		})
 	}
 	insertMerged := func(t *testing.T, d *DB, repoID int64, numbers ...int) {
+		t.Helper()
+
 		for _, number := range numbers {
 			insertTestMRWithOptions(t, d, testMR(repoID, number, withMRState("merged"), withMRActivity(baseTime().Add(time.Duration(number)*time.Minute))))
 		}

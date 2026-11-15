@@ -26,6 +26,8 @@ type largeListServer struct {
 }
 
 func (s *largeListServer) handler(t *testing.T) http.Handler {
+	t.Helper()
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v3/repos/acme/widget/pulls" {
 			assert.Failf(t, "unexpected path", "%s", r.URL.Path)

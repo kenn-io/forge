@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -259,7 +260,7 @@ func TestSpokePreparationReportsDraftHandoffProblems(t *testing.T) {
 	})
 	t.Run("import error", func(t *testing.T) {
 		client := providerPlaneClientFunc(func(context.Context, federationauth.Scope, *http.Request) (*http.Response, error) {
-			return nil, fmt.Errorf("hub offline")
+			return nil, errors.New("hub offline")
 		})
 		var report spokeapi.SpokePreparationReport
 		server.spokeapi.HandoffSpokeProviderState(t.Context(), client, &report)

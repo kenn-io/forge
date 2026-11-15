@@ -277,6 +277,8 @@ func TestSyncFailedRepositoryFailures(t *testing.T) {
 		reason string
 	}{
 		{"missing repository ID", func(t *testing.T) *Syncer {
+			t.Helper()
+
 			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
 			d := openTestDB(t)
 			_, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
@@ -288,6 +290,8 @@ func TestSyncFailedRepositoryFailures(t *testing.T) {
 			return NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
 		}, "other"},
 		{"keyless credential route", func(t *testing.T) *Syncer {
+			t.Helper()
+
 			d := openTestDB(t)
 			repo := RepoRef{Owner: "unrouted", Name: "widget", PlatformHost: "github.com"}
 			_, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))

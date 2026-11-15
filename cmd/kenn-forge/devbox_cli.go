@@ -100,7 +100,8 @@ func newDevboxCommand(run serve.Runner) *cobra.Command {
 }
 
 func runDevboxGitHub(ctx context.Context, command *cobra.Command, socket, repository string, args []string) error {
-	if args[0] != "pr" || !strings.Contains(" create edit comment view list checks ", " "+args[1]+" ") {
+	const supportedCommands = " create edit comment view list checks "
+	if args[0] != "pr" || !strings.Contains(supportedCommands, " "+args[1]+" ") {
 		return errors.New("supported GitHub commands: pr create, edit, comment, view, list, checks")
 	}
 	if _, _, err := devbox.ParseRepository(repository); err != nil {

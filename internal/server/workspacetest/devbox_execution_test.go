@@ -140,7 +140,7 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 		return ws.Status == "ready" || ws.Status == "error"
 	}, 10*time.Second, 20*time.Millisecond)
 	require.Equal("ready", ws.Status, ws.ErrorMessage)
-	getSnapshot, err := http.NewRequestWithContext(ctx, "GET", controllerHTTP.URL+"/api/v1/snapshot?include_peers=true", nil)
+	getSnapshot, err := http.NewRequestWithContext(ctx, http.MethodGet, controllerHTTP.URL+"/api/v1/snapshot?include_peers=true", nil)
 	require.NoError(err)
 	getSnapshot.Header.Set("Authorization", "Bearer controller-bearer")
 	snapshotResponse, err := controllerHTTP.Client().Do(getSnapshot)

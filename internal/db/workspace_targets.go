@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -20,7 +21,7 @@ type WorkspaceTarget struct {
 
 func (d *DB) AddWorkspaceTarget(ctx context.Context, target WorkspaceTarget) (int64, error) {
 	if target.ItemType != WorkspaceItemTypePullRequest && target.ItemType != WorkspaceItemTypeIssue || target.ItemNumber <= 0 {
-		return 0, fmt.Errorf("invalid workspace target")
+		return 0, errors.New("invalid workspace target")
 	}
 	var id int64
 	err := d.rwQueryRowContext(ctx, `INSERT INTO forge_workspace_targets (workspace_id, repo_id, item_type, item_number, url, created_at, hidden)

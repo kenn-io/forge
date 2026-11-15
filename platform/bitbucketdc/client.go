@@ -101,15 +101,15 @@ func request[T any](ctx context.Context, c *Client, method, path string, body an
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var code platform.PlatformErrorCode
 		switch resp.StatusCode {
-		case 400:
+		case http.StatusBadRequest:
 			code = platform.ErrCodeInvalidArgument
-		case 401, 403:
+		case http.StatusUnauthorized, http.StatusForbidden:
 			code = platform.ErrCodePermissionDenied
-		case 404:
+		case http.StatusNotFound:
 			code = platform.ErrCodeNotFound
-		case 409:
+		case http.StatusConflict:
 			code = platform.ErrCodeConflict
-		case 429:
+		case http.StatusTooManyRequests:
 			code = platform.ErrCodeRateLimited
 		default:
 			return result, errors.New("bitbucket data center: " + resp.Status)

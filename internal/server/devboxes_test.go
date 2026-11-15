@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -360,7 +361,7 @@ func TestDevboxHandoffToLiveSessionDoesNotRefreshSourceContext(t *testing.T) {
 func TestDevboxSnapshotMaintenanceBlocksCreation(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	for _, maintenance := range []bool{false, true} {
-		t.Run(fmt.Sprint(maintenance), func(t *testing.T) {
+		t.Run(strconv.FormatBool(maintenance), func(t *testing.T) {
 			assert, require := assert.New(t), require.New(t)
 			worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				assert.Equal("Bearer worker-test-token", r.Header.Get("Authorization"))

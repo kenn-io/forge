@@ -177,7 +177,7 @@ func TestFailedDetailSyncDoesNotReadBypass(t *testing.T) {
 	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
 	setMergeableState(t, database, repoID, 7, "blocked")
 
-	failed := error(errors.New("pull request detail read failed"))
+	failed := errors.New("pull request detail read failed")
 	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &failed)
 
 	assert.Empty(storedRules(t, database, repoID, 7))

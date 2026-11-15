@@ -319,7 +319,7 @@ func (s *HubProviderSource) GetDiffDescriptor(
 	}
 	if descriptor.PullNumber != item.Number {
 		return providerplane.DiffDescriptor{}, InvalidHubDescriptor(
-			fmt.Errorf("diff descriptor does not match requested pull number"),
+			errors.New("diff descriptor does not match requested pull number"),
 		)
 	}
 	if err := s.ObserveRepositoryDescriptor(ctx, descriptor.Repository); err != nil {

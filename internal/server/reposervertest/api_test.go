@@ -59,6 +59,8 @@ func setupTestServerWithMock(t *testing.T, mock *serverfake.MockGH) (*server.Ser
 func setupTestServerWithRepos(
 	t *testing.T, mock *serverfake.MockGH, repos []ghclient.RepoRef,
 ) (*server.Server, *db.DB, *ghclient.Syncer) {
+	t.Helper()
+
 	return setupTestServerWithReposAndOptions(t, mock, repos, server.ServerOptions{})
 }
 
@@ -532,7 +534,7 @@ func TestE2EGraphQLBulkSyncPersistsWorkflowApproval(t *testing.T) {
 
 	syncer.RunOnce(ctx)
 
-	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(prNumber)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)

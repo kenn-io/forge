@@ -334,7 +334,7 @@ func platformReviewThreadsFromGQL(threads []platformgithub.GraphQLReviewThread) 
 				Body:              comment.Body,
 				AuthorLogin:       comment.Author.Login,
 				AuthorAccountType: comment.Author.Typename,
-				AuthorAssociation: comment.AuthorAssociation, //nolint:staticcheck // Removed from Events payloads only; this data comes from REST detail or GraphQL.
+				AuthorAssociation: comment.AuthorAssociation, // Removed from Events payloads only; this data comes from REST detail or GraphQL.
 				Path:              comment.Path,
 				Line:              comment.Line,
 				OriginalLine:      comment.OriginalLine,

@@ -59,7 +59,7 @@ func TestSessionPathsUsePrivateSocketDirForLongRoots(t *testing.T) {
 	require.NoError(err)
 	require.NotEmpty(paths.SocketDir)
 	assert.Equal(filepath.Join(paths.SocketDir, "sock"), paths.Socket)
-	tempRoot := os.TempDir() //nolint:usetesting // unix socket path length requires a short OS temp root
+	tempRoot := os.TempDir() // unix socket path length requires a short OS temp root
 	assert.Equal(fallbackSocketDir(root, "kenn-forge-abc123", tempRoot), paths.SocketDir)
 	assert.LessOrEqual(len(paths.Socket), maxUnixSocketPathLen)
 }

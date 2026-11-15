@@ -147,7 +147,7 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 
 	require.NotEmpty(issueQuery.Repository.Issues.Nodes, "live issue fixture should exist")
 	_, err = fetcher.fetchFreshness(ctx, []PullRequestFreshnessRef{
-		{Owner: "kenn-io", Name: "middleman", Number: int(issueQuery.Repository.Issues.Nodes[0].Number), IsIssue: true},
+		{Owner: "kenn-io", Name: "middleman", Number: issueQuery.Repository.Issues.Nodes[0].Number, IsIssue: true},
 	}, prCompleteFreshnessFields, true)
 	require.NoError(err, "issue freshness fragment should validate against GitHub")
 }

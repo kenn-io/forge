@@ -237,8 +237,8 @@ func (s *Server) registerDevboxProxy(api huma.API, route devboxapi.DevboxProxyRo
 		if r.URL.RawQuery != "" {
 			path += "?" + r.URL.RawQuery
 		}
-		refreshContext := r.Method == "POST" && (strings.HasSuffix(route.Path, "/retry") || strings.HasSuffix(route.Path, "/refresh") || strings.HasSuffix(route.Path, "/runtime/agent-handoffs"))
-		if r.Method == "POST" && strings.HasSuffix(route.Path, "/runtime/sessions") {
+		refreshContext := r.Method == http.MethodPost && (strings.HasSuffix(route.Path, "/retry") || strings.HasSuffix(route.Path, "/refresh") || strings.HasSuffix(route.Path, "/runtime/agent-handoffs"))
+		if r.Method == http.MethodPost && strings.HasSuffix(route.Path, "/runtime/sessions") {
 			var input workspaceapi.LaunchWorkspaceRuntimeSessionInput
 			body, err := io.ReadAll(r.Body)
 			if err == nil {
@@ -253,7 +253,7 @@ func (s *Server) registerDevboxProxy(api huma.API, route devboxapi.DevboxProxyRo
 			// These reserved system targets launch shells; configured targets are agents.
 			refreshContext = target != string(localruntime.LaunchTargetShell) && target != string(localruntime.LaunchTargetPlainShell)
 		}
-		if r.Method == "POST" && strings.HasSuffix(route.Path, "/runtime/agent-handoffs") {
+		if r.Method == http.MethodPost && strings.HasSuffix(route.Path, "/runtime/agent-handoffs") {
 			var handoff struct {
 				SessionKey string `json:"session_key"`
 			}
@@ -449,7 +449,7 @@ func (s *Server) devboxSnapshots(ctx context.Context, timeout time.Duration) []f
 				return
 			}
 			defer response.Body.Close()
-			if response.StatusCode != 200 {
+			if response.StatusCode != http.StatusOK {
 				result.Err = new("devbox needs reconnect or setup: " + response.Status)
 				return
 			}

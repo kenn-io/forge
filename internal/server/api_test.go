@@ -196,6 +196,8 @@ func setupTestServerWithMock(t *testing.T, mock *serverfake.MockGH) (*Server, *d
 func setupTestServerWithRepos(
 	t *testing.T, mock *serverfake.MockGH, repos []ghclient.RepoRef,
 ) (*Server, *db.DB, *ghclient.Syncer) {
+	t.Helper()
+
 	return setupTestServerWithReposAndOptions(t, mock, repos, ServerOptions{})
 }
 
@@ -4231,7 +4233,7 @@ func TestAPIGetPullDetailIncludesAssociatedWorkspace(t *testing.T) {
 		Status:             "ready",
 	}))
 
-	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(associatedPR))}})
+	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(associatedPR)}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON200)
@@ -5021,6 +5023,8 @@ func setupWorkspaceServerFixture(
 	t *testing.T,
 	cfg *config.Config,
 ) workspaceServerFixture {
+	t.Helper()
+
 	return setupWorkspaceServerFixtureWithOptions(
 		t, cfg, ServerOptions{PtyOwnerInProcess: true},
 	)
@@ -5056,6 +5060,8 @@ func setupWorkspaceServerFixtureWithHostAndOptions(
 	options ServerOptions,
 	enableEnrichment ...bool,
 ) workspaceServerFixture {
+	t.Helper()
+
 	return setupWorkspaceServerFixtureWithMockHostAndOptions(
 		t, cfg, &serverfake.MockGH{}, platformHost, options, enableEnrichment...,
 	)
@@ -7600,7 +7606,7 @@ func workspaceTerminalConnWriteRead(
 		if typ != websocket.MessageBinary {
 			continue
 		}
-		got.WriteString(string(data))
+		got.Write(data)
 		if strings.Contains(got.String(), needle) {
 			return
 		}
@@ -7736,7 +7742,7 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 		if typ != websocket.MessageBinary {
 			continue
 		}
-		got.WriteString(string(data))
+		got.Write(data)
 		// tmux keeps one row for its status line by default, so the
 		// pane sees one fewer row than the attached terminal while
 		// preserving the requested column count.
@@ -8038,16 +8044,18 @@ func TestServerPtyOwnerHelperProcess(t *testing.T) { //nolint:paralleltest // su
 		}
 	}
 	ownerCtx, cancel := testPtyOwnerParentContext(*serverPtyOwnerParentPID)
-	defer cancel()
 	if ownerCtx.Err() != nil {
+		cancel()
 		os.Exit(0)
 	}
-	if err := ptyowner.RunOwner(ownerCtx, ptyowner.Options{
+	err := ptyowner.RunOwner(ownerCtx, ptyowner.Options{
 		Root:    *root,
 		Session: *session,
 		Cwd:     *cwd,
 		Command: command,
-	}); err != nil && !errors.Is(err, context.Canceled) {
+	})
+	cancel()
+	if err != nil && !errors.Is(err, context.Canceled) {
 		os.Exit(1)
 	}
 	os.Exit(0)

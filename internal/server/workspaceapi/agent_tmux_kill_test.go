@@ -483,6 +483,8 @@ func TestTmuxPruneKeepsAgentKilledDuringThePass(t *testing.T) {
 }
 
 func testTmuxPruneKeepsAgentKilledDuringThePass(t *testing.T, handledDuringPass bool) {
+	t.Helper()
+
 	require := require.New(t)
 	ctx := t.Context()
 	if privateTmuxOwner == nil {

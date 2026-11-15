@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -203,7 +204,7 @@ func TestFleetSettingsPublishesOnlyCommittedRuntimeSnapshot(t *testing.T) {
 		}
 		deadline, ok := r.Context().Deadline()
 		if !ok {
-			return nil, fmt.Errorf("peer request has no deadline")
+			return nil, errors.New("peer request has no deadline")
 		}
 		peerTimeouts <- time.Until(deadline)
 		<-r.Context().Done()

@@ -1,6 +1,7 @@
 package routepolicy
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -126,7 +127,7 @@ func NormalizeTransportRoutes(routes []TransportRoute) ([]TransportRoute, error)
 		route.Accept = strings.ToLower(strings.TrimSpace(route.Accept))
 		route.Query = maps.Clone(route.Query)
 		if route.Method == "" {
-			return nil, fmt.Errorf("transport route has empty method")
+			return nil, errors.New("transport route has empty method")
 		}
 		if !strings.HasPrefix(route.Path, "/") || strings.HasPrefix(route.Path, "//") {
 			return nil, fmt.Errorf("%s %s: route requires an absolute path", route.Method, route.Path)

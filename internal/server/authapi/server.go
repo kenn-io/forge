@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,7 +28,7 @@ func DeriveHostCheckOptionsFromConfig(cfg *config.Config) (HostCheckOptions, err
 	if cfg.Port < 1 || cfg.Port > 65535 {
 		return HostCheckOptions{}, fmt.Errorf("port %d is outside 1-65535", cfg.Port)
 	}
-	bind, err := config.ParseHostKey(net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port)))
+	bind, err := config.ParseHostKey(net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)))
 	if err != nil {
 		return HostCheckOptions{}, fmt.Errorf("bind host %q: %w", cfg.ListenAddr(), err)
 	}

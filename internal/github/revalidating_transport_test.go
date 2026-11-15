@@ -151,6 +151,8 @@ type ciServer struct {
 }
 
 func (s *ciServer) handler(t *testing.T) http.Handler {
+	t.Helper()
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gen := s.generation.Load()
 		etag := `W/"gen-` + strconv.FormatInt(gen, 10) + `-` + r.URL.RawQuery + `"`

@@ -3,6 +3,7 @@ package gitclone
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -68,7 +69,7 @@ func parseCommitStats(out []byte) (map[string]*CommitStats, error) {
 			// With -z, renames have two separate NUL-delimited paths.
 			// Skip both even when a path looks like a SHA or contains tabs/newlines.
 			if i+2 >= len(records) {
-				return nil, fmt.Errorf("incomplete commit numstat rename")
+				return nil, errors.New("incomplete commit numstat rename")
 			}
 			i += 2
 		}

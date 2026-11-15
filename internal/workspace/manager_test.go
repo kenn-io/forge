@@ -1295,7 +1295,7 @@ func TestSetupRecoveryRejectsManagedCloneWhoseOriginChanged(t *testing.T) {
 
 func TestSetupReusesIdentityManagedCloneAfterRepositoryRename(t *testing.T) {
 	for _, pinned := range []bool{false, true} {
-		t.Run(fmt.Sprint(pinned), func(t *testing.T) {
+		t.Run(strconv.FormatBool(pinned), func(t *testing.T) {
 			require := require.New(t)
 			database := openTestDB(t)
 			worktreeRoot := t.TempDir()

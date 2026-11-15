@@ -114,6 +114,7 @@ func TestWindowsConsoleHelper(t *testing.T) {
 
 // windowsConsoleHelper starts this test binary the way procutil starts agents.
 func windowsConsoleHelper(t *testing.T, mode string) *exec.Cmd {
+	t.Helper()
 	executable, err := os.Executable()
 	require.NoError(t, err)
 	cmd := procutil.CommandContext(t.Context(), executable, "-test.run=^TestWindowsConsoleHelper$")

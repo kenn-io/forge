@@ -387,7 +387,7 @@ func (s *Handlers) RequireSync() error {
 func (s *Handlers) onlyReposFromFilter(filters []string) ([]ghclient.RepoRef, error) {
 	values := SplitRepoFilterValues(filters)
 	if len(values) == 0 {
-		return nil, fmt.Errorf("repository must match a configured provider|platform_host/repo_path")
+		return nil, errors.New("repository must match a configured provider|platform_host/repo_path")
 	}
 
 	tracked := (*s.Syncer).TrackedRepos()

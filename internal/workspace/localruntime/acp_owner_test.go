@@ -381,6 +381,8 @@ func TestACPReloadOfSessionTheAgentNeverStored(t *testing.T) {
 }
 
 func testACPReloadsSavedSession(t *testing.T, sessions, noticeText string, park bool) {
+	t.Helper()
+
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
 	dir := t.TempDir()
@@ -995,7 +997,7 @@ func TestACPRestoreReportsAnOwnerThatListensButNeverAnswers(t *testing.T) {
 
 	// Each start runs out its own attach timeout; this only turns a hang into
 	// a failure.
-	watchdog := time.After(acpAttachTimeout + 30*time.Second) //nolint:kennlint // deadlinetest: a watchdog for a start that must end on its own timeout; it decides only that a hang fails
+	watchdog := time.After(acpAttachTimeout + 30*time.Second) // a watchdog for a start that must end on its own timeout; it decides only that a hang fails
 	for name, restored := range map[string]<-chan error{"late": restoredLate, "listening": restoredListening} {
 		select {
 		case err := <-restored:

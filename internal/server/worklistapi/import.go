@@ -49,7 +49,7 @@ func (h *Handler) importWorklist(
 func (h *Handler) ImportService(ctx context.Context, fragment string) (WorklistImportResponse, error) {
 	list, err := worklist.ParseFragment(fragment)
 	if fieldErr, ok := errors.AsType[*worklist.FieldError](err); ok {
-		return WorklistImportResponse{}, httpapi.Validation("body.fragment", fmt.Sprintf("the link's %s", fieldErr.Error()))
+		return WorklistImportResponse{}, httpapi.Validation("body.fragment", "the link's "+fieldErr.Error())
 	}
 	if err != nil {
 		return WorklistImportResponse{}, httpapi.Validation("body.fragment", err.Error())

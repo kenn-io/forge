@@ -27,12 +27,12 @@ type Server struct {
 	refuseModel string
 }
 
-// New starts a fake endpoint for t whose vector axes are topics.
-func New(t testing.TB, topics ...string) *Server {
-	t.Helper()
+// New starts a fake endpoint for the test whose vector axes are topics.
+func New(tb testing.TB, topics ...string) *Server {
+	tb.Helper()
 	s := &Server{topics: slices.Clone(topics)}
 	server := httptest.NewServer(http.HandlerFunc(s.serve))
-	t.Cleanup(server.Close)
+	tb.Cleanup(server.Close)
 	s.url = server.URL + "/v1"
 	return s
 }

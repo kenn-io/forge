@@ -54,7 +54,7 @@ func TestJSONMatchesRealGH(t *testing.T) {
 			assert := assert.New(t)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Host != "api.github.localhost" || r.URL.Path != "/graphql" {
-					http.Error(w, "unexpected endpoint", 500)
+					http.Error(w, "unexpected endpoint", http.StatusInternalServerError)
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")

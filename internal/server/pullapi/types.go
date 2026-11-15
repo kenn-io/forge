@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
@@ -27,6 +28,9 @@ type MergeRequestResponse struct {
 	LastWorkspaceActivityAt string                     `json:"last_workspace_activity_at,omitempty" format:"date-time"`
 	DetailLoaded            bool                       `json:"detail_loaded"`
 	DetailFetchedAt         string                     `json:"detail_fetched_at,omitempty"`
+	// LineKinds is present once Forge has counted the pull request's current
+	// diff from its local clone.
+	LineKinds *gitclone.LineKinds `json:"line_kinds,omitempty" doc:"Changed lines of the current diff by kind of file. Omitted until Forge has counted that diff from its local clone."`
 	// RoborevVerdict summarizes the newest roborev PR comment that reviews the
 	// current head, so list rows can filter on it.
 	RoborevVerdict string `json:"roborev_verdict,omitempty" enum:"findings,clean" doc:"Verdict of the newest roborev comment that reviews the current head: findings or clean. Omitted when no comment reviews the current head (no review yet, the head's review still pending or running, or a review of a commit sync has not stored as the head) and when that review has no verdict line (failed, skipped, or unstructured)."`

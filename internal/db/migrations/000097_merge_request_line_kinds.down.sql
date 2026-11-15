@@ -1,0 +1,1 @@
+DROP TABLE forge_merge_request_line_kinds;

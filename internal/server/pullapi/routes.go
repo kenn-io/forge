@@ -514,6 +514,10 @@ func (s *Handler) listPullsRouteCore(
 	if err != nil {
 		return nil, httpapi.Internal("load roborev verdicts failed")
 	}
+	lineKinds, err := s.db.ListLineKindsForMRs(ctx, mrIDs)
+	if err != nil {
+		return nil, httpapi.Internal("load line kinds failed")
+	}
 	links, err := s.db.GetWorktreeLinksForMRs(ctx, mrIDs)
 	if err != nil {
 		return nil, httpapi.Internal("load worktree links failed")
@@ -553,6 +557,9 @@ func (s *Handler) listPullsRouteCore(
 			DetailLoaded:  mr.DetailFetchedAt != nil,
 		}
 		resp.RoborevVerdict = roborevVerdicts[mr.ID]
+		if kinds, ok := lineKinds[mr.ID]; ok {
+			resp.LineKinds = &kinds
+		}
 		resp.WorkflowApproval = s.workflowApprovalState(ctx, rp.Owner, rp.Name, &mr)
 		if activity, ok := snapshot.Subjects[key]; ok && activity.ActivityAt != nil {
 			resp.LastWorkspaceActivityAt = formatUTCRFC3339(*activity.ActivityAt)

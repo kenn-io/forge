@@ -34,6 +34,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/githubapp"
+	"go.kenn.io/forge/internal/linekinds"
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/profiler"
 	"go.kenn.io/forge/internal/ptyowner"
@@ -975,14 +976,19 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 			srv.Fleet().NotifyWorktreeLinksChanged,
 			stacks.SyncCompletedHook(ctx, database, nil),
 		)
-		if semanticIndexer != nil {
-			syncer.SetOnSyncCompleted(func(results []ghclient.RepoSyncResult) {
-				syncCompleted(results)
+		// A sync can fetch the commits of new diffs, so line counting runs
+		// after each one.
+		lineKinds := linekinds.New(database, cloneMgr)
+		syncer.SetOnSyncCompleted(func(results []ghclient.RepoSyncResult) {
+			syncCompleted(results)
+			lineKinds.Wake()
+			if semanticIndexer != nil {
 				semanticIndexer.Wake()
-			})
+			}
+		})
+		backgroundLoops.start(lineKinds.Run)
+		if semanticIndexer != nil {
 			backgroundLoops.start(semanticIndexer.Run)
-		} else {
-			syncer.SetOnSyncCompleted(syncCompleted)
 		}
 		if !opts.DisableSync && cfg.Relay.URL != "" {
 			backgroundLoops.start(func(runCtx context.Context) {

@@ -101,6 +101,41 @@ func TestAPIListPulls(t *testing.T) {
 	assert.Equal("acme/widget", body[0].Repo.RepoPath)
 }
 
+func TestAPIListPullsReportsLineKindsForCurrentDiff(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	srv, database := servertest.SetupTestServer(t)
+	counted := seedPRWithHeadSHA(t, database, "acme", "widget", 1, "head-1")
+	stale := seedPRWithHeadSHA(t, database, "acme", "widget", 2, "head-2")
+	kinds := gitclone.LineKinds{
+		Code: gitclone.LineCounts{Additions: 40, Deletions: 12},
+		Docs: gitclone.LineCounts{Additions: 6},
+		Data: gitclone.LineCounts{Additions: 300, Deletions: 280},
+	}
+	require.NoError(database.SetMergeRequestLineKinds(ctx, counted, "merge-base", "head-1", kinds, time.Now()))
+	require.NoError(database.SetMergeRequestLineKinds(ctx, stale, "merge-base", "older-head", kinds, time.Now()))
+	client := servertest.SetupTestClient(t, srv)
+
+	resp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{})
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode)
+	require.NotNil(resp.JSON200)
+	byNumber := map[int64]*generated.LineKinds{}
+	for _, pull := range *resp.JSON200 {
+		byNumber[pull.Number] = pull.LineKinds
+	}
+	require.Len(byNumber, 2)
+	assert.Equal(&generated.LineKinds{
+		Code:      generated.LineCounts{Additions: 40, Deletions: 12},
+		Docs:      generated.LineCounts{Additions: 6},
+		Data:      generated.LineCounts{Additions: 300, Deletions: 280},
+		Generated: generated.LineCounts{},
+	}, byNumber[1])
+	assert.Nil(byNumber[2], "counts for an older head must not describe the current diff")
+}
+
 func TestAPIListPullsClassifiesHeadRepository(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

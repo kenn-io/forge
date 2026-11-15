@@ -552,6 +552,8 @@ export * from "./launchWorkspaceAgentHandoffPathParameters.ts";
 export * from "./launchWorkspaceRuntimeSessionInputBody.ts";
 export * from "./launchWorkspaceRuntimeSessionPathParameters.ts";
 export * from "./line.ts";
+export * from "./lineCounts.ts";
+export * from "./lineKinds.ts";
 export * from "./listActivityAuthorsParams.ts";
 export * from "./listActivityParams.ts";
 export * from "./listActivityProjection.ts";

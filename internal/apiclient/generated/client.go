@@ -69553,6 +69553,18 @@ type Line struct {
 	Type      string `json:"type"`
 }
 
+type LineCounts struct {
+	Additions int64 `json:"additions"`
+	Deletions int64 `json:"deletions"`
+}
+
+type LineKinds struct {
+	Code      LineCounts `json:"code"`
+	Data      LineCounts `json:"data"`
+	Docs      LineCounts `json:"docs"`
+	Generated LineCounts `json:"generated"`
+}
+
 type ListDocsFoldersOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema  *string              `json:"$schema,omitempty"`
@@ -69893,6 +69905,7 @@ type MergeRequestResponse struct {
 	HeadRepoKind             MergeRequestResponseHeadRepoKind `json:"head_repo_kind"`
 	Labels                   []Label                          `json:"labels,omitempty"`
 	LastWorkspaceActivityAt  *time.Time                       `json:"last_workspace_activity_at,omitempty"`
+	LineKinds                *LineKinds                       `json:"line_kinds,omitempty"`
 	MergeQueue               *MergeQueueEntryResponse         `json:"merge_queue,omitempty"`
 	MergeQueueRemoval        *MergeQueueRemovalResponse       `json:"merge_queue_removal,omitempty"`
 	MergeRules               string                           `json:"merge_rules"`

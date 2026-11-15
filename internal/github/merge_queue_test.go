@@ -549,6 +549,27 @@ func TestAppWithMergeQueuesPermissionReadsQueueWithoutConfiguration(t *testing.T
 	assert.Equal("squash", state.MergeMethod)
 }
 
+// A credential that GitHub refuses the queue configuration to cannot learn
+// the merge method. That follows from the credential's permissions, not from a
+// failed sync, so it is not reported as a warning on every recheck.
+func TestRefusedMergeMethodReadIsNotAWarning(t *testing.T) { //nolint:paralleltest // replaces the default logger
+	assert := assert.New(t)
+	require := require.New(t)
+	logs := captureDefaultLogs(t)
+	gql := newPRQueueGraphQL(queuedPR7)
+	gql.configuration = `{"data":{"repository":{"mergeQueue":{"configuration":null}}},` +
+		`"errors":[{"type":"FORBIDDEN","path":["repository","mergeQueue","configuration"],"message":"Resource not accessible by integration"}]}`
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(state, "the queue entry is stored without its merge method")
+	assert.Empty(state.MergeMethod)
+	assert.EqualValues(1, gql.configReads.Load())
+	assert.NotContains(logs.String(), "level=WARN")
+}
+
 func TestRetargetedPullRequestIsReadAgainForNewBaseQueue(t *testing.T) {
 	t.Parallel()
 

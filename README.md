@@ -48,7 +48,7 @@ Start with the [user guide](docs/index.md) for setup and workflows.
 - Read and respond to Roborev reviews from a running daemon.
 - Link Kata issues to provider work and local workspaces.
 - Browse and edit registered Markdown folders.
-- Expose cached maintainer workflows to local MCP clients from the daemon.
+- Connect Claude Code and Codex to the daemon with `kenn-forge agent setup` and expose cached maintainer workflows through MCP.
 - View and operate remote kenn-forge daemons through a federated fleet.
 
 Provider capabilities vary. kenn-forge shows unsupported actions as unavailable.

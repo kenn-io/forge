@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/runtimelock"
 )
 
@@ -36,6 +37,28 @@ func TestMCPQuickstartCommandPrintsAgentConnector(t *testing.T) {
 	assert.Contains(text, "endpoint: http://127.0.0.1:8092/mcp")
 	assert.Contains(text, "token_path: /tmp/forge/auth_token")
 	assert.Contains(text, `"Authorization": "Bearer ${KENN_FORGE_API_TOKEN}"`)
+}
+
+func TestMCPQuickstartStoppedGuidesSetup(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "default", args: []string{"quickstart"}, want: "Run `kenn-forge agent setup` to connect"},
+		{name: "custom", args: []string{"quickstart", "--config", "/tmp/custom config.toml"}, want: "kenn-forge agent setup --config '/tmp/custom config.toml'"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var output bytes.Buffer
+			cmd := newMCPCommand(&output, func(_ context.Context, path string, _ time.Duration) (mcpQuickstartInfo, error) {
+				return stoppedMCPQuickstart(true, path), nil
+			})
+			cmd.SetArgs(tc.args)
+			require.NoError(t, cmd.Execute())
+			assert.NotContains(t, output.String(), "OK mcp quickstart")
+			assert.Contains(t, output.String(), tc.want)
+		})
+	}
 }
 
 func TestMCPQuickstartCommandPrintsStructuredConnector(t *testing.T) {
@@ -89,4 +112,31 @@ enabled = true
 	)
 	_, err = os.Stat(runtimelock.LockPath(dataDir))
 	assert.ErrorIs(err, os.ErrNotExist)
+}
+
+func TestLoadMCPQuickstartMissingConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		defaultPath bool
+	}{
+		{name: "default", defaultPath: true},
+		{name: "custom"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("KENN_FORGE_HOME", dir)
+			configPath := filepath.Join(dir, "missing.toml")
+			if tc.defaultPath {
+				configPath = config.DefaultConfigPath()
+			}
+			info, err := loadMCPQuickstart(t.Context(), configPath, time.Second)
+			if !tc.defaultPath {
+				require.ErrorIs(t, err, os.ErrNotExist)
+				return
+			}
+			require.NoError(t, err)
+			assert.False(t, info.Active)
+			assert.Contains(t, info.NextSteps, "Start the Forge daemon with `kenn-forge daemon start`.")
+		})
+	}
 }

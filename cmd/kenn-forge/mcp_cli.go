@@ -87,6 +87,7 @@ Use "kenn-forge quickstart" for HTTP API request examples and output formats.`,
 			if err != nil {
 				return err
 			}
+			info.NextSteps = append(info.NextSteps, "Run `"+setupCommand(configPath)+"` to connect Claude Code and Codex.")
 			if asJSON {
 				encoder := jsontext.NewEncoder(stdout, jsontext.WithIndentPrefix(""), jsontext.WithIndent("  "))
 				return json.MarshalEncode(encoder, info)
@@ -109,6 +110,9 @@ func loadMCPQuickstart(
 	timeout time.Duration,
 ) (mcpQuickstartInfo, error) {
 	cfg, err := config.Load(configPath)
+	if errors.Is(err, fs.ErrNotExist) && configPath == config.DefaultConfigPath() {
+		return stoppedMCPQuickstart(true, configPath), nil
+	}
 	if err != nil {
 		return mcpQuickstartInfo{}, fmt.Errorf("mcp quickstart: load config: %w", err)
 	}
@@ -239,8 +243,10 @@ func daemonMCPQuickstart(
 }
 
 func writeMCPQuickstart(stdout io.Writer, info mcpQuickstartInfo) error {
-	if _, err := fmt.Fprintln(stdout, "OK mcp quickstart"); err != nil {
-		return err
+	if info.Active {
+		if _, err := fmt.Fprintln(stdout, "OK mcp quickstart"); err != nil {
+			return err
+		}
 	}
 	status := "inactive"
 	if info.Active {

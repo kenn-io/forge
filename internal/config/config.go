@@ -1433,6 +1433,15 @@ func LoadWithOverrides(path string, overrides Overrides) (*Config, error) {
 
 // load reads and normalizes path without running validation.
 func load(path string, overrides Overrides) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading config %s: %w", path, err)
+	}
+	return decodeConfig(path, data, overrides)
+}
+
+// decodeConfig normalizes data as the config at path without running validation.
+func decodeConfig(path string, data []byte, overrides Overrides) (*Config, error) {
 	cfg := &Config{
 		SyncInterval:                defaultSyncInterval,
 		ActivePRRefreshInterval:     defaultActivePRRefreshInterval,
@@ -1449,11 +1458,6 @@ func load(path string, overrides Overrides) (*Config, error) {
 		Detail: Detail{
 			InitialTimelineEntryLimit: DefaultInitialTimelineEntryLimit,
 		},
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading config %s: %w", path, err)
 	}
 
 	text, upgraded, err := upgradeRepositoryIDs(string(data))

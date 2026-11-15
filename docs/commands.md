@@ -155,6 +155,9 @@ These commands manage `[[doc_folders]]` in the selected config file.
 
 ## Install agent activity hooks
 
+Run `kenn-forge agent setup` to connect Claude Code and Codex to Forge.
+To manage hooks without MCP registration, use:
+
 ```sh
 kenn-forge agent-hook install
 kenn-forge agent-hook install --agent codex

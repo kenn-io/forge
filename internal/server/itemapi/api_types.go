@@ -39,6 +39,10 @@ type RepoCatalogResponse struct {
 // pull request count the repository filter shows beside each repository.
 type RepoListItemResponse struct {
 	RepoCatalogResponse
+	// Archived marks a repository its provider reports archived. Live sync
+	// skips it, so LastSyncCompletedAt stops moving; archive collection keeps
+	// its history current.
+	Archived    bool `json:"Archived,omitempty"`
 	OpenPRCount int
 }
 

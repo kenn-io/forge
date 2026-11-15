@@ -502,7 +502,13 @@ func (s *Syncer) mergeQueueMergeMethod(ctx context.Context, repo RepoRef, branch
 				known = entry.method
 			}
 		}
-		logSyncFailure(ctx, slog.LevelWarn, "merge queue merge method read failed", err,
+		// A credential GitHub refuses the configuration to never learns the
+		// method; that is a permission choice, so it is not a warning.
+		level := slog.LevelWarn
+		if isMergeQueueReadRefused(err) {
+			level = slog.LevelDebug
+		}
+		logSyncFailure(ctx, level, "merge queue merge method read failed", err,
 			"repo", repo.Owner+"/"+repo.Name, "branch", branch)
 		s.mergeQueueMethods.Store(key, cachedMergeMethod{method: known, readAt: s.now()})
 		return known

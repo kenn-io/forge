@@ -230,7 +230,7 @@ func TestSeedFixtures_FixtureClient(t *testing.T) {
 	assert.Contains(comments[1].GetBody(), "I can reproduce on 17.4")
 }
 
-func TestSeedFixtures_MergeTargetsHaveReviewedHeads(t *testing.T) {
+func TestSeedFixtures_MergeTargetsHaveReviewedHeads(t *testing.T) { //nolint:tparallel // subtests share the seeded database and fixture client through parent-bound assertions.
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)

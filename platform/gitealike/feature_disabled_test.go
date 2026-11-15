@@ -126,6 +126,7 @@ func (t *featureFailureTransport) ListPullRequestsPage(
 }
 
 func TestRepositoryFeatureError(t *testing.T) {
+	t.Parallel()
 	enabled := true
 	disabled := false
 	metadataFailure := errors.New("repository metadata failed")
@@ -269,6 +270,7 @@ func TestRepositoryItemLookupReusesFeatureMetadataConfirmation(t *testing.T) {
 }
 
 func TestRepositoryFeatureReadBoundaries(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		failAt  string

@@ -85,6 +85,7 @@ func TestNormalizeCommentVisibilityMetadata(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.JSONEq(t, `{"provider_hidden":true,"provider_hidden_reason":"OFF_TOPIC"}`, tt.normalize())
 		})
 	}
@@ -463,8 +464,6 @@ func TestNormalizeTimelineEventAssigned(t *testing.T) {
 func TestNormalizeTimelineEventLifecycle(t *testing.T) {
 	t.Parallel()
 
-	require := require.New(t)
-	assert := assert.New(t)
 	createdAt := time.Date(2024, 6, 1, 12, 30, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -480,6 +479,9 @@ func TestNormalizeTimelineEventLifecycle(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			require := require.New(t)
 			event := NormalizeTimelineEvent(17, platformgithub.PullRequestTimelineEvent{
 				NodeID:    tt.nodeID,
 				EventType: tt.eventType,
@@ -581,6 +583,7 @@ func TestNormalizeIssueTimelineEventLifecycle(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			assert := assert.New(t)
 
@@ -741,6 +744,7 @@ func TestNormalizePR_MergeableState(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ghPR := &gh.PullRequest{
 				ID:             new(int64(1)),
 				Number:         new(1),
@@ -834,6 +838,7 @@ func TestDeriveOverallCIStatus_CheckRunsOnly(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := overallCIStatus(tt.runs, nil)
 			assert.Equal(t, tt.want, got)
 		})
@@ -849,6 +854,7 @@ func TestDeriveOverallCIStatus_NonSuccessConclusions(t *testing.T) {
 		"cancelled", "stale", "startup_failure",
 	} {
 		t.Run(conclusion, func(t *testing.T) {
+			t.Parallel()
 			runs := []*gh.CheckRun{
 				{Status: new("completed"), Conclusion: new(conclusion)},
 			}
@@ -1453,6 +1459,7 @@ func TestNameOrEmpty(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, nameOrEmpty(tt.user))
 		})
 	}

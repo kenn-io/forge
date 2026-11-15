@@ -44,6 +44,7 @@ func TestDeletionOrderingSurvivesLifecycleMigration(t *testing.T) {
 		{name: "queued force", queued: true, force: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			database := dbtest.Open(t)
 			repo := gitfixture.NewRepository(t, false)

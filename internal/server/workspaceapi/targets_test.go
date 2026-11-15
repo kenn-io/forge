@@ -20,6 +20,7 @@ func TestWorkspaceTargetsPreserveOwnerAndBranch(t *testing.T) {
 	t.Parallel()
 	for _, provider := range []string{"github", "gitlab", "forgejo", "gitea", "bitbucket", "bitbucket-cloud"} {
 		t.Run(provider, func(t *testing.T) {
+			t.Parallel()
 			database := dbtest.Open(t)
 			ctx := t.Context()
 			host := provider + ".example.com"

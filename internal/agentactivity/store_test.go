@@ -402,6 +402,7 @@ func TestStoreReadsReportsSavedBeforePerTerminalNames(t *testing.T) {
 }
 
 func TestStoreSessionEndWithInvalidLegacyReport(t *testing.T) {
+	t.Parallel()
 	for _, content := range []string{"", "corrupt", "{}", `{"state":"unknown"}`} {
 		t.Run(content, func(t *testing.T) {
 			t.Parallel()

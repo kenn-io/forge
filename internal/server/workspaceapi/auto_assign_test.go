@@ -94,7 +94,7 @@ func (p *autoAssignProvider) SetIssueAssignees(
 	return slices.Clone(usernames), nil
 }
 
-func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) {
+func TestAutoAssignWorkspaceItemPreservesExistingAssignees(t *testing.T) { //nolint:tparallel // subtests reset the shared provider assignment fields and database before the parent continues assignment checks.
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
@@ -232,6 +232,7 @@ func TestAutoAssignmentPreservesRepositoryIdentityAfterRouteReuse(t *testing.T) 
 				name = itemType + "/renamed"
 			}
 			t.Run(name, func(t *testing.T) {
+				t.Parallel()
 				assert := assert.New(t)
 				require := require.New(t)
 				database := dbtest.Open(t)

@@ -10,7 +10,7 @@ import (
 )
 
 // Mutually exclusive filters match either; every other selected filter must also match.
-func TestListMergeRequestsCombinesFilterSections(t *testing.T) {
+func TestListMergeRequestsCombinesFilterSections(t *testing.T) { //nolint:tparallel // subtests share the seeded pull-request database and filter fixture.
 	t.Parallel()
 	d := openTestDB(t)
 	repoID := insertTestRepo(t, d, "acme", "widget")
@@ -83,7 +83,7 @@ func TestListMergeRequestsCombinesFilterSections(t *testing.T) {
 	}
 }
 
-func TestListIssuesCombinesFilterSections(t *testing.T) {
+func TestListIssuesCombinesFilterSections(t *testing.T) { //nolint:tparallel // subtests share the seeded issue database and reference/involvement fixture.
 	t.Parallel()
 	d := openTestDB(t)
 	ctx := t.Context()

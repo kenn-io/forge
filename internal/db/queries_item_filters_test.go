@@ -23,7 +23,7 @@ func referenceIssueFromPR(t *testing.T, d *DB, issueID int64, number int, at tim
 }
 
 // Workspace, fork, and label filters on the pull request list all apply before the limit.
-func TestListMergeRequestsWorkspaceForkAndLabelFiltersApplyBeforeLimit(t *testing.T) {
+func TestListMergeRequestsWorkspaceForkAndLabelFiltersApplyBeforeLimit(t *testing.T) { //nolint:tparallel // subtests share the seeded repository, pull-request labels, and workspace-filter fixture.
 	t.Parallel()
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -90,7 +90,7 @@ func TestListMergeRequestsWorkspaceForkAndLabelFiltersApplyBeforeLimit(t *testin
 }
 
 // Issue labels and Hide bots apply before the limit; bot authors follow bot-author.ts per provider.
-func TestListIssuesLabelAndBotFiltersApplyBeforeLimit(t *testing.T) {
+func TestListIssuesLabelAndBotFiltersApplyBeforeLimit(t *testing.T) { //nolint:tparallel // subtests share the seeded provider repositories and issue-label fixture.
 	t.Parallel()
 	ctx := t.Context()
 	d := openTestDB(t)
@@ -147,7 +147,7 @@ func TestListIssuesLabelAndBotFiltersApplyBeforeLimit(t *testing.T) {
 
 // Activity applies PR attributes only to pull request rows and issue filters only to issue rows,
 // in SQL before the limit, on the flat feed, the subject list, and the collapsed projection.
-func TestActivityItemFiltersApplyBeforeLimitToTheirItemType(t *testing.T) {
+func TestActivityItemFiltersApplyBeforeLimitToTheirItemType(t *testing.T) { //nolint:tparallel // subtests share the activity database and parent-bound query helpers used again after the subtests.
 	t.Parallel()
 	require := require.New(t)
 	d := openTestDB(t)

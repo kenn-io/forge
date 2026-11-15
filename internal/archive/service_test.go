@@ -21,7 +21,6 @@ import (
 
 func TestArchiveRetryClassifierTreatsAttemptBudgetRefusalAsDeferral(t *testing.T) {
 	t.Parallel()
-	assert := assert.New(t)
 	now := archiveTestTime()
 	// A budget-transport refusal may reach the classifier bare or wrapped by a
 	// provider error mapper. GitLab maps unclassified transport errors to its
@@ -38,6 +37,8 @@ func TestArchiveRetryClassifierTreatsAttemptBudgetRefusalAsDeferral(t *testing.T
 		"deeply-wrapped":    errors.Join(errors.New("list historical issues"), wrapped),
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
 			decision := defaultArchiveRetryDecision(cause, 0, now)
 			assert.Equal(db.ArchiveErrorCodeBudgetExhausted, decision.Code)
 			assert.NotNil(decision.RetryAt)
@@ -844,6 +845,7 @@ func TestDefaultArchiveRetryClassifierDistinguishesTerminalProviderErrors(t *tes
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			decision := (defaultRetryClassifier{}).Classify(tt.err, 0, now)
 			assert.Equal(t, tt.wantCode, decision.Code)
 			assert.Equal(t, tt.wantRetry, decision.RetryAt != nil)

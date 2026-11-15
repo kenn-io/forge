@@ -658,8 +658,6 @@ func TestETagTransport_GHEPathCaches(t *testing.T) {
 func TestETagTransport_InvalidateRepo(t *testing.T) {
 	t.Parallel()
 
-	assert := assert.New(t)
-
 	seed := func(et *etagTransport) {
 		now := time.Now()
 		et.cache.Store("https://api.github.com/repos/o/n/pulls", etagEntry{etag: `"1"`, cachedAt: now})
@@ -670,6 +668,8 @@ func TestETagTransport_InvalidateRepo(t *testing.T) {
 	}
 
 	t.Run("all endpoints", func(t *testing.T) {
+		t.Parallel()
+		assert := assert.New(t)
 		et := &etagTransport{}
 		seed(et)
 		et.invalidateRepo("o", "n", "pulls", "issues")
@@ -688,6 +688,8 @@ func TestETagTransport_InvalidateRepo(t *testing.T) {
 	})
 
 	t.Run("pulls only", func(t *testing.T) {
+		t.Parallel()
+		assert := assert.New(t)
 		et := &etagTransport{}
 		seed(et)
 		et.invalidateRepo("o", "n", "pulls")
@@ -705,6 +707,8 @@ func TestETagTransport_InvalidateRepo(t *testing.T) {
 	})
 
 	t.Run("issues only", func(t *testing.T) {
+		t.Parallel()
+		assert := assert.New(t)
 		et := &etagTransport{}
 		seed(et)
 		et.invalidateRepo("o", "n", "issues")
@@ -719,6 +723,8 @@ func TestETagTransport_InvalidateRepo(t *testing.T) {
 	})
 
 	t.Run("empty endpoints clears every supported path", func(t *testing.T) {
+		t.Parallel()
+		assert := assert.New(t)
 		et := &etagTransport{}
 		now := time.Now()
 		et.cache.Store("https://api.github.com/repos/o/n/pulls", etagEntry{etag: `"1"`, cachedAt: now})

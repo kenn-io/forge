@@ -32,6 +32,7 @@ func bulkRefreshTestNode(number int, at time.Time, issue bool) map[string]any {
 }
 
 func TestRunOnceBulkRefreshTargets(t *testing.T) {
+	t.Parallel()
 	for _, issue := range []bool{false, true} {
 		for _, mode := range []string{"changed", "unchanged", "stale", "cold", "recovery", "closed", "empty", "transferred"} {
 			if mode == "transferred" && !issue {

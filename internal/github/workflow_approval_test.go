@@ -127,6 +127,7 @@ func TestFilterWorkflowRunsAwaitingApproval(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := FilterWorkflowRunsAwaitingApproval(tt.runs, tt.pr)
 			gotIDs := make([]int64, 0, len(got))
 			for _, run := range got {
@@ -154,6 +155,7 @@ func TestParseHeadRepoFullName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, platformgithub.ParseHeadRepoFullName(tt.in))
 		})
 	}

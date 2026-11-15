@@ -112,6 +112,7 @@ func TestPromptMaintenanceResumesDurableCursorAfterBudgetDeferral(t *testing.T) 
 		{name: "between streams", denyAfter: 2, wantWork: true, resumeCall: "updated_mrs:"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			database := dbtest.Open(t)

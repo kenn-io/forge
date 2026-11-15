@@ -281,7 +281,7 @@ func TestListRepoSummariesHidesRemovedUpstreamItems(t *testing.T) {
 	}
 }
 
-func TestRepoSummaryQueryPlans(t *testing.T) {
+func TestRepoSummaryQueryPlans(t *testing.T) { //nolint:tparallel // subtests share the seeded repository-summary database and optimized query-plan fixture.
 	t.Parallel()
 	d := openTestDB(t)
 	repoID := insertTestRepo(t, d, "example", "widgets")

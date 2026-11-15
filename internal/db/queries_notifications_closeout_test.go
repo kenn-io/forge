@@ -278,7 +278,7 @@ func TestMarkClosedLinkedItemNotificationsDoneSkipsInactiveRepository(t *testing
 // every merge-request or issue access must be an index search, never a scan.
 // The previous single-statement form scanned the entire item table once per
 // active notification.
-func TestClosedLinkedNotificationStatementsUseItemIndexes(t *testing.T) {
+func TestClosedLinkedNotificationStatementsUseItemIndexes(t *testing.T) { //nolint:tparallel // subtests share the seeded notification-closeout database and statement-plan fixture.
 	t.Parallel()
 
 	d := openTestDB(t)

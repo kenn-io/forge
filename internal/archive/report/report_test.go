@@ -15,8 +15,6 @@ import (
 
 func TestRenderMarkdownGoldenAndDeterministicSerialization(t *testing.T) {
 	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
 
 	for _, tc := range []struct {
 		name     string
@@ -27,6 +25,9 @@ func TestRenderMarkdownGoldenAndDeterministicSerialization(t *testing.T) {
 		{name: "detailed", detailed: true, golden: "detailed.md.golden"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			require := require.New(t)
 			model := reportFixture(tc.detailed)
 			firstMarkdown, err := RenderMarkdown(model)
 			require.NoError(err)
@@ -127,6 +128,7 @@ func TestValidateDetailedSizeBoundaries(t *testing.T) {
 		{name: "above text", records: 1, textBytes: MaxDetailedTextBytes + 1, wantError: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			err := ValidateDetailedSize(tc.records, tc.textBytes)

@@ -137,6 +137,7 @@ func TestGitHubWorkflowCapabilitiesAreIndependent(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			provider, providerErr := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: test.client, Clock: time.Now})
@@ -262,6 +263,7 @@ func TestGitHubWorkflowProviderAbortsCatalogOnFatalDefinitionErrors(t *testing.T
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			fake := &workflowProviderFake{
 				workflows: []*gh.Workflow{
@@ -311,6 +313,7 @@ func TestGitHubWorkflowProviderKeepsPerDefinitionFailuresPartial(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			fake := &workflowProviderFake{
 				workflows: []*gh.Workflow{

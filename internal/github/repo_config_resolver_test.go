@@ -22,6 +22,7 @@ func TestResolveConfiguredRepoCanonicalizesClientHosts(t *testing.T) {
 		{"GIT.EXAMPLE.COM:8443", "git.example.com:8443"},
 	} {
 		t.Run(tc.clientHost, func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			client := &mockClient{
 				getRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
@@ -598,6 +599,7 @@ func TestFallbackConfiguredRepoRefsHonorsPinnedIdentity(t *testing.T) {
 		{"renamed repository from glob", 1001, platform.KindGitHub, "github.com", true, true, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			verified := RepoRef{
 				Platform: tt.provider, PlatformHost: tt.host,
 				Owner: "acme", Name: "widget-next", RepoPath: "acme/widget-next",

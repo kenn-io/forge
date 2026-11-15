@@ -414,6 +414,7 @@ func TestMigration54DownDropsOnlyPreparationTables(t *testing.T) {
 		"v54":    testDBTemplate.versions[54],
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			dbPath := filepath.Join(t.TempDir(), "node-preparation-down.db")
@@ -726,7 +727,7 @@ func TestKataIssueLinksMigration48IsReversible(t *testing.T) {
 	require.NoError(raw.Close())
 }
 
-func TestKataIssueLinksMigration48EnforcesIdentityConstraints(t *testing.T) {
+func TestKataIssueLinksMigration48EnforcesIdentityConstraints(t *testing.T) { //nolint:tparallel // subtests insert into the shared migrated database before the parent verifies no links were created.
 	t.Parallel()
 	assert := assert.New(t)
 
@@ -1234,6 +1235,7 @@ func TestOpenMigratesLegacyDatabase(t *testing.T) {
 		{name: "schema_version_3", version: 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			dir := t.TempDir()
 			path := filepath.Join(dir, "legacy.db")

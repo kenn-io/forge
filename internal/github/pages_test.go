@@ -42,6 +42,7 @@ func TestGitHubRepositoryFeatureDisabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			err := &gh.ErrorResponse{
@@ -105,6 +106,7 @@ func TestGitHubArchiveMergeRequestInventoryClassifiesIssueOnlyRepository(t *test
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			repositoryRequests := 0

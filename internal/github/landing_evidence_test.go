@@ -25,6 +25,7 @@ func TestRoutedProviderLandingEvidence(t *testing.T) {
 			name = "archive"
 		}
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			require, assert := require.New(t), assert.New(t)
 			var paths []string
 			hc := &http.Client{Transport: platform.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -88,6 +89,7 @@ func TestRoutedProviderLandingInventory(t *testing.T) {
 			name = "archive"
 		}
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			require, assert := require.New(t), assert.New(t)
 			hc := &http.Client{Transport: platform.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 				var body string

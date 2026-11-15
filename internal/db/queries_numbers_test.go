@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestListItemsByNumbers(t *testing.T) {
+func TestListItemsByNumbers(t *testing.T) { //nolint:tparallel // subtests share the seeded pull-request/issue database and number-filter fixture.
 	t.Parallel()
 	d := openTestDB(t)
 	repo := insertTestRepo(t, d, "acme", "widget")

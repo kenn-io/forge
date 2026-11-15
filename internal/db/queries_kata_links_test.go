@@ -150,7 +150,7 @@ func TestCreateKataIssueLinkIsIdempotentAndRefreshesProjectUID(t *testing.T) {
 	assert.Equal(1, count)
 }
 
-func TestKataIssueLinkValidationRejectsAmbiguousAndBlankIdentities(t *testing.T) {
+func TestKataIssueLinkValidationRejectsAmbiguousAndBlankIdentities(t *testing.T) { //nolint:tparallel // subtests attempt writes to the shared link database before the parent verifies it remains empty.
 	t.Parallel()
 
 	assert := assert.New(t)

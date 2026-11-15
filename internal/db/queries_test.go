@@ -2301,7 +2301,7 @@ func TestListPullRequestsFilterBySearchNumber(t *testing.T) {
 	require.Len(prs, 3)
 }
 
-func TestListPullRequestsSearchZeroPaddedNumber(t *testing.T) {
+func TestListPullRequestsSearchZeroPaddedNumber(t *testing.T) { //nolint:tparallel // subtests share the seeded pull-request database and filter fixture.
 	t.Parallel()
 	d := openTestDB(t)
 	repoID := insertTestRepo(t, d, "owner", "repo")

@@ -27,6 +27,7 @@ func TestFleetProtocolMigrationConvertsHistoricalCoordinatorSealDigest(t *testin
 		{name: "historical digest on protocol 4", protocol: 4, hubID: "hub-1"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			assert := assert.New(t)
 			database := openTestDB(t)

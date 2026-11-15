@@ -94,7 +94,7 @@ func TestRegisterProject_RejectsPathThatIsAFile(t *testing.T) {
 // because create_on_disk derives it; without create_on_disk the handler
 // still requires it.
 
-func TestRegisterWorktree_RejectsBlankFields(t *testing.T) {
+func TestRegisterWorktree_RejectsBlankFields(t *testing.T) { //nolint:tparallel // subtests share the registered project, Git repository, and HTTP server closed when the parent returns.
 	runParallelWorkspaceGitTest(t)
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")

@@ -244,6 +244,7 @@ func TestSnapshotOpenIssueScope(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []platform.Kind{platform.KindGitHub, platform.KindGitLab, platform.KindForgejo, platform.KindGitea} {
 		t.Run(string(kind), func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			database := dbtest.Open(t)
@@ -327,6 +328,7 @@ func TestSnapshotDistinguishesUnknownHeadRepository(t *testing.T) {
 		{name: "stale", head: "https://github.test/owner/project.git", stale: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			require := require.New(t)
 			database := dbtest.Open(t)
 			now := archiveTestTime()
@@ -356,6 +358,7 @@ func TestSnapshotRetainsStableIdentityAndOneReadView(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []platform.Kind{platform.KindGitHub, platform.KindGitLab, platform.KindForgejo, platform.KindGitea} {
 		t.Run(string(kind), func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			database := dbtest.Open(t)

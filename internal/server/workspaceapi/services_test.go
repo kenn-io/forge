@@ -425,6 +425,7 @@ func TestWorkspaceCreationDoesNotWaitForHubAutoAssignment(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			database := dbtest.Open(t)

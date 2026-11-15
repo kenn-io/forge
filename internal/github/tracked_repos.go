@@ -215,6 +215,21 @@ func (s *Syncer) IsTrackedRepo(owner, name string) bool {
 	return false
 }
 
+// ArchivedRepositories returns the identities of tracked repositories their
+// provider reports archived. Live sync skips them, so their sync times stop
+// moving, while archive collection keeps their history current.
+func (s *Syncer) ArchivedRepositories() map[platform.RepositoryIdentity]bool {
+	s.reposMu.Lock()
+	defer s.reposMu.Unlock()
+	archived := map[platform.RepositoryIdentity]bool{}
+	for _, repo := range s.repos {
+		if repo.Archived && !repo.Key.IsZero() {
+			archived[repo.Identity()] = true
+		}
+	}
+	return archived
+}
+
 // TrackedRepos returns a snapshot of the tracked repositories.
 func (s *Syncer) TrackedRepos() []RepoRef {
 	s.reposMu.Lock()

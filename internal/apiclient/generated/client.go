@@ -70808,6 +70808,7 @@ type RepoListItemResponse struct {
 	AllowMergeCommit        bool       `json:"AllowMergeCommit"`
 	AllowRebaseMerge        bool       `json:"AllowRebaseMerge"`
 	AllowSquashMerge        bool       `json:"AllowSquashMerge"`
+	Archived                *bool      `json:"Archived,omitempty"`
 	BitbucketRepositoryUUID *uuid.UUID `json:"BitbucketRepositoryUUID,omitempty"`
 	CreatedAt               time.Time  `json:"CreatedAt"`
 	ID                      int64      `json:"ID"`

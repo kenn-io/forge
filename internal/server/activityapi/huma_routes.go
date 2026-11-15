@@ -272,10 +272,18 @@ func (s *Handlers) ListRepos(ctx context.Context, _ *struct{}) (*listReposOutput
 		return nil, httpapi.Internal("count open pull requests failed")
 	}
 
+	var archived map[platform.RepositoryIdentity]bool
+	if syncer := *s.Syncer; syncer != nil {
+		archived = syncer.ArchivedRepositories()
+	}
 	out := make([]itemapi.RepoListItemResponse, 0, len(repos))
 	for _, repo := range repos {
+		identity := platform.RepositoryIdentity{
+			Provider: repo.Platform, PlatformHost: repo.PlatformHost, Key: repo.Key,
+		}.Canonical()
 		out = append(out, itemapi.RepoListItemResponse{
 			RepoCatalogResponse: itemapi.RepoCatalog(repo),
+			Archived:            !repo.Key.IsZero() && archived[identity],
 			OpenPRCount:         openPRCounts[repo.ID],
 		})
 	}

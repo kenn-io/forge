@@ -8707,6 +8707,8 @@ components:
           type: boolean
         AllowSquashMerge:
           type: boolean
+        Archived:
+          type: boolean
         BitbucketRepositoryUUID:
           format: uuid
           type: string

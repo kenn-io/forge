@@ -323,3 +323,51 @@ name = "wid*"
 	assert.Empty(hidden,
 		"a PUT losing the race to a delete must not orphan the preference")
 }
+
+// Live sync skips a provider-archived repository, so its sync time stops
+// moving. /repos says which repositories are archived so a consumer can judge
+// them by archive collection instead of reporting them as never synced.
+func TestListReposMarksProviderArchivedRepositories(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	srv, database, _, syncer := setupTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+
+[[repos]]
+owner = "acme"
+name = "legacy"
+`, &serverfake.MockGH{})
+	refs := make([]ghclient.RepoRef, 0, 2)
+	for _, name := range []string{"widget", "legacy"} {
+		key := platform.RepositoryIDKey(testutil.FixtureRepoID("acme", name))
+		serverfake.SeedVerifiedRepo(t, database, db.RepoIdentity{
+			Platform: "github", PlatformHost: "github.com", Key: key,
+			Owner: "acme", Name: name,
+		})
+		refs = append(refs, ghclient.RepoRef{
+			Owner: "acme", Name: name, PlatformHost: "github.com", Key: key,
+			ConfiguredRepoPath: "acme/" + name, Archived: name == "legacy",
+		})
+	}
+	syncer.SetRepos(refs)
+
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repos", nil)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var repos []struct {
+		Name     string
+		Archived bool
+	}
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &repos))
+	archived := map[string]bool{}
+	for _, repo := range repos {
+		archived[repo.Name] = repo.Archived
+	}
+	assert.Equal(t, map[string]bool{"widget": false, "legacy": true}, archived)
+}

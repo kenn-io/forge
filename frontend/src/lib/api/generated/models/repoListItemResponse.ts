@@ -6,6 +6,7 @@ export interface RepoListItemResponse {
   AllowMergeCommit: boolean;
   AllowRebaseMerge: boolean;
   AllowSquashMerge: boolean;
+  Archived?: boolean;
   BitbucketRepositoryUUID?: string;
   CreatedAt: string;
   ID: number;

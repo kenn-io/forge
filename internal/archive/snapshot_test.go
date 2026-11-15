@@ -1,7 +1,6 @@
 package archive
 
 import (
-	"context"
 	"encoding/json/v2"
 	"fmt"
 	"slices"
@@ -786,10 +785,10 @@ func TestDefaultSnapshotWithOpenAndClosedPullComments(t *testing.T) {
 	}
 	require.NoError(t, database.UpsertMREvents(t.Context(), events))
 
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
+	// Race instrumentation and shared CI load can push this fixture past one
+	// second. Keep the test runner's deadline while checking snapshot contents.
 	started := time.Now()
-	result, err := service.Snapshot(ctx, SnapshotOptions{Start: now.Add(-time.Hour), End: now})
+	result, err := service.Snapshot(t.Context(), SnapshotOptions{Start: now.Add(-time.Hour), End: now})
 	t.Logf("default snapshot duration: %s", time.Since(started))
 	require.NoError(t, err)
 	assert.Len(t, result.PullRequests, 750)

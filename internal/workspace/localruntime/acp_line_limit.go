@@ -127,26 +127,18 @@ func acpOversizedReplacement(message acpOversizedMessage, size int) []byte {
 	return append(line, '\n')
 }
 
-// acpRoutingCapture bounds a kept routing value. A longer one names nothing
-// Forge can route, so it is not kept.
-const acpRoutingCapture = 1 << 10
+// acpRoutingCapture bounds a kept routing value. An identifier longer than
+// this names nothing Forge routes.
+const acpRoutingCapture = acpLineReadSize
 
-// acpRoutingPaths are the members an oversized message is routed by, keyed by
-// their path from the message's top level.
-var acpRoutingPaths = map[string]func(*acpOversizedMessage, []byte){
-	"/id":     func(m *acpOversizedMessage, raw []byte) { m.ID = jsontext.Value(bytes.Clone(raw)) },
-	"/method": func(m *acpOversizedMessage, raw []byte) { m.Method = acpRoutingString(raw) },
-	"/params/sessionId": func(m *acpOversizedMessage, raw []byte) {
-		m.SessionID = acpRoutingString(raw)
-	},
-	"/params/update/sessionUpdate": func(m *acpOversizedMessage, raw []byte) {
-		m.SessionUpdate = acpRoutingString(raw)
-	},
-	"/params/update/toolCallId": func(m *acpOversizedMessage, raw []byte) {
-		m.ToolCallID = acpRoutingString(raw)
-	},
-	"/params/update/status": func(m *acpOversizedMessage, raw []byte) { m.Status = acpRoutingString(raw) },
-}
+// acpRoutingKeyCapture bounds a kept member name. Every routing name is
+// shorter, so a longer name is not one.
+const acpRoutingKeyCapture = 32
+
+// acpRoutingChain names, for each routing object, the member holding the next
+// one: the message holds params, and params holds update. Routing fields sit
+// directly in one of these three objects and nowhere else.
+var acpRoutingChain = [...]string{"params", "update"}
 
 func acpRoutingString(raw []byte) string {
 	var value string
@@ -156,31 +148,26 @@ func acpRoutingString(raw []byte) string {
 	return value
 }
 
-// acpRoutingScanner reads the routing members of one JSON message as its
-// bytes pass, in any member order, and keeps nothing else: the payload of an
-// oversized message can be hundreds of MiB.
+// acpRoutingScanner reads the routing fields of one JSON message as its bytes
+// pass, in any member order. It keeps no state for the payload beyond a
+// nesting depth: the payload of an oversized message can be hundreds of MiB.
 type acpRoutingScanner struct {
 	message acpOversizedMessage
-	frames  []acpRoutingFrame
-	// token is the string or literal being read; raw holds it when kept.
-	token   byte // 0, '"' for a string, or 'l' for a literal
-	escaped bool
-	isKey   bool
-	keep    string // the path of the value being read
-	keeping bool
-	raw     []byte
-}
-
-// acpNoRoute is the path of a value no routing member can be inside: one in
-// an array, or under a key too long to keep.
-const acpNoRoute = "\x00"
-
-// acpRoutingFrame is one open object or array.
-type acpRoutingFrame struct {
-	object    bool
+	// depth counts the open objects and arrays; the outermost route of them
+	// are routing objects.
+	depth, route int
+	// expectKey and key describe the innermost routing object while the
+	// scanner is directly inside it.
 	expectKey bool
-	path      string // the container's own path; "" for the top level
 	key       string
+	// token is the string ('"') or literal ('l') being read, or 0.
+	token     byte
+	escaped   bool
+	isKey     bool
+	capturing bool
+	overflow  bool
+	limit     int
+	raw       []byte
 }
 
 func (s *acpRoutingScanner) write(data []byte) {
@@ -211,59 +198,80 @@ func (s *acpRoutingScanner) next(c byte) {
 			return
 		}
 	}
+	inRoute := s.route > 0 && s.depth == s.route
 	switch c {
-	case '"', '{', '[':
-		path, kept := s.valuePath()
-		if c != '"' {
-			s.frames = append(s.frames, acpRoutingFrame{object: c == '{', expectKey: c == '{', path: path})
+	case '{', '[':
+		if c == '{' && s.depth == s.route && (s.route == 0 || s.route <= len(acpRoutingChain) && s.key == acpRoutingChain[s.route-1]) {
+			s.route++
+			s.expectKey = true
+		}
+		s.depth++
+	case '}', ']':
+		if s.depth == 0 {
 			return
 		}
-		s.token, s.raw = '"', s.raw[:0]
-		s.isKey = len(s.frames) > 0 && s.frames[len(s.frames)-1].object && s.frames[len(s.frames)-1].expectKey
-		s.keeping = s.isKey || kept
-		s.keep = path
-		s.take(c)
-	case '}', ']':
-		if len(s.frames) > 0 {
-			s.frames = s.frames[:len(s.frames)-1]
+		if s.depth == s.route {
+			s.route--
 		}
+		s.depth--
+		s.expectKey = false
 	case ':':
-		if len(s.frames) > 0 {
-			s.frames[len(s.frames)-1].expectKey = false
+		if inRoute {
+			s.expectKey = false
 		}
 	case ',':
-		if len(s.frames) > 0 && s.frames[len(s.frames)-1].object {
-			s.frames[len(s.frames)-1].expectKey = true
+		if inRoute {
+			s.expectKey = true
 		}
 	case ' ', '\t', '\r', '\n':
 	default:
-		path, kept := s.valuePath()
-		s.token, s.raw, s.isKey, s.keeping, s.keep = 'l', s.raw[:0], false, kept, path
-		s.take(c)
+		s.startToken(c, inRoute)
 	}
 }
 
-// valuePath is the path of the value starting now, and whether it is a
-// routing member. A value inside an array has no routing path.
-func (s *acpRoutingScanner) valuePath() (string, bool) {
-	if len(s.frames) == 0 {
-		return "", false
+// startToken begins a string or literal, keeping it when it is a member name
+// or a routing value of the routing object the scanner is directly in.
+func (s *acpRoutingScanner) startToken(c byte, inRoute bool) {
+	s.token, s.isKey, s.overflow, s.raw = 'l', false, false, s.raw[:0]
+	if c == '"' {
+		s.token = '"'
+		s.isKey = inRoute && s.expectKey
 	}
-	top := s.frames[len(s.frames)-1]
-	if !top.object || top.path == acpNoRoute || top.key == acpNoRoute {
-		return acpNoRoute, false
+	s.capturing = inRoute && (s.isKey || s.routingField() != nil)
+	s.limit = acpRoutingCapture
+	if s.isKey {
+		s.limit = acpRoutingKeyCapture
 	}
-	path := top.path + "/" + top.key
-	_, kept := acpRoutingPaths[path]
-	return path, kept
+	s.take(c)
+}
+
+// routingField is where the value of the current member goes, or nil when
+// the member is not a routing field of the routing object it is in.
+func (s *acpRoutingScanner) routingField() func([]byte) {
+	m := &s.message
+	switch {
+	case s.route == 1 && s.key == "id":
+		return func(raw []byte) { m.ID = jsontext.Value(bytes.Clone(raw)) }
+	case s.route == 1 && s.key == "method":
+		return func(raw []byte) { m.Method = acpRoutingString(raw) }
+	case s.route == 2 && s.key == "sessionId":
+		return func(raw []byte) { m.SessionID = acpRoutingString(raw) }
+	case s.route == 3 && s.key == "sessionUpdate":
+		return func(raw []byte) { m.SessionUpdate = acpRoutingString(raw) }
+	case s.route == 3 && s.key == "toolCallId":
+		return func(raw []byte) { m.ToolCallID = acpRoutingString(raw) }
+	case s.route == 3 && s.key == "status":
+		return func(raw []byte) { m.Status = acpRoutingString(raw) }
+	}
+	return nil
 }
 
 func (s *acpRoutingScanner) take(c byte) {
-	if !s.keeping {
+	if !s.capturing {
 		return
 	}
-	if len(s.raw) >= acpRoutingCapture {
-		s.keeping = false
+	if len(s.raw) >= s.limit {
+		s.capturing, s.overflow = false, true
 		s.raw = s.raw[:0]
 		return
 	}
@@ -271,18 +279,20 @@ func (s *acpRoutingScanner) take(c byte) {
 }
 
 func (s *acpRoutingScanner) endToken() {
-	keeping := s.keeping
-	s.token, s.escaped, s.keeping = 0, false, false
-	if !keeping {
-		if s.isKey && len(s.frames) > 0 {
-			// A key too long to keep names no routing member.
-			s.frames[len(s.frames)-1].key = acpNoRoute
-		}
-		return
-	}
+	s.token, s.escaped = 0, false
 	if s.isKey {
-		s.frames[len(s.frames)-1].key = acpRoutingString(s.raw)
+		// A name too long to keep is not a routing name.
+		s.key = ""
+		if s.capturing {
+			s.key = acpRoutingString(s.raw)
+		}
+		s.capturing = false
 		return
 	}
-	acpRoutingPaths[s.keep](&s.message, s.raw)
+	if s.capturing {
+		if field := s.routingField(); field != nil {
+			field(s.raw)
+		}
+	}
+	s.capturing = false
 }

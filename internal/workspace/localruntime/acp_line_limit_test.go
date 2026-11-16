@@ -7,6 +7,7 @@ import (
 	"encoding/json/v2"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -233,4 +234,60 @@ func TestACPLineLimitRoutesOversizedMessagesInAnyMemberOrder(t *testing.T) {
 		assert.Equal(t, `"req-7"`, string(refused["id"]))
 		assert.Contains(t, string(refused["error"]), "Method not found")
 	})
+}
+
+func scanACPRouting(message string) acpOversizedMessage {
+	var scanner acpRoutingScanner
+	scanner.write([]byte(message))
+	return scanner.message
+}
+
+// The payload's own structure costs the scanner nothing: a deeply nested
+// output with long keys must not grow what it keeps.
+func TestACPRoutingScannerKeepsNothingOfANestedPayload(t *testing.T) {
+	key := strings.Repeat("k", 1000)
+	const depth = 2000
+	var payload strings.Builder
+	for range depth {
+		payload.WriteString(`{"` + key + `":`)
+	}
+	payload.WriteString(`"x \" } ] { [ \\"`)
+	payload.WriteString(strings.Repeat("}", depth))
+	message := []byte(`{"jsonrpc":"2.0","method":"session/update","params":{"update":{"rawOutput":` + payload.String() + `,"toolCallId":"call-5","status":"completed","sessionUpdate":"tool_call_update"},"sessionId":"s"}}`)
+
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	var scanner acpRoutingScanner
+	scanner.write(message)
+	runtime.ReadMemStats(&after)
+
+	assert.Less(t, after.TotalAlloc-before.TotalAlloc, uint64(1<<20), "scanning a %d-byte payload allocates", payload.Len())
+	assert.Equal(t, acpOversizedMessage{Method: "session/update", SessionID: "s", SessionUpdate: "tool_call_update", ToolCallID: "call-5", Status: "completed"}, scanner.message)
+}
+
+// Routing fields are matched by their place in the message, not by a name
+// that spells that place.
+func TestACPRoutingScannerMatchesMembersNotSpelledPaths(t *testing.T) {
+	message := scanACPRouting(`{"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"tool_call_update","toolCallId":"call-1","status":"completed","rawOutput":{"status":"failed","id":7}},"update/status":"failed","params":{"sessionId":"other"}},"result":{"id":9}}`)
+	assert.Equal(t, "completed", message.Status)
+	assert.Equal(t, "s", message.SessionID)
+	assert.Empty(t, message.ID, "an id inside the payload is not the message's")
+}
+
+func TestACPRoutingScannerKeepsLongIdentifiers(t *testing.T) {
+	toolCallID := strings.Repeat("t", 1023)
+	requestID := `"` + strings.Repeat("r", 2048) + `"`
+	message := scanACPRouting(`{"params":{"sessionId":"s","update":{"toolCallId":"` + toolCallID + `","sessionUpdate":"tool_call_update"}},"id":` + requestID + `,"method":"session/request_permission"}`)
+	assert.Equal(t, toolCallID, message.ToolCallID)
+	assert.Equal(t, requestID, string(message.ID))
+}
+
+func TestACPLineLimitRefusesAnOversizedRequestWithALongID(t *testing.T) {
+	_, _, agent := connectLineLimitAgent(t, func(r io.Reader) io.Reader { return newACPLineLimitReader(r) })
+	requestID := `"` + strings.Repeat("r", 2048) + `"`
+	go agent.write(`{"jsonrpc":"2.0","params":{"sessionId":"s","toolCall":{"toolCallId":"call-3","rawInput":"` + strings.Repeat("x", acpMaxMessage) + `"},"options":[]},"id":` + requestID + `,"method":"session/request_permission"}`)
+	refused := agent.readRequest()
+	assert.Equal(t, requestID, string(refused["id"]))
+	assert.Contains(t, string(refused["error"]), "Method not found")
 }

@@ -898,8 +898,12 @@ func (m *Manager) ensureCloneNowInNamespace(
 	}
 
 	if _, err := os.Stat(filepath.Join(clonePath, "HEAD")); os.IsNotExist(err) {
+		templateDir, err := userTemplateDir(ctx)
+		if err != nil {
+			return err
+		}
 		return m.cloneBare(
-			ctx, platform, host, owner, name, clonePath, remoteURL,
+			ctx, platform, host, owner, name, clonePath, remoteURL, templateDir,
 		)
 	}
 	if err := m.validateCloneOrigin(ctx, clonePath, platform, host, owner, name); err != nil {
@@ -907,6 +911,22 @@ func (m *Manager) ensureCloneNowInNamespace(
 	}
 	m.ensureRefspecs(ctx, clonePath)
 	return m.fetch(ctx, platform, host, owner, name, clonePath)
+}
+
+// userTemplateDir reads only the user's global template setting. Keep clone
+// execution isolated from other global settings and inherited Git variables.
+// A nil value leaves Git's default template alone; an empty value disables it.
+func userTemplateDir(ctx context.Context) (*string, error) {
+	out, stderr, err := runGitCommand(ctx, gitcmd.Runner{StripEnv: true}, "", nil,
+		"config", "--global", "--includes", "--null", "--path", "--get", "init.templateDir")
+	if gitcmd.IsExitCode(err, 1) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read user Git template directory: %w", wrapGitError(err, stderr))
+	}
+	path := strings.TrimSuffix(string(out), "\x00")
+	return &path, nil
 }
 
 func (m *Manager) validateCloneOrigin(
@@ -1001,6 +1021,7 @@ func (m *Manager) ensureRefspecs(
 
 func (m *Manager) cloneBare(
 	ctx context.Context, platform, host, owner, name, clonePath, remoteURL string,
+	templateDir *string,
 ) error {
 	if err := os.MkdirAll(filepath.Dir(clonePath), 0o755); err != nil {
 		return fmt.Errorf("mkdir for clone: %w", err)
@@ -1016,7 +1037,7 @@ func (m *Manager) cloneBare(
 			return nil, fmt.Errorf("cleanup partial clone: %w", err)
 		}
 		return m.gitCloneBare(
-			ctx, platform, host, owner, name, clonePath, remoteURL,
+			ctx, platform, host, owner, name, clonePath, remoteURL, templateDir,
 		)
 	})
 	if err != nil {
@@ -1367,7 +1388,13 @@ func (m *Manager) gitWithInput(
 
 func (m *Manager) gitCloneBare(
 	ctx context.Context, platform, host, owner, name, clonePath, remoteURL string,
+	templateDir *string,
 ) ([]byte, error) {
+	args := []string{"clone", "--bare", "--no-local"}
+	if templateDir != nil {
+		args = append(args, "--template="+*templateDir)
+	}
+	args = append(args, remoteURL, clonePath)
 	// Local-path clones copy the source object directory and can race source
 	// maintenance. Use transport semantics consistently for every remote.
 	return m.gitNetworked(
@@ -1378,7 +1405,7 @@ func (m *Manager) gitCloneBare(
 			}
 			return nil
 		},
-		"clone", "--bare", "--no-local", remoteURL, clonePath,
+		args...,
 	)
 }
 

@@ -46,6 +46,32 @@ Roborev still owns the jobs and review data. Forge sends these reads and
 actions through its local server so the browser does not connect to the daemon
 directly.
 
+## Keep Git hooks in new workspaces
+
+Forge's new managed clones use the `init.templateDir` from the daemon user's
+global Git configuration, including global includes and XDG configuration.
+Git copies the template into the new bare clone, so ordinary commits in its
+linked workspaces run the installed hooks.
+
+For the [pre-commit framework](https://pre-commit.com/#pre-commit-init-templatedir),
+run these commands as the OS user that runs Forge, on each machine:
+
+```sh
+git config --global init.templateDir ~/.git-template
+pre-commit init-templatedir ~/.git-template
+```
+
+Install pre-commit and the tools your checks need where workspace sessions can
+run them. Forge does not install tools or detect `.pre-commit-config.yaml` to
+install hooks. The template comes from your configuration, not the repository.
+
+This applies only to managed clones created after the template is configured.
+Existing clones keep their hooks; install hooks manually in an existing
+workspace when needed. Source-browser clones and repositories using
+`worktree_base_path` do not use this setup. Changing the template does not update
+clones already on disk, and Forge's internal hook-disabled Git operations stay
+hook-disabled.
+
 ## Link Kata issues
 
 Kata is contextual. It does not add a Kata page to the main navigation.

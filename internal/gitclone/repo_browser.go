@@ -980,7 +980,7 @@ func (m *Manager) refreshRepoBrowserClone(
 		if !seeded {
 			err = m.cloneBare(
 				opCtx, repo.Provider, repo.Host, repo.Owner, repo.Name,
-				staging, repo.RemoteURL,
+				staging, repo.RemoteURL, nil,
 			)
 		} else {
 			err = m.fetch(

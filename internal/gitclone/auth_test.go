@@ -608,7 +608,7 @@ echo complete > "$dest/complete"
 
 	err := mgr.cloneBare(
 		t.Context(), "github", "github.com", "acme", "widgets", clonePath,
-		"https://github.com/acme/widgets.git",
+		"https://github.com/acme/widgets.git", nil,
 	)
 	require.NoError(err)
 
@@ -682,7 +682,7 @@ fi
 
 	require.NoError(mgr.cloneBare(
 		t.Context(), "github", "github.com", "acme", "widgets", clonePath,
-		"https://github.com/acme/widgets.git",
+		"https://github.com/acme/widgets.git", nil,
 	))
 	require.NoError(mgr.fetch(t.Context(), "github", "github.com", "acme", "widgets", clonePath))
 

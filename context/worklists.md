@@ -180,9 +180,10 @@ internal/server/spokeapi                 spoke-to-hub forwarding (`HubProviderSo
 - The rail shows open items by default; merged, closed, and no longer synced
   items show under Closed or All. Closed means live state, not a change since
   writing. The choice is browser-local.
-- Search uses the pull request list's query syntax, applies within the state
-  filter, and resets when the rail remounts. The changed filter, once on, stays
-  on with its button visible even when nothing matches.
+- Search uses the pull request list's query syntax and applies within the state
+  filter. Search and every filter stay set across list switches until the
+  maintainer changes them (maintainer decision). The changed filter, once on,
+  stays on with its button visible even when nothing matches.
 - When the open item leaves the rail, for example because it merged, the
   detail stays open, and `j`, `k`, and a later replacement step from where its
   row was.

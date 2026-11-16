@@ -1036,6 +1036,26 @@ describe("WorklistView", () => {
     await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=issue%3A7"));
   });
 
+  it("keeps the search and filters when switching lists and opens the first matching row", async () => {
+    server.lists = [worklistResponse(5, "Review queue"), worklistResponse(4, "Stale issues")];
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+    const search = () => screen.getByRole("searchbox", { name: "Filter worklist items" }) as HTMLInputElement;
+    await fireEvent.input(search(), { target: { value: "!theme" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Merge conflicts" }));
+    await fireEvent.click(screen.getByRole("button", { name: /changed since$/ }));
+    expect(rowTitles()).toEqual(["Mirror host stub PR"]);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Worklist: Review queue" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: /^Stale issues/ }));
+
+    await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=pr%3A84"));
+    expect(rowTitles()).toEqual(["Mirror host stub PR"]);
+    expect(search().value).toBe("!theme");
+    expect(screen.getByRole("button", { name: /changed since$/ }).getAttribute("aria-pressed")).toBe("true");
+  });
+
   it("keeps the changed filter on and visible when a search leaves no changed rows", async () => {
     renderView("/worklists/5", server);
     const toggle = await screen.findByRole("button", { name: "2 changed since" });

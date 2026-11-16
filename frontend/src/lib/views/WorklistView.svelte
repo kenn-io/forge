@@ -18,6 +18,7 @@
   import { WorklistDismissal } from "../components/worklists/worklist-dismissal.svelte.js";
   import { lastWorklistId, lastWorklistItemKey, rememberWorklist } from "../components/worklists/worklist-memory.js";
   import {
+    emptyWorklistFilters,
     worklistItemKey,
     worklistItemMatchesRoute,
     worklistItemMatchesSelection,
@@ -72,7 +73,11 @@
   const summaries = $derived(worklists.getSummaries());
   const loadedWorklist = $derived(worklists.getDetail());
   const detailError = $derived(worklists.getDetailError());
-  let involvesMe = $state(false);
+  // The rail unmounts while another list loads or while collapsed, so the view
+  // keeps its search and filters for every list.
+  let filters = $state(emptyWorklistFilters());
+  // Either direction needs the server to mark the items that involve the viewer.
+  const involvesMe = $derived(filters.items.includes("involves_me") || filters.items.includes("not_involves_me"));
 
   const dismissal = new WorklistDismissal({
     runtime,
@@ -158,7 +163,7 @@
     if (!worklist || worklist.id !== selectFirstItemOnArrival) return;
     selectFirstItemOnArrival = null;
     if (selected) return;
-    const rows = worklistStoredRows(worklist.items);
+    const rows = untrack(() => worklistStoredRows(worklist.items, filters));
     const rememberedKey = untrack(() => lastWorklistItemKey(worklist.id));
     const first = rows.find((item) => worklistItemKey(item) === rememberedKey) ?? rows[0];
     if (first) untrack(() => replaceUrl(buildWorklistRoute(worklist.id, worklistItemSelection(first))));
@@ -197,12 +202,12 @@
     for (const key of keys) lastOrderOf.set(key, keys);
   }
 
-  // A collapsed rail is unmounted and reopens with its filter and sections
-  // reset, so its keys follow the stored row order until it is back.
+  // A collapsed rail is unmounted and reopens with its sections expanded, so
+  // its keys follow the stored row order until it is back.
   function visibleKeys(list: Worklist): readonly string[] {
     const reported = isSidebarCollapsed ? undefined : visibleOrders.get(list);
     if (reported) return reported;
-    return worklistStoredRows(list.items).map(worklistItemKey);
+    return worklistStoredRows(list.items, filters).map(worklistItemKey);
   }
 
   // An agent rewrite can drop the open item. Move to the item that now takes
@@ -567,7 +572,7 @@
           onDismiss={() => dismissal.dismiss(worklist)}
           onItemsChanged={reloadAfterItemAction}
           onSetHandled={setHandled}
-          onInvolvesMeChange={(active) => { involvesMe = active; }}
+          bind:filters
           onCopyLink={kennLinks && worklist.items.length > 0 ? () => copyLink(worklist) : undefined}
           onVisibleOrder={recordVisibleOrder}
         />

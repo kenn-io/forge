@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import {
     Button,
@@ -25,8 +24,6 @@
     cycleLabelFilter,
     labelFilterChoices,
     labelFilterSummary,
-    matchesLabelFilters,
-    type LabelFilters,
   } from "../../utils/label-filter.js";
   import { createRangeSelection, isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
   import { createRepoLabelFormatter, type RepoLabelIdentity } from "../../utils/repo-label.js";
@@ -40,19 +37,20 @@
     readWorklistOrder,
     readWorklistStateFilter,
     worklistItemClosed,
+    worklistChangedFilterActive,
     worklistItemDone,
     worklistItemKey,
-    worklistItemMatchesFilters,
-    worklistItemMatchesSearch,
+    worklistItemLabels,
     worklistItemNotFresh,
     worklistItemsByScore,
-    worklistItemsInState,
+    worklistItemsMatching,
     worklistItemTarget,
     worklistPickerOptions,
     worklistSections,
     writeWorklistOrder,
     writeWorklistStateFilter,
     WORKLIST_FILTER_SECTIONS,
+    type WorklistFilters,
     type WorklistItemFilter,
     type WorklistOrder,
     type WorklistStateFilter,
@@ -71,7 +69,8 @@
     onDismiss: () => void;
     onItemsChanged: () => void;
     onSetHandled: (items: readonly WorklistItem[], handled: boolean) => void;
-    onInvolvesMeChange: (active: boolean) => void;
+    /** The search and filters, owned by the view so they stay as set when another list opens. */
+    filters: WorklistFilters;
     /** Copies a link that opens this list in another Forge; omitted when links are off. */
     onCopyLink?: (() => void) | undefined;
     /** Receives the keys of the rows on screen, in order, for each list shown. */
@@ -89,7 +88,7 @@
     onDismiss,
     onItemsChanged,
     onSetHandled,
-    onInvolvesMeChange,
+    filters = $bindable(),
     onCopyLink = undefined,
     onVisibleOrder = undefined,
   }: Props = $props();
@@ -98,36 +97,17 @@
   const { grouping } = getStores();
 
   let recipeOpen = $state(false);
-  let changedOnly = $state(false);
   let order = $state<WorklistOrder>(readWorklistOrder());
   let stateFilter = $state<WorklistStateFilter>(readWorklistStateFilter());
-  let search = $state("");
-  let itemFilters = $state<WorklistItemFilter[]>([]);
-  let labelFilters = $state.raw<LabelFilters>(new Map());
-  onDestroy(() => onInvolvesMeChange(false));
   let railElement = $state<HTMLElement | undefined>();
 
   const collapsedSections = new SvelteSet<string>();
 
-  function itemLabels(item: WorklistItem) {
-    return (item.pull ?? item.issue)?.labels;
-  }
-
   const closedCount = $derived(worklist.items.filter(worklistItemClosed).length);
-  const searchQuery = $derived(parseSearchQuery(search));
-  const searching = $derived(!isEmptySearchQuery(searchQuery));
-  const shownItems = $derived(
-    worklistItemsInState(worklist.items, stateFilter).filter(
-      (item) =>
-        (!searching || worklistItemMatchesSearch(item, searchQuery))
-        && worklistItemMatchesFilters(item, itemFilters)
-        && matchesLabelFilters(itemLabels(item), labelFilters),
-    ),
-  );
+  const searching = $derived(!isEmptySearchQuery(parseSearchQuery(filters.search)));
+  const shownItems = $derived(worklistItemsMatching(worklist.items, stateFilter, filters));
   const changedCount = $derived(shownItems.filter(worklistItemNotFresh).length);
-  // Stays on while a search or state filter leaves no changed rows; only a
-  // list with nothing changed at all turns it off.
-  const changedFilterActive = $derived(changedOnly && worklist.items.some(worklistItemNotFresh));
+  const changedFilterActive = $derived(worklistChangedFilterActive(worklist.items, filters));
   const filteredItems = $derived(changedFilterActive ? shownItems.filter(worklistItemNotFresh) : shownItems);
   const sections = $derived(worklistSections(filteredItems));
   const showSectionHeaders = $derived(order === "agent" && sections.some((section) => section.section !== ""));
@@ -183,7 +163,7 @@
 
   const emptyFilterMessage = $derived.by(() => {
     if (searching) return "No items match this search.";
-    if (itemFilters.length > 0 || labelFilters.size > 0) return "No items match these filters.";
+    if (filters.items.length > 0 || filters.labels.size > 0) return "No items match these filters.";
     if (changedFilterActive) return "No shown items changed since the list was written.";
     return stateFilter === "closed" ? "No items are closed." : "No open items remain. Closed items are hidden.";
   });
@@ -228,16 +208,14 @@
   ];
 
   function selectItemFilter(filter: WorklistItemFilter, opposite?: WorklistItemFilter): void {
-    itemFilters =
+    filters.items =
       opposite === undefined
-        ? toggleFilterInSections(WORKLIST_FILTER_SECTIONS, itemFilters, filter)
-        : cycleFilterInSections(WORKLIST_FILTER_SECTIONS, itemFilters, filter, opposite);
-    // Either direction needs the server to mark the items that involve the viewer.
-    onInvolvesMeChange(itemFilters.includes("involves_me") || itemFilters.includes("not_involves_me"));
+        ? toggleFilterInSections(WORKLIST_FILTER_SECTIONS, filters.items, filter)
+        : cycleFilterInSections(WORKLIST_FILTER_SECTIONS, filters.items, filter, opposite);
   }
 
   const labelChoices = $derived(
-    labelFilterChoices(worklist.items.map((item) => ({ labels: itemLabels(item) })), labelFilters),
+    labelFilterChoices(worklist.items.map((item) => ({ labels: worklistItemLabels(item) })), filters.labels),
   );
 
   const filterSections = $derived([
@@ -249,8 +227,8 @@
               {
                 id: "worklist-labels",
                 label: "Labels",
-                detail: labelFilterSummary(labelFilters),
-                active: labelFilters.size > 0,
+                detail: labelFilterSummary(filters.labels),
+                active: filters.labels.size > 0,
                 submenu: labelFilterMenu,
                 onSelect: () => {},
               },
@@ -259,8 +237,8 @@
         ...group.options.map((option) => ({
           id: `worklist-${option.value}`,
           label: option.label,
-          active: itemFilters.includes(option.value),
-          excluded: option.opposite !== undefined && itemFilters.includes(option.opposite),
+          active: filters.items.includes(option.value),
+          excluded: option.opposite !== undefined && filters.items.includes(option.opposite),
           onSelect: () => selectItemFilter(option.value, option.opposite),
         })),
       ],
@@ -277,12 +255,11 @@
       ],
     },
   ]);
-  const filterCount = $derived(itemFilters.length + labelFilters.size + Number(grouping.getHideOrgName()));
+  const filterCount = $derived(filters.items.length + filters.labels.size + Number(grouping.getHideOrgName()));
 
   function clearFilters(): void {
-    itemFilters = [];
-    labelFilters = new Map();
-    onInvolvesMeChange(false);
+    filters.items = [];
+    filters.labels = new Map();
     grouping.setHideOrgName(false);
   }
 
@@ -410,7 +387,7 @@
 {#snippet labelFilterMenu()}
   <LabelFilterMenu
     choices={labelChoices}
-    oncycle={(name) => (labelFilters = cycleLabelFilter(labelFilters, name))}
+    oncycle={(name) => (filters.labels = cycleLabelFilter(filters.labels, name))}
     emptyText="No labels on this worklist"
   />
 {/snippet}
@@ -445,7 +422,7 @@
     </div>
     <div class="worklist-search-row">
       <QuerySearchInput
-        bind:value={search}
+        bind:value={filters.search}
         size="sm"
         block
         placeholder="Filter items..."
@@ -472,7 +449,7 @@
           class="worklist-changed-toggle"
           class:worklist-changed-toggle--on={changedFilterActive}
           aria-pressed={changedFilterActive}
-          onclick={() => (changedOnly = !changedOnly)}
+          onclick={() => (filters.changedOnly = !filters.changedOnly)}
         >{changedCount} changed since</button>
       {/if}
       {#if worklist.recipe.trim() !== ""}

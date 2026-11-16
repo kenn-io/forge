@@ -353,7 +353,16 @@ export function noteSessionExited(key: SessionHostKey, code: number): void {
   // Final disposal is app-level authority: a released session can exit while
   // no workspace view exists to hear the event. Remove it before notifying any
   // current view so listeners never observe a dead cache entry.
+  // A slot still on screen keeps its place: a chat whose agent died mounts
+  // again into it once the runtime parks it, and a closed session's view
+  // removes the slot itself.
+  const slot = slotEls[key] ?? null;
+  const visible = slotVisible[key] === true;
   noteSessionDiscarded(key);
+  if (slot?.isConnected) {
+    slotEls[key] = slot;
+    slotVisible[key] = visible;
+  }
   const listeners = Array.from(exitListeners);
   for (const listener of listeners) listener(key, code);
 }

@@ -35,6 +35,7 @@ import {
   quickActionLaunches,
 } from "../../stores/workspace-quick-actions.js";
 import { STORES_KEY } from "../../context.js";
+import { fixtureState } from "../acp/chat-test-fixtures.js";
 
 const coreActions = vi.hoisted(() => vi.fn(async (_body: unknown, _options?: unknown) => ({ status: "queued" })));
 
@@ -3457,6 +3458,123 @@ describe("WorkspaceTerminalView", () => {
       }),
     );
     await screen.findByRole("button", { name: "Open terminal panel" });
+    expect(sockets).toHaveLength(1);
+  });
+
+  // A chat whose agent dies is parked under the same session, and its next
+  // message starts the agent again; the open view must not lose it.
+  describe("a chat whose agent dies", () => {
+    const chat = { ...runningSession, kind: "acp", target_key: "codex", label: "Codex" } satisfies RuntimeSession;
+    const transcript = [{ role: "assistant", text: "Working on it" }];
+    const sendChatState = (state: Record<string, unknown>) =>
+      sockets.at(-1)!.onmessage(
+        new MessageEvent("message", {
+          data: JSON.stringify(
+            fixtureState({
+              configOptions: [],
+              configuring: false,
+              permissions: [],
+              busy: false,
+              error: "",
+              messageOffset: 0,
+              messageCount: transcript.length,
+              messages: transcript,
+              ...state,
+            }),
+          ),
+        }),
+      );
+    const openChat = async (state: Record<string, unknown>) => {
+      const count = sockets.length;
+      await waitFor(() => expect(sockets).toHaveLength(count + 1));
+      sockets.at(-1)!.onopen();
+      sendChatState(state);
+      expect(await screen.findAllByText("Working on it")).not.toHaveLength(0);
+    };
+    // Role queries skip the hidden parking node, so this finds only a chat on screen.
+    const expectChatShown = async () => {
+      const composer = await screen.findByRole("textbox", { name: "Message agent" });
+      expect(within(composer.closest("section.acp-workspace")!).getAllByText("Working on it")).not.toHaveLength(0);
+      expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+    };
+
+    it("opens again from its saved session once the runtime parks it", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue({ ...runtimeWithStaleSession(), sessions: [chat] });
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+      await openChat({ connected: true });
+
+      mocks.getWorkspaceRuntime.mockResolvedValue({
+        ...runtimeWithStaleSession(),
+        sessions: [{ ...chat, status: "parked" }],
+      });
+      sendChatState({ connected: false, dormant: false, error: "Internal error" });
+
+      await openChat({ connected: false, dormant: true });
+      await expectChatShown();
+    });
+
+    it("opens again when the runtime still reports the parked chat it showed", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue({
+        ...runtimeWithStaleSession(),
+        sessions: [{ ...chat, status: "parked" }],
+      });
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+      await openChat({ connected: false, dormant: true });
+      // The next message started the agent, which died before a runtime poll.
+      sendChatState({ connected: true });
+      sendChatState({ connected: false, dormant: false, error: "Internal error" });
+
+      await openChat({ connected: false, dormant: true });
+      await expectChatShown();
+    });
+
+    it("opens again in the pane that embeds it alone", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue({ ...runtimeWithStaleSession(), sessions: [chat] });
+      claimForPrs();
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+      await openChat({ connected: true });
+
+      mocks.getWorkspaceRuntime.mockResolvedValue({
+        ...runtimeWithStaleSession(),
+        sessions: [{ ...chat, status: "parked" }],
+      });
+      sendChatState({ connected: false, dormant: false, error: "Internal error" });
+
+      await openChat({ connected: false, dormant: true });
+      await expectChatShown();
+    });
+  });
+
+  it("closes a chat whose agent exited once the runtime no longer lists it", async () => {
+    const chat = { ...runningSession, kind: "acp", target_key: "codex", label: "Codex" } satisfies RuntimeSession;
+    mocks.getWorkspaceRuntime.mockResolvedValue({ ...runtimeWithStaleSession(), sessions: [chat] });
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    sockets[0]!.onopen();
+    const state = {
+      configOptions: [],
+      configuring: false,
+      permissions: [],
+      busy: false,
+      error: "",
+      messageOffset: 0,
+      messageCount: 0,
+      messages: [],
+    };
+    sockets[0]!.onmessage(
+      new MessageEvent("message", { data: JSON.stringify(fixtureState({ ...state, connected: true })) }),
+    );
+    expect(await screen.findByRole("textbox", { name: "Message agent" })).toBeTruthy();
+
+    mocks.getWorkspaceRuntime.mockResolvedValue({ ...runtimeWithStaleSession(), sessions: [] });
+    sockets[0]!.onmessage(
+      new MessageEvent("message", {
+        data: JSON.stringify(fixtureState({ ...state, connected: false, dormant: false })),
+      }),
+    );
+
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Message agent" })).toBeNull());
+    expect(screen.queryByRole("tab", { name: /Codex/ })).toBeNull();
     expect(sockets).toHaveLength(1);
   });
 

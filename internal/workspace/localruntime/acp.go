@@ -496,7 +496,7 @@ func acpInitializeRequest() acpsdk.InitializeRequest {
 // onInitialized, if not nil, learns the agent's name once it answers initialize,
 // before the session starts.
 func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpServer, saved *acpSavedSession, onInitialized func(agentName string)) (*ACP, error) {
-	a.client = acpsdk.NewClientSideConnection(a, a, a.stdout)
+	a.client = acpsdk.NewClientSideConnection(a, a, newACPLineLimitReader(a.stdout))
 	go a.wait()
 	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
 	defer cancel()

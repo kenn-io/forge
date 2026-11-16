@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"fmt"
 	"io"
 	"os"
 	"runtime"
@@ -290,4 +291,17 @@ func TestACPLineLimitRefusesAnOversizedRequestWithALongID(t *testing.T) {
 	refused := agent.readRequest()
 	assert.Equal(t, requestID, string(refused["id"]))
 	assert.Contains(t, string(refused["error"]), "Method not found")
+}
+
+// JSON may spell a member name with escapes; it names the same member.
+func TestACPRoutingScannerReadsEscapedMemberNames(t *testing.T) {
+	escape := func(name string) string {
+		var out strings.Builder
+		for _, r := range name {
+			fmt.Fprintf(&out, `\u%04x`, r)
+		}
+		return out.String()
+	}
+	message := scanACPRouting(`{"` + escape("method") + `":"session/update","` + escape("params") + `":{"` + escape("sessionId") + `":"s","` + escape("update") + `":{"` + escape("sessionUpdate") + `":"tool_call_update","` + escape("toolCallId") + `":"call-1","` + escape("status") + `":"completed"}}}`)
+	assert.Equal(t, acpOversizedMessage{Method: "session/update", SessionID: "s", SessionUpdate: "tool_call_update", ToolCallID: "call-1", Status: "completed"}, message)
 }

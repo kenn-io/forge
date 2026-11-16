@@ -131,9 +131,10 @@ func acpOversizedReplacement(message acpOversizedMessage, size int) []byte {
 // this names nothing Forge routes.
 const acpRoutingCapture = acpLineReadSize
 
-// acpRoutingKeyCapture bounds a kept member name. Every routing name is
-// shorter, so a longer name is not one.
-const acpRoutingKeyCapture = 32
+// acpRoutingKeyCapture bounds a kept member name, quoted as written. It
+// fits the longest routing name, sessionUpdate, with every character
+// escaped, so a longer name is not a routing name.
+const acpRoutingKeyCapture = 2 + 6*len("sessionUpdate")
 
 // acpRoutingChain names, for each routing object, the member holding the next
 // one: the message holds params, and params holds update. Routing fields sit

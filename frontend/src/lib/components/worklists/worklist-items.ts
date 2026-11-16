@@ -3,8 +3,14 @@ import { repositoryKeyFromWire, repositoryKeyString, sameRepositoryKey } from ".
 import type { WorklistItem, WorklistItemMark, WorklistSummary } from "../../api/worklists.js";
 import type { ListItemTarget } from "../../stores/item-actions.js";
 import type { RoutedItemRef, WorklistItemSelection } from "../../routes.js";
+import { matchesLabelFilters, type LabelFilters } from "../../utils/label-filter.js";
 import { matchesFilterSections, pullMatchesAttribute, type PullAttributeFilter } from "../../utils/pull-attributes.js";
-import { matchesSearchQuery, type SearchQuery } from "../../utils/search-query.js";
+import {
+  isEmptySearchQuery,
+  matchesSearchQuery,
+  parseSearchQuery,
+  type SearchQuery,
+} from "../../utils/search-query.js";
 
 export interface WorklistChangeMarker {
   readonly label: string;
@@ -288,9 +294,51 @@ export function worklistItemMatchesFilters(item: WorklistItem, filters: readonly
   });
 }
 
-/** The rail's rows in the stored order and state filter, as shown with every section expanded. */
-export function worklistStoredRows(items: readonly WorklistItem[]): WorklistItem[] {
-  const shown = worklistItemsInState(items, readWorklistStateFilter());
+/** The rail's search and filters. They apply to every list until the maintainer changes them. */
+export interface WorklistFilters {
+  search: string;
+  items: WorklistItemFilter[];
+  labels: LabelFilters;
+  changedOnly: boolean;
+}
+
+export function emptyWorklistFilters(): WorklistFilters {
+  return { search: "", items: [], labels: new Map(), changedOnly: false };
+}
+
+export function worklistItemLabels(item: WorklistItem) {
+  return (item.pull ?? item.issue)?.labels;
+}
+
+/** Items in the state filter that pass the search, item filters, and labels; the changed filter is not applied. */
+export function worklistItemsMatching(
+  items: readonly WorklistItem[],
+  stateFilter: WorklistStateFilter,
+  filters: WorklistFilters,
+): WorklistItem[] {
+  const query = parseSearchQuery(filters.search);
+  const searching = !isEmptySearchQuery(query);
+  return worklistItemsInState(items, stateFilter).filter(
+    (item) =>
+      (!searching || worklistItemMatchesSearch(item, query)) &&
+      worklistItemMatchesFilters(item, filters.items) &&
+      matchesLabelFilters(worklistItemLabels(item), filters.labels),
+  );
+}
+
+/**
+ * Whether the changed filter narrows the rows. It stays on while a search or
+ * state filter leaves no changed rows; only a list with nothing changed at all
+ * turns it off.
+ */
+export function worklistChangedFilterActive(items: readonly WorklistItem[], filters: WorklistFilters): boolean {
+  return filters.changedOnly && items.some(worklistItemNotFresh);
+}
+
+/** The rail's rows in the stored order, state filter, and filters, as shown with every section expanded. */
+export function worklistStoredRows(items: readonly WorklistItem[], filters: WorklistFilters): WorklistItem[] {
+  const matching = worklistItemsMatching(items, readWorklistStateFilter(), filters);
+  const shown = worklistChangedFilterActive(items, filters) ? matching.filter(worklistItemNotFresh) : matching;
   return readWorklistOrder() === "score"
     ? worklistItemsByScore(shown)
     : worklistSections(shown).flatMap((section) => section.items);

@@ -550,19 +550,29 @@ func TestSpawnWorkspaceWithAgentCreatesKataTaskWorkspace(t *testing.T) {
 
 func TestSpawnWorkspaceWithAgentRejectsIncompleteKataSource(t *testing.T) {
 	s := newMCPTestServer(t, successfulSpawnBackend("ws", "rt", "cs"))
-	for name, source := range map[string]*workspaceSourceInput{
-		"missing kata":  {Type: "kata"},
-		"missing issue": {Type: "kata", Kata: &WorkspaceKataTarget{DaemonID: "local", ProjectUID: "p"}},
+	validRepo := repoFilterInput{Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widgets"}
+	for name, tc := range map[string]struct {
+		source *workspaceSourceInput
+		want   string
+	}{
+		"missing kata": {&workspaceSourceInput{Type: "kata"}, "exactly one tagged kata task"},
+		"missing issue": {
+			&workspaceSourceInput{Type: "kata", Kata: &WorkspaceKataTarget{DaemonID: "local", ProjectUID: "p"}},
+			"requires daemon_id, project_uid and issue_uid",
+		},
 		"mixed": {
-			Type: "kata", Kata: &WorkspaceKataTarget{DaemonID: "local", ProjectUID: "p", IssueUID: "i"},
-			AdHoc: &adHocWorkspaceSource{},
+			&workspaceSourceInput{
+				Type: "kata", Kata: &WorkspaceKataTarget{DaemonID: "local", ProjectUID: "p", IssueUID: "i"},
+				AdHoc: &adHocWorkspaceSource{Repo: validRepo},
+			},
+			"exactly one tagged kata task",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
-				Source: source, AgentTarget: "codex", InitialMessage: "go", Timeout: "2s",
+				Source: tc.source, AgentTarget: "codex", InitialMessage: "go", Timeout: "2s",
 			})
-			require.Error(t, err)
+			require.ErrorContains(t, err, tc.want)
 		})
 	}
 }

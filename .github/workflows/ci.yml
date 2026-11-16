@@ -212,7 +212,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v10.3.3
         with:
-          version: "0.13.6"
+          version: "0.13.7"
           enable-cache: false
 
       - name: Restore Bun package cache
@@ -286,7 +286,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v10.3.3
         with:
-          version: "0.13.6"
+          version: "0.13.7"
           enable-cache: false
 
       - name: Build the website and documentation

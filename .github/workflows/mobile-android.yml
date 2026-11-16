@@ -122,7 +122,7 @@ jobs:
         working-directory: mobile
         run: kit-retry 3 5 bun install --frozen-lockfile
 
-      - uses: actions/setup-java@v6.1.0
+      - uses: actions/setup-java@v6.2.0
         with:
           distribution: temurin
           java-version: "21"

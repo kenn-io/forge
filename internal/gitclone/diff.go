@@ -5,6 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,6 +27,11 @@ func (m *Manager) DiffFiles(
 	clonePath, err := m.clonePathForContext(ctx, platform, host, owner, name)
 	if err != nil {
 		return nil, err
+	}
+	// A repository that sync does not clone, such as an archived one, has no
+	// clone to read. Git reports that as a failure to start, so name it here.
+	if _, err := os.Stat(filepath.Join(clonePath, "HEAD")); errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("%w: no clone of %s/%s", ErrNotFound, owner, name)
 	}
 	// --raw and --numstat read the same fixed trees independently, so run
 	// them together and report errors in the order the calls are listed.

@@ -74,7 +74,8 @@ func (d *DB) SetMergeRequestLineKinds(
 }
 
 // ListLineKindsForMRs returns the line counts of the merge requests whose
-// current diff has been counted.
+// current diff has been counted. A diff that the provider's head or base has
+// moved past is stale, as DiffSHAs.Stale decides, so its counts are left out.
 func (d *DB) ListLineKindsForMRs(ctx context.Context, mrIDs []int64) (map[int64]gitclone.LineKinds, error) {
 	kinds := make(map[int64]gitclone.LineKinds)
 	if len(mrIDs) == 0 {
@@ -91,7 +92,9 @@ func (d *DB) ListLineKindsForMRs(ctx context.Context, mrIDs []int64) (map[int64]
 		FROM json_each(?) ids
 		JOIN forge_merge_requests p ON p.id = CAST(ids.value AS INTEGER)
 		JOIN forge_merge_request_line_kinds k ON k.merge_request_id = p.id
-		 AND k.merge_base_sha = p.merge_base_sha AND k.head_sha = p.diff_head_sha`, string(payload))
+		 AND k.merge_base_sha = p.merge_base_sha AND k.head_sha = p.diff_head_sha
+		WHERE p.diff_head_sha = p.platform_head_sha
+		  AND (p.state = 'merged' OR p.diff_base_sha = p.platform_base_sha)`, string(payload))
 	if err != nil {
 		return nil, fmt.Errorf("list line kinds: %w", err)
 	}

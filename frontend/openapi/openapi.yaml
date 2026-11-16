@@ -5352,13 +5352,13 @@ components:
       properties:
         code:
           $ref: "#/components/schemas/LineCounts"
-          description: Lines in source code, configuration, and every other file not counted below.
+          description: Lines in source code, build and dependency manifests, configuration, and every other file not counted below.
         data:
           $ref: "#/components/schemas/LineCounts"
-          description: "Lines in data files: JSON, JSON Lines, CSV, TSV, SVG, and test snapshots."
+          description: "Lines in data files: JSON, JSON Lines, CSV, TSV, SVG, and test snapshots, other than manifests and configuration such as package.json and tsconfig.json."
         docs:
           $ref: "#/components/schemas/LineCounts"
-          description: "Lines in prose files: Markdown, reStructuredText, AsciiDoc, and plain text."
+          description: "Lines in prose files: Markdown, reStructuredText, AsciiDoc, and plain text other than build and dependency files such as requirements.txt."
         generated:
           $ref: "#/components/schemas/LineCounts"
           description: Lines in generated files and lockfiles, as the diff view marks them.

@@ -4,11 +4,11 @@
 import type { LineCounts } from "./lineCounts.ts";
 
 export interface LineKinds {
-  /** Lines in source code, configuration, and every other file not counted below. */
+  /** Lines in source code, build and dependency manifests, configuration, and every other file not counted below. */
   code: LineCounts;
-  /** Lines in data files: JSON, JSON Lines, CSV, TSV, SVG, and test snapshots. */
+  /** Lines in data files: JSON, JSON Lines, CSV, TSV, SVG, and test snapshots, other than manifests and configuration such as package.json and tsconfig.json. */
   data: LineCounts;
-  /** Lines in prose files: Markdown, reStructuredText, AsciiDoc, and plain text. */
+  /** Lines in prose files: Markdown, reStructuredText, AsciiDoc, and plain text other than build and dependency files such as requirements.txt. */
   docs: LineCounts;
   /** Lines in generated files and lockfiles, as the diff view marks them. */
   generated: LineCounts;

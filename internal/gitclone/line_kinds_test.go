@@ -11,6 +11,11 @@ func TestCountLineKinds(t *testing.T) {
 	files := []DiffFile{
 		{Path: "cmd/server/main.go", Additions: 10, Deletions: 2},
 		{Path: "deploy/config.yaml", Additions: 3, Deletions: 1},
+		// Manifests and build files count as code despite data or docs extensions.
+		{Path: "web/package.json", Additions: 2, Deletions: 1},
+		{Path: "web/tsconfig.build.json", Additions: 1},
+		{Path: "requirements-dev.txt", Additions: 1, Deletions: 1},
+		{Path: "native/CMakeLists.txt", Additions: 4},
 		{Path: "docs/Guide.MD", Additions: 20, Deletions: 5},
 		{Path: "NOTES.txt", Additions: 1},
 		{Path: "testdata/events.jsonl", Additions: 400, Deletions: 100},
@@ -22,7 +27,7 @@ func TestCountLineKinds(t *testing.T) {
 	}
 
 	assert.Equal(t, LineKinds{
-		Code:      LineCounts{Additions: 13, Deletions: 3},
+		Code:      LineCounts{Additions: 21, Deletions: 5},
 		Docs:      LineCounts{Additions: 21, Deletions: 5},
 		Data:      LineCounts{Additions: 430, Deletions: 100},
 		Generated: LineCounts{Additions: 950, Deletions: 840},

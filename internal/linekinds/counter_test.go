@@ -9,6 +9,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/serverfake"
 )
 
@@ -21,7 +22,7 @@ func TestPassCountsEachDiffOnce(t *testing.T) {
 	ctx := t.Context()
 	database := dbtest.Open(t)
 	prID := serverfake.SeedPR(t, database, "acme", "widgets", 1)
-	fixture, err := testutil.SetupDiffRepo(ctx, t.TempDir(), database)
+	fixture, err := testutil.SetupDiffRepo(ctx, gitfixture.ScratchDir(t), database)
 	require.NoError(err)
 
 	pending, err := database.ListMergeRequestsWithoutLineKinds(ctx, 0, 10)
@@ -45,6 +46,7 @@ func TestPassCountsEachDiffOnce(t *testing.T) {
 	assert.Empty(pending)
 
 	// A pushed commit makes the stored counts stale until the next pass.
+	require.NoError(database.UpdatePlatformSHAs(ctx, repoID, 1, fixture.AltHeadSHA, fixture.BaseSHA))
 	require.NoError(database.UpdateDiffSHAs(ctx, repoID, 1, fixture.AltHeadSHA, fixture.BaseSHA, fixture.BaseSHA))
 	kinds, err = database.ListLineKindsForMRs(ctx, []int64{prID})
 	require.NoError(err)

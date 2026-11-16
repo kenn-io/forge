@@ -5,7 +5,7 @@
 name: kenn-forge-observability
 services:
   lgtm:
-    image: grafana/otel-lgtm:0.39.0
+    image: grafana/otel-lgtm:0.40.0
     environment:
       # Keep one week of every signal, then drop it.
       PROMETHEUS_EXTRA_ARGS: --storage.tsdb.retention.time=7d

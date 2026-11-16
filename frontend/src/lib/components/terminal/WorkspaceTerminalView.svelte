@@ -3260,10 +3260,10 @@
     if (session.workspace_id !== workspaceId) return;
     // A chat whose agent died is parked under the same session and opens again
     // from its saved transcript, so only the runtime read can say it is gone.
-    // Its slot is unmounted, not closed: the pool dropped the slot's claim, and
-    // the read mounts a fresh one while the chat is still shown.
+    // The read must apply even when it matches the snapshot on screen: applying
+    // it mounts the chat again.
     if (session.kind === "acp") {
-      unmountSessionTerminal(session.key);
+      appliedRuntimeState = null;
       requestRuntime({ force: true });
       return;
     }

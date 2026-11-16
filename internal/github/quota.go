@@ -23,6 +23,11 @@ const (
 // QuotaPool is one GitHub principal's live capacity for a single resource.
 // GitHub meters REST and GraphQL separately per principal, so a route's App
 // installation and the user's PAT hold independent pools on the same host.
+//
+// GitHub can report more than one live rate-limit window for a pool, each with
+// its own reset time and count, and answer requests from each in turn. The
+// pool follows the window with the least remaining: a request that window
+// serves is refused when it runs out, whatever the others have left.
 type QuotaPool struct {
 	Identity    IdentityKey
 	Resource    QuotaResource
@@ -103,34 +108,34 @@ func (r *QuotaRegistry) ObserveHeaders(
 	pool.Resource = key.resource
 	pool.Requests++
 	if rate, ok := rateFromQuotaHeaders(header); ok {
+		now := r.now().UTC()
 		reset := rate.Reset.UTC()
 		// Responses complete out of order, so a header issued earlier can
-		// arrive after a later one. The reset timestamp orders them: an older
-		// window says nothing about the current one and is dropped, the same
-		// window may only lower the count because the provider's remaining
-		// only falls inside a window, and a later window is a fresh quota that
-		// replaces the pool. /rate_limit snapshots still reconcile either way.
-		// The pool keeps its first reset time for the whole window, because
-		// archive reservations are keyed by it.
-		window := compareQuotaWindow(reset, pool.ResetAt)
-		switch {
-		case pool.Known && window < 0:
-			// Drop the observation, but the request itself still happened.
-		case pool.Known && window == 0:
+		// arrive after a later one. Inside the pool's window the count may
+		// only fall, because the provider's remaining only falls there. The
+		// pool keeps its first reset time for the whole window, because
+		// archive reservations are keyed by it. /rate_limit snapshots still
+		// reconcile the count in both directions.
+		switch placeQuotaReading(pool, rate, now) {
+		case quotaReadingSameWindow:
 			if rate.Remaining < pool.Remaining {
 				pool.AttemptCost = max(pool.AttemptCost, pool.Remaining-rate.Remaining)
 				pool.Remaining = rate.Remaining
 			}
 			pool.Limit = rate.Limit
-			pool.UpdatedAt = r.now().UTC()
-		default:
-			r.clearReservationsBeforeLocked(key, reset)
+			pool.UpdatedAt = now
+		case quotaReadingFreshWindow:
+			r.clearEndedReservationsLocked(key, now)
+			pool.AttemptCost = 1
+			fallthrough
+		case quotaReadingTighterWindow:
 			pool.Limit = rate.Limit
 			pool.Remaining = rate.Remaining
 			pool.ResetAt = reset
-			pool.UpdatedAt = r.now().UTC()
-			pool.AttemptCost = 1
+			pool.UpdatedAt = now
 			pool.Known = true
+		case quotaReadingIgnored:
+			// Drop the observation, but the request itself still happened.
 		}
 	}
 	r.pools[key] = pool
@@ -152,36 +157,77 @@ func (r *QuotaRegistry) UpdateSnapshot(
 	pool := r.pools[key]
 	pool.Identity = key.identity
 	pool.Resource = key.resource
-	// A delayed /rate_limit response can land after the window it describes has
-	// closed. Rewinding ResetAt to it would make the pool read as expired, and
-	// an expired pool reads as unobserved, which admits background work the
-	// current window may have already ruled out.
-	//
-	// Within its own window a snapshot is authoritative in both directions,
+	// Within the pool's window a snapshot is authoritative in both directions,
 	// unlike a response header. It is the endpoint whose whole job is to state
 	// the truth, refreshes are claimed so only one is in flight per credential,
 	// and it is how a pool that headers clamped too low recovers before the
 	// window rolls.
-	window := compareQuotaWindow(reset, pool.ResetAt)
-	if pool.Known && known && window < 0 {
-		r.pools[key] = pool
+	//
+	// A snapshot of any other window is one more reading of it, placed like a
+	// header. That covers a delayed /rate_limit response for a window that has
+	// closed: rewinding to it would make the pool read as expired, and an
+	// expired pool reads as unobserved, which admits background work the
+	// current window may have already ruled out.
+	now := r.now().UTC()
+	placement := quotaReadingFreshWindow
+	if known {
+		placement = placeQuotaReading(pool, rate, now)
+	}
+	switch placement {
+	case quotaReadingSameWindow:
+	case quotaReadingFreshWindow:
+		r.clearEndedReservationsLocked(key, now)
+		pool.AttemptCost = 1
+		pool.ResetAt = reset
+	case quotaReadingTighterWindow:
+		pool.ResetAt = reset
+	case quotaReadingIgnored:
 		r.mu.Unlock()
 		return
 	}
-	sameWindow := pool.Known && known && window == 0
-	if !sameWindow {
-		pool.AttemptCost = 1
-		pool.ResetAt = reset
-	}
-	if known && (!pool.Known || window > 0) {
-		r.clearReservationsBeforeLocked(key, reset)
-	}
 	pool.Limit = rate.Limit
 	pool.Remaining = rate.Remaining
-	pool.UpdatedAt = r.now().UTC()
+	pool.UpdatedAt = now
 	pool.Known = known
 	r.pools[key] = pool
 	r.mu.Unlock()
+}
+
+// quotaReading says where a provider reading belongs relative to the pool.
+type quotaReading int
+
+const (
+	// quotaReadingIgnored is a reading that says nothing about the pool.
+	quotaReadingIgnored quotaReading = iota
+	// quotaReadingSameWindow is another reading of the window the pool follows.
+	quotaReadingSameWindow
+	// quotaReadingFreshWindow starts the pool over: it had no live window.
+	quotaReadingFreshWindow
+	// quotaReadingTighterWindow is a second live window with less remaining.
+	quotaReadingTighterWindow
+)
+
+// placeQuotaReading decides what a reading of the window ending at rate.Reset
+// means for the pool.
+//
+// A pool whose window has ended, or that has none, takes the next window the
+// provider reports. While the pool's window is open, a reading of any other
+// window comes from a second live one. The pool moves to it only when it is
+// still open and has less remaining. That leaves alone a second window with
+// more room, a late response from a window that has closed, and a window with
+// nothing spent yet, whose reset is an hour after each request and so always
+// looks like the newest.
+func placeQuotaReading(pool QuotaPool, rate Rate, now time.Time) quotaReading {
+	switch {
+	case pool.Known && compareQuotaWindow(rate.Reset, pool.ResetAt) == 0:
+		return quotaReadingSameWindow
+	case !pool.Known || !pool.ResetAt.After(now):
+		return quotaReadingFreshWindow
+	case rate.Reset.After(now) && rate.Remaining < pool.Remaining:
+		return quotaReadingTighterWindow
+	default:
+		return quotaReadingIgnored
+	}
 }
 
 func (r *QuotaRegistry) Get(
@@ -194,7 +240,7 @@ func (r *QuotaRegistry) Get(
 	key := newQuotaKey(identity, resource)
 	r.mu.RLock()
 	pool, ok := r.pools[key]
-	pool.Reserved = r.reservedLocked(key, pool)
+	pool.Reserved = r.reservedLocked(key)
 	r.mu.RUnlock()
 	return pool, ok
 }
@@ -206,7 +252,7 @@ func (r *QuotaRegistry) Snapshot() []QuotaPool {
 	r.mu.RLock()
 	pools := make([]QuotaPool, 0, len(r.pools))
 	for key, pool := range r.pools {
-		pool.Reserved = r.reservedLocked(key, pool)
+		pool.Reserved = r.reservedLocked(key)
 		pools = append(pools, pool)
 	}
 	r.mu.RUnlock()
@@ -418,19 +464,6 @@ func (r *QuotaRegistry) reserveArchiveAttempt(
 	return quotaReservation{key: key, cost: cost, pool: target}, true
 }
 
-func (r *QuotaRegistry) reconcileArchiveReservation(
-	reservation quotaReservation,
-	observedReset time.Time,
-) {
-	if r == nil || reservation.cost <= 0 || observedReset.IsZero() ||
-		compareQuotaWindow(observedReset, reservation.key.resetAt) < 0 {
-		return
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.releaseArchiveReservationLocked(reservation)
-}
-
 func (r *QuotaRegistry) releaseArchiveReservation(reservation quotaReservation) {
 	if r == nil || reservation.cost <= 0 {
 		return
@@ -450,41 +483,30 @@ func (r *QuotaRegistry) releaseArchiveReservationLocked(reservation quotaReserva
 }
 
 func (r *QuotaRegistry) effectiveRemainingLocked(key quotaKey, pool QuotaPool) int {
-	return max(pool.Remaining-r.reservedLocked(key, pool), 0)
+	return max(pool.Remaining-r.reservedLocked(key), 0)
 }
 
-func (r *QuotaRegistry) reservedLocked(key quotaKey, pool QuotaPool) int {
-	return r.reservations[quotaReservationKey{
-		quotaKey: key,
-		resetAt:  pool.ResetAt.UTC(),
-	}]
+// reservedLocked is the archive spend no response has accounted for yet. A
+// reservation is recorded under the window the pool followed when it was
+// made and lasts until that window ends, so it still counts after the pool
+// moves to another live window.
+func (r *QuotaRegistry) reservedLocked(key quotaKey) int {
+	now := r.now().UTC()
+	reserved := 0
+	for reservation, cost := range r.reservations {
+		if reservation.quotaKey == key && reservation.resetAt.After(now) {
+			reserved += cost
+		}
+	}
+	return reserved
 }
 
-func (r *QuotaRegistry) clearReservationsBeforeLocked(key quotaKey, reset time.Time) {
+func (r *QuotaRegistry) clearEndedReservationsLocked(key quotaKey, now time.Time) {
 	for reservation := range r.reservations {
-		if reservation.quotaKey == key && reservation.resetAt.Before(reset) {
+		if reservation.quotaKey == key && !reservation.resetAt.After(now) {
 			delete(r.reservations, reservation)
 		}
 	}
-}
-
-func (r *QuotaRegistry) raiseAttemptCost(
-	key quotaKey,
-	resetAt time.Time,
-	cost int,
-) {
-	if r == nil || cost <= 0 {
-		return
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	pool, ok := r.pools[key]
-	if !ok || !pool.Known || compareQuotaWindow(resetAt, pool.ResetAt) != 0 ||
-		cost <= pool.AttemptCost {
-		return
-	}
-	pool.AttemptCost = cost
-	r.pools[key] = pool
 }
 
 func (r *QuotaRegistry) EarliestReset(

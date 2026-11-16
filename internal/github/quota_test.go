@@ -177,6 +177,7 @@ func TestQuotaRegistryPacingWindowTracksStaggeredResourceResets(t *testing.T) {
 	// Advancing only the earlier REST pool changes the combined maximum while
 	// GraphQL still belongs to its original window.
 	nextRESTReset := now.Add(31 * time.Minute)
+	now = restReset.Add(time.Second)
 	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
 		Limit: 5000, Remaining: 5000, Reset: nextRESTReset,
 	})
@@ -425,13 +426,165 @@ func TestQuotaRegistryHeadersNeverRaiseRemainingWithinAWindow(t *testing.T) {
 	assert.Equal(4000, pool.Remaining,
 		"a late-arriving older header must not restore spent quota")
 
-	// A new window is a different quota and replaces the pool outright.
-	nextReset := reset.Add(time.Hour)
+	// Once the window has ended, the next one is a fresh quota and replaces
+	// the pool outright.
+	now := reset.Add(time.Second)
+	registry.now = func() time.Time { return now }
+	nextReset := now.Add(time.Hour)
 	registry.ObserveHeaders(identity, QuotaResourceREST, header(5000, nextReset))
 	pool, ok = registry.Get(identity, QuotaResourceREST)
 	require.True(ok)
 	assert.Equal(5000, pool.Remaining)
 	assert.True(pool.ResetAt.Equal(nextReset))
+}
+
+// GitHub can report more than one live rate-limit window for a credential and
+// resource, and answers from each in turn. The pool has to follow the window
+// with the least left: a request served from that window is refused when it
+// runs out, however much the other one has.
+func TestQuotaRegistryFollowsTheTightestLiveWindow(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 7, 28, 14, 20, 0, 0, time.UTC)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	busyReset := now.Add(10 * time.Minute)
+	quietReset := now.Add(31 * time.Minute)
+	observe := func(remaining int, reset time.Time) QuotaPool {
+		registry.ObserveHeaders(quotaTestApp, QuotaResourceREST,
+			quotaTestHeaders(15000, remaining, reset))
+		pool, ok := registry.Get(quotaTestApp, QuotaResourceREST)
+		require.True(ok)
+		return pool
+	}
+
+	pool := observe(9000, busyReset)
+	assert.Equal(9000, pool.Remaining)
+
+	// The quiet window resets later, but it is not a newer quota.
+	pool = observe(14994, quietReset)
+	assert.Equal(9000, pool.Remaining,
+		"a window with more room must not hide the one that is nearly spent")
+	assert.True(pool.ResetAt.Equal(busyReset))
+
+	pool = observe(8990, busyReset)
+	assert.Equal(8990, pool.Remaining,
+		"the pool must keep counting down in the window it follows")
+
+	// The quiet window becomes the tighter one, although the pool's own
+	// window is still open.
+	pool = observe(8000, quietReset)
+	assert.Equal(8000, pool.Remaining)
+	assert.True(pool.ResetAt.Equal(quietReset))
+
+	// And back, to a window that resets earlier than the pool's.
+	pool = observe(7000, busyReset)
+	assert.Equal(7000, pool.Remaining)
+	assert.True(pool.ResetAt.Equal(busyReset))
+
+	// When the pool's window ends, the other live window is all that is left.
+	now = busyReset.Add(time.Second)
+	pool = observe(7990, quietReset)
+	assert.Equal(7990, pool.Remaining)
+	assert.True(pool.ResetAt.Equal(quietReset))
+}
+
+// A window with nothing spent reports its reset as an hour after the request,
+// so every such reading names a later window than the last. Following them
+// would hold the pool at its full limit while the window in use runs down.
+func TestQuotaRegistryIgnoresAnUnusedWindowWhileOneIsInUse(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 7, 28, 14, 20, 0, 0, time.UTC)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	inUseReset := now.Add(45 * time.Minute)
+	registry.ObserveHeaders(quotaTestApp, QuotaResourceGraphQL,
+		quotaTestHeaders(10000, 9581, inUseReset))
+
+	for range 3 {
+		now = now.Add(time.Minute)
+		registry.ObserveHeaders(quotaTestApp, QuotaResourceGraphQL,
+			quotaTestHeaders(10000, 10000, now.Add(time.Hour)))
+	}
+	registry.ObserveHeaders(quotaTestApp, QuotaResourceGraphQL,
+		quotaTestHeaders(10000, 2100, inUseReset))
+
+	window, ok := registry.PacingWindow(
+		quotaTestApp, []QuotaResource{QuotaResourceGraphQL},
+	)
+	require.True(ok)
+	assert.Equal(2100, window.Remaining)
+	assert.Equal(100, window.ArchiveHeadroom,
+		"archive headroom must come from the window that is being spent")
+}
+
+// An attempt no response has answered may still be counted by the provider,
+// so its reservation has to outlast the pool moving to another live window. It
+// ends with the window it was made in.
+func TestQuotaRegistryKeepsUnansweredReservationsWhenThePoolChangesWindow(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 7, 28, 14, 20, 0, 0, time.UTC)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	firstReset := now.Add(10 * time.Minute)
+	tighterReset := now.Add(31 * time.Minute)
+	resources := []QuotaResource{QuotaResourceREST}
+	registry.ObserveHeaders(quotaTestApp, QuotaResourceREST,
+		quotaTestHeaders(15000, 9000, firstReset))
+	_, reserved := registry.reserveArchiveAttempt(quotaTestApp, resources, QuotaResourceREST)
+	require.True(reserved)
+
+	registry.ObserveHeaders(quotaTestApp, QuotaResourceREST,
+		quotaTestHeaders(15000, 8000, tighterReset))
+	window, ok := registry.PacingWindow(quotaTestApp, resources)
+	require.True(ok)
+	assert.Equal(7999, window.Remaining)
+
+	now = firstReset.Add(time.Second)
+	window, ok = registry.PacingWindow(quotaTestApp, resources)
+	require.True(ok)
+	assert.Equal(8000, window.Remaining)
+}
+
+// /rate_limit is answered from one of the live windows too, so a snapshot of
+// a window with more room says nothing about the one the pool follows.
+func TestQuotaRegistrySnapshotOfARoomierWindowDoesNotRaiseThePool(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	now := time.Date(2026, 7, 28, 14, 20, 0, 0, time.UTC)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	busyReset := now.Add(10 * time.Minute)
+	quietReset := now.Add(31 * time.Minute)
+	registry.ObserveHeaders(quotaTestApp, QuotaResourceREST,
+		quotaTestHeaders(15000, 3200, busyReset))
+
+	registry.UpdateSnapshot(quotaTestApp, QuotaResourceREST, Rate{
+		Limit: 15000, Remaining: 14994, Reset: quietReset,
+	})
+	pool, ok := registry.Get(quotaTestApp, QuotaResourceREST)
+	require.True(ok)
+	assert.Equal(3200, pool.Remaining)
+	assert.True(pool.ResetAt.Equal(busyReset))
+
+	// A snapshot of a tighter window is the binding one from then on.
+	registry.UpdateSnapshot(quotaTestApp, QuotaResourceREST, Rate{
+		Limit: 15000, Remaining: 3100, Reset: quietReset,
+	})
+	pool, ok = registry.Get(quotaTestApp, QuotaResourceREST)
+	require.True(ok)
+	assert.Equal(3100, pool.Remaining)
+	assert.True(pool.ResetAt.Equal(quietReset))
 }
 
 // A response from the previous reset window can arrive after a new-window
@@ -445,7 +598,7 @@ func TestQuotaRegistryHeadersFromAnOlderWindowDoNotRewindThePool(t *testing.T) {
 	require := require.New(t)
 	registry := NewQuotaRegistry()
 	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
-	oldReset := time.Now().UTC().Add(time.Minute).Truncate(time.Second)
+	oldReset := time.Now().UTC().Add(-time.Second).Truncate(time.Second)
 	newReset := oldReset.Add(time.Hour)
 	header := func(remaining int, at time.Time) http.Header {
 		h := http.Header{}
@@ -455,13 +608,14 @@ func TestQuotaRegistryHeadersFromAnOlderWindowDoNotRewindThePool(t *testing.T) {
 		return h
 	}
 
-	registry.ObserveHeaders(identity, QuotaResourceREST, header(300, newReset))
-	// The straggler belongs to the window that has already closed.
-	registry.ObserveHeaders(identity, QuotaResourceREST, header(4800, oldReset))
+	registry.ObserveHeaders(identity, QuotaResourceREST, header(4990, newReset))
+	// The straggler belongs to the window that has already closed, where far
+	// less was left.
+	registry.ObserveHeaders(identity, QuotaResourceREST, header(300, oldReset))
 
 	pool, ok := registry.Get(identity, QuotaResourceREST)
 	require.True(ok)
-	assert.Equal(300, pool.Remaining,
+	assert.Equal(4990, pool.Remaining,
 		"a closed window must not overwrite the current one")
 	assert.True(pool.ResetAt.Equal(newReset),
 		"the pool must not rewind to a window that has already reset")
@@ -477,19 +631,19 @@ func TestQuotaRegistrySnapshotFromAnOlderWindowDoesNotRewindThePool(t *testing.T
 	require := require.New(t)
 	registry := NewQuotaRegistry()
 	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
-	oldReset := time.Now().UTC().Add(time.Minute).Truncate(time.Second)
+	oldReset := time.Now().UTC().Add(-time.Second).Truncate(time.Second)
 	newReset := oldReset.Add(time.Hour)
 
 	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
-		Limit: 5000, Remaining: 300, Reset: newReset,
+		Limit: 5000, Remaining: 4990, Reset: newReset,
 	})
 	registry.UpdateSnapshot(identity, QuotaResourceREST, Rate{
-		Limit: 5000, Remaining: 4800, Reset: oldReset,
+		Limit: 5000, Remaining: 300, Reset: oldReset,
 	})
 
 	pool, ok := registry.Get(identity, QuotaResourceREST)
 	require.True(ok)
-	assert.Equal(300, pool.Remaining)
+	assert.Equal(4990, pool.Remaining)
 	assert.True(pool.ResetAt.Equal(newReset))
 }
 

@@ -441,8 +441,8 @@ Archive pacing:
 - An active registry with an incomplete or expired window defers as provider-quota-unknown; it
   never falls through to local pacing (`internal/github/archive_sync.go::Admit`).
 - Every other archive path spends local hourly surplus above `archiveLiveFloor`.
-- An unobserved archive reservation stays deducted until a current header accounts for it or the
-  window rolls (`internal/github/quota.go::quotaTransport`).
+- An unobserved archive reservation stays deducted until a response header accounts for it or its
+  window ends (`internal/github/quota.go::quotaTransport`).
 
 Inventory and lookups:
 
@@ -547,6 +547,10 @@ Sync status:
 
 - Provider quota is keyed by identity and REST/GraphQL resource, so a user response never
   overwrites an App pool (`internal/github/quota.go::QuotaRegistry`).
+- GitHub can report more than one live window for a pool, each with its own reset and count. The
+  pool follows the live window with the least remaining. Never let a later reset alone replace
+  it, and never read another window's spend as one attempt's cost
+  (`internal/github/quota.go::placeQuotaReading`).
 - Prefer valid core response headers over the `/rate_limit` core body, which can report full
   capacity while the same response reports exhaustion (`platform/github/client_rate.go::Client.GetRateLimitSnapshot`).
 - Each transport chain carries a fixed identity: reads spend the read identity; mutations and

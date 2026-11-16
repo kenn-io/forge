@@ -153,27 +153,21 @@ func reconcileArchiveProviderAttempt(
 	}
 	actualCost := reservation.cost
 	if observed, ok := rateFromQuotaHeaders(header); ok {
-		observedReset := observed.Reset.UTC()
-		window := compareQuotaWindow(observedReset, reservation.before.ResetAt)
-		if window > 0 ||
-			(window == 0 && observed.Remaining <= reservation.before.Remaining) {
-			registry.reconcileArchiveReservation(reservation.quota, observedReset)
+		// A response from the window the attempt was reserved against shows
+		// what the attempt cost. One from any other window does not: that
+		// window's spend belongs to every request it has served. Either way
+		// the provider has counted the attempt in the window that answered,
+		// and the registry has seen that count, so the reservation is done.
+		sameWindow := compareQuotaWindow(
+			observed.Reset.UTC(), reservation.before.ResetAt,
+		) == 0
+		if !sameWindow || observed.Remaining <= reservation.before.Remaining {
+			registry.releaseArchiveReservation(reservation.quota)
 		}
-		switch {
-		case window == 0 && observed.Remaining < reservation.before.Remaining:
+		if sameWindow && observed.Remaining < reservation.before.Remaining {
 			actualCost = max(
 				actualCost,
 				reservation.before.Remaining-observed.Remaining,
-			)
-		case window > 0:
-			actualCost = max(
-				actualCost,
-				observed.Limit-observed.Remaining,
-			)
-			registry.raiseAttemptCost(
-				reservation.quota.key.quotaKey,
-				observedReset,
-				actualCost,
 			)
 		}
 	}

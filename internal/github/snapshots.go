@@ -190,3 +190,16 @@ func supersededDetailSync(ctx context.Context) error {
 	}
 	return nil
 }
+
+// rejectedDetailSync is the result of a detail sync whose item write was
+// refused because the stored copy is newer than the copy it read.
+// storedBeforeRead reports that the stored copy has not changed since before
+// the read began. Reading again would then get the same answer, so the sync has
+// nothing left to do. Otherwise another write stored a newer copy during the
+// read, and the sync lost a race.
+func rejectedDetailSync(ctx context.Context, storedBeforeRead bool) error {
+	if storedBeforeRead {
+		return nil
+	}
+	return supersededDetailSync(ctx)
+}

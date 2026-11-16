@@ -658,7 +658,9 @@ func (s *Syncer) syncMRForRepoResolved(
 				*lifecyclePersisted = true
 			}
 		}
-		return nil
+		return rejectedDetailSync(
+			ctx, existing != nil && existing.SnapshotRevision == revision,
+		)
 	}
 	if err := s.markClosedLinkedPRNotificationsDone(ctx, repoID, number); err != nil {
 		if errors.Is(err, db.ErrRepositoryIdentityChanged) {

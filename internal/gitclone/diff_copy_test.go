@@ -55,3 +55,17 @@ func TestDiffCopyDetection(t *testing.T) {
 		assert.Equal(want, result.Files)
 	}
 }
+
+func TestDiffFilesReportsAMissingCloneAsNotFound(t *testing.T) {
+	t.Parallel()
+	mgr := New(t.TempDir(), nil)
+	t.Cleanup(mgr.Wait)
+
+	_, err := mgr.DiffFiles(
+		t.Context(), "github", "example.com", "test", "repo",
+		"1111111111111111111111111111111111111111",
+		"2222222222222222222222222222222222222222",
+	)
+
+	require.ErrorIs(t, err, ErrNotFound)
+}

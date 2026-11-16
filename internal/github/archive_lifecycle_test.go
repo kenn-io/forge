@@ -1291,7 +1291,7 @@ func TestGitHubArchiveAdmissionUsesCredentialRESTAndGraphQLPools(t *testing.T) {
 	userAllowed.Complete(nil, false)
 }
 
-func TestGitHubArchiveAdmissionCapsAttemptAllowanceByProviderQuota(t *testing.T) {
+func TestGitHubArchiveAdmissionAllowsAStartedItemToSpendDownToTheReserve(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -1333,9 +1333,10 @@ func TestGitHubArchiveAdmissionCapsAttemptAllowanceByProviderQuota(t *testing.T)
 	require.NoError(err)
 	require.True(admission.Allowed)
 	t.Cleanup(func() { admission.Complete(nil, false) })
-	// Halfway through the window the archive floor is 3000, halfway between
-	// the limit and the limit/5 archive reserve: remaining 4500 leaves 1500.
-	for range 1500 {
+	// Halfway through the window the archive floor is 3000, so 1500 is free
+	// to start items on. A started item is held to the limit/5 reserve of
+	// 1000 instead, so one too large for that 1500 still finishes.
+	for range 3500 {
 		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
 	}
 	assert.False(ConsumeArchiveAttemptAllowance(admission.Context))
@@ -1775,6 +1776,73 @@ func TestGitHubArchiveAdmissionWaitsForSurplusEarlyInTheWindow(t *testing.T) {
 // The local sync budget meters live sync only; provider-paced archive
 // admission must not defer because live sync spent the configured hourly
 // ceiling while provider quota still has surplus above the archive reserve.
+// In steady state the room above the falling floor is about one item's
+// declared cost. An item that needs more requests than that must still finish
+// in one pass: cut off at the floor, it would lose the pages it had read and
+// be cut off again on every retry. It borrows from the rest of the window
+// instead, and the next item waits until the floor has fallen past the debt.
+func TestGitHubArchiveItemLargerThanThePacedSurplusFinishesAndTheNextWaits(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	start := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	reset := start.Add(30 * time.Minute)
+	current := start
+	syncer, registry, ref := newProviderQuotaAdmissionSyncer(
+		t, start, NewSyncBudget(100000),
+	)
+	registry.now = func() time.Time { return current }
+	syncer.now = func() time.Time { return current }
+	identity := IdentityKey{Host: "github.test", Principal: "user:7"}
+	// Halfway through the window the archive floor is 3000, so there is room
+	// to start exactly one item of the declared cost.
+	const cost = 26
+	for _, resource := range []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL} {
+		registry.UpdateSnapshot(identity, resource,
+			Rate{Limit: 5000, Remaining: 3000 + cost, Reset: reset})
+	}
+	remaining := 3000 + cost
+	transport := &quotaTransport{
+		base: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			remaining--
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       http.NoBody,
+				Header:     quotaTestHeaders(5000, remaining, reset),
+				Request:    req,
+			}, nil
+		}),
+		registry: registry, identity: identity, resource: QuotaResourceREST,
+	}
+
+	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeMergeRequest, cost)
+	require.NoError(err)
+	require.True(admission.Allowed)
+	for page := 1; page <= 60; page++ {
+		req, err := http.NewRequestWithContext(
+			admission.Context, http.MethodGet, "https://api.github.test/repos/acme/widget", nil,
+		)
+		require.NoError(err)
+		resp, err := transport.RoundTrip(req)
+		require.NoError(err, "page %d of a started item", page)
+		resp.Body.Close()
+	}
+	admission.Complete(nil, true)
+
+	// The item left the pool 34 below the floor. The next one needs that back
+	// plus its own 26, and the floor falls 4000 an hour: 54 seconds.
+	next, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeMergeRequest, cost)
+	require.NoError(err)
+	require.False(next.Allowed)
+	require.NotNil(next.RetryAt)
+	assert.WithinDuration(start.Add(54*time.Second), *next.RetryAt, time.Second)
+
+	current = *next.RetryAt
+	next, err = syncer.Admit(t.Context(), ref, db.ArchiveItemTypeMergeRequest, cost)
+	require.NoError(err)
+	require.True(next.Allowed)
+	next.Complete(nil, false)
+}
+
 func TestGitHubArchiveAdmissionIgnoresLocalSyncBudget(t *testing.T) {
 	require := require.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)

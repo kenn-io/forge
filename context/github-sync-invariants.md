@@ -434,14 +434,18 @@ Archive worker:
 Archive pacing:
 
 - With a known registry pacing window, archive admission paces off provider quota alone: each
-  pool's remaining minus its own archive floor, checked at admission and every wire attempt
-  (`internal/github/quota.go::archiveQuotaFloor`).
+  pool's remaining minus its own archive floor (`internal/github/quota.go::archiveQuotaFloor`).
 - The floor falls linearly from the pool's limit when its window opens to the archive reserve
   (`max(limit/5, RateReserveBuffer)`) at reset. Archive work runs beside live sync, so a fixed
   reserve would let it take the whole surplus in the first minutes of a window and leave live
   sync the reserve alone for the rest. The floor bounds remaining quota, never archive spend:
   quota live sync leaves unspent becomes archive headroom as the window passes, so the archive
   cannot stall with most of a pool unused.
+- The floor gates the start of an item, never a wire attempt inside one. A started item may spend
+  down to the archive reserve, which every attempt checks
+  (`internal/github/quota.go::reserveArchiveAttempt`). In steady state the room above the floor
+  is about one item's declared cost, so holding attempts to the floor cuts off every larger item,
+  discards the pages it read, and repeats that on each retry.
 - Reserves are per pool; never apply the smallest pool's reserve to a larger one. The local
   ceiling neither enlarges nor shrinks the provider envelope.
 - An active registry with an incomplete or expired window defers as provider-quota-unknown; it

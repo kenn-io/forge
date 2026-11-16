@@ -61,13 +61,14 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	// The registry's clock stays at now, halfway through the quota window,
-	// where the archive floor of a 5000 pool is 3000.
+	// The registry's clock stays at now, one second before the quota window
+	// resets. The archive floor of a 5000 pool is then 1001, so an item may
+	// start, and the reserve of 1000 stops it after one request.
 	now := time.Now().UTC().Truncate(time.Second)
-	reset := now.Add(30 * time.Minute)
+	reset := now.Add(time.Second)
 	var upstreamCalls atomic.Int32
 	var upstreamRemaining atomic.Int32
-	upstreamRemaining.Store(3003)
+	upstreamRemaining.Store(1003)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		call := upstreamCalls.Add(1)
 		remaining := upstreamRemaining.Add(-2)
@@ -138,10 +139,10 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 	syncer.SetQuotaRegistry(quotaRegistry)
 	quotaRegistry.SetClock(func() time.Time { return now })
 	quotaRegistry.UpdateSnapshot(identity, ghclient.QuotaResourceREST, ghclient.Rate{
-		Limit: 5000, Remaining: 3003, Reset: reset,
+		Limit: 5000, Remaining: 1003, Reset: reset,
 	})
 	quotaRegistry.UpdateSnapshot(identity, ghclient.QuotaResourceGraphQL, ghclient.Rate{
-		Limit: 5000, Remaining: 3003, Reset: reset,
+		Limit: 5000, Remaining: 1003, Reset: reset,
 	})
 
 	source := archiveQuotaBurstSource{refs: []platform.RepoRef{ref}, client: client}
@@ -205,7 +206,7 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 	assert.Zero(budget.ArchiveSpent())
 	pool, ok := quotaRegistry.Get(identity, ghclient.QuotaResourceREST)
 	require.True(ok)
-	assert.Equal(3001, pool.Remaining)
+	assert.Equal(1001, pool.Remaining)
 	progress, err := database.GetDatasetProgress(
 		t.Context(), repo.ID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
 	)

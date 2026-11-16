@@ -167,10 +167,11 @@ func (s *Syncer) Admit(
 	}
 	available := 0
 	if providerPacingWindow != nil {
-		// Provider quota is authoritative: archive may spend everything above
-		// each pool's own archive reserve, and the local sync budget meters
-		// live sync only.
-		available = max(providerPacingWindow.ArchiveHeadroom, 0)
+		// Provider quota is authoritative, and the local sync budget meters
+		// live sync only. The falling floor admitted this item; now that it
+		// has started it may spend down to each pool's archive reserve, so an
+		// item larger than the room above the floor still finishes.
+		available = providerPacingWindow.ArchiveAllowance()
 	} else if budget != nil {
 		liveFloor := archiveLiveFloor(ref.Platform)
 		if resetAt == nil &&

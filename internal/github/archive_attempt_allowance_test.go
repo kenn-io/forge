@@ -130,15 +130,12 @@ func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
 
 	assert := assert.New(t)
 	require := require.New(t)
-	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
 	registry := NewQuotaRegistry()
-	registry.now = func() time.Time { return now }
 	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
-	// Halfway through the window the archive floor is 3000.
-	reset := now.Add(30 * time.Minute)
+	reset := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
 	for _, resource := range []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL} {
 		registry.UpdateSnapshot(identity, resource, Rate{
-			Limit: 5000, Remaining: 3003, Reset: reset,
+			Limit: 5000, Remaining: 1003, Reset: reset,
 		})
 	}
 	var calls atomic.Int32
@@ -147,7 +144,7 @@ func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(strings.NewReader("{}")),
-			Header:     quotaTestHeaders(5000, 3001, reset),
+			Header:     quotaTestHeaders(5000, 1001, reset),
 			Request:    req,
 		}, nil
 	})
@@ -184,13 +181,13 @@ func TestArchiveProviderAttemptAllowanceUsesObservedQuotaCost(t *testing.T) {
 	assert.Zero(budget.ArchiveSpent())
 	pool, ok := registry.Get(identity, QuotaResourceREST)
 	require.True(ok)
-	assert.Equal(3001, pool.Remaining)
+	assert.Equal(1001, pool.Remaining)
 	assert.Equal(2, pool.AttemptCost)
 	window, ok := registry.PacingWindow(
 		identity, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
 	)
 	require.True(ok)
-	assert.Equal(3001, window.Remaining)
+	assert.Equal(1001, window.Remaining)
 }
 
 func TestArchiveProviderQuotaCostPersistsAcrossAdmissions(t *testing.T) {
@@ -287,15 +284,14 @@ func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *
 	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
 	resources := []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL}
 	for _, resource := range resources {
-		// Halfway through the window the archive floor is 3000.
 		registry.UpdateSnapshot(identity, resource, Rate{
-			Limit: 5000, Remaining: 3001, Reset: reset,
+			Limit: 5000, Remaining: ArchiveProviderReserve(5000) + 1, Reset: reset,
 		})
 	}
 	window, ok := registry.PacingWindow(identity, resources)
 	require.True(ok)
 	budget := NewSyncBudget(100000)
-	assert.Equal(3001, window.Remaining)
+	assert.Equal(ArchiveProviderReserve(5000)+1, window.Remaining)
 
 	var calls atomic.Int32
 	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -332,7 +328,7 @@ func TestArchiveProviderHeaderlessReservationsProtectReserveAcrossAdmissions(t *
 	require.NoError(request())
 	window, ok = registry.PacingWindow(identity, resources)
 	require.True(ok)
-	assert.Equal(3000, window.Remaining)
+	assert.Equal(ArchiveProviderReserve(5000), window.Remaining)
 	pool, ok := registry.Get(identity, QuotaResourceREST)
 	require.True(ok)
 	assert.Equal(1, pool.Reserved)
@@ -349,16 +345,15 @@ func TestArchiveProviderAttemptAllowanceResetsObservedCostWithQuotaWindow(t *tes
 	registry := NewQuotaRegistry()
 	registry.now = func() time.Time { return now }
 	identity := IdentityKey{Host: "github.com", Principal: "user:7"}
-	// The archive floor is 3000 with half an hour left in a window.
 	firstReset := now.Add(30 * time.Minute)
-	nextReset := firstReset.Add(30 * time.Minute)
+	nextReset := firstReset.Add(time.Hour)
 	for _, resource := range []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL} {
 		registry.UpdateSnapshot(identity, resource, Rate{
-			Limit: 5000, Remaining: 3010, Reset: firstReset,
+			Limit: 5000, Remaining: 1010, Reset: firstReset,
 		})
 	}
 	currentReset := firstReset
-	currentRemaining := 3008
+	currentRemaining := 1008
 	var calls atomic.Int32
 	base := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		calls.Add(1)
@@ -402,11 +397,11 @@ func TestArchiveProviderAttemptAllowanceResetsObservedCostWithQuotaWindow(t *tes
 	now = firstReset.Add(time.Second)
 	for _, resource := range []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL} {
 		registry.UpdateSnapshot(identity, resource, Rate{
-			Limit: 5000, Remaining: 3010, Reset: nextReset,
+			Limit: 5000, Remaining: 1010, Reset: nextReset,
 		})
 	}
 	currentReset = nextReset
-	currentRemaining = 3009
+	currentRemaining = 1009
 	require.NoError(request())
 
 	pool, ok = registry.Get(identity, QuotaResourceREST)
@@ -426,7 +421,7 @@ func TestArchiveProviderAttemptIsNotChargedAnotherWindowsSpend(t *testing.T) {
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
 	followedReset := now.Add(10 * time.Minute)
-	otherReset := now.Add(20 * time.Minute)
+	otherReset := now.Add(45 * time.Minute)
 	registry := NewQuotaRegistry()
 	registry.now = func() time.Time { return now }
 	identity := IdentityKey{Host: "github.com", Principal: "installation:7"}
@@ -481,7 +476,7 @@ func TestArchiveProviderReservationIsReleasedByAResponseFromAnotherWindow(t *tes
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
 	otherReset := now.Add(10 * time.Minute)
-	followedReset := now.Add(20 * time.Minute)
+	followedReset := now.Add(45 * time.Minute)
 	registry := NewQuotaRegistry()
 	registry.now = func() time.Time { return now }
 	identity := IdentityKey{Host: "github.com", Principal: "installation:7"}

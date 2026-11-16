@@ -512,13 +512,14 @@ func TestQuotaRegistryIgnoresAnUnusedWindowWhileOneIsInUse(t *testing.T) {
 			quotaTestHeaders(10000, 10000, now.Add(time.Hour)))
 	}
 	registry.ObserveHeaders(quotaTestApp, QuotaResourceGraphQL,
-		quotaTestHeaders(10000, 2100, inUseReset))
+		quotaTestHeaders(10000, 7700, inUseReset))
 
 	window, ok := registry.PacingWindow(
 		quotaTestApp, []QuotaResource{QuotaResourceGraphQL},
 	)
 	require.True(ok)
-	assert.Equal(2100, window.Remaining)
+	assert.Equal(7700, window.Remaining)
+	// 42 minutes before the in-use window resets, its floor is 7600.
 	assert.Equal(100, window.ArchiveHeadroom,
 		"archive headroom must come from the window that is being spent")
 }
@@ -757,9 +758,11 @@ func TestQuotaRegistryPacingWindowArchiveHeadroomIsPerPool(t *testing.T) {
 	registry := NewQuotaRegistry()
 	registry.now = func() time.Time { return now }
 	reset := now.Add(30 * time.Minute)
-	// REST sits exactly at its own limit/5 reserve (3000); GraphQL has plenty.
+	// Halfway through the window REST's floor is 9000, halfway between its
+	// limit and its limit/5 reserve, and GraphQL's is 3000. REST sits exactly
+	// on its own floor; GraphQL has plenty.
 	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
-		Limit: 15000, Remaining: 3000, Reset: reset,
+		Limit: 15000, Remaining: 9000, Reset: reset,
 	})
 	registry.UpdateSnapshot(quotaTestUser, QuotaResourceGraphQL, Rate{
 		Limit: 5000, Remaining: 4800, Reset: reset,
@@ -772,20 +775,90 @@ func TestQuotaRegistryPacingWindowArchiveHeadroomIsPerPool(t *testing.T) {
 	require.True(ok)
 	assert.Zero(window.ArchiveHeadroom)
 
-	// With REST above its reserve, GraphQL's headroom (4800-1000) binds.
+	// With REST above its floor, GraphQL's headroom (4800-3000) binds.
 	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
-		Limit: 15000, Remaining: 8000, Reset: reset,
+		Limit: 15000, Remaining: 14000, Reset: reset,
 	})
 	window, ok = registry.PacingWindow(
 		quotaTestUser, []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL},
 	)
 	require.True(ok)
-	assert.Equal(3800, window.ArchiveHeadroom)
+	assert.Equal(1800, window.ArchiveHeadroom)
 }
 
 // The pacing window carries each pool's own limit, remaining, headroom, and
 // reset so callers can attribute the binding constraint and the recovery time
 // to the pool that owns them.
+// Archive work may take only what live sync has left unused so far in the
+// window. Its floor falls from the whole limit when the window opens to the
+// archive reserve at the reset, so the same remaining quota is out of reach
+// early in the hour and available later.
+func TestQuotaRegistryArchiveFloorFallsThroughTheWindow(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := assert.New(t)
+	reset := time.Date(2026, 7, 28, 19, 0, 0, 0, time.UTC)
+	now := reset.Add(-time.Hour)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	resources := []QuotaResource{QuotaResourceREST}
+	registry.UpdateSnapshot(quotaTestApp, QuotaResourceREST, Rate{
+		Limit: 15000, Remaining: 12000, Reset: reset,
+	})
+	headroomWith := func(left time.Duration) int {
+		now = reset.Add(-left)
+		window, ok := registry.PacingWindow(quotaTestApp, resources)
+		require.True(ok)
+		return window.ArchiveHeadroom
+	}
+
+	assert.Equal(-3000, headroomWith(time.Hour),
+		"a fresh window holds everything back for live sync")
+	assert.Equal(0, headroomWith(45*time.Minute))
+	assert.Equal(3000, headroomWith(30*time.Minute))
+	assert.Equal(6000, headroomWith(15*time.Minute))
+
+	// The floor ends at the archive reserve, never below it.
+	registry.UpdateSnapshot(quotaTestApp, QuotaResourceREST, Rate{
+		Limit: 15000, Remaining: 3000, Reset: reset,
+	})
+	assert.Equal(0, headroomWith(time.Millisecond))
+}
+
+// A pool short of headroom recovers as its floor falls, usually long before
+// the reset. The retry time has to say so, or archive work would sit out the
+// rest of every window it was once refused in.
+func TestQuotaPacingWindowRetriesWhenTheFloorHasMadeRoom(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 7, 28, 18, 15, 0, 0, time.UTC)
+	reset := now.Add(45 * time.Minute)
+	registry := NewQuotaRegistry()
+	registry.now = func() time.Time { return now }
+	resources := []QuotaResource{QuotaResourceREST}
+	// 45 minutes before the reset the floor is 4000, so headroom is -200. It
+	// falls 4000 an hour, and a request costing 26 needs it 226 lower.
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 3800, Reset: reset,
+	})
+	window, ok := registry.PacingWindow(quotaTestUser, resources)
+	require.True(ok)
+	assert.WithinDuration(
+		now.Add(203*time.Second), window.ArchiveRetryAt(26, now), time.Second,
+	)
+
+	// Below the reserve itself, only the reset brings quota back.
+	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: 900, Reset: reset,
+	})
+	window, ok = registry.PacingWindow(quotaTestUser, resources)
+	require.True(ok)
+	assert.Equal(reset, window.ArchiveRetryAt(26, now))
+}
+
 func TestQuotaRegistryPacingWindowExposesPerResourcePools(t *testing.T) {
 	t.Parallel()
 
@@ -796,8 +869,10 @@ func TestQuotaRegistryPacingWindowExposesPerResourcePools(t *testing.T) {
 	registry.now = func() time.Time { return now }
 	restReset := now.Add(10 * time.Minute)
 	graphQLReset := now.Add(30 * time.Minute)
+	// Ten minutes before its reset REST's floor is 5000; thirty minutes
+	// before its own, GraphQL's is 3000.
 	registry.UpdateSnapshot(quotaTestUser, QuotaResourceREST, Rate{
-		Limit: 15000, Remaining: 3000, Reset: restReset,
+		Limit: 15000, Remaining: 5000, Reset: restReset,
 	})
 	registry.UpdateSnapshot(quotaTestUser, QuotaResourceGraphQL, Rate{
 		Limit: 5000, Remaining: 4800, Reset: graphQLReset,
@@ -810,12 +885,12 @@ func TestQuotaRegistryPacingWindowExposesPerResourcePools(t *testing.T) {
 	require.True(ok)
 	rest := window.Resources[QuotaResourceREST]
 	assert.Equal(15000, rest.Limit)
-	assert.Equal(3000, rest.Remaining)
+	assert.Equal(5000, rest.Remaining)
 	assert.Zero(rest.Headroom)
 	assert.Equal(restReset, rest.ResetAt)
 	graphQL := window.Resources[QuotaResourceGraphQL]
 	assert.Equal(5000, graphQL.Limit)
 	assert.Equal(4800, graphQL.Remaining)
-	assert.Equal(3800, graphQL.Headroom)
+	assert.Equal(1800, graphQL.Headroom)
 	assert.Equal(graphQLReset, graphQL.ResetAt)
 }

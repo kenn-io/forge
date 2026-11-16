@@ -144,7 +144,7 @@ func (s *Syncer) Admit(
 			detail := "provider rate reserve reached"
 			if !pacingKnown {
 				detail = "provider quota unknown"
-			} else if reset := pacingWindow.ArchiveRetryAt(cost); reset.After(now) {
+			} else if reset := pacingWindow.ArchiveRetryAt(cost, now); reset.After(now) {
 				retryAt = reset.UTC()
 			}
 			return archive.AdmissionResult{RetryAt: &retryAt, Detail: detail}, nil

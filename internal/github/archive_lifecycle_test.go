@@ -1333,8 +1333,9 @@ func TestGitHubArchiveAdmissionCapsAttemptAllowanceByProviderQuota(t *testing.T)
 	require.NoError(err)
 	require.True(admission.Allowed)
 	t.Cleanup(func() { admission.Complete(nil, false) })
-	// remaining 4500 minus the limit/5 archive reserve (1000).
-	for range 3500 {
+	// Halfway through the window the archive floor is 3000, halfway between
+	// the limit and the limit/5 archive reserve: remaining 4500 leaves 1500.
+	for range 1500 {
 		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
 	}
 	assert.False(ConsumeArchiveAttemptAllowance(admission.Context))
@@ -1742,18 +1743,21 @@ func newProviderQuotaAdmissionSyncer(
 	return syncer, registry, ref
 }
 
-// A fresh provider window grants the full surplus above the archive reserve
-// immediately: archive availability is a floor on remaining quota, not a ramp
-// across the window.
-func TestGitHubArchiveAdmissionGrantsFullSurplusAtWindowStart(t *testing.T) {
+// Archive work runs beside live sync, so it must not take in the first
+// minutes of a window what live sync needs for the rest of it. Early in the
+// window, quota that live sync has already used is not surplus yet, and the
+// archive waits only until its floor has fallen far enough, not for the reset.
+func TestGitHubArchiveAdmissionWaitsForSurplusEarlyInTheWindow(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
-	reset := now.Add(59 * time.Minute)
+	reset := now.Add(54 * time.Minute)
 	syncer, registry, ref := newProviderQuotaAdmissionSyncer(
 		t, now, NewSyncBudget(100000),
 	)
 	identity := IdentityKey{Host: "github.test", Principal: "user:7"}
+	// Six minutes in, live sync has used 500 of 5000. The floor has fallen 400
+	// from the limit, so the archive is 100 short, plus the 2 it asks for.
 	registry.UpdateSnapshot(identity, QuotaResourceREST,
 		Rate{Limit: 5000, Remaining: 4500, Reset: reset})
 	registry.UpdateSnapshot(identity, QuotaResourceGraphQL,
@@ -1761,13 +1765,11 @@ func TestGitHubArchiveAdmissionGrantsFullSurplusAtWindowStart(t *testing.T) {
 
 	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 2)
 	require.NoError(err)
-	require.True(admission.Allowed)
-	t.Cleanup(func() { admission.Complete(nil, false) })
-	// remaining 4500 minus the limit/5 reserve (1000) is fully consumable.
-	for range 3500 {
-		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
-	}
-	assert.False(ConsumeArchiveAttemptAllowance(admission.Context))
+	require.False(admission.Allowed)
+	assert.Equal("provider rate reserve reached", admission.Detail)
+	require.NotNil(admission.RetryAt)
+	// The floor falls 4000 an hour: 102 takes about 92 seconds.
+	assert.WithinDuration(now.Add(92*time.Second), *admission.RetryAt, time.Second)
 }
 
 // The local sync budget meters live sync only; provider-paced archive

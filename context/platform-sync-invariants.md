@@ -326,7 +326,7 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 - Lifecycle details are marked checked only after provider completeness gates pass.
 - Authentication and repository-blocked errors defer all archive work until an explicit
   retry clears the repository error (`internal/archive/scheduler.go::archiveRepoDeferred`).
-- Archive admission is paced by provider capacity alone: quota above the archive reserve,
+- Archive admission is paced by provider capacity alone: quota above the archive floor,
   or local surplus above the live floor. Archive requests run beside live sync on the same
   credential. Never make archive work wait for a sync pass or live request, and never cancel
   it for one: a busy instance always has live work in flight

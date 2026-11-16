@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"slices"
 	"strconv"
@@ -66,6 +67,27 @@ type QuotaRegistry struct {
 	now          func() time.Time
 }
 
+// quotaWindowLength is how long a GitHub primary rate-limit window lasts.
+const quotaWindowLength = time.Hour
+
+// archiveQuotaFloor is the remaining quota archive work must leave in a pool
+// at now. It falls in a straight line from the pool's whole limit when its
+// window opens to the archive reserve when the window resets.
+//
+// Archive work therefore spends only what live sync has left unused so far in
+// the window. A fixed reserve alone lets a fast archive take everything above
+// it in the first minutes, and live sync then has the reserve to last the rest
+// of the hour, which a busy instance outruns.
+func archiveQuotaFloor(pool QuotaPool, now time.Time) int {
+	reserve := ArchiveProviderReserve(pool.Limit)
+	left := min(pool.ResetAt.Sub(now), quotaWindowLength)
+	if left <= 0 || pool.Limit <= reserve {
+		return reserve
+	}
+	paced := float64(pool.Limit-reserve) * float64(left) / float64(quotaWindowLength)
+	return reserve + int(math.Floor(paced))
+}
+
 // quotaResetJitter is how far apart two reset times may be and still name one
 // quota window. GitHub's reset header can differ by a second between responses
 // in the same window, while the next window resets about an hour later.
@@ -91,6 +113,18 @@ func NewQuotaRegistry() *QuotaRegistry {
 		reservations: make(map[quotaReservationKey]int),
 		now:          time.Now,
 	}
+}
+
+// SetClock replaces the registry's time source. Windows and the archive floor
+// span an hour, so callers that need to observe them inject a clock instead of
+// waiting. It must not be called while requests are in flight.
+func (r *QuotaRegistry) SetClock(now func() time.Time) {
+	if now == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.now = now
 }
 
 func (r *QuotaRegistry) ObserveHeaders(
@@ -284,9 +318,9 @@ type QuotaAvailability struct {
 type QuotaPacingResource struct {
 	Limit     int
 	Remaining int
-	// Headroom is remaining minus this pool's own archive reserve
-	// (`ArchiveProviderReserve` of this pool's limit). Negative when the
-	// pool sits below its reserve.
+	// Headroom is remaining minus this pool's own archive floor
+	// (`archiveQuotaFloor`), which falls through the window to the pool's
+	// archive reserve. Negative when the pool sits below the floor.
 	Headroom int
 	ResetAt  time.Time
 }
@@ -296,23 +330,36 @@ type QuotaPacingWindow struct {
 	Remaining int
 	// ArchiveHeadroom is the archive spend this credential may admit: the
 	// minimum across required resources of remaining minus that pool's own
-	// archive reserve. Reserves are per pool — applying the smallest pool's
-	// reserve to a larger pool would admit spend below the larger pool's
-	// floor. Negative when the binding pool sits below its reserve.
+	// archive floor. Floors are per pool — applying the smallest pool's
+	// floor to a larger pool would admit spend below the larger pool's
+	// own. Negative when the binding pool sits below its floor.
 	ArchiveHeadroom int
 	ResetAt         time.Time
 	Resources       map[QuotaResource]QuotaPacingResource
 }
 
-// ArchiveRetryAt returns the latest reset among pools whose headroom is below
-// cost: the earliest time every deficient pool can have recovered. Waiting for
-// the window-wide latest reset would leave archives paused after the exhausted
-// pool has already reset. Zero when no pool is deficient.
-func (w QuotaPacingWindow) ArchiveRetryAt(cost int) time.Time {
+// ArchiveRetryAt returns the earliest time every pool whose headroom, read at
+// now, is below cost can have enough: when its falling floor has made room, or
+// its reset if that comes first, which is also where a pool below its reserve
+// recovers. Waiting for the window-wide latest reset would leave archives
+// paused after the short pool has already recovered. Zero when no pool is
+// deficient.
+func (w QuotaPacingWindow) ArchiveRetryAt(cost int, now time.Time) time.Time {
 	var retry time.Time
 	for _, resource := range w.Resources {
-		if resource.Headroom < cost && resource.ResetAt.After(retry) {
-			retry = resource.ResetAt
+		if resource.Headroom >= cost {
+			continue
+		}
+		ready := resource.ResetAt
+		if paced := resource.Limit - ArchiveProviderReserve(resource.Limit); paced > 0 {
+			wait := time.Duration(float64(cost-resource.Headroom) /
+				float64(paced) * float64(quotaWindowLength))
+			if at := now.Add(wait); at.Before(ready) {
+				ready = at
+			}
+		}
+		if ready.After(retry) {
+			retry = ready
 		}
 	}
 	return retry
@@ -363,7 +410,7 @@ func (r *QuotaRegistry) PacingWindow(
 		if index == 0 || remaining < window.Remaining {
 			window.Remaining = remaining
 		}
-		headroom := remaining - ArchiveProviderReserve(pool.Limit)
+		headroom := remaining - archiveQuotaFloor(pool, now)
 		if index == 0 || headroom < window.ArchiveHeadroom {
 			window.ArchiveHeadroom = headroom
 		}
@@ -419,9 +466,9 @@ func (r *QuotaRegistry) CheckReserve(
 }
 
 // reserveArchiveAttempt reserves one wire attempt's cost against the target
-// resource pool. Every required pool must stay above its own archive reserve
-// (`ArchiveProviderReserve` of that pool's limit) — reserves are per pool, so
-// a larger pool keeps its proportionally larger floor.
+// resource pool. Every required pool must stay above its own archive floor
+// (`archiveQuotaFloor`) — floors are per pool, so a larger pool keeps its
+// proportionally larger one.
 func (r *QuotaRegistry) reserveArchiveAttempt(
 	identity IdentityKey,
 	resources []QuotaResource,
@@ -448,7 +495,7 @@ func (r *QuotaRegistry) reserveArchiveAttempt(
 			target = pool
 			continue
 		}
-		if remaining <= ArchiveProviderReserve(pool.Limit) {
+		if remaining <= archiveQuotaFloor(pool, now) {
 			return quotaReservation{}, false
 		}
 	}
@@ -456,7 +503,7 @@ func (r *QuotaRegistry) reserveArchiveAttempt(
 		return quotaReservation{}, false
 	}
 	cost := max(target.AttemptCost, 1)
-	if r.effectiveRemainingLocked(targetKey, target)-cost < ArchiveProviderReserve(target.Limit) {
+	if r.effectiveRemainingLocked(targetKey, target)-cost < archiveQuotaFloor(target, now) {
 		return quotaReservation{}, false
 	}
 	key := quotaReservationKey{quotaKey: targetKey, resetAt: target.ResetAt.UTC()}

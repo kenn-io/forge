@@ -101,6 +101,62 @@ func TestAPIListPulls(t *testing.T) {
 	assert.Equal("acme/widget", body[0].Repo.RepoPath)
 }
 
+func TestAPIListPullsReportsLineKindsForCurrentDiff(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	srv, database := servertest.SetupTestServer(t)
+	counted := seedPRWithHeadSHA(t, database, "acme", "widget", 1, "head-1")
+	stale := seedPRWithHeadSHA(t, database, "acme", "widget", 2, "head-2")
+	kinds := gitclone.LineKinds{
+		Code: gitclone.LineCounts{Additions: 40, Deletions: 12},
+		Docs: gitclone.LineCounts{Additions: 6},
+		Data: gitclone.LineCounts{Additions: 300, Deletions: 280},
+	}
+	require.NoError(database.SetMergeRequestLineKinds(ctx, counted, "merge-base", "head-1", kinds, time.Now()))
+	require.NoError(database.SetMergeRequestLineKinds(ctx, stale, "merge-base", "older-head", kinds, time.Now()))
+	// The provider reports a push the diff has not caught up with.
+	pushed := seedPRWithHeadSHA(t, database, "acme", "widget", 3, "head-3")
+	require.NoError(database.SetMergeRequestLineKinds(ctx, pushed, "merge-base", "head-3", kinds, time.Now()))
+	// A merged pull request's base branch moves on, but its diff stays the same.
+	mergedAt := time.Now()
+	merged := serverfake.SeedPR(t, database, "acme", "widget", 4,
+		serverfake.WithSeedPRHeadSHA("head-4"), serverfake.WithSeedPRBaseSHA("base-4"),
+		serverfake.WithSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, &mergedAt))
+	require.NoError(database.SetMergeRequestLineKinds(ctx, merged, "merge-base", "head-4", kinds, time.Now()))
+	repos, err := database.ListRepos(ctx)
+	require.NoError(err)
+	require.Len(repos, 1)
+	require.NoError(database.UpdatePlatformSHAs(ctx, repos[0].ID, 3, "head-3-pushed", ""))
+	require.NoError(database.UpdatePlatformSHAs(ctx, repos[0].ID, 4, "head-4", "base-4-later"))
+	client := servertest.SetupTestClient(t, srv)
+
+	resp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{})
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode)
+	require.NotNil(resp.JSON200)
+	byNumber := map[int64]*generated.LineKinds{}
+	for _, pull := range *resp.JSON200 {
+		byNumber[pull.Number] = pull.LineKinds
+	}
+	require.Len(byNumber, 3)
+	want := &generated.LineKinds{
+		Code:      generated.LineCounts{Additions: 40, Deletions: 12},
+		Docs:      generated.LineCounts{Additions: 6},
+		Data:      generated.LineCounts{Additions: 300, Deletions: 280},
+		Generated: generated.LineCounts{},
+	}
+	assert.Equal(want, byNumber[1])
+	assert.Nil(byNumber[2], "counts for an older head must not describe the current diff")
+	assert.Nil(byNumber[3], "counts for a diff the provider has moved past must not be reported")
+
+	// The open list leaves out the merged pull request, so read its counts directly.
+	mergedKinds, err := database.ListLineKindsForMRs(ctx, []int64{merged})
+	require.NoError(err)
+	assert.Equal(map[int64]gitclone.LineKinds{merged: kinds}, mergedKinds)
+}
+
 func TestAPIListPullsClassifiesHeadRepository(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

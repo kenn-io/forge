@@ -5334,6 +5334,40 @@ components:
         - type
         - content
       type: object
+    LineCounts:
+      additionalProperties: false
+      properties:
+        additions:
+          format: int64
+          type: integer
+        deletions:
+          format: int64
+          type: integer
+      required:
+        - additions
+        - deletions
+      type: object
+    LineKinds:
+      additionalProperties: false
+      properties:
+        code:
+          $ref: "#/components/schemas/LineCounts"
+          description: Lines in source code, build and dependency manifests, configuration, and every other file not counted below.
+        data:
+          $ref: "#/components/schemas/LineCounts"
+          description: "Lines in data files: JSON, JSON Lines, CSV, TSV, SVG, and test snapshots, other than manifests and configuration such as package.json and tsconfig.json."
+        docs:
+          $ref: "#/components/schemas/LineCounts"
+          description: "Lines in prose files: Markdown, reStructuredText, AsciiDoc, and plain text other than build and dependency files such as requirements.txt."
+        generated:
+          $ref: "#/components/schemas/LineCounts"
+          description: Lines in generated files and lockfiles, as the diff view marks them.
+      required:
+        - code
+        - docs
+        - data
+        - generated
+      type: object
     ListDocsFoldersOutputBody:
       additionalProperties: false
       properties:
@@ -6281,6 +6315,9 @@ components:
         last_workspace_activity_at:
           format: date-time
           type: string
+        line_kinds:
+          $ref: "#/components/schemas/LineKinds"
+          description: Changed lines of the current diff by kind of file. Omitted until Forge has counted that diff from its local clone.
         merge_queue:
           $ref: "#/components/schemas/MergeQueueEntryResponse"
         merge_queue_removal:

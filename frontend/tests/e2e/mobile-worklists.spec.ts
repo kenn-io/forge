@@ -57,6 +57,14 @@ test("phone menu opens a worklist whose items round-trip through phone detail", 
   expect(rowBox!.x + rowBox!.width).toBeLessThanOrEqual(width);
   await page.screenshot({ path: testInfo.outputPath("phone-worklist.png"), fullPage: false });
 
+  const search = page.getByRole("searchbox", { name: "Filter worklist items" });
+  await search.fill("regression");
+  await expect(items.getByRole("button", { name: "Theme toggle does not stick" })).toHaveCount(0);
+  await expect(row).toBeVisible();
+  const searchBox = await search.boundingBox();
+  expect(searchBox).not.toBeNull();
+  expect(searchBox!.x + searchBox!.width).toBeLessThanOrEqual(width);
+
   await row.click();
   await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/widgets\/42\?platform_repo_id=1001$/);
   await expect(page.locator(".mobile-detail-header__badge")).toHaveText("PR #42");

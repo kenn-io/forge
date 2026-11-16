@@ -6,6 +6,8 @@
   // offset is applied.
   const collapsedSections = new SvelteSet<string>();
   const expandedNotes = new SvelteSet<string>();
+  // Same lifetime, so Back from an item returns to the filtered rows.
+  const searchState = $state({ value: "" });
 </script>
 
 <script lang="ts">
@@ -15,6 +17,7 @@
   import type { WorklistItem } from "../api/worklists.js";
   import { getAppRuntime } from "../app/runtime-context.js";
   import MobileNavMenu from "../components/mobile/MobileNavMenu.svelte";
+  import QuerySearchInput from "../components/shared/QuerySearchInput.svelte";
   import GroupedSidebarSection from "../components/shared/GroupedSidebarSection.svelte";
   import WorklistCaveatIcon from "../components/worklists/WorklistCaveatIcon.svelte";
   import WorklistRow from "../components/worklists/WorklistRow.svelte";
@@ -24,6 +27,7 @@
     readWorklistStateFilter,
     worklistItemDone,
     worklistItemKey,
+    worklistItemMatchesSearch,
     worklistItemsByScore,
     worklistItemSelection,
     worklistItemsInState,
@@ -33,6 +37,7 @@
     type WorklistStateFilter,
   } from "../components/worklists/worklist-items.js";
   import { getNavigate, getStores } from "../context.js";
+  import { isEmptySearchQuery, parseSearchQuery } from "../utils/search-query.js";
   import { buildMobileWorklistRoute, buildRoutedItemRoute } from "../routes.js";
   import {
     mobileListOriginState,
@@ -69,7 +74,15 @@
   let stateFilter = $state<WorklistStateFilter>(readWorklistStateFilter());
   const order = readWorklistOrder();
 
-  const shownItems = $derived(worklist ? worklistItemsInState(worklist.items, stateFilter) : []);
+  const searchQuery = $derived(parseSearchQuery(searchState.value));
+  const searching = $derived(!isEmptySearchQuery(searchQuery));
+  const shownItems = $derived(
+    worklist
+      ? worklistItemsInState(worklist.items, stateFilter).filter(
+          (item) => !searching || worklistItemMatchesSearch(item, searchQuery),
+        )
+      : [],
+  );
   const sections = $derived(
     order === "score" ? [{ section: "", items: worklistItemsByScore(shownItems) }] : worklistSections(shownItems),
   );
@@ -199,9 +212,10 @@
     runtime.runCommand(effect, { operation: "retry worklists", safeContext: {}, onFailure: () => {} });
   }
 
-  const emptyFilterMessage = $derived(
-    stateFilter === "closed" ? "No items are closed." : "No open items remain. Closed items are hidden.",
-  );
+  const emptyFilterMessage = $derived.by(() => {
+    if (searching) return "No items match this search.";
+    return stateFilter === "closed" ? "No items are closed." : "No open items remain. Closed items are hidden.";
+  });
 </script>
 
 <section class="mobile-worklist" aria-label="Worklists" bind:this={root}>
@@ -246,6 +260,12 @@
           onchange={setStateFilter}
         />
       </div>
+      <QuerySearchInput
+        bind:value={searchState.value}
+        block
+        placeholder="Filter items..."
+        ariaLabel="Filter worklist items"
+      />
     </div>
 
     <ScrollBox label={`${worklist.title} items`} class="mobile-worklist__scroll">
@@ -419,6 +439,11 @@
   .mobile-worklist__meta :global(.mobile-worklist__state .kit-select-dropdown__trigger) {
     min-height: var(--mobile-chrome-hit-target);
     font-size: var(--font-size-sm);
+  }
+
+  .mobile-worklist__summary :global(.kit-search-input) {
+    min-height: var(--mobile-chrome-hit-target);
+    font-size: var(--font-size-md);
   }
 
   .mobile-worklist :global(.mobile-worklist__scroll) {

@@ -434,7 +434,7 @@ func TestSyncWatchedMRsPacesProbes(t *testing.T) {
 			var reads int64
 			refreshed := make(map[int]bool)
 			client := &mockClient{getPullRequestFn: func(ctx context.Context, _, _ string, number int) (*gh.PullRequest, error) {
-				_, admitted, _ := budget.trySpendForTransport(4, syncSpendKind(ctx), false)
+				_, admitted, _ := budget.trySpendForTransport(4, syncSpendKind(ctx), false, 0)
 				require.True(t, admitted)
 				reads++
 				refreshed[number] = true
@@ -785,7 +785,7 @@ func TestDetailDrainProbePacing(t *testing.T) {
 			budget.now = func() time.Time { return now }
 			if tc.spent {
 				for budget.CanSpendPaced(1) {
-					_, admitted, _ := budget.trySpendForTransport(1, SyncSpendDetail, false)
+					_, admitted, _ := budget.trySpendForTransport(1, SyncSpendDetail, false, 0)
 					require.True(t, admitted)
 				}
 				require.True(t, budget.CanSpend(detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR)), "flat ceiling still permits detail work")

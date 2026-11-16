@@ -446,7 +446,10 @@ Archive pacing:
   ceiling neither enlarges nor shrinks the provider envelope.
 - An active registry with an incomplete or expired window defers as provider-quota-unknown; it
   never falls through to local pacing (`internal/github/archive_sync.go::Admit`).
-- Every other archive path spends local hourly surplus above `archiveLiveFloor`.
+- Every other archive path spends local hourly surplus above `archiveLiveFloor`, checked at
+  admission and again at every wire attempt: live sync spends the same budget while an admitted
+  request runs (`internal/github/budget.go::trySpendForTransport`). Complete Gitea and Forgejo
+  merge-request reads carry no allowance and are not cut off.
 - An unobserved archive reservation stays deducted until a response header accounts for it or its
   window ends (`internal/github/quota.go::quotaTransport`).
 

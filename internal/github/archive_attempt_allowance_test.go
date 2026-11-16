@@ -39,7 +39,7 @@ func TestArchiveAttemptAllowanceRefusesBeyondAdmittedCeiling(t *testing.T) {
 	base := &countingRoundTripper{status: http.StatusInternalServerError}
 	budget := NewSyncBudget(100)
 	transport := WrapSyncBudgetTransport(base, budget)
-	ctx := WithArchiveAttemptAllowance(WithArchiveSyncBudget(t.Context()), 2)
+	ctx := WithArchiveAttemptAllowance(WithArchiveSyncBudget(t.Context()), 2, 0)
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
@@ -82,7 +82,7 @@ func TestArchiveAttemptAllowanceBoundsAuthRetries(t *testing.T) {
 		SetHeader:           platform.BearerAuthHeader,
 		RetryOnUnauthorized: true,
 	}
-	ctx := WithArchiveAttemptAllowance(WithArchiveSyncBudget(t.Context()), 1)
+	ctx := WithArchiveAttemptAllowance(WithArchiveSyncBudget(t.Context()), 1, 0)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.test/repos/o/r", nil)
 	require.NoError(err)
 

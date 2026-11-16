@@ -528,7 +528,7 @@ func TestClientArchiveAttemptAllowanceCapsProviderRetries(t *testing.T) {
 	ref := platform.RepoRef{
 		Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "group/project",
 	}
-	ctx := ghsync.WithArchiveAttemptAllowance(ghsync.WithArchiveSyncBudget(t.Context()), 2)
+	ctx := ghsync.WithArchiveAttemptAllowance(ghsync.WithArchiveSyncBudget(t.Context()), 2, 0)
 
 	_, err = client.GetRepository(ctx, ref)
 	require.Error(err)

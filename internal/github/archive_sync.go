@@ -197,7 +197,9 @@ func (s *Syncer) Admit(
 				requestCtx, available, identity, providerResources,
 			)
 		} else {
-			requestCtx = WithArchiveAttemptAllowance(requestCtx, available)
+			requestCtx = WithArchiveAttemptAllowance(
+				requestCtx, available, archiveLiveFloor(ref.Platform),
+			)
 		}
 	}
 	var completeOnce sync.Once

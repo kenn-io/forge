@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"go.kenn.io/forge/internal/cli/ctl"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/daemonclient"
 )
@@ -115,12 +116,12 @@ func useControlAPIMode(cmd *cobra.Command, args []string) bool {
 
 func runAPIVerb(ctx context.Context, method, requestPath string, opts apiVerbOptions, stdout io.Writer, stdin io.Reader) error {
 	method = strings.ToUpper(method)
-	path := requestPath
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
+	daemon, err := daemonclient.Discover(opts.configPath, opts.timeout)
+	if err != nil {
+		return &apiVerbError{apiVerbExitNoRequest, err}
 	}
 
-	daemon, err := daemonclient.Discover(opts.configPath, opts.timeout)
+	requestURL, err := ctl.APIURL(daemon.BaseURL, requestPath, nil)
 	if err != nil {
 		return &apiVerbError{apiVerbExitNoRequest, err}
 	}
@@ -133,13 +134,12 @@ func runAPIVerb(ctx context.Context, method, requestPath string, opts apiVerbOpt
 		body = strings.NewReader(opts.data)
 	}
 
-	url := daemon.BaseURL + path
 	if opts.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, opts.timeout)
 		defer cancel()
 	}
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	req, err := http.NewRequestWithContext(ctx, method, requestURL, body)
 	if err != nil {
 		return &apiVerbError{
 			apiVerbExitNoRequest,
@@ -178,7 +178,7 @@ func runAPIVerb(ctx context.Context, method, requestPath string, opts apiVerbOpt
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return &apiVerbError{apiVerbExitHTTPError, fmt.Errorf(
-			"%s %s returned %s", method, path, resp.Status,
+			"%s %s returned %s", method, requestPath, resp.Status,
 		)}
 	}
 	return nil

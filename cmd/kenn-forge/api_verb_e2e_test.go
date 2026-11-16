@@ -96,6 +96,11 @@ func TestAPIVerbE2E(t *testing.T) {
 	assert.Contains(out, "\"hosts\"",
 		"snapshot body relayed verbatim")
 
+	// Plain relay calls use the same API scope as control-mode calls.
+	out, _, code = run("GET", "/kata/daemons")
+	assert.Equal(0, code)
+	assert.Contains(out, `"daemons"`)
+
 	// -i mode: the exact status line precedes the body so relays can
 	// recover the code; still exit 1 on HTTP errors.
 	out, _, code = run("-i", "GET", "/api/v1/projects/prj_missing")
@@ -187,7 +192,7 @@ func TestAPIVerbE2EWithBasePath(t *testing.T) {
 
 	callSnapshot := func() bool {
 		cmd := procutil.Command(bin,
-			"api", "--config", cfgPath, "GET", "/api/v1/snapshot")
+			"api", "--config", cfgPath, "GET", "/snapshot")
 		var stdout bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = io.Discard

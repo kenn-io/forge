@@ -13,16 +13,6 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-type WorkPriority int
-
-const (
-	PriorityNormalIndex WorkPriority = iota
-	PriorityNotificationRefresh
-	PriorityActiveDetail
-	PriorityFullArchive
-	PriorityDiscoveryInventory
-)
-
 type Scheduler struct{}
 
 func NewScheduler() *Scheduler { return &Scheduler{} }
@@ -64,11 +54,6 @@ func (s *Scheduler) Run(
 }
 
 var errAdmissionDeferred = errors.New("archive request deferred by admission")
-
-// errRequestPreempted marks an admitted provider request that live work
-// canceled mid-flight. It is an admission deferral for retry purposes, but the
-// provider was reached, so the pass counts as work.
-var errRequestPreempted = fmt.Errorf("archive request preempted by live work: %w", errAdmissionDeferred)
 
 // An admission denial may follow earlier provider work in the same pass.
 type admissionDeferredError struct {
@@ -267,8 +252,8 @@ func (s *Service) runNextInventoryWork(
 
 // finishWork converts a work unit's outcome into the pass result. A unit that
 // reached the provider is work, even when a budget or feature deferral stops
-// it or live work preempts the request: other repositories on the host
-// may be eligible right now, so the loop keeps its pacing interval. Only an
+// it: other repositories on the host may be eligible right now, so the loop
+// keeps its pacing interval. Only an
 // admission denial before any provider request is idle: nothing was attempted
 // and the deferral names when to look again, so the worker may back off.
 func (s *Service) finishWork(err error) (bool, error) {
@@ -279,8 +264,6 @@ func (s *Service) finishWork(err error) (bool, error) {
 	switch {
 	case deferredOK:
 		return deferred.providerAttempted, nil
-	case errors.Is(err, errRequestPreempted):
-		return true, nil
 	case errors.Is(err, errAdmissionDeferred):
 		return false, nil
 	}
@@ -417,15 +400,4 @@ func archiveFeatureReadAttemptCost(kind platform.Kind, itemType db.ArchiveItemTy
 		logicalRequests++ // repository metadata confirmation after a candidate feature error
 	}
 	return archiveAttemptCost(logicalRequests)
-}
-
-// archivePreempted reports whether a provider read failed because live
-// work preempted the admitted request context (canceled between admit and
-// release), not because the caller itself is shutting down. Preemption is
-// not a failure: the caller must record nothing and leave the work
-// immediately claimable. requestCtx must be sampled before release() is
-// called, since release always cancels its context and would otherwise
-// make every request look preempted.
-func archivePreempted(outerCtx, requestCtx context.Context) bool {
-	return requestCtx.Err() != nil && outerCtx.Err() == nil
 }

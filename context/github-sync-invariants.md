@@ -275,7 +275,6 @@ PR timeline storage is intentionally selective.
 - Keep one canonical merged lifecycle row: authored rows dominate actorless ones, and detail
   synthesis treats any authored merge as canonical regardless of timestamp
   (`internal/db/queries.go::upsertMREventsTx`).
-- Merged-actor provider reads are active-detail work and preempt archive leases.
 - Actor repairs must emit `pr_detail_refreshed` with canonical repository identity; broad
   `data_changed` does not refresh an open detail.
 
@@ -422,8 +421,8 @@ Archive worker:
   recurring deferral warning is the intended operator signal.
 - Worker passes resolve tolerantly: provider-classified failures are dropped per repository, but
   infrastructure errors surface (`internal/archive/service.go::resolveRepositoriesTolerant`).
-- The worker backs off while idle up to five minutes; completed syncs wake it, and only hosts that
-  denied or preempted archive work wake it on provider-work release (`internal/github/archive_sync.go::runArchiveLoop`).
+- The worker backs off while idle up to five minutes; completed syncs and quota window resets
+  wake it (`internal/github/archive_sync.go::runArchiveLoop`).
 - Archive scheduling is eventually consistent by maintainer decision: a late wake that delays
   eligible work until the next backoff pass is accepted. Do not add wake bookkeeping for it.
 - Archive code owns historical identity inventory only; hydration uses ordinary item sync, not
@@ -441,8 +440,7 @@ Archive pacing:
   ceiling neither enlarges nor shrinks the provider envelope.
 - An active registry with an incomplete or expired window defers as provider-quota-unknown; it
   never falls through to local pacing (`internal/github/archive_sync.go::Admit`).
-- Every other archive path spends local hourly surplus above `archiveLiveFloor`. Live work
-  preempts the archive lease.
+- Every other archive path spends local hourly surplus above `archiveLiveFloor`.
 - An unobserved archive reservation stays deducted until a current header accounts for it or the
   window rolls (`internal/github/quota.go::quotaTransport`).
 
@@ -497,8 +495,7 @@ selected separately by `(host, authenticated identity)`.
   establishes a user identity; their reads leave viewer permissions unknown
   (`platform/github/client_repository.go::Client.withViewerOverlay`).
 - Background requests on the write credential charge the write identity's budget; foreground
-  mutations are uncharged. Live work registers every principal it will touch, so a shared-PAT
-  archive is preempted (`internal/github/client.go::NewClient`).
+  mutations are uncharged (`internal/github/client.go::NewClient`).
 - The PAT viewer overlay is cached per repository and credential and revalidated by ETag on every
   read; do not replace it with a time-based cache (`platform/github/client_repository.go::Client.viewerRepoOverlay`).
 - Reload probes share one fresh installation-token cache per batch; reusing the live cache would

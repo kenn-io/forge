@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,7 +13,6 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 
 	gh "github.com/google/go-github/v93/github"
-	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -167,13 +165,7 @@ func (s *Syncer) SyncNotifications(ctx context.Context) error {
 	clients := s.notificationClients()
 	var errs []error
 	for _, entry := range clients {
-		providerWork := s.beginNotificationProviderWork(
-			ctx, entry.platform, entry.host, tracked,
-		)
-		err := s.syncNotificationsForHost(
-			ctx, entry.platform, entry.host, entry.client, tracked, providerWork,
-		)
-		providerWork.release()
+		err := s.syncNotificationsForHost(ctx, entry.platform, entry.host, entry.client, tracked)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -182,59 +174,6 @@ func (s *Syncer) SyncNotifications(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("mark closed linked notifications done: %w", err))
 	}
 	return errors.Join(errs...)
-}
-
-func (s *Syncer) beginNotificationProviderWork(
-	ctx context.Context,
-	kind platform.Kind,
-	host string,
-	tracked map[string]RepoRef,
-) *notificationProviderWork {
-	work := &notificationProviderWork{
-		syncer: s,
-		seen:   make(map[string]struct{}),
-	}
-	// A repository whose credential route cannot resolve registers nothing:
-	// its own wire calls fail closed at routing without upstream I/O and its
-	// per-repository sync reports the error. Aborting the whole host here
-	// would block healthy siblings from syncing and advancing their
-	// watermarks — the exact coupling per-repository watermarks remove.
-	for _, repo := range notificationTrackedRepos(string(kind), host, tracked) {
-		work.addRepo(ctx, repo)
-	}
-	return work
-}
-
-type notificationProviderWork struct {
-	syncer   *Syncer
-	seen     map[string]struct{}
-	releases []func()
-}
-
-func (w *notificationProviderWork) addRepo(ctx context.Context, repo RepoRef) {
-	identityRoutes := []bool{false}
-	if repoPlatform(repo) == platform.KindGitHub {
-		identityRoutes = append(identityRoutes, true)
-	}
-	for _, useWriteIdentity := range identityRoutes {
-		bucket, err := w.syncer.bucketKeyForRepo(repo, useWriteIdentity)
-		if err != nil {
-			continue
-		}
-		if _, ok := w.seen[bucket]; ok {
-			continue
-		}
-		w.seen[bucket] = struct{}{}
-		w.releases = append(w.releases, w.syncer.beginProviderWork(
-			ctx, bucket, archive.PriorityNotificationRefresh,
-		))
-	}
-}
-
-func (w *notificationProviderWork) release() {
-	for _, v := range slices.Backward(w.releases) {
-		v()
-	}
 }
 
 // notificationClient is the provider surface the notification sync
@@ -303,7 +242,6 @@ func (s *Syncer) syncNotificationsForHost(
 	host string,
 	client notificationClient,
 	tracked map[string]RepoRef,
-	providerWork *notificationProviderWork,
 ) error {
 	startedAt := time.Now().UTC()
 	trackedRepos := notificationTrackedRepos(string(kind), host, tracked)
@@ -328,7 +266,7 @@ func (s *Syncer) syncNotificationsForHost(
 	}
 	for _, bucket := range buckets {
 		if err := s.syncNotificationsForIdentity(
-			ctx, kind, host, client, bucket, groups[bucket], startedAt, providerWork,
+			ctx, kind, host, client, bucket, groups[bucket], startedAt,
 		); err != nil {
 			repoErrs = append(repoErrs, err)
 		}
@@ -352,7 +290,6 @@ func (s *Syncer) syncNotificationsForIdentity(
 	bucket string,
 	repos []RepoRef,
 	startedAt time.Time,
-	providerWork *notificationProviderWork,
 ) error {
 	platformName := string(kind)
 	fullSync := false
@@ -410,7 +347,7 @@ func (s *Syncer) syncNotificationsForIdentity(
 	var repoErrs []error
 	targets := map[string]*notificationRepoTarget{}
 	for _, repo := range repos {
-		target, err := s.prepareNotificationRepo(ctx, kind, host, client, repo, providerWork)
+		target, err := s.prepareNotificationRepo(ctx, kind, host, client, repo)
 		if err != nil {
 			repoErrs = append(repoErrs, err)
 			continue
@@ -576,7 +513,6 @@ func (s *Syncer) prepareNotificationRepo(
 	host string,
 	client notificationClient,
 	repo RepoRef,
-	providerWork *notificationProviderWork,
 ) (*notificationRepoTarget, error) {
 	if err := s.ensureNotificationIdentityBudget(repo, client); err != nil {
 		return nil, err
@@ -589,10 +525,6 @@ func (s *Syncer) prepareNotificationRepo(
 		)
 	}
 	repo = resolved
-	providerWork.addRepo(ctx, repo)
-	if s.afterNotificationRepoIdentityReconciled != nil {
-		s.afterNotificationRepoIdentityReconciled()
-	}
 	if providerRepo != nil {
 		if err := s.updateRepoSettingsFromProvider(ctx, observedRepoID, *providerRepo); err != nil {
 			return nil, fmt.Errorf(
@@ -877,30 +809,12 @@ func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platfo
 	if err != nil {
 		return err
 	}
-	// Read propagation makes refetch and mark-read wire requests, so it holds
-	// notification-priority provider work for each queued repository's
-	// effective identity; otherwise an admitted archive on the same principal
-	// could overlap these requests. Rows whose repository no longer resolves
-	// to a route register nothing: their wire calls fail closed at routing
-	// without upstream I/O.
 	bucketRepos, ackBuckets := s.ackRepoBuckets(kind, host, queued)
-	seenBuckets := make(map[string]struct{}, len(bucketRepos))
-	for _, notification := range queued {
-		bucket, ok := ackBuckets[notification.ID]
-		if !ok {
-			continue
-		}
-		if _, seen := seenBuckets[bucket]; seen {
-			continue
-		}
-		seenBuckets[bucket] = struct{}{}
-		defer s.beginProviderWork(ctx, bucket, archive.PriorityNotificationRefresh)()
-	}
 	// A rate limit stops only the credential that hit it. Its remaining rows
 	// are already deferred in the database, so skipping them here avoids
 	// re-spending an exhausted budget while repositories served by other
 	// credentials on this host keep propagating.
-	exhausted := make(map[string]struct{}, len(seenBuckets))
+	exhausted := make(map[string]struct{}, len(bucketRepos))
 	var rateLimitErr error
 	for _, notification := range queued {
 		bucket := ackBuckets[notification.ID]

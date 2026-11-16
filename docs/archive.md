@@ -11,7 +11,8 @@ Reports read only local data. They do not spend provider requests.
 GitHub archive sync uses spare REST and GraphQL quota from the credential
 reading the repository. Forge reserves 20% of each API's quota for live work,
 with a minimum reserve of 200. Archive work waits when a required API reaches
-that reserve or higher-priority sync work is active.
+that reserve. It does not wait for live sync: archive requests run beside sync
+passes and live refreshes, so a busy instance keeps archiving.
 
 Archive requests reserved against this provider quota do not spend the local
 `sync_budget_per_hour` allowance. They can proceed even when that local

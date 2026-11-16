@@ -11,7 +11,6 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 
 	gh "github.com/google/go-github/v93/github"
-	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -599,15 +598,6 @@ func (s *Syncer) syncIssueForRepo(
 	providerAttempted *bool,
 	options ...IssueSyncOptions,
 ) error {
-	if !IsArchiveSyncBudgetContext(ctx) {
-		bucket, err := s.bucketKeyForRepo(repo, false)
-		if err != nil {
-			return fmt.Errorf("resolve issue credential route for %s/%s: %w", repo.Owner, repo.Name, err)
-		}
-		releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)
-		defer releaseProviderWork()
-	}
-
 	var repoID int64
 	var probe repositoryFeatureProbe
 	if len(options) > 0 && options[0].PagePoll {

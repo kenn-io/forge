@@ -17,7 +17,6 @@ import (
 	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
@@ -578,22 +577,6 @@ func TestSupersededReadCannotVouchForTheProbe(t *testing.T) {
 	assert.Equal(int64(2), h.fullReads.Load(), "a superseded read leaves the next pass reading in full")
 	h.pass(t)
 	assert.Equal(int64(2), h.fullReads.Load(), "a read that applied vouches again")
-}
-
-func TestFreshnessProbeIsActiveDetailWork(t *testing.T) {
-	h := newWatchedFreshnessHarness(t)
-	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "app"}
-	bucket, err := h.syncer.bucketKeyForRepo(repo, false)
-	require.NoError(t, err)
-	var archiveYields atomic.Bool
-	h.gql.set(func(s *freshnessGraphQLServer) {
-		s.onProbe = func() {
-			archiveYields.Store(h.syncer.higherPriorityProviderWorkActive(bucket, archive.PriorityFullArchive))
-		}
-	})
-
-	h.pass(t)
-	assert.True(t, archiveYields.Load(), "archive work must see the probe while it runs")
 }
 
 // drainFreshnessClient reuses the conditional parent fixtures for both item kinds.

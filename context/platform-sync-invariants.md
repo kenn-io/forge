@@ -326,12 +326,11 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 - Lifecycle details are marked checked only after provider completeness gates pass.
 - Authentication and repository-blocked errors defer all archive work until an explicit
   retry clears the repository error (`internal/archive/scheduler.go::archiveRepoDeferred`).
-- Archive admission is provider-host scoped, and index, notification, and active-detail
-  work outrank archive requests, preempting them before provider I/O
+- Archive admission is paced by provider capacity alone: quota above the archive reserve,
+  or local surplus above the live floor. Archive requests run beside live sync on the same
+  credential. Never make archive work wait for a sync pass or live request, and never cancel
+  it for one: a busy instance always has live work in flight
   (`internal/github/archive_sync.go::Admit`).
-- Split-auth live work holds every credential identity it may spend; register work
-  inside shared execution functions so no entry point bypasses admission
-  (`internal/github/notifications_sync.go::notificationProviderWork`).
 - Archive admission requires the declared minimum cost; gitealike merge-request reads
   may exceed the estimate to finish their atomic dataset.
 - Detailed reports use schema `kenn-forge-archive-report/1` with half-open UTC windows;

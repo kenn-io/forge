@@ -10,7 +10,6 @@ import (
 
 	"go.kenn.io/forge/internal/platformdb"
 
-	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 )
@@ -57,12 +56,7 @@ func (s *Syncer) reconcileArchivedRepos(
 			skipped = append(skipped, repo.Owner+"/"+repo.Name)
 			continue
 		}
-		// Register provider work so an admitted archive request on the
-		// same credential is preempted instead of overlapping the
-		// refresh, matching the coordination live repo syncs get.
-		release := s.beginProviderWork(ctx, bucket, archive.PriorityNormalIndex)
 		resolved, repoID, snapshot, err := s.reconcileRepoIdentityObservation(ctx, repo, true)
-		release()
 		if err != nil {
 			slog.Debug("archived repo metadata refresh failed",
 				"repo", repo.Owner+"/"+repo.Name, "err", err,

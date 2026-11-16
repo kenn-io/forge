@@ -11,7 +11,6 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 
 	gh "github.com/google/go-github/v93/github"
-	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -422,15 +421,6 @@ func (s *Syncer) syncMRForRepoResolved(
 	if lifecyclePersisted != nil {
 		*lifecyclePersisted = false
 	}
-	if !IsArchiveSyncBudgetContext(ctx) {
-		bucket, err := s.bucketKeyForRepo(repo, false)
-		if err != nil {
-			return fmt.Errorf("resolve detail credential route for %s/%s: %w", repo.Owner, repo.Name, err)
-		}
-		releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)
-		defer releaseProviderWork()
-	}
-
 	owner := repo.Owner
 	name := repo.Name
 	mrReader, err := s.mergeRequestReaderFor(repo)

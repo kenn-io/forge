@@ -3258,6 +3258,15 @@
 
   function handleSessionExit(session: RuntimeSession): void {
     if (session.workspace_id !== workspaceId) return;
+    // A chat whose agent died is parked under the same session and opens again
+    // from its saved transcript, so only the runtime read can say it is gone.
+    // Its slot is unmounted, not closed: the pool dropped the slot's claim, and
+    // the read mounts a fresh one while the chat is still shown.
+    if (session.kind === "acp") {
+      unmountSessionTerminal(session.key);
+      requestRuntime({ force: true });
+      return;
+    }
     markSessionClosed(session);
     unmountSessionTerminal(session.key);
     const terminalGroups = closeSessionInTerminalGroups(

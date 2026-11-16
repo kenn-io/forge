@@ -116,7 +116,7 @@ func TestRateLimitedGitHubHostStartsAfterReset(t *testing.T) {
 	h := startDegraded(t, scriptedIdentityResolver{calls: calls, errs: []error{
 		&gh.RateLimitError{
 			Rate:     gh.Rate{Reset: gh.Timestamp{Time: reset}},
-			Response: identityLookupResponse(http.StatusForbidden),
+			Response: identityLookupResponse(http.StatusForbidden), //nolint:bodyclose // identityLookupResponse constructs metadata with a nil body.
 			Message:  "API rate limit exceeded",
 		},
 	}}, now)
@@ -319,7 +319,7 @@ func TestRecoveredHostGetsCurrentBudgetCeiling(t *testing.T) {
 	h := startDegraded(t, scriptedIdentityResolver{calls: calls, errs: []error{
 		&gh.RateLimitError{
 			Rate:     gh.Rate{Reset: gh.Timestamp{Time: now.Add(time.Minute)}},
-			Response: identityLookupResponse(http.StatusForbidden),
+			Response: identityLookupResponse(http.StatusForbidden), //nolint:bodyclose // identityLookupResponse constructs metadata with a nil body.
 			Message:  "API rate limit exceeded",
 		},
 	}}, now)
@@ -345,7 +345,7 @@ func TestRejectedGitHubCredentialStaysUnavailable(t *testing.T) {
 	calls := &atomic.Int32{}
 	h := startDegraded(t, scriptedIdentityResolver{calls: calls, errs: []error{
 		&gh.ErrorResponse{
-			Response: identityLookupResponse(http.StatusUnauthorized),
+			Response: identityLookupResponse(http.StatusUnauthorized), //nolint:bodyclose // identityLookupResponse constructs metadata with a nil body.
 			Message:  "Bad credentials",
 		},
 	}}, now)
@@ -383,7 +383,7 @@ func TestClassifyProviderStartFailure(t *testing.T) {
 	}, {
 		name: "secondary rate limit",
 		err: &gh.AbuseRateLimitError{
-			Response:   identityLookupResponse(http.StatusForbidden),
+			Response:   identityLookupResponse(http.StatusForbidden), //nolint:bodyclose // identityLookupResponse constructs metadata with a nil body.
 			RetryAfter: new(90 * time.Second),
 		},
 		want: providerStartFailure{

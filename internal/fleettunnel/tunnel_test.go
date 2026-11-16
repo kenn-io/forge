@@ -117,9 +117,12 @@ func TestHubWebSocketUpgradesThroughTunnel(t *testing.T) {
 		_ = conn.Write(r.Context(), kind, append([]byte("echo "), message...))
 	}))
 
-	conn, _, err := websocket.Dial(t.Context(), "wss://spoke.invalid/ws/v1/terminal", &websocket.DialOptions{
+	conn, resp, err := websocket.Dial(t.Context(), "wss://spoke.invalid/ws/v1/terminal", &websocket.DialOptions{
 		HTTPClient: &http.Client{Transport: hub.registry.Transport(testNodeID, nil, false)},
 	})
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(t, err)
 	defer conn.CloseNow()
 	require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte("hello")))

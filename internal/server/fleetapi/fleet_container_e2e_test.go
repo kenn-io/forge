@@ -949,6 +949,7 @@ func fleetContainerWebSocketReadUntil(
 		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + token}},
 	})
 	if err != nil && resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
 		body, readErr := io.ReadAll(resp.Body)
 		require.NoError(t, readErr)
 		require.NoError(t, err, string(body))
@@ -971,6 +972,7 @@ func fleetContainerWebSocketWriteRead(
 		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + token}},
 	})
 	if err != nil && resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
 		body, readErr := io.ReadAll(resp.Body)
 		require.NoError(t, readErr)
 		require.NoError(t, err, string(body))

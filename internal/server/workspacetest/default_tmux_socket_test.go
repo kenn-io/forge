@@ -66,7 +66,10 @@ func TestWorkspaceUnconfiguredTmuxUsesForgeSocketE2E(t *testing.T) { //nolint:pa
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
 		"/ws/v1/workspaces/" + ws.ID + "/terminal?cols=80&rows=24"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil && resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 

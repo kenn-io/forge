@@ -146,7 +146,10 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	serve()
 	defer func() { server.Close() }()
 	dial := func(path string) *websocket.Conn {
-		conn, _, err := terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/workspaces/"+ws.ID+path, nil, nil) //nolint:bodyclose // the upgraded response has no body
+		conn, response, err := terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/workspaces/"+ws.ID+path, nil, nil)
+		if err != nil && response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
 		require.NoError(err)
 		return conn
 	}
@@ -242,7 +245,10 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	require.NotEmpty(activity.LiveReportsForWorkspace(worktree, []string{agent.Key}), "stopping must keep the saved conversation")
 
 	// Nothing but a page view resumes an agent: sockets, plain reads and tools only list.
-	_, _, err = terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/workspaces/"+ws.ID+"/runtime/sessions/"+agent.Key+"/terminal?resize_active=1", nil, nil) //nolint:bodyclose // a refused upgrade has no body to drain
+	_, dialResponse, err := terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/workspaces/"+ws.ID+"/runtime/sessions/"+agent.Key+"/terminal?resize_active=1", nil, nil)
+	if err != nil && dialResponse != nil && dialResponse.Body != nil {
+		_ = dialResponse.Body.Close()
+	}
 	require.Error(err, "a pane attaching to a stopped agent finds nothing to attach to")
 	listed, err := handler.GetWorkspaceRuntimeService(ctx, ws.ID, false)
 	require.NoError(err)
@@ -279,7 +285,10 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	awaitResume(handler, ws.ID)
 	assert.True(running(agent.Key))
 	assert.False(running(shell.Key), "a page view leaves a stopped shell for its pane to open")
-	_, _, err = terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/workspaces/"+ws.ID+"/runtime/sessions/"+shell.Key+"/terminal?resize_active=0", nil, nil) //nolint:bodyclose // a refused upgrade has no body to drain
+	_, dialResponse, err = terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/workspaces/"+ws.ID+"/runtime/sessions/"+shell.Key+"/terminal?resize_active=0", nil, nil)
+	if err != nil && dialResponse != nil && dialResponse.Body != nil {
+		_ = dialResponse.Body.Close()
+	}
 	require.Error(err, "a hidden pane reconnecting finds nothing to attach to")
 	assert.False(running(shell.Key), "a hidden pane must not start a stopped shell")
 	shellPane := dial("/runtime/sessions/" + shell.Key + "/terminal?resize_active=1")

@@ -99,7 +99,7 @@ func TestAPIAuthCookieBootstrapUsesTrustedHTTPS(t *testing.T) {
 	require := require.New(t)
 	ts := newTrustedProxyAuthTestServer(t)
 
-	response := authGet(t, ts, "/?auth_token=secret-token", func(request *http.Request) {
+	response := authGet(t, ts, "/?auth_token=secret-token", func(request *http.Request) { //nolint:bodyclose // authGet owns response cleanup through t.Cleanup.
 		request.Header.Set("X-Forwarded-Host", "forge.example.test")
 		request.Header.Set("X-Forwarded-Proto", "https")
 	})
@@ -115,7 +115,7 @@ func TestAPIAuthCookieBootstrapIgnoresUntrustedHTTPSHeader(t *testing.T) {
 	require := require.New(t)
 	ts := newAuthTestServer(t, "secret-token")
 
-	response := authGet(t, ts, "/?auth_token=secret-token", func(request *http.Request) {
+	response := authGet(t, ts, "/?auth_token=secret-token", func(request *http.Request) { //nolint:bodyclose // authGet owns response cleanup through t.Cleanup.
 		request.Header.Set("X-Forwarded-Proto", "https")
 	})
 	require.Equal(http.StatusSeeOther, response.StatusCode)

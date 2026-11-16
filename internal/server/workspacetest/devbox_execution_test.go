@@ -164,7 +164,10 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 	attach := func() *websocket.Conn {
 		t.Helper()
 		url := "ws" + strings.TrimPrefix(controllerHTTP.URL, "http") + "/ws/v1/devboxes/fixture/workspaces/" + ws.ID + "/runtime/sessions/" + session.Key + "/terminal?cols=100&rows=30"
-		conn, _, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer controller-bearer"}}})
+		conn, resp, err := websocket.Dial(ctx, url, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer controller-bearer"}}})
+		if err != nil && resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
 		require.NoError(err)
 		return conn
 	}

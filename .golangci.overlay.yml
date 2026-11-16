@@ -58,8 +58,6 @@ linters:
     - perfsprint
     - mirror
     - gocritic
-    # kenn-io/forge#1153. Do not close a successful websocket.Dial body.
-    - bodyclose
   exclusions:
     rules:
       - linters:

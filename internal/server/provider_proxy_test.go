@@ -1350,7 +1350,7 @@ func getProxiedMedia(t *testing.T, spoke *httptest.Server) *http.Response {
 	require.NoError(t, err)
 	got := make(chan *http.Response, 1)
 	go func() {
-		response, err := spoke.Client().Do(request)
+		response, err := spoke.Client().Do(request) //nolint:bodyclose // ownership passes through got to the receiving test cleanup.
 		assert.NoError(t, err)
 		got <- response
 	}()
@@ -1370,7 +1370,7 @@ func TestProviderProxySendsMediaHeadersBeforeHubBodyEnds(t *testing.T) {
 	hub := startedMediaHub(t, func(r *http.Request) { <-r.Context().Done() })
 	spoke := newStreamingProxyTestServer(t, t.Context(), hub)
 
-	response := getProxiedMedia(t, spoke)
+	response := getProxiedMedia(t, spoke) //nolint:bodyclose // getProxiedMedia owns response cleanup through t.Cleanup.
 
 	assert.Equal(t, http.StatusOK, response.StatusCode)
 	assert.Equal(t, "video/mp4", response.Header.Get("Content-Type"))
@@ -1380,7 +1380,7 @@ func TestProviderProxyAbortsMediaWhenHubFailsMidStream(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	hub := startedMediaHub(t, func(*http.Request) { panic(http.ErrAbortHandler) })
 	spoke := newStreamingProxyTestServer(t, t.Context(), hub)
-	response := getProxiedMedia(t, spoke)
+	response := getProxiedMedia(t, spoke) //nolint:bodyclose // getProxiedMedia owns response cleanup through t.Cleanup.
 
 	_, err := io.ReadAll(response.Body)
 
@@ -1393,7 +1393,7 @@ func TestProviderProxyEndsMediaStreamWhenStopped(t *testing.T) {
 	hub := startedMediaHub(t, func(r *http.Request) { <-r.Context().Done() })
 	stop, cancel := context.WithCancel(t.Context())
 	spoke := newStreamingProxyTestServer(t, stop, hub)
-	response := getProxiedMedia(t, spoke)
+	response := getProxiedMedia(t, spoke) //nolint:bodyclose // getProxiedMedia owns response cleanup through t.Cleanup.
 
 	cancel()
 	_, err := io.ReadAll(response.Body)
@@ -1418,7 +1418,7 @@ func TestProviderProxyStopsWaitingOnHubMediaWhenStopped(t *testing.T) {
 		cancel()
 	}()
 
-	response := getProxiedMedia(t, spoke)
+	response := getProxiedMedia(t, spoke) //nolint:bodyclose // getProxiedMedia owns response cleanup through t.Cleanup.
 
 	assert.Equal(t, http.StatusServiceUnavailable, response.StatusCode)
 }

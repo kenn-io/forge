@@ -677,7 +677,7 @@ func (s *Syncer) syncMRForRepoResolved(
 			return fmt.Errorf("clear stale CI for MR #%d: %w", number, err)
 		}
 		if !ciCleared {
-			return nil
+			return supersededDetailSync(ctx)
 		}
 	}
 
@@ -691,14 +691,14 @@ func (s *Syncer) syncMRForRepoResolved(
 			ghPR, normalized,
 		)
 		if errors.Is(diffErr, errParentSnapshotAdvanced) {
-			return nil
+			return supersededDetailSync(ctx)
 		}
 
 		applied, err := s.refreshMRDetailSnapshot(
 			ctx, repo, repoID, mrID, revision, number, normalized, existing, ghPR, lifecyclePersisted,
 		)
 		if errors.Is(err, errParentSnapshotAdvanced) {
-			return nil
+			return supersededDetailSync(ctx)
 		}
 		if err != nil || !applied {
 			return err
@@ -714,7 +714,7 @@ func (s *Syncer) syncMRForRepoResolved(
 			normalized, true,
 		)
 		if errors.Is(diffErr, errParentSnapshotAdvanced) {
-			return nil
+			return supersededDetailSync(ctx)
 		}
 
 		var pending bool
@@ -724,7 +724,7 @@ func (s *Syncer) syncMRForRepoResolved(
 		)
 		if err != nil {
 			if errors.Is(err, errParentSnapshotAdvanced) {
-				return nil
+				return supersededDetailSync(ctx)
 			}
 			return err
 		}

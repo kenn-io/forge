@@ -177,3 +177,16 @@ func livenessHeadForRound(normalized, existing *db.MergeRequest) string {
 }
 
 var errParentSnapshotAdvanced = errors.New("provider parent snapshot advanced during child refresh")
+
+// supersededDetailSync is the result of a detail sync that stopped because
+// another write advanced the item before this sync saved the item's history.
+// Live sync drops the read and keeps what is stored. Archive hydration reads
+// an item once, and the write that won may have saved no history, as when a
+// sync pass records that an item closed. It reports the loss, so the item
+// stays pending and is read again.
+func supersededDetailSync(ctx context.Context) error {
+	if IsArchiveSyncBudgetContext(ctx) {
+		return errParentSnapshotAdvanced
+	}
+	return nil
+}

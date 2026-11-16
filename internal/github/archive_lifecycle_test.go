@@ -454,6 +454,174 @@ func TestArchiveHydrationKeepsIncompleteMergedGitHubPRFailed(t *testing.T) {
 	assert.Contains(*progress.LastErrorDetail, "files_changed")
 }
 
+// A sync pass that notices an item closed records the closure and saves no
+// comments or events. When that write lands while the archive is reading the
+// same item, the archive's history write is refused. The item must stay
+// pending until a later read saves the history.
+func TestArchiveItemStaysPendingWhenALiveCloseUpdateSupersedesItsHistory(t *testing.T) {
+	closedAt := time.Date(2026, 8, 4, 11, 0, 0, 0, time.UTC)
+	const closingBody = "fixed in the last release"
+	closing := &gh.IssueComment{
+		ID: new(int64(9001)), Body: new(closingBody),
+		HTMLURL:   new("https://github.com/acme/widget/issues/7#issuecomment-9001"),
+		User:      &gh.User{Login: new("maintainer")},
+		CreatedAt: makeTimestamp(closedAt), UpdatedAt: makeTimestamp(closedAt),
+	}
+	issue := buildOpenIssue(7, closedAt)
+	issue.State = new("closed")
+	issue.ClosedAt = makeTimestamp(closedAt)
+	pr := buildOpenPR(7, closedAt)
+	pr.State = new("closed")
+	pr.ClosedAt = makeTimestamp(closedAt)
+
+	tests := []struct {
+		name            string
+		itemType        db.ArchiveItemType
+		client          *mockClient
+		issues          []*gh.Issue
+		pullRequests    []*gh.PullRequest
+		liveCloseUpdate func(context.Context, *Syncer, RepoRef, int64) error
+		storedBodies    func(context.Context, *db.DB, int64) ([]string, error)
+	}{
+		{
+			name:     "issue",
+			itemType: db.ArchiveItemTypeIssue,
+			client: &mockClient{getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+				return issue, nil
+			}},
+			issues: []*gh.Issue{issue},
+			liveCloseUpdate: func(ctx context.Context, s *Syncer, repo RepoRef, repoID int64) error {
+				return s.fetchAndUpdateClosedIssue(ctx, repo, repoID, 7)
+			},
+			storedBodies: func(ctx context.Context, database *db.DB, repoID int64) ([]string, error) {
+				stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+				if err != nil || stored == nil {
+					return nil, err
+				}
+				events, err := database.ListIssueEvents(ctx, stored.ID)
+				bodies := make([]string, 0, len(events))
+				for _, event := range events {
+					bodies = append(bodies, event.Body)
+				}
+				return bodies, err
+			},
+		},
+		{
+			name:         "merge request closed without merging",
+			itemType:     db.ArchiveItemTypeMergeRequest,
+			client:       &mockClient{singlePR: pr},
+			pullRequests: []*gh.PullRequest{pr},
+			liveCloseUpdate: func(ctx context.Context, s *Syncer, repo RepoRef, repoID int64) error {
+				return s.fetchAndUpdateClosed(ctx, repo, repoID, 7, false)
+			},
+			storedBodies: func(ctx context.Context, database *db.DB, repoID int64) ([]string, error) {
+				stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+				if err != nil || stored == nil {
+					return nil, err
+				}
+				events, err := database.ListMREvents(ctx, stored.ID)
+				bodies := make([]string, 0, len(events))
+				for _, event := range events {
+					bodies = append(bodies, event.Body)
+				}
+				return bodies, err
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			database := dbtest.Open(t)
+			now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+			ref := platform.RepoRef{
+				Platform: platform.KindGitHub, Host: "github.com",
+				Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+			}
+			tracked := RepoRef{
+				Platform: platform.KindGitHub, PlatformHost: "github.com",
+				Owner: ref.Owner, Name: ref.Name,
+			}
+			client := &archivePageMockClient{
+				mockClient: tt.client,
+				listInventoryIssuesPageFn: func(
+					context.Context, string, string, string, string, string,
+				) ([]*gh.Issue, string, bool, error) {
+					return tt.issues, "", true, nil
+				},
+				listInventoryPullRequestsPageFn: func(
+					context.Context, string, string, string, int,
+				) ([]*gh.PullRequest, bool, error) {
+					return tt.pullRequests, false, nil
+				},
+			}
+			tracker := NewPlatformRateTracker(database, "github", "github.com", "host", "rest")
+			tracker.UpdateFromRate(Rate{
+				Limit: 5000, Remaining: 4999, Reset: now.Add(30 * time.Minute),
+			})
+			syncer := NewSyncer(
+				map[string]Client{"github.com": client}, database, nil,
+				[]RepoRef{tracked}, time.Hour,
+				map[string]*RateTracker{"github.com": tracker}, testBudget(5000),
+			)
+			syncer.now = func() time.Time { return now }
+			service, err := archive.NewService(
+				database, syncer.clients, syncer, syncer, nil,
+				archiveLifecycleClock{now: func() time.Time { return now }},
+			)
+			require.NoError(err)
+			requireEnsureConfigured(t, service, []platform.RepoRef{ref})
+			_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+			require.NoError(err)
+			for range 2 {
+				require.NoError(service.RunEligible(t.Context())) // inventories
+			}
+			repo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
+			require.NoError(err)
+			require.NotNil(repo)
+
+			// The archive lists comments after it has saved the item itself, so a
+			// write made here lands between the two.
+			liveCloseUpdates := 0
+			tt.client.listIssueCommentsFn = func(
+				context.Context, string, string, int,
+			) ([]*gh.IssueComment, error) {
+				if liveCloseUpdates == 0 {
+					liveCloseUpdates++
+					if err := tt.liveCloseUpdate(t.Context(), syncer, tracked, repo.ID); err != nil {
+						return nil, err
+					}
+				}
+				return []*gh.IssueComment{closing}, nil
+			}
+
+			require.Error(service.RunEligible(t.Context()))
+			require.Equal(1, liveCloseUpdates)
+			progress, err := database.GetDatasetProgress(
+				t.Context(), repo.ID, tt.itemType, 7, db.ArchiveDatasetLookup,
+			)
+			require.NoError(err)
+			bodies, err := tt.storedBodies(t.Context(), database, repo.ID)
+			require.NoError(err)
+			assert.NotContains(bodies, closingBody)
+			assert.NotEqual(db.ArchiveDatasetProgressComplete, progress.Status)
+			assert.Nil(progress.CompletedAt)
+			require.NotNil(progress.NextRetryAt)
+
+			now = *progress.NextRetryAt
+			require.NoError(service.RunEligible(t.Context()))
+			progress, err = database.GetDatasetProgress(
+				t.Context(), repo.ID, tt.itemType, 7, db.ArchiveDatasetLookup,
+			)
+			require.NoError(err)
+			bodies, err = tt.storedBodies(t.Context(), database, repo.ID)
+			require.NoError(err)
+			assert.Contains(bodies, closingBody)
+			assert.Equal(db.ArchiveDatasetProgressComplete, progress.Status)
+		})
+	}
+}
+
 func TestArchiveItemCompletesWhileLiveSyncUsesTheSameCredential(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

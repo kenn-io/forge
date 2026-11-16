@@ -429,6 +429,11 @@ Archive worker:
   archive-specific lookup or persistence (`internal/github/archive_sync.go::SyncArchiveItem`).
 - Archive hydration bypasses parent-detail ETags, and treats timeline failures as hard errors
   where ordinary refresh is best-effort.
+- Archive hydration runs beside live sync, so a live write can advance an item between the
+  archive's parent write and its history write. Live sync drops a read that loses that race.
+  Archive hydration fails it, so the item stays pending and is read again: the write that won may
+  have saved no history, as a sync pass's close update does
+  (`internal/github/snapshots.go::supersededDetailSync`).
 - Post-hydration completeness uses the repository ID that sync resolved, never the caller's route.
 
 Archive pacing:

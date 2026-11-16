@@ -160,7 +160,7 @@ func (s *Syncer) fetchIssueDetail(
 	); err != nil {
 		calls++ // comments
 		if errors.Is(err, errParentSnapshotAdvanced) {
-			return calls, nil
+			return calls, supersededDetailSync(ctx)
 		}
 		if errors.Is(err, db.ErrRepositoryIdentityChanged) {
 			return calls, nil
@@ -343,7 +343,7 @@ func (s *Syncer) fetchProviderIssueDetail(
 			return calls, fmt.Errorf("replace provider issue comments for #%d: %w", number, commitErr)
 		}
 		if !applied {
-			return calls, nil
+			return calls, supersededDetailSync(ctx)
 		}
 	}
 

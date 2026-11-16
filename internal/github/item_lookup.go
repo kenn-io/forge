@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	gh "github.com/google/go-github/v93/github"
-	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -110,13 +109,6 @@ func (s *Syncer) SyncItemByNumber(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	bucket, err := s.bucketKeyForRepo(repo, false)
-	if err != nil {
-		return "", fmt.Errorf("resolve item credential route for %s/%s: %w", owner, name, err)
-	}
-	releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)
-	defer releaseProviderWork()
-
 	if repoPlatform(repo) != platform.KindGitHub {
 		return "", fmt.Errorf(
 			"sync item by number for %s/%s on %s/%s requires an item type",

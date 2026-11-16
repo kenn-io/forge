@@ -9,7 +9,6 @@ import (
 
 	"go.kenn.io/forge/internal/platformdb"
 
-	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -60,25 +59,6 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 // route the provider has since renamed.
 func (s *Syncer) syncRepoResolving(ctx context.Context, repo RepoRef, resolved *RepoRef) error {
 	ctx = WithSyncSpendKind(ctx, SyncSpendDiscovery)
-	bucket, err := s.bucketKeyForRepo(repo, false)
-	if err != nil {
-		return fmt.Errorf("resolve sync credential route for %s/%s: %w", repo.Owner, repo.Name, err)
-	}
-	releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityNormalIndex)
-	defer releaseProviderWork()
-	// Split-auth repository sync also issues a viewer-permission request on
-	// the write identity; register that principal too so an archive sharing
-	// the write PAT is preempted rather than running concurrently.
-	if writeIdentity, idErr := s.identityForRepo(repo, true); idErr == nil &&
-		writeIdentity.Principal != "" {
-		writeBucket := RateBucketKey(
-			string(repoPlatform(repo)), writeIdentity.Host, writeIdentity.Principal,
-		)
-		if writeBucket != bucket {
-			defer s.beginProviderWork(ctx, writeBucket, archive.PriorityNormalIndex)()
-		}
-	}
-
 	resolvedRef, repoID, resolvedRepo, err := s.reconcileRepoIdentityObservation(ctx, repo, true)
 	if err != nil {
 		return fmt.Errorf("resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err)

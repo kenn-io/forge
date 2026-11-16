@@ -11,17 +11,11 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v7"
-	"go.opentelemetry.io/otel"
 
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 )
-
-type archiveProviderRequest struct {
-	cancel context.CancelFunc
-	done   chan struct{}
-}
 
 type archiveRunner interface {
 	// RunPass performs one worker pass and reports whether it attempted
@@ -123,11 +117,6 @@ func (s *Syncer) Admit(
 		}}, nil
 	}
 	now := s.now().UTC()
-	if s.running.Load() {
-		probe.abandon()
-		retryAt := now.Add(time.Second)
-		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "normal sync is active"}, nil
-	}
 	keyRepo := RepoRef{
 		Platform:     ref.Platform,
 		PlatformHost: ref.Host,
@@ -141,12 +130,6 @@ func (s *Syncer) Admit(
 		return archive.AdmissionResult{}, err
 	}
 	key := RateBucketKey(string(repoPlatform(keyRepo)), identity.Host, identity.Principal)
-	if s.higherPriorityProviderWorkActive(key, archive.PriorityFullArchive) {
-		probe.abandon()
-		s.noteArchiveDenied(key)
-		retryAt := now.Add(time.Second)
-		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
-	}
 	tracker := s.hosts().rateTrackers[key]
 	var providerResetAt *time.Time
 	var providerPacingWindow *QuotaPacingWindow
@@ -161,7 +144,7 @@ func (s *Syncer) Admit(
 			detail := "provider rate reserve reached"
 			if !pacingKnown {
 				detail = "provider quota unknown"
-			} else if reset := pacingWindow.ArchiveRetryAt(cost); reset.After(now) {
+			} else if reset := pacingWindow.ArchiveRetryAt(cost, now); reset.After(now) {
 				retryAt = reset.UTC()
 			}
 			return archive.AdmissionResult{RetryAt: &retryAt, Detail: detail}, nil
@@ -184,10 +167,11 @@ func (s *Syncer) Admit(
 	}
 	available := 0
 	if providerPacingWindow != nil {
-		// Provider quota is authoritative: archive may spend everything above
-		// each pool's own archive reserve, and the local sync budget meters
-		// live sync only.
-		available = max(providerPacingWindow.ArchiveHeadroom, 0)
+		// Provider quota is authoritative, and the local sync budget meters
+		// live sync only. The falling floor admitted this item; now that it
+		// has started it may spend down to each pool's archive reserve, so an
+		// item larger than the room above the floor still finishes.
+		available = providerPacingWindow.ArchiveAllowance()
 	} else if budget != nil {
 		liveFloor := archiveLiveFloor(ref.Platform)
 		if resetAt == nil &&
@@ -205,13 +189,7 @@ func (s *Syncer) Admit(
 		}
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "archive surplus budget unavailable"}, nil
 	}
-	requestCtx, releaseProviderRequest, allowed := s.tryBeginArchiveProviderRequest(ctx, key)
-	if !allowed {
-		probe.abandon()
-		retryAt := now.Add(time.Second)
-		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
-	}
-	requestCtx = WithArchiveSyncBudget(requestCtx)
+	requestCtx := WithArchiveSyncBudget(ctx)
 	completeGitealikeMR := itemType == db.ArchiveItemTypeMergeRequest &&
 		(ref.Platform == platform.KindGitea || ref.Platform == platform.KindForgejo)
 	if !completeGitealikeMR {
@@ -220,7 +198,9 @@ func (s *Syncer) Admit(
 				requestCtx, available, identity, providerResources,
 			)
 		} else {
-			requestCtx = WithArchiveAttemptAllowance(requestCtx, available)
+			requestCtx = WithArchiveAttemptAllowance(
+				requestCtx, available, archiveLiveFloor(ref.Platform),
+			)
 		}
 	}
 	var completeOnce sync.Once
@@ -238,69 +218,18 @@ func (s *Syncer) Admit(
 			} else {
 				probe.release()
 			}
-			releaseProviderRequest()
 		})
 		return featureDeferred
 	}
 	// The declared cost is the admission minimum. Gitealike merge-request reads
-	// are atomic and data-complete, so they remain preemptible but are not cut
-	// off mid-dataset by the admission estimate. Other archive reads may use the
+	// are atomic and data-complete, so they are not cut off mid-dataset by the
+	// admission estimate. Other archive reads may use the
 	// currently available surplus without crossing the live floor.
 	return archive.AdmissionResult{
 		Allowed:  true,
 		Context:  requestCtx,
 		Complete: complete,
 	}, nil
-}
-
-// noteArchiveDenied records that live work on key turned an archive request
-// away, so releasing the host later wakes the archive worker.
-func (s *Syncer) noteArchiveDenied(key string) {
-	s.providerWorkMu.Lock()
-	s.markArchiveDeniedLocked(key)
-	s.providerWorkMu.Unlock()
-}
-
-func (s *Syncer) markArchiveDeniedLocked(key string) {
-	if s.archiveDeniedHosts == nil {
-		s.archiveDeniedHosts = make(map[string]struct{})
-	}
-	s.archiveDeniedHosts[key] = struct{}{}
-}
-
-func (s *Syncer) tryBeginArchiveProviderRequest(
-	ctx context.Context,
-	key string,
-) (context.Context, func(), bool) {
-	s.providerWorkMu.Lock()
-	if active := s.providerWork[key]; len(active) > 0 {
-		s.providerWorkMu.Unlock()
-		return nil, nil, false
-	}
-	if s.providerWork == nil {
-		s.providerWork = make(map[string]map[archive.WorkPriority]int)
-	}
-	s.providerWork[key] = map[archive.WorkPriority]int{archive.PriorityFullArchive: 1}
-	requestCtx, cancel := context.WithCancel(ctx)
-	done := make(chan struct{})
-	s.archiveProviderRequests[key] = archiveProviderRequest{cancel: cancel, done: done}
-	s.providerWorkMu.Unlock()
-
-	var once sync.Once
-	return requestCtx, func() {
-		once.Do(func() {
-			cancel()
-			s.providerWorkMu.Lock()
-			active := s.providerWork[key]
-			delete(active, archive.PriorityFullArchive)
-			if len(active) == 0 {
-				delete(s.providerWork, key)
-			}
-			delete(s.archiveProviderRequests, key)
-			close(done)
-			s.providerWorkMu.Unlock()
-		})
-	}, true
 }
 
 func archiveBudgetResetAt(tracker *RateTracker) *time.Time {
@@ -319,76 +248,6 @@ func archiveLiveFloor(kind platform.Kind) int {
 		floor += wireAttemptsPerRequest // one notification page
 	}
 	return floor
-}
-
-var providerWorkTracer = otel.Tracer("go.kenn.io/forge/internal/github")
-
-func (s *Syncer) beginProviderWork(ctx context.Context, key string, priority archive.WorkPriority) func() {
-	s.providerWorkMu.Lock()
-	if s.providerWork == nil {
-		s.providerWork = make(map[string]map[archive.WorkPriority]int)
-	}
-	active := s.providerWork[key]
-	if active == nil {
-		active = make(map[archive.WorkPriority]int)
-		s.providerWork[key] = active
-	}
-	active[priority]++
-	archiveRequest, waitForArchive := s.archiveProviderRequests[key]
-	if waitForArchive {
-		archiveRequest.cancel()
-		s.markArchiveDeniedLocked(key)
-	}
-	s.providerWorkMu.Unlock()
-	if waitForArchive {
-		// Live work yields the credential only after the cancelled archive
-		// request returns; trace the wait so it is not an unexplained gap.
-		_, span := providerWorkTracer.Start(ctx, "provider_work.wait_archive")
-		select {
-		case <-archiveRequest.done:
-		case <-ctx.Done():
-		}
-		span.End()
-	}
-
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			s.providerWorkMu.Lock()
-			active := s.providerWork[key]
-			active[priority]--
-			if active[priority] == 0 {
-				delete(active, priority)
-			}
-			hostFree := len(active) == 0
-			if hostFree {
-				delete(s.providerWork, key)
-			}
-			_, wake := s.archiveDeniedHosts[key]
-			if hostFree && wake {
-				delete(s.archiveDeniedHosts, key)
-			}
-			s.providerWorkMu.Unlock()
-			if hostFree && wake {
-				// This host turned archive work away while live work held it
-				// and the worker backed off; tell it the host is free again.
-				// Hosts that never denied archive work stay quiet, so a normal
-				// sync's stream of releases does not trigger denied passes.
-				s.WakeArchive()
-			}
-		})
-	}
-}
-
-func (s *Syncer) higherPriorityProviderWorkActive(key string, threshold archive.WorkPriority) bool {
-	s.providerWorkMu.Lock()
-	defer s.providerWorkMu.Unlock()
-	for priority, count := range s.providerWork[key] {
-		if count > 0 && priority < threshold {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *Syncer) runArchiveLoop(ctx context.Context, ready <-chan struct{}) {
@@ -458,9 +317,8 @@ func (s *Syncer) ArchiveItemSyncCost(kind platform.Kind, itemType db.ArchiveItem
 }
 
 // SyncArchiveItem runs archive hydration through the canonical live item
-// sync. The caller has already acquired archive admission, so the archive
-// budget context also prevents the live entry point from taking a nested
-// provider-work lease.
+// sync. The caller has already acquired archive admission, and the archive
+// budget context it returned meters every request the sync makes.
 func (s *Syncer) SyncArchiveItem(
 	ctx context.Context,
 	ref platform.RepoRef,

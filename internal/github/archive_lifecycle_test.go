@@ -235,24 +235,28 @@ func (*archiveWorkerProvider) ListIssueEvents(
 	return nil, nil
 }
 
-// preemptibleArchiveProvider blocks its first archive issue read until the
-// admitted request context is canceled, so a test can drive real live-work
-// preemption of an in-flight archive request. Subsequent reads succeed.
-type preemptibleArchiveProvider struct {
+// heldArchiveProvider holds its first issue read open until the test releases
+// it, so live sync can run while an archive request is in flight. A read whose
+// context is canceled fails. Subsequent reads succeed at once.
+type heldArchiveProvider struct {
 	*archiveWorkerProvider
 	readStarted chan struct{}
-	blockOnce   sync.Once
+	release     chan struct{}
+	holdOnce    sync.Once
 }
 
-func (p *preemptibleArchiveProvider) GetIssue(
+func (p *heldArchiveProvider) GetIssue(
 	ctx context.Context, ref platform.RepoRef, number int,
 ) (platform.Issue, error) {
-	blocked := false
-	p.blockOnce.Do(func() { blocked = true })
-	if blocked {
+	held := false
+	p.holdOnce.Do(func() { held = true })
+	if held {
 		close(p.readStarted)
-		<-ctx.Done()
-		return platform.Issue{}, ctx.Err()
+		select {
+		case <-p.release:
+		case <-ctx.Done():
+			return platform.Issue{}, ctx.Err()
+		}
 	}
 	return p.archiveWorkerProvider.GetIssue(ctx, ref, number)
 }
@@ -450,7 +454,248 @@ func TestArchiveHydrationKeepsIncompleteMergedGitHubPRFailed(t *testing.T) {
 	assert.Contains(*progress.LastErrorDetail, "files_changed")
 }
 
-func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T) {
+// A sync pass that notices an item closed records the closure and saves no
+// comments or events. When that write lands while the archive is reading the
+// same item, the archive loses a write: its history write when the closure
+// lands after it saved the item, or its item write when the closure lands
+// first. Either way the item must stay pending until a later read saves the
+// history.
+func TestArchiveItemStaysPendingWhenALiveCloseUpdateOvertakesItsRead(t *testing.T) {
+	closedAt := time.Date(2026, 8, 4, 11, 0, 0, 0, time.UTC)
+	const closingBody = "fixed in the last release"
+	closing := &gh.IssueComment{
+		ID: new(int64(9001)), Body: new(closingBody),
+		HTMLURL:   new("https://github.com/acme/widget/issues/7#issuecomment-9001"),
+		User:      &gh.User{Login: new("maintainer")},
+		CreatedAt: makeTimestamp(closedAt), UpdatedAt: makeTimestamp(closedAt),
+	}
+	openIssue := buildOpenIssue(7, closedAt.Add(-time.Hour))
+	closedIssue := buildOpenIssue(7, closedAt)
+	closedIssue.State = new("closed")
+	closedIssue.ClosedAt = makeTimestamp(closedAt)
+	openPR := buildOpenPR(7, closedAt.Add(-time.Hour))
+	closedPR := buildOpenPR(7, closedAt)
+	closedPR.State = new("closed")
+	closedPR.ClosedAt = makeTimestamp(closedAt)
+
+	items := []struct {
+		name     string
+		itemType db.ArchiveItemType
+		// client answers a read of the item with its closed copy, or with its
+		// open copy when stillOpen reports true.
+		client          func(stillOpen func() (bool, error)) *mockClient
+		listed          func(open bool) ([]*gh.Issue, []*gh.PullRequest)
+		liveCloseUpdate func(context.Context, *Syncer, RepoRef, int64) error
+		storedBodies    func(context.Context, *db.DB, int64) ([]string, error)
+	}{
+		{
+			name:     "issue",
+			itemType: db.ArchiveItemTypeIssue,
+			client: func(stillOpen func() (bool, error)) *mockClient {
+				return &mockClient{getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+					open, err := stillOpen()
+					if err != nil {
+						return nil, err
+					}
+					if open {
+						return openIssue, nil
+					}
+					return closedIssue, nil
+				}}
+			},
+			listed: func(open bool) ([]*gh.Issue, []*gh.PullRequest) {
+				if open {
+					return []*gh.Issue{openIssue}, nil
+				}
+				return []*gh.Issue{closedIssue}, nil
+			},
+			liveCloseUpdate: func(ctx context.Context, s *Syncer, repo RepoRef, repoID int64) error {
+				return s.fetchAndUpdateClosedIssue(ctx, repo, repoID, 7)
+			},
+			storedBodies: func(ctx context.Context, database *db.DB, repoID int64) ([]string, error) {
+				stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+				if err != nil || stored == nil {
+					return nil, err
+				}
+				events, err := database.ListIssueEvents(ctx, stored.ID)
+				bodies := make([]string, 0, len(events))
+				for _, event := range events {
+					bodies = append(bodies, event.Body)
+				}
+				return bodies, err
+			},
+		},
+		{
+			name:     "merge request closed without merging",
+			itemType: db.ArchiveItemTypeMergeRequest,
+			client: func(stillOpen func() (bool, error)) *mockClient {
+				return &mockClient{getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+					open, err := stillOpen()
+					if err != nil {
+						return nil, err
+					}
+					if open {
+						return openPR, nil
+					}
+					return closedPR, nil
+				}}
+			},
+			listed: func(open bool) ([]*gh.Issue, []*gh.PullRequest) {
+				if open {
+					return nil, []*gh.PullRequest{openPR}
+				}
+				return nil, []*gh.PullRequest{closedPR}
+			},
+			liveCloseUpdate: func(ctx context.Context, s *Syncer, repo RepoRef, repoID int64) error {
+				return s.fetchAndUpdateClosed(ctx, repo, repoID, 7, false)
+			},
+			storedBodies: func(ctx context.Context, database *db.DB, repoID int64) ([]string, error) {
+				stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+				if err != nil || stored == nil {
+					return nil, err
+				}
+				events, err := database.ListMREvents(ctx, stored.ID)
+				bodies := make([]string, 0, len(events))
+				for _, event := range events {
+					bodies = append(bodies, event.Body)
+				}
+				return bodies, err
+			},
+		},
+	}
+	orderings := []struct {
+		name string
+		// closesDuringItemRead closes the item after the provider has answered
+		// the archive's read of it, so the archive holds the open copy when
+		// live sync saves the closure. Otherwise the item is closed before the
+		// archive reads it, and live sync saves the closure after the archive
+		// has saved the item.
+		closesDuringItemRead bool
+	}{
+		{name: "closure saved after the archive saves the item"},
+		{name: "closure saved before the archive saves the item", closesDuringItemRead: true},
+	}
+	for _, item := range items {
+		for _, ordering := range orderings {
+			t.Run(item.name+"/"+ordering.name, func(t *testing.T) {
+				assert := assert.New(t)
+				require := require.New(t)
+				database := dbtest.Open(t)
+				now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+				ref := platform.RepoRef{
+					Platform: platform.KindGitHub, Host: "github.com",
+					Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+				}
+				tracked := RepoRef{
+					Platform: platform.KindGitHub, PlatformHost: "github.com",
+					Owner: ref.Owner, Name: ref.Name,
+				}
+
+				var syncer *Syncer
+				var repoID int64
+				liveCloseUpdates := 0
+				liveCloseUpdate := func() error {
+					liveCloseUpdates++
+					return item.liveCloseUpdate(t.Context(), syncer, tracked, repoID)
+				}
+				open := ordering.closesDuringItemRead
+				closeOnNextItemRead := false
+				mock := item.client(func() (bool, error) {
+					if !open || !closeOnNextItemRead {
+						return open, nil
+					}
+					// The provider has answered this read with the open copy.
+					// The item closes, and live sync saves the closure before
+					// the archive saves what it read.
+					open = false
+					return true, liveCloseUpdate()
+				})
+				// The archive lists comments after it has saved the item, so a
+				// write made here lands between the two.
+				closeOnNextCommentRead := false
+				mock.listIssueCommentsFn = func(
+					context.Context, string, string, int,
+				) ([]*gh.IssueComment, error) {
+					if closeOnNextCommentRead {
+						closeOnNextCommentRead = false
+						if err := liveCloseUpdate(); err != nil {
+							return nil, err
+						}
+					}
+					return []*gh.IssueComment{closing}, nil
+				}
+				listedIssues, listedPullRequests := item.listed(open)
+				client := &archivePageMockClient{
+					mockClient: mock,
+					listInventoryIssuesPageFn: func(
+						context.Context, string, string, string, string, string,
+					) ([]*gh.Issue, string, bool, error) {
+						return listedIssues, "", true, nil
+					},
+					listInventoryPullRequestsPageFn: func(
+						context.Context, string, string, string, int,
+					) ([]*gh.PullRequest, bool, error) {
+						return listedPullRequests, false, nil
+					},
+				}
+				tracker := NewPlatformRateTracker(database, "github", "github.com", "host", "rest")
+				tracker.UpdateFromRate(Rate{
+					Limit: 5000, Remaining: 4999, Reset: now.Add(30 * time.Minute),
+				})
+				syncer = NewSyncer(
+					map[string]Client{"github.com": client}, database, nil,
+					[]RepoRef{tracked}, time.Hour,
+					map[string]*RateTracker{"github.com": tracker}, testBudget(5000),
+				)
+				syncer.now = func() time.Time { return now }
+				service, err := archive.NewService(
+					database, syncer.clients, syncer, syncer, nil,
+					archiveLifecycleClock{now: func() time.Time { return now }},
+				)
+				require.NoError(err)
+				requireEnsureConfigured(t, service, []platform.RepoRef{ref})
+				_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+				require.NoError(err)
+				for range 2 {
+					require.NoError(service.RunEligible(t.Context())) // inventories
+				}
+				repo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
+				require.NoError(err)
+				require.NotNil(repo)
+				repoID = repo.ID
+
+				closeOnNextItemRead = ordering.closesDuringItemRead
+				closeOnNextCommentRead = !ordering.closesDuringItemRead
+				require.Error(service.RunEligible(t.Context()))
+				require.Equal(1, liveCloseUpdates)
+				progress, err := database.GetDatasetProgress(
+					t.Context(), repo.ID, item.itemType, 7, db.ArchiveDatasetLookup,
+				)
+				require.NoError(err)
+				bodies, err := item.storedBodies(t.Context(), database, repo.ID)
+				require.NoError(err)
+				assert.NotContains(bodies, closingBody)
+				assert.NotEqual(db.ArchiveDatasetProgressComplete, progress.Status)
+				assert.Nil(progress.CompletedAt)
+				require.NotNil(progress.NextRetryAt)
+
+				now = *progress.NextRetryAt
+				require.NoError(service.RunEligible(t.Context()))
+				require.Equal(1, liveCloseUpdates)
+				progress, err = database.GetDatasetProgress(
+					t.Context(), repo.ID, item.itemType, 7, db.ArchiveDatasetLookup,
+				)
+				require.NoError(err)
+				bodies, err = item.storedBodies(t.Context(), database, repo.ID)
+				require.NoError(err)
+				assert.Contains(bodies, closingBody)
+				assert.Equal(db.ArchiveDatasetProgressComplete, progress.Status)
+			})
+		}
+	}
+}
+
+func TestArchiveItemCompletesWhileLiveSyncUsesTheSameCredential(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -461,9 +706,10 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	}
 	_, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
-	provider := &preemptibleArchiveProvider{
+	provider := &heldArchiveProvider{
 		archiveWorkerProvider: &archiveWorkerProvider{ref: ref},
 		readStarted:           make(chan struct{}),
+		release:               make(chan struct{}),
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
@@ -473,16 +719,17 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	tracker := NewPlatformRateTracker(database, "github", ref.Host, "host", "rest")
 	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
 	budget := NewSyncBudget(5000)
-	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{{
+	tracked := RepoRef{
 		Platform: ref.Platform, PlatformHost: ref.Host,
 		Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
 		Key: ref.Key,
-	}}, time.Hour, map[string]*RateTracker{key: tracker}, map[string]*SyncBudget{key: budget})
+	}
+	syncer := NewSyncerWithRegistry(
+		registry, database, nil, []RepoRef{tracked}, time.Hour,
+		map[string]*RateTracker{key: tracker}, map[string]*SyncBudget{key: budget},
+	)
 	syncer.now = func() time.Time { return now }
 
-	// Real Syncer admission (not nil): the admitted archive request gets a real
-	// cancellable provider lease that live work can preempt, unlike a fake
-	// already-canceled admission.
 	service, err := archive.NewService(database, registry, syncer, syncer, nil, nil)
 	require.NoError(err)
 	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
@@ -496,47 +743,44 @@ func TestArchivePreemptedItemRecordsNoFailureAndCompletesOnNextPass(t *testing.T
 	require.NoError(err)
 	require.NotNil(repo)
 
-	// The archive pass delegates to the existing issue sync, which blocks in
-	// its canonical lookup until live work begins.
+	// A sync pass that overruns its interval is followed at once by the next
+	// one, so a busy instance always has a pass in flight. The archive must be
+	// admitted anyway.
+	syncer.running.Store(true)
 	hydrationDone := make(chan error, 1)
 	go func() { hydrationDone <- service.RunEligible(t.Context()) }()
 	select {
 	case <-provider.readStarted:
 	case <-time.After(2 * time.Second):
-		require.Fail("archive item sync did not start")
+		require.Fail("archive item sync did not start while a sync pass was running")
 	}
 
-	// beginProviderWork cancels the in-flight archive lease and waits for it to
-	// release; the hydration pass observes preemption and records nothing.
-	releaseLive := syncer.beginProviderWork(t.Context(), key, archive.PriorityActiveDetail)
+	// Live sync of the same item on the same credential runs to completion
+	// beside the archive request instead of canceling it.
+	providerAttempted := false
+	require.NoError(syncer.syncIssueForRepo(t.Context(), tracked, 1, &providerAttempted))
+	require.True(providerAttempted)
+	select {
+	case err := <-hydrationDone:
+		require.Failf("archive request ended early", "live sync must not end the archive request: %v", err)
+	default:
+	}
+
+	close(provider.release)
 	require.NoError(<-hydrationDone)
 
 	lookup, err := database.GetDatasetProgress(
 		t.Context(), repo.ID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
 	)
 	require.NoError(err)
-	assert.Equal(db.ArchiveDatasetProgressPending, lookup.Status)
-	assert.Zero(lookup.AttemptCount)
-
-	var lastErrorCode *string
-	var nextRetryAt *time.Time
-	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-		SELECT last_error_code, next_retry_at FROM forge_archive_repos WHERE repo_id = ?`, repo.ID,
-	).Scan(&lastErrorCode, &nextRetryAt))
-	assert.Nil(lastErrorCode)
-	assert.Nil(nextRetryAt)
-
-	// Live work releases; the next archive pass claims the still-pending item
-	// and completes hydration.
-	releaseLive()
-	require.NoError(service.RunEligible(t.Context()))
-
-	lookup, err = database.GetDatasetProgress(
-		t.Context(), repo.ID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup,
-	)
-	require.NoError(err)
 	assert.Equal(db.ArchiveDatasetProgressComplete, lookup.Status)
 	assert.NotNil(lookup.CompletedAt)
+
+	var lastErrorCode *string
+	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+		SELECT last_error_code FROM forge_archive_repos WHERE repo_id = ?`, repo.ID,
+	).Scan(&lastErrorCode))
+	assert.Nil(lastErrorCode)
 }
 
 func TestArchiveDisabledIssueInventoryCompletesUnsupportedWithoutBlockingMergeRequests(t *testing.T) {
@@ -1206,12 +1450,6 @@ func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 	require.NoError(err)
 	assert.False(denied.Allowed)
 	assert.Contains(denied.Detail, "reserve")
-
-	syncer.running.Store(true)
-	denied, err = syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
-	require.NoError(err)
-	assert.False(denied.Allowed)
-	assert.Contains(denied.Detail, "normal sync")
 }
 
 func TestGitHubArchiveAdmissionUsesCredentialRESTAndGraphQLPools(t *testing.T) {
@@ -1294,7 +1532,7 @@ func TestGitHubArchiveAdmissionUsesCredentialRESTAndGraphQLPools(t *testing.T) {
 	userAllowed.Complete(nil, false)
 }
 
-func TestGitHubArchiveAdmissionCapsAttemptAllowanceByProviderQuota(t *testing.T) {
+func TestGitHubArchiveAdmissionAllowsAStartedItemToSpendDownToTheReserve(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -1336,7 +1574,9 @@ func TestGitHubArchiveAdmissionCapsAttemptAllowanceByProviderQuota(t *testing.T)
 	require.NoError(err)
 	require.True(admission.Allowed)
 	t.Cleanup(func() { admission.Complete(nil, false) })
-	// remaining 4500 minus the limit/5 archive reserve (1000).
+	// Halfway through the window the archive floor is 3000, so 1500 is free
+	// to start items on. A started item is held to the limit/5 reserve of
+	// 1000 instead, so one too large for that 1500 still finishes.
 	for range 3500 {
 		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
 	}
@@ -1474,39 +1714,6 @@ func TestArchiveRampDenialRetriesWithinCurrentWindow(t *testing.T) {
 	assert.True(denied.RetryAt.Before(reset))
 }
 
-func TestArchiveAdmissionDefersToNotificationAndActiveDetailWork(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := dbtest.Open(t)
-	key := RateBucketKey("github", "github.test", "host")
-	now := time.Now().UTC()
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
-	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
-	syncer := NewSyncerWithRegistry(
-		nil, database, nil, nil, time.Hour,
-		map[string]*RateTracker{key: tracker},
-		map[string]*SyncBudget{key: NewSyncBudget(100)},
-	)
-	syncer.now = func() time.Time { return now }
-	ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.test", Owner: "acme", Name: "widget"}
-
-	for _, priority := range []archive.WorkPriority{
-		archive.PriorityNotificationRefresh,
-		archive.PriorityActiveDetail,
-	} {
-		release := syncer.beginProviderWork(t.Context(), key, priority)
-		denied, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
-		require.NoError(err)
-		assert.False(denied.Allowed)
-		assert.Contains(denied.Detail, "higher-priority sync work is active")
-		release()
-	}
-
-	allowed, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
-	require.NoError(err)
-	assert.True(allowed.Allowed)
-}
-
 func TestArchiveAdmissionDenialAbandonsExpiredFeatureProbeReservation(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -1532,11 +1739,10 @@ func TestArchiveAdmissionDenialAbandonsExpiredFeatureProbeReservation(t *testing
 	))
 	now = now.Add(repositoryFeatureProbeInterval)
 
-	syncer.running.Store(true)
+	syncer.hosts().budgets[key].Spend(100)
 	denied, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
 	require.NoError(err)
 	require.False(denied.Allowed)
-	syncer.running.Store(false)
 
 	first, due := syncer.beginRepositoryFeatureProbe(
 		t.Context(), repo, platform.RepositoryFeatureIssues,
@@ -1602,152 +1808,7 @@ func TestArchiveCompletionWithoutProviderAttemptAbandonsExpiredFeatureProbeReser
 	require.False(due)
 }
 
-func TestArchiveAdmissionLeaseSerializesProviderRequests(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	database := dbtest.Open(t)
-	key := RateBucketKey("github", "github.test", "host")
-	now := time.Now().UTC()
-	tracker := NewPlatformRateTracker(database, "github", "github.test", "host", "rest")
-	tracker.UpdateFromRate(Rate{Limit: 5000, Remaining: 4999, Reset: now.Add(time.Minute)})
-	syncer := NewSyncerWithRegistry(
-		nil, database, nil, nil, time.Hour,
-		map[string]*RateTracker{key: tracker},
-		map[string]*SyncBudget{key: NewSyncBudget(100)},
-	)
-	syncer.now = func() time.Time { return now }
-	ref := platform.RepoRef{
-		Platform: platform.KindGitHub, Host: "github.test", Owner: "acme", Name: "widget",
-	}
-
-	first, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
-	require.NoError(err)
-	require.True(first.Allowed)
-	require.NotNil(first.Complete)
-
-	second, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
-	require.NoError(err)
-	assert.False(second.Allowed)
-	assert.Contains(second.Detail, "higher-priority sync work is active")
-
-	first.Complete(nil, true)
-	first.Complete(nil, true)
-	third, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 1)
-	require.NoError(err)
-	require.True(third.Allowed)
-	require.NotNil(third.Complete)
-	third.Complete(nil, true)
-}
-
-func TestLiveProviderWorkCancelsAndWaitsForArchiveRequest(t *testing.T) {
-	require := require.New(t)
-	syncer := NewSyncerWithRegistry(nil, dbtest.Open(t), nil, nil, time.Hour, nil, nil)
-	key := RateBucketKey("github", "github.test", "host")
-	archiveCtx, releaseArchive, allowed := syncer.tryBeginArchiveProviderRequest(t.Context(), key)
-	require.True(allowed)
-
-	liveStarted := make(chan struct{})
-	liveDone := make(chan struct{})
-	go func() {
-		releaseLive := syncer.beginProviderWork(t.Context(), key, archive.PriorityActiveDetail)
-		close(liveStarted)
-		releaseLive()
-		close(liveDone)
-	}()
-
-	select {
-	case <-archiveCtx.Done():
-	case <-time.After(time.Second):
-		require.Fail("live work did not cancel archive request")
-	}
-	select {
-	case <-liveStarted:
-		require.Fail("live work started before archive lease released")
-	case <-time.After(25 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the archive lease blocks live work until releaseArchive
-	}
-
-	releaseArchive()
-	select {
-	case <-liveDone:
-	case <-time.After(time.Second):
-		require.Fail("live work did not proceed after archive lease released")
-	}
-}
-
-func TestBackfillMergedActorCancelsAndWaitsForArchiveRequest(t *testing.T) {
-	require := require.New(t)
-	ctx := t.Context()
-	database := dbtest.Open(t)
-	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
-	ref := platform.RepoRef{
-		Platform: platform.KindGitLab, Host: "gitlab.test",
-		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
-		Key: platform.RepositoryIDKey(1001),
-	}
-	provider := &blockingPriorityProvider{
-		kind: ref.Platform, host: ref.Host,
-		ref: ref, operation: priorityWorkMR,
-		started: make(chan struct{}), release: make(chan struct{}),
-	}
-	releaseProvider := sync.OnceFunc(func() { close(provider.release) })
-	t.Cleanup(releaseProvider)
-	registry, err := platform.NewRegistry(provider)
-	require.NoError(err)
-	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform: string(ref.Platform), PlatformHost: ref.Host,
-		Key: platform.RepositoryIDKey(1001), Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
-	})
-	require.NoError(err)
-	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID: repoID, PlatformID: 7, PlatformExternalID: "mr-7", Number: 7,
-		Title: "Synthetic MR", State: db.MergeRequestStateMerged,
-		CreatedAt: now, UpdatedAt: now, LastActivityAt: now, MergedAt: &now,
-	})
-	require.NoError(err)
-	key := RateBucketKey(string(ref.Platform), ref.Host, "host")
-	syncer := NewSyncerWithRegistry(
-		registry, database, nil, []RepoRef{{
-			Platform: ref.Platform, PlatformHost: ref.Host, Key: platform.RepositoryIDKey(1001),
-			Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
-		}}, time.Hour, nil, map[string]*SyncBudget{key: NewSyncBudget(10)},
-	)
-	t.Cleanup(syncer.Stop)
-
-	archiveCtx, releaseArchive, allowed := syncer.tryBeginArchiveProviderRequest(ctx, key)
-	require.True(allowed)
-	done := make(chan error, 1)
-	go func() {
-		_, backfillErr := syncer.BackfillMergedActorEventOnProvider(ctx, repoID, 7)
-		done <- backfillErr
-	}()
-
-	select {
-	case <-archiveCtx.Done():
-	case <-provider.started:
-		releaseProvider()
-		releaseArchive()
-		require.NoError(<-done)
-		require.Fail("merged-actor backfill overlapped an active archive request")
-	case <-time.After(time.Second):
-		releaseArchive()
-		require.Fail("merged-actor backfill did not cancel the active archive request")
-	}
-	select {
-	case <-provider.started:
-		require.Fail("merged-actor backfill started before the archive lease released")
-	case <-time.After(25 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the archive lease blocks the backfill until releaseArchive
-	}
-	releaseArchive()
-	select {
-	case <-provider.started:
-	case <-time.After(time.Second):
-		require.Fail("merged-actor backfill did not proceed after the archive lease released")
-	}
-	releaseProvider()
-	require.NoError(<-done)
-}
-
-func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
+func TestArchiveAdmissionProceedsWhileLiveSyncIsInFlight(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		operation priorityWorkOperation
@@ -1789,11 +1850,16 @@ func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
 			registry, err := platform.NewRegistry(provider)
 			require.NoError(err)
 			key := RateBucketKey(string(ref.Platform), ref.Host, "host")
+			tracker := NewPlatformRateTracker(database, string(ref.Platform), ref.Host, "host", "rest")
+			tracker.UpdateFromRate(Rate{
+				Limit: 5000, Remaining: 4999, Reset: time.Now().UTC().Add(time.Minute),
+			})
 			syncer := NewSyncerWithRegistry(
 				registry, database, nil, []RepoRef{{
 					Platform: ref.Platform, PlatformHost: ref.Host,
 					Owner: ref.Owner, Name: ref.Name, RepoPath: ref.RepoPath,
-				}}, time.Hour, nil, map[string]*SyncBudget{key: NewSyncBudget(10)},
+				}}, time.Hour,
+				map[string]*RateTracker{key: tracker}, map[string]*SyncBudget{key: NewSyncBudget(100)},
 			)
 			t.Cleanup(syncer.Stop)
 
@@ -1802,266 +1868,20 @@ func TestArchiveAdmissionDefersToForegroundSyncEntryPoints(t *testing.T) {
 			select {
 			case <-provider.started:
 			case <-time.After(5 * time.Second):
-				require.Fail("foreground provider call did not start")
+				require.Fail("live provider call did not start")
 			}
 			admission, err := syncer.Admit(
 				t.Context(), ref, db.ArchiveItemTypeIssue, 1,
 			)
 			require.NoError(err)
-			assert.False(admission.Allowed)
-			assert.Contains(admission.Detail, "higher-priority sync work is active")
+			assert.True(admission.Allowed, admission.Detail)
+			if admission.Complete != nil {
+				admission.Complete(nil, false)
+			}
 			close(provider.release)
 			require.NoError(<-done)
 		})
 	}
-}
-
-func TestSyncRepoRegistersReadAndWriteIdentityProviderWork(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	database := dbtest.Open(t)
-	started := make(chan struct{})
-	release := make(chan struct{})
-	var once sync.Once
-	mc := &mockClient{getRepositoryFn: func(context.Context, string, string) (*gh.Repository, error) {
-		once.Do(func() { close(started) })
-		<-release
-		return nil, errors.New("stop after identity resolution")
-	}}
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, nil, time.Hour, nil, nil)
-	t.Cleanup(syncer.Stop)
-	router, err := NewHostRouter("github.com", &Route{
-		Key:           RouteKey{Host: "github.com", Owner: "acme"},
-		Client:        mc,
-		ReadIdentity:  IdentityKey{Host: "github.com", Principal: "installation:11"},
-		WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:9"},
-	})
-	require.NoError(err)
-	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
-	repo := RepoRef{
-		Platform: platform.KindGitHub, PlatformHost: "github.com",
-		Owner: "acme", Name: "widget",
-	}
-
-	done := make(chan error, 1)
-	go func() { done <- syncer.syncRepo(t.Context(), repo) }()
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		require.Fail("repository sync did not reach the provider")
-	}
-	readBucket := RateBucketKey("github", "github.com", "installation:11")
-	writeBucket := RateBucketKey("github", "github.com", "user:9")
-	assert.True(
-		syncer.higherPriorityProviderWorkActive(readBucket, archive.PriorityFullArchive),
-		"read identity work must preempt archives during repository sync",
-	)
-	assert.True(
-		syncer.higherPriorityProviderWorkActive(writeBucket, archive.PriorityFullArchive),
-		"write identity work must preempt archives while the viewer permission overlay can run",
-	)
-	close(release)
-	require.Error(<-done)
-	assert.False(syncer.higherPriorityProviderWorkActive(readBucket, archive.PriorityFullArchive))
-	assert.False(syncer.higherPriorityProviderWorkActive(writeBucket, archive.PriorityFullArchive))
-}
-
-func TestSyncNotificationsPreemptsArchivesForSplitAndReconciledIdentities(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	database := dbtest.Open(t)
-	getRepoStarted := make(chan struct{})
-	listStarted := make(chan struct{})
-	releaseList := make(chan struct{})
-	var getRepoOnce sync.Once
-	var listOnce sync.Once
-	mc := &mockClient{
-		getRepositoryFn: func(context.Context, string, string) (*gh.Repository, error) {
-			getRepoOnce.Do(func() { close(getRepoStarted) })
-			owner := "acme"
-			name := "widget"
-			id := int64(1002)
-			return &gh.Repository{
-				ID: &id, Owner: &gh.User{Login: &owner}, Name: &name,
-			}, nil
-		},
-		listNotificationsFn: func(
-			context.Context, NotificationListOptions,
-		) ([]NotificationThread, bool, error) {
-			listOnce.Do(func() { close(listStarted) })
-			<-releaseList
-			return nil, false, nil
-		},
-	}
-	repo := RepoRef{
-		Platform: platform.KindGitHub, PlatformHost: "github.com",
-		Owner: "acme", Name: "widget",
-	}
-	syncer := NewSyncer(
-		map[string]Client{"github.com": mc}, database, nil,
-		[]RepoRef{repo}, time.Hour, nil, nil,
-	)
-	t.Cleanup(syncer.Stop)
-	router, err := NewHostRouter(
-		"github.com",
-		&Route{
-			Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: mc,
-			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "installation:22"},
-			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:8"},
-		},
-		&Route{
-			Key: RouteKey{Host: "github.com", Owner: "legacy"}, Client: mc,
-			ReadIdentity:  IdentityKey{Host: "github.com", Principal: "installation:11"},
-			WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:9"},
-		},
-	)
-	require.NoError(err)
-	router.RegisterRepoCredentialAlias("acme", "widget", RouteKey{
-		Host: "github.com", Owner: "legacy",
-	}, platform.RepositoryIDKey(1001))
-	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
-
-	oldReadBucket := RateBucketKey("github", "github.com", "installation:11")
-	oldWriteBucket := RateBucketKey("github", "github.com", "user:9")
-	newReadBucket := RateBucketKey("github", "github.com", "installation:22")
-	newWriteBucket := RateBucketKey("github", "github.com", "user:8")
-	oldArchiveCtx, releaseOldArchive, allowed := syncer.tryBeginArchiveProviderRequest(
-		t.Context(), oldReadBucket,
-	)
-	require.True(allowed)
-	t.Cleanup(releaseOldArchive)
-	newArchiveCtx, releaseNewArchive, allowed := syncer.tryBeginArchiveProviderRequest(
-		t.Context(), newReadBucket,
-	)
-	require.True(allowed)
-	t.Cleanup(releaseNewArchive)
-	t.Cleanup(func() {
-		select {
-		case <-releaseList:
-		default:
-			close(releaseList)
-		}
-	})
-
-	done := make(chan error, 1)
-	go func() { done <- syncer.SyncNotifications(t.Context()) }()
-	select {
-	case <-oldArchiveCtx.Done():
-	case <-time.After(time.Second):
-		require.Fail("notification sync did not preempt the initial read identity archive")
-	}
-	select {
-	case <-getRepoStarted:
-		require.Fail("repository verification started before the initial read archive released")
-	case <-time.After(25 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the old archive lease blocks repository verification until releaseOldArchive
-	}
-	releaseOldArchive()
-	select {
-	case <-getRepoStarted:
-	case <-time.After(time.Second):
-		require.Fail("notification sync did not begin repository verification")
-	}
-	select {
-	case <-newArchiveCtx.Done():
-	case <-time.After(time.Second):
-		require.Fail("notification sync did not preempt the reconciled read identity archive")
-	}
-	select {
-	case <-listStarted:
-		require.Fail("notification listing started before the reconciled read archive released")
-	case <-time.After(25 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the new archive lease blocks listing until releaseNewArchive
-	}
-	releaseNewArchive()
-	select {
-	case <-listStarted:
-	case <-time.After(time.Second):
-		require.Fail("notification sync did not begin listing notifications")
-	}
-	for bucket, label := range map[string]string{
-		oldReadBucket: "initial read", oldWriteBucket: "initial write",
-		newReadBucket: "reconciled read", newWriteBucket: "reconciled write",
-	} {
-		assert.True(
-			syncer.higherPriorityProviderWorkActive(bucket, archive.PriorityFullArchive),
-			label+" identity work must preempt archives during notification sync",
-		)
-	}
-	close(releaseList)
-	require.NoError(<-done)
-	for _, bucket := range []string{oldReadBucket, oldWriteBucket, newReadBucket, newWriteBucket} {
-		assert.False(syncer.higherPriorityProviderWorkActive(bucket, archive.PriorityFullArchive))
-	}
-}
-
-func TestProcessQueuedNotificationReadsHoldsWriteIdentityProviderWork(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	database := dbtest.Open(t)
-	repoID, err := reposeed.Seed(
-		t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"),
-	)
-	require.NoError(err)
-	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
-	queuedAt := now.Add(time.Minute)
-	number := 7
-	require.NoError(database.UpsertNotifications(t.Context(), []db.Notification{{
-		Platform:                 "github",
-		PlatformHost:             "github.com",
-		PlatformNotificationID:   "thread-1",
-		RepoID:                   &repoID,
-		RepoOwner:                "acme",
-		RepoName:                 "widget",
-		SubjectType:              "PullRequest",
-		SubjectTitle:             "Please review",
-		WebURL:                   "https://github.com/acme/widget/pull/7",
-		ItemNumber:               &number,
-		ItemType:                 "pr",
-		Reason:                   "mention",
-		SourceUpdatedAt:          now,
-		SyncedAt:                 now,
-		SourceAckQueuedAt:        &queuedAt,
-		SourceLastAcknowledgedAt: &queuedAt,
-	}}))
-	started := make(chan struct{})
-	release := make(chan struct{})
-	var once sync.Once
-	mc := &mockClient{
-		getNotificationThreadFn: func(context.Context, string) (NotificationThread, error) {
-			once.Do(func() { close(started) })
-			<-release
-			return NotificationThread{}, errors.New("refetch failed")
-		},
-	}
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, database, nil, nil, time.Hour, nil, nil)
-	t.Cleanup(syncer.Stop)
-	router, err := NewHostRouter("github.com", &Route{
-		Key:           RouteKey{Host: "github.com", Owner: "acme"},
-		Client:        mc,
-		ReadIdentity:  IdentityKey{Host: "github.com", Principal: "installation:11"},
-		WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:9"},
-	})
-	require.NoError(err)
-	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
-
-	done := make(chan error, 1)
-	go func() {
-		done <- syncer.ProcessQueuedNotificationReads(
-			t.Context(), platform.KindGitHub, "github.com", 10,
-		)
-	}()
-	select {
-	case <-started:
-	case <-time.After(5 * time.Second):
-		require.Fail("queued read propagation did not reach the provider")
-	}
-	writeBucket := RateBucketKey("github", "github.com", "user:9")
-	assert.True(
-		syncer.higherPriorityProviderWorkActive(writeBucket, archive.PriorityFullArchive),
-		"queued acknowledgment propagation must preempt archives on the write identity",
-	)
-	close(release)
-	require.NoError(<-done)
-	assert.False(syncer.higherPriorityProviderWorkActive(writeBucket, archive.PriorityFullArchive))
 }
 
 func TestSyncerConfiguredRepositoriesCarryFullProviderIdentity(t *testing.T) {
@@ -2165,18 +1985,21 @@ func newProviderQuotaAdmissionSyncer(
 	return syncer, registry, ref
 }
 
-// A fresh provider window grants the full surplus above the archive reserve
-// immediately: archive availability is a floor on remaining quota, not a ramp
-// across the window.
-func TestGitHubArchiveAdmissionGrantsFullSurplusAtWindowStart(t *testing.T) {
+// Archive work runs beside live sync, so it must not take in the first
+// minutes of a window what live sync needs for the rest of it. Early in the
+// window, quota that live sync has already used is not surplus yet, and the
+// archive waits only until its floor has fallen far enough, not for the reset.
+func TestGitHubArchiveAdmissionWaitsForSurplusEarlyInTheWindow(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
-	reset := now.Add(59 * time.Minute)
+	reset := now.Add(54 * time.Minute)
 	syncer, registry, ref := newProviderQuotaAdmissionSyncer(
 		t, now, NewSyncBudget(100000),
 	)
 	identity := IdentityKey{Host: "github.test", Principal: "user:7"}
+	// Six minutes in, live sync has used 500 of 5000. The floor has fallen 400
+	// from the limit, so the archive is 100 short, plus the 2 it asks for.
 	registry.UpdateSnapshot(identity, QuotaResourceREST,
 		Rate{Limit: 5000, Remaining: 4500, Reset: reset})
 	registry.UpdateSnapshot(identity, QuotaResourceGraphQL,
@@ -2184,18 +2007,83 @@ func TestGitHubArchiveAdmissionGrantsFullSurplusAtWindowStart(t *testing.T) {
 
 	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeIssue, 2)
 	require.NoError(err)
-	require.True(admission.Allowed)
-	t.Cleanup(func() { admission.Complete(nil, false) })
-	// remaining 4500 minus the limit/5 reserve (1000) is fully consumable.
-	for range 3500 {
-		assert.True(ConsumeArchiveAttemptAllowance(admission.Context))
-	}
-	assert.False(ConsumeArchiveAttemptAllowance(admission.Context))
+	require.False(admission.Allowed)
+	assert.Equal("provider rate reserve reached", admission.Detail)
+	require.NotNil(admission.RetryAt)
+	// The floor falls 4000 an hour: 102 takes about 92 seconds.
+	assert.WithinDuration(now.Add(92*time.Second), *admission.RetryAt, time.Second)
 }
 
 // The local sync budget meters live sync only; provider-paced archive
 // admission must not defer because live sync spent the configured hourly
 // ceiling while provider quota still has surplus above the archive reserve.
+// In steady state the room above the falling floor is about one item's
+// declared cost. An item that needs more requests than that must still finish
+// in one pass: cut off at the floor, it would lose the pages it had read and
+// be cut off again on every retry. It borrows from the rest of the window
+// instead, and the next item waits until the floor has fallen past the debt.
+func TestGitHubArchiveItemLargerThanThePacedSurplusFinishesAndTheNextWaits(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	start := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	reset := start.Add(30 * time.Minute)
+	current := start
+	syncer, registry, ref := newProviderQuotaAdmissionSyncer(
+		t, start, NewSyncBudget(100000),
+	)
+	registry.now = func() time.Time { return current }
+	syncer.now = func() time.Time { return current }
+	identity := IdentityKey{Host: "github.test", Principal: "user:7"}
+	// Halfway through the window the archive floor is 3000, so there is room
+	// to start exactly one item of the declared cost.
+	const cost = 26
+	for _, resource := range []QuotaResource{QuotaResourceREST, QuotaResourceGraphQL} {
+		registry.UpdateSnapshot(identity, resource,
+			Rate{Limit: 5000, Remaining: 3000 + cost, Reset: reset})
+	}
+	remaining := 3000 + cost
+	transport := &quotaTransport{
+		base: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			remaining--
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       http.NoBody,
+				Header:     quotaTestHeaders(5000, remaining, reset),
+				Request:    req,
+			}, nil
+		}),
+		registry: registry, identity: identity, resource: QuotaResourceREST,
+	}
+
+	admission, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeMergeRequest, cost)
+	require.NoError(err)
+	require.True(admission.Allowed)
+	for page := 1; page <= 60; page++ {
+		req, err := http.NewRequestWithContext(
+			admission.Context, http.MethodGet, "https://api.github.test/repos/acme/widget", nil,
+		)
+		require.NoError(err)
+		resp, err := transport.RoundTrip(req)
+		require.NoError(err, "page %d of a started item", page)
+		resp.Body.Close()
+	}
+	admission.Complete(nil, true)
+
+	// The item left the pool 34 below the floor. The next one needs that back
+	// plus its own 26, and the floor falls 4000 an hour: 54 seconds.
+	next, err := syncer.Admit(t.Context(), ref, db.ArchiveItemTypeMergeRequest, cost)
+	require.NoError(err)
+	require.False(next.Allowed)
+	require.NotNil(next.RetryAt)
+	assert.WithinDuration(start.Add(54*time.Second), *next.RetryAt, time.Second)
+
+	current = *next.RetryAt
+	next, err = syncer.Admit(t.Context(), ref, db.ArchiveItemTypeMergeRequest, cost)
+	require.NoError(err)
+	require.True(next.Allowed)
+	next.Complete(nil, false)
+}
+
 func TestGitHubArchiveAdmissionIgnoresLocalSyncBudget(t *testing.T) {
 	require := require.New(t)
 	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
@@ -2306,5 +2194,5 @@ var (
 	_ platform.IssueReader            = (*blockingPriorityProvider)(nil)
 	_ platform.MergeRequestReader     = (*blockingPriorityProvider)(nil)
 	_ platform.RepositoryReader       = (*blockingPriorityProvider)(nil)
-	_ platform.IssueReader            = (*preemptibleArchiveProvider)(nil)
+	_ platform.IssueReader            = (*heldArchiveProvider)(nil)
 )

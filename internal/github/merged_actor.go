@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"time"
 
-	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 )
@@ -175,15 +174,6 @@ func (s *Syncer) BackfillMergedActorEventOnProvider(
 		repo = routed
 	}
 	repo = repoRefFromStoredIdentity(repo, *stored)
-	bucket, err := s.bucketKeyForRepo(repo, false)
-	if err != nil {
-		return false, fmt.Errorf(
-			"resolve merged-actor credential route for %s/%s: %w",
-			repo.Owner, repo.Name, err,
-		)
-	}
-	releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)
-	defer releaseProviderWork()
 	return s.backfillMergedActorEvent(ctx, repo, repoID, number)
 }
 

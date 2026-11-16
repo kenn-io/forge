@@ -11540,48 +11540,6 @@ func TestRunOnceAdvancesCadenceForArchivedOnlyBucket(t *testing.T) {
 		"second pass inside the cadence gate must defer the archived refresh")
 }
 
-func TestRunOnceRegistersProviderWorkForArchivedRefresh(t *testing.T) {
-	require := require.New(t)
-	d := openTestDB(t)
-
-	var syncer *Syncer
-	var workActive atomic.Bool
-	ghMock := &mockClient{
-		openPRs:  []*gh.PullRequest{},
-		comments: []*gh.IssueComment{},
-		reviews:  []*gh.PullRequestReview{},
-		commits:  []*gh.RepositoryCommit{},
-		getRepositoryFn: func(
-			_ context.Context, owner, repo string,
-		) (*gh.Repository, error) {
-			workActive.Store(syncer.higherPriorityProviderWorkActive(
-				"github.com", archive.PriorityFullArchive,
-			))
-			id := testRepoID(owner, repo)
-			archived := true
-			return &gh.Repository{
-				ID:       &id,
-				Name:     &repo,
-				Owner:    &gh.User{Login: &owner},
-				Archived: &archived,
-			}, nil
-		},
-	}
-	repos := []RepoRef{
-		{Owner: "acme", Name: "frozen", PlatformHost: "github.com", Archived: true},
-	}
-	syncer = NewSyncer(
-		map[string]Client{"github.com": ghMock}, d, nil, repos,
-		time.Minute, nil, nil,
-	)
-
-	syncer.RunOnce(t.Context())
-
-	require.True(workActive.Load(),
-		"archived metadata refresh must register provider work so an "+
-			"admitted archive lease on the credential is preempted")
-}
-
 func TestReconcileRepoIdentityObservationReturnsMidflightArchivedFlip(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

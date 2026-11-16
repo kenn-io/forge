@@ -129,6 +129,57 @@ func TestBudgetTransportArchiveReservationUpdatesBothCountersAtomically(t *testi
 	assert.Equal(SyncSpendByKind{Archive: 1}, budget.Snapshot().SpentByKind)
 }
 
+func TestBudgetTransportArchiveLeavesTheLiveFloorToConcurrentLiveSpend(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := assert.New(t)
+	var upstream atomic.Int32
+	budget := NewSyncBudget(10)
+	transport := WrapSyncBudgetTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		upstream.Add(1)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       http.NoBody,
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	}), budget)
+	send := func(ctx context.Context) error {
+		req, err := http.NewRequestWithContext(
+			ctx, http.MethodGet, "https://gitlab.example.com/api/v4/projects/1", nil,
+		)
+		require.NoError(err)
+		resp, err := transport.RoundTrip(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
+		return err
+	}
+
+	// Admitted with nothing spent: the whole budget above a live floor of 3.
+	archiveCtx := WithArchiveAttemptAllowance(WithArchiveSyncBudget(t.Context()), 7, 3)
+	liveCtx := WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendDetail)
+
+	for range 2 {
+		require.NoError(send(archiveCtx))
+	}
+	// Live sync spends beside the archive request, which admission did not see.
+	for range 4 {
+		require.NoError(send(liveCtx))
+	}
+	require.NoError(send(archiveCtx))
+
+	// Seven of ten are spent. The archive request still holds four attempts of
+	// its allowance, but the three left belong to live work.
+	require.ErrorIs(send(archiveCtx), platform.ErrSyncBudgetExhausted)
+	assert.EqualValues(7, upstream.Load())
+	for range 3 {
+		require.NoError(send(liveCtx))
+	}
+	assert.Zero(budget.Remaining())
+}
+
 func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
 	t.Parallel()
 

@@ -121,7 +121,6 @@ func (s *Service) promptPages(
 		switch itemType {
 		case db.ArchiveItemTypeIssue:
 			page, err := repo.Issues.ListIssuesPage(requestCtx, repo.Ref, query)
-			preempted := archivePreempted(ctx, requestCtx)
 			featureDisabled := archiveInventoryFeatureDisabled(err, itemType)
 			deferred := complete(err, true)
 			if featureDisabled {
@@ -132,9 +131,6 @@ func (s *Service) promptPages(
 				return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
 			}
 			if err != nil {
-				if preempted {
-					return errRequestPreempted
-				}
 				return s.recordScanFailure(ctx, repo, kind, scan.Generation, fmt.Errorf(
 					"list updated issues for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
 				))
@@ -147,7 +143,6 @@ func (s *Service) promptPages(
 			}
 		case db.ArchiveItemTypeMergeRequest:
 			page, err := repo.MergeRequests.ListMergeRequestsPage(requestCtx, repo.Ref, query)
-			preempted := archivePreempted(ctx, requestCtx)
 			featureDisabled := archiveInventoryFeatureDisabled(err, itemType)
 			deferred := complete(err, true)
 			if featureDisabled {
@@ -158,9 +153,6 @@ func (s *Service) promptPages(
 				return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
 			}
 			if err != nil {
-				if preempted {
-					return errRequestPreempted
-				}
 				return s.recordScanFailure(ctx, repo, kind, scan.Generation, fmt.Errorf(
 					"list updated merge requests for %s: %w", archiveRepoIdentityKey(repo.Ref), err,
 				))

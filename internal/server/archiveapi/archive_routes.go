@@ -199,7 +199,9 @@ func (s *Handlers) RegisterArchiveAPI(api huma.API) {
 // hydration headroom. Limit, remaining, reserve, and reset all describe the
 // binding pool — the resource with the least headroom, the constraint that
 // currently limits admission — so the numbers are mutually consistent.
-// Available is that pool's remaining above its own limit/5 reserve. Known is
+// Reserve is that pool's archive floor right now: it starts the quota window
+// at the pool's limit and falls to limit/5 at reset. Available is the pool's
+// remaining above that floor. Known is
 // false when the combined window is unavailable (a required pool missing,
 // expired, or never observed) — the state archive admission defers as
 // "provider quota unknown" — and the pacing numbers are zero.

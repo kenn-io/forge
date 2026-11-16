@@ -17,7 +17,6 @@ import (
 	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
@@ -435,7 +434,7 @@ func TestSyncWatchedMRsPacesProbes(t *testing.T) {
 			var reads int64
 			refreshed := make(map[int]bool)
 			client := &mockClient{getPullRequestFn: func(ctx context.Context, _, _ string, number int) (*gh.PullRequest, error) {
-				_, admitted, _ := budget.trySpendForTransport(4, syncSpendKind(ctx), false)
+				_, admitted, _ := budget.trySpendForTransport(4, syncSpendKind(ctx), false, 0)
 				require.True(t, admitted)
 				reads++
 				refreshed[number] = true
@@ -578,22 +577,6 @@ func TestSupersededReadCannotVouchForTheProbe(t *testing.T) {
 	assert.Equal(int64(2), h.fullReads.Load(), "a superseded read leaves the next pass reading in full")
 	h.pass(t)
 	assert.Equal(int64(2), h.fullReads.Load(), "a read that applied vouches again")
-}
-
-func TestFreshnessProbeIsActiveDetailWork(t *testing.T) {
-	h := newWatchedFreshnessHarness(t)
-	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "app"}
-	bucket, err := h.syncer.bucketKeyForRepo(repo, false)
-	require.NoError(t, err)
-	var archiveYields atomic.Bool
-	h.gql.set(func(s *freshnessGraphQLServer) {
-		s.onProbe = func() {
-			archiveYields.Store(h.syncer.higherPriorityProviderWorkActive(bucket, archive.PriorityFullArchive))
-		}
-	})
-
-	h.pass(t)
-	assert.True(t, archiveYields.Load(), "archive work must see the probe while it runs")
 }
 
 // drainFreshnessClient reuses the conditional parent fixtures for both item kinds.
@@ -802,7 +785,7 @@ func TestDetailDrainProbePacing(t *testing.T) {
 			budget.now = func() time.Time { return now }
 			if tc.spent {
 				for budget.CanSpendPaced(1) {
-					_, admitted, _ := budget.trySpendForTransport(1, SyncSpendDetail, false)
+					_, admitted, _ := budget.trySpendForTransport(1, SyncSpendDetail, false, 0)
 					require.True(t, admitted)
 				}
 				require.True(t, budget.CanSpend(detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR)), "flat ceiling still permits detail work")

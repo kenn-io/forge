@@ -113,7 +113,9 @@ func (s *Syncer) fetchIssueDetail(
 		)
 	}
 	if !accepted {
-		return calls, nil
+		return calls, rejectedDetailSync(
+			ctx, existing != nil && existing.SnapshotRevision == revision,
+		)
 	}
 
 	if pagePoll {
@@ -160,7 +162,7 @@ func (s *Syncer) fetchIssueDetail(
 	); err != nil {
 		calls++ // comments
 		if errors.Is(err, errParentSnapshotAdvanced) {
-			return calls, nil
+			return calls, supersededDetailSync(ctx)
 		}
 		if errors.Is(err, db.ErrRepositoryIdentityChanged) {
 			return calls, nil
@@ -291,6 +293,10 @@ func (s *Syncer) fetchProviderIssueDetail(
 	if err != nil {
 		return calls, fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
+	existing, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return calls, fmt.Errorf("get existing issue #%d: %w", number, err)
+	}
 	issue, err := issueReader.GetIssue(ctx, platformRepoRef(repo), number)
 	calls++
 	if err != nil {
@@ -301,10 +307,6 @@ func (s *Syncer) fetchProviderIssueDetail(
 	}
 
 	normalized := platformdb.DBIssue(repoID, issue)
-	existing, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoID, number)
-	if err != nil {
-		return calls, fmt.Errorf("get existing issue #%d: %w", number, err)
-	}
 	if existing != nil {
 		normalized.CommentCount = existing.CommentCount
 	}
@@ -317,7 +319,9 @@ func (s *Syncer) fetchProviderIssueDetail(
 		)
 	}
 	if !accepted {
-		return calls, nil
+		return calls, rejectedDetailSync(
+			ctx, existing != nil && existing.SnapshotRevision == revision,
+		)
 	}
 	events, eventsErr := reader.ListIssueEvents(ctx, platformRepoRef(repo), number)
 	calls++
@@ -343,7 +347,7 @@ func (s *Syncer) fetchProviderIssueDetail(
 			return calls, fmt.Errorf("replace provider issue comments for #%d: %w", number, commitErr)
 		}
 		if !applied {
-			return calls, nil
+			return calls, supersededDetailSync(ctx)
 		}
 	}
 

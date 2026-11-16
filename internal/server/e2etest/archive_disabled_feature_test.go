@@ -169,11 +169,13 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 	require.NoError(err)
 	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{ref.Host: router})
 	syncer.SetQuotaRegistry(quotaRegistry)
+	// The quota window is near its end, so archive work has room to run.
+	quotaRegistry.SetClock(clock.Now)
 	quotaRegistry.UpdateSnapshot(identity, ghclient.QuotaResourceREST, ghclient.Rate{
-		Limit: 5000, Remaining: 4999, Reset: clock.Now().Add(time.Hour),
+		Limit: 5000, Remaining: 4999, Reset: clock.Now().Add(10 * time.Minute),
 	})
 	quotaRegistry.UpdateSnapshot(identity, ghclient.QuotaResourceGraphQL, ghclient.Rate{
-		Limit: 5000, Remaining: 4999, Reset: clock.Now().Add(time.Hour),
+		Limit: 5000, Remaining: 4999, Reset: clock.Now().Add(10 * time.Minute),
 	})
 	syncer.SetClock(clock.Now)
 	archiveService, err := archive.NewService(
@@ -241,10 +243,10 @@ func TestArchiveAPIRecoversWhenGitHubIssuesAreReenabledE2E(t *testing.T) {
 	}, 3*time.Second, 5*time.Millisecond)
 	clock.Advance(time.Minute)
 	quotaRegistry.UpdateSnapshot(identity, ghclient.QuotaResourceREST, ghclient.Rate{
-		Limit: 5000, Remaining: 4999, Reset: clock.Now().Add(time.Hour),
+		Limit: 5000, Remaining: 4999, Reset: clock.Now().Add(10 * time.Minute),
 	})
 	quotaRegistry.UpdateSnapshot(identity, ghclient.QuotaResourceGraphQL, ghclient.Rate{
-		Limit: 5000, Remaining: 4999, Reset: clock.Now().Add(time.Hour),
+		Limit: 5000, Remaining: 4999, Reset: clock.Now().Add(10 * time.Minute),
 	})
 	releaseUpdatedIssueOnce.Do(func() { close(releaseUpdatedIssue) })
 	syncer.WakeArchive()

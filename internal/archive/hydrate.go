@@ -32,11 +32,7 @@ func (s *Service) hydrateItem(
 	syncResult, syncErr := s.items.SyncArchiveItem(
 		requestCtx, repo.Ref, work.ItemType, work.ItemNumber,
 	)
-	preempted := archivePreempted(ctx, requestCtx)
 	deferred := complete(syncErr, syncResult.ProviderAttempted)
-	if preempted {
-		return errRequestPreempted
-	}
 	if deferred != nil {
 		return &featureDeferredError{FeatureDeferral: *deferred, providerAttempted: true}
 	}

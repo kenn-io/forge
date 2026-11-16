@@ -373,7 +373,7 @@ func TestListMergeRequestReviewThreadsRejectsDatasetBeyondArchiveAttemptAllowanc
 		WithServerVersion(testGiteaServerVersion),
 		WithTransport(ghsync.WrapSyncBudgetTransport(http.DefaultTransport, budget)))
 	require.NoError(err)
-	ctx := ghsync.WithArchiveAttemptAllowance(ghsync.WithArchiveSyncBudget(t.Context()), 2)
+	ctx := ghsync.WithArchiveAttemptAllowance(ghsync.WithArchiveSyncBudget(t.Context()), 2, 0)
 	threads, err := client.ListMergeRequestReviewThreads(ctx, platform.RepoRef{
 		Owner: "acme", Name: "widgets",
 	}, 42)

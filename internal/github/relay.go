@@ -12,7 +12,6 @@ import (
 	"github.com/cenkalti/backoff/v7"
 
 	"go.kenn.io/forge/internal/activityrelay"
-	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -279,7 +278,6 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 		if budget := s.hosts().budgets[bucket]; budget != nil && !budget.CanSpend(ciRefreshCalls*wireAttemptsPerRequest) {
 			return nil
 		}
-		defer s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)()
 		warnings, err := s.RefreshMRCIStatusForRepository(ctx, repo, repoID, hint.Number, mr.PlatformHeadSHA)
 		if err != nil || len(warnings) != 0 {
 			return errors.Join(err, errors.New("relay CI refresh incomplete"))
@@ -343,11 +341,6 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 }
 
 func (s *Syncer) refreshRelayRefs(ctx context.Context, repo RepoRef) error {
-	bucket, err := s.bucketKeyForRepo(repo, false)
-	if err != nil {
-		return err
-	}
-	defer s.beginProviderWork(ctx, bucket, archive.PriorityNormalIndex)()
 	repo, repoID, err := s.reconcileRepoForDirectSync(ctx, repo)
 	if err != nil {
 		return err

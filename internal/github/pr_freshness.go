@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 )
@@ -148,7 +147,6 @@ func (s *Syncer) probeFreshness(ctx context.Context, targets []freshnessTarget, 
 		fetcher *GraphQLFetcher
 		refs    []PullRequestFreshnessRef
 		keys    map[PullRequestFreshnessRef]string
-		buckets map[string]struct{}
 	}
 	var groups []*group
 	byFetcher := make(map[*GraphQLFetcher]*group)
@@ -163,10 +161,7 @@ func (s *Syncer) probeFreshness(ctx context.Context, targets []freshnessTarget, 
 		}
 		g, ok := byFetcher[fetcher]
 		if !ok {
-			g = &group{
-				fetcher: fetcher, keys: make(map[PullRequestFreshnessRef]string),
-				buckets: make(map[string]struct{}),
-			}
+			g = &group{fetcher: fetcher, keys: make(map[PullRequestFreshnessRef]string)}
 			byFetcher[fetcher] = g
 			groups = append(groups, g)
 		}
@@ -176,22 +171,10 @@ func (s *Syncer) probeFreshness(ctx context.Context, targets []freshnessTarget, 
 		}
 		g.keys[ref] = target.key
 		g.refs = append(g.refs, ref)
-		if bucket, err := s.bucketKeyForRepo(repo, false); err == nil {
-			g.buckets[bucket] = struct{}{}
-		}
 	}
 	out := make(map[string]PullRequestFreshness)
 	for _, g := range groups {
-		// Probes are active detail work, so archive collection on the same
-		// credential yields to them.
-		releases := make([]func(), 0, len(g.buckets))
-		for bucket := range g.buckets {
-			releases = append(releases, s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail))
-		}
 		fingerprints, err := g.fetcher.fetchFreshness(ctx, g.refs, fields, complete)
-		for _, release := range releases {
-			release()
-		}
 		if err != nil {
 			logSyncFailure(ctx, slog.LevelDebug, "pull request freshness probe failed", err,
 				"host", g.fetcher.host, "pull_requests", len(g.refs),
@@ -218,11 +201,6 @@ func (s *Syncer) markMRFreshFromProbe(
 	if !ok || repo.Archived {
 		return false, nil
 	}
-	bucket, err := s.bucketKeyForRepo(repo, false)
-	if err != nil {
-		return false, err
-	}
-	defer s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)()
 	resolution, _ := resolutions.resolve(ctx, s, repo)
 	if resolution.err != nil {
 		return false, resolution.err

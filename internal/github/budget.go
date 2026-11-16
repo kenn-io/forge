@@ -209,17 +209,20 @@ func (b *SyncBudget) TrySpend(n int) (BudgetWindow, bool) {
 // trySpendForTransport reserves one wire attempt and returns the reset of the
 // window examined by that reservation. Keeping the reset snapshot under the
 // same lock as the refusal prevents a rollover between those two observations
-// from assigning an exhausted request to the next window.
+// from assigning an exhausted request to the next window. liveFloor is the
+// optional budget an archive attempt leaves to live work; live attempts pass
+// zero.
 func (b *SyncBudget) trySpendForTransport(
 	n int,
 	kind SyncSpendKind,
 	essential bool,
+	liveFloor int,
 ) (BudgetWindow, bool, time.Time) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.rollLocked()
 	resetAt := b.windowStart.Add(time.Hour)
-	limit := b.optionalLimitLocked()
+	limit := b.optionalLimitLocked() - max(liveFloor, 0)
 	if essential {
 		limit = b.limit
 	}

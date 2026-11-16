@@ -13,7 +13,6 @@ import (
 
 	"go.kenn.io/forge/internal/platformdb"
 
-	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/shutdownbudget"
@@ -95,17 +94,10 @@ type Syncer struct {
 	fullSync                 FullSyncStatus       // guarded by statusMu
 	pendingRun               *pendingSyncRun      // guarded by runMu
 	startupRepoSyncTimes     map[string]time.Time // one-shot credential completions, guarded by runMu
-	providerWorkMu           sync.Mutex
-	providerWork             map[string]map[archive.WorkPriority]int
-	// archiveDeniedHosts records provider hosts whose live work denied or
-	// preempted an archive request; releasing such a host wakes the archive
-	// worker, while hosts that never turned archive work away stay quiet.
-	archiveDeniedHosts      map[string]struct{}
-	archiveProviderRequests map[string]archiveProviderRequest
-	status                  atomic.Value // stores *SyncStatus
-	stopCh                  chan struct{}
-	notificationSyncMu      sync.RWMutex
-	notificationSync        NotificationSyncStatus
+	status                   atomic.Value         // stores *SyncStatus
+	stopCh                   chan struct{}
+	notificationSyncMu       sync.RWMutex
+	notificationSync         NotificationSyncStatus
 	// notificationValidators holds the Last-Modified validator of the last
 	// complete notification pass per user identity; guarded by
 	// notificationSyncMu.
@@ -221,10 +213,9 @@ type Syncer struct {
 	pendingPRCommentSyncs    []queuedPRCommentSync
 	pendingIssueCommentSyncs []queuedIssueCommentSync
 
-	afterMergeRequestParentSnapshotCommit   func()
-	afterMergedMRMetricsRepair              func()
-	afterHeadRepoSnapshotRead               func()
-	afterNotificationRepoIdentityReconciled func()
+	afterMergeRequestParentSnapshotCommit func()
+	afterMergedMRMetricsRepair            func()
+	afterHeadRepoSnapshotRead             func()
 }
 
 // DisableSync permanently prevents this Syncer from starting provider refresh
@@ -375,7 +366,6 @@ func NewSyncerWithRegistry(
 		branchActivityMaxCommits: defaultBranchActivityMaxCommits,
 		nextSyncAfter:            make(map[string]time.Time),
 		nextWatchSyncAfter:       make(map[string]time.Time),
-		archiveProviderRequests:  make(map[string]archiveProviderRequest),
 		stopCh:                   make(chan struct{}),
 		archiveWake:              make(chan struct{}, 1),
 		archivePollInterval:      time.Second,

@@ -529,8 +529,10 @@ func TestAPIArchivePacingReportsProviderHeadroom(t *testing.T) {
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	registry := ghclient.NewQuotaRegistry()
+	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	registry.SetClock(func() time.Time { return now })
 	identity := ghclient.IdentityKey{Host: "github.test", Principal: "user:7"}
-	reset := time.Now().UTC().Add(30 * time.Minute).Truncate(time.Second)
+	reset := now.Add(30 * time.Minute)
 	registry.UpdateSnapshot(identity, ghclient.QuotaResourceREST,
 		ghclient.Rate{Limit: 5000, Remaining: 4500, Reset: reset})
 	registry.UpdateSnapshot(identity, ghclient.QuotaResourceGraphQL,
@@ -569,11 +571,12 @@ func TestAPIArchivePacingReportsProviderHeadroom(t *testing.T) {
 	assert.Equal("provider", row.Source)
 	assert.True(row.Known)
 	// Limit and remaining are the min across REST and GraphQL, matching what
-	// archive admission consumes.
+	// archive admission consumes. Halfway through the window the archive must
+	// leave 3000, halfway between the limit and the limit/5 reserve.
 	assert.Equal(5000, row.Limit)
 	assert.Equal(4200, row.Remaining)
-	assert.Equal(1000, row.Reserve)
-	assert.Equal(3200, row.Available)
+	assert.Equal(3000, row.Reserve)
+	assert.Equal(1200, row.Available)
 	assert.Equal(reset.Format(time.RFC3339), row.ResetAt)
 }
 
@@ -654,10 +657,12 @@ func TestAPIArchivePacingUsesPerPoolReserves(t *testing.T) {
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	registry := ghclient.NewQuotaRegistry()
+	now := time.Date(2026, 7, 28, 18, 30, 0, 0, time.UTC)
+	registry.SetClock(func() time.Time { return now })
 	identity := ghclient.IdentityKey{Host: "github.test", Principal: "user:7"}
-	reset := time.Now().UTC().Add(30 * time.Minute).Truncate(time.Second)
+	reset := now.Add(30 * time.Minute)
 	registry.UpdateSnapshot(identity, ghclient.QuotaResourceREST,
-		ghclient.Rate{Limit: 15000, Remaining: 3000, Reset: reset})
+		ghclient.Rate{Limit: 15000, Remaining: 9000, Reset: reset})
 	registry.UpdateSnapshot(identity, ghclient.QuotaResourceGraphQL,
 		ghclient.Rate{Limit: 5000, Remaining: 4800, Reset: reset})
 	syncer.SetQuotaRegistry(registry)
@@ -686,9 +691,10 @@ func TestAPIArchivePacingUsesPerPoolReserves(t *testing.T) {
 	assert.True(row.Known)
 	// The binding pool is REST (least headroom): every reported number comes
 	// from that one pool so limit, remaining, and reserve are consistent.
+	// Halfway through the window REST must keep 9000 of its 15000.
 	assert.Equal(15000, row.Limit)
-	assert.Equal(3000, row.Remaining)
-	assert.Equal(3000, row.Reserve)
+	assert.Equal(9000, row.Remaining)
+	assert.Equal(9000, row.Reserve)
 	assert.Zero(row.Available)
 }
 

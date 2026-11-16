@@ -24,6 +24,8 @@ type (
 // deltas, so SDK and authentication retries cannot outrun live quota headroom.
 type archiveAttemptAllowance struct {
 	remaining atomic.Int64
+	// liveFloor is the local sync budget this request leaves to live work.
+	liveFloor int
 	provider  *archiveProviderAttemptConfig
 }
 
@@ -42,9 +44,11 @@ type archiveProviderAttemptReservation struct {
 // WithArchiveAttemptAllowance attaches a per-request wire-attempt allowance to
 // ctx alongside the archive-budget marker. Admission sets attempts to the
 // admitted archive cost so the ceiling enforced at admission is also enforced
-// atomically at every wire attempt.
-func WithArchiveAttemptAllowance(ctx context.Context, attempts int) context.Context {
-	allowance := &archiveAttemptAllowance{}
+// atomically at every wire attempt. Live sync spends the same local budget
+// while the request runs, so every attempt also leaves liveFloor of that
+// budget unspent.
+func WithArchiveAttemptAllowance(ctx context.Context, attempts, liveFloor int) context.Context {
+	allowance := &archiveAttemptAllowance{liveFloor: liveFloor}
 	allowance.remaining.Store(int64(attempts))
 	return context.WithValue(ctx, archiveAttemptAllowanceKey{}, allowance)
 }
@@ -153,27 +157,21 @@ func reconcileArchiveProviderAttempt(
 	}
 	actualCost := reservation.cost
 	if observed, ok := rateFromQuotaHeaders(header); ok {
-		observedReset := observed.Reset.UTC()
-		window := compareQuotaWindow(observedReset, reservation.before.ResetAt)
-		if window > 0 ||
-			(window == 0 && observed.Remaining <= reservation.before.Remaining) {
-			registry.reconcileArchiveReservation(reservation.quota, observedReset)
+		// A response from the window the attempt was reserved against shows
+		// what the attempt cost. One from any other window does not: that
+		// window's spend belongs to every request it has served. Either way
+		// the provider has counted the attempt in the window that answered,
+		// and the registry has seen that count, so the reservation is done.
+		sameWindow := compareQuotaWindow(
+			observed.Reset.UTC(), reservation.before.ResetAt,
+		) == 0
+		if !sameWindow || observed.Remaining <= reservation.before.Remaining {
+			registry.releaseArchiveReservation(reservation.quota)
 		}
-		switch {
-		case window == 0 && observed.Remaining < reservation.before.Remaining:
+		if sameWindow && observed.Remaining < reservation.before.Remaining {
 			actualCost = max(
 				actualCost,
 				reservation.before.Remaining-observed.Remaining,
-			)
-		case window > 0:
-			actualCost = max(
-				actualCost,
-				observed.Limit-observed.Remaining,
-			)
-			registry.raiseAttemptCost(
-				reservation.quota.key.quotaKey,
-				observedReset,
-				actualCost,
 			)
 		}
 	}
@@ -292,10 +290,14 @@ func (t *budgetTransport) RoundTrip(
 	kind := syncSpendKind(req.Context())
 	var window BudgetWindow
 	if counted {
+		liveFloor := 0
+		if allowance, ok := req.Context().Value(archiveAttemptAllowanceKey{}).(*archiveAttemptAllowance); ok {
+			liveFloor = allowance.liveFloor
+		}
 		var reserved bool
 		var resetAt time.Time
 		window, reserved, resetAt = t.budget.trySpendForTransport(
-			1, kind, IsEssentialSyncBudgetContext(req.Context()),
+			1, kind, IsEssentialSyncBudgetContext(req.Context()), liveFloor,
 		)
 		if !reserved {
 			return nil, newSyncBudgetExhaustedError(resetAt)

@@ -54,7 +54,7 @@ func TestSyncBudgetPacesOptionalAdmissionThroughTheWindow(t *testing.T) {
 		if tc.reset {
 			b.Reset()
 		}
-		b.trySpendForTransport(tc.spent, SyncSpendWatchedPRRefresh, false)
+		b.trySpendForTransport(tc.spent, SyncSpendWatchedPRRefresh, false, 0)
 		assert.True(t, b.CanSpendPaced(tc.admitted), tc.name)
 		assert.False(t, b.CanSpendPaced(tc.refused), tc.name)
 	}
@@ -252,7 +252,7 @@ func TestSyncBudgetResetClearsSpendByKind(t *testing.T) {
 
 	budget := NewSyncBudget(100)
 	for kind := range numSyncSpendKinds {
-		_, ok, _ := budget.trySpendForTransport(1, kind, false)
+		_, ok, _ := budget.trySpendForTransport(1, kind, false, 0)
 		assert.True(t, ok)
 	}
 	budget.Reset()

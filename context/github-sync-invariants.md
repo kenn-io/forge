@@ -275,7 +275,6 @@ PR timeline storage is intentionally selective.
 - Keep one canonical merged lifecycle row: authored rows dominate actorless ones, and detail
   synthesis treats any authored merge as canonical regardless of timestamp
   (`internal/db/queries.go::upsertMREventsTx`).
-- Merged-actor provider reads are active-detail work and preempt archive leases.
 - Actor repairs must emit `pr_detail_refreshed` with canonical repository identity; broad
   `data_changed` does not refresh an open detail.
 
@@ -422,29 +421,49 @@ Archive worker:
   recurring deferral warning is the intended operator signal.
 - Worker passes resolve tolerantly: provider-classified failures are dropped per repository, but
   infrastructure errors surface (`internal/archive/service.go::resolveRepositoriesTolerant`).
-- The worker backs off while idle up to five minutes; completed syncs wake it, and only hosts that
-  denied or preempted archive work wake it on provider-work release (`internal/github/archive_sync.go::runArchiveLoop`).
+- The worker backs off while idle up to five minutes; completed syncs and quota window resets
+  wake it (`internal/github/archive_sync.go::runArchiveLoop`).
 - Archive scheduling is eventually consistent by maintainer decision: a late wake that delays
   eligible work until the next backoff pass is accepted. Do not add wake bookkeeping for it.
 - Archive code owns historical identity inventory only; hydration uses ordinary item sync, not
   archive-specific lookup or persistence (`internal/github/archive_sync.go::SyncArchiveItem`).
 - Archive hydration bypasses parent-detail ETags, and treats timeline failures as hard errors
   where ordinary refresh is best-effort.
+- Archive hydration runs beside live sync, so a live write can advance an item at any point after
+  the archive's read of it begins. The archive then loses its parent write or its history write.
+  Live sync drops a read that loses that race. Archive hydration fails it, so the item stays
+  pending and is read again: the write that won may have saved no history, as a sync pass's close
+  update does (`internal/github/snapshots.go::supersededDetailSync`).
+- A parent write refused by a copy that was already stored when the read began is not a race. The
+  snapshot revision is unchanged since before the read, and archive hydration completes as live
+  sync does (`internal/github/snapshots.go::rejectedDetailSync`).
 - Post-hydration completeness uses the repository ID that sync resolved, never the caller's route.
 
 Archive pacing:
 
 - With a known registry pacing window, archive admission paces off provider quota alone: each
-  pool's remaining minus its own archive reserve (`max(limit/5, RateReserveBuffer)`), checked at
-  admission and every wire attempt (`internal/github/budget.go::ArchiveProviderReserve`).
+  pool's remaining minus its own archive floor (`internal/github/quota.go::archiveQuotaFloor`).
+- The floor falls linearly from the pool's limit when its window opens to the archive reserve
+  (`max(limit/5, RateReserveBuffer)`) at reset. Archive work runs beside live sync, so a fixed
+  reserve would let it take the whole surplus in the first minutes of a window and leave live
+  sync the reserve alone for the rest. The floor bounds remaining quota, never archive spend:
+  quota live sync leaves unspent becomes archive headroom as the window passes, so the archive
+  cannot stall with most of a pool unused.
+- The floor gates the start of an item, never a wire attempt inside one. A started item may spend
+  down to the archive reserve, which every attempt checks
+  (`internal/github/quota.go::reserveArchiveAttempt`). In steady state the room above the floor
+  is about one item's declared cost, so holding attempts to the floor cuts off every larger item,
+  discards the pages it read, and repeats that on each retry.
 - Reserves are per pool; never apply the smallest pool's reserve to a larger one. The local
   ceiling neither enlarges nor shrinks the provider envelope.
 - An active registry with an incomplete or expired window defers as provider-quota-unknown; it
   never falls through to local pacing (`internal/github/archive_sync.go::Admit`).
-- Every other archive path spends local hourly surplus above `archiveLiveFloor`. Live work
-  preempts the archive lease.
-- An unobserved archive reservation stays deducted until a current header accounts for it or the
-  window rolls (`internal/github/quota.go::quotaTransport`).
+- Every other archive path spends local hourly surplus above `archiveLiveFloor`, checked at
+  admission and again at every wire attempt: live sync spends the same budget while an admitted
+  request runs (`internal/github/budget.go::trySpendForTransport`). Complete Gitea and Forgejo
+  merge-request reads carry no allowance and are not cut off.
+- An unobserved archive reservation stays deducted until a response header accounts for it or its
+  window ends (`internal/github/quota.go::quotaTransport`).
 
 Inventory and lookups:
 
@@ -497,8 +516,7 @@ selected separately by `(host, authenticated identity)`.
   establishes a user identity; their reads leave viewer permissions unknown
   (`platform/github/client_repository.go::Client.withViewerOverlay`).
 - Background requests on the write credential charge the write identity's budget; foreground
-  mutations are uncharged. Live work registers every principal it will touch, so a shared-PAT
-  archive is preempted (`internal/github/client.go::NewClient`).
+  mutations are uncharged (`internal/github/client.go::NewClient`).
 - The PAT viewer overlay is cached per repository and credential and revalidated by ETag on every
   read; do not replace it with a time-based cache (`platform/github/client_repository.go::Client.viewerRepoOverlay`).
 - Reload probes share one fresh installation-token cache per batch; reusing the live cache would
@@ -550,6 +568,10 @@ Sync status:
 
 - Provider quota is keyed by identity and REST/GraphQL resource, so a user response never
   overwrites an App pool (`internal/github/quota.go::QuotaRegistry`).
+- GitHub can report more than one live window for a pool, each with its own reset and count. The
+  pool follows the live window with the least remaining. Never let a later reset alone replace
+  it, and never read another window's spend as one attempt's cost
+  (`internal/github/quota.go::placeQuotaReading`).
 - Prefer valid core response headers over the `/rate_limit` core body, which can report full
   capacity while the same response reports exhaustion (`platform/github/client_rate.go::Client.GetRateLimitSnapshot`).
 - Each transport chain carries a fixed identity: reads spend the read identity; mutations and

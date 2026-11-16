@@ -11,7 +11,6 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 
 	gh "github.com/google/go-github/v93/github"
-	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -422,15 +421,6 @@ func (s *Syncer) syncMRForRepoResolved(
 	if lifecyclePersisted != nil {
 		*lifecyclePersisted = false
 	}
-	if !IsArchiveSyncBudgetContext(ctx) {
-		bucket, err := s.bucketKeyForRepo(repo, false)
-		if err != nil {
-			return fmt.Errorf("resolve detail credential route for %s/%s: %w", repo.Owner, repo.Name, err)
-		}
-		releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)
-		defer releaseProviderWork()
-	}
-
 	owner := repo.Owner
 	name := repo.Name
 	mrReader, err := s.mergeRequestReaderFor(repo)
@@ -668,7 +658,9 @@ func (s *Syncer) syncMRForRepoResolved(
 				*lifecyclePersisted = true
 			}
 		}
-		return nil
+		return rejectedDetailSync(
+			ctx, existing != nil && existing.SnapshotRevision == revision,
+		)
 	}
 	if err := s.markClosedLinkedPRNotificationsDone(ctx, repoID, number); err != nil {
 		if errors.Is(err, db.ErrRepositoryIdentityChanged) {
@@ -687,7 +679,7 @@ func (s *Syncer) syncMRForRepoResolved(
 			return fmt.Errorf("clear stale CI for MR #%d: %w", number, err)
 		}
 		if !ciCleared {
-			return nil
+			return supersededDetailSync(ctx)
 		}
 	}
 
@@ -701,14 +693,14 @@ func (s *Syncer) syncMRForRepoResolved(
 			ghPR, normalized,
 		)
 		if errors.Is(diffErr, errParentSnapshotAdvanced) {
-			return nil
+			return supersededDetailSync(ctx)
 		}
 
 		applied, err := s.refreshMRDetailSnapshot(
 			ctx, repo, repoID, mrID, revision, number, normalized, existing, ghPR, lifecyclePersisted,
 		)
 		if errors.Is(err, errParentSnapshotAdvanced) {
-			return nil
+			return supersededDetailSync(ctx)
 		}
 		if err != nil || !applied {
 			return err
@@ -724,7 +716,7 @@ func (s *Syncer) syncMRForRepoResolved(
 			normalized, true,
 		)
 		if errors.Is(diffErr, errParentSnapshotAdvanced) {
-			return nil
+			return supersededDetailSync(ctx)
 		}
 
 		var pending bool
@@ -734,7 +726,7 @@ func (s *Syncer) syncMRForRepoResolved(
 		)
 		if err != nil {
 			if errors.Is(err, errParentSnapshotAdvanced) {
-				return nil
+				return supersededDetailSync(ctx)
 			}
 			return err
 		}

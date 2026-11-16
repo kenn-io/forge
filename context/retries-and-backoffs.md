@@ -68,9 +68,6 @@ cadence loops are intentionally separate.
 - Manual workflow dispatch is never retried; follow only the run ID dispatch returned,
   never infer it from ref, actor, or time
   (`internal/server/workflowapi/dispatch_follow.go::Handler.followDispatch`).
-- Live provider work waits for preempted archive requests only while its caller is
-  active; a canceled waiter must not release the archive lease or leak live-work counts
-  (`internal/github/archive_sync.go::beginProviderWork`).
 
 ## Sync coalescing
 

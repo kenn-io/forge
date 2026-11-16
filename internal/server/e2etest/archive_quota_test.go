@@ -61,8 +61,11 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	now := time.Now().UTC()
-	reset := now.Add(30 * time.Minute).Truncate(time.Second)
+	// The registry's clock stays at now, one second before the quota window
+	// resets. The archive floor of a 5000 pool is then 1001, so an item may
+	// start, and the reserve of 1000 stops it after one request.
+	now := time.Now().UTC().Truncate(time.Second)
+	reset := now.Add(time.Second)
 	var upstreamCalls atomic.Int32
 	var upstreamRemaining atomic.Int32
 	upstreamRemaining.Store(1003)
@@ -134,6 +137,7 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 	require.NoError(err)
 	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
 	syncer.SetQuotaRegistry(quotaRegistry)
+	quotaRegistry.SetClock(func() time.Time { return now })
 	quotaRegistry.UpdateSnapshot(identity, ghclient.QuotaResourceREST, ghclient.Rate{
 		Limit: 5000, Remaining: 1003, Reset: reset,
 	})

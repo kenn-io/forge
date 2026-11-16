@@ -529,6 +529,54 @@ func TestSpawnWorkspaceWithAgentCreatesIssueAndAdHocWorkspaces(t *testing.T) {
 	})
 }
 
+func TestSpawnWorkspaceWithAgentCreatesKataTaskWorkspace(t *testing.T) {
+	backend := successfulSpawnBackend("ws-kata", "runtime-kata", "coding-kata")
+	backend.createKataWorkspaceFn = func(_ context.Context, target WorkspaceKataTarget) (Workspace, error) {
+		assert.Equal(t, WorkspaceKataTarget{DaemonID: "local", ProjectUID: "project-a", IssueUID: "task-a"}, target)
+		return Workspace{ID: "ws-kata", Status: "ready", Created: true}, nil
+	}
+	s := newMCPTestServer(t, backend)
+
+	out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
+		Source: &workspaceSourceInput{Type: "kata", Kata: &WorkspaceKataTarget{
+			DaemonID: " local ", ProjectUID: "project-a", IssueUID: "task-a",
+		}},
+		AgentTarget: "codex", InitialMessage: "start work", Timeout: "2s",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "ws-kata", out.Workspace.ID)
+	assert.False(t, out.Workspace.Reused)
+}
+
+func TestSpawnWorkspaceWithAgentRejectsIncompleteKataSource(t *testing.T) {
+	s := newMCPTestServer(t, successfulSpawnBackend("ws", "rt", "cs"))
+	validRepo := repoFilterInput{Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widgets"}
+	for name, tc := range map[string]struct {
+		source *workspaceSourceInput
+		want   string
+	}{
+		"missing kata": {&workspaceSourceInput{Type: "kata"}, "exactly one tagged kata task"},
+		"missing issue": {
+			&workspaceSourceInput{Type: "kata", Kata: &WorkspaceKataTarget{DaemonID: "local", ProjectUID: "p"}},
+			"requires daemon_id, project_uid and issue_uid",
+		},
+		"mixed": {
+			&workspaceSourceInput{
+				Type: "kata", Kata: &WorkspaceKataTarget{DaemonID: "local", ProjectUID: "p", IssueUID: "i"},
+				AdHoc: &adHocWorkspaceSource{Repo: validRepo},
+			},
+			"exactly one tagged kata task",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
+				Source: tc.source, AgentTarget: "codex", InitialMessage: "go", Timeout: "2s",
+			})
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}
+
 func TestSpawnWorkspaceWithAgentRetriesMultilineMessageUntilInputModeIsReady(t *testing.T) {
 	assert := assert.New(t)
 	backend := successfulSpawnBackend("ws-paste", "runtime-paste", "coding-paste")

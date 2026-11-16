@@ -24,9 +24,10 @@ const (
 )
 
 type workspaceSourceInput struct {
-	Type  string                `json:"type" jsonschema:"item or adhoc"`
+	Type  string                `json:"type" jsonschema:"item, adhoc or kata"`
 	Item  *itemRefInput         `json:"item,omitempty"`
 	AdHoc *adHocWorkspaceSource `json:"adhoc,omitempty"`
+	Kata  *WorkspaceKataTarget  `json:"kata,omitempty"`
 }
 
 type adHocWorkspaceSource struct {
@@ -165,16 +166,27 @@ func validateSpawnWorkspaceInput(
 	in.Source.Type = strings.ToLower(strings.TrimSpace(in.Source.Type))
 	switch in.Source.Type {
 	case "item":
-		if in.Source.Item == nil || in.Source.AdHoc != nil {
+		if in.Source.Item == nil || in.Source.AdHoc != nil || in.Source.Kata != nil {
 			return in, 0, errors.New("source must contain exactly one tagged item")
 		}
 	case "adhoc":
-		if in.Source.AdHoc == nil || in.Source.Item != nil {
+		if in.Source.AdHoc == nil || in.Source.Item != nil || in.Source.Kata != nil {
 			return in, 0, errors.New("source must contain exactly one tagged adhoc repo")
 		}
 		in.Source.AdHoc.Branch = strings.TrimSpace(in.Source.AdHoc.Branch)
+	case "kata":
+		kata := in.Source.Kata
+		if kata == nil || in.Source.Item != nil || in.Source.AdHoc != nil {
+			return in, 0, errors.New("source must contain exactly one tagged kata task")
+		}
+		kata.DaemonID = strings.TrimSpace(kata.DaemonID)
+		kata.ProjectUID = strings.TrimSpace(kata.ProjectUID)
+		kata.IssueUID = strings.TrimSpace(kata.IssueUID)
+		if kata.DaemonID == "" || kata.ProjectUID == "" || kata.IssueUID == "" {
+			return in, 0, errors.New("source.kata requires daemon_id, project_uid and issue_uid")
+		}
 	default:
-		return in, 0, errors.New("source.type must be item or adhoc")
+		return in, 0, errors.New("source.type must be item, adhoc or kata")
 	}
 	return in, timeout, nil
 }
@@ -441,6 +453,13 @@ func (s *Server) resolveOrCreateWorkspace(
 	}
 	if source.AdHoc != nil {
 		return s.createAdHocWorkspace(ctx, *source.AdHoc)
+	}
+	if source.Kata != nil {
+		workspace, err := s.backend.CreateKataWorkspace(ctx, *source.Kata)
+		if err != nil {
+			return Workspace{}, false, err
+		}
+		return workspace, !workspace.Created, nil
 	}
 	return Workspace{}, false, errors.New("unsupported workspace source")
 }

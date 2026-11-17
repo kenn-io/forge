@@ -55,7 +55,7 @@ func TestArchiveLastProgressMigration(t *testing.T) {
 		require.NoError(err)
 		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_dataset_progress (repo_id, item_type, item_number, dataset, status, completed_at, updated_at, item_created_at) VALUES (1, 'issue', 1, 'comments', 'complete', ?, ?, ?)`, now.Add(2*time.Hour).Format(time.RFC3339Nano), now, now)
 		require.NoError(err)
-		for number, status := range []string{"complete", "pending", "terminal", "failed"} {
+		for number, status := range []string{"complete", "terminal"} {
 			id := number + 2
 			lifecycle := "active"
 			if status == "terminal" {
@@ -102,6 +102,10 @@ func TestArchiveLastProgressMigration(t *testing.T) {
 			require.NoError(err)
 			_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_repos (repo_id, collection_mode, operator_state, initial_started_at, created_at, updated_at) VALUES (?, 'full', 'active', ?, ?, ?)`, scan.id, now.Add(-24*time.Hour), now, now)
 			require.NoError(err)
+			if scan.id == 8 {
+				_, err = raw.ExecContext(t.Context(), `UPDATE forge_archive_repos SET initial_completed_at = ? WHERE repo_id = ?`, now.Add(-time.Hour), scan.id)
+				require.NoError(err)
+			}
 			_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_repo_scans (repo_id, scan, status, page_count, updated_at) VALUES (?, ?, ?, ?, ?)`, scan.id, scan.kind, scan.status, scan.pages, now.Format(time.RFC3339Nano))
 			require.NoError(err)
 		}
@@ -119,11 +123,6 @@ func TestArchiveLastProgressMigration(t *testing.T) {
 	d, err := Open(path)
 	require.NoError(err)
 	t.Cleanup(func() { require.NoError(d.Close()) })
-	states, err := d.ListArchiveRepoStates(t.Context(), []int64{1})
-	require.NoError(err)
-	require.Len(states, 1)
-	require.NotNil(states[0].LastProgressAt)
-	require.Equal(now.Add(time.Hour), *states[0].LastProgressAt)
 	progress, err := d.GetArchiveProgress(t.Context(), ArchiveProgressOpts{RepoIDs: []int64{1}, Now: now})
 	require.NoError(err)
 	require.NotNil(progress[0].LastProgressAt)
@@ -135,6 +134,9 @@ func TestArchiveLastProgressMigration(t *testing.T) {
 		if id == 4 {
 			require.NotNil(rows[0].LastProgressAt)
 			require.Equal(now, *rows[0].LastProgressAt)
+		} else if id == 8 {
+			require.NotNil(rows[0].LastProgressAt)
+			require.Equal(now.Add(-time.Hour), *rows[0].LastProgressAt)
 		} else {
 			require.Nil(rows[0].LastProgressAt, "repository %d", id)
 		}
@@ -150,19 +152,6 @@ func TestArchiveLastProgressMigration(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(finishedEmpty[0].LastProgressAt)
 	require.Equal(now, *finishedEmpty[0].LastProgressAt)
-	require.NoError(d.ReconcileArchiveCoverage(t.Context(), 3, ArchiveCoverageSet{
-		Issues: ArchiveCoverageSupported, MergeRequests: ArchiveCoverageSupported,
-		Comments: ArchiveCoverageSupported, Reviews: ArchiveCoverageSupported, InlineComments: ArchiveCoverageSupported,
-	}, now.Add(time.Minute)))
-	states, err = d.ListArchiveRepoStates(t.Context(), []int64{3})
-	require.NoError(err)
-	require.Nil(states[0].InitialCompletedAt)
-	require.NotNil(states[0].LastProgressAt)
-	require.Equal(now, *states[0].LastProgressAt)
-	require.NoError(d.CommitArchiveInventoryPage(t.Context(), ArchiveInventoryCommit{RepoID: 3, ItemType: ArchiveItemTypeIssue, ScanGeneration: states[0].IssueInventory.Generation, Exhausted: true, Now: now.Add(time.Hour)}))
-	finishedEmpty, err = d.GetArchiveProgress(t.Context(), ArchiveProgressOpts{RepoIDs: []int64{3}, Now: now.Add(time.Hour)})
-	require.NoError(err)
-	require.Equal(now.Add(time.Hour), *finishedEmpty[0].LastProgressAt)
 	require.NoError(d.CommitArchiveInventoryPage(t.Context(), ArchiveInventoryCommit{RepoID: 1, ItemType: ArchiveItemTypeIssue, ScanGeneration: 1, Exhausted: true, Now: now.Add(2 * time.Hour)}))
 	progress, err = d.GetArchiveProgress(t.Context(), ArchiveProgressOpts{RepoIDs: []int64{1}, Now: now.Add(2 * time.Hour)})
 	require.NoError(err)

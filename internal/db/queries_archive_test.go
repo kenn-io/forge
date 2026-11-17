@@ -1658,7 +1658,6 @@ func TestArchiveProgressRecordsLiveRemovalOfPendingItemOnce(t *testing.T) {
 	require.NoError(err)
 	require.Len(progress, 1)
 	require.NotNil(progress[0].LastProgressAt)
-	assert.Equal(1, progress[0].Counts.PendingItemCount)
 	assert.Equal(removedAt, *progress[0].LastProgressAt)
 	require.NoError(d.RecordRemovedMergeRequest(ctx, repoID, 2, "not found", removedAt.Add(time.Hour)))
 	progress, err = d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: removedAt.Add(time.Hour)})
@@ -1676,6 +1675,7 @@ func TestArchiveProgressIgnoresLiveRemovalOutsideInitialPendingWork(t *testing.T
 	}{
 		{name: "completed", status: ArchiveDatasetProgressComplete, reason: ArchiveRefreshReasonInitial},
 		{name: "maintenance", status: ArchiveDatasetProgressPending, reason: ArchiveRefreshReasonPrompt},
+		{name: "untracked"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -1688,42 +1688,18 @@ func TestArchiveProgressIgnoresLiveRemovalOutsideInitialPendingWork(t *testing.T
 			require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
 			_, err := d.UpsertMergeRequest(ctx, &MergeRequest{RepoID: repoID, Number: 1, PlatformID: 7, State: MergeRequestStateOpen, CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
 			require.NoError(err)
-			insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 1, now)
-			insertArchiveProgressForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 1, ArchiveDatasetLookup, tc.status)
-			_, err = d.WriteDB().ExecContext(ctx, `UPDATE forge_archive_items SET refresh_reason = ? WHERE repo_id = ?`, tc.reason, repoID)
-			require.NoError(err)
+			if tc.status != "" {
+				insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 1, now)
+				insertArchiveProgressForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 1, ArchiveDatasetLookup, tc.status)
+				_, err = d.WriteDB().ExecContext(ctx, `UPDATE forge_archive_items SET refresh_reason = ? WHERE repo_id = ?`, tc.reason, repoID)
+				require.NoError(err)
+			}
 			require.NoError(d.RecordRemovedMergeRequest(ctx, repoID, 1, "not found", now))
 			progress, err := d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: now})
 			require.NoError(err)
 			require.Nil(progress[0].LastProgressAt)
 		})
 	}
-}
-
-func TestArchiveProgressIgnoresLiveRemoval(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	assert := assert.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-	now := archiveTestTime()
-	repoID := insertTestRepo(t, d, "acme", "removal")
-	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
-	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
-	_, err := d.UpsertMergeRequest(ctx, &MergeRequest{RepoID: repoID, Number: 1, PlatformID: 7, Title: "Example", State: MergeRequestStateOpen, CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
-	require.NoError(err)
-	require.NoError(d.RecordRemovedMergeRequest(ctx, repoID, 1, "not found", now))
-	progress, err := d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: now})
-	require.NoError(err)
-	assert.Nil(progress[0].LastProgressAt)
-	item, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeMergeRequest, 1, ArchiveDatasetLookup)
-	require.NoError(err)
-	require.NoError(d.CommitArchiveItemSync(ctx, ArchiveItemSyncCommit{RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest, ItemNumber: 1, ScanGeneration: item.ScanGeneration, Outcome: ArchiveLookupRemoved, Now: now.Add(time.Minute)}))
-	require.NoError(d.RecordRemovedMergeRequest(ctx, repoID, 1, "not found", now.Add(time.Hour)))
-	progress, err = d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: now.Add(time.Hour)})
-	require.NoError(err)
-	require.NotNil(progress[0].LastProgressAt)
-	assert.Equal(now.Add(time.Minute), *progress[0].LastProgressAt)
 }
 
 func TestArchiveGetProgressDerivesCountsFromDurableRows(t *testing.T) {

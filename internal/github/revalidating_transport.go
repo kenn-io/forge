@@ -31,8 +31,9 @@ const (
 	issuePageEntryLimit = 8192
 	// issuePageBodyLimit is Forge's local bound on one cached issue page.
 	issuePageBodyLimit = 32 << 20
-	// issuePageCacheBytes bounds the issue-page bodies cached at once.
-	issuePageCacheBytes = 256 << 20
+	// issuePageCacheBytes bounds the issue-page bodies cached at once. It holds
+	// 400 repositories with 300 open issues at about 320 KiB per 100-issue page.
+	issuePageCacheBytes = 384 << 20
 )
 
 type revalidatedEntry struct {

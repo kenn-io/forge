@@ -125,6 +125,8 @@ Federation peers and the hub event stream live in
   checks each developer's current permission before issuing a single-repository token (`internal/devbox/broker.go::Broker.Credential`).
 - Fork credentials serve `git` only (helper, clone/fetch, admission), never `push` or `pr`. The
   fork's immediate organization parent supplies access checks and tokens (`internal/devbox/broker.go::Broker.forkUpstream`).
+- The devbox GitHub wrapper lets agents close, reopen, or mark ready only App-authored pull
+  requests; merges stay with the existing merge queue (`cmd/kenn-forge/devbox_cli.go::runDevboxGitHub`).
 - Fork credentials keep the fork's ID and default branch; erase evicts only the parent's tokens, and
   installation-wide lookup tokens are metadata-read only and never leave the broker.
 - Service accounts skip developer checks; only their configured repository IDs and those

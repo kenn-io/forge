@@ -963,21 +963,6 @@ func (d *DB) RecordRemovedMergeRequest(
 	ctx context.Context, repoID int64, number int, detail string, now time.Time,
 ) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `
-			UPDATE forge_archive_repos
-			SET last_progress_at = MAX(COALESCE(last_progress_at, ?1), ?1)
-			WHERE repo_id = ?2 AND collection_mode = 'full' AND initial_completed_at IS NULL
-			  AND EXISTS (
-				SELECT 1 FROM forge_archive_items i
-				JOIN forge_archive_dataset_progress p ON p.repo_id = i.repo_id
-				  AND p.item_type = i.item_type AND p.item_number = i.item_number
-				WHERE i.repo_id = ?2 AND i.item_type = 'merge_request' AND i.item_number = ?3
-				  AND i.lifecycle_state = 'active' AND i.refresh_reason = 'initial'
-				  AND p.dataset = 'lookup' AND p.status IN ('pending', 'running', 'failed')
-			  )`, now.UTC(), repoID, number)
-		if err != nil {
-			return fmt.Errorf("record removed PR #%d archive progress: %w", number, err)
-		}
 		result, err := tx.ExecContext(ctx, `
 			INSERT INTO forge_archive_items (
 				repo_id, item_type, item_number, provider_item_id,

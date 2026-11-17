@@ -169,9 +169,7 @@ kenn-forge devbox github --socket /run/forge-broker/broker.sock \
 ```
 
 The wrapper supports `pr create`, `edit`, `comment`, `view`, `list`, `checks`,
-`close`, `reopen`, `ready`, and `merge`. For `pr merge`, specify `--merge`,
-`--squash`, or `--rebase`, unless the target branch requires a merge queue.
-GitHub branch rules still control whether the App can merge.
+`close`, `reopen`, `ready`, and `merge`.
 Its token goes only to that child process. Git and the wrapper explain broker
 failures, such as a repository not being admitted or missing write permission.
 

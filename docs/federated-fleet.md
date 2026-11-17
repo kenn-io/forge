@@ -730,12 +730,14 @@ behavior an operator depends on.
 ## Use the fleet
 
 Use the Forge selector in the top bar to open any fleet member directly.
-Choosing the hub from a spoke, or a spoke from the hub, signs you in to that
-Forge automatically and opens the same page there. From a spoke, other spokes
-open as ordinary links and use their own sign-in, such as Tailscale Serve.
-Browser modifiers open the plain link in another tab or window. Each origin
-keeps its own browser state, filters, searches, terminal connections, and event
-cursors; changing one Forge tab does not retarget another.
+Choosing another fleet member signs you in to that Forge automatically and
+opens the same page there. A spoke signs you in to another spoke through the
+hub, which asks that spoke for a one-time login link. If the hub is
+unavailable to the spoke, or runs a Forge version without this, the other
+spoke opens as an ordinary link and uses its own sign-in, such as Tailscale
+Serve. Browser modifiers open the plain link in another tab or window. Each
+origin keeps its own browser state, filters, searches, terminal connections,
+and event cursors; changing one Forge tab does not retarget another.
 
 Every member's UI shows the fleet-wide workspace view, and each workspace row
 shows its execution-node badge. Supported actions call the owning machine's

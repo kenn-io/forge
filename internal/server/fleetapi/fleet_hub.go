@@ -360,12 +360,29 @@ func (s *Handler) fetchFederationJSON(
 	return nil
 }
 
+// federationPeerStatusError keeps a peer's HTTP status and problem reason
+// beside the operator-facing message, so callers can branch on a refusal.
+type federationPeerStatusError struct {
+	StatusCode int
+	Reason     string
+	message    error
+}
+
+func (e *federationPeerStatusError) Error() string { return e.message.Error() }
+
 func federationPeerResponseError(response *http.Response) error {
+	reason, message := describeFederationPeerProblem(response)
+	return &federationPeerStatusError{
+		StatusCode: response.StatusCode, Reason: reason, message: message,
+	}
+}
+
+func describeFederationPeerProblem(response *http.Response) (string, error) {
 	body, err := io.ReadAll(io.LimitReader(
 		response.Body, maxFederationProblemBytes+1,
 	))
 	if err != nil || len(body) > maxFederationProblemBytes {
-		return fmt.Errorf("peer returned HTTP %d", response.StatusCode)
+		return "", fmt.Errorf("peer returned HTTP %d", response.StatusCode)
 	}
 	var problem struct {
 		Detail  string `json:"detail"`
@@ -374,27 +391,28 @@ func federationPeerResponseError(response *http.Response) error {
 		} `json:"details"`
 	}
 	if json.Unmarshal(body, &problem) != nil {
-		return fmt.Errorf("peer returned HTTP %d", response.StatusCode)
+		return "", fmt.Errorf("peer returned HTTP %d", response.StatusCode)
 	}
+	reason := problem.Details.Reason
 	detail := strings.Join(strings.Fields(problem.Detail), " ")
-	switch problem.Details.Reason {
+	switch reason {
 	case "federationEnrollmentInactive":
-		return errors.New(
+		return reason, errors.New(
 			"peer fleet authorization is inactive; check its service startup logs and hub connectivity",
 		)
 	case "federationSubjectMismatch":
-		return errors.New("peer rejected the hub identity; check its fleet enrollment")
+		return reason, errors.New("peer rejected the hub identity; check its fleet enrollment")
 	}
 	if detail == "" {
-		return fmt.Errorf("peer returned HTTP %d", response.StatusCode)
+		return reason, fmt.Errorf("peer returned HTTP %d", response.StatusCode)
 	}
-	if problem.Details.Reason != "" {
-		return fmt.Errorf(
+	if reason != "" {
+		return reason, fmt.Errorf(
 			"peer returned HTTP %d: %s (%s)",
-			response.StatusCode, detail, problem.Details.Reason,
+			response.StatusCode, detail, reason,
 		)
 	}
-	return fmt.Errorf("peer returned HTTP %d: %s", response.StatusCode, detail)
+	return reason, fmt.Errorf("peer returned HTTP %d: %s", response.StatusCode, detail)
 }
 
 func neutralSnapshotContainsNode(

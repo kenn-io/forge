@@ -3,6 +3,7 @@ package fleetapi
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/federation"
+	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server/httpapi"
 )
 
@@ -44,6 +46,28 @@ type browserLoginTicket struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+type siblingBrowserLoginTicketInput struct {
+	NodeID string `path:"node_id" doc:"Stable node ID of the sibling spoke to sign in to."`
+}
+
+type siblingBrowserLoginTicketBody struct {
+	Ticket    string    `json:"ticket" doc:"Opaque single-use secret issued by the sibling spoke; append it to a page URL there as login_ticket."`
+	ExpiresAt time.Time `json:"expires_at" doc:"UTC instant after which the ticket is rejected."`
+	BaseURL   string    `json:"base_url" doc:"Enrolled origin of the sibling spoke, the only Forge that accepts the ticket."`
+}
+
+type siblingBrowserLoginTicketOutput = httpapi.BodyOutput[siblingBrowserLoginTicketBody]
+
+// browserLoginRoute names the peer this daemon calls for a login ticket. A
+// spoke has no credential for a sibling spoke, so it calls its hub, and the
+// hub obtains the sibling's ticket with its own credential.
+type browserLoginRoute struct {
+	target fleetHostTarget
+	// sibling is the destination node ID when target is the hub relaying the
+	// request; it is empty when target itself issues the ticket.
+	sibling string
+}
+
 func (h *Handler) registerBrowserLoginRoute(api huma.API) {
 	huma.Register(api, huma.Operation{
 		OperationID: "create-fleet-browser-login",
@@ -52,11 +76,22 @@ func (h *Handler) registerBrowserLoginRoute(api huma.API) {
 		Summary:     "Create a one-time link that signs this browser into another Forge",
 		Tags:        []string{"Fleet"},
 	}, h.createBrowserLogin)
+	// The fleet host prefix makes the federation authenticator require the
+	// browser.login scope of /federation/browser-login-tickets, the route the
+	// hub calls on the sibling.
+	huma.Register(api, huma.Operation{
+		OperationID: "issue-fleet-host-browser-login-ticket",
+		Method:      http.MethodPost,
+		Path:        "/fleet/hosts/{node_id}/federation/browser-login-tickets",
+		Summary:     "Obtain a sibling spoke's one-time browser login ticket for a spoke",
+		Tags:        []string{"Fleet"},
+	}, h.issueSiblingBrowserLoginTicket)
 }
 
-// createBrowserLogin asks a directly credentialed fleet peer for a one-time
-// login ticket and returns the link that consumes it. The peer call uses this
-// daemon's outbound federation bearer; the browser never sees that bearer.
+// createBrowserLogin asks the destination for a one-time login ticket,
+// directly or through this spoke's hub, and returns the link that consumes
+// it. Peer calls use this daemon's outbound federation bearer; the browser
+// never sees that bearer.
 func (h *Handler) createBrowserLogin(
 	ctx context.Context, input *browserLoginInput,
 ) (*browserLoginOutput, error) {
@@ -68,28 +103,132 @@ func (h *Handler) createBrowserLogin(
 	if err != nil {
 		return nil, err
 	}
-	target, err := h.resolveBrowserLoginTarget(strings.TrimSpace(input.NodeID))
+	nodeID := strings.TrimSpace(input.NodeID)
+	route, err := h.resolveBrowserLoginTarget(nodeID)
 	if err != nil {
 		return nil, err
 	}
-	ticket, err := h.requestBrowserLoginTicket(ctx, target)
+	var ticket browserLoginTicket
+	baseURL := route.target.member.BaseURL
+	if route.sibling == "" {
+		ticket, err = h.requestBrowserLoginTicket(ctx, route.target)
+	} else {
+		ticket, baseURL, err = h.requestSiblingBrowserLoginTicket(ctx, route)
+	}
 	if err != nil {
-		return nil, httpapi.NewProblem(
-			http.StatusBadGateway, httpapi.CodeUpstreamError,
-			"fleet peer browser login failed: "+err.Error(),
-			map[string]any{"hostKey": target.member.NodeID},
-		)
+		if problem, ok := errors.AsType[huma.StatusError](err); ok {
+			return nil, problem
+		}
+		return nil, browserLoginUpstreamProblem(nodeID, err)
 	}
 	query := destination.RawQuery
 	if query != "" {
 		query += "&"
 	}
 	query += browserLoginTicketParam + "=" + url.QueryEscape(ticket.Ticket)
-	link := strings.TrimRight(target.member.BaseURL, "/") +
+	link := strings.TrimRight(baseURL, "/") +
 		destination.EscapedPath() + "?" + query
 	return &browserLoginOutput{Body: browserLoginOutputBody{
 		URL: link, ExpiresAt: ticket.ExpiresAt.UTC(),
 	}}, nil
+}
+
+func browserLoginUpstreamProblem(nodeID string, err error) error {
+	return httpapi.NewProblem(
+		http.StatusBadGateway, httpapi.CodeUpstreamError,
+		"fleet peer browser login failed: "+err.Error(),
+		map[string]any{"hostKey": nodeID},
+	)
+}
+
+// issueSiblingBrowserLoginTicket lets an active spoke sign its user in to
+// another active spoke. The federation authenticator admits only a peer whose
+// enrollment is active and whose grant carries browser.login, which on a hub
+// means an active enrolled spoke. The hub then calls the sibling with its own
+// credential, so the sibling's session stays bound to the hub's enrollment.
+func (h *Handler) issueSiblingBrowserLoginTicket(
+	ctx context.Context, input *siblingBrowserLoginTicketInput,
+) (*siblingBrowserLoginTicketOutput, error) {
+	principal, peer := federationauth.PrincipalFromContext(ctx)
+	fleetConfig := h.configSnapshot().Fleet
+	if !peer || !fleetConfig.Enabled || fleetConfig.RoleOrDefault() != config.FleetRoleHub {
+		return nil, httpapi.Forbidden(
+			"only a fleet hub issues sibling browser login tickets, and only to its spokes",
+			map[string]any{"reason": "federationSpokeRequired"},
+		)
+	}
+	nodeID := strings.TrimSpace(input.NodeID)
+	if nodeID == principal.NodeID {
+		return nil, browserLoginConflict(
+			nodeID, "selfHost", "this browser is already signed in to this Forge",
+		)
+	}
+	route, err := h.resolveBrowserLoginTarget(nodeID)
+	if err != nil {
+		return nil, err
+	}
+	ticket, err := h.requestBrowserLoginTicket(ctx, route.target)
+	if err != nil {
+		return nil, browserLoginUpstreamProblem(nodeID, err)
+	}
+	return &siblingBrowserLoginTicketOutput{Body: siblingBrowserLoginTicketBody{
+		Ticket: ticket.Ticket, ExpiresAt: ticket.ExpiresAt.UTC(),
+		BaseURL: route.target.member.BaseURL,
+	}}, nil
+}
+
+// requestSiblingBrowserLoginTicket asks the hub for a sibling spoke's ticket
+// and returns it with the sibling's enrolled origin. A hub that cannot issue
+// one, including an older hub without the route, leaves the browser to open
+// the sibling's plain address, so those refusals keep the 409 the frontend
+// falls back on.
+func (h *Handler) requestSiblingBrowserLoginTicket(
+	ctx context.Context, route browserLoginRoute,
+) (browserLoginTicket, string, error) {
+	request, err := generated.NewIssueFleetHostBrowserLoginTicketRequest(
+		ctx, strings.TrimRight(route.target.member.BaseURL, "/")+"/api/v1",
+		&generated.IssueFleetHostBrowserLoginTicketRequestOptions{
+			PathParams: &generated.IssueFleetHostBrowserLoginTicketPath{NodeID: route.sibling},
+		},
+	)
+	if err != nil {
+		return browserLoginTicket{}, "", err
+	}
+	var body siblingBrowserLoginTicketBody
+	fleet := h.configSnapshot().Fleet
+	if err := h.fetchFederationJSON(
+		ctx, route.target, route.target.clients.rest,
+		fleet.PeerTimeoutOrDefault(), request, &body,
+	); err != nil {
+		if refusal, ok := errors.AsType[*federationPeerStatusError](err); ok &&
+			hubCannotRelayBrowserLogin(refusal) {
+			return browserLoginTicket{}, "", noDirectBrowserLoginCredential(route.sibling)
+		}
+		return browserLoginTicket{}, "", err
+	}
+	ticket := browserLoginTicket{Ticket: body.Ticket, ExpiresAt: body.ExpiresAt}
+	if err := validateBrowserLoginTicket(ticket); err != nil {
+		return browserLoginTicket{}, "", err
+	}
+	baseURL, err := federation.CanonicalOrigin(body.BaseURL)
+	if err != nil || baseURL != body.BaseURL {
+		return browserLoginTicket{}, "", fmt.Errorf("hub returned an invalid sibling origin")
+	}
+	return ticket, baseURL, nil
+}
+
+// hubCannotRelayBrowserLogin reports a hub refusal that means "no ticket for
+// that node": an unknown or inactive sibling, or a hub that predates the
+// route. Hubs from before fleet host routes were peer-callable reject the
+// path in authentication rather than routing.
+func hubCannotRelayBrowserLogin(refusal *federationPeerStatusError) bool {
+	switch refusal.StatusCode {
+	case http.StatusNotFound, http.StatusConflict:
+		return true
+	case http.StatusForbidden:
+		return refusal.Reason == "federationRouteNotAllowed"
+	}
+	return false
 }
 
 // browserLoginDestination validates a same-origin relative reference. The
@@ -128,30 +267,26 @@ func browserLoginDestination(raw string) (*url.URL, error) {
 	return destination, nil
 }
 
-// resolveBrowserLoginTarget returns a fleet peer this daemon can call with
+// resolveBrowserLoginTarget returns the fleet peer this daemon calls with
 // its own outbound federation bearer. A hub reaches its active spokes; a
-// spoke reaches only its hub. Other fleet members have no direct credential.
-func (h *Handler) resolveBrowserLoginTarget(nodeID string) (fleetHostTarget, error) {
+// spoke reaches its hub directly and sibling spokes through that hub.
+func (h *Handler) resolveBrowserLoginTarget(nodeID string) (browserLoginRoute, error) {
 	switch {
 	case nodeID == "":
-		return fleetHostTarget{}, fleetHostNotFoundProblem(nodeID)
+		return browserLoginRoute{}, fleetHostNotFoundProblem(nodeID)
 	case nodeID == fleetSelfHostAlias || nodeID == h.fleetSelfKey(""):
-		return fleetHostTarget{}, browserLoginConflict(
+		return browserLoginRoute{}, browserLoginConflict(
 			nodeID, "selfHost", "this browser is already signed in to this Forge",
 		)
 	case strings.HasPrefix(nodeID, "devbox:"):
-		return fleetHostTarget{}, browserLoginConflict(
+		return browserLoginRoute{}, browserLoginConflict(
 			nodeID, "devboxHost", "devboxes do not serve a browser UI",
 		)
 	}
 	fleetConfig := h.configSnapshot().Fleet
 	if !fleetConfig.Enabled {
-		return fleetHostTarget{}, fleetHostNotFoundProblem(nodeID)
+		return browserLoginRoute{}, fleetHostNotFoundProblem(nodeID)
 	}
-	noCredential := browserLoginConflict(
-		nodeID, "noDirectFederationCredential",
-		"this Forge has no active federation credential for that fleet host",
-	)
 	if fleetConfig.RoleOrDefault() == config.FleetRoleHub {
 		for _, member := range fleetConfig.Members {
 			if member.NodeID != nodeID {
@@ -159,33 +294,33 @@ func (h *Handler) resolveBrowserLoginTarget(nodeID string) (fleetHostTarget, err
 			}
 			target, ok := h.resolveEnrolledSpoke(member)
 			if !ok {
-				return fleetHostTarget{}, noCredential
+				return browserLoginRoute{}, noDirectBrowserLoginCredential(nodeID)
 			}
-			return target, nil
+			return browserLoginRoute{target: target}, nil
 		}
-		return fleetHostTarget{}, fleetHostNotFoundProblem(nodeID)
+		return browserLoginRoute{}, fleetHostNotFoundProblem(nodeID)
 	}
-	hub := fleetConfig.Hub
-	if hub != nil && hub.NodeID == nodeID {
-		if !h.federationActive {
-			return fleetHostTarget{}, noCredential
-		}
-		target, ok := h.resolveEnrolledMember(config.FleetMember{
-			NodeID: hub.NodeID, Name: hub.Name,
-			BaseURL: hub.BaseURL, State: federation.EnrollmentActive,
-		})
-		if !ok {
-			return fleetHostTarget{}, noCredential
-		}
-		return target, nil
+	// A spoke learns about sibling spokes only through the hub aggregate, so
+	// any other valid node ID is a sibling the hub signs into on its behalf.
+	if (fleetConfig.Hub == nil || fleetConfig.Hub.NodeID != nodeID) &&
+		!federation.ValidNodeID(nodeID) {
+		return browserLoginRoute{}, fleetHostNotFoundProblem(nodeID)
 	}
-	// A spoke learns about sibling spokes only through the hub aggregate and
-	// never holds their credentials, so any other node ID is a sibling it
-	// cannot sign into directly.
-	if federation.ValidNodeID(nodeID) {
-		return fleetHostTarget{}, noCredential
+	hub, ok := h.resolveSpokeHub()
+	if !ok {
+		return browserLoginRoute{}, noDirectBrowserLoginCredential(nodeID)
 	}
-	return fleetHostTarget{}, fleetHostNotFoundProblem(nodeID)
+	if hub.member.NodeID == nodeID {
+		return browserLoginRoute{target: hub}, nil
+	}
+	return browserLoginRoute{target: hub, sibling: nodeID}, nil
+}
+
+func noDirectBrowserLoginCredential(nodeID string) error {
+	return browserLoginConflict(
+		nodeID, "noDirectFederationCredential",
+		"this Forge has no active federation credential for that fleet host",
+	)
 }
 
 func browserLoginConflict(nodeID, reason, detail string) error {
@@ -211,13 +346,20 @@ func (h *Handler) requestBrowserLoginTicket(
 	); err != nil {
 		return browserLoginTicket{}, err
 	}
-	if !validBrowserLoginTicket(ticket.Ticket) {
-		return browserLoginTicket{}, fmt.Errorf("peer returned an invalid login ticket")
-	}
-	if ticket.ExpiresAt.IsZero() {
-		return browserLoginTicket{}, fmt.Errorf("peer returned a login ticket without an expiry")
+	if err := validateBrowserLoginTicket(ticket); err != nil {
+		return browserLoginTicket{}, err
 	}
 	return ticket, nil
+}
+
+func validateBrowserLoginTicket(ticket browserLoginTicket) error {
+	if !validBrowserLoginTicket(ticket.Ticket) {
+		return errors.New("peer returned an invalid login ticket")
+	}
+	if ticket.ExpiresAt.IsZero() {
+		return errors.New("peer returned a login ticket without an expiry")
+	}
+	return nil
 }
 
 func validBrowserLoginTicket(ticket string) bool {

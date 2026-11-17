@@ -4279,6 +4279,38 @@ func (o *CreateFleetBrowserLoginRequestOptions) GetHeader() (map[string]string, 
 	return nil, nil
 }
 
+// IssueFleetHostBrowserLoginTicketRequestOptions is the options needed to make a request to IssueFleetHostBrowserLoginTicket.
+type IssueFleetHostBrowserLoginTicketRequestOptions struct {
+	PathParams *IssueFleetHostBrowserLoginTicketPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *IssueFleetHostBrowserLoginTicketRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *IssueFleetHostBrowserLoginTicketRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *IssueFleetHostBrowserLoginTicketRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *IssueFleetHostBrowserLoginTicketRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // JoinFederationRequestOptions is the options needed to make a request to JoinFederation.
 type JoinFederationRequestOptions struct {
 	Body *JoinFederationBody
@@ -13293,6 +13325,7 @@ type ClientInterface interface {
 	GetFleetWorkspaceViewStateWithResponse(ctx context.Context, options *GetFleetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceViewStateResp, error)
 	UpdateFleetWorkspaceViewStateWithResponse(ctx context.Context, options *UpdateFleetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateFleetWorkspaceViewStateResp, error)
 	CreateFleetBrowserLoginWithResponse(ctx context.Context, options *CreateFleetBrowserLoginRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateFleetBrowserLoginResp, error)
+	IssueFleetHostBrowserLoginTicketWithResponse(ctx context.Context, options *IssueFleetHostBrowserLoginTicketRequestOptions, reqEditors ...runtime.RequestEditorFn) (*IssueFleetHostBrowserLoginTicketResp, error)
 	JoinFederationWithResponse(ctx context.Context, options *JoinFederationRequestOptions, reqEditors ...runtime.RequestEditorFn) (*JoinFederationResp, error)
 	PrepareFederationSpokeWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*PrepareFederationSpokeResp, error)
 	AbortFederationSpokePreparationWithResponse(ctx context.Context, options *AbortFederationSpokePreparationRequestOptions, reqEditors ...runtime.RequestEditorFn) (*AbortFederationSpokePreparationResp, error)
@@ -22530,6 +22563,74 @@ func (c *Client) CreateFleetBrowserLoginWithResponse(ctx context.Context, option
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "CreateFleetBrowserLoginErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// IssueFleetHostBrowserLoginTicket Obtain a sibling spoke's one-time browser login ticket for a spoke
+func (c *Client) IssueFleetHostBrowserLoginTicketWithResponse(ctx context.Context, options *IssueFleetHostBrowserLoginTicketRequestOptions, reqEditors ...runtime.RequestEditorFn) (*IssueFleetHostBrowserLoginTicketResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{node_id}/federation/browser-login-tickets",
+		Method:     "POST",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/fleet/hosts/{node_id}/federation/browser-login-tickets")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &IssueFleetHostBrowserLoginTicketResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(IssueFleetHostBrowserLoginTicketErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(IssueFleetHostBrowserLoginTicketResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "IssueFleetHostBrowserLoginTicketResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(IssueFleetHostBrowserLoginTicketErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "IssueFleetHostBrowserLoginTicketErrorResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -45043,6 +45144,21 @@ func (c *Client) CreateFleetBrowserLoginRaw(ctx context.Context, httpClient *htt
 	return httpClient.Do(req)
 }
 
+// IssueFleetHostBrowserLoginTicketRaw returns an unread response. The caller must close its body.
+func (c *Client) IssueFleetHostBrowserLoginTicketRaw(ctx context.Context, httpClient *http.Client, options *IssueFleetHostBrowserLoginTicketRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{node_id}/federation/browser-login-tickets",
+		Method:     "POST",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // JoinFederationRaw returns an unread response. The caller must close its body.
 func (c *Client) JoinFederationRaw(ctx context.Context, httpClient *http.Client, options *JoinFederationRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -52539,6 +52655,22 @@ func NewCreateFleetBrowserLoginRequest(ctx context.Context, baseURL string, opti
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewIssueFleetHostBrowserLoginTicketRequest constructs a typed request for a caller-owned transport.
+func NewIssueFleetHostBrowserLoginTicketRequest(ctx context.Context, baseURL string, options *IssueFleetHostBrowserLoginTicketRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{node_id}/federation/browser-login-tickets",
+		Method:     "POST",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewJoinFederationRequest constructs a typed request for a caller-owned transport.
 func NewJoinFederationRequest(ctx context.Context, baseURL string, options *JoinFederationRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -59062,6 +59194,11 @@ type CreateFleetBrowserLoginPath struct {
 	NodeID string `json:"node_id"`
 }
 
+type IssueFleetHostBrowserLoginTicketPath struct {
+	// NodeID Stable node ID of the sibling spoke to sign in to.
+	NodeID string `json:"node_id"`
+}
+
 type ListWorkflowRunsOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -62347,6 +62484,10 @@ type CreateFleetBrowserLoginResponse = BrowserLoginOutputBody
 
 type CreateFleetBrowserLoginErrorResponse = ProblemError
 
+type IssueFleetHostBrowserLoginTicketResponse = SiblingBrowserLoginTicketBody
+
+type IssueFleetHostBrowserLoginTicketErrorResponse = ProblemError
+
 type JoinFederationResponse = LocalEnrollment
 
 type JoinFederationErrorResponse = ProblemError
@@ -64660,6 +64801,15 @@ type CreateFleetBrowserLoginResp struct {
 	Error                             *CreateFleetBrowserLoginErrorResponse
 	JSON200                           *CreateFleetBrowserLoginResponse
 	ApplicationProblemPlusJSONDefault *CreateFleetBrowserLoginErrorResponse
+}
+
+type IssueFleetHostBrowserLoginTicketResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *IssueFleetHostBrowserLoginTicketErrorResponse
+	JSON200                           *IssueFleetHostBrowserLoginTicketResponse
+	ApplicationProblemPlusJSONDefault *IssueFleetHostBrowserLoginTicketErrorResponse
 }
 
 type JoinFederationResp struct {
@@ -71310,6 +71460,20 @@ type SettingsResponse struct {
 	Sync                   SyncSettingsResponse    `json:"sync"`
 	Terminal               Terminal                `json:"terminal"`
 	Workspaces             Workspaces              `json:"workspaces"`
+}
+
+type SiblingBrowserLoginTicketBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// BaseURL Enrolled origin of the sibling spoke, the only Forge that accepts the ticket.
+	BaseURL string `json:"base_url"`
+
+	// ExpiresAt UTC instant after which the ticket is rejected.
+	ExpiresAt time.Time `json:"expires_at"`
+
+	// Ticket Opaque single-use secret issued by the sibling spoke; append it to a page URL there as login_ticket.
+	Ticket string `json:"ticket"`
 }
 
 type Snapshot struct {

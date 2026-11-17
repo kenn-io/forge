@@ -391,6 +391,7 @@ func TestRevalidatingIssuePagesBodyLimitsAndComments(t *testing.T) {
 		{"comments", "/repos/acme/widget/issues/1/comments", 8, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			body := strings.Repeat("x", tc.size)
 			var conditionals atomic.Int64
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -471,6 +472,7 @@ func TestRevalidatingIssuePagesKeepHitsOverLimits(t *testing.T) {
 		{"many repositories", 0, 0, 513, 4, 2, 2, 2052},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			var conditionals atomic.Int64
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				etag := `"` + r.URL.RequestURI() + `"`

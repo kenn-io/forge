@@ -325,9 +325,11 @@ installation needs no broker configuration change or restart.
 
 **App permissions cannot express “push branches, but never merge or push main.”**
 Use an enforced **Restrict updates** ruleset on default/protected branches,
-with bypass assigned to the intended human maintainers. To let service accounts
-merge protected pull requests, add the App as a **For pull requests only** bypass
-actor on that ruleset. This allows pull request merges without direct pushes.
+with bypass assigned only to the intended human maintainers, not this App. This
+blocks direct App merges into those branches. A configured [merge queue](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
+can accept `pr merge` requests when GitHub permits them. Giving the shared App a
+direct merge bypass would extend that access to every brokered writer and needs
+a separate authorization design.
 See GitHub's [ruleset setup guide](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository).
 Keep required-review and checks rules in a separate ruleset without an App bypass
 so they still apply to its pull request merges.

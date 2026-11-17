@@ -37,7 +37,6 @@ type Handlers struct {
 	WorkspaceAPI                          **workspaceapi.Handler
 	DefaultPlatformHost                   func() string
 	EnqueueDetailSync                     func(key string, attrs []any, repo dbpkg.Repo, number int, fn func(context.Context) error) bool
-	EnqueueDetailSyncWithCompletion       func(key string, attrs []any, repo dbpkg.Repo, number int, fn func(context.Context) error, after func(context.Context)) bool
 	EnqueueDetailSyncOrRerun              func(key string, attrs []any, repo dbpkg.Repo, number int, fn func(context.Context) error) bool
 	FilterConfiguredRepoSummaries         func(summaries []dbpkg.RepoSummary) []dbpkg.RepoSummary
 	FilterConfiguredRepos                 func(repos []dbpkg.Repo) []dbpkg.Repo

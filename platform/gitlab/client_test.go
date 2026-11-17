@@ -807,31 +807,9 @@ func TestListReleasesReadsOnlyFirstPage(t *testing.T) {
 			return
 		}
 		requests++
-		assert.Equal(t, "100", r.URL.Query().Get("per_page"))
-		page, err := strconv.Atoi(r.URL.Query().Get("page"))
-		if !assert.NoError(t, err) || page < 1 {
-			http.Error(w, "invalid page", http.StatusBadRequest)
-			return
-		}
-		perPage, err := strconv.Atoi(r.URL.Query().Get("per_page"))
-		if !assert.NoError(t, err) || perPage < 1 {
-			http.Error(w, "invalid page size", http.StatusBadRequest)
-			return
-		}
-		start := (page - 1) * perPage
-		end := min(start+perPage, 1000)
-		if end < 1000 {
-			w.Header().Set("X-Next-Page", strconv.Itoa(page+1))
-		}
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, "[")
-		for i := start; i < end; i++ {
-			if i > start {
-				fmt.Fprint(w, ",")
-			}
-			fmt.Fprintf(w, `{"tag_name":"v%d"}`, 1000-i)
-		}
-		fmt.Fprint(w, "]")
+		assert.Equal(t, "3", r.URL.Query().Get("per_page"))
+		w.Header().Set("X-Next-Page", "2")
+		writeJSON(w, `[{"tag_name":"v1000"},{"tag_name":"v999"},{"tag_name":"v998"}]`)
 	}))
 	defer server.Close()
 
@@ -840,7 +818,7 @@ func TestListReleasesReadsOnlyFirstPage(t *testing.T) {
 	releases, err := client.ListReleases(t.Context(), ref)
 	require.NoError(t, err)
 	assert.Equal(t, 1, requests)
-	require.Len(t, releases, 100)
+	require.Len(t, releases, 3)
 	assert.Equal(t, []string{"v1000", "v999", "v998"}, []string{releases[0].TagName, releases[1].TagName, releases[2].TagName})
 }
 

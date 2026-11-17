@@ -639,7 +639,7 @@ func (c *Client) ListReleases(ctx context.Context, ref platform.RepoRef) ([]plat
 	if err != nil {
 		return nil, err
 	}
-	opt := &gitlab.ListReleasesOptions{Page: 1, PerPage: defaultPageSize}
+	opt := &gitlab.ListReleasesOptions{Page: 1, PerPage: 3}
 
 	releases, _, err := c.api.Releases.ListReleases(pid, opt, gitlab.WithContext(ctx))
 	if err != nil {

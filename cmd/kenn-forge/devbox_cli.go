@@ -130,6 +130,9 @@ func runDevboxGitHub(ctx context.Context, command *cobra.Command, socket, reposi
 	if err != nil {
 		return err
 	}
+	if checkAuthor && credential.AppSlug == "" {
+		return errors.New("broker credential has no GitHub App slug; upgrade the broker")
+	}
 	privateConfig, err := os.MkdirTemp("", "forge-devbox-gh-")
 	if err != nil {
 		return err
@@ -160,7 +163,7 @@ func runDevboxGitHub(ctx context.Context, command *cobra.Command, socket, reposi
 		if err := json.Unmarshal(output, &result); err != nil {
 			return fmt.Errorf("read pull request author: %w", err)
 		}
-		if credential.AppSlug == "" || !result.Author.IsBot || result.Author.Login != "app/"+credential.AppSlug {
+		if !result.Author.IsBot || result.Author.Login != "app/"+credential.AppSlug {
 			return fmt.Errorf("pull request author %q is not GitHub App %q", result.Author.Login, credential.AppSlug)
 		}
 	}
@@ -188,13 +191,8 @@ func devboxGitHubActionFlags(args []string) (string, string, bool, error) {
 	flags.BoolP("help", "h", false, "")
 	flags.StringP("repo", "R", "", "")
 	switch args[1] {
-	case "close":
-		flags.BoolP("delete-branch", "d", false, "")
+	case "close", "reopen":
 		flags.StringP("comment", "c", "", "")
-	case "reopen":
-		flags.StringP("comment", "c", "", "")
-	case "ready":
-		flags.Bool("undo", false, "")
 	}
 	if err := flags.Parse(args[2:]); err != nil {
 		return "", "", false, err

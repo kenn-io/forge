@@ -26,6 +26,7 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socket)
 	require.NoError(t, err)
 	var brokerCalls atomic.Int32
+	var missingSlug atomic.Bool
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		brokerCalls.Add(1)
 		assert.Equal(t, "/v1/credentials", r.URL.Path)
@@ -33,7 +34,11 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		_, err := body.ReadFrom(r.Body)
 		assert.NoError(t, err)
 		assert.JSONEq(t, `{"repository":"example/project","profile":"pr"}`, body.String())
-		_, _ = fmt.Fprintf(w, `{"token":"test-token","app_slug":"example-app","expires_at":%q}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
+		slug := "example-app"
+		if missingSlug.Load() {
+			slug = ""
+		}
+		_, _ = fmt.Fprintf(w, `{"token":"test-token","app_slug":%q,"expires_at":%q}`, slug, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
 	})}
 	done := make(chan struct{})
 	go func() { defer close(done); _ = server.Serve(listener) }()
@@ -69,7 +74,7 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		{"reopen", []string{"pr", "reopen", "42"}, "pr reopen 42"},
 		{"ready", []string{"pr", "ready", "42"}, "pr ready 42"},
 		{"reopen with comment", []string{"pr", "reopen", "42", "-c", "message"}, "pr reopen 42 -c message"},
-		{"ready undo", []string{"pr", "ready", "42", "--undo"}, "pr ready 42 --undo"},
+		{"close with comment", []string{"pr", "close", "42", "-c", "message"}, "pr close 42 -c message"},
 	} {
 		t.Run(tc.action, func(t *testing.T) {
 			var output bytes.Buffer
@@ -113,6 +118,38 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		require.Error(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42"}))
 		assert.Empty(t, output.String())
 	})
+	t.Run("missing app slug", func(t *testing.T) {
+		missingSlug.Store(true)
+		defer missingSlug.Store(false)
+		viewLog := filepath.Join(t.TempDir(), "view")
+		t.Setenv("VIEW_LOG", viewLog)
+		var output bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetOut(&output)
+		err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42"})
+		require.ErrorContains(t, err, "upgrade the broker")
+		assert.NoFileExists(t, viewLog)
+		assert.Empty(t, output.String())
+	})
+	for _, tc := range []struct{ action, flag string }{
+		{"close", "--delete-branch"},
+		{"close", "-d"},
+		{"ready", "--undo"},
+	} {
+		t.Run(tc.action+" rejects "+tc.flag, func(t *testing.T) {
+			viewLog := filepath.Join(t.TempDir(), "view")
+			t.Setenv("VIEW_LOG", viewLog)
+			before := brokerCalls.Load()
+			var output bytes.Buffer
+			cmd := &cobra.Command{}
+			cmd.SetOut(&output)
+			err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", tc.action, "42", tc.flag})
+			require.ErrorContains(t, err, tc.flag)
+			assert.Equal(t, before, brokerCalls.Load())
+			assert.NoFileExists(t, viewLog)
+			assert.Empty(t, output.String())
+		})
+	}
 	t.Run("help false still checks author", func(t *testing.T) {
 		t.Setenv("AUTHOR_JSON", `{"author":{"login":"alice","is_bot":false}}`)
 		before := brokerCalls.Load()

@@ -76,7 +76,7 @@ type archiveStatusResponse struct {
 	Counts                 archiveProgressCountsResponse `json:"counts"`
 	Coverage               archiveCoverageResponse       `json:"coverage"`
 	BudgetWaitUntil        *time.Time                    `json:"budget_wait_until,omitempty"`
-	LastProgressAt         *time.Time                    `json:"last_progress_at,omitempty" doc:"Latest finished item or committed inventory page"`
+	LastProgressAt         *time.Time                    `json:"last_progress_at,omitempty" doc:"Last committed inventory page or finished item"`
 	InitialStartedAt       *time.Time                    `json:"initial_started_at,omitempty"`
 	InitialCompletedAt     *time.Time                    `json:"initial_completed_at,omitempty"`
 	MaintenanceWatermark   *time.Time                    `json:"maintenance_watermark,omitempty"`

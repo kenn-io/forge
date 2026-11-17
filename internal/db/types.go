@@ -402,6 +402,7 @@ type ArchiveRepoState struct {
 	MaintenanceMergeRequests ArchiveScanState
 	InitialStartedAt         *time.Time
 	InitialCompletedAt       *time.Time
+	LastProgressAt           *time.Time
 	MaintenanceWatermark     *time.Time
 	MaintenanceSucceededAt   *time.Time
 	PromptScanStartedAt      *time.Time

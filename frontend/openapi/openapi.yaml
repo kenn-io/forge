@@ -1433,7 +1433,7 @@ components:
           format: date-time
           type: string
         last_progress_at:
-          description: Latest finished item or committed inventory page
+          description: Last committed inventory page or finished item
           format: date-time
           type: string
         maintenance_succeeded_at:

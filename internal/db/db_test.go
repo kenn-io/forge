@@ -37,6 +37,40 @@ func openDBWithMigrations(t *testing.T) *DB {
 	return d
 }
 
+func TestArchiveLastProgressMigration(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	path := filepath.Join(t.TempDir(), "archive-v98.db")
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	openAtVersionForTest(t, path, 98, func(raw *sql.DB) {
+		_, err := raw.ExecContext(t.Context(), `INSERT INTO forge_repos (id, owner, name, repo_path, owner_key, name_key, repo_path_key) VALUES (1, 'acme', 'widget', 'acme/widget', 'acme', 'widget', 'acme/widget')`)
+		require.NoError(err)
+		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_repos (repo_id, collection_mode, operator_state, created_at, updated_at) VALUES (1, 'full', 'active', ?, ?)`, now, now)
+		require.NoError(err)
+		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_repo_scans (repo_id, scan, status, page_count, updated_at) VALUES (1, 'issue_inventory', 'running', 1, ?)`, now.Format(time.RFC3339Nano))
+		require.NoError(err)
+		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_items (repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state) VALUES (1, 'issue', 1, 'issue-1', ?, ?, 'active')`, now, now)
+		require.NoError(err)
+		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_dataset_progress (repo_id, item_type, item_number, dataset, status, completed_at, updated_at, item_created_at) VALUES (1, 'issue', 1, 'lookup', 'complete', ?, ?, ?)`, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), now)
+		require.NoError(err)
+	})
+	d, err := Open(path)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(d.Close()) })
+	states, err := d.ListArchiveRepoStates(t.Context(), []int64{1})
+	require.NoError(err)
+	require.Len(states, 1)
+	require.Nil(states[0].LastProgressAt)
+	progress, err := d.GetArchiveProgress(t.Context(), ArchiveProgressOpts{RepoIDs: []int64{1}, Now: now})
+	require.NoError(err)
+	require.Nil(progress[0].LastProgressAt)
+	require.NoError(d.CommitArchiveInventoryPage(t.Context(), ArchiveInventoryCommit{RepoID: 1, ItemType: ArchiveItemTypeIssue, ScanGeneration: 1, Exhausted: true, Now: now.Add(time.Hour)}))
+	progress, err = d.GetArchiveProgress(t.Context(), ArchiveProgressOpts{RepoIDs: []int64{1}, Now: now.Add(time.Hour)})
+	require.NoError(err)
+	require.NotNil(progress[0].LastProgressAt)
+	require.Equal(now.Add(time.Hour), *progress[0].LastProgressAt)
+}
+
 func TestOpenAndSchema(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

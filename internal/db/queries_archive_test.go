@@ -1057,8 +1057,7 @@ func TestRequeueArchiveLifecycleDetailsOnlyReopensIncompleteGitHubRows(t *testin
 	)
 	require.NoError(err)
 	assert.Equal(ArchiveDatasetProgressPending, progress.Status)
-	require.NotNil(progress.CompletedAt)
-	assert.Equal(now, *progress.CompletedAt)
+	assert.Nil(progress.CompletedAt)
 	assert.Zero(progress.ScanGeneration % 2)
 	issueProgress, err := database.GetDatasetProgress(
 		ctx, repoID, ArchiveItemTypeIssue, 8, ArchiveDatasetLookup,
@@ -1283,8 +1282,7 @@ func TestReconcileArchiveCoverageRequeuesKnownItemsWhenInventoryReturns(t *testi
 	)
 	require.NoError(err)
 	require.Equal(ArchiveDatasetProgressPending, progress.Status)
-	require.NotNil(progress.CompletedAt)
-	require.Equal(now, *progress.CompletedAt)
+	require.Nil(progress.CompletedAt)
 	require.Greater(progress.ScanGeneration, archiveLifecycleDetailsGeneration)
 }
 
@@ -1569,40 +1567,6 @@ func TestArchiveDeriveProgressStatusAndOrderedPhases(t *testing.T) {
 	}
 }
 
-func TestArchiveGetProgressReportsLastProgressAt(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	assert := assert.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-	now := archiveTestTime()
-	first := insertTestRepo(t, d, "acme", "first")
-	second := insertTestRepo(t, d, "acme", "second")
-	empty := insertTestRepo(t, d, "acme", "empty")
-	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{first, second, empty}, now))
-	require.NoError(d.StartFullArchives(ctx, []int64{first, second, empty}, now))
-	for _, repo := range []int64{first, second} {
-		insertArchiveItemForTest(t, d, repo, ArchiveItemTypeIssue, 1, now)
-		insertArchiveProgressForTest(t, d, repo, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup, ArchiveDatasetProgressComplete)
-	}
-	_, err := d.WriteDB().ExecContext(ctx, `UPDATE forge_archive_dataset_progress SET completed_at = ? WHERE repo_id IN (?, ?)`, formatDatasetProgressTime(now.Add(-time.Hour)), first, second)
-	require.NoError(err)
-	_, err = d.WriteDB().ExecContext(ctx, `UPDATE forge_archive_repo_scans SET page_count = 1, status = 'running', updated_at = ? WHERE repo_id = ? AND scan = 'issue_inventory'`, formatDatasetProgressTime(now), first)
-	require.NoError(err)
-	progress, err := d.GetArchiveProgress(ctx, ArchiveProgressOpts{Now: now})
-	require.NoError(err)
-	require.Len(progress, 3)
-	byRepo := make(map[int64]*time.Time)
-	for _, row := range progress {
-		byRepo[row.RepoID] = row.LastProgressAt
-	}
-	require.NotNil(byRepo[first])
-	require.NotNil(byRepo[second])
-	assert.Equal(now, *byRepo[first])
-	assert.Equal(now.Add(-time.Hour), *byRepo[second])
-	assert.Nil(byRepo[empty])
-}
-
 func TestArchiveProgressSurvivesBlockAndReopen(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
@@ -1613,26 +1577,65 @@ func TestArchiveProgressSurvivesBlockAndReopen(t *testing.T) {
 	repoID := insertTestRepo(t, d, "acme", "progress")
 	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
 	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
-	page := ArchiveInventoryCommit{RepoID: repoID, ItemType: ArchiveItemTypeIssue, ScanGeneration: 1, NextCursor: "next", Now: now, Items: []ArchiveInventoryItem{archiveInventoryItemForTest(1, now)}}
+	page := ArchiveInventoryCommit{RepoID: repoID, ItemType: ArchiveItemTypeIssue, ScanGeneration: 1, NextCursor: "next", Now: now.Add(900 * time.Millisecond), Items: []ArchiveInventoryItem{archiveInventoryItemForTest(1, now)}}
 	require.NoError(d.CommitArchiveInventoryPage(ctx, page))
+	require.NoError(d.CommitArchiveInventoryPage(ctx, ArchiveInventoryCommit{RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest, ScanGeneration: 1, Exhausted: true, Now: now.Add(100 * time.Millisecond)}))
 	require.NoError(d.BlockArchiveRepoScan(ctx, repoID, ArchiveScanIssueInventory, 1, "blocked", "blocked"))
 	progress, err := d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: now})
 	require.NoError(err)
 	require.NotNil(progress[0].LastProgressAt)
-	assert.Equal(now, *progress[0].LastProgressAt)
+	assert.Equal(page.Now, *progress[0].LastProgressAt)
+	require.NoError(d.Tx(ctx, func(tx *sql.Tx) error {
+		return resetArchiveScanTx(ctx, tx, repoID, ArchiveScanIssueInventory, now.Add(time.Minute))
+	}))
+	progress, err = d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: now})
+	require.NoError(err)
+	require.NotNil(progress[0].LastProgressAt)
+	assert.Equal(page.Now, *progress[0].LastProgressAt)
 	item, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup)
 	require.NoError(err)
-	completed := now.Add(500 * time.Millisecond)
+	completed := now.Add(time.Second)
 	require.NoError(d.CommitArchiveItemSync(ctx, ArchiveItemSyncCommit{RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: 1, ScanGeneration: item.ScanGeneration, Outcome: ArchiveLookupRemoved, Now: completed}))
 	progress, err = d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: completed})
 	require.NoError(err)
 	require.NotNil(progress[0].LastProgressAt)
 	assert.Equal(completed, *progress[0].LastProgressAt)
 	require.NoError(d.Tx(ctx, func(tx *sql.Tx) error { return reopenArchiveItemProgressTx(ctx, tx, repoID, ArchiveItemTypeIssue, 1) }))
+	require.NoError(d.RequeueArchiveLifecycleDetails(ctx, []int64{repoID}, now.Add(time.Hour)))
+	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now.Add(time.Hour)))
 	progress, err = d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: completed})
 	require.NoError(err)
 	require.NotNil(progress[0].LastProgressAt)
 	assert.Equal(completed, *progress[0].LastProgressAt)
+}
+
+func TestArchiveProgressRecordsFinishedItemOnce(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, d, "acme", "item")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
+	_, err := d.UpsertMergeRequest(ctx, &MergeRequest{RepoID: repoID, Number: 1, PlatformID: 7, State: MergeRequestStateOpen, CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
+	require.NoError(err)
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 1, now)
+	insertArchiveProgressForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 1, ArchiveDatasetLookup, ArchiveDatasetProgressPending)
+	item, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeMergeRequest, 1, ArchiveDatasetLookup)
+	require.NoError(err)
+	commit := ArchiveItemSyncCommit{RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest, ItemNumber: 1, ScanGeneration: item.ScanGeneration, Outcome: ArchiveLookupPresent, Now: now}
+	require.NoError(d.CommitArchiveItemSync(ctx, commit))
+	progress, err := d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: now})
+	require.NoError(err)
+	require.NotNil(progress[0].LastProgressAt)
+	require.Equal(now, *progress[0].LastProgressAt)
+	commit.Now = now.Add(time.Hour)
+	commit.ScanGeneration = archiveLifecycleDetailsGeneration
+	require.NoError(d.CommitArchiveItemSync(ctx, commit))
+	progress, err = d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: commit.Now})
+	require.NoError(err)
+	require.Equal(now, *progress[0].LastProgressAt)
 }
 
 func TestArchiveProgressIgnoresLiveRemoval(t *testing.T) {

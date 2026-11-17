@@ -327,7 +327,7 @@ func requeueArchiveKnownItemLookupsTx(
 			page_count = 0, observed_count = 0,
 			status = 'pending', attempt_count = 0, next_retry_at = NULL,
 			last_error_code = NULL, last_error_detail = NULL,
-			started_at = NULL, updated_at = ?
+			started_at = NULL, completed_at = NULL, updated_at = ?
 		WHERE repo_id = ? AND item_type = ? AND dataset = 'lookup'
 		  AND status = 'complete'
 		  AND EXISTS (
@@ -367,7 +367,7 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 			page_count = 0, observed_count = 0,
 			status = 'pending', attempt_count = 0, next_retry_at = NULL,
 			last_error_code = NULL, last_error_detail = NULL,
-			started_at = NULL, updated_at = ?
+			started_at = NULL, completed_at = NULL, updated_at = ?
 		WHERE repo_id IN (%s)
 		  AND item_type IN ('issue', 'merge_request') AND dataset = 'lookup'
 		  AND status = 'complete'
@@ -719,7 +719,7 @@ func listArchiveRepoStates(
 ) ([]ArchiveRepoState, error) {
 	query := `
 		SELECT repo_id, collection_mode, operator_state,
-			initial_started_at, initial_completed_at,
+			initial_started_at, initial_completed_at, last_progress_at,
 			maintenance_watermark, maintenance_succeeded_at,
 			prompt_scan_started_at, prompt_since,
 			issues_coverage, merge_requests_coverage,
@@ -758,7 +758,7 @@ func listArchiveRepoStates(
 func scanArchiveRepoState(row scanner, state *ArchiveRepoState) error {
 	return row.Scan(
 		&state.RepoID, &state.CollectionMode, &state.OperatorState,
-		&state.InitialStartedAt, &state.InitialCompletedAt,
+		&state.InitialStartedAt, &state.InitialCompletedAt, &state.LastProgressAt,
 		&state.MaintenanceWatermark, &state.MaintenanceSucceededAt,
 		&state.PromptScanStartedAt, &state.PromptSince,
 		&state.IssuesCoverage, &state.MergeRequestsCoverage,
@@ -994,9 +994,9 @@ func (d *DB) RecordRemovedMergeRequest(
 			SET scan_generation = scan_generation + 2,
 				status = 'terminal', next_cursor = NULL, last_input_cursor = NULL,
 				next_retry_at = NULL, last_error_code = 'not_found', last_error_detail = ?,
-				updated_at = ?
+				completed_at = ?, updated_at = ?
 			WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = ? AND dataset = 'lookup'`,
-			sanitizeArchiveErrorDetail(detail), nowText, repoID, number)
+			sanitizeArchiveErrorDetail(detail), nowText, nowText, repoID, number)
 		if err != nil {
 			return fmt.Errorf("record removed PR #%d lookup: %w", number, err)
 		}
@@ -1084,7 +1084,7 @@ func markArchiveItemTerminalTx(ctx context.Context, tx *sql.Tx, t ArchiveItemTer
 			t.RepoID, t.ItemType, t.ItemNumber,
 		)
 	}
-	if err := clearArchiveRepositoryFailureTx(ctx, tx, t.RepoID, t.At); err != nil {
+	if err := recordArchiveProgressTx(ctx, tx, t.RepoID, t.At); err != nil {
 		return err
 	}
 	return completeArchiveInitialIfReadyTx(ctx, tx, t.RepoID, t.At)
@@ -1152,51 +1152,14 @@ func (d *DB) getArchiveProgress(
 	if err != nil {
 		return nil, err
 	}
-	lastProgress, err := loadArchiveLastProgress(ctx, tx, repoIDs)
-	if err != nil {
-		return nil, err
-	}
 	progress := make([]ArchiveRepoProgress, len(states))
 	for i, state := range states {
 		progress[i] = deriveArchiveProgress(state, countsByRepo[state.RepoID], opts.Now)
-		progress[i].LastProgressAt = lastProgress[state.RepoID]
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit archive progress snapshot: %w", err)
 	}
 	return progress, nil
-}
-
-func loadArchiveLastProgress(ctx context.Context, queryer rowQueryer, repoIDs []int64) (map[int64]*time.Time, error) {
-	rows, err := queryer.QueryContext(ctx, fmt.Sprintf(`
-		SELECT repo_id, progress_at FROM (
-			SELECT repo_id, updated_at AS progress_at FROM forge_archive_repo_scans
-			WHERE scan IN ('issue_inventory', 'merge_request_inventory')
-				AND page_count > 0
-			UNION ALL
-			SELECT repo_id, completed_at AS progress_at FROM forge_archive_dataset_progress
-			WHERE dataset = 'lookup' AND completed_at IS NOT NULL
-		) WHERE repo_id IN (%s)`, sqlPlaceholders(len(repoIDs))), archiveRepoIDArgs(repoIDs)...)
-	if err != nil {
-		return nil, fmt.Errorf("load archive last progress: %w", err)
-	}
-	defer rows.Close()
-	result := make(map[int64]*time.Time, len(repoIDs))
-	for rows.Next() {
-		var repoID int64
-		var value sql.NullString
-		if err := rows.Scan(&repoID, &value); err != nil {
-			return nil, fmt.Errorf("scan archive last progress: %w", err)
-		}
-		parsed, err := parseDatasetProgressTimePtr(value)
-		if err != nil {
-			return nil, fmt.Errorf("parse archive last progress: %w", err)
-		}
-		if parsed != nil && (result[repoID] == nil || parsed.After(*result[repoID])) {
-			result[repoID] = parsed
-		}
-	}
-	return result, rows.Err()
 }
 
 func loadArchiveProgressCounts(
@@ -1270,7 +1233,7 @@ func deriveArchiveProgress(
 	counts ArchiveProgressCounts,
 	now time.Time,
 ) ArchiveRepoProgress {
-	progress := ArchiveRepoProgress{RepoID: state.RepoID, Counts: counts}
+	progress := ArchiveRepoProgress{RepoID: state.RepoID, Counts: counts, LastProgressAt: state.LastProgressAt}
 	if archiveRepoHasError(state, ArchiveErrorCodeBudgetExhausted) {
 		progress.BudgetWaitUntil = state.NextRetryAt
 	}
@@ -1505,7 +1468,7 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 					return fmt.Errorf("record archive inventory coverage: %w", err)
 				}
 			}
-			if err := clearArchiveRepositoryFailureTx(ctx, tx, commit.RepoID, commit.Now); err != nil {
+			if err := recordArchiveProgressTx(ctx, tx, commit.RepoID, commit.Now); err != nil {
 				return err
 			}
 			return completeArchiveInitialIfReadyTx(ctx, tx, commit.RepoID, commit.Now)
@@ -1708,11 +1671,11 @@ func reactivateTerminalArchiveWorkTx(
 	return nil
 }
 
-// clearArchiveRepositoryFailureTx clears a wait that finished work has
+// recordArchiveProgressTx records finished work and clears a wait it has
 // outlived. An authentication failure or a repository block stays until an
 // explicit retry. Items of one repository run together, and one that succeeds
 // says nothing about the one the provider refused.
-func clearArchiveRepositoryFailureTx(
+func recordArchiveProgressTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	repoID int64,
@@ -1723,11 +1686,12 @@ func clearArchiveRepositoryFailureTx(
 		SET last_error_code = CASE WHEN last_error_code IN (?1, ?2) THEN last_error_code ELSE NULL END,
 			last_error_detail = CASE WHEN last_error_code IN (?1, ?2) THEN last_error_detail ELSE NULL END,
 			next_retry_at = CASE WHEN last_error_code IN (?1, ?2) THEN next_retry_at ELSE NULL END,
-			updated_at = MAX(updated_at, ?3)
+			updated_at = MAX(updated_at, ?3),
+			last_progress_at = MAX(COALESCE(last_progress_at, ?3), ?3)
 		WHERE repo_id = ?4`,
 		ArchiveErrorCodeAuthentication, ArchiveErrorCodeRepoBlocked, now.UTC(), repoID)
 	if err != nil {
-		return fmt.Errorf("clear archive repository failure: %w", err)
+		return fmt.Errorf("record archive progress: %w", err)
 	}
 	return nil
 }

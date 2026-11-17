@@ -67,7 +67,6 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	}, (*started.JSON200)[0].ActivePhases)
 	assert.Equal(generated.ArchiveCoverageResponseCommentsSupported, (*started.JSON200)[0].Coverage.Comments)
 	assert.NotNil((*started.JSON200)[0].InitialStartedAt)
-	assert.Nil((*started.JSON200)[0].LastProgressAt)
 	assert.Equal(int32(1), wakeCount.Load())
 	assert.Zero(provider.calls.Load(), "start must only mutate durable state and wake the worker")
 

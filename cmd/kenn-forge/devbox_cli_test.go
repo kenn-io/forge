@@ -39,14 +39,23 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "gh"), []byte("#!/bin/sh\nprintf '%s|%s|%s' \"$*\" \"$GH_TOKEN\" \"$GH_REPO\"\n"), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	for _, action := range []string{"close", "reopen", "ready", "merge"} {
-		t.Run(action, func(t *testing.T) {
+	for _, tc := range []struct {
+		action string
+		args   []string
+		want   string
+	}{
+		{"close", []string{"pr", "close", "42", "--delete-branch"}, "pr close 42 --delete-branch --repo example/project"},
+		{"reopen", []string{"pr", "reopen", "42"}, "pr reopen 42"},
+		{"ready", []string{"pr", "ready", "42"}, "pr ready 42"},
+		{"merge", []string{"pr", "merge", "42", "--delete-branch"}, "pr merge 42 --delete-branch --repo example/project"},
+	} {
+		t.Run(tc.action, func(t *testing.T) {
 			var output bytes.Buffer
 			cmd := &cobra.Command{}
 			cmd.SetOut(&output)
-			err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", action, "42"})
+			err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", tc.args)
 			require.NoError(t, err)
-			assert.Equal(t, "pr "+action+" 42|test-token|github.com/example/project", output.String())
+			assert.Equal(t, tc.want+"|test-token|github.com/example/project", output.String())
 		})
 	}
 	t.Run("reject unsupported verb", func(t *testing.T) {

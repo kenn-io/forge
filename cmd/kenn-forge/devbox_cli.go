@@ -117,6 +117,9 @@ func runDevboxGitHub(ctx context.Context, command *cobra.Command, socket, reposi
 		return err
 	}
 	defer os.RemoveAll(privateConfig)
+	if args[1] == "close" || args[1] == "merge" {
+		args = append(args, "--repo", repository)
+	}
 	child := procutil.CommandContext(ctx, "gh", args...)
 	child.Stdin, child.Stdout, child.Stderr = command.InOrStdin(), command.OutOrStdout(), command.ErrOrStderr()
 	for _, entry := range os.Environ() {

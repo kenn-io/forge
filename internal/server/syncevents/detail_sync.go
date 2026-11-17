@@ -5,30 +5,73 @@ import (
 	"errors"
 	"log/slog"
 
+	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/platform"
 )
 
 type DetailSyncJob struct {
-	attrs []any
-	fn    func(context.Context) error
-	after func(context.Context)
+	attrs  []any
+	fn     func(context.Context) error
+	repo   db.Repo
+	after  func(context.Context)
+	number int
+}
+
+type detailSyncKey struct{}
+
+type detailSyncTarget struct {
+	repoID int64
+	number int
+}
+
+// TracksDetailSync reports whether the job will announce this PR's changes.
+func TracksDetailSync(ctx context.Context, repoID int64, number int) bool {
+	target, ok := ctx.Value(detailSyncKey{}).(detailSyncTarget)
+	return ok && target.repoID == repoID && target.number == number
+}
+
+// RepositoryEvent identifies the repository whose stored data changed.
+type RepositoryEvent struct {
+	Provider     string                 `json:"provider"`
+	PlatformHost string                 `json:"platform_host"`
+	RepoPath     string                 `json:"repo_path"`
+	Key          platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid,omitempty"`
+}
+
+func (r RepositoryEvent) MarshalJSON() ([]byte, error) {
+	type plain RepositoryEvent
+	return platform.MarshalKeyedJSON(plain(r))
+}
+
+func (r *RepositoryEvent) UnmarshalJSON(data []byte) error {
+	type plain RepositoryEvent
+	return platform.UnmarshalKeyedJSON(data, (*plain)(r))
+}
+
+type RepositoryChanges struct {
+	Repositories []RepositoryEvent `json:"repositories"`
 }
 
 func (s *Handlers) EnqueueDetailSync(
 	key string,
 	attrs []any,
+	repo db.Repo,
+	number int,
 	fn func(context.Context) error,
 ) bool {
-	return s.enqueueDetailSyncOpts(key, attrs, fn, nil, false)
+	return s.enqueueDetailSyncOpts(key, attrs, repo, number, fn, nil, false)
 }
 
 func (s *Handlers) EnqueueDetailSyncWithCompletion(
 	key string,
 	attrs []any,
+	repo db.Repo,
+	number int,
 	fn func(context.Context) error,
 	after func(context.Context),
 ) bool {
-	return s.enqueueDetailSyncOpts(key, attrs, fn, after, false)
+	return s.enqueueDetailSyncOpts(key, attrs, repo, number, fn, after, false)
 }
 
 // enqueueDetailSyncOrRerun schedules one rerun after the in-flight sync
@@ -39,9 +82,11 @@ func (s *Handlers) EnqueueDetailSyncWithCompletion(
 func (s *Handlers) EnqueueDetailSyncOrRerun(
 	key string,
 	attrs []any,
+	repo db.Repo,
+	number int,
 	fn func(context.Context) error,
 ) bool {
-	return s.enqueueDetailSyncOpts(key, attrs, fn, nil, true)
+	return s.enqueueDetailSyncOpts(key, attrs, repo, number, fn, nil, true)
 }
 
 // EnqueueDetailSyncOrRerunWithCompletion is EnqueueDetailSyncOrRerun with
@@ -51,20 +96,24 @@ func (s *Handlers) EnqueueDetailSyncOrRerun(
 func (s *Handlers) EnqueueDetailSyncOrRerunWithCompletion(
 	key string,
 	attrs []any,
+	repo db.Repo,
+	number int,
 	fn func(context.Context) error,
 	after func(context.Context),
 ) bool {
-	return s.enqueueDetailSyncOpts(key, attrs, fn, after, true)
+	return s.enqueueDetailSyncOpts(key, attrs, repo, number, fn, after, true)
 }
 
 func (s *Handlers) enqueueDetailSyncOpts(
 	key string,
 	attrs []any,
+	repo db.Repo,
+	number int,
 	fn func(context.Context) error,
 	after func(context.Context),
 	rerun bool,
 ) bool {
-	job := DetailSyncJob{attrs: attrs, fn: fn, after: after}
+	job := DetailSyncJob{attrs: attrs, repo: repo, number: number, fn: fn, after: after}
 	s.DetailSyncMu.Lock()
 	if (*s.DetailSyncInFlight) == nil {
 		(*s.DetailSyncInFlight) = make(map[string]struct{})
@@ -117,11 +166,16 @@ func (s *Handlers) startDetailSyncJob(key string, job DetailSyncJob) bool {
 			}
 		}()
 
+		var before string
+		var snapshotErr error
+		if job.repo.ID != 0 {
+			before, snapshotErr = s.Db.DetailChangeSnapshot(ctx, job.repo.ID, job.number)
+			ctx = context.WithValue(ctx, detailSyncKey{}, detailSyncTarget{repoID: job.repo.ID, number: job.number})
+		}
 		err := job.fn(ctx)
 		diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err)
 		if err != nil && !isDiffErr {
 			slog.Warn("background detail sync failed", append(job.attrs, "err", err)...)
-			return
 		}
 		if diffErr != nil {
 			slog.Warn(
@@ -129,13 +183,24 @@ func (s *Handlers) startDetailSyncJob(key string, job DetailSyncJob) bool {
 				append(job.attrs, "code", diffErr.Code, "err", diffErr.Err)...,
 			)
 		}
-		if job.after != nil {
+		if job.after != nil && (err == nil || isDiffErr) {
 			job.after(ctx)
 		}
-		(*s.Hub).Broadcast(Event{
-			Type: "data_changed",
-			Data: struct{}{},
-		})
+		if job.repo.ID == 0 {
+			if err == nil || isDiffErr {
+				(*s.Hub).Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+			}
+			return
+		}
+		after, afterErr := s.Db.DetailChangeSnapshot(ctx, job.repo.ID, job.number)
+		if snapshotErr != nil || afterErr != nil {
+			slog.Warn("background detail snapshot failed", append(job.attrs, "err", errors.Join(snapshotErr, afterErr))...)
+			return
+		}
+		if before != after {
+			event := RepositoryEvent{Provider: job.repo.Platform, PlatformHost: job.repo.PlatformHost, RepoPath: job.repo.RepoPath, Key: job.repo.Key}
+			(*s.Hub).Broadcast(Event{Type: "data_changed", Data: RepositoryChanges{Repositories: []RepositoryEvent{event}}})
+		}
 	})
 	if started {
 		return true

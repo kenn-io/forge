@@ -2,6 +2,7 @@ package syncevents
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -58,9 +59,11 @@ type EventHub struct {
 	// goroutine times the intervals, woken through dataChangedSent, so
 	// timers belong to the hub's creator rather than to whichever goroutine
 	// broadcast.
-	dataChangedOpen    bool
-	dataChangedPending bool
-	dataChangedSent    chan struct{}
+	dataChangedOpen         bool
+	dataChangedPending      bool
+	dataChangedRepositories []RepositoryEvent
+	dataChangedUnscoped     bool
+	dataChangedSent         chan struct{}
 }
 
 // NewEventHub creates a ready-to-use hub with the default ring capacity.
@@ -207,6 +210,15 @@ func (h *EventHub) broadcastDataChanged(event Event) uint64 {
 	defer h.Mu.Unlock()
 	if h.dataChangedOpen {
 		h.dataChangedPending = true
+		if changes, ok := event.Data.(RepositoryChanges); ok && len(changes.Repositories) > 0 {
+			for _, repo := range changes.Repositories {
+				if !slices.Contains(h.dataChangedRepositories, repo) {
+					h.dataChangedRepositories = append(h.dataChangedRepositories, repo)
+				}
+			}
+		} else {
+			h.dataChangedUnscoped = true
+		}
 		return 0
 	}
 	h.dataChangedOpen = true
@@ -235,7 +247,13 @@ func (h *EventHub) timeDataChangedIntervals() {
 			h.Mu.Lock()
 			if h.dataChangedPending {
 				h.dataChangedPending = false
-				h.broadcastLocked(0, func(uint64) Event { return Event{Type: "data_changed", Data: struct{}{}} })
+				var data any = struct{}{}
+				if !h.dataChangedUnscoped {
+					data = RepositoryChanges{Repositories: h.dataChangedRepositories}
+				}
+				h.dataChangedRepositories = nil
+				h.dataChangedUnscoped = false
+				h.broadcastLocked(0, func(uint64) Event { return Event{Type: "data_changed", Data: data} })
 			} else {
 				h.dataChangedOpen = false
 				open = false

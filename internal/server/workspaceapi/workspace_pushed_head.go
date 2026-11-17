@@ -95,8 +95,12 @@ type prCIRefreshedPayload struct {
 // PRCIRefreshedPayload is shared with the deferred-merge event producer.
 type PRCIRefreshedPayload = prCIRefreshedPayload
 
-func (s *Handler) enqueueWorkspacePushedHeadRefresh(change workspace.PushedHeadUpdate) bool {
+func (s *Handler) enqueueWorkspacePushedHeadRefresh(ctx context.Context, change workspace.PushedHeadUpdate) bool {
 	if s.syncer == nil {
+		return false
+	}
+	repo, mr := s.lookupPushedHeadMR(ctx, change)
+	if repo == nil || mr == nil {
 		return false
 	}
 	key := pushedHeadPRKey(change)
@@ -113,6 +117,7 @@ func (s *Handler) enqueueWorkspacePushedHeadRefresh(change workspace.PushedHeadU
 	started := s.enqueueDetailSyncWithCompletion(
 		key,
 		attrs,
+		*repo, change.Number,
 		func(ctx context.Context) error {
 			repo, mr := s.lookupPushedHeadMR(ctx, change)
 			if repo == nil || mr == nil {
@@ -215,6 +220,7 @@ func (s *Handler) maybeEnqueuePushedHeadCIRefresh(ctx context.Context, change wo
 	started := s.enqueueDetailSyncWithCompletion(
 		key,
 		[]any{"type", "pr-ci", "provider", string(change.Provider), "platform_host", change.PlatformHost, "repo_path", change.RepoPath, "number", change.Number},
+		*repo, change.Number,
 		func(ctx context.Context) error {
 			currentRepo, currentMR := s.lookupPushedHeadMR(ctx, change)
 			if currentRepo == nil || currentMR == nil {

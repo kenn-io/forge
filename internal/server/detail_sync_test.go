@@ -2,12 +2,25 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/itemapi"
+	"go.kenn.io/forge/internal/server/syncevents"
+	"go.kenn.io/forge/internal/testutil/tokenauthtest"
+	platformgithub "go.kenn.io/forge/platform/github"
 
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
@@ -24,7 +37,7 @@ func TestEnqueueDetailSyncOrRerunRunsPendingAfterInFlight(t *testing.T) {
 		secondDone := make(chan struct{})
 		var calls atomic.Int64
 
-		started := srv.syncevents.EnqueueDetailSyncOrRerun("pr:github:github.com:acme/widget#7", nil, func(context.Context) error {
+		started := srv.syncevents.EnqueueDetailSyncOrRerun("pr:github:github.com:acme/widget#7", nil, db.Repo{}, 0, func(context.Context) error {
 			calls.Add(1)
 			close(firstStarted)
 			<-releaseFirst
@@ -34,7 +47,7 @@ func TestEnqueueDetailSyncOrRerunRunsPendingAfterInFlight(t *testing.T) {
 		synctest.Wait()
 		<-firstStarted
 
-		started = srv.syncevents.EnqueueDetailSyncOrRerun("pr:github:github.com:acme/widget#7", nil, func(context.Context) error {
+		started = srv.syncevents.EnqueueDetailSyncOrRerun("pr:github:github.com:acme/widget#7", nil, db.Repo{}, 0, func(context.Context) error {
 			calls.Add(1)
 			close(secondDone)
 			return nil
@@ -66,7 +79,7 @@ func TestEnqueueDetailSyncOrRerunKeepsReplacedCompletion(t *testing.T) {
 			}
 		}
 
-		require.True(srv.syncevents.EnqueueDetailSyncOrRerun(key, nil, func(context.Context) error {
+		require.True(srv.syncevents.EnqueueDetailSyncOrRerun(key, nil, db.Repo{}, 0, func(context.Context) error {
 			<-releaseFirst
 			return nil
 		}))
@@ -75,14 +88,126 @@ func TestEnqueueDetailSyncOrRerunKeepsReplacedCompletion(t *testing.T) {
 		// A mutation queues a rerun with follow-up work, then a plain refresh
 		// replaces that rerun before the in-flight sync finishes.
 		require.False(srv.syncevents.EnqueueDetailSyncOrRerunWithCompletion(
-			key, nil, record("mutation sync"),
+			key, nil, db.Repo{}, 0, record("mutation sync"),
 			func(context.Context) { order = append(order, "mutation completion") },
 		))
-		require.False(srv.syncevents.EnqueueDetailSyncOrRerun(key, nil, record("refresh sync")))
+		require.False(srv.syncevents.EnqueueDetailSyncOrRerun(key, nil, db.Repo{}, 0, record("refresh sync")))
 
 		close(releaseFirst)
 		synctest.Wait()
 		srv.bg.Wait()
 		assert.Equal([]string{"refresh sync", "mutation completion"}, order)
 	})
+}
+
+func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		queue bool
+	}{
+		{"unchanged", false},
+		{"queue", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			serverfake.RunParallelServerTest(t)
+			when := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute).Truncate(time.Second)}
+			comment, state := "original", "open"
+			commentWhen := gh.Timestamp{Time: when.Add(time.Minute)}
+			var timelineCalls atomic.Int64
+			mock := &serverfake.MockGH{
+				GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+					return &gh.PullRequest{ID: new(int64(1000)), Number: &number, State: &state, Title: new("Example pull"), Body: new("body"), CreatedAt: &when, UpdatedAt: &when, Head: &gh.PullRequestBranch{SHA: new("abc123"), Ref: new("feature")}, Base: &gh.PullRequestBranch{Ref: new("main")}}, nil
+				},
+				ListPRTimelineEventsFn: func(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error) {
+					timelineCalls.Add(1)
+					return []platformgithub.PullRequestTimelineEvent{{NodeID: "title-1", EventType: "renamed_title", PreviousTitle: "Old", CurrentTitle: "New", CreatedAt: when.Time}}, nil
+				},
+				ListIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+					return []*gh.IssueComment{{ID: new(int64(99)), Body: &comment, CreatedAt: &commentWhen, UpdatedAt: &commentWhen}}, nil
+				},
+			}
+			srv, database, syncer := setupTestServerWithMock(t, mock)
+			serverfake.SeedPR(t, database, "acme", "widget", 1)
+			input := &itemapi.RepoNumberInput{Provider: "github", Owner: "acme", Name: "widget", Number: 1}
+			var fetchers map[string]*ghclient.GraphQLFetcher
+			if tc.queue {
+				queueServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					body, _ := io.ReadAll(r.Body)
+					w.Header().Set("Content-Type", "application/json")
+					switch {
+					case strings.Contains(string(body), "isMergeQueueEnabled"):
+						_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"state":"OPEN","baseRefName":"main","isMergeQueueEnabled":true,"mergeQueueEntry":{"position":1,"state":"AWAITING_CHECKS","enqueuedAt":"2026-10-14T19:05:15Z","estimatedTimeToMerge":240},"latestQueueEvent":{"nodes":[{"__typename":"AddedToMergeQueueEvent"}]}}}}}`)
+					case strings.Contains(string(body), "configuration"):
+						_, _ = io.WriteString(w, `{"data":{"repository":{"mergeQueue":{"configuration":{"mergeMethod":"SQUASH"}}}}}`)
+					default:
+						_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{}}}}`)
+					}
+				}))
+				t.Cleanup(queueServer.Close)
+				fetchers = map[string]*ghclient.GraphQLFetcher{"github.com": ghclient.NewGraphQLFetcher(tokenauthtest.Source("token"), "github.com", nil, nil, ghclient.WithGraphQLEndpointForTesting(queueServer.URL))}
+			}
+			_, err := srv.activityapi.EnqueuePRSync(t.Context(), input)
+			require.NoError(t, err)
+			srv.bg.Wait()
+
+			result, err := database.WriteDB().ExecContext(t.Context(), `UPDATE forge_mr_events SET metadata_json = '{"current_title":"New","previous_title":"Old"}' WHERE dedupe_key = 'timeline-title-1'`)
+			require.NoError(t, err)
+			rows, err := result.RowsAffected()
+			require.NoError(t, err)
+			require.EqualValues(t, 1, rows)
+
+			if tc.queue {
+				syncer.SetFetchers(fetchers)
+			}
+
+			oldHub := srv.hub
+			srv.hub = syncevents.NewEventHub()
+			oldHub.Close()
+			defer srv.hub.Close()
+			events, _ := srv.hub.Subscribe(t.Context(), false)
+			_, err = srv.activityapi.EnqueuePRSync(t.Context(), input)
+			require.NoError(t, err)
+			srv.bg.Wait()
+			require.EqualValues(t, 2, timelineCalls.Load())
+			var change syncevents.Event
+		drain:
+			for {
+				select {
+				case event := <-events:
+					if event.Event.Type == "data_changed" {
+						require.Empty(t, change.Type, "extra data_changed event")
+						change = event.Event
+					}
+				default:
+					break drain
+				}
+			}
+			require.Equal(t, tc.queue, change.Type == "data_changed", "unexpected refresh event")
+			if !tc.queue {
+				return
+			}
+			payload, err := json.Marshal(change.Data)
+			require.NoError(t, err)
+			var data struct {
+				Repositories []struct {
+					Provider     string `json:"provider"`
+					PlatformHost string `json:"platform_host"`
+					RepoPath     string `json:"repo_path"`
+				} `json:"repositories"`
+			}
+			require.NoError(t, json.Unmarshal(payload, &data))
+			require.Len(t, data.Repositories, 1)
+			require.Equal(t, "github", data.Repositories[0].Provider)
+			require.Equal(t, "github.com", data.Repositories[0].PlatformHost)
+			require.Equal(t, "acme/widget", data.Repositories[0].RepoPath)
+			assert.Never(t, func() bool {
+				select {
+				case event := <-events:
+					return event.Event.Type == "data_changed"
+				default:
+					return false
+				}
+			}, syncevents.DataChangedInterval+200*time.Millisecond, 10*time.Millisecond, "extra data_changed event")
+		})
+	}
 }

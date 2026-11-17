@@ -2,6 +2,7 @@ package syncevents
 
 import (
 	"context"
+	"encoding/json/v2"
 	"io"
 
 	"go.kenn.io/forge/internal/apiclient/generated"
@@ -106,7 +107,14 @@ func (s *Handlers) ReceiveHubEvent(
 	}
 	// Hub IDs belong only to the private inbound cursor. Ordinary
 	// Broadcast assigns a fresh spoke-local ID for the browser's one cursor.
-	(*s.Hub).Broadcast(Event{Type: event.Type, Data: event.Data})
+	var data any = event.Data
+	if event.Type == "data_changed" {
+		var changes RepositoryChanges
+		if json.Unmarshal(event.Data, &changes) == nil && len(changes.Repositories) > 0 {
+			data = changes
+		}
+	}
+	(*s.Hub).Broadcast(Event{Type: event.Type, Data: data})
 	return nil
 }
 

@@ -609,6 +609,7 @@ func (s *Handlers) EnqueuePRSync(ctx context.Context, input *itemapi.RepoNumberI
 			"name", repo.Name,
 			"number", input.Number,
 		},
+		repo.Repo, input.Number,
 		func(ctx context.Context) error {
 			removed, err := s.Db.IsArchiveItemRemovedUpstream(
 				ctx, repo.ID, db.ArchiveItemTypeMergeRequest, input.Number,
@@ -711,6 +712,7 @@ func (s *Handlers) EnqueueIssueSync(ctx context.Context, input *itemapi.IssueRep
 			"name", repo.Name,
 			"number", input.Number,
 		},
+		db.Repo{}, 0,
 		func(ctx context.Context) error {
 			removed, err := s.Db.IsArchiveItemRemovedUpstream(
 				ctx, repo.ID, db.ArchiveItemTypeIssue, input.Number,

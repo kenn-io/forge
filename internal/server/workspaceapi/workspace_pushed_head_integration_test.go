@@ -102,6 +102,7 @@ func newPushedHeadIntegrationFixture(
 		EnqueueDetailSync: func(
 			_ string,
 			_ []any,
+			_ db.Repo, _ int,
 			run func(context.Context) error,
 			onSuccess func(context.Context),
 		) bool {

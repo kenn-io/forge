@@ -36,8 +36,8 @@ type Handlers struct {
 	Syncer                                **ghclient.Syncer
 	WorkspaceAPI                          **workspaceapi.Handler
 	DefaultPlatformHost                   func() string
-	EnqueueDetailSync                     func(key string, attrs []any, fn func(context.Context) error) bool
-	EnqueueDetailSyncOrRerun              func(key string, attrs []any, fn func(context.Context) error) bool
+	EnqueueDetailSync                     func(key string, attrs []any, repo dbpkg.Repo, number int, fn func(context.Context) error) bool
+	EnqueueDetailSyncOrRerun              func(key string, attrs []any, repo dbpkg.Repo, number int, fn func(context.Context) error) bool
 	FilterConfiguredRepoSummaries         func(summaries []dbpkg.RepoSummary) []dbpkg.RepoSummary
 	FilterConfiguredRepos                 func(repos []dbpkg.Repo) []dbpkg.Repo
 	FilterHiddenRepoSummaries             func(ctx context.Context, summaries []dbpkg.RepoSummary) ([]dbpkg.RepoSummary, error)

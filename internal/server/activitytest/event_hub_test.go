@@ -2,6 +2,7 @@ package activitytest
 
 import (
 	"context"
+	"encoding/json/v2"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/server/syncevents"
+	"go.kenn.io/forge/platform"
 )
 
 func TestEventHubGenerationReadsWithoutBroadcast(t *testing.T) {
@@ -551,4 +553,36 @@ func TestEventHub_CloseDropsPendingDataChanged(t *testing.T) {
 		synctest.Wait()
 		assert.Equal(t, generation, hub.Generation(), "a closed hub sends no collapsed data_changed")
 	})
+}
+
+func TestEventHub_DataChangedCoalescesRepositoryIdentities(t *testing.T) {
+	repoA := syncevents.RepositoryEvent{Provider: "github", PlatformHost: "github.com", RepoPath: "example/a", Key: platform.RepositoryIDKey(42)}
+	repoB := syncevents.RepositoryEvent{Provider: "gitlab", PlatformHost: "gitlab.com", RepoPath: "example/b", Key: platform.RepositoryIDKey(43)}
+	cases := []struct {
+		name    string
+		changes []any
+		want    string
+	}{
+		{"repositories", []any{syncevents.RepositoryChanges{Repositories: []syncevents.RepositoryEvent{repoA}}, syncevents.RepositoryChanges{Repositories: []syncevents.RepositoryEvent{repoA, repoB}}}, `{"repositories":[{"provider":"github","platform_host":"github.com","repo_path":"example/a","platform_repo_id":42},{"provider":"gitlab","platform_host":"gitlab.com","repo_path":"example/b","platform_repo_id":43}]}`},
+		{"unscoped", []any{syncevents.RepositoryChanges{Repositories: []syncevents.RepositoryEvent{repoA}}, struct{}{}}, `{}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				hub := syncevents.NewEventHub()
+				defer hub.Close()
+				events, _ := hub.Subscribe(t.Context(), false)
+				hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
+				<-events
+				for _, data := range tc.changes {
+					hub.Broadcast(syncevents.Event{Type: "data_changed", Data: data})
+				}
+				time.Sleep(syncevents.DataChangedInterval)
+				synctest.Wait()
+				data, err := json.Marshal((<-events).Event.Data)
+				require.NoError(t, err)
+				require.JSONEq(t, tc.want, string(data))
+			})
+		})
+	}
 }

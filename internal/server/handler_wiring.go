@@ -219,7 +219,6 @@ func (s *Server) wireHandlers() {
 	s.activityapi.DefaultPlatformHost = s.settingsapi.DefaultPlatformHost
 	s.activityapi.EnqueueDetailSync = s.syncevents.EnqueueDetailSync
 	s.activityapi.EnqueueRepositoryDetailSyncOrRerun = s.syncevents.EnqueueRepositoryDetailSyncOrRerun
-	s.activityapi.EnqueueDetailSyncOrRerun = s.syncevents.EnqueueDetailSyncOrRerun
 	s.activityapi.FilterConfiguredRepoSummaries = s.repoapi.FilterConfiguredRepoSummaries
 	s.activityapi.FilterConfiguredRepos = s.repoapi.FilterConfiguredRepos
 	s.activityapi.FilterHiddenRepoSummaries = s.repoapi.FilterHiddenRepoSummaries

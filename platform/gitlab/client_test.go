@@ -799,6 +799,51 @@ func TestPreviewNamespaceReturnsPartialMetadataAfterLaterPageFailure(t *testing.
 	assert.Equal("upstream_error", preview.PartialErrors[0].Code)
 }
 
+func TestListReleasesReadsOnlyFirstPage(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v4/projects/42/releases" {
+			http.NotFound(w, r)
+			return
+		}
+		requests++
+		assert.Equal(t, "100", r.URL.Query().Get("per_page"))
+		page, err := strconv.Atoi(r.URL.Query().Get("page"))
+		if !assert.NoError(t, err) || page < 1 {
+			http.Error(w, "invalid page", http.StatusBadRequest)
+			return
+		}
+		perPage, err := strconv.Atoi(r.URL.Query().Get("per_page"))
+		if !assert.NoError(t, err) || perPage < 1 {
+			http.Error(w, "invalid page size", http.StatusBadRequest)
+			return
+		}
+		start := (page - 1) * perPage
+		end := min(start+perPage, 1000)
+		if end < 1000 {
+			w.Header().Set("X-Next-Page", strconv.Itoa(page+1))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, "[")
+		for i := start; i < end; i++ {
+			if i > start {
+				fmt.Fprint(w, ",")
+			}
+			fmt.Fprintf(w, `{"tag_name":"v%d"}`, 1000-i)
+		}
+		fmt.Fprint(w, "]")
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server.URL)
+	ref := platform.RepoRef{Platform: platform.KindGitLab, Host: "gitlab.example.com", RepoPath: "group/project", Key: platform.RepositoryIDKey(42)}
+	releases, err := client.ListReleases(t.Context(), ref)
+	require.NoError(t, err)
+	assert.Equal(t, 1, requests)
+	require.Len(t, releases, 100)
+	assert.Equal(t, []string{"v1000", "v999", "v998"}, []string{releases[0].TagName, releases[1].TagName, releases[2].TagName})
+}
+
 func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

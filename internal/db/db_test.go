@@ -45,9 +45,9 @@ func TestArchiveLastProgressMigration(t *testing.T) {
 	openAtVersionForTest(t, path, 98, func(raw *sql.DB) {
 		_, err := raw.ExecContext(t.Context(), `INSERT INTO forge_repos (id, owner, name, repo_path, owner_key, name_key, repo_path_key) VALUES (1, 'acme', 'widget', 'acme/widget', 'acme', 'widget', 'acme/widget')`)
 		require.NoError(err)
-		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_repos (repo_id, collection_mode, operator_state, initial_started_at, created_at, updated_at) VALUES (1, 'full', 'active', ?, ?, ?)`, now.Add(-24*time.Hour), now, now)
+		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_repos (repo_id, collection_mode, operator_state, initial_started_at, initial_completed_at, created_at, updated_at) VALUES (1, 'full', 'active', ?, ?, ?, ?)`, now.Add(-24*time.Hour), now.Add(-time.Hour), now, now)
 		require.NoError(err)
-		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_repo_scans (repo_id, scan, status, page_count, updated_at) VALUES (1, 'issue_inventory', 'running', 1, ?)`, now.Format(time.RFC3339Nano))
+		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_repo_scans (repo_id, scan, status, page_count, updated_at) VALUES (1, 'issue_inventory', 'running', 1, ?)`, now.Add(30*time.Minute).Format(time.RFC3339Nano))
 		require.NoError(err)
 		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_items (repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state) VALUES (1, 'issue', 1, 'issue-1', ?, ?, 'active')`, now, now)
 		require.NoError(err)
@@ -80,6 +80,37 @@ func TestArchiveLastProgressMigration(t *testing.T) {
 		require.NoError(err)
 		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_repo_scans (repo_id, scan, status, updated_at) VALUES (3, 'issue_inventory', 'complete', ?)`, now.Format(time.RFC3339Nano))
 		require.NoError(err)
+		for _, scan := range []struct {
+			id           int
+			kind, status string
+			pages        int
+		}{
+			{4, "merge_request_inventory", "complete", 1},
+			{5, "issue_inventory", "blocked", 1},
+			{6, "issue_inventory", "pending", 0},
+			{7, "issue_inventory", "failed", 1},
+			{8, "maintenance_issues", "running", 1},
+			{9, "issue_inventory", "running", 0},
+		} {
+			name := fmt.Sprintf("repo-%d", scan.id)
+			path := "acme/" + name
+			_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_repos (id, owner, name, repo_path, owner_key, name_key, repo_path_key) VALUES (?, 'acme', ?, ?, 'acme', ?, ?)`, scan.id, name, path, name, path)
+			require.NoError(err)
+			_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_repos (repo_id, collection_mode, operator_state, initial_started_at, created_at, updated_at) VALUES (?, 'full', 'active', ?, ?, ?)`, scan.id, now.Add(-24*time.Hour), now, now)
+			require.NoError(err)
+			_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_repo_scans (repo_id, scan, status, page_count, updated_at) VALUES (?, ?, ?, ?, ?)`, scan.id, scan.kind, scan.status, scan.pages, now.Format(time.RFC3339Nano))
+			require.NoError(err)
+		}
+		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_repos (id, owner, name, repo_path, owner_key, name_key, repo_path_key) VALUES (10, 'acme', 'lookup', 'acme/lookup', 'acme', 'lookup', 'acme/lookup')`)
+		require.NoError(err)
+		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_repos (repo_id, collection_mode, operator_state, created_at, updated_at) VALUES (10, 'full', 'active', ?, ?)`, now, now)
+		require.NoError(err)
+		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_repo_scans (repo_id, scan, status, page_count, updated_at) VALUES (10, 'issue_inventory', 'running', 1, ?)`, now.Format("2006-01-02 15:04:05"))
+		require.NoError(err)
+		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_items (repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state) VALUES (10, 'issue', 1, 'issue-1', ?, ?, 'active')`, now, now)
+		require.NoError(err)
+		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_dataset_progress (repo_id, item_type, item_number, dataset, status, completed_at, updated_at, item_created_at) VALUES (10, 'issue', 1, 'lookup', 'complete', ?, ?, ?)`, now.Add(900*time.Millisecond).Format(time.RFC3339Nano), now, now)
+		require.NoError(err)
 	})
 	d, err := Open(path)
 	require.NoError(err)
@@ -88,11 +119,26 @@ func TestArchiveLastProgressMigration(t *testing.T) {
 	require.NoError(err)
 	require.Len(states, 1)
 	require.NotNil(states[0].LastProgressAt)
-	require.Equal(now.Add(900*time.Millisecond), *states[0].LastProgressAt)
+	require.Equal(now.Add(30*time.Minute), *states[0].LastProgressAt)
 	progress, err := d.GetArchiveProgress(t.Context(), ArchiveProgressOpts{RepoIDs: []int64{1}, Now: now})
 	require.NoError(err)
 	require.NotNil(progress[0].LastProgressAt)
-	require.Equal(now.Add(900*time.Millisecond), *progress[0].LastProgressAt)
+	require.Equal(now.Add(30*time.Minute), *progress[0].LastProgressAt)
+	for _, id := range []int64{4, 5, 6, 7, 8, 9} {
+		rows, err := d.GetArchiveProgress(t.Context(), ArchiveProgressOpts{RepoIDs: []int64{id}, Now: now})
+		require.NoError(err)
+		require.Len(rows, 1)
+		if id == 4 {
+			require.NotNil(rows[0].LastProgressAt)
+			require.Equal(now, *rows[0].LastProgressAt)
+		} else {
+			require.Nil(rows[0].LastProgressAt, "repository %d", id)
+		}
+	}
+	lookup, err := d.GetArchiveProgress(t.Context(), ArchiveProgressOpts{RepoIDs: []int64{10}, Now: now})
+	require.NoError(err)
+	require.NotNil(lookup[0].LastProgressAt)
+	require.Equal(now.Add(900*time.Millisecond), *lookup[0].LastProgressAt)
 	empty, err := d.GetArchiveProgress(t.Context(), ArchiveProgressOpts{RepoIDs: []int64{2}, Now: now})
 	require.NoError(err)
 	require.Nil(empty[0].LastProgressAt)

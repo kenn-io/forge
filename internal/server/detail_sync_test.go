@@ -98,7 +98,7 @@ func TestEnqueueIssueSyncBroadcastsOnlyPersistedChanges(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	body := "original"
 	when := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute).Truncate(time.Second)}
-	commentWhen := gh.Timestamp{Time: when.Time.Add(time.Minute)}
+	commentWhen := gh.Timestamp{Time: when.Add(time.Minute)}
 	mock := &serverfake.MockGH{GetIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
 		return &gh.Issue{ID: new(int64(202)), Number: &number, State: new("open"), Title: new("Example issue"), Body: &body, CreatedAt: &when, UpdatedAt: &when}, nil
 	}, ListIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
@@ -167,7 +167,7 @@ func TestEnqueuePRSyncBroadcastsChangesToChecksAndComments(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	when := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute).Truncate(time.Second)}
 	comment := "original"
-	commentWhen := gh.Timestamp{Time: when.Time.Add(time.Minute)}
+	commentWhen := gh.Timestamp{Time: when.Add(time.Minute)}
 	check := "success"
 	mock := &serverfake.MockGH{
 		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {

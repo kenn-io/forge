@@ -314,7 +314,10 @@ Federation peers and the hub event stream live in
 - `sync_status`, `config.changed`, and `hub_connection_changed` are latest-value events replayed to
   fresh subscribers (`internal/server/syncevents/event_hub.go::EventHub.enqueueCachedLocked`).
 - `Broadcast` coalesces `data_changed` to one per `DataChangedInterval`: the first is sent at once and
-  a burst inside the interval becomes one event when it ends. `BroadcastBuild` never coalesces
+  a burst inside the interval becomes one event when it ends. Repository-scoped events carry a
+  `repositories` array with provider, platform host, provider key, and current repo path. An empty
+  object requires a full refresh. Coalescing combines repository identities, and any unscoped event
+  makes the result unscoped. `BroadcastBuild` never coalesces
   (`internal/server/syncevents/event_hub.go::EventHub.Broadcast`).
 - The hub's federation event stream serves from this same replay ring, filtered to provider-owned
   events; its rules live in `fleet-architecture.md`.

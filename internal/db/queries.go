@@ -1517,7 +1517,7 @@ func (d *DB) UpsertMergeRequestSnapshotWithLabelsAndEventMetadata(
 	var id int64
 	var revision int64
 	var accepted bool
-	err = d.Tx(ctx, func(tx *sql.Tx) error {
+	err = d.detailChangeTx(ctx, func(tx *sql.Tx) error {
 		terminalTransition := false
 		if terminalEventMetadata != nil && mr.State != MergeRequestStateOpen {
 			var priorState string
@@ -2484,7 +2484,7 @@ func (d *DB) UpsertMergedActorEvent(
 	}
 	canonicalizeMREventTimestamps(&event)
 	changed := false
-	err := d.Tx(ctx, func(tx *sql.Tx) error {
+	err := d.detailChangeTx(ctx, func(tx *sql.Tx) error {
 		var parentMergedAt sql.NullString
 		err := tx.QueryRowContext(ctx, `
 			SELECT merged_at
@@ -3247,7 +3247,7 @@ func (d *DB) UpsertIssueSnapshotWithLabels(
 	var id int64
 	var revision int64
 	var accepted bool
-	err := d.Tx(ctx, func(tx *sql.Tx) error {
+	err := d.detailChangeTx(ctx, func(tx *sql.Tx) error {
 		var err error
 		id, revision, accepted, err = commitIssueParentSnapshotTx(ctx, tx, issue, issue.Labels)
 		return err
@@ -3918,7 +3918,7 @@ func (d *DB) UpdateMRWorkflowApproval(
 	required bool,
 	count int,
 ) error {
-	_, err := d.execContext(ctx, `
+	_, err := d.detailChangeExec(ctx, `
 		UPDATE forge_merge_requests
 		SET workflow_approval_checked_at = ?,
 		    workflow_approval_head_sha   = ?,
@@ -3965,7 +3965,7 @@ func (d *DB) ListBlockedOpenMergeRequestRules(
 func (d *DB) UpdateMergeRequestMergeRules(
 	ctx context.Context, repoID int64, number int, rules string,
 ) error {
-	_, err := d.execContext(ctx, `
+	_, err := d.detailChangeExec(ctx, `
 		UPDATE forge_merge_requests
 		SET merge_rules = ?
 		WHERE repo_id = ? AND number = ?`,

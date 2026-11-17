@@ -217,6 +217,9 @@ func (s *Server) wireHandlers() {
 		TraceRelay: s.traceRelay,
 	}
 	s.activityapi.DefaultPlatformHost = s.settingsapi.DefaultPlatformHost
+	s.activityapi.EnqueueRepositoryDetailSync = s.syncevents.EnqueueRepositoryDetailSync
+	s.activityapi.EnqueueRepositoryDetailSyncOrRerun = s.syncevents.EnqueueRepositoryDetailSyncOrRerun
+	s.activityapi.EnqueueRepositoryBatchDetailSyncOrRerun = s.syncevents.EnqueueRepositoryBatchDetailSyncOrRerun
 	s.activityapi.EnqueueDetailSync = s.syncevents.EnqueueDetailSync
 	s.activityapi.EnqueueDetailSyncOrRerun = s.syncevents.EnqueueDetailSyncOrRerun
 	s.activityapi.FilterConfiguredRepoSummaries = s.repoapi.FilterConfiguredRepoSummaries

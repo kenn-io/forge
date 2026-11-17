@@ -6,12 +6,50 @@ import (
 	"log/slog"
 
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/platform"
 )
 
 type DetailSyncJob struct {
 	attrs []any
-	fn    func(context.Context) error
+	fn    func(context.Context) (bool, error)
+	batch func(context.Context) ([]RepositoryEvent, error)
+	force bool
+	repo  *RepositoryEvent
 	after func(context.Context)
+}
+
+// RepositoryEvent identifies the repository whose stored data changed.
+type RepositoryEvent struct {
+	Provider     string                 `json:"provider"`
+	PlatformHost string                 `json:"platform_host"`
+	RepoPath     string                 `json:"repo_path"`
+	Key          platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid,omitempty"`
+}
+
+func (r RepositoryEvent) MarshalJSON() ([]byte, error) {
+	type plain RepositoryEvent
+	return platform.MarshalKeyedJSON(plain(r))
+}
+
+func (r *RepositoryEvent) UnmarshalJSON(data []byte) error {
+	type plain RepositoryEvent
+	return platform.UnmarshalKeyedJSON(data, (*plain)(r))
+}
+
+type RepositoryChanges struct {
+	Repositories []RepositoryEvent `json:"repositories"`
+}
+
+func (s *Handlers) EnqueueRepositoryDetailSync(key string, attrs []any, repo RepositoryEvent, fn func(context.Context) (bool, error)) bool {
+	return s.enqueueDetailSyncJob(key, DetailSyncJob{attrs: attrs, fn: fn, repo: &repo}, false)
+}
+
+func (s *Handlers) EnqueueRepositoryDetailSyncOrRerun(key string, attrs []any, repo RepositoryEvent, fn func(context.Context) (bool, error)) bool {
+	return s.enqueueDetailSyncJob(key, DetailSyncJob{attrs: attrs, fn: fn, repo: &repo}, true)
+}
+
+func (s *Handlers) EnqueueRepositoryBatchDetailSyncOrRerun(key string, attrs []any, fn func(context.Context) ([]RepositoryEvent, error)) bool {
+	return s.enqueueDetailSyncJob(key, DetailSyncJob{attrs: attrs, batch: fn}, true)
 }
 
 func (s *Handlers) EnqueueDetailSync(
@@ -64,7 +102,11 @@ func (s *Handlers) enqueueDetailSyncOpts(
 	after func(context.Context),
 	rerun bool,
 ) bool {
-	job := DetailSyncJob{attrs: attrs, fn: fn, after: after}
+	job := DetailSyncJob{attrs: attrs, fn: func(ctx context.Context) (bool, error) { return true, fn(ctx) }, after: after}
+	return s.enqueueDetailSyncJob(key, job, rerun)
+}
+
+func (s *Handlers) enqueueDetailSyncJob(key string, job DetailSyncJob, rerun bool) bool {
 	s.DetailSyncMu.Lock()
 	if (*s.DetailSyncInFlight) == nil {
 		(*s.DetailSyncInFlight) = make(map[string]struct{})
@@ -74,8 +116,11 @@ func (s *Handlers) enqueueDetailSyncOpts(
 			if (*s.DetailSyncPending) == nil {
 				(*s.DetailSyncPending) = make(map[string]DetailSyncJob)
 			}
-			if replaced, ok := (*s.DetailSyncPending)[key]; ok && replaced.after != nil {
-				job.after = chainDetailSyncCompletions(replaced.after, job.after)
+			if replaced, ok := (*s.DetailSyncPending)[key]; ok {
+				if replaced.after != nil {
+					job.after = chainDetailSyncCompletions(replaced.after, job.after)
+				}
+				job.force = replaced.force || (replaced.repo == nil && replaced.batch == nil)
 			}
 			(*s.DetailSyncPending)[key] = job
 		}
@@ -117,7 +162,15 @@ func (s *Handlers) startDetailSyncJob(key string, job DetailSyncJob) bool {
 			}
 		}()
 
-		err := job.fn(ctx)
+		var changed bool
+		var repos []RepositoryEvent
+		var err error
+		if job.batch != nil {
+			repos, err = job.batch(ctx)
+			changed = len(repos) > 0
+		} else {
+			changed, err = job.fn(ctx)
+		}
 		diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err)
 		if err != nil && !isDiffErr {
 			slog.Warn("background detail sync failed", append(job.attrs, "err", err)...)
@@ -131,11 +184,18 @@ func (s *Handlers) startDetailSyncJob(key string, job DetailSyncJob) bool {
 		}
 		if job.after != nil {
 			job.after(ctx)
+			changed = true
 		}
-		(*s.Hub).Broadcast(Event{
-			Type: "data_changed",
-			Data: struct{}{},
-		})
+		if changed || job.force {
+			if job.force || (job.repo == nil && job.batch == nil) {
+				(*s.Hub).Broadcast(Event{Type: "data_changed", Data: struct{}{}})
+			} else {
+				if job.repo != nil {
+					repos = append(repos, *job.repo)
+				}
+				(*s.Hub).Broadcast(Event{Type: "data_changed", Data: RepositoryChanges{Repositories: repos}})
+			}
+		}
 	})
 	if started {
 		return true

@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -318,4 +319,89 @@ func TestMigration000063DownUpRoundTrips(t *testing.T) {
 
 	assertDatabaseIntegrityForTest(t, raw)
 	require.NoError(raw.Close())
+}
+
+func TestDetailChangeTrackingRecordsCIChanges(t *testing.T) {
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "example", "ci-change")
+	mrID, revision, accepted, err := d.UpsertMergeRequestSnapshotWithLabels(ctx, testMR(repoID, 1))
+	require.NoError(t, err)
+	require.True(t, accepted)
+	_, err = d.UpdateMergeRequestCISnapshot(ctx, mrID, revision, "success", `[{"name":"build"}]`, nil)
+	require.NoError(t, err)
+	tracked, changed := TrackDetailChanges(ctx, repoID, 1, false)
+	observedAt := time.Now()
+	applied, err := d.UpdateMergeRequestCISnapshot(tracked, mrID, revision, "success", `[{"name":"build"}]`, &observedAt)
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.False(t, changed())
+	applied, err = d.UpdateMergeRequestCISnapshot(tracked, mrID, revision-1, "failure", `[]`, nil)
+	require.NoError(t, err)
+	require.False(t, applied)
+	require.False(t, changed())
+	applied, err = d.UpdateMergeRequestCISnapshot(tracked, mrID, revision, "failure", `[]`, nil)
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.True(t, changed())
+}
+
+func TestDetailChangeTrackingRecordsOnlyCommittedSemanticChanges(t *testing.T) {
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "example", "tracked-detail")
+	mr := testMR(repoID, 1)
+	mrID, _, accepted, err := d.UpsertMergeRequestSnapshotWithLabels(ctx, mr)
+	require.NoError(t, err)
+	require.True(t, accepted)
+	tracked, changed := TrackDetailChanges(ctx, repoID, 1, false)
+	_, _, accepted, err = d.UpsertMergeRequestSnapshotWithLabels(tracked, mr)
+	require.NoError(t, err)
+	require.True(t, accepted)
+	require.False(t, changed())
+	mr.Body = "updated body"
+	_, _, accepted, err = d.UpsertMergeRequestSnapshotWithLabels(tracked, mr)
+	require.NoError(t, err)
+	require.True(t, accepted)
+	require.True(t, changed())
+
+	rolledBack, rolledBackChanged := TrackDetailChanges(ctx, repoID, 1, false)
+	err = d.detailChangeTx(rolledBack, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(rolledBack, `UPDATE forge_merge_requests SET body = 'discarded' WHERE id = ?`, mrID); err != nil {
+			return err
+		}
+		return errors.New("rollback")
+	})
+	require.Error(t, err)
+	require.False(t, rolledBackChanged())
+}
+
+func TestDetailChangeTrackingRecordsCommentEdits(t *testing.T) {
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "example", "comment-change")
+	mrID, revision, accepted, err := d.UpsertMergeRequestSnapshotWithLabels(ctx, testMR(repoID, 1))
+	require.NoError(t, err)
+	require.True(t, accepted)
+	event := MREvent{MergeRequestID: mrID, EventType: "issue_comment", Body: "first", DedupeKey: "comment-1", CreatedAt: baseTime()}
+	snapshot := MergeRequestChildSnapshot{MergeRequestID: mrID, ExpectedRevision: revision, CommentsComplete: true, Comments: []MREvent{event}}
+	_, err = d.CommitMergeRequestChildSnapshot(ctx, snapshot)
+	require.NoError(t, err)
+	tracked, changed := TrackDetailChanges(ctx, repoID, 1, false)
+	applied, err := d.CommitMergeRequestChildSnapshot(tracked, snapshot)
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.False(t, changed())
+	snapshot.Comments[0].Body = "edited"
+	applied, err = d.CommitMergeRequestChildSnapshot(tracked, snapshot)
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.True(t, changed())
+
+	tracked, changed = TrackDetailChanges(ctx, repoID, 1, false)
+	snapshot.Comments = nil
+	applied, err = d.CommitMergeRequestChildSnapshot(tracked, snapshot)
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.True(t, changed())
 }

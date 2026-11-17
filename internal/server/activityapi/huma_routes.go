@@ -598,7 +598,7 @@ func (s *Handlers) EnqueuePRSync(ctx context.Context, input *itemapi.RepoNumberI
 	}
 	kind := httpapi.ProviderKind(repo.Repo)
 	host := httpapi.ProviderHost(repo.Repo)
-	s.EnqueueDetailSyncOrRerun(
+	s.EnqueueRepositoryDetailSyncOrRerun(
 		prDetailSyncKey(repo, input.Number),
 		[]any{
 			"type", "pr",
@@ -609,19 +609,22 @@ func (s *Handlers) EnqueuePRSync(ctx context.Context, input *itemapi.RepoNumberI
 			"name", repo.Name,
 			"number", input.Number,
 		},
-		func(ctx context.Context) error {
+		repositoryEvent(repo),
+		func(ctx context.Context) (bool, error) {
 			removed, err := s.Db.IsArchiveItemRemovedUpstream(
 				ctx, repo.ID, db.ArchiveItemTypeMergeRequest, input.Number,
 			)
 			if err != nil {
-				return fmt.Errorf("check pull request visibility: %w", err)
+				return false, fmt.Errorf("check pull request visibility: %w", err)
 			}
 			if removed {
-				return nil
+				return false, nil
 			}
-			return (*s.Syncer).SyncMROnProviderIfChanged(
+			ctx, changed := db.TrackDetailChanges(ctx, repo.ID, input.Number, false)
+			err = (*s.Syncer).SyncMROnProviderIfChanged(
 				ctx, kind, host, repo.Owner, repo.Name, input.Number,
 			)
+			return changed(), err
 		},
 	)
 	return &itemapi.AcceptedOutput{Status: http.StatusAccepted}, nil
@@ -700,7 +703,7 @@ func (s *Handlers) EnqueueIssueSync(ctx context.Context, input *itemapi.IssueRep
 	host := httpapi.ProviderHost(repo.Repo)
 	key := "issue:" + string(kind) + ":" + host + ":" + repo.RepoPath +
 		"#" + strconv.Itoa(input.Number)
-	s.EnqueueDetailSync(
+	s.EnqueueRepositoryDetailSync(
 		key,
 		[]any{
 			"type", "issue",
@@ -711,19 +714,22 @@ func (s *Handlers) EnqueueIssueSync(ctx context.Context, input *itemapi.IssueRep
 			"name", repo.Name,
 			"number", input.Number,
 		},
-		func(ctx context.Context) error {
+		repositoryEvent(repo),
+		func(ctx context.Context) (bool, error) {
 			removed, err := s.Db.IsArchiveItemRemovedUpstream(
 				ctx, repo.ID, db.ArchiveItemTypeIssue, input.Number,
 			)
 			if err != nil {
-				return fmt.Errorf("check issue visibility: %w", err)
+				return false, fmt.Errorf("check issue visibility: %w", err)
 			}
 			if removed {
-				return nil
+				return false, nil
 			}
-			return (*s.Syncer).SyncIssueOnProvider(
+			ctx, changed := db.TrackDetailChanges(ctx, repo.ID, input.Number, true)
+			err = (*s.Syncer).SyncIssueOnProvider(
 				ctx, kind, host, repo.Owner, repo.Name, input.Number,
 			)
+			return changed(), err
 		},
 	)
 	return &itemapi.AcceptedOutput{Status: http.StatusAccepted}, nil

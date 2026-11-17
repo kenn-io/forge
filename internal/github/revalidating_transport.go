@@ -24,7 +24,8 @@ const (
 	// Superseded heads age out as new heads are polled.
 	revalidatedEntryLimit = 2048
 	// revalidatedBodyLimit skips caching an unusually large page.
-	revalidatedBodyLimit = 2 << 20
+	revalidatedBodyLimit = 1 << 20
+	issuePageBodyLimit   = 4 << 20
 )
 
 type revalidatedEntry struct {
@@ -79,26 +80,30 @@ func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, er
 		_ = resp.Body.Close()
 		return replayCachedResponse(entry, resp, req), nil
 	case resp.StatusCode == http.StatusOK:
-		return t.store(key, resp)
+		return t.store(key, resp, strings.HasSuffix(req.URL.Path, "/issues"))
 	default:
 		t.cache.Remove(key)
 		return resp, nil
 	}
 }
 
-func (t *revalidatingTransport) store(key string, resp *http.Response) (*http.Response, error) {
+func (t *revalidatingTransport) store(key string, resp *http.Response, issuePage bool) (*http.Response, error) {
 	etag := resp.Header.Get("ETag")
 	if etag == "" {
 		t.cache.Remove(key)
 		return resp, nil
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, revalidatedBodyLimit+1))
+	limit := revalidatedBodyLimit
+	if issuePage {
+		limit = issuePageBodyLimit
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit+1)))
 	if err != nil {
 		_ = resp.Body.Close()
 		t.cache.Remove(key)
 		return nil, err
 	}
-	if len(body) > revalidatedBodyLimit {
+	if len(body) > limit {
 		t.cache.Remove(key)
 		resp.Body = struct {
 			io.Reader

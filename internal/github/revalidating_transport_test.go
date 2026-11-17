@@ -388,6 +388,10 @@ func TestRevalidatingIssuePagesSkipOversizedBodiesAndComments(t *testing.T) {
 		}
 		w.Header().Set("ETag", `"page"`)
 		if strings.HasSuffix(r.URL.Path, "/issues") {
+			_, _ = w.Write([]byte(strings.Repeat("x", issuePageBodyLimit+1)))
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/labels") {
 			_, _ = w.Write([]byte(strings.Repeat("x", revalidatedBodyLimit+1)))
 			return
 		}
@@ -395,7 +399,7 @@ func TestRevalidatingIssuePagesSkipOversizedBodiesAndComments(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	client := &http.Client{Transport: newRevalidatingTransport(http.DefaultTransport)}
-	for _, path := range []string{"/repos/acme/widget/issues", "/repos/acme/widget/issues/1/comments"} {
+	for _, path := range []string{"/repos/acme/widget/issues", "/repos/acme/widget/labels", "/repos/acme/widget/issues/1/comments"} {
 		for range 2 {
 			resp, err := client.Get(server.URL + path)
 			require.NoError(t, err)
@@ -451,7 +455,7 @@ func TestRevalidatingIssuePageExpiresAndRefreshesLink(t *testing.T) {
 
 func TestRevalidatingIssuePageCachesLargeBody(t *testing.T) {
 	t.Parallel()
-	body := strings.Repeat("x", 1100*1024)
+	body := strings.Repeat("x", 2300*1024)
 	var conditionals atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("If-None-Match") == `"page"` {

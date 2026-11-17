@@ -61,6 +61,10 @@ func (c *Client) ListOpenIssues(
 				"listing issues for %s/%s: %w", owner, repo, err,
 			)
 		}
+		// Cached full pages can lack a next link after the list grows.
+		if resp.NextPage == 0 && len(issues) == pageOpts.PerPage {
+			resp.NextPage = max(pageOpts.Page, 1) + 1
+		}
 		return issues, resp, nil
 	}, c.trackRate, progress.recordPage)
 	if err != nil {

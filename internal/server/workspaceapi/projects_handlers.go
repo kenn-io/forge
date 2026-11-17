@@ -1677,7 +1677,8 @@ func (s *Handler) launchProjectWorktreeRuntimeCommandSession(
 // forgetProjectWorktreeRuntimeSessionIfExited reconciles a session that exited
 // while its metadata write was still in flight: the async exit handler's
 // generation-qualified delete can run before the row exists, so a short-lived
-// launch could otherwise leave a durable row for a dead session.
+// launch could otherwise leave a durable row for a dead session. The delete
+// waits for SQLite's single writer because no later pass removes the row.
 func (s *Handler) forgetProjectWorktreeRuntimeSessionIfExited(
 	ctx context.Context,
 	scope string,
@@ -1689,12 +1690,8 @@ func (s *Handler) forgetProjectWorktreeRuntimeSessionIfExited(
 			return
 		}
 	}
-	cleanupCtx, cancel := context.WithTimeout(
-		context.WithoutCancel(ctx), runtimeSessionCleanupTimeout,
-	)
-	defer cancel()
 	if _, err := s.db.DeleteProjectWorktreeTmuxSessionCreatedAt(
-		cleanupCtx, worktreeID, session.Key, session.CreatedAt,
+		context.WithoutCancel(ctx), worktreeID, session.Key, session.CreatedAt,
 	); err != nil {
 		slog.Warn(
 			"forget project worktree runtime tmux session recorded after exit",

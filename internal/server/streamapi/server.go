@@ -42,10 +42,7 @@ type ShutdownDeadline struct {
 	set      bool
 }
 
-var (
-	StartupTmuxCleanupTimeout    = 2 * time.Second
-	RuntimeSessionCleanupTimeout = 2 * time.Second
-)
+var StartupTmuxCleanupTimeout = 2 * time.Second
 
 func (d *ShutdownDeadline) Tighten(deadline time.Time) {
 	d.mu.Lock()
@@ -428,21 +425,21 @@ func (s *Handlers) ApplyIssueConfigLocked() {
 	}
 }
 
+// HandleRuntimeSessionExit forgets the stored row of an exited host or
+// project-worktree runtime, or hands other exits to the workspace API. The
+// deletes have no deadline: no later pass removes these rows, so each waits
+// for SQLite's single writer until shutdown.
 func (s *Handlers) HandleRuntimeSessionExit(info localruntime.SessionInfo) {
 	if info.WorkspaceID == authapi.HostRuntimeScope {
 		if s.Db == nil || info.TmuxSession == "" {
 			return
 		}
 		s.RunBackground(func(ctx context.Context) {
-			cleanupCtx, cancel := context.WithTimeout(
-				ctx, RuntimeSessionCleanupTimeout,
-			)
-			defer cancel()
 			// Generation-qualified: command session keys are reusable, so
 			// this exit's cleanup must not delete the row of a newer live
 			// session relaunched under the same key.
 			if _, err := s.Db.DeleteHostRuntimeTmuxSessionCreatedAt(
-				cleanupCtx, info.Key, info.CreatedAt,
+				ctx, info.Key, info.CreatedAt,
 			); err != nil {
 				slog.Warn(
 					"forget host runtime tmux session",
@@ -459,15 +456,11 @@ func (s *Handlers) HandleRuntimeSessionExit(info localruntime.SessionInfo) {
 			return
 		}
 		s.RunBackground(func(ctx context.Context) {
-			cleanupCtx, cancel := context.WithTimeout(
-				ctx, RuntimeSessionCleanupTimeout,
-			)
-			defer cancel()
 			// Generation-qualified: command session keys are reusable, so
 			// this exit's cleanup must not delete the row of a newer live
 			// session relaunched under the same key.
 			if _, err := s.Db.DeleteProjectWorktreeTmuxSessionCreatedAt(
-				cleanupCtx, worktreeID, info.Key, info.CreatedAt,
+				ctx, worktreeID, info.Key, info.CreatedAt,
 			); err != nil {
 				slog.Warn(
 					"forget project worktree runtime tmux session",

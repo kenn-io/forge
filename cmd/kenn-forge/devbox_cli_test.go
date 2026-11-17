@@ -76,6 +76,11 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 			err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", tc.args)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want+"|test-token|github.com/example/project", output.String())
+			if tc.action == "ready current branch" {
+				view, err := os.ReadFile(filepath.Join(dir, "view"))
+				require.NoError(t, err)
+				assert.Equal(t, "pr view --json author,url|test-token|github.com/example/project", string(view))
+			}
 		})
 	}
 	t.Run("view uses selector and repository", func(t *testing.T) {
@@ -89,10 +94,10 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		assert.Equal(t, "pr ready https://github.com/example/project/pull/42 --repo=example/other|test-token|github.com/example/project", output.String())
 	})
 	for _, tc := range []struct{ action, json, want string }{
-		{"close", `{"author":{"login":"alice","is_bot":false}}`, "alice"},
-		{"reopen", `{"author":{"login":"alice","is_bot":false}}`, "alice"},
-		{"ready", `{"author":{"login":"alice","is_bot":false}}`, "alice"},
-		{"close", `{"author":{"login":"app/other-app","is_bot":true}}`, "app/other-app"},
+		{"close", `{"url":"https://github.com/example/project/pull/42","author":{"login":"alice","is_bot":false}}`, "alice"},
+		{"reopen", `{"url":"https://github.com/example/project/pull/42","author":{"login":"alice","is_bot":false}}`, "alice"},
+		{"ready", `{"url":"https://github.com/example/project/pull/42","author":{"login":"alice","is_bot":false}}`, "alice"},
+		{"close", `{"url":"https://github.com/example/project/pull/42","author":{"login":"app/other-app","is_bot":true}}`, "app/other-app"},
 		{"close", `invalid`, "read pull request author"},
 	} {
 		t.Run(tc.action+"/"+tc.want, func(t *testing.T) {
@@ -132,7 +137,7 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		})
 	}
 	t.Run("help false still checks author", func(t *testing.T) {
-		t.Setenv("AUTHOR_JSON", `{"author":{"login":"alice","is_bot":false}}`)
+		t.Setenv("AUTHOR_JSON", `{"url":"https://github.com/example/project/pull/42","author":{"login":"alice","is_bot":false}}`)
 		before := brokerCalls.Load()
 		var output bytes.Buffer
 		cmd := &cobra.Command{}

@@ -3620,6 +3620,25 @@ describe("WorkspaceTerminalView", () => {
     runtimeRefresh.resolve(runtimeWithTerminalSession());
   });
 
+  it("does not launch another shell when the dock is opened before the runtime read returns", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+    const runtimeRead = deferred<ReturnType<typeof runtimeWithTwoTerminalSessions>>();
+    mocks.getWorkspaceRuntime.mockReturnValue(runtimeRead.promise);
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    // Until the read returns, the view cannot tell an empty dock from one it has
+    // not loaded, and an empty dock auto-launches a shell when opened.
+    const open = await screen.findByRole("button", { name: "Open terminal panel" });
+    expect((open as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(open);
+    runtimeRead.resolve(runtimeWithTwoTerminalSessions());
+    await waitFor(() => expect((open as HTMLButtonElement).disabled).toBe(false));
+    await fireEvent.click(open);
+
+    await waitFor(() => expect(sockets.some((socket) => socket.url.includes("ws-1_shell_a"))).toBe(true));
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+  });
+
   it("renders a split terminal immediately after launching its session", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());

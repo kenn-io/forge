@@ -246,5 +246,3 @@ func websocketDebugEnabled() bool {
 		return false
 	}
 }
-
-const runtimeSessionCleanupTimeout = 2 * time.Second

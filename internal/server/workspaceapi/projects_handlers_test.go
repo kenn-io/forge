@@ -32,6 +32,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
 )
 
@@ -285,4 +286,61 @@ func TestWorktreeLifecycleProblemKeepsCauseWhenCleanupIsIncomplete(t *testing.T)
 			assert.Contains(t, problem.Detail, "/work/checkout")
 		})
 	}
+}
+
+func TestForgetProjectWorktreeRuntimeSessionIfExitedWaitsForBusyWriter(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	runtime := localruntime.NewManager(localruntime.Options{})
+	t.Cleanup(runtime.Shutdown)
+	handler := New(Deps{DB: database, Runtime: runtime})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+		defer cancel()
+		require.NoError(handler.Shutdown(shutdownCtx))
+	})
+	project, err := database.CreateProject(ctx, db.CreateProjectInput{
+		LocalPath: t.TempDir(), DisplayName: "Example", DefaultBranch: "main",
+	})
+	require.NoError(err)
+	worktree, err := database.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
+		ProjectID: project.ID, Branch: "feature", Path: t.TempDir(),
+	})
+	require.NoError(err)
+	session := localruntime.SessionInfo{
+		Key: worktree.ID + "_helper", WorkspaceID: ProjectWorktreeRuntimeScope(worktree.ID),
+		TargetKey: "helper", TmuxSession: "project-runtime-exited",
+		CreatedAt: time.Date(2026, 11, 12, 3, 37, 1, 0, time.UTC),
+	}
+	require.NoError(database.UpsertProjectWorktreeTmuxSession(ctx, &db.ProjectWorktreeTmuxSession{
+		WorktreeID: worktree.ID, SessionKey: session.Key, SessionName: session.TmuxSession,
+		TargetKey: session.TargetKey, CreatedAt: session.CreatedAt,
+	}))
+
+	// SQLite has one writer. This cleanup once gave its delete two seconds,
+	// and nothing removes the row of a dead session later. Hold it longer.
+	held := make(chan struct{})
+	release := make(chan struct{})
+	holderDone := make(chan error, 1)
+	go func() {
+		holderDone <- database.Tx(context.WithoutCancel(ctx), func(*sql.Tx) error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	releaseTimer := time.AfterFunc(3*time.Second, func() { close(release) })
+	defer releaseTimer.Stop()
+
+	handler.forgetProjectWorktreeRuntimeSessionIfExited(
+		ctx, session.WorkspaceID, worktree.ID, session,
+	)
+
+	require.NoError(<-holderDone)
+	rows, err := database.ListProjectWorktreeTmuxSessions(ctx, worktree.ID)
+	require.NoError(err)
+	require.Empty(rows)
 }

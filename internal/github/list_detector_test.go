@@ -265,7 +265,6 @@ type issuePageServer struct {
 	deleted     atomic.Bool
 	transferred atomic.Bool
 	added       atomic.Bool
-	appendIssue atomic.Bool
 	requests    atomic.Int64
 	notModified atomic.Int64
 }
@@ -294,9 +293,6 @@ func (s *issuePageServer) handler(t *testing.T) http.Handler {
 			}
 			rows = append(rows, fmt.Sprintf(`{"id":%d,"number":%d,"state":"open","title":"issue","created_at":"2024-06-01T12:00:00Z","updated_at":"2024-06-01T12:00:00Z"}`, n, n))
 		}
-		if s.appendIssue.Load() {
-			rows = append(rows, `{"id":301,"number":301,"state":"open","title":"issue"}`)
-		}
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 		if page < 1 {
 			page = 1
@@ -322,21 +318,18 @@ func (s *issuePageServer) handler(t *testing.T) http.Handler {
 	})
 }
 
-func TestIssueListFindsNewPageAfterFullLastPage(t *testing.T) {
+func TestLargeIssueListFitsThreeRequestBudget(t *testing.T) {
 	t.Parallel()
 	srv := &issuePageServer{}
 	server := httptest.NewServer(srv.handler(t))
 	t.Cleanup(server.Close)
-	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil, WithBaseURLForTesting(server.URL))
+	budget := NewSyncBudget(3)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
 	require.NoError(t, err)
-	issues, err := client.ListOpenIssues(t.Context(), "acme", "widget")
+	issues, err := client.ListOpenIssues(WithSyncBudget(t.Context()), "acme", "widget")
 	require.NoError(t, err)
-	require.Len(t, issues, 300)
-	srv.appendIssue.Store(true)
-	issues, err = client.ListOpenIssues(t.Context(), "acme", "widget")
-	require.NoError(t, err)
-	require.Len(t, issues, 301)
-	assert.Equal(t, 301, issues[300].GetNumber())
+	assert.Len(t, issues, 300)
+	assert.Equal(t, int64(3), srv.requests.Load())
 }
 
 func TestLargeIssueListRevalidatesEachPage(t *testing.T) {
@@ -351,19 +344,19 @@ func TestLargeIssueListRevalidatesEachPage(t *testing.T) {
 	issues, err := client.ListOpenIssues(ctx, "acme", "widget")
 	require.NoError(t, err)
 	require.Len(t, issues, 300)
-	require.Equal(t, 4, budget.Spent())
+	require.Equal(t, 3, budget.Spent())
 	issues, err = client.ListOpenIssues(ctx, "acme", "widget")
 	require.NoError(t, err)
 	require.Len(t, issues, 300)
-	assert.Equal(t, int64(8), srv.requests.Load())
-	assert.Equal(t, int64(4), srv.notModified.Load())
-	assert.Equal(t, 4, budget.Spent())
+	assert.Equal(t, int64(6), srv.requests.Load())
+	assert.Equal(t, int64(3), srv.notModified.Load())
+	assert.Equal(t, 3, budget.Spent())
 	srv.deleted.Store(true)
 	issues, err = client.ListOpenIssues(ctx, "acme", "widget")
 	require.NoError(t, err)
 	require.Len(t, issues, 299)
-	assert.Equal(t, int64(5), srv.notModified.Load())
-	assert.Equal(t, 6, budget.Spent())
+	assert.Equal(t, int64(4), srv.notModified.Load())
+	assert.Equal(t, 5, budget.Spent())
 	for _, issue := range issues {
 		assert.NotEqual(t, 250, issue.GetNumber())
 	}

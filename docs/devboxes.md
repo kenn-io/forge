@@ -172,7 +172,8 @@ The wrapper supports `pr create`, `edit`, `comment`, `view`, `list`, `checks`,
 `close`, `reopen`, `ready`, and `merge`. For `pr merge`, specify `--merge`,
 `--squash`, or `--rebase`, unless the target branch requires a merge queue.
 Specify a pull request number, URL, or branch for `pr merge`. With `pr close`
-or `pr merge`, `--delete-branch` deletes only the remote branch.
+or `pr merge`, `--delete-branch` can delete the pull request's remote branch;
+the wrapper does not delete a local branch.
 GitHub branch rules still control whether the App can merge.
 Its token goes only to that child process. Git and the wrapper explain broker
 failures, such as a repository not being admitted or missing write permission.

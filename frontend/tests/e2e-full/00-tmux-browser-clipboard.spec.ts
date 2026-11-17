@@ -648,7 +648,10 @@ async function enableTmuxMouseAndRenderMarker(
   tmuxSession: string,
   marker: string,
 ): Promise<TerminalDimensions> {
-  await container.click({ position: { x: 10, y: 10 } });
+  // renderMarker clicks the terminal. A setup click here could land within
+  // tmux's 300 ms click timeout and make that click a double-click. Tmux then
+  // copies the word under it, and a drag already under way when that copy
+  // arrives loses its clipboard authorization to it.
   await expect.poll(() => output.activeSocketCount(), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBeGreaterThan(0);
   await expect.poll(() => output.activeSocketHasDimensions(), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
   const client = runE2ETmuxCommand(server, ["list-clients", "-t", tmuxSession, "-F", "#{client_pid}"]);

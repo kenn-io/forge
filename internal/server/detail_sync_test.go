@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -102,11 +103,13 @@ func TestEnqueueDetailSyncOrRerunKeepsReplacedCompletion(t *testing.T) {
 
 func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		queue bool
+		name    string
+		queue   bool
+		etaOnly bool
 	}{
-		{"unchanged", false},
-		{"queue", true},
+		{"unchanged", false, false},
+		{"queue", true, false},
+		{"eta only", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			serverfake.RunParallelServerTest(t)
@@ -127,6 +130,28 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 			srv, database, syncer := setupTestServerWithMock(t, mock)
 			serverfake.SeedPR(t, database, "acme", "widget", 1)
 			input := &itemapi.RepoNumberInput{Provider: "github", Owner: "acme", Name: "widget", Number: 1}
+			var eta atomic.Int64
+			eta.Store(240)
+			var fetchers map[string]*ghclient.GraphQLFetcher
+			if tc.queue || tc.etaOnly {
+				queueServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					body, _ := io.ReadAll(r.Body)
+					w.Header().Set("Content-Type", "application/json")
+					switch {
+					case strings.Contains(string(body), "isMergeQueueEnabled"):
+						_, _ = io.WriteString(w, strings.Replace(`{"data":{"repository":{"pullRequest":{"state":"OPEN","baseRefName":"main","isMergeQueueEnabled":true,"mergeQueueEntry":{"position":1,"state":"AWAITING_CHECKS","enqueuedAt":"2026-10-14T19:05:15Z","estimatedTimeToMerge":240},"latestQueueEvent":{"nodes":[{"__typename":"AddedToMergeQueueEvent"}]}}}}}`, `"estimatedTimeToMerge":240`, `"estimatedTimeToMerge":`+strconv.FormatInt(eta.Load(), 10), 1))
+					case strings.Contains(string(body), "configuration"):
+						_, _ = io.WriteString(w, `{"data":{"repository":{"mergeQueue":{"configuration":{"mergeMethod":"SQUASH"}}}}}`)
+					default:
+						_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{}}}}`)
+					}
+				}))
+				t.Cleanup(queueServer.Close)
+				fetchers = map[string]*ghclient.GraphQLFetcher{"github.com": ghclient.NewGraphQLFetcher(tokenauthtest.Source("token"), "github.com", nil, nil, ghclient.WithGraphQLEndpointForTesting(queueServer.URL))}
+			}
+			if tc.etaOnly {
+				syncer.SetFetchers(fetchers)
+			}
 			_, err := srv.activityapi.EnqueuePRSync(t.Context(), input)
 			require.NoError(t, err)
 			srv.bg.Wait()
@@ -138,21 +163,12 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 			require.EqualValues(t, 1, rows)
 
 			if tc.queue {
-				queueServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					body, _ := io.ReadAll(r.Body)
-					w.Header().Set("Content-Type", "application/json")
-					switch {
-					case strings.Contains(string(body), "isMergeQueueEnabled"):
-						_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"state":"OPEN","baseRefName":"main","isMergeQueueEnabled":true,"mergeQueueEntry":{"position":1,"state":"AWAITING_CHECKS","enqueuedAt":"2026-10-14T19:05:15Z","estimatedTimeToMerge":240},"latestQueueEvent":{"nodes":[{"__typename":"AddedToMergeQueueEvent"}]}}}}}`)
-					case strings.Contains(string(body), "configuration"):
-						_, _ = io.WriteString(w, `{"data":{"repository":{"mergeQueue":{"configuration":{"mergeMethod":"SQUASH"}}}}}`)
-					default:
-						_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{}}}}`)
-					}
-				}))
-				t.Cleanup(queueServer.Close)
-				syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{"github.com": ghclient.NewGraphQLFetcher(tokenauthtest.Source("token"), "github.com", nil, nil, ghclient.WithGraphQLEndpointForTesting(queueServer.URL))})
+				syncer.SetFetchers(fetchers)
 			}
+			if tc.etaOnly {
+				eta.Store(480)
+			}
+
 			oldHub := srv.hub
 			srv.hub = syncevents.NewEventHub()
 			oldHub.Close()
@@ -161,6 +177,11 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 			_, err = srv.activityapi.EnqueuePRSync(t.Context(), input)
 			require.NoError(t, err)
 			srv.bg.Wait()
+			if tc.etaOnly {
+				var storedETA int
+				require.NoError(t, database.ReadDB().QueryRowContext(t.Context(), `SELECT estimated_time_to_merge_seconds FROM forge_merge_queue_states WHERE number = 1`).Scan(&storedETA))
+				require.Equal(t, 480, storedETA)
+			}
 			var change syncevents.Event
 		drain:
 			for {

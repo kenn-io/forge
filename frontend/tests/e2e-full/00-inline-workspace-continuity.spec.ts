@@ -734,6 +734,7 @@ test.describe("inline workspace pane continuity", () => {
     );
     await page.setViewportSize({ width: 1280, height: 800 });
     const phonePage = await page.context().newPage();
+    trackTerminalReadiness(phonePage);
     await phonePage.setViewportSize({ width: 390, height: 844 });
 
     let isolatedServer: IsolatedE2EServer | null = null;
@@ -751,6 +752,10 @@ test.describe("inline workspace pane continuity", () => {
       const desktopTerminal = await openTerminalPanel(page);
       await phonePage.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
       const phoneTerminal = await ensureTerminalPanelOpen(phonePage);
+      // Attaching claims resize once the replay ends. Count from after that
+      // claim, or the click wait below can pass on it before the click's own
+      // claim arrives and leave that claim to land during the cursor query.
+      await waitForTerminalInputReady(phoneTerminal);
 
       const phoneClaimsBefore = phoneFrames.filter((frame) => frame.type === "claim_resize").length;
       await phoneTerminal.click({ position: { x: 12, y: 12 } });

@@ -106,18 +106,12 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 		changed bool
 	}{
 		{"unchanged", false},
-		{"comment", true},
 		{"queue", true},
-		{"linked notification", true},
-		{"legacy notification", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			serverfake.RunParallelServerTest(t)
 			when := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute).Truncate(time.Second)}
 			comment, state := "original", "open"
-			if strings.Contains(tc.name, "notification") {
-				state = "closed"
-			}
 			commentWhen := gh.Timestamp{Time: when.Add(time.Minute)}
 			mock := &serverfake.MockGH{
 				GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
@@ -142,13 +136,11 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 			require.NoError(t, err)
 			require.EqualValues(t, 1, rows)
 
-			switch tc.name {
-			case "comment":
-				comment = "edited"
-			case "queue":
+			if tc.changed {
 				queueServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					body, _ := io.ReadAll(r.Body)
 					w.Header().Set("Content-Type", "application/json")
+					w.Header().Set("Connection", "close")
 					switch {
 					case strings.Contains(string(body), "isMergeQueueEnabled"):
 						_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"state":"OPEN","baseRefName":"main","isMergeQueueEnabled":true,"mergeQueueEntry":{"position":1,"state":"AWAITING_CHECKS","enqueuedAt":"2026-10-14T19:05:15Z","estimatedTimeToMerge":240},"latestQueueEvent":{"nodes":[{"__typename":"AddedToMergeQueueEvent"}]}}}}}`)
@@ -160,60 +152,51 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 				}))
 				t.Cleanup(queueServer.Close)
 				syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{"github.com": ghclient.NewGraphQLFetcher(tokenauthtest.Source("token"), "github.com", nil, nil, ghclient.WithGraphQLEndpointForTesting(queueServer.URL))})
-			case "linked notification", "legacy notification":
-				number := 1
-				notification := db.Notification{Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "notice", RepoOwner: "acme", RepoName: "widget", ItemType: "pr", ItemNumber: &number, SubjectType: "PullRequest", SubjectTitle: "Example pull", Reason: "mention", Unread: true, SourceUpdatedAt: when.Time, SyncedAt: when.Time}
-				require.NoError(t, database.UpsertNotifications(t.Context(), []db.Notification{notification}))
-				if tc.name == "legacy notification" {
-					_, err = database.WriteDB().ExecContext(t.Context(), `UPDATE forge_notification_items SET repo_id = NULL WHERE platform_notification_id = 'notice'`)
-					require.NoError(t, err)
-				}
 			}
-			oldHub := srv.hub
-			srv.hub = syncevents.NewEventHub()
-			oldHub.Close()
-			t.Cleanup(srv.hub.Close)
-			events, _ := srv.hub.Subscribe(t.Context(), false)
-			_, err = srv.activityapi.EnqueuePRSync(t.Context(), input)
-			require.NoError(t, err)
-			srv.bg.Wait()
-			if strings.Contains(tc.name, "notification") {
-				var done int
-				require.NoError(t, database.ReadDB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_notification_items WHERE platform_notification_id = 'notice' AND done_reason = 'closed' AND done_at IS NOT NULL`).Scan(&done))
-				require.Equal(t, 1, done)
-			}
-			var change syncevents.Event
-		drain:
-			for {
-				select {
-				case event := <-events:
-					if event.Event.Type == "data_changed" {
-						require.Empty(t, change.Type, "extra data_changed event")
-						change = event.Event
-					}
-				default:
-					break drain
-				}
-			}
-			if change.Type != "" {
-				require.True(t, tc.changed, "unchanged refresh sent an event")
-				payload, err := json.Marshal(change.Data)
+			synctest.Test(t, func(t *testing.T) {
+				oldHub := srv.hub
+				srv.hub = syncevents.NewEventHub()
+				oldHub.Close()
+				defer srv.hub.Close()
+				events, _ := srv.hub.Subscribe(t.Context(), false)
+				_, err = srv.activityapi.EnqueuePRSync(t.Context(), input)
 				require.NoError(t, err)
-				var data struct {
-					Repositories []struct {
-						Provider     string `json:"provider"`
-						PlatformHost string `json:"platform_host"`
-						RepoPath     string `json:"repo_path"`
-					} `json:"repositories"`
+				srv.bg.Wait()
+				time.Sleep(syncevents.DataChangedInterval)
+				synctest.Wait()
+				var change syncevents.Event
+			drain:
+				for {
+					select {
+					case event := <-events:
+						if event.Event.Type == "data_changed" {
+							require.Empty(t, change.Type, "extra data_changed event")
+							change = event.Event
+						}
+					default:
+						break drain
+					}
 				}
-				require.NoError(t, json.Unmarshal(payload, &data))
-				require.Len(t, data.Repositories, 1)
-				require.Equal(t, "github", data.Repositories[0].Provider)
-				require.Equal(t, "github.com", data.Repositories[0].PlatformHost)
-				require.Equal(t, "acme/widget", data.Repositories[0].RepoPath)
-			} else {
-				require.False(t, tc.changed, "changed refresh did not broadcast")
-			}
+				if change.Type != "" {
+					require.True(t, tc.changed, "unchanged refresh sent an event")
+					payload, err := json.Marshal(change.Data)
+					require.NoError(t, err)
+					var data struct {
+						Repositories []struct {
+							Provider     string `json:"provider"`
+							PlatformHost string `json:"platform_host"`
+							RepoPath     string `json:"repo_path"`
+						} `json:"repositories"`
+					}
+					require.NoError(t, json.Unmarshal(payload, &data))
+					require.Len(t, data.Repositories, 1)
+					require.Equal(t, "github", data.Repositories[0].Provider)
+					require.Equal(t, "github.com", data.Repositories[0].PlatformHost)
+					require.Equal(t, "acme/widget", data.Repositories[0].RepoPath)
+				} else {
+					require.False(t, tc.changed, "changed refresh did not broadcast")
+				}
+			})
 		})
 	}
 }

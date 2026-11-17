@@ -1052,9 +1052,6 @@ func newServer(
 			Broadcast: func(event pullapi.Event) uint64 {
 				return s.hub.Broadcast(syncevents.Event{Type: event.Type, Data: event.Data})
 			},
-			BroadcastRepositoryChange: func(repo db.Repo) {
-				s.hub.Broadcast(syncevents.RepositoryChanged(repo))
-			},
 			BroadcastPRDetailRefreshed:        s.syncevents.BroadcastPRDetailRefresh,
 			MarkClosedLinkedNotificationsDone: s.notificationapi.MarkClosedLinkedNotificationsDone,
 		})

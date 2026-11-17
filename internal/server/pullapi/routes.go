@@ -1453,9 +1453,7 @@ func (s *Handler) approvePR(ctx context.Context, input *approvePRInput) (*action
 	}
 
 	event := platformdb.DBMREvent(mr.ID, platformEvent)
-	if err := s.db.UpsertMREvents(ctx, []db.MREvent{event}); err == nil && s.broadcastRepositoryChange != nil {
-		s.broadcastRepositoryChange(repo.Repo)
-	}
+	_ = s.db.UpsertMREvents(ctx, []db.MREvent{event})
 	s.syncAfterProviderMutation(repo.Repo, input.Number, "approve", nil)
 
 	return &actionStatusOutput{Body: ActionStatusBody{Status: "approved"}}, nil

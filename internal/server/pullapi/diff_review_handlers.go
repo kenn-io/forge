@@ -458,9 +458,9 @@ func closesMarkdownFence(line string, fence markdownFence) bool {
 // accepted a mutation, without holding the HTTP response for the full
 // detail sync. It reruns after a sync already in flight for the same pull
 // request, because that sync may have read state from before the mutation.
-// When the sync lands, afterSync (if set) runs, then clients get data_changed
-// and pr_detail_refreshed so an open list and detail reload. Both still run
-// when a later request for the same pull request replaces the pending rerun.
+// When the sync lands, afterSync (if set) runs and clients get
+// pr_detail_refreshed. Stored changes also trigger data_changed. The follow-up
+// still runs when a later request replaces the pending rerun.
 func (s *Handler) syncAfterProviderMutation(
 	repo db.Repo, number int, source string, afterSync func(context.Context),
 ) {

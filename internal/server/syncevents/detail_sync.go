@@ -53,11 +53,6 @@ type RepositoryChanges struct {
 	Repositories []RepositoryEvent `json:"repositories"`
 }
 
-func RepositoryChanged(repo db.Repo) Event {
-	event := RepositoryEvent{Provider: repo.Platform, PlatformHost: repo.PlatformHost, RepoPath: repo.RepoPath, Key: repo.Key}
-	return Event{Type: "data_changed", Data: RepositoryChanges{Repositories: []RepositoryEvent{event}}}
-}
-
 func (s *Handlers) EnqueueDetailSync(
 	key string,
 	attrs []any,
@@ -203,7 +198,8 @@ func (s *Handlers) startDetailSyncJob(key string, job DetailSyncJob) bool {
 			return
 		}
 		if before != after {
-			(*s.Hub).Broadcast(RepositoryChanged(job.repo))
+			event := RepositoryEvent{Provider: job.repo.Platform, PlatformHost: job.repo.PlatformHost, RepoPath: job.repo.RepoPath, Key: job.repo.Key}
+			(*s.Hub).Broadcast(Event{Type: "data_changed", Data: RepositoryChanges{Repositories: []RepositoryEvent{event}}})
 		}
 	})
 	if started {

@@ -57,7 +57,6 @@ type Deps struct {
 		string, []any, db.Repo, int, func(context.Context) error, func(context.Context),
 	) bool
 	Broadcast                         func(Event) uint64
-	BroadcastRepositoryChange         func(db.Repo)
 	BroadcastPRDetailRefreshed        func(context.Context, int64, int)
 	MarkClosedLinkedNotificationsDone func(context.Context)
 }
@@ -84,10 +83,9 @@ type Handler struct {
 	enqueueDetailSyncRerun func(
 		string, []any, db.Repo, int, func(context.Context) error, func(context.Context),
 	) bool
-	broadcast                 func(Event) uint64
-	broadcastRepositoryChange func(db.Repo)
-	prDetailRefreshed         func(context.Context, int64, int)
-	markClosedNotifications   func(context.Context)
+	broadcast               func(Event) uint64
+	prDetailRefreshed       func(context.Context, int64, int)
+	markClosedNotifications func(context.Context)
 
 	configMu sync.RWMutex
 	config   ConfigSnapshot
@@ -139,7 +137,6 @@ func New(deps Deps) *Handler {
 		repoOperationsForMergeRequest: deps.RepoOperationsForMergeRequest,
 		enqueueDetailSyncRerun:        deps.EnqueueDetailSyncOrRerun,
 		broadcast:                     deps.Broadcast,
-		broadcastRepositoryChange:     deps.BroadcastRepositoryChange,
 		prDetailRefreshed:             deps.BroadcastPRDetailRefreshed,
 		markClosedNotifications:       deps.MarkClosedLinkedNotificationsDone,
 		config:                        deps.Config,

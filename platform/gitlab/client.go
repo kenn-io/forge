@@ -633,27 +633,23 @@ func (c *Client) listIssueDiscussions(
 	})
 }
 
+// ListReleases returns up to the newest three releases for the repo overview.
 func (c *Client) ListReleases(ctx context.Context, ref platform.RepoRef) ([]platform.Release, error) {
 	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
-	opt := &gitlab.ListReleasesOptions{Page: 1, PerPage: defaultPageSize}
+	opt := &gitlab.ListReleasesOptions{Page: 1, PerPage: 3}
 
-	var out []platform.Release
-	for {
-		releases, resp, err := c.api.Releases.ListReleases(pid, opt, gitlab.WithContext(ctx))
-		if err != nil {
-			return nil, mapGitLabError("list_releases", err)
-		}
-		for _, release := range releases {
-			out = append(out, NormalizeRelease(normalizedRef, release))
-		}
-		if resp == nil || resp.NextPage == 0 {
-			return out, nil
-		}
-		opt.Page = resp.NextPage
+	releases, _, err := c.api.Releases.ListReleases(pid, opt, gitlab.WithContext(ctx))
+	if err != nil {
+		return nil, mapGitLabError("list_releases", err)
 	}
+	var out []platform.Release
+	for _, release := range releases {
+		out = append(out, NormalizeRelease(normalizedRef, release))
+	}
+	return out, nil
 }
 
 func (c *Client) ListTags(ctx context.Context, ref platform.RepoRef) ([]platform.Tag, error) {

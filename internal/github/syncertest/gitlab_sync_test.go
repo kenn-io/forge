@@ -31,6 +31,43 @@ func (s staticGitLabToken) Descriptor() tokenauth.Descriptor {
 	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "gitlab", Host: "gitlab.example.com"}}
 }
 
+func TestGitLabSyncOverviewRefreshesRecentReleases(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	database := openTestDB(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/group%2Fproject", "/api/v4/projects/42":
+			_, _ = w.Write([]byte(`{"id":42,"path":"project","path_with_namespace":"group/project","name":"Project","default_branch":"main","web_url":"https://gitlab.example.com/group/project"}`))
+		case "/api/v4/projects/42/releases":
+			_, _ = w.Write([]byte(`[{"tag_name":"v1000"},{"tag_name":"v999"},{"tag_name":"v998"}]`))
+		default:
+			_, _ = w.Write([]byte(`[]`))
+		}
+	}))
+	defer server.Close()
+
+	client, err := gitlab.NewClient("gitlab.example.com", staticGitLabToken("token"),
+		gitlab.WithBaseURLForTesting(server.URL+"/api/v4"),
+		gitlab.WithoutRetriesForTesting(), gitlab.WithTransport(http.DefaultTransport))
+	require.NoError(t, err)
+	registry, err := ghclient.NewProviderRegistry(nil, client)
+	require.NoError(t, err)
+	repo := ghclient.RepoRef{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com", Owner: "group", Name: "project", RepoPath: "group/project"}
+
+	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil)
+	syncer.RunOnce(ctx)
+	summaries, err := database.ListRepoSummaries(ctx)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	overview := summaries[0].Overview
+	require.Len(t, overview.Releases, 3)
+	expectedTags := []string{"v1000", "v999", "v998"}
+	actualTags := []string{overview.Releases[0].TagName, overview.Releases[1].TagName, overview.Releases[2].TagName}
+	assert.Equal(t, expectedTags, actualTags)
+}
+
 // TestGitLabProviderSyncPersistsAndRetainsInaccessibleItems drives the real
 // Syncer against a real GitLab provider client backed by a fake GitLab
 // server, registered through the real provider registry. It proves the

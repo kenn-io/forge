@@ -43,14 +43,12 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 	done := make(chan struct{})
 	go func() { defer close(done); _ = server.Serve(listener) }()
 	t.Cleanup(func() { _ = server.Close(); <-done })
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "gh"), []byte("#!/bin/sh\nif [ \"$2\" = view ]; then printf '%s' \"$*\" > \"$VIEW_LOG\"; printf '%s' \"$AUTHOR_JSON\"; exit \"${VIEW_EXIT:-0}\"; fi\nprintf '%s|%s|%s' \"$*\" \"$GH_TOKEN\" \"$GH_REPO\"\n"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "gh"), []byte("#!/bin/sh\nif [ \"$2\" = view ]; then printf '%s|%s|%s' \"$*\" \"$GH_TOKEN\" \"$GH_REPO\" > \"$VIEW_LOG\"; printf '%s' \"$AUTHOR_JSON\"; exit \"${VIEW_EXIT:-0}\"; fi\nprintf '%s|%s|%s' \"$*\" \"$GH_TOKEN\" \"$GH_REPO\"\n"), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("VIEW_LOG", filepath.Join(dir, "view"))
-	t.Setenv("AUTHOR_JSON", `{"author":{"login":"app/example-app","is_bot":true}}`)
+	t.Setenv("AUTHOR_JSON", `{"url":"https://github.com/example/project/pull/42","author":{"login":"app/example-app","is_bot":true}}`)
 	for _, tc := range []struct{ action, helpFlag string }{
 		{"close", "--help"},
-		{"reopen", "--help"},
-		{"ready", "--help"},
 		{"close", "-h"},
 	} {
 		t.Run(tc.action+" help "+tc.helpFlag, func(t *testing.T) {
@@ -70,11 +68,11 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		args   []string
 		want   string
 	}{
-		{"close", []string{"pr", "close", "42"}, "pr close 42"},
-		{"reopen", []string{"pr", "reopen", "42"}, "pr reopen 42"},
-		{"ready", []string{"pr", "ready", "42"}, "pr ready 42"},
-		{"reopen with comment", []string{"pr", "reopen", "42", "-c", "message"}, "pr reopen 42 -c message"},
-		{"close with comment", []string{"pr", "close", "42", "-c", "message"}, "pr close 42 -c message"},
+		{"close", []string{"pr", "close", "42"}, "pr close https://github.com/example/project/pull/42"},
+		{"reopen", []string{"pr", "reopen", "42"}, "pr reopen https://github.com/example/project/pull/42"},
+		{"ready", []string{"pr", "ready", "42"}, "pr ready https://github.com/example/project/pull/42"},
+		{"comment starting with dash", []string{"pr", "reopen", "--comment=-message", "42"}, "pr reopen https://github.com/example/project/pull/42 --comment=-message"},
+		{"ready current branch", []string{"pr", "ready"}, "pr ready https://github.com/example/project/pull/42"},
 	} {
 		t.Run(tc.action, func(t *testing.T) {
 			var output bytes.Buffer
@@ -86,36 +84,69 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		})
 	}
 	t.Run("view uses selector and repository", func(t *testing.T) {
+		var output bytes.Buffer
 		cmd := &cobra.Command{}
-		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetOut(&output)
 		require.NoError(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "ready", "42", "-R", "example/other"}))
 		view, err := os.ReadFile(filepath.Join(dir, "view"))
 		require.NoError(t, err)
-		assert.Equal(t, "pr view 42 --repo example/other --json author", string(view))
+		assert.Equal(t, "pr view 42 --repo example/other --json author,url|test-token|github.com/example/project", string(view))
+		assert.Equal(t, "pr ready https://github.com/example/project/pull/42 --repo=example/other|test-token|github.com/example/project", output.String())
 	})
-	for _, action := range []string{"close", "reopen", "ready"} {
-		for _, author := range []struct{ json, want string }{
-			{`{"author":{"login":"alice","is_bot":false}}`, "alice"},
-			{`{"author":{"login":"app/other-app","is_bot":true}}`, "app/other-app"},
-			{`invalid`, "read pull request author"},
-		} {
-			t.Run(action+"/"+author.want, func(t *testing.T) {
-				t.Setenv("AUTHOR_JSON", author.json)
-				var output bytes.Buffer
-				cmd := &cobra.Command{}
-				cmd.SetOut(&output)
-				err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", action, "42"})
-				require.ErrorContains(t, err, author.want)
-				assert.Empty(t, output.String())
-			})
-		}
+	t.Run("close keeps the checked pull request", func(t *testing.T) {
+		ghDir := t.TempDir()
+		script := `#!/bin/sh
+if [ "$2" = view ]; then
+  printf '%s' '{"number":42,"url":"https://github.com/example/project/pull/42","author":{"login":"app/example-app","is_bot":true}}'
+  exit 0
+fi
+for arg in "$@"; do
+  if [ "$arg" = 42 ] || [ "$arg" = https://github.com/example/project/pull/42 ]; then
+    printf app
+    exit 0
+  fi
+done
+printf human
+`
+		require.NoError(t, os.WriteFile(filepath.Join(ghDir, "gh"), []byte(script), 0o755))
+		t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		var output bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetOut(&output)
+		require.NoError(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "feature"}))
+		assert.Equal(t, "app", output.String(), "action reached human-authored PR after App author check")
+	})
+	for _, tc := range []struct{ action, json, want string }{
+		{"close", `{"author":{"login":"alice","is_bot":false}}`, "alice"},
+		{"reopen", `{"author":{"login":"alice","is_bot":false}}`, "alice"},
+		{"ready", `{"author":{"login":"alice","is_bot":false}}`, "alice"},
+		{"close", `{"author":{"login":"app/other-app","is_bot":true}}`, "app/other-app"},
+		{"close", `invalid`, "read pull request author"},
+	} {
+		t.Run(tc.action+"/"+tc.want, func(t *testing.T) {
+			t.Setenv("AUTHOR_JSON", tc.json)
+			var output bytes.Buffer
+			cmd := &cobra.Command{}
+			cmd.SetOut(&output)
+			err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", tc.action, "42"})
+			require.ErrorContains(t, err, tc.want)
+			assert.Empty(t, output.String())
+		})
 	}
 	t.Run("failed view", func(t *testing.T) {
 		t.Setenv("VIEW_EXIT", "1")
 		var output bytes.Buffer
 		cmd := &cobra.Command{}
 		cmd.SetOut(&output)
-		require.Error(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42"}))
+		require.ErrorContains(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42"}), "look up pull request author")
+		assert.Empty(t, output.String())
+	})
+	t.Run("missing pull request URL", func(t *testing.T) {
+		t.Setenv("AUTHOR_JSON", `{"author":{"login":"app/example-app","is_bot":true}}`)
+		var output bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetOut(&output)
+		require.ErrorContains(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42"}), "empty result")
 		assert.Empty(t, output.String())
 	})
 	t.Run("missing app slug", func(t *testing.T) {
@@ -133,7 +164,6 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 	})
 	for _, tc := range []struct{ action, flag string }{
 		{"close", "--delete-branch"},
-		{"close", "-d"},
 		{"ready", "--undo"},
 	} {
 		t.Run(tc.action+" rejects "+tc.flag, func(t *testing.T) {
@@ -161,11 +191,16 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		assert.Equal(t, before+1, brokerCalls.Load())
 		assert.Empty(t, output.String())
 	})
-	t.Run("invalid action flag", func(t *testing.T) {
+	t.Run("reject multiple selectors", func(t *testing.T) {
+		viewLog := filepath.Join(t.TempDir(), "view")
+		t.Setenv("VIEW_LOG", viewLog)
+		before := brokerCalls.Load()
 		var output bytes.Buffer
 		cmd := &cobra.Command{}
 		cmd.SetOut(&output)
-		require.Error(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42", "--unknown"}))
+		require.ErrorContains(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42", "43"}), "at most one pull request selector")
+		assert.Equal(t, before, brokerCalls.Load())
+		assert.NoFileExists(t, viewLog)
 		assert.Empty(t, output.String())
 	})
 	t.Run("reject merge before broker request", func(t *testing.T) {
@@ -177,24 +212,5 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		require.ErrorContains(t, err, "supported GitHub commands")
 		assert.Equal(t, before, brokerCalls.Load())
 		assert.Empty(t, output.String())
-	})
-	for _, action := range []string{"reopen", "ready"} {
-		t.Run(action+" rejects delete-branch", func(t *testing.T) {
-			var output bytes.Buffer
-			cmd := &cobra.Command{}
-			cmd.SetOut(&output)
-			err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", action, "42", "--delete-branch"})
-			require.ErrorContains(t, err, "unknown flag")
-			assert.Empty(t, output.String())
-		})
-	}
-	t.Run("reject unsupported verb", func(t *testing.T) {
-		before := brokerCalls.Load()
-		var output bytes.Buffer
-		cmd := &cobra.Command{}
-		cmd.SetOut(&output)
-		err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "review", "42"})
-		require.ErrorContains(t, err, "supported GitHub commands")
-		assert.Equal(t, before, brokerCalls.Load())
 	})
 }

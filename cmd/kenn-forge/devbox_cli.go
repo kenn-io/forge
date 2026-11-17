@@ -107,11 +107,11 @@ func runDevboxGitHub(ctx context.Context, command *cobra.Command, socket, reposi
 		return errors.New("supported GitHub commands: pr create, edit, comment, view, list, checks, close, reopen, ready")
 	}
 	checkAuthor := strings.Contains(" close reopen ready ", " "+args[1]+" ")
-	var selector, repo string
+	selector, repo, actionFlags := "", "", []string(nil)
 	if checkAuthor {
 		var help bool
 		var err error
-		selector, repo, help, err = devboxGitHubActionFlags(args)
+		selector, repo, actionFlags, help, err = devboxGitHubActionFlags(args)
 		if err != nil {
 			return err
 		}
@@ -139,33 +139,11 @@ func runDevboxGitHub(ctx context.Context, command *cobra.Command, socket, reposi
 	}
 	defer os.RemoveAll(privateConfig)
 	if checkAuthor {
-		viewArgs := []string{"pr", "view"}
-		if selector != "" {
-			viewArgs = append(viewArgs, selector)
-		}
-		if repo != "" {
-			viewArgs = append(viewArgs, "--repo", repo)
-		}
-		viewArgs = append(viewArgs, "--json", "author")
-		view := procutil.CommandContext(ctx, "gh", viewArgs...)
-		view.Env = devboxGitHubEnv(credential.Token, privateConfig, repository)
-		view.Stderr = command.ErrOrStderr()
-		output, err := view.Output()
+		url, err := devboxAppPullRequest(ctx, command, devboxGitHubEnv(credential.Token, privateConfig, repository), credential.AppSlug, selector, repo)
 		if err != nil {
-			return fmt.Errorf("look up pull request author: %w", err)
+			return err
 		}
-		var result struct {
-			Author struct {
-				Login string `json:"login"`
-				IsBot bool   `json:"is_bot"`
-			} `json:"author"`
-		}
-		if err := json.Unmarshal(output, &result); err != nil {
-			return fmt.Errorf("read pull request author: %w", err)
-		}
-		if !result.Author.IsBot || result.Author.Login != "app/"+credential.AppSlug {
-			return fmt.Errorf("pull request author %q is not GitHub App %q", result.Author.Login, credential.AppSlug)
-		}
+		args = append([]string{"pr", args[1], url}, actionFlags...)
 	}
 	child := procutil.CommandContext(ctx, "gh", args...)
 	child.Stdin, child.Stdout, child.Stderr = command.InOrStdin(), command.OutOrStdout(), command.ErrOrStderr()
@@ -185,7 +163,44 @@ func devboxGitHubEnv(token, config, repository string) []string {
 		"GH_REPO=github.com/"+repository, "GH_HOST=github.com", "GH_PROMPT_DISABLED=1")
 }
 
-func devboxGitHubActionFlags(args []string) (string, string, bool, error) {
+// devboxAppPullRequest returns the URL of the selected pull request after
+// checking that the GitHub App authored it.
+func devboxAppPullRequest(ctx context.Context, command *cobra.Command, env []string, appSlug, selector, repo string) (string, error) {
+	viewArgs := []string{"pr", "view"}
+	if selector != "" {
+		viewArgs = append(viewArgs, selector)
+	}
+	if repo != "" {
+		viewArgs = append(viewArgs, "--repo", repo)
+	}
+	viewArgs = append(viewArgs, "--json", "author,url")
+	view := procutil.CommandContext(ctx, "gh", viewArgs...)
+	view.Env = env
+	view.Stderr = command.ErrOrStderr()
+	output, err := view.Output()
+	if err != nil {
+		return "", fmt.Errorf("look up pull request author: %w", err)
+	}
+	var result struct {
+		URL    string `json:"url"`
+		Author struct {
+			Login string `json:"login"`
+			IsBot bool   `json:"is_bot"`
+		} `json:"author"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return "", fmt.Errorf("read pull request author: %w", err)
+	}
+	if !result.Author.IsBot || result.Author.Login != "app/"+appSlug {
+		return "", fmt.Errorf("pull request author %q is not GitHub App %q", result.Author.Login, appSlug)
+	}
+	if result.URL == "" {
+		return "", errors.New("look up pull request URL: empty result")
+	}
+	return result.URL, nil
+}
+
+func devboxGitHubActionFlags(args []string) (string, string, []string, bool, error) {
 	flags := pflag.NewFlagSet("gh pr "+args[1], pflag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.BoolP("help", "h", false, "")
@@ -195,12 +210,18 @@ func devboxGitHubActionFlags(args []string) (string, string, bool, error) {
 		flags.StringP("comment", "c", "", "")
 	}
 	if err := flags.Parse(args[2:]); err != nil {
-		return "", "", false, err
+		return "", "", nil, false, err
 	}
 	repo, _ := flags.GetString("repo")
 	help, _ := flags.GetBool("help")
 	if flags.NArg() > 1 {
-		return "", "", false, errors.New("expected at most one pull request selector")
+		return "", "", nil, false, errors.New("expected at most one pull request selector")
 	}
-	return flags.Arg(0), repo, help, nil
+	var actionFlags []string
+	flags.Visit(func(flag *pflag.Flag) {
+		if flag.Name != "help" {
+			actionFlags = append(actionFlags, "--"+flag.Name+"="+flag.Value.String())
+		}
+	})
+	return flags.Arg(0), repo, actionFlags, help, nil
 }

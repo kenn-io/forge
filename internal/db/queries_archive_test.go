@@ -1558,6 +1558,43 @@ func TestArchiveDeriveProgressStatusAndOrderedPhases(t *testing.T) {
 	}
 }
 
+func TestArchiveProgressRecordsTerminalItemOnce(t *testing.T) {
+	t.Parallel()
+	for _, outcome := range []ArchiveLookupOutcome{ArchiveLookupRemoved, ArchiveLookupInaccessible, ArchiveLookupMoved} {
+		t.Run(string(outcome), func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			d := openTestDB(t)
+			ctx := t.Context()
+			now := archiveTestTime()
+			repoID := insertTestRepo(t, d, "acme", "terminal")
+			require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+			require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
+			insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 1, now)
+			insertArchiveProgressForTest(t, d, repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup, ArchiveDatasetProgressPending)
+			opts := ClaimArchiveItemOpts{RepoIDs: []int64{repoID}, Now: now}
+			first, err := d.ClaimArchiveItem(ctx, opts)
+			require.NoError(err)
+			require.NotNil(first)
+			second, err := d.ClaimArchiveItem(ctx, opts)
+			require.NoError(err)
+			require.Equal(first, second)
+			commit := ArchiveItemSyncCommit{RepoID: repoID, ItemType: first.ItemType, ItemNumber: first.ItemNumber, ScanGeneration: first.ScanGeneration, Outcome: outcome, Now: now}
+			if outcome == ArchiveLookupMoved {
+				commit.Destination = &RepoIdentity{Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "destination"}
+			}
+			require.NoError(d.CommitArchiveItemSync(ctx, commit))
+			commit.Now = now.Add(5 * time.Hour)
+			commit.ScanGeneration = second.ScanGeneration
+			require.NoError(d.CommitArchiveItemSync(ctx, commit))
+			states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
+			require.NoError(err)
+			require.NotNil(states[0].LastProgressAt)
+			require.Equal(now, *states[0].LastProgressAt)
+		})
+	}
+}
+
 func TestArchiveProgressRecordsFinishedItemOnce(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

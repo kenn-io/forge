@@ -508,3 +508,74 @@ func TestRevalidatingIssuePagesKeepHitsOverByteBudget(t *testing.T) {
 	}
 	assert.Equal(t, int64(4), conditionals.Load(), "the two pages that fit cost a 304 on each later pass")
 }
+
+func TestRevalidatingIssuePagesSurviveManyRepositories(t *testing.T) {
+	t.Parallel()
+	var conditionals atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		etag := `"` + r.URL.RequestURI() + `"`
+		if r.Header.Get("If-None-Match") == etag {
+			conditionals.Add(1)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(server.Close)
+	client := &http.Client{Transport: newRevalidatingTransport(http.DefaultTransport)}
+	const repos, pages = 513, 4
+	for range 2 {
+		for repo := range repos {
+			for page := 1; page <= pages; page++ {
+				resp, err := client.Get(fmt.Sprintf("%s/repos/acme/repo-%d/issues?state=open&page=%d", server.URL, repo, page))
+				require.NoError(t, err)
+				require.NoError(t, resp.Body.Close())
+			}
+		}
+	}
+	assert.Equal(t, int64(2052), conditionals.Load(), "every page of the second pass costs a 304")
+}
+
+func TestRevalidatingIssuePagesKeepHitsOverEntryLimit(t *testing.T) {
+	t.Parallel()
+	var conditionals atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		etag := `"` + r.URL.RequestURI() + `"`
+		if r.Header.Get("If-None-Match") == etag {
+			conditionals.Add(1)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(server.Close)
+	// Two empty pages fit; each pass reads three repositories' pages in turn.
+	transport := newRevalidatingTransport(http.DefaultTransport)
+	transport.issues.maxPages = 2
+	client := &http.Client{Transport: transport}
+	get := func(repo int) {
+		resp, err := client.Get(fmt.Sprintf("%s/repos/acme/repo-%d/issues?state=open", server.URL, repo))
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+	}
+	for range 3 {
+		for repo := range 3 {
+			get(repo)
+		}
+	}
+	assert.Equal(t, int64(4), conditionals.Load(), "the two pages that fit cost a 304 on each later pass")
+
+	// Once the cached pages expire, a refused page takes their place.
+	for repo := range 2 {
+		key := fmt.Sprintf("%s/repos/acme/repo-%d/issues?state=open", server.URL, repo)
+		entry, ok := transport.issues.get(key)
+		require.True(t, ok)
+		entry.cachedAt = time.Now().Add(-etagTTL - time.Minute)
+		transport.issues.add(key, entry)
+	}
+	get(2)
+	get(2)
+	assert.Equal(t, int64(5), conditionals.Load(), "the third page is cached after the expired pages are removed")
+}

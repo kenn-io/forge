@@ -30,6 +30,10 @@ const (
 	issuePageBodyLimit = 32 << 20
 	// issuePageCacheBytes bounds the issue-page bodies cached at once.
 	issuePageCacheBytes = 256 << 20
+	// issuePageEntryLimit bounds cached issue pages, whose keys and headers the
+	// byte budget does not count; an empty page costs no body bytes. It holds every
+	// page of about 2,000 repositories with 300 open issues.
+	issuePageEntryLimit = 8192
 )
 
 type revalidatedEntry struct {
@@ -58,7 +62,7 @@ func newRevalidatingTransport(base http.RoundTripper) *revalidatingTransport {
 	if err != nil {
 		panic(err) // only for a non-positive size
 	}
-	issues := &issuePageCache{limit: issuePageCacheBytes, pages: map[string]revalidatedEntry{}}
+	issues := &issuePageCache{limit: issuePageCacheBytes, maxPages: issuePageEntryLimit, pages: map[string]revalidatedEntry{}}
 	return &revalidatingTransport{base: base, cache: cache, issues: issues}
 }
 
@@ -113,10 +117,11 @@ func (c metadataCache) remove(key string)                       { c.Remove(key) 
 // not refresh it. When full it caches no new page rather than evict one: a sync
 // pass over more pages than fit would evict each page before the next pass.
 type issuePageCache struct {
-	mu    sync.Mutex
-	limit int
-	bytes int
-	pages map[string]revalidatedEntry
+	mu       sync.Mutex
+	limit    int
+	maxPages int
+	bytes    int
+	pages    map[string]revalidatedEntry
 }
 
 func (c *issuePageCache) get(key string) (revalidatedEntry, bool) {
@@ -134,17 +139,21 @@ func (c *issuePageCache) add(key string, entry revalidatedEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.removeLocked(key)
-	if c.bytes+len(entry.body) > c.limit {
+	if !c.fitsLocked(len(entry.body)) {
 		for k, e := range c.pages {
 			if time.Since(e.cachedAt) >= etagTTL {
 				c.removeLocked(k)
 			}
 		}
 	}
-	if c.bytes+len(entry.body) <= c.limit {
+	if c.fitsLocked(len(entry.body)) {
 		c.pages[key] = entry
 		c.bytes += len(entry.body)
 	}
+}
+
+func (c *issuePageCache) fitsLocked(size int) bool {
+	return len(c.pages) < c.maxPages && c.bytes+size <= c.limit
 }
 
 func (c *issuePageCache) remove(key string) {

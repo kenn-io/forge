@@ -1,0 +1,49 @@
+//go:build !windows
+
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestDevboxGitHubPullRequestActions(t *testing.T) {
+	dir := t.TempDir()
+	socket := filepath.Join(dir, "broker.sock")
+	listener, err := net.Listen("unix", socket)
+	require.NoError(t, err)
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/credentials", r.URL.Path)
+		var body bytes.Buffer
+		_, err := body.ReadFrom(r.Body)
+		assert.NoError(t, err)
+		assert.JSONEq(t, `{"repository":"example/project","profile":"pr"}`, body.String())
+		_, _ = fmt.Fprintf(w, `{"token":"test-token","expires_at":%q}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
+	})}
+	done := make(chan struct{})
+	go func() { defer close(done); _ = server.Serve(listener) }()
+	t.Cleanup(func() { _ = server.Close(); <-done })
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "gh"), []byte("#!/bin/sh\nprintf '%s|%s|%s' \"$*\" \"$GH_TOKEN\" \"$GH_REPO\"\n"), 0o755))
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	for _, action := range []string{"close", "reopen", "ready", "merge"} {
+		t.Run(action, func(t *testing.T) {
+			var output bytes.Buffer
+			cmd := &cobra.Command{}
+			cmd.SetOut(&output)
+			err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", action, "42"})
+			require.NoError(t, err)
+			assert.Equal(t, "pr "+action+" 42|test-token|github.com/example/project", output.String())
+		})
+	}
+}

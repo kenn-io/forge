@@ -71,7 +71,7 @@ func newRevalidatingTransport(base http.RoundTripper) *revalidatingTransport {
 
 func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Method != http.MethodGet || !revalidatedPathPattern.MatchString(req.URL.Path) ||
-		platformgithub.UnconditionalRead(req.Context()) || req.Header.Get("If-None-Match") != "" {
+		platformgithub.UnconditionalRead(req.Context()) {
 		return t.base.RoundTrip(req)
 	}
 	key := req.URL.String()
@@ -82,7 +82,8 @@ func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, er
 	}
 	entry, cached := cache.get(key)
 	sent := req
-	if cached {
+	callerConditional := req.Header.Get("If-None-Match") != ""
+	if cached && !callerConditional {
 		sent = req.Clone(req.Context())
 		sent.Header.Set("If-None-Match", entry.etag)
 	}
@@ -91,13 +92,15 @@ func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, er
 		return resp, err
 	}
 	switch {
-	case resp.StatusCode == http.StatusNotModified && cached:
+	case resp.StatusCode == http.StatusNotModified && cached && !callerConditional:
 		_ = resp.Body.Close()
 		return replayCachedResponse(entry, resp, req), nil
 	case resp.StatusCode == http.StatusOK:
 		return store(cache, key, req, resp, limit)
 	default:
-		cache.remove(key)
+		if !callerConditional {
+			cache.remove(key)
+		}
 		return resp, nil
 	}
 }

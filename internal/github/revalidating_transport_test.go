@@ -379,6 +379,43 @@ func TestRevalidatingIssueListKeepsOuterConditional(t *testing.T) {
 	assert.Equal(t, int64(1), conditionals.Load())
 }
 
+func TestChangedSinglePageIssueListRevalidatesAfterInvalidation(t *testing.T) {
+	t.Parallel()
+	var changed atomic.Bool
+	var fullReads atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		etag, body := `"v1"`, `[1]`
+		if changed.Load() {
+			etag, body = `"v2"`, `[2]`
+		}
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		fullReads.Add(1)
+		w.Header().Set("ETag", etag)
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(server.Close)
+	outer := &etagTransport{base: newRevalidatingTransport(http.DefaultTransport)}
+	client := &http.Client{Transport: outer}
+	read := func(want string) {
+		resp, err := client.Get(server.URL + "/repos/acme/widget/issues")
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		assert.Equal(t, want, string(body))
+	}
+	read(`[1]`)
+	changed.Store(true)
+	read(`[2]`)
+	outer.invalidateRepo("acme", "widget", "issues")
+	read(`[2]`)
+	assert.Equal(t, int64(2), fullReads.Load())
+}
+
 func TestSinglePageIssueListLeavesRoomForPaginatedList(t *testing.T) {
 	t.Parallel()
 	var paginatedConditionals, singleConditionals atomic.Int64

@@ -14,7 +14,6 @@ import (
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
-	"go.kenn.io/forge/internal/server/streamapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
@@ -157,7 +156,8 @@ func (s *Handlers) LaunchHostRuntimeSession(
 // forgetHostRuntimeCommandSessionIfExited reconciles a command that exited
 // while its metadata write was still in flight: the async exit handler's
 // generation-qualified delete can run before the row exists, so a short-lived
-// command could otherwise leave a durable row for a dead session.
+// command could otherwise leave a durable row for a dead session. The delete
+// waits for SQLite's single writer because no later pass removes the row.
 func (s *Handlers) ForgetHostRuntimeCommandSessionIfExited(
 	ctx context.Context, session localruntime.SessionInfo,
 ) {
@@ -166,12 +166,8 @@ func (s *Handlers) ForgetHostRuntimeCommandSessionIfExited(
 			return
 		}
 	}
-	cleanupCtx, cancel := context.WithTimeout(
-		context.WithoutCancel(ctx), streamapi.RuntimeSessionCleanupTimeout,
-	)
-	defer cancel()
 	if _, err := s.Db.DeleteHostRuntimeTmuxSessionCreatedAt(
-		cleanupCtx, session.Key, session.CreatedAt,
+		context.WithoutCancel(ctx), session.Key, session.CreatedAt,
 	); err != nil {
 		slog.Warn(
 			"forget host runtime tmux session recorded after exit",

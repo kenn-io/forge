@@ -11,24 +11,32 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-// hydrateItem runs the existing full item sync under archive admission. The
+// admitItem asks archive admission for one item's full sync. An admitted item
+// must be passed to hydrateItem, which reports the outcome to complete.
+func (s *Service) admitItem(
+	ctx context.Context,
+	repo resolvedRepository,
+	work db.ArchiveItemWork,
+) (context.Context, AdmissionComplete, error) {
+	if s.items == nil {
+		return nil, nil, errors.New("archive item syncer is required")
+	}
+	return s.admit(
+		ctx, repo, work.ItemType,
+		s.items.ArchiveItemSyncCost(repo.Ref.Platform, work.ItemType),
+	)
+}
+
+// hydrateItem runs the existing full item sync for an admitted item. The
 // syncer remains the sole owner of provider reads, normalization, and domain
 // persistence; archive records only scheduling progress and outcomes.
 func (s *Service) hydrateItem(
 	ctx context.Context,
+	requestCtx context.Context,
+	complete AdmissionComplete,
 	repo resolvedRepository,
 	work db.ArchiveItemWork,
 ) error {
-	if s.items == nil {
-		return errors.New("archive item syncer is required")
-	}
-	requestCtx, complete, err := s.admit(
-		ctx, repo, work.ItemType,
-		s.items.ArchiveItemSyncCost(repo.Ref.Platform, work.ItemType),
-	)
-	if err != nil {
-		return err
-	}
 	syncResult, syncErr := s.items.SyncArchiveItem(
 		requestCtx, repo.Ref, work.ItemType, work.ItemNumber,
 	)

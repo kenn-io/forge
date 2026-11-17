@@ -289,7 +289,8 @@ func archiveMaintenanceService(
 
 func completeArchiveInitial(t *testing.T, service *Service) {
 	t.Helper()
-	for range 4 {
+	// Two inventory pages, then one pass that hydrates both items.
+	for range 3 {
 		require.NoError(t, service.RunEligible(t.Context()))
 	}
 }

@@ -324,11 +324,14 @@ installation needs no broker configuration change or restart.
 
 **App permissions cannot express “push branches, but never merge or push main.”**
 Use an enforced **Restrict updates** ruleset on default/protected branches,
-with bypass assigned only to the intended human maintainers and never this App.
+with bypass assigned to the intended human maintainers. To let service accounts
+merge protected pull requests, add the App as a **For pull requests only** bypass
+actor on that ruleset. This allows pull request merges without direct pushes.
+See GitHub's [ruleset setup guide](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository).
 Keep the required-review and checks rules in a separate ruleset so bypassing the
 update restriction does not waive those requirements.
-Test an actual rejected default-branch push and merge attempt before admitting
-production repositories. [Contents write can authorize the merge endpoint](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request);
+Test an actual rejected default-branch push and the intended merge permissions
+before admitting production repositories. [Contents write can authorize the merge endpoint](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request);
 omitting Pull requests write does not solve this. Preserve protection against
 force pushes and deletion. Do the initial allow/deny exercises in a disposable
 repository governed by the same rules.

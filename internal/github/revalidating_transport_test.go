@@ -439,23 +439,23 @@ func TestRevalidatingIssuePageExpiresAndRefreshesLink(t *testing.T) {
 		return resp.Header.Get("Link")
 	}
 	assert.Empty(t, read())
-	entry, ok := transport.cache.Get(url)
+	entry, ok := transport.issues.Get(url)
 	require.True(t, ok)
 	entry.cachedAt = time.Now().Add(-etagTTL + time.Minute)
-	transport.cache.Add(url, entry)
+	transport.issues.Add(url, entry)
 	expanded.Store(true)
 	assert.Empty(t, read())
-	after304, ok := transport.cache.Get(url)
+	after304, ok := transport.issues.Get(url)
 	require.True(t, ok)
 	assert.Equal(t, entry.cachedAt, after304.cachedAt)
 	after304.cachedAt = time.Now().Add(-etagTTL - time.Minute)
-	transport.cache.Add(url, after304)
+	transport.issues.Add(url, after304)
 	assert.Equal(t, `<https://example.com/issues?page=3>; rel="next"`, read())
 }
 
 func TestRevalidatingIssuePageCachesLargeBody(t *testing.T) {
 	t.Parallel()
-	body := strings.Repeat("x", 2300*1024)
+	body := strings.Repeat("x", 100*45*1024) // 100 issues averaging 45 KB
 	var conditionals atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("If-None-Match") == `"page"` {
@@ -477,4 +477,32 @@ func TestRevalidatingIssuePageCachesLargeBody(t *testing.T) {
 		assert.Equal(t, body, string(got))
 	}
 	assert.Equal(t, int64(1), conditionals.Load())
+}
+
+func TestRevalidatingIssuePagesSurviveManyRepositories(t *testing.T) {
+	t.Parallel()
+	var conditionals atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		etag := `"` + r.URL.RequestURI() + `"`
+		if r.Header.Get("If-None-Match") == etag {
+			conditionals.Add(1)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(server.Close)
+	client := &http.Client{Transport: newRevalidatingTransport(http.DefaultTransport)}
+	const repos, pages = 513, 4
+	for range 2 {
+		for repo := range repos {
+			for page := 1; page <= pages; page++ {
+				resp, err := client.Get(fmt.Sprintf("%s/repos/acme/repo-%d/issues?page=%d", server.URL, repo, page))
+				require.NoError(t, err)
+				require.NoError(t, resp.Body.Close())
+			}
+		}
+	}
+	assert.Equal(t, int64(repos*pages), conditionals.Load(), "every page of the second pass costs a 304")
 }

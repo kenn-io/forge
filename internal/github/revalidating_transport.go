@@ -20,12 +20,17 @@ var revalidatedPathPattern = regexp.MustCompile(
 )
 
 const (
-	// revalidatedEntryLimit bounds the cache for metadata, issue, and CI pages.
+	// revalidatedEntryLimit bounds the cache for metadata and CI pages.
 	// Superseded heads age out as new heads are polled.
 	revalidatedEntryLimit = 2048
 	// revalidatedBodyLimit skips caching an unusually large page.
 	revalidatedBodyLimit = 1 << 20
-	issuePageBodyLimit   = 4 << 20
+	// issuePageEntryLimit keeps every issue page of about 2,000 repositories with
+	// 300 open issues, so one sync pass does not evict the pages the next one reads.
+	issuePageEntryLimit = 8192
+	// issuePageBodyLimit admits a full page of 100 issues at GitHub's
+	// 65,536-character body limit.
+	issuePageBodyLimit = 32 << 20
 )
 
 type revalidatedEntry struct {
@@ -44,8 +49,9 @@ type revalidatedEntry struct {
 // A 304 carries no Link header, so the cached headers are replayed for
 // pagination, with the 304's rate-limit headers laid over them.
 type revalidatingTransport struct {
-	base  http.RoundTripper
-	cache *lru.Cache[string, revalidatedEntry]
+	base   http.RoundTripper
+	cache  *lru.Cache[string, revalidatedEntry]
+	issues *lru.Cache[string, revalidatedEntry]
 }
 
 func newRevalidatingTransport(base http.RoundTripper) *revalidatingTransport {
@@ -53,7 +59,11 @@ func newRevalidatingTransport(base http.RoundTripper) *revalidatingTransport {
 	if err != nil {
 		panic(err) // only for a non-positive size
 	}
-	return &revalidatingTransport{base: base, cache: cache}
+	issues, err := lru.New[string, revalidatedEntry](issuePageEntryLimit)
+	if err != nil {
+		panic(err)
+	}
+	return &revalidatingTransport{base: base, cache: cache, issues: issues}
 }
 
 func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -62,9 +72,14 @@ func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, er
 		return t.base.RoundTrip(req)
 	}
 	key := req.URL.String()
-	entry, cached := t.cache.Get(key)
+	issuePage := strings.HasSuffix(req.URL.Path, "/issues")
+	cache, limit := t.cache, revalidatedBodyLimit
+	if issuePage {
+		cache, limit = t.issues, issuePageBodyLimit
+	}
+	entry, cached := cache.Get(key)
 	sent := req
-	if cached && strings.HasSuffix(req.URL.Path, "/issues") && time.Since(entry.cachedAt) >= etagTTL {
+	if cached && issuePage && time.Since(entry.cachedAt) >= etagTTL {
 		cached = false
 	}
 	if cached {
@@ -80,31 +95,27 @@ func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, er
 		_ = resp.Body.Close()
 		return replayCachedResponse(entry, resp, req), nil
 	case resp.StatusCode == http.StatusOK:
-		return t.store(key, resp, strings.HasSuffix(req.URL.Path, "/issues"))
+		return store(cache, key, resp, limit)
 	default:
-		t.cache.Remove(key)
+		cache.Remove(key)
 		return resp, nil
 	}
 }
 
-func (t *revalidatingTransport) store(key string, resp *http.Response, issuePage bool) (*http.Response, error) {
+func store(cache *lru.Cache[string, revalidatedEntry], key string, resp *http.Response, limit int) (*http.Response, error) {
 	etag := resp.Header.Get("ETag")
 	if etag == "" {
-		t.cache.Remove(key)
+		cache.Remove(key)
 		return resp, nil
-	}
-	limit := revalidatedBodyLimit
-	if issuePage {
-		limit = issuePageBodyLimit
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit+1)))
 	if err != nil {
 		_ = resp.Body.Close()
-		t.cache.Remove(key)
+		cache.Remove(key)
 		return nil, err
 	}
 	if len(body) > limit {
-		t.cache.Remove(key)
+		cache.Remove(key)
 		resp.Body = struct {
 			io.Reader
 			io.Closer
@@ -112,7 +123,7 @@ func (t *revalidatingTransport) store(key string, resp *http.Response, issuePage
 		return resp, nil
 	}
 	_ = resp.Body.Close()
-	t.cache.Add(key, revalidatedEntry{etag: etag, header: resp.Header.Clone(), body: body, cachedAt: time.Now()})
+	cache.Add(key, revalidatedEntry{etag: etag, header: resp.Header.Clone(), body: body, cachedAt: time.Now()})
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	return resp, nil
 }

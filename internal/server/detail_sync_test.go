@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/testutil/tokenauthtest"
+	platformgithub "go.kenn.io/forge/platform/github"
 
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
@@ -116,6 +117,9 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 				GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 					return &gh.PullRequest{ID: new(int64(1000)), Number: &number, State: &state, Title: new("Example pull"), Body: new("body"), CreatedAt: &when, UpdatedAt: &when, Head: &gh.PullRequestBranch{SHA: new("abc123"), Ref: new("feature")}, Base: &gh.PullRequestBranch{Ref: new("main")}}, nil
 				},
+				ListPRTimelineEventsFn: func(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error) {
+					return []platformgithub.PullRequestTimelineEvent{{NodeID: "title-1", EventType: "renamed_title", PreviousTitle: "Old", CurrentTitle: "New", CreatedAt: when.Time}}, nil
+				},
 				ListIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
 					return []*gh.IssueComment{{ID: new(int64(99)), Body: &comment, CreatedAt: &commentWhen, UpdatedAt: &commentWhen}}, nil
 				},
@@ -126,6 +130,12 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 			_, err := srv.activityapi.EnqueuePRSync(t.Context(), input)
 			require.NoError(t, err)
 			srv.bg.Wait()
+
+			result, err := database.WriteDB().ExecContext(t.Context(), `UPDATE forge_mr_events SET metadata_json = '{"current_title":"New","previous_title":"Old"}' WHERE dedupe_key = 'timeline-title-1'`)
+			require.NoError(t, err)
+			rows, err := result.RowsAffected()
+			require.NoError(t, err)
+			require.EqualValues(t, 1, rows)
 
 			if tc.name == "queue" {
 				queueServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

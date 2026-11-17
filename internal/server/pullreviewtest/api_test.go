@@ -1626,17 +1626,9 @@ func TestAPIApprovePRSubmitsGitHubReview(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	release := make(chan struct{})
 	var providerCalled atomic.Bool
 	var reviewCommitID string
 	mock := &serverfake.MockGH{
-		GetPullRequestFn: func(ctx context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
-			select {
-			case <-release:
-			case <-ctx.Done():
-			}
-			return nil, ctx.Err()
-		},
 		CreateReviewWithCommentsFn: func(
 			_ context.Context,
 			_, _ string,
@@ -1659,8 +1651,6 @@ func TestAPIApprovePRSubmitsGitHubReview(t *testing.T) {
 		},
 	}
 	srv, database := servertest.SetupTestServerWithMock(t, mock)
-	t.Cleanup(func() { close(release) })
-	eventStream, _ := srv.Hub().Subscribe(t.Context(), false)
 	expectedHeadSHA := "reviewed-sha"
 	mrID := serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRHeadSHA(expectedHeadSHA))
 	client := servertest.SetupTestClient(t, srv)
@@ -1670,21 +1660,43 @@ func TestAPIApprovePRSubmitsGitHubReview(t *testing.T) {
 	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
 	assert.True(providerCalled.Load())
 	assert.Equal(expectedHeadSHA, reviewCommitID)
-	select {
-	case event := <-eventStream:
-		require.Equal("data_changed", event.Event.Type)
-		payload, err := json.Marshal(event.Event.Data)
-		require.NoError(err)
-		require.Contains(string(payload), `"repo_path":"acme/widget"`)
-	case <-time.After(time.Second):
-		require.FailNow("approval did not notify list subscribers")
-	}
 
 	events, err := database.ListMREvents(t.Context(), mrID)
 	require.NoError(err)
 	require.Len(events, 1)
 	assert.Equal("review", events[0].EventType)
 	assert.Equal("APPROVE", events[0].Summary)
+}
+
+func TestAPIApprovePRBroadcastsRepositoryChange(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	release := make(chan struct{})
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(ctx context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return nil, ctx.Err()
+		},
+		CreateReviewWithCommentsFn: func(_ context.Context, _, _ string, _ int, event, body, _ string, _ []*gh.DraftReviewComment) (*gh.PullRequestReview, error) {
+			now := gh.Timestamp{Time: time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)}
+			return &gh.PullRequestReview{ID: new(int64(101)), State: &event, Body: &body, SubmittedAt: &now, User: &gh.User{Login: new("reviewer")}}, nil
+		},
+	}
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	t.Cleanup(func() { close(release) })
+	events, _ := srv.Hub().Subscribe(t.Context(), false)
+	expectedHeadSHA := "reviewed-sha"
+	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRHeadSHA(expectedHeadSHA))
+	client := servertest.SetupTestClient(t, srv)
+	resp, err := client.HTTP.ApprovePullWithResponse(t.Context(), &generated.ApprovePullRequestOptions{PathParams: &generated.ApprovePullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.ApprovePullBody{ExpectedHeadSha: &expectedHeadSHA}})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode, string(resp.Body))
+	event := readEventMatching(t, events, func(event syncevents.Event) bool { return event.Type == "data_changed" })
+	payload, err := json.Marshal(event.Data)
+	require.NoError(t, err)
+	require.Contains(t, string(payload), `"repo_path":"acme/widget"`)
 }
 
 func TestAPIMergePRRejectsNilProviderPayload(t *testing.T) {

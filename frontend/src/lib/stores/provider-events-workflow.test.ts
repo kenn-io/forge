@@ -644,7 +644,7 @@ it.layer(ProviderEventsTest)("provider event reconnect interruption", (it) => {
   );
 });
 
-it.layer(ProviderEventsTest)("provider scoped data_changed coalescing", (it) => {
+it.layer(ProviderEventsTest)("provider data_changed coalescing", (it) => {
   it.effect("refreshes once for a burst of data_changed hints and once more after the interval", () =>
     Effect.gen(function* () {
       const probe = yield* ProviderEventsProbe;
@@ -657,12 +657,7 @@ it.layer(ProviderEventsTest)("provider scoped data_changed coalescing", (it) => 
       );
       const source = yield* probe.awaitSource;
       emitOpen(source);
-      emitFrame(
-        source,
-        "data_changed",
-        { repositories: [{ provider: "github", platform_host: "github.com", repo_path: "acme/widget" }] },
-        "1",
-      );
+      emitFrame(source, "data_changed", {}, "1");
       assert.strictEqual((yield* Queue.take(refreshes)).type, "data_changed");
 
       for (let id = 2; id <= 20; id++) emitFrame(source, "data_changed", {}, String(id));

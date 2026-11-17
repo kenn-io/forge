@@ -563,7 +563,7 @@ func TestEventHub_DataChangedCoalescesRepositoryIdentities(t *testing.T) {
 		changes []any
 		want    string
 	}{
-		{"repositories", []any{syncevents.RepositoryChanges{Repositories: []syncevents.RepositoryEvent{repoA}}, syncevents.RepositoryChanges{Repositories: []syncevents.RepositoryEvent{repoB}}}, `{"repositories":[{"provider":"github","platform_host":"github.com","repo_path":"example/a","platform_repo_id":42},{"provider":"gitlab","platform_host":"gitlab.com","repo_path":"example/b","platform_repo_id":43}]}`},
+		{"repositories", []any{syncevents.RepositoryChanges{Repositories: []syncevents.RepositoryEvent{repoA}}, syncevents.RepositoryChanges{Repositories: []syncevents.RepositoryEvent{repoA, repoB}}}, `{"repositories":[{"provider":"github","platform_host":"github.com","repo_path":"example/a","platform_repo_id":42},{"provider":"gitlab","platform_host":"gitlab.com","repo_path":"example/b","platform_repo_id":43}]}`},
 		{"unscoped", []any{syncevents.RepositoryChanges{Repositories: []syncevents.RepositoryEvent{repoA}}, struct{}{}}, `{}`},
 	}
 	for _, tc := range cases {

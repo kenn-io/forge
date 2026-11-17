@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -23,13 +24,14 @@ const (
 	// Superseded heads age out as new heads are polled.
 	revalidatedEntryLimit = 2048
 	// revalidatedBodyLimit skips caching an unusually large page.
-	revalidatedBodyLimit = 1 << 20
+	revalidatedBodyLimit = 2 << 20
 )
 
 type revalidatedEntry struct {
-	etag   string
-	header http.Header
-	body   []byte
+	etag     string
+	header   http.Header
+	body     []byte
+	cachedAt time.Time
 }
 
 // revalidatingTransport sends If-None-Match for CI, metadata, and issue reads and answers a
@@ -61,6 +63,9 @@ func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, er
 	key := req.URL.String()
 	entry, cached := t.cache.Get(key)
 	sent := req
+	if cached && strings.HasSuffix(req.URL.Path, "/issues") && time.Since(entry.cachedAt) >= etagTTL {
+		cached = false
+	}
 	if cached {
 		sent = req.Clone(req.Context())
 		sent.Header.Set("If-None-Match", entry.etag)
@@ -102,7 +107,7 @@ func (t *revalidatingTransport) store(key string, resp *http.Response) (*http.Re
 		return resp, nil
 	}
 	_ = resp.Body.Close()
-	t.cache.Add(key, revalidatedEntry{etag: etag, header: resp.Header.Clone(), body: body})
+	t.cache.Add(key, revalidatedEntry{etag: etag, header: resp.Header.Clone(), body: body, cachedAt: time.Now()})
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	return resp, nil
 }

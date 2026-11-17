@@ -406,3 +406,71 @@ func TestRevalidatingIssuePagesSkipOversizedBodiesAndComments(t *testing.T) {
 	}
 	assert.Zero(t, conditionals.Load())
 }
+
+func TestRevalidatingIssuePageExpiresAndRefreshesLink(t *testing.T) {
+	t.Parallel()
+	var expanded atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") == `"page"` {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", `"page"`)
+		if expanded.Load() {
+			w.Header().Set("Link", `<https://example.com/issues?page=3>; rel="next"`)
+		}
+		_, _ = w.Write([]byte(`[{"number":200}]`))
+	}))
+	t.Cleanup(server.Close)
+	transport := newRevalidatingTransport(http.DefaultTransport)
+	client := &http.Client{Transport: transport}
+	url := server.URL + "/repos/acme/widget/issues?page=2"
+	read := func() string {
+		resp, err := client.Get(url)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		assert.Equal(t, `[{"number":200}]`, string(body))
+		return resp.Header.Get("Link")
+	}
+	assert.Empty(t, read())
+	entry, ok := transport.cache.Get(url)
+	require.True(t, ok)
+	entry.cachedAt = time.Now().Add(-etagTTL + time.Minute)
+	transport.cache.Add(url, entry)
+	expanded.Store(true)
+	assert.Empty(t, read())
+	after304, ok := transport.cache.Get(url)
+	require.True(t, ok)
+	assert.Equal(t, entry.cachedAt, after304.cachedAt)
+	after304.cachedAt = time.Now().Add(-etagTTL - time.Minute)
+	transport.cache.Add(url, after304)
+	assert.Equal(t, `<https://example.com/issues?page=3>; rel="next"`, read())
+}
+
+func TestRevalidatingIssuePageCachesLargeBody(t *testing.T) {
+	t.Parallel()
+	body := strings.Repeat("x", 1100*1024)
+	var conditionals atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") == `"page"` {
+			conditionals.Add(1)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", `"page"`)
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(server.Close)
+	client := &http.Client{Transport: newRevalidatingTransport(http.DefaultTransport)}
+	for range 2 {
+		resp, err := client.Get(server.URL + "/repos/acme/widget/issues?page=2")
+		require.NoError(t, err)
+		got, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		assert.Equal(t, body, string(got))
+	}
+	assert.Equal(t, int64(1), conditionals.Load())
+}

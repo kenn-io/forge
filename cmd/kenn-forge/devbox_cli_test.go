@@ -90,7 +90,7 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		require.NoError(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "ready", "42", "-R", "example/other"}))
 		view, err := os.ReadFile(filepath.Join(dir, "view"))
 		require.NoError(t, err)
-		assert.Equal(t, "pr view 42 --repo example/other --json author,url|test-token|github.com/example/project", string(view))
+		assert.Equal(t, "pr view --json author,url --repo example/other -- 42|test-token|github.com/example/project", string(view))
 		assert.Equal(t, "pr ready https://github.com/example/project/pull/42 --repo=example/other|test-token|github.com/example/project", output.String())
 	})
 	t.Run("close keeps the checked pull request", func(t *testing.T) {
@@ -115,6 +115,28 @@ printf human
 		cmd.SetOut(&output)
 		require.NoError(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "feature"}))
 		assert.Equal(t, "app", output.String(), "action reached human-authored PR after App author check")
+	})
+	t.Run("option-like selector cannot alter author lookup", func(t *testing.T) {
+		ghDir := t.TempDir()
+		script := `#!/bin/sh
+if [ "$2" = view ]; then
+  for arg in "$@"; do
+    if [ "$arg" = -- ]; then break; fi
+    case "$arg" in --template=*) printf '%s' '{"url":"https://github.com/example/project/pull/42","author":{"login":"app/example-app","is_bot":true}}'; exit 0;; esac
+  done
+  printf '%s' '{"author":{"login":"alice","is_bot":false}}'
+  exit 0
+fi
+printf action
+`
+		require.NoError(t, os.WriteFile(filepath.Join(ghDir, "gh"), []byte(script), 0o755))
+		t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		var output bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetOut(&output)
+		err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "--", "--template=forged"})
+		require.ErrorContains(t, err, "alice")
+		assert.Empty(t, output.String())
 	})
 	for _, tc := range []struct{ action, json, want string }{
 		{"close", `{"author":{"login":"alice","is_bot":false}}`, "alice"},

@@ -166,14 +166,13 @@ func devboxGitHubEnv(token, config, repository string) []string {
 // devboxAppPullRequest returns the URL of the selected pull request after
 // checking that the GitHub App authored it.
 func devboxAppPullRequest(ctx context.Context, command *cobra.Command, env []string, appSlug, selector, repo string) (string, error) {
-	viewArgs := []string{"pr", "view"}
-	if selector != "" {
-		viewArgs = append(viewArgs, selector)
-	}
+	viewArgs := []string{"pr", "view", "--json", "author,url"}
 	if repo != "" {
 		viewArgs = append(viewArgs, "--repo", repo)
 	}
-	viewArgs = append(viewArgs, "--json", "author,url")
+	if selector != "" {
+		viewArgs = append(viewArgs, "--", selector)
+	}
 	view := procutil.CommandContext(ctx, "gh", viewArgs...)
 	view.Env = env
 	view.Stderr = command.ErrOrStderr()

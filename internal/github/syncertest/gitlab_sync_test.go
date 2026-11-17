@@ -2,8 +2,11 @@ package syncertest
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -29,6 +32,88 @@ func (s staticGitLabToken) Invalidate(string) {}
 
 func (s staticGitLabToken) Descriptor() tokenauth.Descriptor {
 	return tokenauth.Descriptor{Key: tokenauth.Key{Platform: "gitlab", Host: "gitlab.example.com"}}
+}
+
+func TestGitLabSyncOverviewRefreshesRecentReleases(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	database := openTestDB(t)
+	var requests atomic.Int32
+	var stage atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/api/v4/projects/group%2Fproject", "/api/v4/projects/42":
+			_, _ = w.Write([]byte(`{"id":42,"path":"project","path_with_namespace":"group/project","name":"Project","default_branch":"main","web_url":"https://gitlab.example.com/group/project"}`))
+		case "/api/v4/projects/42/releases":
+			requests.Add(1)
+			page, err := strconv.Atoi(r.URL.Query().Get("page"))
+			if err != nil || page < 1 {
+				http.Error(w, "invalid page", http.StatusBadRequest)
+				return
+			}
+			perPage, err := strconv.Atoi(r.URL.Query().Get("per_page"))
+			if err != nil || perPage < 1 || perPage > 100 {
+				http.Error(w, "invalid page size", http.StatusBadRequest)
+				return
+			}
+			first := 1000
+			if stage.Load() == 2 {
+				first--
+			}
+			start := (page - 1) * perPage
+			end := min(start+perPage, first)
+			if end < first {
+				w.Header().Set("X-Next-Page", strconv.Itoa(page+1))
+			}
+			releases := make([]map[string]string, 0)
+			for i := start; i < end; i++ {
+				tag := fmt.Sprintf("v%d", first-i)
+				name := tag
+				if tag == "v1000" && stage.Load() == 1 {
+					name = "Updated release"
+				}
+				releases = append(releases, map[string]string{"tag_name": tag, "name": name})
+			}
+			_ = json.NewEncoder(w).Encode(releases)
+		default:
+			_, _ = w.Write([]byte(`[]`))
+		}
+	}))
+	defer server.Close()
+
+	client, err := gitlab.NewClient("gitlab.example.com", staticGitLabToken("token"),
+		gitlab.WithBaseURLForTesting(server.URL+"/api/v4"),
+		gitlab.WithoutRetriesForTesting(), gitlab.WithTransport(http.DefaultTransport))
+	require.NoError(t, err)
+	registry, err := ghclient.NewProviderRegistry(nil, client)
+	require.NoError(t, err)
+	repo := ghclient.RepoRef{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com", Owner: "group", Name: "project", RepoPath: "group/project"}
+
+	for _, step := range []struct {
+		stage int32
+		tags  []string
+		name  string
+	}{
+		{0, []string{"v1000", "v999", "v998"}, "v1000"},
+		{1, []string{"v1000", "v999", "v998"}, "Updated release"},
+		{2, []string{"v999", "v998", "v997"}, "v999"},
+	} {
+		stage.Store(step.stage)
+		requests.Store(0)
+		syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil)
+		syncer.RunOnce(ctx)
+		assert.Equal(t, int32(1), requests.Load(), "stage %d", step.stage)
+		summaries, err := database.ListRepoSummaries(ctx)
+		require.NoError(t, err)
+		require.Len(t, summaries, 1)
+		overview := summaries[0].Overview
+		require.Len(t, overview.Releases, 3)
+		assert.Equal(t, step.tags, []string{overview.Releases[0].TagName, overview.Releases[1].TagName, overview.Releases[2].TagName})
+		assert.Equal(t, step.name, overview.Releases[0].Name)
+		require.NotNil(t, overview.LatestRelease)
+		assert.Equal(t, step.name, overview.LatestRelease.Name)
+	}
 }
 
 // TestGitLabProviderSyncPersistsAndRetainsInaccessibleItems drives the real

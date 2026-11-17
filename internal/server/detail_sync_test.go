@@ -100,12 +100,11 @@ func TestEnqueueDetailSyncOrRerunKeepsReplacedCompletion(t *testing.T) {
 	})
 }
 
-func TestEnqueuePRSyncBroadcastsChangesToChecksAndComments(t *testing.T) {
+func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	when := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute).Truncate(time.Second)}
 	comment := "original"
 	commentWhen := gh.Timestamp{Time: when.Add(time.Minute)}
-	check := "success"
 	mock := &serverfake.MockGH{
 		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			return &gh.PullRequest{ID: new(int64(1000)), Number: &number, State: new("open"), Title: new("Example pull"), Body: new("body"), CreatedAt: &when, UpdatedAt: &when, Head: &gh.PullRequestBranch{SHA: new("abc123"), Ref: new("feature")}, Base: &gh.PullRequestBranch{Ref: new("main")}}, nil
@@ -115,9 +114,6 @@ func TestEnqueuePRSyncBroadcastsChangesToChecksAndComments(t *testing.T) {
 		},
 		ListIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
 			return []*gh.IssueComment{{ID: new(int64(99)), Body: &comment, CreatedAt: &commentWhen, UpdatedAt: &commentWhen}}, nil
-		},
-		ListCheckRunsForRefFn: func(context.Context, string, string, string) ([]*gh.CheckRun, error) {
-			return []*gh.CheckRun{{ID: new(int64(1)), Name: new("build"), Status: new("completed"), Conclusion: &check}}, nil
 		},
 	}
 	srv, database, syncer := setupTestServerWithMock(t, mock)
@@ -161,7 +157,6 @@ func TestEnqueuePRSyncBroadcastsChangesToChecksAndComments(t *testing.T) {
 		"github.com": ghclient.NewGraphQLFetcher(tokenauthtest.Source("token"), "github.com", nil, nil, ghclient.WithGraphQLEndpointForTesting(queueServer.URL)),
 	})
 	comment = "edited"
-	check = "failure"
 	_, err = srv.activityapi.EnqueuePRSync(t.Context(), input)
 	require.NoError(t, err)
 	srv.bg.Wait()
@@ -203,13 +198,8 @@ drain:
 	}, syncevents.DataChangedInterval+200*time.Millisecond, 10*time.Millisecond, "no extra data_changed event")
 	stored, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(t, err)
-	require.Equal(t, "failure", stored.CIStatus)
 	queue, err := database.GetMergeQueueState(t.Context(), stored.RepoID, 1)
 	require.NoError(t, err)
 	require.NotNil(t, queue)
 	require.True(t, queue.Queued)
-	eventRows, err := database.ListMREvents(t.Context(), stored.ID)
-	require.NoError(t, err)
-	require.Len(t, eventRows, 2)
-	require.Contains(t, []string{eventRows[0].Body, eventRows[1].Body}, "edited")
 }

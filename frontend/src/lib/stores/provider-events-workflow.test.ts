@@ -644,7 +644,7 @@ it.layer(ProviderEventsTest)("provider event reconnect interruption", (it) => {
   );
 });
 
-it.layer(ProviderEventsTest)("provider data_changed coalescing", (it) => {
+it.layer(ProviderEventsTest)("provider scoped data_changed coalescing", (it) => {
   it.effect("refreshes once for a burst of data_changed hints and once more after the interval", () =>
     Effect.gen(function* () {
       const probe = yield* ProviderEventsProbe;

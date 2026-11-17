@@ -36,7 +36,7 @@ func withObsoleteMetadata(metadataJSON string, obsolete bool) (string, bool) {
 		}
 		delete(metadata, "obsolete")
 	}
-	encoded, err := json.Marshal(metadata, json.Deterministic(true))
+	encoded, err := json.Marshal(metadata)
 	if err != nil {
 		return metadataJSON, false
 	}

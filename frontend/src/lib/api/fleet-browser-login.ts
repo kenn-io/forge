@@ -11,8 +11,8 @@ export interface FleetBrowserLoginTarget {
 
 // resolveFleetHostDestination returns where the machine switcher should send
 // the browser: a one-time login link on the destination Forge, or its plain
-// address when this Forge holds no direct credential for it (for example a
-// sibling spoke reached through Tailscale Serve identity).
+// address when this Forge has no credential path to it (for example a sibling
+// spoke whose hub cannot relay the sign-in).
 export const resolveFleetHostDestination = Effect.fn("FleetBrowserLogin.resolveDestination")(function* (
   host: FleetBrowserLoginTarget,
   path: string,

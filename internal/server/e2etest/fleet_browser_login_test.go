@@ -149,7 +149,7 @@ func TestFleetBrowserLoginE2E(t *testing.T) {
 func TestFleetBrowserLoginRejectsUnreachableTargets(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	fixture := newFederatedForgesFixture(t)
-	hub, nodeA, nodeB := fixture.Hub, fixture.NodeA, fixture.NodeB
+	hub, nodeA := fixture.Hub, fixture.NodeA
 	for _, test := range []struct {
 		name   string
 		source *federatedDaemonFixture
@@ -161,7 +161,6 @@ func TestFleetBrowserLoginRejectsUnreachableTargets(t *testing.T) {
 		{name: "self alias", source: hub, nodeID: "self", status: http.StatusConflict, code: string(httpapi.CodeConflict), reason: "selfHost"},
 		{name: "own node ID", source: nodeA, nodeID: nodeA.NodeID, status: http.StatusConflict, code: string(httpapi.CodeConflict), reason: "selfHost"},
 		{name: "devbox", source: hub, nodeID: "devbox:compute-a", status: http.StatusConflict, code: string(httpapi.CodeConflict), reason: "devboxHost"},
-		{name: "sibling spoke", source: nodeA, nodeID: nodeB.NodeID, status: http.StatusConflict, code: string(httpapi.CodeConflict), reason: "noDirectFederationCredential"},
 		{name: "unknown member", source: hub, nodeID: "40404040404040404040404040404040", status: http.StatusNotFound, code: string(httpapi.CodeNotFound)},
 		{name: "malformed host", source: nodeA, nodeID: "not-a-node", status: http.StatusNotFound, code: string(httpapi.CodeNotFound)},
 	} {
@@ -230,4 +229,133 @@ func TestFleetBrowserLoginReportsPeerFailure(t *testing.T) {
 	assert.Equal(fixture.Hub.NodeID, problem.Details["hostKey"])
 	assert.Contains(problem.Detail, "the federation hub is unavailable",
 		"the peer's own cause reaches the operator")
+}
+
+// TestFleetBrowserLoginSpokeToSiblingE2E proves a spoke signs its browser in
+// to a sibling spoke it holds no credential for: the hub obtains the
+// sibling's ticket, and the link opens on the sibling's own origin.
+func TestFleetBrowserLoginSpokeToSiblingE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newFederatedForgesFixture(t)
+	nodeA, nodeB := fixture.NodeA, fixture.NodeB
+
+	response, body := fixture.requestBrowserLogin(t, nodeA, nodeB.NodeID,
+		`{"path":"/pulls?state=open&login_ticket=stale"}`, localBearer(nodeA))
+	login := decodeBrowserLogin(t, response, body)
+	link, err := url.Parse(login.URL)
+	require.NoError(err)
+	assert.Equal(nodeB.HTTP.URL, link.Scheme+"://"+link.Host)
+	assert.Equal("/pulls", link.Path)
+	assert.Equal("open", link.Query().Get("state"))
+	assert.NotEqual("stale", link.Query().Get("login_ticket"))
+	assert.True(login.ExpiresAt.After(time.Now()))
+
+	location, siblingSession := fixture.followBrowserLogin(t, login.URL)
+	assert.Equal("/pulls?state=open", location)
+	snapshot, _ := fixture.browserRequest(t, http.MethodGet,
+		nodeB.HTTP.URL+"/api/v1/snapshot", "", withCookie(siblingSession))
+	assert.Equal(http.StatusOK, snapshot.StatusCode, "the link signs the browser into the sibling")
+	onNodeA, _ := fixture.browserRequest(t, http.MethodGet,
+		nodeA.HTTP.URL+"/api/v1/snapshot", "", withCookie(siblingSession))
+	assert.Equal(http.StatusUnauthorized, onNodeA.StatusCode,
+		"the session belongs to the sibling only")
+}
+
+func (f *federatedForgesFixture) requestSiblingTicket(
+	t *testing.T, target *federatedDaemonFixture, nodeID string, credential func(*http.Request),
+) (http.Response, []byte) {
+	t.Helper()
+	return f.browserRequest(t, http.MethodPost,
+		target.HTTP.URL+"/api/v1/fleet/hosts/"+url.PathEscape(nodeID)+
+			"/federation/browser-login-tickets", "", credential)
+}
+
+func peerBearer(token string) func(*http.Request) {
+	return func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+token) }
+}
+
+func TestFleetSiblingBrowserLoginTicketRefusals(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	fixture := newFederatedForgesFixture(t)
+	hub, nodeA, nodeB := fixture.Hub, fixture.NodeA, fixture.NodeB
+	hubToNodeB, ok := hub.Credentials.Outbound(nodeB.NodeID)
+	require.True(t, ok)
+	for _, test := range []struct {
+		name       string
+		target     *federatedDaemonFixture
+		nodeID     string
+		credential func(*http.Request)
+		status     int
+		reason     string
+	}{
+		{name: "local user", target: hub, nodeID: nodeB.NodeID, credential: localBearer(hub), status: http.StatusForbidden, reason: "federationSpokeRequired"},
+		{name: "hub caller on a spoke", target: nodeB, nodeID: nodeA.NodeID, credential: peerBearer(hubToNodeB.Token), status: http.StatusForbidden, reason: "federationSpokeRequired"},
+		{name: "caller's own node", target: hub, nodeID: nodeA.NodeID, credential: peerBearer(fixture.nodeAToken), status: http.StatusConflict, reason: "selfHost"},
+		{name: "hub's own node", target: hub, nodeID: hub.NodeID, credential: peerBearer(fixture.nodeAToken), status: http.StatusConflict, reason: "selfHost"},
+		{name: "devbox", target: hub, nodeID: "devbox:compute-a", credential: peerBearer(fixture.nodeAToken), status: http.StatusConflict, reason: "devboxHost"},
+		{name: "non-member", target: hub, nodeID: "40404040404040404040404040404040", credential: peerBearer(fixture.nodeAToken), status: http.StatusNotFound},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response, body := fixture.requestSiblingTicket(t, test.target, test.nodeID, test.credential)
+			require.Equal(t, test.status, response.StatusCode, string(body))
+			problem := decodeFleetProblem(t, string(body))
+			assert.NotContains(t, string(body), `"ticket"`)
+			if test.reason != "" {
+				assert.Equal(t, test.reason, problem.Details["reason"])
+			}
+		})
+	}
+}
+
+// TestFleetBrowserLoginSiblingFallsBackWithoutHubRelay keeps the plain-link
+// fallback working when the hub cannot relay a sibling's ticket.
+func TestFleetBrowserLoginSiblingFallsBackWithoutHubRelay(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	olderHub := func(status int, reason string) func(*federatedForgesFixture) {
+		return func(fixture *federatedForgesFixture) {
+			current := fixture.Hub.Server
+			fixture.Hub.Switch.Set(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.HasSuffix(r.URL.Path, "/federation/browser-login-tickets") ||
+					!strings.HasPrefix(r.URL.Path, "/api/v1/fleet/hosts/") {
+					current.ServeHTTP(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(status)
+				problem := map[string]any{"status": status, "detail": "not served"}
+				if reason != "" {
+					problem["details"] = map[string]any{"reason": reason}
+				}
+				if err := json.NewEncoder(w).Encode(problem); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+			}))
+		}
+	}
+	for _, test := range []struct {
+		name  string
+		setup func(*federatedForgesFixture)
+	}{
+		{name: "hub without the route", setup: olderHub(http.StatusNotFound, "")},
+		{name: "hub that denies fleet host peer routes", setup: olderHub(http.StatusForbidden, "federationRouteNotAllowed")},
+		{name: "inactive hub federation", setup: func(fixture *federatedForgesFixture) {
+			nodeA := fixture.NodeA
+			nodeA.Server = newFederatedDaemonServer(
+				t, nodeA, federatedSpokeConfig(fixture.Hub), fixture.HTTPClient, false,
+			)
+			nodeA.Switch.Set(nodeA.Server)
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newFederatedForgesFixture(t)
+			test.setup(fixture)
+			response, body := fixture.requestBrowserLogin(t, fixture.NodeA,
+				fixture.NodeB.NodeID, `{"path":"/"}`, localBearer(fixture.NodeA))
+			require.Equal(t, http.StatusConflict, response.StatusCode, string(body))
+			assert.Equal(t, "noDirectFederationCredential",
+				decodeFleetProblem(t, string(body)).Details["reason"])
+		})
+	}
 }

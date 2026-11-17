@@ -92,6 +92,7 @@ import type {
   GitHubRepositoryIDResponse,
   InspectFleetProjectWorktreeDefaultOne,
   InspectFleetProjectWorktreePathParameters,
+  IssueFleetHostBrowserLoginTicketPathParameters,
   JoinRequest,
   JoinResponse,
   LaunchFleetHostRuntimeSessionBody,
@@ -158,6 +159,7 @@ import type {
   SetFleetProjectWorktreeSessionBackendBody,
   SetFleetProjectWorktreeSessionBackendDefaultOne,
   SetFleetProjectWorktreeSessionBackendPathParameters,
+  SiblingBrowserLoginTicketBody,
   Snapshot,
   SpokePreparationAbortReport,
   SpokePreparationReport,
@@ -2477,6 +2479,23 @@ export const createFleetBrowserLogin = async (
     method: "POST",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(browserLoginRequestBody),
+  });
+};
+
+export const getIssueFleetHostBrowserLoginTicketUrl = ({ nodeId }: IssueFleetHostBrowserLoginTicketPathParameters) => {
+  return `/fleet/hosts/${encodeURIComponent(String(nodeId))}/federation/browser-login-tickets`;
+};
+
+/**
+ * @summary Obtain a sibling spoke's one-time browser login ticket for a spoke
+ */
+export const issueFleetHostBrowserLoginTicket = async (
+  { nodeId }: IssueFleetHostBrowserLoginTicketPathParameters,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<SiblingBrowserLoginTicketBody> => {
+  return orvalFetch<SiblingBrowserLoginTicketBody>(getIssueFleetHostBrowserLoginTicketUrl({ nodeId }), {
+    ...options,
+    method: "POST",
   });
 };
 

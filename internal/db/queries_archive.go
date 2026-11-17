@@ -1663,6 +1663,10 @@ func reactivateTerminalArchiveWorkTx(
 	return nil
 }
 
+// clearArchiveRepositoryFailureTx clears a wait that finished work has
+// outlived. An authentication failure or a repository block stays until an
+// explicit retry. Items of one repository run together, and one that succeeds
+// says nothing about the one the provider refused.
 func clearArchiveRepositoryFailureTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -1671,9 +1675,12 @@ func clearArchiveRepositoryFailureTx(
 ) error {
 	_, err := tx.ExecContext(ctx, `
 		UPDATE forge_archive_repos
-		SET last_error_code = NULL, last_error_detail = NULL, next_retry_at = NULL,
-			updated_at = MAX(updated_at, ?)
-		WHERE repo_id = ?`, now.UTC(), repoID)
+		SET last_error_code = CASE WHEN last_error_code IN (?1, ?2) THEN last_error_code ELSE NULL END,
+			last_error_detail = CASE WHEN last_error_code IN (?1, ?2) THEN last_error_detail ELSE NULL END,
+			next_retry_at = CASE WHEN last_error_code IN (?1, ?2) THEN next_retry_at ELSE NULL END,
+			updated_at = MAX(updated_at, ?3)
+		WHERE repo_id = ?4`,
+		ArchiveErrorCodeAuthentication, ArchiveErrorCodeRepoBlocked, now.UTC(), repoID)
 	if err != nil {
 		return fmt.Errorf("clear archive repository failure: %w", err)
 	}

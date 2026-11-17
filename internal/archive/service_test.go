@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1108,6 +1109,78 @@ func TestArchiveHydrationDenialKeepsEarlierAdmittedItem(t *testing.T) {
 	mr, err = database.GetDatasetProgress(t.Context(), repoID, db.ArchiveItemTypeMergeRequest, 2, db.ArchiveDatasetLookup)
 	require.NoError(t, err)
 	assert.Equal(db.ArchiveDatasetProgressComplete, mr.Status)
+}
+
+func TestArchiveHydrationSuccessKeepsSiblingRepositoryBlock(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+	// The issue breaks the provider contract, which blocks the repository.
+	// The PR of the same pass succeeds only after that block is recorded.
+	source := &archiveBlockedSiblingSource{
+		refs: []platform.RepoRef{ref}, database: database, repoID: repoID,
+	}
+	service, err := NewService(database, registry, nil, source, nil, fixedClock{value: archiveTestTime()})
+	require.NoError(t, err)
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(t, err)
+	// The first two passes discover the issue and PR inventories.
+	require.NoError(t, service.RunEligible(t.Context()))
+	require.NoError(t, service.RunEligible(t.Context()))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	require.ErrorIs(t, service.RunEligible(ctx), platform.ErrProviderContract)
+
+	mr, err := database.GetDatasetProgress(t.Context(), repoID, db.ArchiveItemTypeMergeRequest, 2, db.ArchiveDatasetLookup)
+	require.NoError(t, err)
+	assert.Equal(db.ArchiveDatasetProgressComplete, mr.Status)
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(t, err)
+	require.Len(t, states, 1)
+	require.NotNil(t, states[0].LastErrorCode, "the PR's success must not lift the block")
+	assert.Equal(string(db.ArchiveErrorCodeRepoBlocked), *states[0].LastErrorCode)
+
+	// A blocked repository gets no further provider requests.
+	require.NoError(t, service.RunEligible(t.Context()))
+	assert.Equal(int32(2), source.syncs.Load())
+}
+
+// archiveBlockedSiblingSource fails the issue with a contract error and holds
+// the PR's sync until that failure has blocked the repository.
+type archiveBlockedSiblingSource struct {
+	archiveTestSource
+	database *db.DB
+	repoID   int64
+	syncs    atomic.Int32
+}
+
+func (s *archiveBlockedSiblingSource) SyncArchiveItem(
+	ctx context.Context,
+	_ platform.RepoRef,
+	itemType db.ArchiveItemType,
+	_ int,
+) (ItemSyncResult, error) {
+	s.syncs.Add(1)
+	if itemType == db.ArchiveItemTypeIssue {
+		return ItemSyncResult{ProviderAttempted: true}, platform.ErrProviderContract
+	}
+	// Each read waits on the database, and a canceled context fails it.
+	for {
+		states, err := s.database.ListArchiveRepoStates(ctx, []int64{s.repoID})
+		if err != nil {
+			return ItemSyncResult{}, err
+		}
+		if len(states) == 1 && states[0].LastErrorCode != nil {
+			return ItemSyncResult{ProviderAttempted: true}, nil
+		}
+	}
 }
 
 // archiveMeetingItemSource holds every item sync until want of them are in

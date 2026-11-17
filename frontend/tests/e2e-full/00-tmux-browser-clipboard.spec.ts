@@ -13,7 +13,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
-import { trackTerminalReadiness, waitForTerminalInputReady } from "./support/terminalReadiness";
+import { insertTerminalText, trackTerminalReadiness, waitForTerminalInputReady } from "./support/terminalReadiness";
 
 type WorkspaceStatusResponse = {
   id: string;
@@ -428,7 +428,7 @@ async function renderTerminalLink(
   marker: string,
 ): Promise<TerminalDimensions> {
   await container.locator(".xterm-helper-textarea").focus();
-  await page.keyboard.insertText(`clear; printf '${shellOctal(`${renderedText}\n${marker}\n`)}'`);
+  await insertTerminalText(page, `clear; printf '${shellOctal(`${renderedText}\n${marker}\n`)}'`);
   await page.keyboard.press("Enter");
   await expect.poll(() => output.includes(marker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
   await page.evaluate(
@@ -489,7 +489,7 @@ async function emitApplicationOsc52(
   const payload = Buffer.from("application clipboard value", "utf8").toString("base64");
   await container.click({ position: { x: 10, y: 10 } });
   // Batch setup input so queued keystrokes cannot outlive clipboard authorization.
-  await page.keyboard.insertText(`printf '${shellOctal(`\x1b]52;c;${payload}\x07${marker}\n`)}'`);
+  await insertTerminalText(page, `printf '${shellOctal(`\x1b]52;c;${payload}\x07${marker}\n`)}'`);
   await page.keyboard.press("Enter");
   await expect.poll(() => output.includes(marker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
 }
@@ -620,7 +620,7 @@ async function renderMarker(
 ): Promise<TerminalDimensions> {
   await container.click({ position: { x: 10, y: 10 } });
   await container.locator(".xterm-helper-textarea").focus();
-  await page.keyboard.insertText(`clear; printf '${shellOctal(`${marker}#`)}\\n'`);
+  await insertTerminalText(page, `clear; printf '${shellOctal(`${marker}#`)}\\n'`);
   await page.keyboard.press("Enter");
   await expect.poll(() => output.includes(marker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
   // The Playwright WebSocket observer can see the marker before xterm has

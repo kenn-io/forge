@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
-type TerminalSocketState = { pathname: string; inputReady: boolean; closed: boolean };
+type TerminalSocketState = { pathname: string; inputReady: boolean; closed: boolean; input: string };
 const terminalSockets = new WeakMap<Page, Map<object, TerminalSocketState>>();
 
 export function trackTerminalReadiness(page: Page): void {
@@ -9,10 +9,15 @@ export function trackTerminalReadiness(page: Page): void {
   page.on("websocket", (socket) => {
     const pathname = new URL(socket.url()).pathname;
     if (!pathname.includes("/runtime/sessions/") || !pathname.endsWith("/terminal")) return;
-    const state = { pathname, inputReady: false, closed: false };
+    const state = { pathname, inputReady: false, closed: false, input: "" };
     sockets.set(socket, state);
+    const decoder = new TextDecoder();
     socket.on("framesent", ({ payload }) => {
-      if (typeof payload !== "string") return;
+      if (typeof payload !== "string") {
+        // Terminal input is binary; text frames carry controls.
+        state.input += decoder.decode(payload, { stream: true });
+        return;
+      }
       try {
         if ((JSON.parse(payload) as { type?: string }).type === "claim_resize") state.inputReady = true;
       } catch {
@@ -25,9 +30,14 @@ export function trackTerminalReadiness(page: Page): void {
   });
 }
 
-export async function waitForTerminalInputReady(container: Locator): Promise<void> {
-  const sockets = terminalSockets.get(container.page());
+function trackedTerminalSockets(page: Page): Map<object, TerminalSocketState> {
+  const sockets = terminalSockets.get(page);
   if (!sockets) throw new Error("Install trackTerminalReadiness before opening a terminal");
+  return sockets;
+}
+
+export async function waitForTerminalInputReady(container: Locator): Promise<void> {
+  const sockets = trackedTerminalSockets(container.page());
   const identity = await container.evaluate((element) =>
     element.closest("[data-session-host]")?.getAttribute("data-session-host"),
   );
@@ -44,5 +54,24 @@ export async function waitForTerminalInputReady(container: Locator): Promise<voi
       },
       { message: `Terminal ${identity} must claim resize before input`, timeout: 15_000 },
     )
+    .toBe(true);
+}
+
+/**
+ * Inserts text into the focused terminal and waits until a terminal socket has sent it.
+ *
+ * Firefox's insertText commits an IME composition, and xterm.js sends a committed
+ * composition from a zero-delay timer. A key pressed before that timer runs makes
+ * xterm send an empty range instead, so the text never reaches the shell. Press
+ * the next key only after this resolves.
+ */
+export async function insertTerminalText(page: Page, text: string): Promise<void> {
+  const sockets = trackedTerminalSockets(page);
+  const sentBefore = new Map([...sockets].map(([socket, state]) => [socket, state.input.length]));
+  await page.keyboard.insertText(text);
+  await expect
+    .poll(() => [...sockets].some(([socket, state]) => state.input.slice(sentBefore.get(socket) ?? 0).includes(text)), {
+      message: "Inserted terminal text must be sent before the next key",
+    })
     .toBe(true);
 }

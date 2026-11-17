@@ -19,6 +19,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/syncevents"
+	platformgithub "go.kenn.io/forge/platform/github"
 
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
@@ -108,6 +109,9 @@ func TestEnqueuePRSyncBroadcastsChangesToChecksAndComments(t *testing.T) {
 		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			return &gh.PullRequest{ID: new(int64(1000)), Number: &number, State: new("open"), Title: new("Example pull"), Body: new("body"), CreatedAt: &when, UpdatedAt: &when, Head: &gh.PullRequestBranch{SHA: new("abc123"), Ref: new("feature")}, Base: &gh.PullRequestBranch{Ref: new("main")}}, nil
 		},
+		ListPRTimelineEventsFn: func(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error) {
+			return []platformgithub.PullRequestTimelineEvent{{NodeID: "title-1", EventType: "renamed_title", PreviousTitle: "Old", CurrentTitle: "New", CreatedAt: when.Time}}, nil
+		},
 		ListIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
 			return []*gh.IssueComment{{ID: new(int64(99)), Body: &comment, CreatedAt: &commentWhen, UpdatedAt: &commentWhen}}, nil
 		},
@@ -121,6 +125,11 @@ func TestEnqueuePRSyncBroadcastsChangesToChecksAndComments(t *testing.T) {
 	_, err := srv.activityapi.EnqueuePRSync(t.Context(), input)
 	require.NoError(t, err)
 	srv.bg.Wait()
+	result, err := database.WriteDB().ExecContext(t.Context(), `UPDATE forge_mr_events SET metadata_json = '{"current_title":"New","previous_title":"Old"}' WHERE dedupe_key = 'timeline-title-1'`)
+	require.NoError(t, err)
+	rows, err := result.RowsAffected()
+	require.NoError(t, err)
+	require.EqualValues(t, 1, rows)
 	oldHub := srv.hub
 	srv.hub = syncevents.NewEventHub()
 	oldHub.Close()
@@ -183,8 +192,6 @@ drain:
 	require.Equal(t, "github", data.Repositories[0].Provider)
 	require.Equal(t, "github.com", data.Repositories[0].PlatformHost)
 	require.Equal(t, "acme/widget", data.Repositories[0].RepoPath)
-	var legacy struct{}
-	require.NoError(t, json.Unmarshal(payload, &legacy))
 	assert.Never(t, func() bool {
 		select {
 		case event := <-events:
@@ -202,6 +209,6 @@ drain:
 	require.True(t, queue.Queued)
 	eventRows, err := database.ListMREvents(t.Context(), stored.ID)
 	require.NoError(t, err)
-	require.Len(t, eventRows, 1)
-	require.Equal(t, "edited", eventRows[0].Body)
+	require.Len(t, eventRows, 2)
+	require.Contains(t, []string{eventRows[0].Body, eventRows[1].Body}, "edited")
 }

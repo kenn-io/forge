@@ -179,7 +179,6 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 				require.NoError(t, database.ReadDB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_notification_items WHERE platform_notification_id = 'notice' AND done_reason = 'closed' AND done_at IS NOT NULL`).Scan(&done))
 				require.Equal(t, 1, done)
 			}
-			time.Sleep(2 * syncevents.DataChangedInterval)
 			var change syncevents.Event
 		drain:
 			for {
@@ -193,6 +192,14 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 					break drain
 				}
 			}
+			assert.Never(t, func() bool {
+				select {
+				case event := <-events:
+					return event.Event.Type == "data_changed"
+				default:
+					return false
+				}
+			}, syncevents.DataChangedInterval+200*time.Millisecond, 10*time.Millisecond, "extra data_changed event")
 			if change.Type != "" {
 				require.True(t, tc.changed, "unchanged refresh sent an event")
 				payload, err := json.Marshal(change.Data)

@@ -174,14 +174,17 @@ func devboxGitHubEnv(token, config, repository string) []string {
 func devboxGitHubActionFlags(args []string) (string, string, error) {
 	flags := pflag.NewFlagSet("gh pr "+args[1], pflag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	flags.BoolP("delete-branch", "d", false, "")
 	flags.StringP("repo", "R", "", "")
 	switch args[1] {
-	case "close", "reopen":
+	case "close":
+		flags.BoolP("delete-branch", "d", false, "")
+		flags.StringP("comment", "c", "", "")
+	case "reopen":
 		flags.StringP("comment", "c", "", "")
 	case "ready":
 		flags.Bool("undo", false, "")
 	case "merge":
+		flags.BoolP("delete-branch", "d", false, "")
 		for _, flag := range []struct{ name, short string }{
 			{"author-email", "A"}, {"body", "b"}, {"body-file", "F"}, {"subject", "t"},
 		} {

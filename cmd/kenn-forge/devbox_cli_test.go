@@ -104,6 +104,16 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		require.Error(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42", "--unknown"}))
 		assert.Empty(t, output.String())
 	})
+	for _, action := range []string{"reopen", "ready"} {
+		t.Run(action+" rejects delete-branch", func(t *testing.T) {
+			var output bytes.Buffer
+			cmd := &cobra.Command{}
+			cmd.SetOut(&output)
+			err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", action, "42", "--delete-branch"})
+			require.ErrorContains(t, err, "unknown flag")
+			assert.Empty(t, output.String())
+		})
+	}
 	t.Run("reject unsupported verb", func(t *testing.T) {
 		before := brokerCalls.Load()
 		var output bytes.Buffer

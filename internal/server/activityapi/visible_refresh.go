@@ -74,7 +74,7 @@ func (s *Handlers) syncStaleVisiblePull(ctx context.Context, syncer *ghclient.Sy
 	}
 	host := httpapi.ProviderHost(repo.Repo)
 	done := make(chan struct{})
-	if !s.EnqueueRepositoryDetailSyncWithCompletion(
+	if !s.EnqueueDetailSyncWithCompletion(
 		prDetailSyncKey(repo, stale.Number),
 		[]any{"type", "visible-pr", "provider", string(kind), "platform_host", host, "repo_path", repo.RepoPath, "number", stale.Number},
 		repo.Repo, stale.Number,

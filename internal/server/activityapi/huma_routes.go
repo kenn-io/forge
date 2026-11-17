@@ -598,7 +598,7 @@ func (s *Handlers) EnqueuePRSync(ctx context.Context, input *itemapi.RepoNumberI
 	}
 	kind := httpapi.ProviderKind(repo.Repo)
 	host := httpapi.ProviderHost(repo.Repo)
-	s.EnqueueRepositoryDetailSyncOrRerun(
+	s.EnqueueDetailSyncOrRerun(
 		prDetailSyncKey(repo, input.Number),
 		[]any{
 			"type", "pr",
@@ -712,6 +712,7 @@ func (s *Handlers) EnqueueIssueSync(ctx context.Context, input *itemapi.IssueRep
 			"name", repo.Name,
 			"number", input.Number,
 		},
+		db.Repo{}, 0,
 		func(ctx context.Context) error {
 			removed, err := s.Db.IsArchiveItemRemovedUpstream(
 				ctx, repo.ID, db.ArchiveItemTypeIssue, input.Number,

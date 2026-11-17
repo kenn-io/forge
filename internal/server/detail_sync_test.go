@@ -15,6 +15,7 @@ import (
 	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/syncevents"
@@ -36,7 +37,7 @@ func TestEnqueueDetailSyncOrRerunRunsPendingAfterInFlight(t *testing.T) {
 		secondDone := make(chan struct{})
 		var calls atomic.Int64
 
-		started := srv.syncevents.EnqueueDetailSyncOrRerun("pr:github:github.com:acme/widget#7", nil, func(context.Context) error {
+		started := srv.syncevents.EnqueueDetailSyncOrRerun("pr:github:github.com:acme/widget#7", nil, db.Repo{}, 0, func(context.Context) error {
 			calls.Add(1)
 			close(firstStarted)
 			<-releaseFirst
@@ -46,7 +47,7 @@ func TestEnqueueDetailSyncOrRerunRunsPendingAfterInFlight(t *testing.T) {
 		synctest.Wait()
 		<-firstStarted
 
-		started = srv.syncevents.EnqueueDetailSyncOrRerun("pr:github:github.com:acme/widget#7", nil, func(context.Context) error {
+		started = srv.syncevents.EnqueueDetailSyncOrRerun("pr:github:github.com:acme/widget#7", nil, db.Repo{}, 0, func(context.Context) error {
 			calls.Add(1)
 			close(secondDone)
 			return nil
@@ -78,7 +79,7 @@ func TestEnqueueDetailSyncOrRerunKeepsReplacedCompletion(t *testing.T) {
 			}
 		}
 
-		require.True(srv.syncevents.EnqueueDetailSyncOrRerun(key, nil, func(context.Context) error {
+		require.True(srv.syncevents.EnqueueDetailSyncOrRerun(key, nil, db.Repo{}, 0, func(context.Context) error {
 			<-releaseFirst
 			return nil
 		}))
@@ -87,10 +88,10 @@ func TestEnqueueDetailSyncOrRerunKeepsReplacedCompletion(t *testing.T) {
 		// A mutation queues a rerun with follow-up work, then a plain refresh
 		// replaces that rerun before the in-flight sync finishes.
 		require.False(srv.syncevents.EnqueueDetailSyncOrRerunWithCompletion(
-			key, nil, record("mutation sync"),
+			key, nil, db.Repo{}, 0, record("mutation sync"),
 			func(context.Context) { order = append(order, "mutation completion") },
 		))
-		require.False(srv.syncevents.EnqueueDetailSyncOrRerun(key, nil, record("refresh sync")))
+		require.False(srv.syncevents.EnqueueDetailSyncOrRerun(key, nil, db.Repo{}, 0, record("refresh sync")))
 
 		close(releaseFirst)
 		synctest.Wait()

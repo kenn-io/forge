@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 )
 
@@ -10,11 +9,6 @@ type DetailSnapshot struct{ parent, events, threads, labels, queue string }
 
 // DetailChangeSnapshot reads the stored fields visible in a detail view.
 func (d *DB) DetailChangeSnapshot(ctx context.Context, repoID int64, number int) (DetailSnapshot, error) {
-	tx, err := d.ro.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
-	if err != nil {
-		return DetailSnapshot{}, fmt.Errorf("begin detail snapshot: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
 	var snap DetailSnapshot
 	parent := `SELECT COALESCE((SELECT json_array(platform_id, platform_external_id, state, title, body, url, author, author_display_name, author_account_type, author_association, created_at, updated_at, last_activity_at, is_draft, is_locked, head_branch, base_branch, platform_head_sha, platform_base_sha, diff_head_sha, diff_base_sha, merge_base_sha, head_repo_clone_url, additions, deletions, diff_size_history_json, files_changed, merge_commit_sha, comment_count, review_decision, review_decision_observed_at IS NOT NULL, ci_status, ci_checks_json, ci_had_pending, ci_observed_at IS NOT NULL, mergeable_state, mergeable_state_observed_at IS NOT NULL, merge_rules, auto_merge_enabled, workflow_approval_head_sha, workflow_approval_checked_at IS NOT NULL, head_repo_identity_stale, workflow_approval_required, workflow_approval_count, assignees_json, reviewers_json, merged_at, closed_at, detail_fetched_at IS NOT NULL) FROM forge_merge_requests WHERE repo_id = ? AND number = ?), '')`
 	// JSON object key order is not meaningful, including in legacy metadata.
@@ -23,16 +17,9 @@ func (d *DB) DetailChangeSnapshot(ctx context.Context, repoID int64, number int)
 	threads := fmt.Sprintf(`SELECT COALESCE(json_group_array(json_array(provider_thread_id, provider_review_id, provider_comment_id, path, old_path, side, start_side, start_line, line, old_line, new_line, line_type, diff_head_sha, commit_sha, body, author_login, resolved, created_at, updated_at, resolved_at, %s)), '[]') FROM (SELECT t.* FROM forge_mr_review_threads t JOIN forge_merge_requests p ON p.id = t.merge_request_id WHERE p.repo_id = ? AND p.number = ? ORDER BY t.id)`, metadata)
 	labels := `SELECT COALESCE(json_group_array(json_array(name, color, description, is_default)), '[]') FROM (SELECT l.name, l.color, l.description, l.is_default FROM forge_labels l JOIN forge_merge_request_labels x ON x.label_id = l.id JOIN forge_merge_requests p ON p.id = x.merge_request_id WHERE p.repo_id = ? AND p.number = ? ORDER BY l.id)`
 	queue := `SELECT COALESCE((SELECT json_array(base_branch, queue_enabled, merge_method, queued, position, state, estimated_time_to_merge_seconds, enqueued_at, removed_at, removal_reason, removal_failed_checks) FROM forge_merge_queue_states WHERE repo_id = ? AND number = ?), '')`
-	for _, query := range []struct {
-		sql  string
-		dest *string
-	}{{parent, &snap.parent}, {events, &snap.events}, {threads, &snap.threads}, {labels, &snap.labels}, {queue, &snap.queue}} {
-		if err := tx.QueryRowContext(ctx, query.sql, repoID, number).Scan(query.dest); err != nil {
-			return DetailSnapshot{}, fmt.Errorf("read detail changes: %w", err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return DetailSnapshot{}, fmt.Errorf("finish detail snapshot: %w", err)
+	query := fmt.Sprintf("SELECT (%s), (%s), (%s), (%s), (%s)", parent, events, threads, labels, queue)
+	if err := d.ro.QueryRowContext(ctx, query, repoID, number, repoID, number, repoID, number, repoID, number, repoID, number).Scan(&snap.parent, &snap.events, &snap.threads, &snap.labels, &snap.queue); err != nil {
+		return DetailSnapshot{}, fmt.Errorf("read detail changes: %w", err)
 	}
 	return snap, nil
 }

@@ -979,7 +979,7 @@ func newServer(
 		RefreshProjectInventory:     s.fleetAPI.RefreshProjectInventory,
 		LookupRepo:                  repoResolver.LookupRoute,
 		ResolveRepository:           resolveRepository,
-		EnqueueDetailSync:           s.syncevents.EnqueueRepositoryDetailSyncWithCompletion,
+		EnqueueDetailSync:           s.syncevents.EnqueueDetailSyncWithCompletion,
 		ProviderWriteGate:           s.providerWriteGate,
 		LaunchSpecResolver:          launchSpecResolver,
 		PullCandidates:              workspacePullCandidates,
@@ -1048,7 +1048,7 @@ func newServer(
 			FilterRepos:                   s.filterTrackedRepos,
 			RepoOperations:                s.operationapi.RepoOperations,
 			RepoOperationsForMergeRequest: s.operationapi.RepoOperationsForMergeRequest,
-			EnqueueDetailSyncOrRerun:      s.syncevents.EnqueueRepositoryDetailSyncOrRerunWithCompletion,
+			EnqueueDetailSyncOrRerun:      s.syncevents.EnqueueDetailSyncOrRerunWithCompletion,
 			Broadcast: func(event pullapi.Event) uint64 {
 				return s.hub.Broadcast(syncevents.Event{Type: event.Type, Data: event.Data})
 			},

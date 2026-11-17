@@ -419,7 +419,7 @@ func TestAPIQueuedPRSyncRechecksRemovedUpstreamBeforeProviderCall(t *testing.T) 
 	firstStarted := make(chan struct{})
 	releaseFirst := make(chan struct{})
 	require.True(srv.syncevents.EnqueueDetailSyncOrRerun(
-		key, nil, func(context.Context) error {
+		key, nil, db.Repo{}, 0, func(context.Context) error {
 			close(firstStarted)
 			<-releaseFirst
 			return nil

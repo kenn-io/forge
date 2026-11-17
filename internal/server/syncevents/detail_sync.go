@@ -54,38 +54,25 @@ type RepositoryChanges struct {
 	Repositories []RepositoryEvent `json:"repositories"`
 }
 
-func (s *Handlers) EnqueueRepositoryDetailSyncOrRerun(key string, attrs []any, repo db.Repo, number int, fn func(context.Context) error) bool {
-	return s.enqueueTrackedDetailSync(key, attrs, repo, number, fn, nil, true)
-}
-
-func (s *Handlers) EnqueueRepositoryDetailSyncWithCompletion(key string, attrs []any, repo db.Repo, number int, fn func(context.Context) error, after func(context.Context)) bool {
-	return s.enqueueTrackedDetailSync(key, attrs, repo, number, fn, after, false)
-}
-
-func (s *Handlers) EnqueueRepositoryDetailSyncOrRerunWithCompletion(key string, attrs []any, repo db.Repo, number int, fn func(context.Context) error, after func(context.Context)) bool {
-	return s.enqueueTrackedDetailSync(key, attrs, repo, number, fn, after, true)
-}
-
-func (s *Handlers) enqueueTrackedDetailSync(key string, attrs []any, repo db.Repo, number int, fn func(context.Context) error, after func(context.Context), rerun bool) bool {
-	event := RepositoryEvent{Provider: repo.Platform, PlatformHost: repo.PlatformHost, RepoPath: repo.RepoPath, Key: repo.Key}
-	return s.enqueueDetailSyncJob(key, DetailSyncJob{attrs: attrs, repo: &event, repoID: repo.ID, number: number, fn: fn, after: after}, rerun)
-}
-
 func (s *Handlers) EnqueueDetailSync(
 	key string,
 	attrs []any,
+	repo db.Repo,
+	number int,
 	fn func(context.Context) error,
 ) bool {
-	return s.enqueueDetailSyncOpts(key, attrs, fn, nil, false)
+	return s.enqueueDetailSyncOpts(key, attrs, repo, number, fn, nil, false)
 }
 
 func (s *Handlers) EnqueueDetailSyncWithCompletion(
 	key string,
 	attrs []any,
+	repo db.Repo,
+	number int,
 	fn func(context.Context) error,
 	after func(context.Context),
 ) bool {
-	return s.enqueueDetailSyncOpts(key, attrs, fn, after, false)
+	return s.enqueueDetailSyncOpts(key, attrs, repo, number, fn, after, false)
 }
 
 // enqueueDetailSyncOrRerun schedules one rerun after the in-flight sync
@@ -96,9 +83,11 @@ func (s *Handlers) EnqueueDetailSyncWithCompletion(
 func (s *Handlers) EnqueueDetailSyncOrRerun(
 	key string,
 	attrs []any,
+	repo db.Repo,
+	number int,
 	fn func(context.Context) error,
 ) bool {
-	return s.enqueueDetailSyncOpts(key, attrs, fn, nil, true)
+	return s.enqueueDetailSyncOpts(key, attrs, repo, number, fn, nil, true)
 }
 
 // EnqueueDetailSyncOrRerunWithCompletion is EnqueueDetailSyncOrRerun with
@@ -108,24 +97,25 @@ func (s *Handlers) EnqueueDetailSyncOrRerun(
 func (s *Handlers) EnqueueDetailSyncOrRerunWithCompletion(
 	key string,
 	attrs []any,
+	repo db.Repo,
+	number int,
 	fn func(context.Context) error,
 	after func(context.Context),
 ) bool {
-	return s.enqueueDetailSyncOpts(key, attrs, fn, after, true)
+	return s.enqueueDetailSyncOpts(key, attrs, repo, number, fn, after, true)
 }
 
 func (s *Handlers) enqueueDetailSyncOpts(
 	key string,
 	attrs []any,
+	repo db.Repo,
+	number int,
 	fn func(context.Context) error,
 	after func(context.Context),
 	rerun bool,
 ) bool {
-	job := DetailSyncJob{attrs: attrs, fn: fn, after: after}
-	return s.enqueueDetailSyncJob(key, job, rerun)
-}
-
-func (s *Handlers) enqueueDetailSyncJob(key string, job DetailSyncJob, rerun bool) bool {
+	event := RepositoryEvent{Provider: repo.Platform, PlatformHost: repo.PlatformHost, RepoPath: repo.RepoPath, Key: repo.Key}
+	job := DetailSyncJob{attrs: attrs, repo: &event, repoID: repo.ID, number: number, fn: fn, after: after}
 	s.DetailSyncMu.Lock()
 	if (*s.DetailSyncInFlight) == nil {
 		(*s.DetailSyncInFlight) = make(map[string]struct{})

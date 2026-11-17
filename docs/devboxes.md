@@ -38,9 +38,10 @@ personal GitHub credentials stay on the controller.
    the GitHub App authenticates the push. Forge checks GitHub's resolved author
    and committer IDs after pushing and displays a warning if attribution cannot
    be verified. A verification failure does not retry the push.
-6. Review and merge through your usual trusted Forge or GitHub session. Delete
-   the remote workspace explicitly when finished. Automatic cleanup after a
-   merge is not part of this initial deployment.
+6. Review pull requests through your usual trusted Forge or GitHub session. The
+   existing merge queue handles merges. Delete the remote workspace explicitly
+   when finished. Automatic cleanup after a merge is not part of this initial
+   deployment.
 
 Reconnect after sleep to see progress. There are no new worker-generated
 notifications while the controller is disconnected. Existing terminals and
@@ -168,8 +169,8 @@ kenn-forge devbox github --socket /run/forge-broker/broker.sock \
 ```
 
 The wrapper supports `pr create`, `edit`, `comment`, `view`, `list`, `checks`,
-`close`, `reopen`, `ready`, and `merge`.
-The wrapper refuses `close`, `reopen`, `ready`, and `merge` on pull requests
+`close`, `reopen`, and `ready`.
+The wrapper refuses `close`, `reopen`, and `ready` on pull requests
 authored by anyone other than the App.
 Its token goes only to that child process. Git and the wrapper explain broker
 failures, such as a repository not being admitted or missing write permission.

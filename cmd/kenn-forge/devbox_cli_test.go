@@ -46,7 +46,6 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		{"close", "--help"},
 		{"reopen", "--help"},
 		{"ready", "--help"},
-		{"merge", "--help"},
 		{"close", "-h"},
 	} {
 		t.Run(tc.action+" help "+tc.helpFlag, func(t *testing.T) {
@@ -69,7 +68,6 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		{"close", []string{"pr", "close", "42"}, "pr close 42"},
 		{"reopen", []string{"pr", "reopen", "42"}, "pr reopen 42"},
 		{"ready", []string{"pr", "ready", "42"}, "pr ready 42"},
-		{"merge", []string{"pr", "merge", "42"}, "pr merge 42"},
 		{"reopen with comment", []string{"pr", "reopen", "42", "-c", "message"}, "pr reopen 42 -c message"},
 		{"ready undo", []string{"pr", "ready", "42", "--undo"}, "pr ready 42 --undo"},
 	} {
@@ -90,7 +88,7 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "pr view 42 --repo example/other --json author", string(view))
 	})
-	for _, action := range []string{"close", "reopen", "ready", "merge"} {
+	for _, action := range []string{"close", "reopen", "ready"} {
 		for _, author := range []struct{ json, want string }{
 			{`{"author":{"login":"alice","is_bot":false}}`, "alice"},
 			{`{"author":{"login":"app/other-app","is_bot":true}}`, "app/other-app"},
@@ -131,6 +129,16 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		cmd := &cobra.Command{}
 		cmd.SetOut(&output)
 		require.Error(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42", "--unknown"}))
+		assert.Empty(t, output.String())
+	})
+	t.Run("reject merge before broker request", func(t *testing.T) {
+		before := brokerCalls.Load()
+		var output bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetOut(&output)
+		err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "merge", "42"})
+		require.ErrorContains(t, err, "supported GitHub commands")
+		assert.Equal(t, before, brokerCalls.Load())
 		assert.Empty(t, output.String())
 	})
 	for _, action := range []string{"reopen", "ready"} {

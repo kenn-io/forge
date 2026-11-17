@@ -1233,7 +1233,7 @@ func deriveArchiveProgress(
 	counts ArchiveProgressCounts,
 	now time.Time,
 ) ArchiveRepoProgress {
-	progress := ArchiveRepoProgress{RepoID: state.RepoID, Counts: counts, LastProgressAt: state.LastProgressAt}
+	progress := ArchiveRepoProgress{RepoID: state.RepoID, Counts: counts}
 	if archiveRepoHasError(state, ArchiveErrorCodeBudgetExhausted) {
 		progress.BudgetWaitUntil = state.NextRetryAt
 	}

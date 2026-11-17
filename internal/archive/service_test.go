@@ -109,10 +109,10 @@ func TestArchiveInventoryProgressRecordsPageCompletionTime(t *testing.T) {
 	service.clock = fixedClock{value: finished}
 	close(provider.issueInventoryRelease)
 	require.NoError(<-done)
-	progress, err := database.GetArchiveProgress(t.Context(), db.ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: finished})
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
 	require.NoError(err)
-	require.NotNil(progress[0].LastProgressAt)
-	require.Equal(finished, *progress[0].LastProgressAt)
+	require.NotNil(states[0].LastProgressAt)
+	require.Equal(finished, *states[0].LastProgressAt)
 }
 
 func TestArchiveServiceStartValidatesAllRepositoriesBeforePromotion(t *testing.T) {

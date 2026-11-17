@@ -67856,7 +67856,7 @@ type ArchiveStatusResponse struct {
 	InitialCompletedAt *time.Time                          `json:"initial_completed_at,omitempty"`
 	InitialStartedAt   *time.Time                          `json:"initial_started_at,omitempty"`
 
-	// LastProgressAt Last committed inventory page or finished item
+	// LastProgressAt Last committed inventory page or completed item lookup, including terminal lookups
 	LastProgressAt         *time.Time                         `json:"last_progress_at,omitempty"`
 	MaintenanceSucceededAt *time.Time                         `json:"maintenance_succeeded_at,omitempty"`
 	MaintenanceWatermark   *time.Time                         `json:"maintenance_watermark,omitempty"`

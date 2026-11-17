@@ -76,7 +76,7 @@ type archiveStatusResponse struct {
 	Counts                 archiveProgressCountsResponse `json:"counts"`
 	Coverage               archiveCoverageResponse       `json:"coverage"`
 	BudgetWaitUntil        *time.Time                    `json:"budget_wait_until,omitempty"`
-	LastProgressAt         *time.Time                    `json:"last_progress_at,omitempty" doc:"Last committed inventory page or finished item"`
+	LastProgressAt         *time.Time                    `json:"last_progress_at,omitempty" doc:"Last committed inventory page or completed item lookup, including terminal lookups"`
 	InitialStartedAt       *time.Time                    `json:"initial_started_at,omitempty"`
 	InitialCompletedAt     *time.Time                    `json:"initial_completed_at,omitempty"`
 	MaintenanceWatermark   *time.Time                    `json:"maintenance_watermark,omitempty"`
@@ -441,7 +441,7 @@ func archiveStatusResponses(statuses []archive.Status) []archiveStatusResponse {
 				InlineComments: status.State.InlineCommentsCoverage,
 			},
 			BudgetWaitUntil:        status.Progress.BudgetWaitUntil,
-			LastProgressAt:         status.Progress.LastProgressAt,
+			LastProgressAt:         status.State.LastProgressAt,
 			InitialStartedAt:       status.State.InitialStartedAt,
 			InitialCompletedAt:     status.State.InitialCompletedAt,
 			MaintenanceWatermark:   status.State.MaintenanceWatermark,

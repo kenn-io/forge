@@ -19,7 +19,7 @@ export interface ArchiveStatusResponse {
   failure?: ArchiveFailureResponse;
   initial_completed_at?: string;
   initial_started_at?: string;
-  /** Last committed inventory page or finished item */
+  /** Last committed inventory page or completed item lookup, including terminal lookups */
   last_progress_at?: string;
   maintenance_succeeded_at?: string;
   maintenance_watermark?: string;

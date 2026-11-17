@@ -392,10 +392,8 @@ func TestArchiveInventoryPageCommitUsesScanCursorCompareAndSwap(t *testing.T) {
 	assert.True(states[0].IssueInventory.Blocked())
 	require.NotNil(states[0].IssueInventory.LastErrorCode)
 	assert.Equal("invalid_cursor", *states[0].IssueInventory.LastErrorCode)
-	progress, err := d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: now.Add(time.Hour)})
-	require.NoError(err)
-	require.NotNil(progress[0].LastProgressAt)
-	assert.Equal(now, *progress[0].LastProgressAt)
+	require.NotNil(states[0].LastProgressAt)
+	assert.Equal(now, *states[0].LastProgressAt)
 	var echoedItems int
 	require.NoError(d.ReadDB().QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM forge_archive_items
@@ -1577,16 +1575,16 @@ func TestArchiveProgressRecordsFinishedItemOnce(t *testing.T) {
 	require.NoError(err)
 	commit := ArchiveItemSyncCommit{RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest, ItemNumber: 1, ScanGeneration: item.ScanGeneration, Outcome: ArchiveLookupPresent, Now: now}
 	require.NoError(d.CommitArchiveItemSync(ctx, commit))
-	progress, err := d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: now})
+	states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
 	require.NoError(err)
-	require.NotNil(progress[0].LastProgressAt)
-	require.Equal(now, *progress[0].LastProgressAt)
+	require.NotNil(states[0].LastProgressAt)
+	require.Equal(now, *states[0].LastProgressAt)
 	commit.Now = now.Add(time.Hour)
 	commit.ScanGeneration = archiveLifecycleDetailsGeneration
 	require.NoError(d.CommitArchiveItemSync(ctx, commit))
-	progress, err = d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: commit.Now})
+	states, err = d.ListArchiveRepoStates(ctx, []int64{repoID})
 	require.NoError(err)
-	require.Equal(now, *progress[0].LastProgressAt)
+	require.Equal(now, *states[0].LastProgressAt)
 }
 
 func TestArchiveGetProgressDerivesCountsFromDurableRows(t *testing.T) {

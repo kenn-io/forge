@@ -107,11 +107,16 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 	}{
 		{"unchanged", false},
 		{"queue", true},
+		{"notification", true},
+		{"legacy notification", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			serverfake.RunParallelServerTest(t)
 			when := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute).Truncate(time.Second)}
 			comment, state := "original", "open"
+			if strings.Contains(tc.name, "notification") {
+				state = "closed"
+			}
 			commentWhen := gh.Timestamp{Time: when.Add(time.Minute)}
 			mock := &serverfake.MockGH{
 				GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
@@ -136,7 +141,7 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 			require.NoError(t, err)
 			require.EqualValues(t, 1, rows)
 
-			if tc.changed {
+			if tc.name == "queue" {
 				queueServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					body, _ := io.ReadAll(r.Body)
 					w.Header().Set("Content-Type", "application/json")
@@ -152,6 +157,15 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 				t.Cleanup(queueServer.Close)
 				syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{"github.com": ghclient.NewGraphQLFetcher(tokenauthtest.Source("token"), "github.com", nil, nil, ghclient.WithGraphQLEndpointForTesting(queueServer.URL))})
 			}
+			if strings.Contains(tc.name, "notification") {
+				number := 1
+				notification := db.Notification{Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "notice", RepoOwner: "acme", RepoName: "widget", ItemType: "pr", ItemNumber: &number, SubjectType: "PullRequest", SubjectTitle: "Example pull", Reason: "mention", Unread: true, SourceUpdatedAt: when.Time, SyncedAt: when.Time}
+				require.NoError(t, database.UpsertNotifications(t.Context(), []db.Notification{notification}))
+				if tc.name == "legacy notification" {
+					_, err = database.WriteDB().ExecContext(t.Context(), `UPDATE forge_notification_items SET repo_id = NULL WHERE platform_notification_id = 'notice'`)
+					require.NoError(t, err)
+				}
+			}
 			oldHub := srv.hub
 			srv.hub = syncevents.NewEventHub()
 			oldHub.Close()
@@ -160,6 +174,11 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 			_, err = srv.activityapi.EnqueuePRSync(t.Context(), input)
 			require.NoError(t, err)
 			srv.bg.Wait()
+			if strings.Contains(tc.name, "notification") {
+				var done int
+				require.NoError(t, database.ReadDB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_notification_items WHERE platform_notification_id = 'notice' AND done_reason = 'closed' AND done_at IS NOT NULL`).Scan(&done))
+				require.Equal(t, 1, done)
+			}
 			time.Sleep(2 * syncevents.DataChangedInterval)
 			var change syncevents.Event
 		drain:

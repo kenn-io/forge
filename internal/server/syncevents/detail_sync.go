@@ -13,9 +13,8 @@ import (
 type DetailSyncJob struct {
 	attrs  []any
 	fn     func(context.Context) error
-	repo   *RepositoryEvent
+	repo   db.Repo
 	after  func(context.Context)
-	repoID int64
 	number int
 }
 
@@ -114,8 +113,7 @@ func (s *Handlers) enqueueDetailSyncOpts(
 	after func(context.Context),
 	rerun bool,
 ) bool {
-	event := RepositoryEvent{Provider: repo.Platform, PlatformHost: repo.PlatformHost, RepoPath: repo.RepoPath, Key: repo.Key}
-	job := DetailSyncJob{attrs: attrs, repo: &event, repoID: repo.ID, number: number, fn: fn, after: after}
+	job := DetailSyncJob{attrs: attrs, repo: repo, number: number, fn: fn, after: after}
 	s.DetailSyncMu.Lock()
 	if (*s.DetailSyncInFlight) == nil {
 		(*s.DetailSyncInFlight) = make(map[string]struct{})
@@ -170,9 +168,9 @@ func (s *Handlers) startDetailSyncJob(key string, job DetailSyncJob) bool {
 
 		var before db.DetailSnapshot
 		var snapshotErr error
-		if job.repoID != 0 {
-			before, snapshotErr = s.Db.DetailChangeSnapshot(ctx, job.repoID, job.number)
-			ctx = context.WithValue(ctx, detailSyncKey{}, detailSyncTarget{repoID: job.repoID, number: job.number})
+		if job.repo.ID != 0 {
+			before, snapshotErr = s.Db.DetailChangeSnapshot(ctx, job.repo.ID, job.number)
+			ctx = context.WithValue(ctx, detailSyncKey{}, detailSyncTarget{repoID: job.repo.ID, number: job.number})
 		}
 		err := job.fn(ctx)
 		diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err)
@@ -185,19 +183,20 @@ func (s *Handlers) startDetailSyncJob(key string, job DetailSyncJob) bool {
 		if job.after != nil && (err == nil || isDiffErr) {
 			job.after(ctx)
 		}
-		if job.repoID == 0 {
+		if job.repo.ID == 0 {
 			if err == nil || isDiffErr {
 				(*s.Hub).Broadcast(Event{Type: "data_changed", Data: struct{}{}})
 			}
 			return
 		}
-		after, afterErr := s.Db.DetailChangeSnapshot(ctx, job.repoID, job.number)
+		after, afterErr := s.Db.DetailChangeSnapshot(ctx, job.repo.ID, job.number)
 		if snapshotErr != nil || afterErr != nil {
 			slog.Warn("background detail snapshot failed", append(job.attrs, "err", errors.Join(snapshotErr, afterErr))...)
 			return
 		}
 		if before != after {
-			(*s.Hub).Broadcast(Event{Type: "data_changed", Data: RepositoryChanges{Repositories: []RepositoryEvent{*job.repo}}})
+			event := RepositoryEvent{Provider: job.repo.Platform, PlatformHost: job.repo.PlatformHost, RepoPath: job.repo.RepoPath, Key: job.repo.Key}
+			(*s.Hub).Broadcast(Event{Type: "data_changed", Data: RepositoryChanges{Repositories: []RepositoryEvent{event}}})
 		}
 	})
 	if started {

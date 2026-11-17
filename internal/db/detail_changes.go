@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-type DetailSnapshot struct{ parent, events, threads, labels, queue string }
+type DetailSnapshot string
 
 // DetailChangeSnapshot reads the stored fields visible in a detail view.
 func (d *DB) DetailChangeSnapshot(ctx context.Context, repoID int64, number int) (DetailSnapshot, error) {
@@ -17,9 +17,9 @@ func (d *DB) DetailChangeSnapshot(ctx context.Context, repoID int64, number int)
 	threads := fmt.Sprintf(`SELECT COALESCE(json_group_array(json_array(provider_thread_id, provider_review_id, provider_comment_id, path, old_path, side, start_side, start_line, line, old_line, new_line, line_type, diff_head_sha, commit_sha, body, author_login, resolved, created_at, updated_at, resolved_at, %s)), '[]') FROM (SELECT t.* FROM forge_mr_review_threads t JOIN forge_merge_requests p ON p.id = t.merge_request_id WHERE p.repo_id = ? AND p.number = ? ORDER BY t.id)`, metadata)
 	labels := `SELECT COALESCE(json_group_array(json_array(name, color, description, is_default)), '[]') FROM (SELECT l.name, l.color, l.description, l.is_default FROM forge_labels l JOIN forge_merge_request_labels x ON x.label_id = l.id JOIN forge_merge_requests p ON p.id = x.merge_request_id WHERE p.repo_id = ? AND p.number = ? ORDER BY l.id)`
 	queue := `SELECT COALESCE((SELECT json_array(base_branch, queue_enabled, merge_method, queued, position, state, estimated_time_to_merge_seconds, enqueued_at, removed_at, removal_reason, removal_failed_checks) FROM forge_merge_queue_states WHERE repo_id = ? AND number = ?), '')`
-	query := fmt.Sprintf("SELECT (%s), (%s), (%s), (%s), (%s)", parent, events, threads, labels, queue)
-	if err := d.ro.QueryRowContext(ctx, query, repoID, number, repoID, number, repoID, number, repoID, number, repoID, number).Scan(&snap.parent, &snap.events, &snap.threads, &snap.labels, &snap.queue); err != nil {
-		return DetailSnapshot{}, fmt.Errorf("read detail changes: %w", err)
+	query := fmt.Sprintf("SELECT json_array((%s), (%s), (%s), (%s), (%s))", parent, events, threads, labels, queue)
+	if err := d.ro.QueryRowContext(ctx, query, repoID, number, repoID, number, repoID, number, repoID, number, repoID, number).Scan(&snap); err != nil {
+		return "", fmt.Errorf("read detail changes: %w", err)
 	}
 	return snap, nil
 }

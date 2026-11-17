@@ -109,7 +109,9 @@ func TestGitLabSyncOverviewRefreshesRecentReleases(t *testing.T) {
 		require.Len(t, summaries, 1)
 		overview := summaries[0].Overview
 		require.Len(t, overview.Releases, 3)
-		assert.Equal(t, step.tags, []string{overview.Releases[0].TagName, overview.Releases[1].TagName, overview.Releases[2].TagName})
+		expectedTags := step.tags
+		actualTags := []string{overview.Releases[0].TagName, overview.Releases[1].TagName, overview.Releases[2].TagName}
+		assert.Equal(t, expectedTags, actualTags)
 		assert.Equal(t, step.name, overview.Releases[0].Name)
 		require.NotNil(t, overview.LatestRelease)
 		assert.Equal(t, step.name, overview.LatestRelease.Name)

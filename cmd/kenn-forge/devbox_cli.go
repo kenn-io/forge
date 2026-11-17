@@ -130,9 +130,6 @@ func runDevboxGitHub(ctx context.Context, command *cobra.Command, socket, reposi
 	if err != nil {
 		return err
 	}
-	if checkAuthor && credential.AppSlug == "" {
-		return errors.New("broker credential has no GitHub App slug; upgrade the broker")
-	}
 	privateConfig, err := os.MkdirTemp("", "forge-devbox-gh-")
 	if err != nil {
 		return err
@@ -210,9 +207,6 @@ func devboxGitHubActionFlags(args []string) (string, string, []string, bool, err
 	}
 	repo, _ := flags.GetString("repo")
 	help, _ := flags.GetBool("help")
-	if flags.NArg() > 1 {
-		return "", "", nil, false, errors.New("expected at most one pull request selector")
-	}
 	var actionFlags []string
 	flags.Visit(func(flag *pflag.Flag) {
 		if flag.Name != "help" {

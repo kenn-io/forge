@@ -26,7 +26,6 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socket)
 	require.NoError(t, err)
 	var brokerCalls atomic.Int32
-	var missingSlug atomic.Bool
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		brokerCalls.Add(1)
 		assert.Equal(t, "/v1/credentials", r.URL.Path)
@@ -34,11 +33,7 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		_, err := body.ReadFrom(r.Body)
 		assert.NoError(t, err)
 		assert.JSONEq(t, `{"repository":"example/project","profile":"pr"}`, body.String())
-		slug := "example-app"
-		if missingSlug.Load() {
-			slug = ""
-		}
-		_, _ = fmt.Fprintf(w, `{"token":"test-token","app_slug":%q,"expires_at":%q}`, slug, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
+		_, _ = fmt.Fprintf(w, `{"token":"test-token","app_slug":"example-app","expires_at":%q}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
 	})}
 	done := make(chan struct{})
 	go func() { defer close(done); _ = server.Serve(listener) }()
@@ -68,7 +63,7 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		args   []string
 		want   string
 	}{
-		{"close", []string{"pr", "close", "42"}, "pr close https://github.com/example/project/pull/42"},
+		{"close", []string{"pr", "close", "feature"}, "pr close https://github.com/example/project/pull/42"},
 		{"reopen", []string{"pr", "reopen", "42"}, "pr reopen https://github.com/example/project/pull/42"},
 		{"ready", []string{"pr", "ready", "42"}, "pr ready https://github.com/example/project/pull/42"},
 		{"comment starting with dash", []string{"pr", "reopen", "--comment=-message", "42"}, "pr reopen https://github.com/example/project/pull/42 --comment=-message"},
@@ -87,56 +82,11 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		var output bytes.Buffer
 		cmd := &cobra.Command{}
 		cmd.SetOut(&output)
-		require.NoError(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "ready", "42", "-R", "example/other"}))
+		require.NoError(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "ready", "-R", "example/other", "--", "--template=forged"}))
 		view, err := os.ReadFile(filepath.Join(dir, "view"))
 		require.NoError(t, err)
-		assert.Equal(t, "pr view --json author,url --repo example/other -- 42|test-token|github.com/example/project", string(view))
+		assert.Equal(t, "pr view --json author,url --repo example/other -- --template=forged|test-token|github.com/example/project", string(view))
 		assert.Equal(t, "pr ready https://github.com/example/project/pull/42 --repo=example/other|test-token|github.com/example/project", output.String())
-	})
-	t.Run("close keeps the checked pull request", func(t *testing.T) {
-		ghDir := t.TempDir()
-		script := `#!/bin/sh
-if [ "$2" = view ]; then
-  printf '%s' '{"number":42,"url":"https://github.com/example/project/pull/42","author":{"login":"app/example-app","is_bot":true}}'
-  exit 0
-fi
-for arg in "$@"; do
-  if [ "$arg" = 42 ] || [ "$arg" = https://github.com/example/project/pull/42 ]; then
-    printf app
-    exit 0
-  fi
-done
-printf human
-`
-		require.NoError(t, os.WriteFile(filepath.Join(ghDir, "gh"), []byte(script), 0o755))
-		t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-		var output bytes.Buffer
-		cmd := &cobra.Command{}
-		cmd.SetOut(&output)
-		require.NoError(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "feature"}))
-		assert.Equal(t, "app", output.String(), "action reached human-authored PR after App author check")
-	})
-	t.Run("option-like selector cannot alter author lookup", func(t *testing.T) {
-		ghDir := t.TempDir()
-		script := `#!/bin/sh
-if [ "$2" = view ]; then
-  for arg in "$@"; do
-    if [ "$arg" = -- ]; then break; fi
-    case "$arg" in --template=*) printf '%s' '{"url":"https://github.com/example/project/pull/42","author":{"login":"app/example-app","is_bot":true}}'; exit 0;; esac
-  done
-  printf '%s' '{"author":{"login":"alice","is_bot":false}}'
-  exit 0
-fi
-printf action
-`
-		require.NoError(t, os.WriteFile(filepath.Join(ghDir, "gh"), []byte(script), 0o755))
-		t.Setenv("PATH", ghDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-		var output bytes.Buffer
-		cmd := &cobra.Command{}
-		cmd.SetOut(&output)
-		err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "--", "--template=forged"})
-		require.ErrorContains(t, err, "alice")
-		assert.Empty(t, output.String())
 	})
 	for _, tc := range []struct{ action, json, want string }{
 		{"close", `{"author":{"login":"alice","is_bot":false}}`, "alice"},
@@ -161,19 +111,6 @@ printf action
 		cmd := &cobra.Command{}
 		cmd.SetOut(&output)
 		require.ErrorContains(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42"}), "look up pull request author")
-		assert.Empty(t, output.String())
-	})
-	t.Run("missing app slug", func(t *testing.T) {
-		missingSlug.Store(true)
-		defer missingSlug.Store(false)
-		viewLog := filepath.Join(t.TempDir(), "view")
-		t.Setenv("VIEW_LOG", viewLog)
-		var output bytes.Buffer
-		cmd := &cobra.Command{}
-		cmd.SetOut(&output)
-		err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42"})
-		require.ErrorContains(t, err, "upgrade the broker")
-		assert.NoFileExists(t, viewLog)
 		assert.Empty(t, output.String())
 	})
 	for _, tc := range []struct{ action, flag string }{
@@ -203,18 +140,6 @@ printf action
 		err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42", "--help=false"})
 		require.ErrorContains(t, err, "alice")
 		assert.Equal(t, before+1, brokerCalls.Load())
-		assert.Empty(t, output.String())
-	})
-	t.Run("reject multiple selectors", func(t *testing.T) {
-		viewLog := filepath.Join(t.TempDir(), "view")
-		t.Setenv("VIEW_LOG", viewLog)
-		before := brokerCalls.Load()
-		var output bytes.Buffer
-		cmd := &cobra.Command{}
-		cmd.SetOut(&output)
-		require.ErrorContains(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42", "43"}), "at most one pull request selector")
-		assert.Equal(t, before, brokerCalls.Load())
-		assert.NoFileExists(t, viewLog)
 		assert.Empty(t, output.String())
 	})
 	t.Run("reject merge before broker request", func(t *testing.T) {

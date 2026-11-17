@@ -75,7 +75,7 @@ func (s *Handlers) syncStaleVisiblePull(ctx context.Context, syncer *ghclient.Sy
 	host := httpapi.ProviderHost(repo.Repo)
 	done := make(chan struct{})
 	if !s.EnqueueRepositoryDetailSyncOrRerun(
-		prDetailSyncKey(repo, stale.Number),
+		"visible:"+prDetailSyncKey(repo, stale.Number),
 		[]any{"type", "visible-pr", "provider", string(kind), "platform_host", host, "repo_path", repo.RepoPath, "number", stale.Number},
 		repo.Repo, stale.Number,
 		func(ctx context.Context) error {
@@ -91,8 +91,7 @@ func (s *Handlers) syncStaleVisiblePull(ctx context.Context, syncer *ghclient.Sy
 	}
 }
 
-// prDetailSyncKey names a pull request's background detail sync, so an item
-// visit and a visible-set refresh share one in-flight job.
+// prDetailSyncKey names an item visit or mutation refresh for a pull request.
 func prDetailSyncKey(repo *db.ActiveRepo, number int) string {
 	return "pr:" + string(httpapi.ProviderKind(repo.Repo)) + ":" + httpapi.ProviderHost(repo.Repo) +
 		":" + repo.RepoPath + "#" + strconv.Itoa(number)

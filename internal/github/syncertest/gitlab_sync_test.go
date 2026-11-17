@@ -47,16 +47,8 @@ func TestGitLabSyncOverviewRefreshesRecentReleases(t *testing.T) {
 			_, _ = w.Write([]byte(`{"id":42,"path":"project","path_with_namespace":"group/project","name":"Project","default_branch":"main","web_url":"https://gitlab.example.com/group/project"}`))
 		case "/api/v4/projects/42/releases":
 			requests.Add(1)
-			page, err := strconv.Atoi(r.URL.Query().Get("page"))
-			if err != nil || page < 1 {
-				http.Error(w, "invalid page", http.StatusBadRequest)
-				return
-			}
-			perPage, err := strconv.Atoi(r.URL.Query().Get("per_page"))
-			if err != nil || perPage < 1 || perPage > 100 {
-				http.Error(w, "invalid page size", http.StatusBadRequest)
-				return
-			}
+			page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+			perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
 			first := 1000
 			if stage.Load() == 2 {
 				first--

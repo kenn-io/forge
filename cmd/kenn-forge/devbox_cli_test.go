@@ -101,6 +101,14 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		require.Error(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42"}))
 		assert.Empty(t, output.String())
 	})
+	t.Run("help on another author's pull request", func(t *testing.T) {
+		t.Setenv("AUTHOR_JSON", `{"author":{"login":"alice","is_bot":false}}`)
+		var output bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetOut(&output)
+		require.NoError(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42", "--help"}))
+		assert.Equal(t, "pr close 42 --help|test-token|github.com/example/project", output.String())
+	})
 	t.Run("invalid action flag", func(t *testing.T) {
 		var output bytes.Buffer
 		cmd := &cobra.Command{}

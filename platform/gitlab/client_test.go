@@ -802,6 +802,7 @@ func TestPreviewNamespaceReturnsPartialMetadataAfterLaterPageFailure(t *testing.
 func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
+	var releaseRequests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.EscapedPath() {
 		case "/api/v4/projects/42/merge_requests":
@@ -834,6 +835,10 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 		case "/api/v4/projects/42/issues/5/related_merge_requests":
 			writeJSON(w, `[{"id":3001,"iid":11,"project_id":77,"title":"Fix issue one","web_url":"https://gitlab.example.com/acme/tools/-/merge_requests/11","references":{"full":"acme/tools!11"},"updated_at":"2026-04-02T11:00:00Z"}]`)
 		case "/api/v4/projects/42/releases":
+			assert.Equal("3", r.URL.Query().Get("per_page"))
+			if releaseRequests.Add(1) == 1 {
+				w.Header().Set("X-Next-Page", "2")
+			}
 			writeJSON(w, `[{"tag_name": "v1.0.0", "name": "One", "released_at": "2026-04-03T10:00:00Z", "created_at": "2026-04-03T09:00:00Z", "commit": {"id": "abc"}}]`)
 		case "/api/v4/projects/42/repository/tags":
 			writeJSON(w, `[{"name": "v1.0.0", "target": "abc", "commit": {"web_url": "https://gitlab.example.com/project/-/commit/abc"}}]`)
@@ -894,6 +899,7 @@ func TestReadClientFetchesMergeRequestsIssuesEventsReleasesTagsAndPipelines(t *t
 
 	releases, err := client.ListReleases(t.Context(), ref)
 	require.NoError(err)
+	assert.Equal(int32(1), releaseRequests.Load())
 	require.Len(releases, 1)
 	assert.Equal("v1.0.0", releases[0].TagName)
 

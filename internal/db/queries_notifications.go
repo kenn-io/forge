@@ -1261,10 +1261,10 @@ func (d *DB) markClosedLinkedItemNotificationsDone(
 	now = canonicalUTCTime(now)
 	linked, unlinked := subject.itemStatements()
 	args := []any{now, repoID, subject.itemType, number, repoID, number}
-	if _, err := d.execContext(ctx, linked, args...); err != nil {
+	if _, err := d.detailChangeNotificationExec(ctx, linked, args...); err != nil {
 		return fmt.Errorf("mark closed linked %s #%d notifications done: %w", subject.itemType, number, err)
 	}
-	if _, err := d.execContext(ctx, unlinked, args...); err != nil {
+	if _, err := d.detailChangeNotificationExec(ctx, unlinked, args...); err != nil {
 		return fmt.Errorf("mark closed unlinked %s #%d notifications done: %w", subject.itemType, number, err)
 	}
 	return nil

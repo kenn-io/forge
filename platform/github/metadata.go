@@ -14,7 +14,7 @@ func WithCommitOrderMetadata(metadataJSON string, listOrder int, stableOrder int
 	}
 	metadata["commit_order"] = listOrder
 	metadata["commit_order_key"] = stableOrder
-	encoded, err := json.Marshal(metadata)
+	encoded, err := json.Marshal(metadata, json.Deterministic(true))
 	if err != nil {
 		return metadataJSON
 	}
@@ -29,7 +29,7 @@ func NormalizeCommentVisibilityMetadata(visibility CommentVisibility) string {
 	if visibility.Reason != "" {
 		metadata["provider_hidden_reason"] = visibility.Reason
 	}
-	encoded, _ := json.Marshal(metadata)
+	encoded, _ := json.Marshal(metadata, json.Deterministic(true))
 	return string(encoded)
 }
 
@@ -55,7 +55,7 @@ func WithActorAccountType(metadataJSON, account string) string {
 		metadata = map[string]any{}
 	}
 	metadata["actor_account_type"] = string(kind)
-	encoded, err := json.Marshal(metadata)
+	encoded, err := json.Marshal(metadata, json.Deterministic(true))
 	if err != nil {
 		return metadataJSON
 	}

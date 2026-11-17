@@ -10,13 +10,16 @@ import (
 type detailChangeKey struct{}
 
 type detailChangeTracker struct {
-	repoID  int64
-	number  int
-	issue   bool
-	mu      sync.Mutex
-	initial detailSnapshot
-	final   detailSnapshot
-	seen    bool
+	repoID               int64
+	number               int
+	issue                bool
+	mu                   sync.Mutex
+	initial              detailSnapshot
+	final                detailSnapshot
+	seen                 bool
+	notificationsSeen    bool
+	notificationsInitial string
+	notificationsFinal   string
 }
 
 // TrackDetailChanges reports semantic writes made by this detail refresh.
@@ -25,7 +28,7 @@ func TrackDetailChanges(ctx context.Context, repoID int64, number int, issue boo
 	return context.WithValue(ctx, detailChangeKey{}, tracker), func() bool {
 		tracker.mu.Lock()
 		defer tracker.mu.Unlock()
-		return tracker.seen && tracker.initial != tracker.final
+		return (tracker.seen && tracker.initial != tracker.final) || (tracker.notificationsSeen && tracker.notificationsInitial != tracker.notificationsFinal)
 	}
 }
 
@@ -104,4 +107,59 @@ func (d *DB) detailChangeExec(ctx context.Context, query string, args ...any) (s
 		return err
 	})
 	return result, err
+}
+
+// detailChangeNotificationExec tracks closeout state only for notification writes.
+func (d *DB) detailChangeNotificationExec(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	tracker, _ := ctx.Value(detailChangeKey{}).(*detailChangeTracker)
+	if tracker == nil {
+		return d.execContext(ctx, query, args...)
+	}
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	var before, after string
+	var result sql.Result
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		var err error
+		before, err = detailNotificationSnapshot(ctx, tx, tracker)
+		if err != nil {
+			return err
+		}
+		result, err = tx.ExecContext(ctx, query, args...)
+		if err != nil {
+			return err
+		}
+		after, err = detailNotificationSnapshot(ctx, tx, tracker)
+		return err
+	})
+	if err == nil {
+		if !tracker.notificationsSeen {
+			tracker.notificationsInitial, tracker.notificationsSeen = before, true
+		}
+		tracker.notificationsFinal = after
+	}
+	return result, err
+}
+
+func detailNotificationSnapshot(ctx context.Context, tx *sql.Tx, target *detailChangeTracker) (string, error) {
+	itemType := "pr"
+	if target.issue {
+		itemType = "issue"
+	}
+	var snapshot string
+	err := tx.QueryRowContext(ctx, `WITH target(repo_id, number, item_type) AS (VALUES (?, ?, ?))
+ SELECT COALESCE(json_group_array(json_array(id, done_at IS NOT NULL, done_reason)), '[]') FROM (
+  SELECT n.id, n.done_at, n.done_reason FROM forge_notification_items n, target t
+   WHERE n.repo_id = t.repo_id AND n.item_type = t.item_type AND n.item_number = t.number
+  UNION ALL
+  SELECT n.id, n.done_at, n.done_reason FROM forge_notification_items n, target t
+   WHERE n.repo_id IS NULL AND n.item_type = t.item_type AND n.item_number = t.number
+   AND (n.platform, n.platform_host, n.repo_owner, n.repo_name) =
+       (SELECT platform, platform_host, owner_key, name_key FROM forge_repos WHERE id = t.repo_id)
+  ORDER BY id
+ )`, target.repoID, target.number, itemType).Scan(&snapshot)
+	if err != nil {
+		return "", fmt.Errorf("read notification changes: %w", err)
+	}
+	return snapshot, nil
 }

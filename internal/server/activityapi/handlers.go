@@ -40,8 +40,6 @@ type Handlers struct {
 	EnqueueRepositoryDetailSync             func(key string, attrs []any, repo syncevents.RepositoryEvent, fn func(context.Context) (bool, error)) bool
 	EnqueueRepositoryDetailSyncOrRerun      func(key string, attrs []any, repo syncevents.RepositoryEvent, fn func(context.Context) (bool, error)) bool
 	EnqueueRepositoryBatchDetailSyncOrRerun func(key string, attrs []any, fn func(context.Context) ([]syncevents.RepositoryEvent, error)) bool
-	EnqueueDetailSync                       func(key string, attrs []any, fn func(context.Context) error) bool
-	EnqueueDetailSyncOrRerun                func(key string, attrs []any, fn func(context.Context) error) bool
 	FilterConfiguredRepoSummaries           func(summaries []dbpkg.RepoSummary) []dbpkg.RepoSummary
 	FilterConfiguredRepos                   func(repos []dbpkg.Repo) []dbpkg.Repo
 	FilterHiddenRepoSummaries               func(ctx context.Context, summaries []dbpkg.RepoSummary) ([]dbpkg.RepoSummary, error)

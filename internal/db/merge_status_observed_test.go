@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	ghplatform "go.kenn.io/forge/platform/github"
 )
 
 // nonUTCTestTime returns an instant expressed in a non-UTC offset, so tests
@@ -481,4 +482,31 @@ func TestDetailChangeTrackingRecognizesFirstCIObservation(t *testing.T) {
 	_, err = d.UpdateMergeRequestCISnapshot(tracked, mrID, revision, "", "", &later)
 	require.NoError(t, err)
 	require.False(t, changed())
+}
+
+func TestDetailChangeTrackingStableCommitMetadata(t *testing.T) {
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "example", "commit-metadata")
+	mrID, revision, _, err := d.UpsertMergeRequestSnapshotWithLabels(ctx, testMR(repoID, 1))
+	require.NoError(t, err)
+	event := MREvent{MergeRequestID: mrID, EventType: "commit", DedupeKey: "commit-1", CreatedAt: baseTime()}
+	snapshot := MergeRequestChildSnapshot{MergeRequestID: mrID, ExpectedRevision: revision}
+	for i := range 50 {
+		event.MetadataJSON = ghplatform.WithCommitOrderMetadata(`{"commit_author":"actor","sha":"abc"}`, 1, 2)
+		snapshot.OtherEvents = []MREvent{event}
+		if i == 0 {
+			_, err = d.CommitMergeRequestChildSnapshot(ctx, snapshot)
+			require.NoError(t, err)
+			continue
+		}
+		tracked, changed := TrackDetailChanges(ctx, repoID, 1, false)
+		_, err = d.CommitMergeRequestChildSnapshot(tracked, snapshot)
+		require.NoError(t, err)
+		require.False(t, changed())
+	}
+	rows, err := d.ListMREvents(ctx, mrID)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.JSONEq(t, `{"commit_author":"actor","sha":"abc","commit_order":1,"commit_order_key":2}`, rows[0].MetadataJSON)
 }

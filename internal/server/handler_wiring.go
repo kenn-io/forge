@@ -220,8 +220,6 @@ func (s *Server) wireHandlers() {
 	s.activityapi.EnqueueRepositoryDetailSync = s.syncevents.EnqueueRepositoryDetailSync
 	s.activityapi.EnqueueRepositoryDetailSyncOrRerun = s.syncevents.EnqueueRepositoryDetailSyncOrRerun
 	s.activityapi.EnqueueRepositoryBatchDetailSyncOrRerun = s.syncevents.EnqueueRepositoryBatchDetailSyncOrRerun
-	s.activityapi.EnqueueDetailSync = s.syncevents.EnqueueDetailSync
-	s.activityapi.EnqueueDetailSyncOrRerun = s.syncevents.EnqueueDetailSyncOrRerun
 	s.activityapi.FilterConfiguredRepoSummaries = s.repoapi.FilterConfiguredRepoSummaries
 	s.activityapi.FilterConfiguredRepos = s.repoapi.FilterConfiguredRepos
 	s.activityapi.FilterHiddenRepoSummaries = s.repoapi.FilterHiddenRepoSummaries

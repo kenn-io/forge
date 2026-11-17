@@ -306,3 +306,41 @@ func TestRepositoryDetailSyncIncludesCompletionWrites(t *testing.T) {
 		require.FailNow(t, "completion write was not broadcast")
 	}
 }
+
+func TestIssueDetailSyncBroadcastsNotificationCloseout(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	when := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute).Truncate(time.Second)}
+	mock := &serverfake.MockGH{GetIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
+		return &gh.Issue{ID: new(int64(202)), Number: &number, State: new("closed"), Title: new("Example issue"), CreatedAt: &when, UpdatedAt: &when, ClosedAt: &when}, nil
+	}}
+	srv, database, _ := setupTestServerWithMock(t, mock)
+	serverfake.SeedIssue(t, database, "acme", "widget", 5, "open")
+	input := &itemapi.IssueRepoNumberInput{Provider: "github", Owner: "acme", Name: "widget", Number: 5}
+	_, err := srv.activityapi.EnqueueIssueSync(t.Context(), input)
+	require.NoError(t, err)
+	srv.bg.Wait()
+	number := 5
+	require.NoError(t, database.UpsertNotifications(t.Context(), []db.Notification{{
+		Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "thread-1", RepoOwner: "acme", RepoName: "widget", SubjectType: "Issue", SubjectTitle: "Example issue", ItemType: "issue", ItemNumber: &number, Reason: "mention", Unread: true, SourceUpdatedAt: when.Time, SyncedAt: when.Time,
+	}}))
+	oldHub := srv.hub
+	srv.hub = syncevents.NewEventHub()
+	oldHub.Close()
+	t.Cleanup(srv.hub.Close)
+	events, _ := srv.hub.Subscribe(t.Context(), false)
+	_, err = srv.activityapi.EnqueueIssueSync(t.Context(), input)
+	require.NoError(t, err)
+	srv.bg.Wait()
+	var done bool
+	require.NoError(t, database.ReadDB().QueryRowContext(t.Context(), `SELECT done_at IS NOT NULL FROM forge_notification_items WHERE platform_notification_id = 'thread-1'`).Scan(&done))
+	require.True(t, done)
+	select {
+	case event := <-events:
+		require.Equal(t, "data_changed", event.Event.Type)
+		payload, err := json.Marshal(event.Event.Data)
+		require.NoError(t, err)
+		require.Contains(t, string(payload), `"repo_path":"acme/widget"`)
+	default:
+		require.FailNow(t, "notification closeout was not broadcast")
+	}
+}

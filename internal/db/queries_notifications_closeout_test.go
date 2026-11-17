@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"strconv"
 	"strings"
@@ -346,4 +347,42 @@ func explainQueryPlan(t *testing.T, ro *sql.DB, query string, args ...any) []str
 	}
 	require.NoError(t, rows.Err())
 	return details
+}
+
+func TestDetailChangeTrackingNotificationCloseout(t *testing.T) {
+	for _, tc := range []struct {
+		name, itemType string
+		number         int
+		issue          bool
+		close          func(*DB, context.Context, time.Time, int64, int) error
+	}{
+		{"pull request", "pr", 7, false, (*DB).MarkClosedLinkedPRNotificationsDone},
+		{"issue", "issue", 9, true, (*DB).MarkClosedLinkedIssueNotificationsDone},
+	} {
+		for _, legacy := range []bool{false, true} {
+			name := tc.name + "/linked"
+			if legacy {
+				name = tc.name + "/legacy"
+			}
+			t.Run(name, func(t *testing.T) {
+				d := openTestDB(t)
+				fx := seedCloseoutFixture(t, d)
+				notification := closeoutNotification("thread", tc.itemType, tc.number, &fx.repoID, fx.now)
+				require.NoError(t, d.UpsertNotifications(t.Context(), []Notification{notification}))
+				if legacy {
+					_, err := d.rw.ExecContext(t.Context(), `UPDATE forge_notification_items SET repo_id = NULL WHERE platform_notification_id = 'thread'`)
+					require.NoError(t, err)
+				}
+				tracked, changed := TrackDetailChanges(t.Context(), fx.repoID, tc.number, tc.issue)
+				require.NoError(t, tc.close(d, tracked, fx.now.Add(time.Minute), fx.repoID, tc.number))
+				require.True(t, changed())
+				state := readCloseoutState(t, d, "thread")
+				require.NotNil(t, state.doneAt)
+				require.Equal(t, "closed", state.doneReason)
+				tracked, changed = TrackDetailChanges(t.Context(), fx.repoID, tc.number, tc.issue)
+				require.NoError(t, tc.close(d, tracked, fx.now.Add(time.Hour), fx.repoID, tc.number))
+				require.False(t, changed())
+			})
+		}
+	}
 }

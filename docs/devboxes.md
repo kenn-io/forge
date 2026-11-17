@@ -38,9 +38,10 @@ personal GitHub credentials stay on the controller.
    the GitHub App authenticates the push. Forge checks GitHub's resolved author
    and committer IDs after pushing and displays a warning if attribution cannot
    be verified. A verification failure does not retry the push.
-6. Review and merge through your usual trusted Forge or GitHub session. Delete
-   the remote workspace explicitly when finished. Automatic cleanup after a
-   merge is not part of this initial deployment.
+6. Review and merge through your usual trusted Forge or GitHub session. Agents
+   can also use `pr merge` when GitHub rules permit it. Delete the remote
+   workspace explicitly when finished. Automatic cleanup after a merge is not
+   part of this initial deployment.
 
 Reconnect after sleep to see progress. There are no new worker-generated
 notifications while the controller is disconnected. Existing terminals and
@@ -328,8 +329,8 @@ with bypass assigned to the intended human maintainers. To let service accounts
 merge protected pull requests, add the App as a **For pull requests only** bypass
 actor on that ruleset. This allows pull request merges without direct pushes.
 See GitHub's [ruleset setup guide](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository).
-Keep the required-review and checks rules in a separate ruleset so bypassing the
-update restriction does not waive those requirements.
+Keep required-review and checks rules in a separate ruleset without an App bypass
+so they still apply to its pull request merges.
 Test an actual rejected default-branch push and the intended merge permissions
 before admitting production repositories. [Contents write can authorize the merge endpoint](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request);
 omitting Pull requests write does not solve this. Preserve protection against

@@ -113,11 +113,13 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 			when := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute).Truncate(time.Second)}
 			comment, state := "original", "open"
 			commentWhen := gh.Timestamp{Time: when.Add(time.Minute)}
+			var timelineCalls atomic.Int64
 			mock := &serverfake.MockGH{
 				GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 					return &gh.PullRequest{ID: new(int64(1000)), Number: &number, State: &state, Title: new("Example pull"), Body: new("body"), CreatedAt: &when, UpdatedAt: &when, Head: &gh.PullRequestBranch{SHA: new("abc123"), Ref: new("feature")}, Base: &gh.PullRequestBranch{Ref: new("main")}}, nil
 				},
 				ListPRTimelineEventsFn: func(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error) {
+					timelineCalls.Add(1)
 					return []platformgithub.PullRequestTimelineEvent{{NodeID: "title-1", EventType: "renamed_title", PreviousTitle: "Old", CurrentTitle: "New", CreatedAt: when.Time}}, nil
 				},
 				ListIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
@@ -166,6 +168,7 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 			_, err = srv.activityapi.EnqueuePRSync(t.Context(), input)
 			require.NoError(t, err)
 			srv.bg.Wait()
+			require.EqualValues(t, 2, timelineCalls.Load())
 			var change syncevents.Event
 		drain:
 			for {

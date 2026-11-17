@@ -13,12 +13,12 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v93/github"
-	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/syncevents"
+	"go.kenn.io/forge/internal/testutil/tokenauthtest"
 	platformgithub "go.kenn.io/forge/platform/github"
 
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
@@ -157,7 +157,7 @@ func TestEnqueuePRSyncBroadcastsChangesToChecksAndComments(t *testing.T) {
 	}))
 	t.Cleanup(queueServer.Close)
 	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
-		"github.com": ghclient.NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(queueServer.URL, queueServer.Client()), nil),
+		"github.com": ghclient.NewGraphQLFetcher(tokenauthtest.Source("token"), "github.com", nil, nil, ghclient.WithGraphQLEndpointForTesting(queueServer.URL)),
 	})
 	comment = "edited"
 	check = "failure"

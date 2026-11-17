@@ -25,9 +25,6 @@ func (d *DB) DetailChangeSnapshot(ctx context.Context, repoID int64, number int)
 		sql  string
 		dest *string
 	}{{parent, &snap.parent}, {events, &snap.events}, {threads, &snap.threads}, {labels, &snap.labels}, {queue, &snap.queue}} {
-		if query.sql == "" {
-			continue
-		}
 		if err := tx.QueryRowContext(ctx, query.sql, repoID, number).Scan(query.dest); err != nil {
 			return DetailSnapshot{}, fmt.Errorf("read detail changes: %w", err)
 		}

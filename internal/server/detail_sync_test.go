@@ -109,7 +109,7 @@ func TestEnqueuePRSyncBroadcastsChangesToChecksAndComments(t *testing.T) {
 			return []*gh.CheckRun{{ID: new(int64(1)), Name: new("build"), Status: new("completed"), Conclusion: &check}}, nil
 		},
 	}
-	srv, database, _ := setupTestServerWithMock(t, mock)
+	srv, database, syncer := setupTestServerWithMock(t, mock)
 	serverfake.SeedPR(t, database, "acme", "widget", 1)
 	input := &itemapi.RepoNumberInput{Provider: "github", Owner: "acme", Name: "widget", Number: 1}
 	_, err := srv.activityapi.EnqueuePRSync(t.Context(), input)
@@ -167,4 +167,52 @@ func TestEnqueuePRSyncBroadcastsChangesToChecksAndComments(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, eventRows, 1)
 	require.Equal(t, "edited", eventRows[0].Body)
+
+	// Queue changes in a scoped job produce one scoped list refresh.
+	repo, err := database.GetRepoByID(t.Context(), stored.RepoID)
+	require.NoError(t, err)
+	repoRef := serverfake.DefaultTestRepos[0]
+	oldHub = srv.hub
+	srv.hub = syncevents.NewEventHub()
+	oldHub.Close()
+	t.Cleanup(srv.hub.Close)
+	events, _ = srv.hub.Subscribe(t.Context(), false)
+	require.True(t, srv.syncevents.EnqueueRepositoryDetailSyncOrRerun("queue", nil, *repo, 1, func(ctx context.Context) error {
+		syncer.RecordPullRequestEnqueued(ctx, repoRef, repo.ID, 1, "main")
+		return nil
+	}))
+	srv.bg.Wait()
+	queue, err := database.GetMergeQueueState(t.Context(), repo.ID, 1)
+	require.NoError(t, err)
+	require.NotNil(t, queue)
+	require.True(t, queue.Queued)
+	require.Equal(t, "pr_detail_refreshed", (<-events).Event.Type)
+	change := <-events
+	require.Equal(t, "data_changed", change.Event.Type)
+	payload, err := json.Marshal(change.Event.Data)
+	require.NoError(t, err)
+	require.Contains(t, string(payload), `"repo_path":"acme/widget"`)
+	assert.Never(t, func() bool {
+		select {
+		case <-events:
+			return true
+		default:
+			return false
+		}
+	}, syncevents.DataChangedInterval+200*time.Millisecond, 10*time.Millisecond, "no extra queue event")
+
+	// Queue changes outside a scoped job still notify list subscribers.
+	serverfake.SeedPR(t, database, "acme", "widget", 2)
+	oldHub = srv.hub
+	srv.hub = syncevents.NewEventHub()
+	oldHub.Close()
+	t.Cleanup(srv.hub.Close)
+	events, _ = srv.hub.Subscribe(t.Context(), false)
+	syncer.RecordPullRequestEnqueued(t.Context(), repoRef, repo.ID, 2, "main")
+	require.Equal(t, "pr_detail_refreshed", (<-events).Event.Type)
+	change = <-events
+	require.Equal(t, "data_changed", change.Event.Type)
+	payload, err = json.Marshal(change.Event.Data)
+	require.NoError(t, err)
+	require.JSONEq(t, `{}`, string(payload))
 }

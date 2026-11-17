@@ -19,6 +19,19 @@ type DetailSyncJob struct {
 	number int
 }
 
+type detailSyncKey struct{}
+
+type detailSyncTarget struct {
+	repoID int64
+	number int
+}
+
+// TracksDetailSync reports whether the job will announce this PR's changes.
+func TracksDetailSync(ctx context.Context, repoID int64, number int) bool {
+	target, ok := ctx.Value(detailSyncKey{}).(detailSyncTarget)
+	return ok && target.repoID == repoID && target.number == number
+}
+
 // RepositoryEvent identifies the repository whose stored data changed.
 type RepositoryEvent struct {
 	Provider     string                 `json:"provider"`
@@ -169,6 +182,7 @@ func (s *Handlers) startDetailSyncJob(key string, job DetailSyncJob) bool {
 		var snapshotErr error
 		if job.repoID != 0 {
 			before, snapshotErr = s.Db.DetailChangeSnapshot(ctx, job.repoID, job.number)
+			ctx = context.WithValue(ctx, detailSyncKey{}, detailSyncTarget{repoID: job.repoID, number: job.number})
 		}
 		err := job.fn(ctx)
 		diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err)

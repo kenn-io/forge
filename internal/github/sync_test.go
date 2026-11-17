@@ -17301,8 +17301,8 @@ func testSyncerBudgetWaitLogsOneLinePerRepo(t *testing.T, withIssues bool) {
 	listsStarted.Store(false)
 	syncer.RunOnce(ctx)
 	if withIssues {
-		assert.Equal(int64(2), issueOK.Load())
-		assert.Zero(issueConditional.Load())
+		assert.Equal(int64(1), issueOK.Load())
+		assert.Equal(int64(1), issueConditional.Load())
 	} else {
 		assert.Equal(int64(1), prOK.Load())
 		assert.Equal(int64(1), prNotModified.Load())
@@ -17335,8 +17335,8 @@ func testSyncerBudgetWaitLogsOneLinePerRepo(t *testing.T, withIssues bool) {
 	refill.Store(true)
 	budget.Reset()
 	syncer.RunOnce(ctx)
-	assert.Equal(int64(3), issueOK.Load())
-	assert.Zero(issueConditional.Load())
+	assert.Equal(int64(1), issueOK.Load())
+	assert.Equal(int64(2), issueConditional.Load())
 	assert.Equal(int64(1), closureCalls.Load())
 	missing, err := database.GetIssue(ctx, "github", "github.com", "owner", "repo", 3)
 	require.NoError(err)

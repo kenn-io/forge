@@ -327,7 +327,7 @@ func requeueArchiveKnownItemLookupsTx(
 			page_count = 0, observed_count = 0,
 			status = 'pending', attempt_count = 0, next_retry_at = NULL,
 			last_error_code = NULL, last_error_detail = NULL,
-			started_at = NULL, completed_at = NULL, updated_at = ?
+			started_at = NULL, updated_at = ?
 		WHERE repo_id = ? AND item_type = ? AND dataset = 'lookup'
 		  AND status = 'complete'
 		  AND EXISTS (
@@ -367,7 +367,7 @@ func (d *DB) RequeueArchiveLifecycleDetails(
 			page_count = 0, observed_count = 0,
 			status = 'pending', attempt_count = 0, next_retry_at = NULL,
 			last_error_code = NULL, last_error_detail = NULL,
-			started_at = NULL, completed_at = NULL, updated_at = ?
+			started_at = NULL, updated_at = ?
 		WHERE repo_id IN (%s)
 		  AND item_type IN ('issue', 'merge_request') AND dataset = 'lookup'
 		  AND status = 'complete'
@@ -994,9 +994,9 @@ func (d *DB) RecordRemovedMergeRequest(
 			SET scan_generation = scan_generation + 2,
 				status = 'terminal', next_cursor = NULL, last_input_cursor = NULL,
 				next_retry_at = NULL, last_error_code = 'not_found', last_error_detail = ?,
-				completed_at = ?, updated_at = ?
+				updated_at = ?
 			WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = ? AND dataset = 'lookup'`,
-			sanitizeArchiveErrorDetail(detail), nowText, nowText, repoID, number)
+			sanitizeArchiveErrorDetail(detail), nowText, repoID, number)
 		if err != nil {
 			return fmt.Errorf("record removed PR #%d lookup: %w", number, err)
 		}
@@ -1169,14 +1169,14 @@ func (d *DB) getArchiveProgress(
 
 func loadArchiveLastProgress(ctx context.Context, queryer rowQueryer, repoIDs []int64) (map[int64]*time.Time, error) {
 	rows, err := queryer.QueryContext(ctx, fmt.Sprintf(`
-		SELECT repo_id, MAX(progress_at) FROM (
+		SELECT repo_id, progress_at FROM (
 			SELECT repo_id, updated_at AS progress_at FROM forge_archive_repo_scans
 			WHERE scan IN ('issue_inventory', 'merge_request_inventory')
-				AND page_count > 0 AND status IN ('running', 'complete')
+				AND page_count > 0
 			UNION ALL
 			SELECT repo_id, completed_at AS progress_at FROM forge_archive_dataset_progress
-			WHERE dataset = 'lookup' AND status IN ('complete', 'terminal')
-		) WHERE repo_id IN (%s) GROUP BY repo_id`, sqlPlaceholders(len(repoIDs))), archiveRepoIDArgs(repoIDs)...)
+			WHERE dataset = 'lookup' AND completed_at IS NOT NULL
+		) WHERE repo_id IN (%s)`, sqlPlaceholders(len(repoIDs))), archiveRepoIDArgs(repoIDs)...)
 	if err != nil {
 		return nil, fmt.Errorf("load archive last progress: %w", err)
 	}
@@ -1192,7 +1192,9 @@ func loadArchiveLastProgress(ctx context.Context, queryer rowQueryer, repoIDs []
 		if err != nil {
 			return nil, fmt.Errorf("parse archive last progress: %w", err)
 		}
-		result[repoID] = parsed
+		if parsed != nil && (result[repoID] == nil || parsed.After(*result[repoID])) {
+			result[repoID] = parsed
+		}
 	}
 	return result, rows.Err()
 }

@@ -55,7 +55,7 @@ func reopenArchiveItemProgressTx(
 			page_count = 0, observed_count = 0,
 			status = 'pending', attempt_count = 0, next_retry_at = NULL,
 			last_error_code = NULL, last_error_detail = NULL,
-			started_at = NULL, completed_at = NULL, updated_at = ?
+			started_at = NULL, updated_at = ?
 		WHERE repo_id = ? AND item_type = ? AND item_number = ? AND dataset = 'lookup'
 		  AND status NOT IN ('unsupported', 'blocked')`, nextEvenScanGenerationSQL),
 		formatDatasetProgressTime(time.Now()), repoID, itemType, itemNumber)

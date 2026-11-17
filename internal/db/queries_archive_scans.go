@@ -209,6 +209,7 @@ func advanceArchiveScanTx(
 	return nil
 }
 
+// After a page commits, updated_at remains the page time until the next page or reset.
 func blockArchiveScanTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -220,7 +221,8 @@ func blockArchiveScanTx(
 ) error {
 	result, err := tx.ExecContext(ctx, `
 		UPDATE forge_archive_repo_scans
-		SET status = 'blocked', last_error_code = ?, last_error_detail = ?, updated_at = ?
+		SET status = 'blocked', last_error_code = ?, last_error_detail = ?,
+			updated_at = CASE WHEN page_count > 0 THEN updated_at ELSE ? END
 		WHERE repo_id = ? AND scan = ?`,
 		code, sanitizeArchiveErrorDetail(detail), formatDatasetProgressTime(now), repoID, kind)
 	if err != nil {
@@ -251,7 +253,8 @@ func (d *DB) BlockArchiveRepoScan(
 ) error {
 	_, err := d.execContext(ctx, `
 		UPDATE forge_archive_repo_scans
-		SET status = 'blocked', last_error_code = ?, last_error_detail = ?, updated_at = ?
+		SET status = 'blocked', last_error_code = ?, last_error_detail = ?,
+			updated_at = CASE WHEN page_count > 0 THEN updated_at ELSE ? END
 		WHERE repo_id = ? AND scan = ?
 		  AND scan_generation = ?
 		  AND status IN ('pending', 'running', 'failed')`,

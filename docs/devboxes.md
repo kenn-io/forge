@@ -171,9 +171,6 @@ kenn-forge devbox github --socket /run/forge-broker/broker.sock \
 The wrapper supports `pr create`, `edit`, `comment`, `view`, `list`, `checks`,
 `close`, `reopen`, `ready`, and `merge`. For `pr merge`, specify `--merge`,
 `--squash`, or `--rebase`, unless the target branch requires a merge queue.
-Specify a pull request number, URL, or branch for `pr merge`. With `pr close`
-or `pr merge`, `--delete-branch` can delete the pull request's remote branch;
-the wrapper does not delete a local branch.
 GitHub branch rules still control whether the App can merge.
 Its token goes only to that child process. Git and the wrapper explain broker
 failures, such as a repository not being admitted or missing write permission.
@@ -329,10 +326,9 @@ installation needs no broker configuration change or restart.
 **App permissions cannot express “push branches, but never merge or push main.”**
 Use an enforced **Restrict updates** ruleset on default/protected branches,
 with bypass assigned only to the intended human maintainers, not this App. This
-blocks direct App merges into those branches. A configured [merge queue](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)
-can accept `pr merge` requests when GitHub permits them. Giving the shared App a
-direct merge bypass would extend that access to every brokered writer and needs
-a separate authorization design.
+blocks direct App merges into those branches. Giving the shared App a direct merge
+bypass would extend that access to every brokered writer and needs a separate
+authorization design.
 See GitHub's [ruleset setup guide](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository).
 Keep required-review and checks rules in a separate ruleset without an App bypass
 so they still apply to its pull request merges.

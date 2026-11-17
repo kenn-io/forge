@@ -44,13 +44,11 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		args   []string
 		want   string
 	}{
-		{"close", []string{"pr", "close", "42", "--delete-branch"}, "pr close --repo example/project 42 --delete-branch"},
+		{"close", []string{"pr", "close", "42"}, "pr close 42"},
 		{"reopen", []string{"pr", "reopen", "42"}, "pr reopen 42"},
 		{"ready", []string{"pr", "ready", "42"}, "pr ready 42"},
-		{"merge", []string{"pr", "merge", "42", "--delete-branch"}, "pr merge --repo example/project 42 --delete-branch"},
-		{"close explicit repo", []string{"pr", "close", "42", "-R", "other/project"}, "pr close --repo example/project 42 -R other/project"},
-		{"merge explicit repo", []string{"pr", "merge", "42", "--repo=other/project"}, "pr merge --repo example/project 42 --repo=other/project"},
-		{"separator", []string{"pr", "close", "--", "42"}, "pr close --repo example/project -- 42"},
+		{"merge", []string{"pr", "merge", "42"}, "pr merge 42"},
+		{"merge current branch", []string{"pr", "merge"}, "pr merge"},
 	} {
 		t.Run(tc.action, func(t *testing.T) {
 			var output bytes.Buffer

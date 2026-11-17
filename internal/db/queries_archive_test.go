@@ -1674,6 +1674,39 @@ func TestArchiveProgressRecordsLiveRemovalOfPendingItemOnce(t *testing.T) {
 	assert.Equal(removedAt, *progress[0].LastProgressAt)
 }
 
+func TestArchiveProgressIgnoresLiveRemovalOutsideInitialPendingWork(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		status ArchiveDatasetProgressStatus
+		reason ArchiveRefreshReason
+	}{
+		{name: "completed", status: ArchiveDatasetProgressComplete, reason: ArchiveRefreshReasonInitial},
+		{name: "maintenance", status: ArchiveDatasetProgressPending, reason: ArchiveRefreshReasonPrompt},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			d := openTestDB(t)
+			ctx := t.Context()
+			now := archiveTestTime()
+			repoID := insertTestRepo(t, d, "acme", "unaffected")
+			require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+			require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
+			_, err := d.UpsertMergeRequest(ctx, &MergeRequest{RepoID: repoID, Number: 1, PlatformID: 7, State: MergeRequestStateOpen, CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
+			require.NoError(err)
+			insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 1, now)
+			insertArchiveProgressForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 1, ArchiveDatasetLookup, tc.status)
+			_, err = d.WriteDB().ExecContext(ctx, `UPDATE forge_archive_items SET refresh_reason = ? WHERE repo_id = ?`, tc.reason, repoID)
+			require.NoError(err)
+			require.NoError(d.RecordRemovedMergeRequest(ctx, repoID, 1, "not found", now))
+			progress, err := d.GetArchiveProgress(ctx, ArchiveProgressOpts{RepoIDs: []int64{repoID}, Now: now})
+			require.NoError(err)
+			require.Nil(progress[0].LastProgressAt)
+		})
+	}
+}
+
 func TestArchiveProgressIgnoresLiveRemoval(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

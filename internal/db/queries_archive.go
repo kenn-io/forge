@@ -963,45 +963,66 @@ func (d *DB) RecordRemovedMergeRequest(
 	ctx context.Context, repoID int64, number int, detail string, now time.Time,
 ) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		result, err := tx.ExecContext(ctx, `
-			INSERT INTO forge_archive_items (
-				repo_id, item_type, item_number, provider_item_id,
-				provider_created_at, provider_updated_at, lifecycle_state, refresh_reason
-			)
-			SELECT repo_id, 'merge_request', number,
-				COALESCE(NULLIF(platform_external_id, ''), CAST(platform_id AS TEXT)),
-				created_at, updated_at, 'removed_upstream', 'prompt'
-			FROM forge_merge_requests WHERE repo_id = ? AND number = ?
-			ON CONFLICT(repo_id, item_type, item_number) DO UPDATE SET
-				lifecycle_state = 'removed_upstream'`, repoID, number)
-		if err != nil {
-			return fmt.Errorf("record removed PR #%d: %w", number, err)
-		}
-		changed, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("record removed PR #%d rows affected: %w", number, err)
-		}
-		if changed == 0 {
-			return fmt.Errorf("record removed PR #%d: parent is not stored", number)
-		}
-		if err := seedArchiveItemProgressTx(ctx, tx, repoID, ArchiveItemTypeMergeRequest, number); err != nil {
-			return err
-		}
-		// Invalidate older archive work before sealing the removal observation.
-		nowText := formatDatasetProgressTime(now)
-		_, err = tx.ExecContext(ctx, `
-			UPDATE forge_archive_dataset_progress
-			SET scan_generation = scan_generation + 2,
-				status = 'terminal', next_cursor = NULL, last_input_cursor = NULL,
-				next_retry_at = NULL, last_error_code = 'not_found', last_error_detail = ?,
-				completed_at = ?, updated_at = ?
-			WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = ? AND dataset = 'lookup'`,
-			sanitizeArchiveErrorDetail(detail), nowText, nowText, repoID, number)
-		if err != nil {
-			return fmt.Errorf("record removed PR #%d lookup: %w", number, err)
-		}
-		return completeArchiveInitialIfReadyTx(ctx, tx, repoID, now)
+		return recordRemovedMergeRequestTx(ctx, tx, repoID, number, detail, now)
 	})
+}
+
+func recordRemovedMergeRequestTx(
+	ctx context.Context, tx *sql.Tx, repoID int64, number int, detail string, now time.Time,
+) error {
+	_, err := tx.ExecContext(ctx, `
+		UPDATE forge_archive_repos
+		SET last_progress_at = MAX(COALESCE(last_progress_at, ?1), ?1)
+		WHERE repo_id = ?2 AND collection_mode = 'full' AND initial_completed_at IS NULL
+		  AND EXISTS (
+			SELECT 1 FROM forge_archive_items i
+			JOIN forge_archive_dataset_progress p ON p.repo_id = i.repo_id
+			  AND p.item_type = i.item_type AND p.item_number = i.item_number
+			WHERE i.repo_id = ?2 AND i.item_type = 'merge_request' AND i.item_number = ?3
+			  AND i.lifecycle_state = 'active' AND i.refresh_reason = 'initial'
+			  AND p.dataset = 'lookup' AND p.status IN ('pending', 'running', 'failed')
+		  )`, now.UTC(), repoID, number)
+	if err != nil {
+		return fmt.Errorf("record removed PR #%d archive progress: %w", number, err)
+	}
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id,
+			provider_created_at, provider_updated_at, lifecycle_state, refresh_reason
+		)
+		SELECT repo_id, 'merge_request', number,
+			COALESCE(NULLIF(platform_external_id, ''), CAST(platform_id AS TEXT)),
+			created_at, updated_at, 'removed_upstream', 'prompt'
+		FROM forge_merge_requests WHERE repo_id = ? AND number = ?
+		ON CONFLICT(repo_id, item_type, item_number) DO UPDATE SET
+			lifecycle_state = 'removed_upstream'`, repoID, number)
+	if err != nil {
+		return fmt.Errorf("record removed PR #%d: %w", number, err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("record removed PR #%d rows affected: %w", number, err)
+	}
+	if changed == 0 {
+		return fmt.Errorf("record removed PR #%d: parent is not stored", number)
+	}
+	if err := seedArchiveItemProgressTx(ctx, tx, repoID, ArchiveItemTypeMergeRequest, number); err != nil {
+		return err
+	}
+	// Invalidate older archive work before sealing the removal observation.
+	nowText := formatDatasetProgressTime(now)
+	_, err = tx.ExecContext(ctx, `
+		UPDATE forge_archive_dataset_progress
+		SET scan_generation = scan_generation + 2,
+			status = 'terminal', next_cursor = NULL, last_input_cursor = NULL,
+			next_retry_at = NULL, last_error_code = 'not_found', last_error_detail = ?,
+			completed_at = ?, updated_at = ?
+		WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = ? AND dataset = 'lookup'`,
+		sanitizeArchiveErrorDetail(detail), nowText, nowText, repoID, number)
+	if err != nil {
+		return fmt.Errorf("record removed PR #%d lookup: %w", number, err)
+	}
+	return completeArchiveInitialIfReadyTx(ctx, tx, repoID, now)
 }
 
 // RecordLiveMergeRequestPresence restores a removed PR when live inventory

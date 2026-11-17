@@ -121,41 +121,36 @@ func runDevboxGitHub(ctx context.Context, command *cobra.Command, socket, reposi
 	}
 	defer os.RemoveAll(privateConfig)
 	if strings.Contains(" close reopen ready merge ", " "+args[1]+" ") {
-		selector, repo, deletes, help, err := devboxGitHubActionFlags(args)
+		selector, repo, err := devboxGitHubActionFlags(args)
 		if err != nil {
 			return err
 		}
-		if !help {
-			viewArgs := []string{"pr", "view"}
-			if selector != "" {
-				viewArgs = append(viewArgs, selector)
-			}
-			if repo != "" {
-				viewArgs = append(viewArgs, "--repo", repo)
-			}
-			viewArgs = append(viewArgs, "--json", "author")
-			view := procutil.CommandContext(ctx, "gh", viewArgs...)
-			view.Env = devboxGitHubEnv(credential.Token, privateConfig, repository)
-			view.Stderr = command.ErrOrStderr()
-			output, err := view.Output()
-			if err != nil {
-				return fmt.Errorf("look up pull request author: %w", err)
-			}
-			var result struct {
-				Author struct {
-					Login string `json:"login"`
-					IsBot bool   `json:"is_bot"`
-				} `json:"author"`
-			}
-			if err := json.Unmarshal(output, &result); err != nil {
-				return fmt.Errorf("read pull request author: %w", err)
-			}
-			if credential.AppSlug == "" || !result.Author.IsBot || result.Author.Login != "app/"+credential.AppSlug {
-				return fmt.Errorf("pull request author %q is not GitHub App %q", result.Author.Login, credential.AppSlug)
-			}
-			if deletes && selector != "" {
-				args = append([]string{args[0], args[1], "--repo", "github.com/" + repository}, args[2:]...)
-			}
+		viewArgs := []string{"pr", "view"}
+		if selector != "" {
+			viewArgs = append(viewArgs, selector)
+		}
+		if repo != "" {
+			viewArgs = append(viewArgs, "--repo", repo)
+		}
+		viewArgs = append(viewArgs, "--json", "author")
+		view := procutil.CommandContext(ctx, "gh", viewArgs...)
+		view.Env = devboxGitHubEnv(credential.Token, privateConfig, repository)
+		view.Stderr = command.ErrOrStderr()
+		output, err := view.Output()
+		if err != nil {
+			return fmt.Errorf("look up pull request author: %w", err)
+		}
+		var result struct {
+			Author struct {
+				Login string `json:"login"`
+				IsBot bool   `json:"is_bot"`
+			} `json:"author"`
+		}
+		if err := json.Unmarshal(output, &result); err != nil {
+			return fmt.Errorf("read pull request author: %w", err)
+		}
+		if credential.AppSlug == "" || !result.Author.IsBot || result.Author.Login != "app/"+credential.AppSlug {
+			return fmt.Errorf("pull request author %q is not GitHub App %q", result.Author.Login, credential.AppSlug)
 		}
 	}
 	child := procutil.CommandContext(ctx, "gh", args...)
@@ -176,12 +171,11 @@ func devboxGitHubEnv(token, config, repository string) []string {
 		"GH_REPO=github.com/"+repository, "GH_HOST=github.com", "GH_PROMPT_DISABLED=1")
 }
 
-func devboxGitHubActionFlags(args []string) (string, string, bool, bool, error) {
+func devboxGitHubActionFlags(args []string) (string, string, error) {
 	flags := pflag.NewFlagSet("gh pr "+args[1], pflag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.BoolP("delete-branch", "d", false, "")
 	flags.StringP("repo", "R", "", "")
-	flags.Bool("help", false, "")
 	if args[1] == "close" || args[1] == "reopen" {
 		flags.StringP("comment", "c", "", "")
 	} else if args[1] == "ready" {
@@ -201,13 +195,11 @@ func devboxGitHubActionFlags(args []string) (string, string, bool, bool, error) 
 		}
 	}
 	if err := flags.Parse(args[2:]); err != nil {
-		return "", "", false, false, err
+		return "", "", err
 	}
-	deletes, _ := flags.GetBool("delete-branch")
 	repo, _ := flags.GetString("repo")
-	help, _ := flags.GetBool("help")
 	if flags.NArg() > 1 {
-		return "", "", false, false, errors.New("expected at most one pull request selector")
+		return "", "", errors.New("expected at most one pull request selector")
 	}
-	return flags.Arg(0), repo, deletes, help, nil
+	return flags.Arg(0), repo, nil
 }

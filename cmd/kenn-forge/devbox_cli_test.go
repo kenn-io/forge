@@ -52,10 +52,6 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		{"reopen", []string{"pr", "reopen", "42"}, "pr reopen 42"},
 		{"ready", []string{"pr", "ready", "42"}, "pr ready 42"},
 		{"merge", []string{"pr", "merge", "42"}, "pr merge 42"},
-		{"close and delete", []string{"pr", "close", "42", "--delete-branch"}, "pr close --repo github.com/example/project 42 --delete-branch"},
-		{"merge and delete", []string{"pr", "merge", "-ds", "42"}, "pr merge --repo github.com/example/project -ds 42"},
-		{"selector after separator", []string{"pr", "merge", "-d", "--", "42"}, "pr merge --repo github.com/example/project -d -- 42"},
-		{"merge current branch and delete", []string{"pr", "merge", "--body", "message", "-d"}, "pr merge --body message -d"},
 		{"reopen with comment", []string{"pr", "reopen", "42", "-c", "message"}, "pr reopen 42 -c message"},
 		{"ready undo", []string{"pr", "ready", "42", "--undo"}, "pr ready 42 --undo"},
 	} {
@@ -100,14 +96,6 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		cmd.SetOut(&output)
 		require.Error(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42"}))
 		assert.Empty(t, output.String())
-	})
-	t.Run("help on another author's pull request", func(t *testing.T) {
-		t.Setenv("AUTHOR_JSON", `{"author":{"login":"alice","is_bot":false}}`)
-		var output bytes.Buffer
-		cmd := &cobra.Command{}
-		cmd.SetOut(&output)
-		require.NoError(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42", "--help"}))
-		assert.Equal(t, "pr close 42 --help|test-token|github.com/example/project", output.String())
 	})
 	t.Run("invalid action flag", func(t *testing.T) {
 		var output bytes.Buffer

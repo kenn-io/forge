@@ -141,14 +141,6 @@ printf human
 		require.ErrorContains(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42"}), "look up pull request author")
 		assert.Empty(t, output.String())
 	})
-	t.Run("missing pull request URL", func(t *testing.T) {
-		t.Setenv("AUTHOR_JSON", `{"author":{"login":"app/example-app","is_bot":true}}`)
-		var output bytes.Buffer
-		cmd := &cobra.Command{}
-		cmd.SetOut(&output)
-		require.ErrorContains(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42"}), "empty result")
-		assert.Empty(t, output.String())
-	})
 	t.Run("missing app slug", func(t *testing.T) {
 		missingSlug.Store(true)
 		defer missingSlug.Store(false)

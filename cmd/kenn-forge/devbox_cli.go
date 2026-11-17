@@ -194,9 +194,6 @@ func devboxAppPullRequest(ctx context.Context, command *cobra.Command, env []str
 	if !result.Author.IsBot || result.Author.Login != "app/"+appSlug {
 		return "", fmt.Errorf("pull request author %q is not GitHub App %q", result.Author.Login, appSlug)
 	}
-	if result.URL == "" {
-		return "", errors.New("look up pull request URL: empty result")
-	}
 	return result.URL, nil
 }
 

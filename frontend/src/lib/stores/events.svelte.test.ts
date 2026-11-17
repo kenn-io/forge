@@ -166,7 +166,13 @@ describe("createEventsStore event dispatch", () => {
     const store = createEventsStore({ onDataChanged });
     start(store);
     const source = await awaitSource();
-    emit(source, "data_changed", { data: "{}" });
+    emit(source, "data_changed", {
+      data: JSON.stringify({
+        repositories: [
+          { provider: "github", platform_host: "github.com", repo_path: "acme/widget", platform_repo_id: 42 },
+        ],
+      }),
+    });
     await vi.waitFor(() => expect(onDataChanged).toHaveBeenCalledTimes(1));
   });
 

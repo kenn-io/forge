@@ -657,12 +657,7 @@ it.layer(ProviderEventsTest)("provider data_changed coalescing", (it) => {
       );
       const source = yield* probe.awaitSource;
       emitOpen(source);
-      emitFrame(
-        source,
-        "data_changed",
-        { repositories: [{ provider: "github", platform_host: "github.com", repo_path: "acme/widget" }] },
-        "1",
-      );
+      emitFrame(source, "data_changed", {}, "1");
       assert.strictEqual((yield* Queue.take(refreshes)).type, "data_changed");
 
       for (let id = 2; id <= 20; id++) emitFrame(source, "data_changed", {}, String(id));

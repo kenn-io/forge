@@ -102,8 +102,8 @@ func TestEnqueueDetailSyncOrRerunKeepsReplacedCompletion(t *testing.T) {
 
 func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		changed bool
+		name  string
+		queue bool
 	}{
 		{"unchanged", false},
 		{"queue", true},
@@ -137,7 +137,7 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 			require.NoError(t, err)
 			require.EqualValues(t, 1, rows)
 
-			if tc.name == "queue" {
+			if tc.queue {
 				queueServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					body, _ := io.ReadAll(r.Body)
 					w.Header().Set("Content-Type", "application/json")
@@ -174,6 +174,24 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 					break drain
 				}
 			}
+			require.Equal(t, tc.queue, change.Type == "data_changed", "unexpected refresh event")
+			if !tc.queue {
+				return
+			}
+			payload, err := json.Marshal(change.Data)
+			require.NoError(t, err)
+			var data struct {
+				Repositories []struct {
+					Provider     string `json:"provider"`
+					PlatformHost string `json:"platform_host"`
+					RepoPath     string `json:"repo_path"`
+				} `json:"repositories"`
+			}
+			require.NoError(t, json.Unmarshal(payload, &data))
+			require.Len(t, data.Repositories, 1)
+			require.Equal(t, "github", data.Repositories[0].Provider)
+			require.Equal(t, "github.com", data.Repositories[0].PlatformHost)
+			require.Equal(t, "acme/widget", data.Repositories[0].RepoPath)
 			assert.Never(t, func() bool {
 				select {
 				case event := <-events:
@@ -182,25 +200,6 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 					return false
 				}
 			}, syncevents.DataChangedInterval+200*time.Millisecond, 10*time.Millisecond, "extra data_changed event")
-			if change.Type != "" {
-				require.True(t, tc.changed, "unchanged refresh sent an event")
-				payload, err := json.Marshal(change.Data)
-				require.NoError(t, err)
-				var data struct {
-					Repositories []struct {
-						Provider     string `json:"provider"`
-						PlatformHost string `json:"platform_host"`
-						RepoPath     string `json:"repo_path"`
-					} `json:"repositories"`
-				}
-				require.NoError(t, json.Unmarshal(payload, &data))
-				require.Len(t, data.Repositories, 1)
-				require.Equal(t, "github", data.Repositories[0].Provider)
-				require.Equal(t, "github.com", data.Repositories[0].PlatformHost)
-				require.Equal(t, "acme/widget", data.Repositories[0].RepoPath)
-			} else {
-				require.False(t, tc.changed, "changed refresh did not broadcast")
-			}
 		})
 	}
 }

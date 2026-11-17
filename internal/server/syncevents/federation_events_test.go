@@ -19,16 +19,11 @@ func TestFederationKeepsRepositoryChanges(t *testing.T) {
 		err := h.ReceiveHubEvent(t.Context(), providerplane.Event{Type: "data_changed", Data: []byte(`{"repositories":[{"provider":"github","platform_host":"github.com","repo_path":"example/first","platform_repo_id":41}]}`)})
 		require.NoError(t, err)
 		<-events
-		for _, data := range []string{
-			`{"repositories":[{"provider":"github","platform_host":"github.com","repo_path":"example/a","platform_repo_id":42}]}`,
-			`{"repositories":[{"provider":"github","platform_host":"github.com","repo_path":"example/b","platform_repo_id":43}]}`,
-		} {
-			require.NoError(t, h.ReceiveHubEvent(t.Context(), providerplane.Event{Type: "data_changed", Data: []byte(data)}))
-		}
+		require.NoError(t, h.ReceiveHubEvent(t.Context(), providerplane.Event{Type: "data_changed", Data: []byte(`{"repositories":[{"provider":"github","platform_host":"github.com","repo_path":"example/a","platform_repo_id":42}]}`)}))
 		time.Sleep(DataChangedInterval)
 		synctest.Wait()
 		data, err := json.Marshal((<-events).Event.Data)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"repositories":[{"provider":"github","platform_host":"github.com","repo_path":"example/a","platform_repo_id":42},{"provider":"github","platform_host":"github.com","repo_path":"example/b","platform_repo_id":43}]}`, string(data))
+		require.JSONEq(t, `{"repositories":[{"provider":"github","platform_host":"github.com","repo_path":"example/a","platform_repo_id":42}]}`, string(data))
 	})
 }

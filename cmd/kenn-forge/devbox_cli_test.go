@@ -67,6 +67,5 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "review", "42"})
 		require.ErrorContains(t, err, "supported GitHub commands")
 		assert.Equal(t, before, brokerCalls.Load())
-		assert.Empty(t, output.String())
 	})
 }

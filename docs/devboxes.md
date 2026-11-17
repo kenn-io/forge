@@ -38,10 +38,10 @@ personal GitHub credentials stay on the controller.
    the GitHub App authenticates the push. Forge checks GitHub's resolved author
    and committer IDs after pushing and displays a warning if attribution cannot
    be verified. A verification failure does not retry the push.
-6. Review and merge through your usual trusted Forge or GitHub session. Agents
-   can also use `pr merge` when GitHub rules permit it. Delete the remote
-   workspace explicitly when finished. Automatic cleanup after a merge is not
-   part of this initial deployment.
+6. Agents can run `pr merge`. With the recommended **Restrict updates** ruleset,
+   a maintainer must merge pull requests targeting protected branches. Delete
+   the remote workspace explicitly when finished. Automatic cleanup after a
+   merge is not part of this initial deployment.
 
 Reconnect after sleep to see progress. There are no new worker-generated
 notifications while the controller is disconnected. Existing terminals and
@@ -323,15 +323,11 @@ installation needs no broker configuration change or restart.
 
 **App permissions cannot express “push branches, but never merge or push main.”**
 Use an enforced **Restrict updates** ruleset on default/protected branches,
-with bypass assigned only to the intended human maintainers, not this App. This
-blocks direct App merges into those branches. Giving the shared App a direct merge
-bypass would extend that access to every brokered writer and needs a separate
-authorization design.
-See GitHub's [ruleset setup guide](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository).
-Keep required-review and checks rules in a separate ruleset without an App bypass
-so they still apply to its pull request merges.
-Test an actual rejected default-branch push and the intended merge permissions
-before admitting production repositories. [Contents write can authorize the merge endpoint](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request);
+with bypass assigned only to the intended human maintainers and never this App.
+Keep the required-review and checks rules in a separate ruleset so bypassing the
+update restriction does not waive those requirements.
+Test an actual rejected default-branch push and merge attempt before admitting
+production repositories. [Contents write can authorize the merge endpoint](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request);
 omitting Pull requests write does not solve this. Preserve protection against
 force pushes and deletion. Do the initial allow/deny exercises in a disposable
 repository governed by the same rules.

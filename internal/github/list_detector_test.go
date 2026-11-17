@@ -1,10 +1,12 @@
 package github
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,11 +16,9 @@ import (
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
-// largeListServer serves an open list and the
+// largeListServer serves a two-page open pull request list and the
 // one-item detector read. generation moves the most recently updated item.
 type largeListServer struct {
-	path        string
-	deleted     atomic.Bool
 	generation  atomic.Int64
 	failList    atomic.Bool
 	failPage2   atomic.Bool
@@ -29,11 +29,7 @@ type largeListServer struct {
 
 func (s *largeListServer) handler(t *testing.T) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := s.path
-		if path == "" {
-			path = "pulls"
-		}
-		if r.URL.Path != "/api/v3/repos/acme/widget/"+path {
+		if r.URL.Path != "/api/v3/repos/acme/widget/pulls" {
 			assert.Failf(t, "unexpected path", "%s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -60,26 +56,6 @@ func (s *largeListServer) handler(t *testing.T) http.Handler {
 			return
 		}
 		w.Header().Set("ETag", `"page-etag"`)
-		if path == "issues" {
-			page, _ := strconv.Atoi(query.Get("page"))
-			if page == 0 {
-				page = 1
-			}
-			if page < 3 {
-				w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?state=open&per_page=100&page=%d>; rel="next"`, r.Host, r.URL.Path, page+1))
-			}
-			_, _ = w.Write([]byte("["))
-			comma := ""
-			for n := (page-1)*100 + 1; n <= page*100; n++ {
-				if n == 250 && s.deleted.Load() {
-					continue
-				}
-				_, _ = fmt.Fprintf(w, `%s{"number":%d,"state":"open"}`, comma, n)
-				comma = ","
-			}
-			_, _ = w.Write([]byte("]"))
-			return
-		}
 		if query.Get("page") == "" || query.Get("page") == "1" {
 			w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?state=open&per_page=100&page=2>; rel="next"`, r.Host, r.URL.Path))
 			_, _ = w.Write([]byte(`[{"number":1,"state":"open"}]`))
@@ -250,53 +226,129 @@ func TestFailedLaterPageCannotLeaveTheDetectorVouching(t *testing.T) {
 	}
 }
 
-func TestLargeIssueListIsSkippedWhileNoIssueChanged(t *testing.T) {
+func TestLargeIssueListIsNotVouchedForByItsNewestIssue(t *testing.T) {
 	t.Parallel()
 
 	assert := assert.New(t)
 	require := require.New(t)
-	srv := &largeListServer{path: "issues"}
+
+	var detectors, pages atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("ETag", `"issues"`)
+		if r.URL.Query().Get("state") == "all" {
+			detectors.Add(1)
+			_, _ = w.Write([]byte(`[]`))
+			return
+		}
+		pages.Add(1)
+		if r.URL.Query().Get("page") == "" {
+			w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?state=open&page=2>; rel="next"`, r.Host, r.URL.Path))
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(server.Close)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil,
+		WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	for range 3 {
+		_, err := client.ListOpenIssues(t.Context(), "acme", "widget")
+		require.NoError(err)
+	}
+	// An issue can be deleted or transferred without moving the newest
+	// one, so large issue lists are always read in full.
+	assert.Zero(detectors.Load())
+	assert.Equal(int64(6), pages.Load())
+}
+
+type issuePageServer struct {
+	deleted     atomic.Bool
+	transferred atomic.Bool
+	added       atomic.Bool
+	requests    atomic.Int64
+	notModified atomic.Int64
+}
+
+func (s *issuePageServer) handler(t *testing.T) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v3/repos/acme/widget/issues" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		s.requests.Add(1)
+		var rows []string
+		if s.added.Load() {
+			rows = append(rows, `{"id":301,"number":301,"state":"open","title":"issue","created_at":"2024-06-01T12:00:00Z","updated_at":"2024-06-01T12:00:00Z"}`)
+		}
+		for i := 1; i <= 300; i++ {
+			n := i
+			if i > 100 && i <= 200 {
+				n += 100
+			} else if i > 200 {
+				n -= 100
+			}
+			if n == 250 && s.deleted.Load() || n == 251 && s.transferred.Load() {
+				continue
+			}
+			rows = append(rows, fmt.Sprintf(`{"id":%d,"number":%d,"state":"open","title":"issue","created_at":"2024-06-01T12:00:00Z","updated_at":"2024-06-01T12:00:00Z"}`, n, n))
+		}
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page < 1 {
+			page = 1
+		}
+		start := (page - 1) * 100
+		end := min(start+100, len(rows))
+		if start > len(rows) {
+			start = len(rows)
+		}
+		body := "[" + strings.Join(rows[start:end], ",") + "]"
+		etag := fmt.Sprintf(`"%x"`, sha256.Sum256([]byte(body)))
+		if r.Header.Get("If-None-Match") == etag {
+			s.notModified.Add(1)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Content-Type", "application/json")
+		if end < len(rows) {
+			w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?state=open&per_page=100&page=%d>; rel="next"`, r.Host, r.URL.Path, page+1))
+		}
+		_, _ = w.Write([]byte(body))
+	})
+}
+
+func TestLargeIssueListRevalidatesEachPage(t *testing.T) {
+	t.Parallel()
+	srv := &issuePageServer{}
 	server := httptest.NewServer(srv.handler(t))
 	t.Cleanup(server.Close)
 	budget := NewSyncBudget(100)
 	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
-	require.NoError(err)
+	require.NoError(t, err)
 	ctx := WithSyncBudget(t.Context())
-	for range 2 {
-		issues, err := client.ListOpenIssues(ctx, "acme", "widget")
-		require.NoError(err)
-		assert.Len(issues, 300)
-	}
-	spent := budget.Spent()
-	_, err = client.ListOpenIssues(ctx, "acme", "widget")
-	require.True(platformgithub.IsNotModified(err), "expected unchanged issue list, got: %v", err)
-	assert.Equal(int64(6), srv.listPages.Load())
-	assert.Equal(spent, budget.Spent())
-
-	// Change the fake detector's generation to trigger a full read.
-	srv.generation.Add(1)
 	issues, err := client.ListOpenIssues(ctx, "acme", "widget")
-	require.NoError(err)
-	assert.Len(issues, 300)
-	assert.Equal(int64(9), srv.listPages.Load())
-
-	// Deletion need not move the detector, so it waits for expiry.
-	srv.deleted.Store(true)
-	_, err = client.ListOpenIssues(ctx, "acme", "widget")
-	require.True(platformgithub.IsNotModified(err), "expected unchanged issue list after deletion, got: %v", err)
-	assert.Equal(int64(9), srv.listPages.Load())
-
-	client, err = NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
-	require.NoError(err)
-	client.(*platformgithub.Client).SeedListETags("acme", "widget", []platformgithub.ListETag{{
-		Resource: "issues?direction=desc&per_page=100&sort=updated&state=open",
-		ETag:     `"top-1"`, Detector: true, CachedAt: time.Now().Add(-etagTTL - time.Minute),
-	}})
+	require.NoError(t, err)
+	require.Len(t, issues, 300)
+	require.Equal(t, 3, budget.Spent())
 	issues, err = client.ListOpenIssues(ctx, "acme", "widget")
-	require.NoError(err)
-	assert.Len(issues, 299)
+	require.NoError(t, err)
+	require.Len(t, issues, 300)
+	assert.Equal(t, int64(6), srv.requests.Load())
+	assert.Equal(t, int64(3), srv.notModified.Load())
+	assert.Equal(t, 3, budget.Spent())
+	srv.deleted.Store(true)
+	issues, err = client.ListOpenIssues(ctx, "acme", "widget")
+	require.NoError(t, err)
+	require.Len(t, issues, 299)
+	assert.Equal(t, int64(4), srv.notModified.Load())
+	assert.Equal(t, 5, budget.Spent())
 	for _, issue := range issues {
-		assert.NotEqual(250, issue.GetNumber())
+		assert.NotEqual(t, 250, issue.GetNumber())
 	}
-	assert.Equal(int64(12), srv.listPages.Load())
+	srv.added.Store(true)
+	issues, err = client.ListOpenIssues(ctx, "acme", "widget")
+	require.NoError(t, err)
+	require.Len(t, issues, 300)
+	assert.Equal(t, 301, issues[0].GetNumber())
 }

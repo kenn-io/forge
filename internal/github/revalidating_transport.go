@@ -13,14 +13,14 @@ import (
 
 // revalidatedPathPattern matches CI and repository metadata reads that sync polls:
 // check runs, combined status, workflow runs, base branch rules and protection,
-// repository identity, releases, tags, and labels.
+// repository identity, releases, tags, labels, and issues.
 var revalidatedPathPattern = regexp.MustCompile(
-	`^(?:/api/v3)?/(?:repositories/\d+|repos/[^/]+/[^/]+/(?:commits/[^/]+/(?:check-runs|status)|actions/runs|rules/branches/.+|branches/.+|releases|tags|labels))$`,
+	`^(?:/api/v3)?/(?:repositories/\d+|repos/[^/]+/[^/]+/(?:commits/[^/]+/(?:check-runs|status)|actions/runs|rules/branches/.+|branches/.+|releases|tags|labels|issues))$`,
 )
 
 const (
-	// revalidatedEntryLimit bounds the cache at about four metadata pages per
-	// tracked repository plus CI pages. Superseded heads age out as new heads are polled.
+	// revalidatedEntryLimit bounds the cache for metadata, issue, and CI pages.
+	// Superseded heads age out as new heads are polled.
 	revalidatedEntryLimit = 2048
 	// revalidatedBodyLimit skips caching an unusually large page.
 	revalidatedBodyLimit = 1 << 20
@@ -32,7 +32,7 @@ type revalidatedEntry struct {
 	body   []byte
 }
 
-// revalidatingTransport sends If-None-Match for CI and repository metadata reads and answers a
+// revalidatingTransport sends If-None-Match for CI, metadata, and issue reads and answers a
 // 304 Not Modified with the cached 200 response. GitHub does not charge
 // a 304 against the rate limit, and the budget transport refunds it, so
 // polling unchanged CI and metadata costs nothing. Callers see the same 200 they would
@@ -55,7 +55,7 @@ func newRevalidatingTransport(base http.RoundTripper) *revalidatingTransport {
 
 func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.Method != http.MethodGet || !revalidatedPathPattern.MatchString(req.URL.Path) ||
-		platformgithub.UnconditionalRead(req.Context()) {
+		platformgithub.UnconditionalRead(req.Context()) || req.Header.Get("If-None-Match") != "" {
 		return t.base.RoundTrip(req)
 	}
 	key := req.URL.String()

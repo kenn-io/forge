@@ -2,6 +2,7 @@ package github
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -354,4 +355,54 @@ func TestRequiredCheckReadsRevalidate(t *testing.T) {
 		assert.Equal([]string{"build", "deploy-gate"}, required.Contexts)
 	}
 	assert.Equal(int64(2), notModified.Load(), "the second read of each source costs a 304")
+}
+
+func TestRevalidatingIssueListKeepsOuterConditional(t *testing.T) {
+	t.Parallel()
+	var conditionals atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") == `"issue-list"` {
+			conditionals.Add(1)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", `"issue-list"`)
+		_, _ = w.Write([]byte(`[{"number":1,"state":"open"}]`))
+	}))
+	t.Cleanup(server.Close)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil, WithBaseURLForTesting(server.URL))
+	require.NoError(t, err)
+	_, err = client.ListOpenIssues(t.Context(), "acme", "widget")
+	require.NoError(t, err)
+	_, err = client.ListOpenIssues(t.Context(), "acme", "widget")
+	require.True(t, platformgithub.IsNotModified(err), "expected 304, got %v", err)
+	assert.Equal(t, int64(1), conditionals.Load())
+}
+
+func TestRevalidatingIssuePagesSkipOversizedBodiesAndComments(t *testing.T) {
+	t.Parallel()
+	var conditionals atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") != "" {
+			conditionals.Add(1)
+		}
+		w.Header().Set("ETag", `"page"`)
+		if strings.HasSuffix(r.URL.Path, "/issues") {
+			_, _ = w.Write([]byte(strings.Repeat("x", revalidatedBodyLimit+1)))
+			return
+		}
+		_, _ = w.Write([]byte("comments"))
+	}))
+	t.Cleanup(server.Close)
+	client := &http.Client{Transport: newRevalidatingTransport(http.DefaultTransport)}
+	for _, path := range []string{"/repos/acme/widget/issues", "/repos/acme/widget/issues/1/comments"} {
+		for range 2 {
+			resp, err := client.Get(server.URL + path)
+			require.NoError(t, err)
+			_, err = io.Copy(io.Discard, resp.Body)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+		}
+	}
+	assert.Zero(t, conditionals.Load())
 }

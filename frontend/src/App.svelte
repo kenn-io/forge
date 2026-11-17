@@ -1835,6 +1835,11 @@
     line-height: 1.58;
   }
 
+  /* The phone padding is too thin to hold the sync spinner fully above the content. */
+  .focus-layout--phone :global(.pull-detail .sync-indicator) {
+    bottom: calc(100% - 1px);
+  }
+
   .focus-layout--phone :global(.pull-detail-content),
   .focus-layout--phone :global(.issue-detail-content) {
     width: 100%;

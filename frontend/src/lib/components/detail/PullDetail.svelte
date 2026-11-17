@@ -2535,15 +2535,17 @@
           onscroll={handlePullDetailScroll}
         >
         <div class="pull-detail">
-          {#if detailStore.isDetailSyncing() && !manualRefreshPending}
-            <!-- Keep background progress out of the layout, including narrow desktop panels. -->
-            <div class="sync-indicator" role="status" aria-label="Syncing from GitHub"></div>
-          {/if}
           <div
             class="pull-detail-content"
             class:pull-detail-content--has-compact-actions={showActionSurface}
             class:pull-detail-content--actions-menu={!phonePresentation && hasPrimaryPRActions && primaryActionStage === 2}
           >
+            {#if detailStore.isDetailSyncing() && !manualRefreshPending}
+              <!-- Sits in the padding above the content's top-right corner so it never reflows the header. -->
+              <span class="sync-indicator" title="Syncing from GitHub">
+                <Spinner size={10} label="Syncing from GitHub" />
+              </span>
+            {/if}
             {#snippet labelActionButton(iconSize = 16)}
               <Button
                 class="btn--labels"
@@ -4030,6 +4032,7 @@
 
   .pull-detail-content {
     container: pull-detail / inline-size;
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -4193,39 +4196,16 @@
 
   .sync-indicator {
     position: absolute;
-    top: 0;
-    left: 0;
     right: 0;
-    height: 2px;
-    overflow: hidden;
-    pointer-events: none;
-    background: color-mix(in srgb, var(--accent-blue) 25%, transparent);
+    bottom: calc(100% + 5px);
+    display: flex;
+    /* Quick syncs, like the one that runs when a PR is opened, finish before this shows. */
+    animation: sync-indicator-fade-in 0.2s ease-out 0.4s backwards;
   }
 
-  .sync-indicator::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 40%;
-    background: var(--accent-blue);
-    animation: sync-bar-slide 1.2s ease-in-out infinite;
-  }
-
-  @keyframes sync-bar-slide {
+  @keyframes sync-indicator-fade-in {
     from {
-      transform: translateX(-100%);
-    }
-    to {
-      transform: translateX(250%);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .sync-indicator::before {
-      animation: none;
-      width: 100%;
+      opacity: 0;
     }
   }
 
@@ -4861,6 +4841,10 @@
     .pull-detail-content {
       gap: var(--detail-mobile-space-md);
       max-width: 100%;
+    }
+
+    .sync-indicator {
+      bottom: calc(100% + 2px);
     }
 
     .detail-header,

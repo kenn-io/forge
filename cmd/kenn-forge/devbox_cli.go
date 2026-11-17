@@ -176,11 +176,12 @@ func devboxGitHubActionFlags(args []string) (string, string, error) {
 	flags.SetOutput(io.Discard)
 	flags.BoolP("delete-branch", "d", false, "")
 	flags.StringP("repo", "R", "", "")
-	if args[1] == "close" || args[1] == "reopen" {
+	switch args[1] {
+	case "close", "reopen":
 		flags.StringP("comment", "c", "", "")
-	} else if args[1] == "ready" {
+	case "ready":
 		flags.Bool("undo", false, "")
-	} else if args[1] == "merge" {
+	case "merge":
 		for _, flag := range []struct{ name, short string }{
 			{"author-email", "A"}, {"body", "b"}, {"body-file", "F"}, {"subject", "t"},
 		} {

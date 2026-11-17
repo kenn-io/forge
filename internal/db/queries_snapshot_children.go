@@ -64,7 +64,7 @@ func (d *DB) CommitIssueChildSnapshot(
 	snapshot IssueChildSnapshot,
 ) (bool, error) {
 	applied := false
-	err := d.detailChangeTx(ctx, func(tx *sql.Tx) error {
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		current, err := domainParentSnapshotCurrentTx(
 			ctx, tx, "forge_issues", snapshot.IssueID, snapshot.ExpectedRevision,
 		)
@@ -94,7 +94,7 @@ func (d *DB) CommitMergeRequestChildSnapshot(
 	snapshot MergeRequestChildSnapshot,
 ) (bool, error) {
 	applied := false
-	err := d.detailChangeTx(ctx, func(tx *sql.Tx) error {
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		current, err := domainParentSnapshotCurrentTx(
 			ctx, tx, "forge_merge_requests", snapshot.MergeRequestID, snapshot.ExpectedRevision,
 		)
@@ -220,7 +220,7 @@ func (d *DB) updateCommentMetadataSnapshot(
 	updates []CommentMetadataUpdate,
 ) (bool, error) {
 	applied := false
-	err := d.detailChangeTx(ctx, func(tx *sql.Tx) error {
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		current, err := domainParentSnapshotCurrentTx(
 			ctx, tx, parentTable, parentID, expectedRevision,
 		)
@@ -254,7 +254,7 @@ func (d *DB) updateApplied(
 	query string,
 	args ...any,
 ) (bool, error) {
-	result, err := d.detailChangeExec(ctx, query, args...)
+	result, err := d.execContext(ctx, query, args...)
 	if err != nil {
 		return false, fmt.Errorf("%s: %w", action, err)
 	}
@@ -374,7 +374,7 @@ func (d *DB) MarkMergeRequestDetailFetchedSnapshot(
 			markQuery, ciHadPending, mergeRequestID, expectedRevision)
 	}
 	applied := false
-	err := d.detailChangeTx(ctx, func(tx *sql.Tx) error {
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		result, err := tx.ExecContext(
 			ctx, markQuery, ciHadPending, mergeRequestID, expectedRevision,
 		)

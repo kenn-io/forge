@@ -1,9 +1,7 @@
 package syncevents
 
 import (
-	"context"
 	"encoding/json/v2"
-	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -12,39 +10,6 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/platform"
 )
-
-func TestRepositoryDetailSyncBroadcastsOnlyChanges(t *testing.T) {
-	hub := NewEventHub()
-	t.Cleanup(hub.Close)
-	inFlight := make(map[string]struct{})
-	pending := make(map[string]DetailSyncJob)
-	var mu sync.Mutex
-	h := &Handlers{
-		Hub: &hub, DetailSyncInFlight: &inFlight, DetailSyncPending: &pending, DetailSyncMu: &mu,
-		RunBackground: func(fn func(context.Context)) bool { fn(t.Context()); return true },
-	}
-	events, _ := hub.Subscribe(t.Context(), false)
-	repo := RepositoryEvent{Provider: "github", PlatformHost: "github.com", RepoPath: "example/project", Key: platform.RepositoryIDKey(42)}
-	h.EnqueueRepositoryDetailSync("unchanged", nil, repo, func(context.Context) (bool, error) { return false, nil })
-	select {
-	case event := <-events:
-		require.FailNow(t, "unchanged refresh broadcast", "%v", event)
-	default:
-	}
-	h.EnqueueRepositoryDetailSync("changed", nil, repo, func(context.Context) (bool, error) { return true, nil })
-	event := <-events
-	require.Equal(t, "data_changed", event.Event.Type)
-	data, err := json.Marshal(event.Event.Data)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"repositories":[{"provider":"github","platform_host":"github.com","repo_path":"example/project","platform_repo_id":42}]}`, string(data))
-	var legacy struct{}
-	require.NoError(t, json.Unmarshal(data, &legacy))
-	select {
-	case event := <-events:
-		require.FailNow(t, "extra event", "%v", event)
-	default:
-	}
-}
 
 func TestDataChangedCoalescesRepositoryIdentities(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {

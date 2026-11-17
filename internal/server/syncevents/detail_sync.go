@@ -12,9 +12,7 @@ import (
 
 type DetailSyncJob struct {
 	attrs  []any
-	fn     func(context.Context) (bool, error)
-	batch  func(context.Context) ([]RepositoryEvent, error)
-	force  bool
+	fn     func(context.Context) error
 	repo   *RepositoryEvent
 	after  func(context.Context)
 	repoID int64
@@ -43,19 +41,10 @@ type RepositoryChanges struct {
 	Repositories []RepositoryEvent `json:"repositories"`
 }
 
-func (s *Handlers) EnqueueRepositoryDetailSync(key string, attrs []any, repo RepositoryEvent, fn func(context.Context) (bool, error)) bool {
-	return s.enqueueDetailSyncJob(key, DetailSyncJob{attrs: attrs, fn: fn, repo: &repo}, false)
+func (s *Handlers) EnqueueRepositoryDetailSyncOrRerun(key string, attrs []any, repo db.Repo, number int, fn func(context.Context) error) bool {
+	return s.enqueueTrackedDetailSync(key, attrs, repo, number, fn, nil, true)
 }
 
-func (s *Handlers) EnqueueRepositoryDetailSyncOrRerun(key string, attrs []any, repo RepositoryEvent, fn func(context.Context) (bool, error)) bool {
-	return s.enqueueDetailSyncJob(key, DetailSyncJob{attrs: attrs, fn: fn, repo: &repo}, true)
-}
-
-func (s *Handlers) EnqueueRepositoryBatchDetailSyncOrRerun(key string, attrs []any, fn func(context.Context) ([]RepositoryEvent, error)) bool {
-	return s.enqueueDetailSyncJob(key, DetailSyncJob{attrs: attrs, batch: fn}, true)
-}
-
-// EnqueueRepositoryDetailSyncWithCompletion tracks writes from the whole job.
 func (s *Handlers) EnqueueRepositoryDetailSyncWithCompletion(key string, attrs []any, repo db.Repo, number int, fn func(context.Context) error, after func(context.Context)) bool {
 	return s.enqueueTrackedDetailSync(key, attrs, repo, number, fn, after, false)
 }
@@ -66,7 +55,7 @@ func (s *Handlers) EnqueueRepositoryDetailSyncOrRerunWithCompletion(key string, 
 
 func (s *Handlers) enqueueTrackedDetailSync(key string, attrs []any, repo db.Repo, number int, fn func(context.Context) error, after func(context.Context), rerun bool) bool {
 	event := RepositoryEvent{Provider: repo.Platform, PlatformHost: repo.PlatformHost, RepoPath: repo.RepoPath, Key: repo.Key}
-	return s.enqueueDetailSyncJob(key, DetailSyncJob{attrs: attrs, repo: &event, repoID: repo.ID, number: number, fn: func(ctx context.Context) (bool, error) { return false, fn(ctx) }, after: after}, rerun)
+	return s.enqueueDetailSyncJob(key, DetailSyncJob{attrs: attrs, repo: &event, repoID: repo.ID, number: number, fn: fn, after: after}, rerun)
 }
 
 func (s *Handlers) EnqueueDetailSync(
@@ -119,7 +108,7 @@ func (s *Handlers) enqueueDetailSyncOpts(
 	after func(context.Context),
 	rerun bool,
 ) bool {
-	job := DetailSyncJob{attrs: attrs, fn: func(ctx context.Context) (bool, error) { err := fn(ctx); return err == nil, err }, after: after}
+	job := DetailSyncJob{attrs: attrs, fn: fn, after: after}
 	return s.enqueueDetailSyncJob(key, job, rerun)
 }
 
@@ -133,14 +122,8 @@ func (s *Handlers) enqueueDetailSyncJob(key string, job DetailSyncJob, rerun boo
 			if (*s.DetailSyncPending) == nil {
 				(*s.DetailSyncPending) = make(map[string]DetailSyncJob)
 			}
-			if replaced, ok := (*s.DetailSyncPending)[key]; ok {
-				if replaced.after != nil {
-					job.after = chainDetailSyncCompletions(replaced.after, job.after)
-					if job.repoID == 0 && job.repo != nil {
-						job.repoID, job.number = replaced.repoID, replaced.number
-					}
-				}
-				job.force = replaced.force || (replaced.repo == nil && replaced.batch == nil)
+			if replaced, ok := (*s.DetailSyncPending)[key]; ok && replaced.after != nil {
+				job.after = chainDetailSyncCompletions(replaced.after, job.after)
 			}
 			(*s.DetailSyncPending)[key] = job
 		}
@@ -182,47 +165,35 @@ func (s *Handlers) startDetailSyncJob(key string, job DetailSyncJob) bool {
 			}
 		}()
 
-		var tracked func() bool
+		var before db.DetailSnapshot
+		var snapshotErr error
 		if job.repoID != 0 {
-			ctx, tracked = db.TrackDetailChanges(ctx, job.repoID, job.number, false)
+			before, snapshotErr = s.Db.DetailChangeSnapshot(ctx, job.repoID, job.number)
 		}
-		var changed bool
-		var repos []RepositoryEvent
-		var err error
-		if job.batch != nil {
-			repos, err = job.batch(ctx)
-			changed = len(repos) > 0
-		} else {
-			changed, err = job.fn(ctx)
-		}
+		err := job.fn(ctx)
 		diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err)
 		if err != nil && !isDiffErr {
 			slog.Warn("background detail sync failed", append(job.attrs, "err", err)...)
 		}
 		if diffErr != nil {
-			if job.repo == nil && job.batch == nil {
-				changed = true
-			}
-			slog.Warn(
-				"background PR diff sync failed",
-				append(job.attrs, "code", diffErr.Code, "err", diffErr.Err)...,
-			)
+			slog.Warn("background PR diff sync failed", append(job.attrs, "code", diffErr.Code, "err", diffErr.Err)...)
 		}
 		if job.after != nil && (err == nil || isDiffErr) {
 			job.after(ctx)
 		}
-		if tracked != nil {
-			changed = changed || tracked()
-		}
-		if changed || (job.force && (err == nil || isDiffErr)) {
-			if job.force || (job.repo == nil && job.batch == nil) {
+		if job.repoID == 0 {
+			if err == nil || isDiffErr {
 				(*s.Hub).Broadcast(Event{Type: "data_changed", Data: struct{}{}})
-			} else {
-				if job.repo != nil {
-					repos = append(repos, *job.repo)
-				}
-				(*s.Hub).Broadcast(Event{Type: "data_changed", Data: RepositoryChanges{Repositories: repos}})
 			}
+			return
+		}
+		after, afterErr := s.Db.DetailChangeSnapshot(ctx, job.repoID, job.number)
+		if snapshotErr != nil || afterErr != nil {
+			slog.Warn("background detail snapshot failed", append(job.attrs, "err", errors.Join(snapshotErr, afterErr))...)
+			return
+		}
+		if before != after {
+			(*s.Hub).Broadcast(Event{Type: "data_changed", Data: RepositoryChanges{Repositories: []RepositoryEvent{*job.repo}}})
 		}
 	})
 	if started {

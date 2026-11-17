@@ -4,14 +4,12 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"slices"
 	"strconv"
 
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/itemapi"
-	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/platform"
 )
 
@@ -70,16 +68,13 @@ func (s *Handlers) RefreshVisiblePulls(
 			key += ":" + string(focus.Platform) + ":" + focus.PlatformHost + ":" +
 				focus.Owner + "/" + focus.Name + "#" + strconv.Itoa(focus.Number)
 		}
-		s.EnqueueRepositoryBatchDetailSyncOrRerun(key, []any{"type", "visible-prs", "count", len(stale)},
-			func(ctx context.Context) ([]syncevents.RepositoryEvent, error) {
+		s.EnqueueDetailSyncOrRerun(key, []any{"type", "visible-prs", "count", len(stale)},
+			func(ctx context.Context) error {
 				ctx = ghclient.WithSyncBudget(ctx)
-				var changed []syncevents.RepositoryEvent
 				for _, mr := range stale {
-					if repo, ok := s.syncStaleVisiblePull(ctx, syncer, mr); ok && !slices.Contains(changed, repo) {
-						changed = append(changed, repo)
-					}
+					s.syncStaleVisiblePull(ctx, syncer, mr)
 				}
-				return changed, nil
+				return nil
 			})
 	})
 	return &itemapi.AcceptedOutput{Status: http.StatusAccepted}, nil
@@ -87,28 +82,21 @@ func (s *Handlers) RefreshVisiblePulls(
 
 // syncStaleVisiblePull reads one stale row in full. A failure stays with
 // that row: it is logged, and the rest of the selection still refreshes.
-func (s *Handlers) syncStaleVisiblePull(ctx context.Context, syncer *ghclient.Syncer, stale ghclient.ProbedMR) (syncevents.RepositoryEvent, bool) {
+func (s *Handlers) syncStaleVisiblePull(ctx context.Context, syncer *ghclient.Syncer, stale ghclient.ProbedMR) {
 	kind := stale.Platform
 	if kind == "" {
 		kind = platform.KindGitHub
 	}
 	repo, err := s.RepoResolver.LookupRoute(ctx, string(kind), stale.PlatformHost, stale.Owner, stale.Name)
 	if err != nil {
-		return syncevents.RepositoryEvent{}, false
+		return
 	}
 	host := httpapi.ProviderHost(repo.Repo)
-	ctx, changed := db.TrackDetailChanges(ctx, repo.ID, stale.Number, false)
 	if err := syncer.SyncProbedMR(ctx, kind, host, stale); err != nil {
 		slog.Warn("visible pull request refresh failed",
 			"provider", string(kind), "platform_host", host,
 			"repo_path", repo.RepoPath, "number", stale.Number, "err", err)
 	}
-	return repositoryEvent(repo), changed()
-}
-
-func repositoryEvent(repo *db.ActiveRepo) syncevents.RepositoryEvent {
-	identity := repo.Identity()
-	return syncevents.RepositoryEvent{Provider: identity.Provider, PlatformHost: identity.PlatformHost, Key: identity.Key, RepoPath: repo.RepoPath}
 }
 
 // prDetailSyncKey names a pull request's background detail sync, so an item

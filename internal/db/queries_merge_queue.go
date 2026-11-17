@@ -24,7 +24,7 @@ func (d *DB) UpsertMergeQueueState(
 	ctx context.Context, repoID int64, state MergeQueueState,
 ) (bool, error) {
 	var changed bool
-	err := d.detailChangeTx(ctx, func(tx *sql.Tx) error {
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		prior, err := scanMergeQueueStateRow(tx.QueryRowContext(ctx, `
 			SELECT `+mergeQueueStateColumns+`
 			FROM forge_merge_queue_states q
@@ -93,7 +93,7 @@ func mergeQueueStateShownChanged(prior, next MergeQueueState) bool {
 // DeleteMergeQueueState forgets a pull request's merge queue state and
 // reports whether there was any.
 func (d *DB) DeleteMergeQueueState(ctx context.Context, repoID int64, number int) (bool, error) {
-	result, err := d.detailChangeExec(ctx, `
+	result, err := d.rwExecContext(ctx, `
 		DELETE FROM forge_merge_queue_states WHERE repo_id = ? AND number = ?`,
 		repoID, number)
 	if err != nil {

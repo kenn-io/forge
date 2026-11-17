@@ -145,10 +145,9 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // checkListDetector reads the repo's most recently updated item for a
-// paginated list. Opening, closing, merging, or editing any item bumps its
-// update time and moves it to the top. An unchanged top item answers the list
-// request with a 304 that costs no quota. Deleting or transferring a non-top
-// issue can go unnoticed until the full read after etagTTL. Otherwise it
+// paginated list. An unchanged top item answers the list request with a 304
+// that costs no quota. Deleting or transferring a non-top issue can go
+// unnoticed until the full read after etagTTL. Otherwise it
 // returns the detector validator to store once the full list arrives.
 func (t *etagTransport) checkListDetector(
 	req *http.Request, entry etagEntry, fresh bool,

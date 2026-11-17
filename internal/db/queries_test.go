@@ -2913,6 +2913,51 @@ func TestReplaceCommentEventsCountsPersistedUniqueRows(t *testing.T) {
 	})
 }
 
+func TestReplaceCommentEventsBeyondSQLiteVariableLimit(t *testing.T) {
+	t.Run("merge request", func(t *testing.T) {
+		require := require.New(t)
+		d := openTestDB(t)
+		repoID := insertTestRepo(t, d, "o", "r")
+		id := insertTestMR(t, d, repoID, 1, "pr", baseTime())
+		require.NoError(d.UpsertMREvents(t.Context(), []MREvent{
+			{MergeRequestID: id, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "stale"},
+			{MergeRequestID: id, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "comment-0"},
+			{MergeRequestID: id, EventType: "review", CreatedAt: baseTime(), DedupeKey: "review"},
+		}))
+		var retainedID int64
+		require.NoError(d.ReadDB().QueryRowContext(t.Context(), `SELECT id FROM forge_mr_events WHERE merge_request_id = ? AND dedupe_key = 'comment-0'`, id).Scan(&retainedID))
+		events := make([]MREvent, 40000)
+		for i := range events {
+			events[i] = MREvent{MergeRequestID: id, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: fmt.Sprintf("comment-%d", i)}
+		}
+		require.NoError(d.ReplaceMRCommentEvents(t.Context(), id, events))
+		var stale, reviews, comments, keptID int64
+		require.NoError(d.ReadDB().QueryRowContext(t.Context(), `SELECT SUM(dedupe_key = 'stale'), SUM(event_type = 'review'), SUM(event_type = 'issue_comment'), MAX(CASE WHEN dedupe_key = 'comment-0' THEN id END) FROM forge_mr_events WHERE merge_request_id = ?`, id).Scan(&stale, &reviews, &comments, &keptID))
+		require.Equal([4]int64{0, 1, 40000, retainedID}, [4]int64{stale, reviews, comments, keptID})
+	})
+	t.Run("issue", func(t *testing.T) {
+		require := require.New(t)
+		d := openTestDB(t)
+		repoID := insertTestRepo(t, d, "o", "r")
+		id := insertTestIssue(t, d, repoID, 1, "issue", baseTime())
+		require.NoError(d.UpsertIssueEvents(t.Context(), []IssueEvent{
+			{IssueID: id, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "stale"},
+			{IssueID: id, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "comment-0"},
+			{IssueID: id, EventType: "cross_referenced", CreatedAt: baseTime(), DedupeKey: "cross_referenced"},
+		}))
+		var retainedID int64
+		require.NoError(d.ReadDB().QueryRowContext(t.Context(), `SELECT id FROM forge_issue_events WHERE issue_id = ? AND dedupe_key = 'comment-0'`, id).Scan(&retainedID))
+		events := make([]IssueEvent, 40000)
+		for i := range events {
+			events[i] = IssueEvent{IssueID: id, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: fmt.Sprintf("comment-%d", i)}
+		}
+		require.NoError(d.ReplaceIssueCommentEvents(t.Context(), id, events, nil))
+		var stale, references, comments, keptID int64
+		require.NoError(d.ReadDB().QueryRowContext(t.Context(), `SELECT SUM(dedupe_key = 'stale'), SUM(event_type = 'cross_referenced'), SUM(event_type = 'issue_comment'), MAX(CASE WHEN dedupe_key = 'comment-0' THEN id END) FROM forge_issue_events WHERE issue_id = ?`, id).Scan(&stale, &references, &comments, &keptID))
+		require.Equal([4]int64{0, 1, 40000, retainedID}, [4]int64{stale, references, comments, keptID})
+	})
+}
+
 func TestMREventsDedupeIsScopedToMergeRequest(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

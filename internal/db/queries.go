@@ -2619,10 +2619,12 @@ func replaceMRCommentEventsTx(
 			WHERE merge_request_id = ? AND event_type = 'issue_comment'`
 	args := []any{mrID}
 	if len(events) > 0 {
-		query += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(events)) + `)`
+		query += ` AND dedupe_key NOT IN (SELECT value FROM json_each(?))`
+		keys := make([]string, len(events))
 		for i := range events {
-			args = append(args, events[i].DedupeKey)
+			keys[i] = events[i].DedupeKey
 		}
+		args = append(args, jsonStringList(keys))
 	}
 	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 		return fmt.Errorf("delete missing mr comment events: %w", err)
@@ -4192,10 +4194,12 @@ func replaceIssueCommentEventsTx(
 			WHERE issue_id = ? AND event_type = 'issue_comment'`
 	args := []any{issueID}
 	if len(events) > 0 {
-		query += ` AND dedupe_key NOT IN (` + sqlPlaceholders(len(events)) + `)`
+		query += ` AND dedupe_key NOT IN (SELECT value FROM json_each(?))`
+		keys := make([]string, len(events))
 		for i := range events {
-			args = append(args, events[i].DedupeKey)
+			keys[i] = events[i].DedupeKey
 		}
+		args = append(args, jsonStringList(keys))
 	}
 	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 		return fmt.Errorf("delete missing issue comment events: %w", err)

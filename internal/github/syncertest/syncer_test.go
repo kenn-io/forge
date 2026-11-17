@@ -23,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
+	"go.kenn.io/kit/stacktest"
 )
 
 func openTestDB(t *testing.T) *db.DB {
@@ -985,10 +986,15 @@ func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
 				syncer.Stop()
 			})
 
+			// Each wait spans sync-pipeline work: the start of a pass, or the
+			// rest of the first pass plus the start of the queued one. A
+			// dropped trigger never reaches the second snapshot, so the bound
+			// only has to outlast a slow race-mode pass.
 			syncer.TriggerRun(ctx)
 			select {
 			case <-firstSnapshot:
-			case <-time.After(5 * time.Second):
+			case <-time.After(30 * time.Second):
+				stacktest.Dump(t)
 				require.FailNow("initial sync did not reach the provider snapshot")
 			}
 
@@ -998,7 +1004,8 @@ func TestSyncerAcceptedTriggerQueuesBehindInFlightRun(t *testing.T) {
 
 			select {
 			case <-secondSnapshot:
-			case <-time.After(5 * time.Second):
+			case <-time.After(30 * time.Second):
+				stacktest.Dump(t)
 				require.Fail("accepted trigger did not run after the active sync")
 			}
 			syncer.Stop()

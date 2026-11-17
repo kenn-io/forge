@@ -132,7 +132,7 @@ type LabelReader interface {
 	ListLabels(ctx context.Context, ref RepoRef) (LabelCatalog, error)
 }
 
-// ReleaseReader implementations may limit results to recent releases.
+// ReleaseReader implementations may return a bounded subset; callers must not assume completeness.
 type ReleaseReader interface {
 	ListReleases(ctx context.Context, ref RepoRef) ([]Release, error)
 }

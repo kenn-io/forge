@@ -633,7 +633,7 @@ func (c *Client) listIssueDiscussions(
 	})
 }
 
-// ListReleases returns the newest page only, because the overview shows the latest few.
+// ListReleases returns up to the newest three releases for the repo overview.
 func (c *Client) ListReleases(ctx context.Context, ref platform.RepoRef) ([]platform.Release, error) {
 	pid, normalizedRef, err := c.projectScopedArg(ctx, ref)
 	if err != nil {

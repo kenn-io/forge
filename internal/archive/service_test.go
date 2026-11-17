@@ -86,6 +86,35 @@ func TestArchiveTerminalSyncOutcomeAcceptsExplicitInaccessibleLookup(t *testing.
 	assert.Nil(destination)
 }
 
+func TestArchiveInventoryProgressRecordsPageCompletionTime(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	provider.issueInventoryStarted = make(chan struct{})
+	provider.issueInventoryRelease = make(chan struct{})
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(err)
+	done := make(chan error, 1)
+	go func() { done <- service.RunEligible(t.Context()) }()
+	<-provider.issueInventoryStarted
+	finished := now.Add(4 * time.Hour)
+	service.clock = fixedClock{value: finished}
+	close(provider.issueInventoryRelease)
+	require.NoError(<-done)
+	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
+	require.NoError(err)
+	require.NotNil(states[0].LastProgressAt)
+	require.Equal(finished, *states[0].LastProgressAt)
+}
+
 func TestArchiveServiceStartValidatesAllRepositoriesBeforePromotion(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

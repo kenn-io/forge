@@ -23,7 +23,6 @@ func (s *Service) inventoryPage(ctx context.Context, repo resolvedRepository, st
 		RepoID: repo.ID, ItemType: itemType,
 		RefreshReason:  db.ArchiveRefreshReasonInitial,
 		ScanGeneration: scan.Generation, InputCursor: scan.Cursor(),
-		Now: s.now(),
 	}
 	if !archiveInventorySupported(repo, itemType) {
 		commit.Exhausted = true
@@ -125,6 +124,7 @@ func archiveInventoryFeatureDisabled(err error, itemType db.ArchiveItemType) boo
 // and blocked scans are already durably recorded. Both halt the current
 // traversal without failing it.
 func (s *Service) commitInventoryPage(ctx context.Context, commit db.ArchiveInventoryCommit) (bool, error) {
+	commit.Now = s.now()
 	err := s.db.CommitArchiveInventoryPage(ctx, commit)
 	if _, ok := errors.AsType[*db.StaleArchiveScanError](err); ok {
 		return true, nil

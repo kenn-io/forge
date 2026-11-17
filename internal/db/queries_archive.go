@@ -719,7 +719,7 @@ func listArchiveRepoStates(
 ) ([]ArchiveRepoState, error) {
 	query := `
 		SELECT repo_id, collection_mode, operator_state,
-			initial_started_at, initial_completed_at,
+			initial_started_at, initial_completed_at, last_progress_at,
 			maintenance_watermark, maintenance_succeeded_at,
 			prompt_scan_started_at, prompt_since,
 			issues_coverage, merge_requests_coverage,
@@ -758,7 +758,7 @@ func listArchiveRepoStates(
 func scanArchiveRepoState(row scanner, state *ArchiveRepoState) error {
 	return row.Scan(
 		&state.RepoID, &state.CollectionMode, &state.OperatorState,
-		&state.InitialStartedAt, &state.InitialCompletedAt,
+		&state.InitialStartedAt, &state.InitialCompletedAt, &state.LastProgressAt,
 		&state.MaintenanceWatermark, &state.MaintenanceSucceededAt,
 		&state.PromptScanStartedAt, &state.PromptSince,
 		&state.IssuesCoverage, &state.MergeRequestsCoverage,
@@ -1084,7 +1084,7 @@ func markArchiveItemTerminalTx(ctx context.Context, tx *sql.Tx, t ArchiveItemTer
 			t.RepoID, t.ItemType, t.ItemNumber,
 		)
 	}
-	if err := clearArchiveRepositoryFailureTx(ctx, tx, t.RepoID, t.At); err != nil {
+	if err := recordArchiveProgressTx(ctx, tx, t.RepoID, t.At); err != nil {
 		return err
 	}
 	return completeArchiveInitialIfReadyTx(ctx, tx, t.RepoID, t.At)
@@ -1468,7 +1468,7 @@ func (d *DB) CommitArchiveInventoryPage(ctx context.Context, commit ArchiveInven
 					return fmt.Errorf("record archive inventory coverage: %w", err)
 				}
 			}
-			if err := clearArchiveRepositoryFailureTx(ctx, tx, commit.RepoID, commit.Now); err != nil {
+			if err := recordArchiveProgressTx(ctx, tx, commit.RepoID, commit.Now); err != nil {
 				return err
 			}
 			return completeArchiveInitialIfReadyTx(ctx, tx, commit.RepoID, commit.Now)
@@ -1671,11 +1671,11 @@ func reactivateTerminalArchiveWorkTx(
 	return nil
 }
 
-// clearArchiveRepositoryFailureTx clears a wait that finished work has
+// recordArchiveProgressTx records finished work and clears a wait it has
 // outlived. An authentication failure or a repository block stays until an
 // explicit retry. Items of one repository run together, and one that succeeds
 // says nothing about the one the provider refused.
-func clearArchiveRepositoryFailureTx(
+func recordArchiveProgressTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	repoID int64,
@@ -1686,11 +1686,12 @@ func clearArchiveRepositoryFailureTx(
 		SET last_error_code = CASE WHEN last_error_code IN (?1, ?2) THEN last_error_code ELSE NULL END,
 			last_error_detail = CASE WHEN last_error_code IN (?1, ?2) THEN last_error_detail ELSE NULL END,
 			next_retry_at = CASE WHEN last_error_code IN (?1, ?2) THEN next_retry_at ELSE NULL END,
-			updated_at = MAX(updated_at, ?3)
+			updated_at = MAX(updated_at, ?3),
+			last_progress_at = MAX(COALESCE(last_progress_at, ?3), ?3)
 		WHERE repo_id = ?4`,
 		ArchiveErrorCodeAuthentication, ArchiveErrorCodeRepoBlocked, now.UTC(), repoID)
 	if err != nil {
-		return fmt.Errorf("clear archive repository failure: %w", err)
+		return fmt.Errorf("record archive progress: %w", err)
 	}
 	return nil
 }

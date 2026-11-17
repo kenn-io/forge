@@ -154,11 +154,16 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	assert.Zero(provider.calls.Load(), "reports must read SQLite only")
 
 	filter := []string{"github|github.test/owner/repo"}
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE forge_archive_repos SET last_progress_at = ? WHERE repo_id = ?`, now, repo.ID)
+	require.NoError(err)
 	statusResponse, err := client.HTTP.ListArchiveStatusWithResponse(t.Context(), &generated.ListArchiveStatusRequestOptions{Query: &generated.ListArchiveStatusQuery{Repo: filter}})
 	require.NoError(err)
 	require.NotNil(statusResponse.JSON200)
 	require.Len(*statusResponse.JSON200, 1)
 	assert.Equal("github", (*statusResponse.JSON200)[0].Repository.Provider)
+	require.NotNil((*statusResponse.JSON200)[0].LastProgressAt)
+	assert.Equal(now, *(*statusResponse.JSON200)[0].LastProgressAt)
 
 	resetAt := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
 	_, err = database.WriteDB().ExecContext(t.Context(), `

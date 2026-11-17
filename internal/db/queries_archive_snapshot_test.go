@@ -220,3 +220,43 @@ func TestCommentVisibilityRefreshPreservesActorType(t *testing.T) {
 	require.NoError(t, database.ReadDB().QueryRowContext(t.Context(), `SELECT metadata_json FROM forge_mr_events WHERE merge_request_id=? AND platform_id=?`, id, commentID).Scan(&metadata))
 	assert.JSONEq(t, `{"provider_hidden":true,"actor_account_type":"user"}`, metadata)
 }
+
+// An instance exports recent pulls for each of its repositories in turn, so a
+// read that walks the whole event table costs the store's size every time.
+func TestRecentPullSnapshotEventReadsUseIndexes(t *testing.T) { //nolint:tparallel // subtests share the seeded database and its planner statistics.
+	database := openTestDB(t)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	role := "MEMBER"
+	var repoIDs, mrIDs []int64
+	for r := range 3 {
+		repo := insertArchiveReportRepo(t, database, RepoIdentity{Platform: "github", PlatformHost: "github.example", Owner: "acme", Name: fmt.Sprintf("repo-%d", r)})
+		repoIDs = append(repoIDs, repo)
+		var events []MREvent
+		for number := 1; number <= 40; number++ {
+			id := insertArchiveReportMR(t, database, repo, number, fmt.Sprintf("mr-%d-%d", r, number), "Title", "author", now)
+			if r == 0 {
+				mrIDs = append(mrIDs, id)
+			}
+			events = append(events,
+				MREvent{MergeRequestID: id, EventType: "cross_referenced", MetadataJSON: `{"source_type":"PullRequest","source_number":1,"is_cross_repository":false}`, DedupeKey: "reference", CreatedAt: now},
+				MREvent{MergeRequestID: id, EventType: "issue_comment", Author: "maintainer", AuthorAssociation: &role, MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "comment", CreatedAt: now},
+				MREvent{MergeRequestID: id, EventType: "assigned", Author: "maintainer", MetadataJSON: `{"actor_account_type":"user"}`, DedupeKey: "assigned", CreatedAt: now},
+			)
+		}
+		require.NoError(t, database.UpsertMREvents(t.Context(), events))
+	}
+	repos, pulls := fmt.Sprintf("[%d]", repoIDs[0]), strings.ReplaceAll(fmt.Sprint(mrIDs), " ", ",")
+	for _, stats := range []string{"without_stats", "with_stats"} {
+		if stats == "with_stats" {
+			require.NoError(t, database.Optimize(t.Context()))
+		}
+		t.Run(stats, func(t *testing.T) {
+			references := strings.Join(explainQueryPlan(t, database.ReadDB(), archiveSnapshotPullScope+` SELECT count(*) FROM pull_links`,
+				repos, true, now.Add(-30*24*time.Hour), now, true), "\n")
+			assert.Contains(t, references, "SCAN e USING COVERING INDEX idx_mr_events_cross_references")
+			activity := strings.Join(explainQueryPlan(t, database.ReadDB(), `WITH pulls AS (SELECT id,repo_id,number FROM forge_merge_requests WHERE id IN (SELECT value FROM json_each(?))), `+archiveSnapshotActivity+` SELECT count(*) FROM activity`,
+				pulls), "\n")
+			assert.Contains(t, activity, "SEARCH r USING COVERING INDEX idx_mr_events_repo_roles (repo_id=?)")
+		})
+	}
+}

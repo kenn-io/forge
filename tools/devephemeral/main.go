@@ -858,6 +858,10 @@ func startCommand(ctx context.Context, spec commandSpec) (*exec.Cmd, error) {
 	cmd.Env = spec.env
 	cmd.Dir = spec.dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// The default cancel kills only the group leader, so its Wait can report
+	// "signal: killed" before waitForCommands sees the cancellation and orphan
+	// the rest of the group. Ask the group to stop the way shutdown does.
+	cmd.Cancel = func() error { return interruptProcessGroup(cmd.Process.Pid) }
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin

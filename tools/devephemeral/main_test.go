@@ -939,6 +939,46 @@ func TestWaitForCommandsEscalatesIgnoredInterrupt(t *testing.T) {
 	assert.False(t, frontendRunning)
 }
 
+// Ending the launch context must interrupt a child so it can shut down. A kill
+// skips that shutdown and reaches waitForCommands as a launch failure.
+func TestStartCommandInterruptsChildWhenContextEnds(t *testing.T) {
+	require := require.New(t)
+	dir := t.TempDir()
+	ready := filepath.Join(dir, "ready")
+	interrupted := filepath.Join(dir, "interrupted")
+	scriptPath := filepath.Join(dir, "child.sh")
+	require.NoError(os.WriteFile(scriptPath, []byte(`#!/usr/bin/env sh
+trap ': > "$CHILD_INTERRUPTED"; exit 0' INT
+: > "$CHILD_READY"
+while :; do sleep 1; done
+`), 0o700))
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	cmd, err := startCommand(ctx, commandSpec{
+		name: scriptPath,
+		env: append(os.Environ(),
+			"CHILD_READY="+ready,
+			"CHILD_INTERRUPTED="+interrupted,
+		),
+	})
+	require.NoError(err)
+	waitCh := make(chan error, 1)
+	go func() { waitCh <- cmd.Wait() }()
+	require.Eventually(func() bool {
+		_, err := os.Stat(ready)
+		return err == nil
+	}, 5*time.Second, 10*time.Millisecond)
+
+	cancel()
+	select {
+	case <-waitCh:
+	case <-time.After(5 * time.Second):
+		stopProcess(cmd.Process)
+		require.Fail("canceled child did not exit")
+	}
+	require.FileExists(interrupted)
+}
+
 func TestStopStartedCommandsEscalatesAndWaits(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()

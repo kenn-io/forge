@@ -104,10 +104,11 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	when := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute).Truncate(time.Second)}
 	comment := "original"
+	state := "open"
 	commentWhen := gh.Timestamp{Time: when.Add(time.Minute)}
 	mock := &serverfake.MockGH{
 		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
-			return &gh.PullRequest{ID: new(int64(1000)), Number: &number, State: new("open"), Title: new("Example pull"), Body: new("body"), CreatedAt: &when, UpdatedAt: &when, Head: &gh.PullRequestBranch{SHA: new("abc123"), Ref: new("feature")}, Base: &gh.PullRequestBranch{Ref: new("main")}}, nil
+			return &gh.PullRequest{ID: new(int64(1000)), Number: &number, State: &state, Title: new("Example pull"), Body: new("body"), CreatedAt: &when, UpdatedAt: &when, Head: &gh.PullRequestBranch{SHA: new("abc123"), Ref: new("feature")}, Base: &gh.PullRequestBranch{Ref: new("main")}}, nil
 		},
 		ListPRTimelineEventsFn: func(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error) {
 			return []platformgithub.PullRequestTimelineEvent{{NodeID: "title-1", EventType: "renamed_title", PreviousTitle: "Old", CurrentTitle: "New", CreatedAt: when.Time}}, nil
@@ -202,4 +203,41 @@ drain:
 	require.NoError(t, err)
 	require.NotNil(t, queue)
 	require.True(t, queue.Queued)
+	// A closed pull can have newly arrived linked and legacy notifications.
+	state = "closed"
+	_, err = srv.activityapi.EnqueuePRSync(t.Context(), input)
+	require.NoError(t, err)
+	srv.bg.Wait()
+	number := 1
+	notifications := []db.Notification{
+		{Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "linked", RepoOwner: "acme", RepoName: "widget", ItemType: "pr", ItemNumber: &number, SubjectType: "PullRequest", SubjectTitle: "Example pull", Reason: "mention", Unread: true, SourceUpdatedAt: when.Time, SyncedAt: when.Time},
+		{Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "legacy", RepoOwner: "acme", RepoName: "widget", ItemType: "pr", ItemNumber: &number, SubjectType: "PullRequest", SubjectTitle: "Example pull", Reason: "mention", Unread: true, SourceUpdatedAt: when.Time, SyncedAt: when.Time},
+	}
+	for _, notification := range notifications {
+		require.NoError(t, database.UpsertNotifications(t.Context(), []db.Notification{notification}))
+		if notification.PlatformNotificationID == "legacy" {
+			_, err = database.WriteDB().ExecContext(t.Context(), `UPDATE forge_notification_items SET repo_id = NULL WHERE platform_notification_id = 'legacy'`)
+			require.NoError(t, err)
+		}
+		oldHub = srv.hub
+		srv.hub = syncevents.NewEventHub()
+		oldHub.Close()
+		t.Cleanup(srv.hub.Close)
+		events, _ = srv.hub.Subscribe(t.Context(), false)
+		_, err = srv.activityapi.EnqueuePRSync(t.Context(), input)
+		require.NoError(t, err)
+		srv.bg.Wait()
+		var done int
+		require.NoError(t, database.ReadDB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_notification_items WHERE platform_notification_id = ? AND done_reason = 'closed' AND done_at IS NOT NULL`, notification.PlatformNotificationID).Scan(&done))
+		require.Equal(t, 1, done)
+		select {
+		case event := <-events:
+			require.Equal(t, "data_changed", event.Event.Type)
+			payload, err := json.Marshal(event.Event.Data)
+			require.NoError(t, err)
+			require.Contains(t, string(payload), `"repo_path":"acme/widget"`)
+		default:
+			require.FailNow(t, "closed notification refresh did not broadcast", "%s", notification.PlatformNotificationID)
+		}
+	}
 }

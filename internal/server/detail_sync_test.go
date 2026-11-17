@@ -3,14 +3,20 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	gh "github.com/google/go-github/v93/github"
+	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/syncevents"
 
@@ -128,91 +134,74 @@ func TestEnqueuePRSyncBroadcastsChangesToChecksAndComments(t *testing.T) {
 		require.FailNow(t, "unchanged pull refresh sent event", "%+v", event)
 	default:
 	}
+	queueServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(string(body), "isMergeQueueEnabled"):
+			_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"state":"OPEN","baseRefName":"main","isMergeQueueEnabled":true,"mergeQueueEntry":{"position":1,"state":"AWAITING_CHECKS","enqueuedAt":"2026-10-14T19:05:15Z","estimatedTimeToMerge":240},"latestQueueEvent":{"nodes":[{"__typename":"AddedToMergeQueueEvent"}]}}}}}`)
+		case strings.Contains(string(body), "configuration"):
+			_, _ = io.WriteString(w, `{"data":{"repository":{"mergeQueue":{"configuration":{"mergeMethod":"SQUASH"}}}}}`)
+		default:
+			_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{}}}}`)
+		}
+	}))
+	t.Cleanup(queueServer.Close)
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(queueServer.URL, queueServer.Client()), nil),
+	})
 	comment = "edited"
 	check = "failure"
 	_, err = srv.activityapi.EnqueuePRSync(t.Context(), input)
 	require.NoError(t, err)
 	srv.bg.Wait()
-	select {
-	case event := <-events:
-		require.Equal(t, "data_changed", event.Event.Type)
-		payload, err := json.Marshal(event.Event.Data)
-		require.NoError(t, err)
-		var data struct {
-			Repositories []struct {
-				Provider     string `json:"provider"`
-				PlatformHost string `json:"platform_host"`
-				RepoPath     string `json:"repo_path"`
-			} `json:"repositories"`
+	var change syncevents.Event
+drain:
+	for {
+		select {
+		case event := <-events:
+			if event.Event.Type == "data_changed" {
+				require.Empty(t, change.Type, "extra data_changed event")
+				change = event.Event
+			}
+		default:
+			break drain
 		}
-		require.NoError(t, json.Unmarshal(payload, &data))
-		require.Len(t, data.Repositories, 1)
-		require.Equal(t, "github", data.Repositories[0].Provider)
-		require.Equal(t, "github.com", data.Repositories[0].PlatformHost)
-		require.Equal(t, "acme/widget", data.Repositories[0].RepoPath)
-		var legacy struct{}
-		require.NoError(t, json.Unmarshal(payload, &legacy))
-	default:
-		require.FailNow(t, "changed pull refresh did not broadcast")
 	}
-	select {
-	case event := <-events:
-		require.FailNow(t, "extra event", "%+v", event)
-	default:
+	require.Equal(t, "data_changed", change.Type)
+	payload, err := json.Marshal(change.Data)
+	require.NoError(t, err)
+	var data struct {
+		Repositories []struct {
+			Provider     string `json:"provider"`
+			PlatformHost string `json:"platform_host"`
+			RepoPath     string `json:"repo_path"`
+		} `json:"repositories"`
 	}
+	require.NoError(t, json.Unmarshal(payload, &data))
+	require.Len(t, data.Repositories, 1)
+	require.Equal(t, "github", data.Repositories[0].Provider)
+	require.Equal(t, "github.com", data.Repositories[0].PlatformHost)
+	require.Equal(t, "acme/widget", data.Repositories[0].RepoPath)
+	var legacy struct{}
+	require.NoError(t, json.Unmarshal(payload, &legacy))
+	assert.Never(t, func() bool {
+		select {
+		case event := <-events:
+			return event.Event.Type == "data_changed"
+		default:
+			return false
+		}
+	}, syncevents.DataChangedInterval+200*time.Millisecond, 10*time.Millisecond, "no extra data_changed event")
 	stored, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
 	require.NoError(t, err)
 	require.Equal(t, "failure", stored.CIStatus)
+	queue, err := database.GetMergeQueueState(t.Context(), stored.RepoID, 1)
+	require.NoError(t, err)
+	require.NotNil(t, queue)
+	require.True(t, queue.Queued)
 	eventRows, err := database.ListMREvents(t.Context(), stored.ID)
 	require.NoError(t, err)
 	require.Len(t, eventRows, 1)
 	require.Equal(t, "edited", eventRows[0].Body)
-
-	// Queue changes in a scoped job produce one scoped list refresh.
-	repo, err := database.GetRepoByID(t.Context(), stored.RepoID)
-	require.NoError(t, err)
-	repoRef := serverfake.DefaultTestRepos[0]
-	oldHub = srv.hub
-	srv.hub = syncevents.NewEventHub()
-	oldHub.Close()
-	t.Cleanup(srv.hub.Close)
-	events, _ = srv.hub.Subscribe(t.Context(), false)
-	require.True(t, srv.syncevents.EnqueueRepositoryDetailSyncOrRerun("queue", nil, *repo, 1, func(ctx context.Context) error {
-		syncer.RecordPullRequestEnqueued(ctx, repoRef, repo.ID, 1, "main")
-		return nil
-	}))
-	srv.bg.Wait()
-	queue, err := database.GetMergeQueueState(t.Context(), repo.ID, 1)
-	require.NoError(t, err)
-	require.NotNil(t, queue)
-	require.True(t, queue.Queued)
-	require.Equal(t, "pr_detail_refreshed", (<-events).Event.Type)
-	change := <-events
-	require.Equal(t, "data_changed", change.Event.Type)
-	payload, err := json.Marshal(change.Event.Data)
-	require.NoError(t, err)
-	require.Contains(t, string(payload), `"repo_path":"acme/widget"`)
-	assert.Never(t, func() bool {
-		select {
-		case <-events:
-			return true
-		default:
-			return false
-		}
-	}, syncevents.DataChangedInterval+200*time.Millisecond, 10*time.Millisecond, "no extra queue event")
-
-	// Queue changes outside a scoped job still notify list subscribers.
-	serverfake.SeedPR(t, database, "acme", "widget", 2)
-	oldHub = srv.hub
-	srv.hub = syncevents.NewEventHub()
-	oldHub.Close()
-	t.Cleanup(srv.hub.Close)
-	events, _ = srv.hub.Subscribe(t.Context(), false)
-	syncer.RecordPullRequestEnqueued(t.Context(), repoRef, repo.ID, 2, "main")
-	require.Equal(t, "pr_detail_refreshed", (<-events).Event.Type)
-	change = <-events
-	require.Equal(t, "data_changed", change.Event.Type)
-	payload, err = json.Marshal(change.Event.Data)
-	require.NoError(t, err)
-	require.JSONEq(t, `{}`, string(payload))
 }

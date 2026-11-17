@@ -98,7 +98,6 @@ func (s *Service) promptPages(
 			RepoID: repo.ID, ItemType: itemType,
 			RefreshReason:  db.ArchiveRefreshReasonPrompt,
 			ScanGeneration: scan.Generation, InputCursor: cursor,
-			Now: s.now(),
 		}
 		requestCtx, complete, err := s.admit(
 			withInventoryProbe(ctx), repo, itemType,

@@ -70,7 +70,7 @@ Progress survives daemon restarts. Repositories advance independently.
 kenn-forge archive status --json
 ```
 
-Each repository's `last_progress_at` records its latest finished item or committed inventory page. On upgrade, completed lookups provide the starting value; blocks, retries, and restarts leave it unchanged.
+Each repository's `last_progress_at` records its latest finished item or committed inventory page. On upgrade, initial completion or completed lookups provide the starting value; blocks, retries, and restarts leave it unchanged.
 
 Common states:
 

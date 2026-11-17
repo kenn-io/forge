@@ -21,19 +21,15 @@ var revalidatedPathPattern = regexp.MustCompile(
 )
 
 const (
-	// revalidatedEntryLimit bounds the cache for metadata and CI pages.
-	// Superseded heads age out as new heads are polled.
+	// revalidatedEntryLimit bounds the cache at about four metadata pages per
+	// tracked repository plus CI pages. Superseded heads age out as new heads are polled.
 	revalidatedEntryLimit = 2048
 	// revalidatedBodyLimit skips caching an unusually large page.
 	revalidatedBodyLimit = 1 << 20
-	// issuePageEntryLimit keeps every issue page of about 2,000 repositories with
-	// 300 open issues, so one sync pass does not evict the pages the next one reads.
-	issuePageEntryLimit = 8192
 	// issuePageBodyLimit is Forge's local bound on one cached issue page.
 	issuePageBodyLimit = 32 << 20
-	// issuePageCacheBytes bounds the issue-page bodies cached at once. It holds
-	// 400 repositories with 300 open issues at about 320 KiB per 100-issue page.
-	issuePageCacheBytes = 384 << 20
+	// issuePageCacheBytes bounds the issue-page bodies cached at once.
+	issuePageCacheBytes = 256 << 20
 )
 
 type revalidatedEntry struct {
@@ -58,15 +54,11 @@ type revalidatingTransport struct {
 }
 
 func newRevalidatingTransport(base http.RoundTripper) *revalidatingTransport {
-	return newRevalidatingTransportWithIssueBytes(base, issuePageCacheBytes)
-}
-
-func newRevalidatingTransportWithIssueBytes(base http.RoundTripper, issueBytes int) *revalidatingTransport {
 	cache, err := lru.New[string, revalidatedEntry](revalidatedEntryLimit)
 	if err != nil {
 		panic(err) // only for a non-positive size
 	}
-	issues := &issuePageCache{limit: issueBytes, pages: map[string]revalidatedEntry{}}
+	issues := &issuePageCache{limit: issuePageCacheBytes, pages: map[string]revalidatedEntry{}}
 	return &revalidatingTransport{base: base, cache: cache, issues: issues}
 }
 
@@ -79,10 +71,6 @@ func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, er
 	var cache revalidatedCache = metadataCache{t.cache}
 	limit := revalidatedBodyLimit
 	if strings.HasSuffix(req.URL.Path, "/issues") {
-		// Only open-issue lists are synced on every pass; other states would crowd them out.
-		if req.URL.Query().Get("state") != "open" {
-			return t.base.RoundTrip(req)
-		}
 		cache, limit = t.issues, issuePageBodyLimit
 	}
 	entry, cached := cache.get(key)
@@ -146,14 +134,14 @@ func (c *issuePageCache) add(key string, entry revalidatedEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.removeLocked(key)
-	if c.bytes+len(entry.body) > c.limit || len(c.pages) >= issuePageEntryLimit {
+	if c.bytes+len(entry.body) > c.limit {
 		for k, e := range c.pages {
 			if time.Since(e.cachedAt) >= etagTTL {
 				c.removeLocked(k)
 			}
 		}
 	}
-	if c.bytes+len(entry.body) <= c.limit && len(c.pages) < issuePageEntryLimit {
+	if c.bytes+len(entry.body) <= c.limit {
 		c.pages[key] = entry
 		c.bytes += len(entry.body)
 	}

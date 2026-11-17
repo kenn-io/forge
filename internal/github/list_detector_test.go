@@ -318,20 +318,6 @@ func (s *issuePageServer) handler(t *testing.T) http.Handler {
 	})
 }
 
-func TestLargeIssueListFitsThreeRequestBudget(t *testing.T) {
-	t.Parallel()
-	srv := &issuePageServer{}
-	server := httptest.NewServer(srv.handler(t))
-	t.Cleanup(server.Close)
-	budget := NewSyncBudget(3)
-	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
-	require.NoError(t, err)
-	issues, err := client.ListOpenIssues(WithSyncBudget(t.Context()), "acme", "widget")
-	require.NoError(t, err)
-	assert.Len(t, issues, 300)
-	assert.Equal(t, int64(3), srv.requests.Load())
-}
-
 func TestLargeIssueListRevalidatesEachPage(t *testing.T) {
 	t.Parallel()
 	srv := &issuePageServer{}

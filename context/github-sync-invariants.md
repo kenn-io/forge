@@ -89,8 +89,8 @@ ETags and 304s:
   conditional read of the repo's single most recently updated pull request
   (`state=all&sort=updated&per_page=1`), because opening, closing, merging, or editing any of them
   moves it to the top; a 304 answers the list with a 304. Multi-page issue lists revalidate each page, so a
-  removal or transfer on any page is read on the next pass. Only open-issue pages are cached, none
-  is evicted to admit another, and each requires a full read after `etagTTL`. The detector validator is read before
+  removal or transfer on any page is read on the next pass. No issue page is evicted to admit
+  another, and each requires a full read after `etagTTL`. The detector validator is read before
   the list, stored once page 1 arrives, dropped when any later page fails (including a budget refusal),
   and cannot vouch past `etagTTL`
   (`internal/github/etag_transport.go::etagTransport.checkListDetector`).

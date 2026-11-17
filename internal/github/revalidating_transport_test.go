@@ -479,34 +479,6 @@ func TestRevalidatingIssuePageCachesLargeBody(t *testing.T) {
 	assert.Equal(t, int64(1), conditionals.Load())
 }
 
-func TestRevalidatingIssuePagesSurviveManyRepositories(t *testing.T) {
-	t.Parallel()
-	var conditionals atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		etag := `"` + r.URL.RequestURI() + `"`
-		if r.Header.Get("If-None-Match") == etag {
-			conditionals.Add(1)
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		_, _ = w.Write([]byte(`[]`))
-	}))
-	t.Cleanup(server.Close)
-	client := &http.Client{Transport: newRevalidatingTransport(http.DefaultTransport)}
-	const repos, pages = 513, 4
-	for range 2 {
-		for repo := range repos {
-			for page := 1; page <= pages; page++ {
-				resp, err := client.Get(fmt.Sprintf("%s/repos/acme/repo-%d/issues?state=open&page=%d", server.URL, repo, page))
-				require.NoError(t, err)
-				require.NoError(t, resp.Body.Close())
-			}
-		}
-	}
-	assert.Equal(t, int64(repos*pages), conditionals.Load(), "every page of the second pass costs a 304")
-}
-
 func TestRevalidatingIssuePagesKeepHitsOverByteBudget(t *testing.T) {
 	t.Parallel()
 	var conditionals atomic.Int64
@@ -522,7 +494,9 @@ func TestRevalidatingIssuePagesKeepHitsOverByteBudget(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	// Two 1 KiB pages fit; each pass reads three repositories' pages in turn.
-	client := &http.Client{Transport: newRevalidatingTransportWithIssueBytes(http.DefaultTransport, 2048)}
+	transport := newRevalidatingTransport(http.DefaultTransport)
+	transport.issues.limit = 2048
+	client := &http.Client{Transport: transport}
 	for range 3 {
 		for repo := range 3 {
 			resp, err := client.Get(fmt.Sprintf("%s/repos/acme/repo-%d/issues?state=open", server.URL, repo))
@@ -533,32 +507,4 @@ func TestRevalidatingIssuePagesKeepHitsOverByteBudget(t *testing.T) {
 		}
 	}
 	assert.Equal(t, int64(4), conditionals.Load(), "the two pages that fit cost a 304 on each later pass")
-}
-
-func TestRevalidatingClosedIssuePagesLeaveOpenPagesCached(t *testing.T) {
-	t.Parallel()
-	var conditionals atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		etag := `"` + r.URL.RequestURI() + `"`
-		if r.Header.Get("If-None-Match") != "" {
-			assert.Equal(t, "open", r.URL.Query().Get("state"))
-		}
-		if r.Header.Get("If-None-Match") == etag {
-			conditionals.Add(1)
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		_, _ = io.WriteString(w, strings.Repeat("x", 1024))
-	}))
-	t.Cleanup(server.Close)
-	client := &http.Client{Transport: newRevalidatingTransportWithIssueBytes(http.DefaultTransport, 1024)}
-	for _, state := range []string{"open", "closed", "all", "closed", "open"} {
-		resp, err := client.Get(server.URL + "/repos/acme/widget/issues?state=" + state + "&page=1")
-		require.NoError(t, err)
-		_, err = io.Copy(io.Discard, resp.Body)
-		require.NoError(t, err)
-		require.NoError(t, resp.Body.Close())
-	}
-	assert.Equal(t, int64(1), conditionals.Load(), "the open page stays cached")
 }

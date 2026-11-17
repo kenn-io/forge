@@ -57,7 +57,11 @@ func TestArchiveLastProgressMigration(t *testing.T) {
 		require.NoError(err)
 		for number, status := range []string{"complete", "pending", "terminal", "failed"} {
 			id := number + 2
-			_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_items (repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state) VALUES (1, 'issue', ?, ?, ?, ?, 'active')`, id, fmt.Sprint(id), now, now)
+			lifecycle := "active"
+			if status == "terminal" {
+				lifecycle = "inaccessible"
+			}
+			_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_items (repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state) VALUES (1, 'issue', ?, ?, ?, ?, ?)`, id, fmt.Sprint(id), now, now, lifecycle)
 			require.NoError(err)
 			completed := now.Add(time.Hour).Format(time.RFC3339Nano)
 			if status == "complete" {
@@ -70,9 +74,9 @@ func TestArchiveLastProgressMigration(t *testing.T) {
 		require.NoError(err)
 		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_repos (repo_id, collection_mode, operator_state, created_at, updated_at) VALUES (2, 'full', 'active', ?, ?)`, now, now)
 		require.NoError(err)
-		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_items (repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state) VALUES (2, 'issue', 1, 'issue-1', ?, ?, 'active')`, now, now)
+		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_items (repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state) VALUES (2, 'merge_request', 1, 'mr-1', ?, ?, 'removed_upstream')`, now, now)
 		require.NoError(err)
-		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_dataset_progress (repo_id, item_type, item_number, dataset, status, completed_at, updated_at, item_created_at) VALUES (2, 'issue', 1, 'lookup', 'terminal', ?, ?, ?)`, now, now, now)
+		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_archive_dataset_progress (repo_id, item_type, item_number, dataset, status, completed_at, last_error_code, updated_at, item_created_at) VALUES (2, 'merge_request', 1, 'lookup', 'terminal', ?, 'not_found', ?, ?)`, now, now, now)
 		require.NoError(err)
 		_, err = raw.ExecContext(t.Context(), `INSERT INTO forge_repos (id, owner, name, repo_path, owner_key, name_key, repo_path_key) VALUES (3, 'acme', 'empty', 'acme/empty', 'acme', 'empty', 'acme/empty')`)
 		require.NoError(err)
@@ -119,11 +123,11 @@ func TestArchiveLastProgressMigration(t *testing.T) {
 	require.NoError(err)
 	require.Len(states, 1)
 	require.NotNil(states[0].LastProgressAt)
-	require.Equal(now.Add(30*time.Minute), *states[0].LastProgressAt)
+	require.Equal(now.Add(time.Hour), *states[0].LastProgressAt)
 	progress, err := d.GetArchiveProgress(t.Context(), ArchiveProgressOpts{RepoIDs: []int64{1}, Now: now})
 	require.NoError(err)
 	require.NotNil(progress[0].LastProgressAt)
-	require.Equal(now.Add(30*time.Minute), *progress[0].LastProgressAt)
+	require.Equal(now.Add(time.Hour), *progress[0].LastProgressAt)
 	for _, id := range []int64{4, 5, 6, 7, 8, 9} {
 		rows, err := d.GetArchiveProgress(t.Context(), ArchiveProgressOpts{RepoIDs: []int64{id}, Now: now})
 		require.NoError(err)
@@ -159,11 +163,11 @@ func TestArchiveLastProgressMigration(t *testing.T) {
 	finishedEmpty, err = d.GetArchiveProgress(t.Context(), ArchiveProgressOpts{RepoIDs: []int64{3}, Now: now.Add(time.Hour)})
 	require.NoError(err)
 	require.Equal(now.Add(time.Hour), *finishedEmpty[0].LastProgressAt)
-	require.NoError(d.CommitArchiveInventoryPage(t.Context(), ArchiveInventoryCommit{RepoID: 1, ItemType: ArchiveItemTypeIssue, ScanGeneration: 1, Exhausted: true, Now: now.Add(time.Hour)}))
-	progress, err = d.GetArchiveProgress(t.Context(), ArchiveProgressOpts{RepoIDs: []int64{1}, Now: now.Add(time.Hour)})
+	require.NoError(d.CommitArchiveInventoryPage(t.Context(), ArchiveInventoryCommit{RepoID: 1, ItemType: ArchiveItemTypeIssue, ScanGeneration: 1, Exhausted: true, Now: now.Add(2 * time.Hour)}))
+	progress, err = d.GetArchiveProgress(t.Context(), ArchiveProgressOpts{RepoIDs: []int64{1}, Now: now.Add(2 * time.Hour)})
 	require.NoError(err)
 	require.NotNil(progress[0].LastProgressAt)
-	require.Equal(now.Add(time.Hour), *progress[0].LastProgressAt)
+	require.Equal(now.Add(2*time.Hour), *progress[0].LastProgressAt)
 }
 
 func TestOpenAndSchema(t *testing.T) {

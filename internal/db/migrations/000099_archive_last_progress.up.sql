@@ -7,9 +7,12 @@ WITH progress_candidates AS (
     FROM forge_archive_repos
     WHERE initial_completed_at IS NOT NULL
     UNION ALL
-    SELECT repo_id, completed_at AS progress_at
-    FROM forge_archive_dataset_progress
-    WHERE dataset = 'lookup' AND status = 'complete' AND completed_at IS NOT NULL
+    SELECT p.repo_id, p.completed_at AS progress_at
+    FROM forge_archive_dataset_progress p
+    JOIN forge_archive_items i ON i.repo_id = p.repo_id
+        AND i.item_type = p.item_type AND i.item_number = p.item_number
+    WHERE p.dataset = 'lookup' AND p.completed_at IS NOT NULL
+      AND (p.status = 'complete' OR (p.status = 'terminal' AND i.lifecycle_state = 'inaccessible'))
     UNION ALL
     SELECT repo_id, updated_at AS progress_at
     FROM forge_archive_repo_scans

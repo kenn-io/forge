@@ -35,7 +35,7 @@ type revalidatedEntry struct {
 // revalidatingTransport sends If-None-Match for CI, metadata, and issue reads and answers a
 // 304 Not Modified with the cached 200 response. GitHub does not charge
 // a 304 against the rate limit, and the budget transport refunds it, so
-// polling unchanged CI and metadata costs nothing. Callers see the same 200 they would
+// polling unchanged CI, metadata, and issue lists costs nothing. Callers see the same 200 they would
 // see from an unconditional read: a 304 proves the body is current.
 //
 // A 304 carries no Link header, so the cached headers are replayed for

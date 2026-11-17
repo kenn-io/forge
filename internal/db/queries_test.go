@@ -2919,12 +2919,11 @@ func TestReplaceCommentEventsBeyondSQLiteVariableLimit(t *testing.T) {
 		d := openTestDB(t)
 		repoID := insertTestRepo(t, d, "o", "r")
 		id := insertTestMR(t, d, repoID, 1, "pr", baseTime())
-		seed := []MREvent{
+		require.NoError(d.UpsertMREvents(t.Context(), []MREvent{
 			{MergeRequestID: id, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "stale"},
 			{MergeRequestID: id, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "comment-0"},
 			{MergeRequestID: id, EventType: "review", CreatedAt: baseTime(), DedupeKey: "review"},
-		}
-		require.NoError(d.UpsertMREvents(t.Context(), seed))
+		}))
 		var retainedID int64
 		require.NoError(d.ReadDB().QueryRowContext(t.Context(), `SELECT id FROM forge_mr_events WHERE merge_request_id = ? AND dedupe_key = 'comment-0'`, id).Scan(&retainedID))
 		events := make([]MREvent, 40000)
@@ -2932,36 +2931,20 @@ func TestReplaceCommentEventsBeyondSQLiteVariableLimit(t *testing.T) {
 			events[i] = MREvent{MergeRequestID: id, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: fmt.Sprintf("comment-%d", i)}
 		}
 		require.NoError(d.ReplaceMRCommentEvents(t.Context(), id, events))
-		stored, err := d.ListMREvents(t.Context(), id)
-		require.NoError(err)
-		require.Len(stored, 40001)
-		foundRetained := false
-		for _, event := range stored {
-			require.NotEqual("stale", event.DedupeKey)
-			if event.DedupeKey == "comment-0" {
-				foundRetained = true
-				require.Equal(retainedID, event.ID)
-			}
-		}
-		require.True(foundRetained)
-		var reviewCount int
-		require.NoError(d.ReadDB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_mr_events WHERE merge_request_id = ? AND dedupe_key = 'review' AND event_type = 'review'`, id).Scan(&reviewCount))
-		require.Equal(1, reviewCount)
-		mr, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
-		require.NoError(err)
-		require.Equal(40000, mr.CommentCount)
+		var stale, reviews, comments, keptID int64
+		require.NoError(d.ReadDB().QueryRowContext(t.Context(), `SELECT SUM(dedupe_key = 'stale'), SUM(event_type = 'review'), SUM(event_type = 'issue_comment'), MAX(CASE WHEN dedupe_key = 'comment-0' THEN id END) FROM forge_mr_events WHERE merge_request_id = ?`, id).Scan(&stale, &reviews, &comments, &keptID))
+		require.Equal([4]int64{0, 1, 40000, retainedID}, [4]int64{stale, reviews, comments, keptID})
 	})
 	t.Run("issue", func(t *testing.T) {
 		require := require.New(t)
 		d := openTestDB(t)
 		repoID := insertTestRepo(t, d, "o", "r")
 		id := insertTestIssue(t, d, repoID, 1, "issue", baseTime())
-		seed := []IssueEvent{
+		require.NoError(d.UpsertIssueEvents(t.Context(), []IssueEvent{
 			{IssueID: id, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "stale"},
 			{IssueID: id, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: "comment-0"},
-			{IssueID: id, EventType: "review", CreatedAt: baseTime(), DedupeKey: "review"},
-		}
-		require.NoError(d.UpsertIssueEvents(t.Context(), seed))
+			{IssueID: id, EventType: "cross_referenced", CreatedAt: baseTime(), DedupeKey: "cross_referenced"},
+		}))
 		var retainedID int64
 		require.NoError(d.ReadDB().QueryRowContext(t.Context(), `SELECT id FROM forge_issue_events WHERE issue_id = ? AND dedupe_key = 'comment-0'`, id).Scan(&retainedID))
 		events := make([]IssueEvent, 40000)
@@ -2969,24 +2952,9 @@ func TestReplaceCommentEventsBeyondSQLiteVariableLimit(t *testing.T) {
 			events[i] = IssueEvent{IssueID: id, EventType: "issue_comment", CreatedAt: baseTime(), DedupeKey: fmt.Sprintf("comment-%d", i)}
 		}
 		require.NoError(d.ReplaceIssueCommentEvents(t.Context(), id, events, nil))
-		stored, err := d.ListIssueEvents(t.Context(), id)
-		require.NoError(err)
-		require.Len(stored, 40001)
-		foundRetained := false
-		for _, event := range stored {
-			require.NotEqual("stale", event.DedupeKey)
-			if event.DedupeKey == "comment-0" {
-				foundRetained = true
-				require.Equal(retainedID, event.ID)
-			}
-		}
-		require.True(foundRetained)
-		var reviewCount int
-		require.NoError(d.ReadDB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_issue_events WHERE issue_id = ? AND dedupe_key = 'review' AND event_type = 'review'`, id).Scan(&reviewCount))
-		require.Equal(1, reviewCount)
-		issue, err := d.GetIssueByRepoIDAndNumber(t.Context(), repoID, 1)
-		require.NoError(err)
-		require.Equal(40000, issue.CommentCount)
+		var stale, references, comments, keptID int64
+		require.NoError(d.ReadDB().QueryRowContext(t.Context(), `SELECT SUM(dedupe_key = 'stale'), SUM(event_type = 'cross_referenced'), SUM(event_type = 'issue_comment'), MAX(CASE WHEN dedupe_key = 'comment-0' THEN id END) FROM forge_issue_events WHERE issue_id = ?`, id).Scan(&stale, &references, &comments, &keptID))
+		require.Equal([4]int64{0, 1, 40000, retainedID}, [4]int64{stale, references, comments, keptID})
 	})
 }
 

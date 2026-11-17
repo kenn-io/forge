@@ -166,7 +166,7 @@ func (s *Handlers) startDetailSyncJob(key string, job DetailSyncJob) bool {
 			}
 		}()
 
-		var before db.DetailSnapshot
+		var before string
 		var snapshotErr error
 		if job.repo.ID != 0 {
 			before, snapshotErr = s.Db.DetailChangeSnapshot(ctx, job.repo.ID, job.number)

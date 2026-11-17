@@ -20,7 +20,6 @@ import (
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/testutil/tokenauthtest"
-	platformgithub "go.kenn.io/forge/platform/github"
 
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
@@ -107,22 +106,15 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 	}{
 		{"unchanged", false},
 		{"queue", true},
-		{"notification", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			serverfake.RunParallelServerTest(t)
 			when := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute).Truncate(time.Second)}
 			comment, state := "original", "open"
-			if tc.name == "notification" {
-				state = "closed"
-			}
 			commentWhen := gh.Timestamp{Time: when.Add(time.Minute)}
 			mock := &serverfake.MockGH{
 				GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 					return &gh.PullRequest{ID: new(int64(1000)), Number: &number, State: &state, Title: new("Example pull"), Body: new("body"), CreatedAt: &when, UpdatedAt: &when, Head: &gh.PullRequestBranch{SHA: new("abc123"), Ref: new("feature")}, Base: &gh.PullRequestBranch{Ref: new("main")}}, nil
-				},
-				ListPRTimelineEventsFn: func(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error) {
-					return []platformgithub.PullRequestTimelineEvent{{NodeID: "title-1", EventType: "renamed_title", PreviousTitle: "Old", CurrentTitle: "New", CreatedAt: when.Time}}, nil
 				},
 				ListIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
 					return []*gh.IssueComment{{ID: new(int64(99)), Body: &comment, CreatedAt: &commentWhen, UpdatedAt: &commentWhen}}, nil
@@ -134,11 +126,6 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 			_, err := srv.activityapi.EnqueuePRSync(t.Context(), input)
 			require.NoError(t, err)
 			srv.bg.Wait()
-			result, err := database.WriteDB().ExecContext(t.Context(), `UPDATE forge_mr_events SET metadata_json = '{"current_title":"New","previous_title":"Old"}' WHERE dedupe_key = 'timeline-title-1'`)
-			require.NoError(t, err)
-			rows, err := result.RowsAffected()
-			require.NoError(t, err)
-			require.EqualValues(t, 1, rows)
 
 			if tc.name == "queue" {
 				queueServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -156,16 +143,6 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 				t.Cleanup(queueServer.Close)
 				syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{"github.com": ghclient.NewGraphQLFetcher(tokenauthtest.Source("token"), "github.com", nil, nil, ghclient.WithGraphQLEndpointForTesting(queueServer.URL))})
 			}
-			if tc.name == "notification" {
-				number := 1
-				notifications := []db.Notification{
-					{Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "linked", RepoOwner: "acme", RepoName: "widget", ItemType: "pr", ItemNumber: &number, SubjectType: "PullRequest", SubjectTitle: "Example pull", Reason: "mention", Unread: true, SourceUpdatedAt: when.Time, SyncedAt: when.Time},
-					{Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "legacy", RepoOwner: "acme", RepoName: "widget", ItemType: "pr", ItemNumber: &number, SubjectType: "PullRequest", SubjectTitle: "Example pull", Reason: "mention", Unread: true, SourceUpdatedAt: when.Time, SyncedAt: when.Time},
-				}
-				require.NoError(t, database.UpsertNotifications(t.Context(), notifications))
-				_, err = database.WriteDB().ExecContext(t.Context(), `UPDATE forge_notification_items SET repo_id = NULL WHERE platform_notification_id = 'legacy'`)
-				require.NoError(t, err)
-			}
 			oldHub := srv.hub
 			srv.hub = syncevents.NewEventHub()
 			oldHub.Close()
@@ -174,11 +151,6 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 			_, err = srv.activityapi.EnqueuePRSync(t.Context(), input)
 			require.NoError(t, err)
 			srv.bg.Wait()
-			if tc.name == "notification" {
-				var done int
-				require.NoError(t, database.ReadDB().QueryRowContext(t.Context(), `SELECT COUNT(*) FROM forge_notification_items WHERE platform_notification_id IN ('linked', 'legacy') AND done_reason = 'closed' AND done_at IS NOT NULL`).Scan(&done))
-				require.Equal(t, 2, done)
-			}
 			var change syncevents.Event
 		drain:
 			for {

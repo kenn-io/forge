@@ -39,10 +39,11 @@ const (
 )
 
 type revalidatedEntry struct {
-	etag     string
-	header   http.Header
-	body     []byte
-	cachedAt time.Time
+	etag       string
+	header     http.Header
+	body       []byte
+	cachedAt   time.Time
+	singlePage bool
 }
 
 // revalidatingTransport sends If-None-Match for CI, metadata, and issue reads and answers a
@@ -116,8 +117,8 @@ func (c metadataCache) add(key string, entry revalidatedEntry)  { c.Add(key, ent
 func (c metadataCache) remove(key string)                       { c.Remove(key) }
 
 // issuePageCache keeps each issue page until etagTTL after its 200; a 304 does
-// not refresh it. When full it caches no new page rather than evict one: a sync
-// pass over more pages than fit would evict each page before the next pass.
+// not refresh it. Single-page lists can be evicted for paginated lists; other
+// pages stay until expiry so a large sync pass cannot evict its own cache.
 type issuePageCache struct {
 	mu       sync.Mutex
 	limit    int
@@ -143,8 +144,11 @@ func (c *issuePageCache) add(key string, entry revalidatedEntry) {
 	c.removeLocked(key)
 	if !c.fitsLocked(len(entry.body)) {
 		for k, e := range c.pages {
-			if time.Since(e.cachedAt) >= etagTTL {
+			if time.Since(e.cachedAt) >= etagTTL || (!entry.singlePage && e.singlePage) {
 				c.removeLocked(k)
+				if c.fitsLocked(len(entry.body)) {
+					break
+				}
 			}
 		}
 	}
@@ -170,10 +174,6 @@ func (c *issuePageCache) removeLocked(key string) {
 }
 
 func store(cache revalidatedCache, key string, req *http.Request, resp *http.Response, limit int) (*http.Response, error) {
-	if _, issues := cache.(*issuePageCache); issues && !cacheableIssuePage(req, resp) {
-		cache.remove(key)
-		return resp, nil
-	}
 	etag := resp.Header.Get("ETag")
 	if etag == "" {
 		cache.remove(key)
@@ -194,7 +194,7 @@ func store(cache revalidatedCache, key string, req *http.Request, resp *http.Res
 		return resp, nil
 	}
 	_ = resp.Body.Close()
-	cache.add(key, revalidatedEntry{etag: etag, header: resp.Header.Clone(), body: body, cachedAt: time.Now()})
+	cache.add(key, revalidatedEntry{etag: etag, header: resp.Header.Clone(), body: body, cachedAt: time.Now(), singlePage: !cacheableIssuePage(req, resp)})
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	return resp, nil
 }

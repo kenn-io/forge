@@ -381,11 +381,13 @@ func TestRevalidatingIssueListKeepsOuterConditional(t *testing.T) {
 
 func TestSinglePageIssueListLeavesRoomForPaginatedList(t *testing.T) {
 	t.Parallel()
-	var paginatedConditionals atomic.Int64
+	var paginatedConditionals, singleConditionals atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("If-None-Match") == `"list"` {
 			if r.URL.Path == "/repos/acme/large/issues" {
 				paginatedConditionals.Add(1)
+			} else {
+				singleConditionals.Add(1)
 			}
 			w.WriteHeader(http.StatusNotModified)
 			return
@@ -399,9 +401,24 @@ func TestSinglePageIssueListLeavesRoomForPaginatedList(t *testing.T) {
 	t.Cleanup(server.Close)
 	transport := newRevalidatingTransport(http.DefaultTransport)
 	transport.issues.maxPages = 1
-	client := &http.Client{Transport: &etagTransport{base: transport}}
-	for _, path := range []string{"/repos/acme/small/issues", "/repos/acme/small/issues", "/repos/acme/small/issues", "/repos/acme/large/issues", "/repos/acme/large/issues"} {
+	outer := &etagTransport{base: transport}
+	client := &http.Client{Transport: outer}
+	for _, path := range []string{"/repos/acme/small/issues", "/repos/acme/small/issues", "/repos/acme/small/issues"} {
 		resp, err := client.Get(server.URL + path)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+	}
+	outer.invalidateRepo("acme", "small", "issues")
+	resp, err := client.Get(server.URL + "/repos/acme/small/issues")
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, `[]`, string(body))
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, int64(3), singleConditionals.Load())
+	for range 2 {
+		resp, err := client.Get(server.URL + "/repos/acme/large/issues")
 		require.NoError(t, err)
 		require.NoError(t, resp.Body.Close())
 	}

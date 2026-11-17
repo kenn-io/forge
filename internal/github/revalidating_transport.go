@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,8 @@ var revalidatedPathPattern = regexp.MustCompile(
 	`^(?:/api/v3)?/(?:repositories/\d+|repos/[^/]+/[^/]+/(?:commits/[^/]+/(?:check-runs|status)|actions/runs|rules/branches/.+|branches/.+|releases|tags|labels|issues))$`,
 )
 
+var issueListPath = regexp.MustCompile(`^(?:/api/v3)?/repos/[^/]+/[^/]+/issues$`)
+
 const (
 	// revalidatedEntryLimit bounds the cache at about four metadata pages per
 	// tracked repository plus CI pages. Superseded heads age out as new heads are polled.
@@ -31,8 +34,7 @@ const (
 	// issuePageCacheBytes bounds the issue-page bodies cached at once.
 	issuePageCacheBytes = 256 << 20
 	// issuePageEntryLimit bounds cached issue pages, whose keys and headers the
-	// byte budget does not count; an empty page costs no body bytes. It holds every
-	// page of about 2,000 repositories with 300 open issues.
+	// byte budget does not count; an empty page costs no body bytes.
 	issuePageEntryLimit = 8192
 )
 
@@ -74,7 +76,7 @@ func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, er
 	key := req.URL.String()
 	var cache revalidatedCache = metadataCache{t.cache}
 	limit := revalidatedBodyLimit
-	if strings.HasSuffix(req.URL.Path, "/issues") {
+	if issueListPath.MatchString(req.URL.Path) {
 		cache, limit = t.issues, issuePageBodyLimit
 	}
 	entry, cached := cache.get(key)
@@ -92,7 +94,7 @@ func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, er
 		_ = resp.Body.Close()
 		return replayCachedResponse(entry, resp, req), nil
 	case resp.StatusCode == http.StatusOK:
-		return store(cache, key, resp, limit)
+		return store(cache, key, req, resp, limit)
 	default:
 		cache.remove(key)
 		return resp, nil
@@ -167,7 +169,11 @@ func (c *issuePageCache) removeLocked(key string) {
 	delete(c.pages, key)
 }
 
-func store(cache revalidatedCache, key string, resp *http.Response, limit int) (*http.Response, error) {
+func store(cache revalidatedCache, key string, req *http.Request, resp *http.Response, limit int) (*http.Response, error) {
+	if _, issues := cache.(*issuePageCache); issues && !cacheableIssuePage(req, resp) {
+		cache.remove(key)
+		return resp, nil
+	}
 	etag := resp.Header.Get("ETag")
 	if etag == "" {
 		cache.remove(key)
@@ -191,6 +197,19 @@ func store(cache revalidatedCache, key string, resp *http.Response, limit int) (
 	cache.add(key, revalidatedEntry{etag: etag, header: resp.Header.Clone(), body: body, cachedAt: time.Now()})
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	return resp, nil
+}
+
+func cacheableIssuePage(req *http.Request, resp *http.Response) bool {
+	page, _ := strconv.Atoi(req.URL.Query().Get("page"))
+	if page > 1 {
+		return true
+	}
+	for _, link := range resp.Header.Values("Link") {
+		if strings.Contains(link, `rel="next"`) {
+			return true
+		}
+	}
+	return false
 }
 
 func replayCachedResponse(entry revalidatedEntry, notModified *http.Response, req *http.Request) *http.Response {

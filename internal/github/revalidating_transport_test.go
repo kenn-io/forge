@@ -379,14 +379,62 @@ func TestRevalidatingIssueListKeepsOuterConditional(t *testing.T) {
 	assert.Equal(t, int64(1), conditionals.Load())
 }
 
+func TestSinglePageIssueListLeavesRoomForPaginatedList(t *testing.T) {
+	t.Parallel()
+	var paginatedConditionals atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") == `"list"` {
+			if r.URL.Path == "/repos/acme/large/issues" {
+				paginatedConditionals.Add(1)
+			}
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", `"list"`)
+		if r.URL.Path == "/repos/acme/large/issues" {
+			w.Header().Set("Link", `<https://example.com/issues?page=2>; rel="next"`)
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(server.Close)
+	transport := newRevalidatingTransport(http.DefaultTransport)
+	transport.issues.maxPages = 1
+	client := &http.Client{Transport: &etagTransport{base: transport}}
+	for _, path := range []string{"/repos/acme/small/issues", "/repos/acme/small/issues", "/repos/acme/small/issues", "/repos/acme/large/issues", "/repos/acme/large/issues"} {
+		resp, err := client.Get(server.URL + path)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+	}
+	assert.Equal(t, int64(1), paginatedConditionals.Load())
+}
+
+func TestBranchNamedIssuesUsesMetadataCache(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("ETag", `"branch"`)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(server.Close)
+	transport := newRevalidatingTransport(http.DefaultTransport)
+	client := &http.Client{Transport: transport}
+	url := server.URL + "/repos/acme/widget/branches/issues"
+	resp, err := client.Get(url)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	_, inMetadata := transport.cache.Get(url)
+	_, inIssues := transport.issues.get(url)
+	assert.True(t, inMetadata)
+	assert.False(t, inIssues)
+}
+
 func TestRevalidatingIssuePagesBodyLimitsAndComments(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name, path             string
 		size, wantConditionals int
 	}{
-		{"large issue page", "/repos/acme/widget/issues?state=open", 100 * 45 * 1024, 1},
-		{"oversized issue page", "/repos/acme/widget/issues?state=open", issuePageBodyLimit + 1, 0},
+		{"large issue page", "/repos/acme/widget/issues?state=open&page=2", 100 * 45 * 1024, 1},
+		{"oversized issue page", "/repos/acme/widget/issues?state=open&page=2", issuePageBodyLimit + 1, 0},
 		{"oversized labels", "/repos/acme/widget/labels", revalidatedBodyLimit + 1, 0},
 		{"comments", "/repos/acme/widget/issues/1/comments", 8, 0},
 	} {
@@ -482,6 +530,7 @@ func TestRevalidatingIssuePagesKeepHitsOverLimits(t *testing.T) {
 					return
 				}
 				w.Header().Set("ETag", etag)
+				w.Header().Set("Link", `<https://example.com/issues?page=2>; rel="next"`)
 				_, _ = io.WriteString(w, strings.Repeat("x", tc.bodySize))
 			}))
 			t.Cleanup(server.Close)

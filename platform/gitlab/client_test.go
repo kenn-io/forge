@@ -808,7 +808,9 @@ func TestListReleasesReadsOnlyFirstPage(t *testing.T) {
 		}
 		requests++
 		assert.Equal(t, "3", r.URL.Query().Get("per_page"))
-		w.Header().Set("X-Next-Page", "2")
+		if r.URL.Query().Get("page") == "1" {
+			w.Header().Set("X-Next-Page", "2")
+		}
 		writeJSON(w, `[{"tag_name":"v1000"},{"tag_name":"v999"},{"tag_name":"v998"}]`)
 	}))
 	defer server.Close()

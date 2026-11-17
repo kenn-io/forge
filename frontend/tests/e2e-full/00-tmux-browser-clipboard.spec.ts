@@ -499,11 +499,11 @@ function sendDelayedTmuxClipboardWrite(server: IsolatedE2EServer, tmuxSession: s
   writeTmuxClientTTY(server, tmuxSession, new TextEncoder().encode(`\x1b]52;c;${payload}\x07`));
 }
 
-async function runClipboardGesture(page: Page, action: "read" | "write", text = ""): Promise<string> {
+async function setBrowserClipboard(page: Page, text: string): Promise<void> {
   clipboardProbeSequence += 1;
   const probeId = `kenn-forge-clipboard-probe-${clipboardProbeSequence}`;
   await page.evaluate(
-    ({ id, operation, value }) => {
+    ({ id, value }) => {
       const button = document.createElement("button");
       button.id = id;
       button.textContent = "clipboard probe";
@@ -516,10 +516,7 @@ async function runClipboardGesture(page: Page, action: "read" | "write", text = 
         "click",
         async () => {
           try {
-            button.dataset.result =
-              operation === "read"
-                ? await navigator.clipboard.readText()
-                : (await navigator.clipboard.writeText(value), "");
+            await navigator.clipboard.writeText(value);
             button.dataset.state = "done";
           } catch (error) {
             button.dataset.state = "error";
@@ -530,29 +527,21 @@ async function runClipboardGesture(page: Page, action: "read" | "write", text = 
       );
       document.body.appendChild(button);
     },
-    { id: probeId, operation: action, value: text },
+    { id: probeId, value: text },
   );
 
   const probe = page.locator(`#${probeId}`);
   await probe.click();
   await expect.poll(() => probe.getAttribute("data-state")).not.toBe("pending");
   const state = await probe.getAttribute("data-state");
-  const result = (await probe.getAttribute("data-result")) ?? "";
   const error = await probe.getAttribute("data-error");
   await probe.evaluate((element) => element.remove());
   if (state === "error") throw new Error(error ?? "clipboard gesture failed");
-  return result;
-}
-
-async function setBrowserClipboard(page: Page, text: string): Promise<void> {
-  await runClipboardGesture(page, "write", text);
 }
 
 async function readBrowserClipboard(page: Page): Promise<string> {
-  return runClipboardGesture(page, "read");
-}
-
-async function readBrowserClipboardWithoutFocus(page: Page): Promise<string> {
+  // Chromium tests grant clipboard-read permission. Reading without a click
+  // keeps terminal focus and authorization while its copy reply is in flight.
   return page.evaluate(() => navigator.clipboard.readText());
 }
 
@@ -1016,7 +1005,7 @@ test("insecure browser clipboard events and context menu work with tmux", async 
     const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
     await copyMarkerWithTmuxBuffer(page, terminal, output, isolatedServer, tmuxSession, copyMarker);
     await clipboardPage.bringToFront();
-    await expect.poll(() => readBrowserClipboardWithoutFocus(clipboardPage), { timeout: 15_000 }).toBe(copyMarker);
+    await expect.poll(() => readBrowserClipboard(clipboardPage), { timeout: 15_000 }).toBe(copyMarker);
 
     await page.bringToFront();
     await enableTmuxMouseAndRenderMarker(page, terminal, output, isolatedServer, tmuxSession, "RIGHT_CLICK_MARKER");
@@ -1080,7 +1069,7 @@ for (const clipboardPolicy of ["external", "on"] as const) {
         await setBrowserClipboard(page, "trusted clipboard value");
         await emitApplicationOsc52(page, tabTerminal, output);
         if (clipboardPolicy === "on") {
-          await expect.poll(() => readBrowserClipboardWithoutFocus(page)).toBe("application clipboard value");
+          await expect.poll(() => readBrowserClipboard(page)).toBe("application clipboard value");
         } else {
           await page.waitForTimeout(250);
           expect(await readBrowserClipboard(page)).toBe("trusted clipboard value");
@@ -1088,7 +1077,7 @@ for (const clipboardPolicy of ["external", "on"] as const) {
 
         await setBrowserClipboard(page, "");
         await copyMarkerWithTmuxBuffer(page, tabTerminal, output, isolatedServer, tmuxSession, keyboardMarker);
-        await expect.poll(() => readBrowserClipboardWithoutFocus(page), { timeout: 15_000 }).toBe(keyboardMarker);
+        await expect.poll(() => readBrowserClipboard(page), { timeout: 15_000 }).toBe(keyboardMarker);
       }
     } finally {
       await api?.dispose();

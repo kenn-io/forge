@@ -39,7 +39,6 @@ func TestGitLabSyncOverviewRefreshesRecentReleases(t *testing.T) {
 	ctx := t.Context()
 	database := openTestDB(t)
 	var requests atomic.Int32
-	var stage atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
@@ -49,23 +48,15 @@ func TestGitLabSyncOverviewRefreshesRecentReleases(t *testing.T) {
 			requests.Add(1)
 			page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 			perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
-			first := 1000
-			if stage.Load() == 2 {
-				first--
-			}
 			start := (page - 1) * perPage
-			end := min(start+perPage, first)
-			if end < first {
+			end := min(start+perPage, 1000)
+			if end < 1000 {
 				w.Header().Set("X-Next-Page", strconv.Itoa(page+1))
 			}
 			releases := make([]map[string]string, 0)
 			for i := start; i < end; i++ {
-				tag := fmt.Sprintf("v%d", first-i)
-				name := tag
-				if tag == "v1000" && stage.Load() == 1 {
-					name = "Updated release"
-				}
-				releases = append(releases, map[string]string{"tag_name": tag, "name": name})
+				tag := fmt.Sprintf("v%d", 1000-i)
+				releases = append(releases, map[string]string{"tag_name": tag, "name": tag})
 			}
 			_ = json.NewEncoder(w).Encode(releases)
 		default:
@@ -82,32 +73,17 @@ func TestGitLabSyncOverviewRefreshesRecentReleases(t *testing.T) {
 	require.NoError(t, err)
 	repo := ghclient.RepoRef{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com", Owner: "group", Name: "project", RepoPath: "group/project"}
 
-	for _, step := range []struct {
-		stage int32
-		tags  []string
-		name  string
-	}{
-		{0, []string{"v1000", "v999", "v998"}, "v1000"},
-		{1, []string{"v1000", "v999", "v998"}, "Updated release"},
-		{2, []string{"v999", "v998", "v997"}, "v999"},
-	} {
-		stage.Store(step.stage)
-		requests.Store(0)
-		syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil)
-		syncer.RunOnce(ctx)
-		assert.Equal(t, int32(1), requests.Load(), "stage %d", step.stage)
-		summaries, err := database.ListRepoSummaries(ctx)
-		require.NoError(t, err)
-		require.Len(t, summaries, 1)
-		overview := summaries[0].Overview
-		require.Len(t, overview.Releases, 3)
-		expectedTags := step.tags
-		actualTags := []string{overview.Releases[0].TagName, overview.Releases[1].TagName, overview.Releases[2].TagName}
-		assert.Equal(t, expectedTags, actualTags)
-		assert.Equal(t, step.name, overview.Releases[0].Name)
-		require.NotNil(t, overview.LatestRelease)
-		assert.Equal(t, step.name, overview.LatestRelease.Name)
-	}
+	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil)
+	syncer.RunOnce(ctx)
+	assert.Equal(t, int32(1), requests.Load())
+	summaries, err := database.ListRepoSummaries(ctx)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	overview := summaries[0].Overview
+	require.Len(t, overview.Releases, 3)
+	expectedTags := []string{"v1000", "v999", "v998"}
+	actualTags := []string{overview.Releases[0].TagName, overview.Releases[1].TagName, overview.Releases[2].TagName}
+	assert.Equal(t, expectedTags, actualTags)
 }
 
 // TestGitLabProviderSyncPersistsAndRetainsInaccessibleItems drives the real

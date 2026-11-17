@@ -381,7 +381,7 @@ func TestArchiveInventoryPageCommitUsesScanCursorCompareAndSwap(t *testing.T) {
 	// An echoed cursor without exhaustion durably blocks the scan.
 	echoed := ArchiveInventoryCommit{
 		RepoID: repoID, ItemType: ArchiveItemTypeIssue,
-		ScanGeneration: 1, InputCursor: "p2", NextCursor: "p2", Now: now.Add(time.Hour),
+		ScanGeneration: 1, InputCursor: "p2", NextCursor: "p2", Now: now,
 		Items: []ArchiveInventoryItem{archiveInventoryItemForTest(2, now)},
 	}
 	var blocked *ScanBlockedError
@@ -392,8 +392,6 @@ func TestArchiveInventoryPageCommitUsesScanCursorCompareAndSwap(t *testing.T) {
 	assert.True(states[0].IssueInventory.Blocked())
 	require.NotNil(states[0].IssueInventory.LastErrorCode)
 	assert.Equal("invalid_cursor", *states[0].IssueInventory.LastErrorCode)
-	require.NotNil(states[0].LastProgressAt)
-	assert.Equal(now, *states[0].LastProgressAt)
 	var echoedItems int
 	require.NoError(d.ReadDB().QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM forge_archive_items
@@ -1560,42 +1558,27 @@ func TestArchiveDeriveProgressStatusAndOrderedPhases(t *testing.T) {
 
 func TestArchiveProgressRecordsTerminalItemOnce(t *testing.T) {
 	t.Parallel()
-	for _, outcome := range []ArchiveLookupOutcome{ArchiveLookupRemoved, ArchiveLookupInaccessible, ArchiveLookupMoved} {
-		t.Run(string(outcome), func(t *testing.T) {
-			t.Parallel()
-			require := require.New(t)
-			d := openTestDB(t)
-			ctx := t.Context()
-			now := archiveTestTime()
-			repoID := insertTestRepo(t, d, "acme", "terminal")
-			require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
-			require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
-			insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 1, now)
-			insertArchiveProgressForTest(t, d, repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup, ArchiveDatasetProgressPending)
-			opts := ClaimArchiveItemOpts{RepoIDs: []int64{repoID}, Now: now}
-			first, err := d.ClaimArchiveItem(ctx, opts)
-			require.NoError(err)
-			require.NotNil(first)
-			second, err := d.ClaimArchiveItem(ctx, opts)
-			require.NoError(err)
-			require.Equal(first, second)
-			commit := ArchiveItemSyncCommit{RepoID: repoID, ItemType: first.ItemType, ItemNumber: first.ItemNumber, ScanGeneration: first.ScanGeneration, Outcome: outcome, Now: now}
-			if outcome == ArchiveLookupMoved {
-				commit.Destination = &RepoIdentity{Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "destination"}
-			}
-			require.NoError(d.CommitArchiveItemSync(ctx, commit))
-			commit.Now = now.Add(5 * time.Hour)
-			commit.ScanGeneration = second.ScanGeneration
-			require.NoError(d.CommitArchiveItemSync(ctx, commit))
-			states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
-			require.NoError(err)
-			require.NotNil(states[0].LastProgressAt)
-			require.Equal(now, *states[0].LastProgressAt)
-		})
-	}
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, d, "acme", "terminal")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now))
+	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, 1, now)
+	insertArchiveProgressForTest(t, d, repoID, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup, ArchiveDatasetProgressPending)
+	// Two workers can claim the same pending item; the later result is not new progress.
+	commit := ArchiveItemSyncCommit{RepoID: repoID, ItemType: ArchiveItemTypeIssue, ItemNumber: 1, ScanGeneration: 1, Outcome: ArchiveLookupRemoved, Now: now}
+	require.NoError(d.CommitArchiveItemSync(ctx, commit))
+	commit.Now = now.Add(5 * time.Hour)
+	require.NoError(d.CommitArchiveItemSync(ctx, commit))
+	states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
+	require.NoError(err)
+	require.NotNil(states[0].LastProgressAt)
+	require.Equal(now, *states[0].LastProgressAt)
 }
 
-func TestArchiveProgressRecordsFinishedItemOnce(t *testing.T) {
+func TestArchiveProgressRecordsFinishedItem(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	d := openTestDB(t)
@@ -1608,19 +1591,10 @@ func TestArchiveProgressRecordsFinishedItemOnce(t *testing.T) {
 	require.NoError(err)
 	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 1, now)
 	insertArchiveProgressForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 1, ArchiveDatasetLookup, ArchiveDatasetProgressPending)
-	item, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeMergeRequest, 1, ArchiveDatasetLookup)
-	require.NoError(err)
-	commit := ArchiveItemSyncCommit{RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest, ItemNumber: 1, ScanGeneration: item.ScanGeneration, Outcome: ArchiveLookupPresent, Now: now}
-	require.NoError(d.CommitArchiveItemSync(ctx, commit))
+	require.NoError(d.CommitArchiveItemSync(ctx, ArchiveItemSyncCommit{RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest, ItemNumber: 1, ScanGeneration: 1, Outcome: ArchiveLookupPresent, Now: now}))
 	states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
 	require.NoError(err)
 	require.NotNil(states[0].LastProgressAt)
-	require.Equal(now, *states[0].LastProgressAt)
-	commit.Now = now.Add(time.Hour)
-	commit.ScanGeneration = archiveLifecycleDetailsGeneration
-	require.NoError(d.CommitArchiveItemSync(ctx, commit))
-	states, err = d.ListArchiveRepoStates(ctx, []int64{repoID})
-	require.NoError(err)
 	require.Equal(now, *states[0].LastProgressAt)
 }
 

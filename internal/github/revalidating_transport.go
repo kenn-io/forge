@@ -9,6 +9,7 @@ import (
 	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/jellydator/ttlcache/v3"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
@@ -28,9 +29,11 @@ const (
 	// issuePageEntryLimit keeps every issue page of about 2,000 repositories with
 	// 300 open issues, so one sync pass does not evict the pages the next one reads.
 	issuePageEntryLimit = 8192
-	// issuePageBodyLimit admits a full page of 100 issues at GitHub's
-	// 65,536-character body limit.
+	// issuePageBodyLimit is Forge's local bound on one cached issue page.
 	issuePageBodyLimit = 32 << 20
+	// issuePageCacheBytes bounds the issue-page bodies cached at once. The
+	// least recently read pages are evicted first.
+	issuePageCacheBytes = 256 << 20
 )
 
 type revalidatedEntry struct {
@@ -51,19 +54,30 @@ type revalidatedEntry struct {
 type revalidatingTransport struct {
 	base   http.RoundTripper
 	cache  *lru.Cache[string, revalidatedEntry]
-	issues *lru.Cache[string, revalidatedEntry]
+	issues *ttlcache.Cache[string, revalidatedEntry]
 }
 
 func newRevalidatingTransport(base http.RoundTripper) *revalidatingTransport {
+	return newRevalidatingTransportWithIssueBytes(base, issuePageCacheBytes)
+}
+
+func newRevalidatingTransportWithIssueBytes(base http.RoundTripper, issueBytes uint64) *revalidatingTransport {
 	cache, err := lru.New[string, revalidatedEntry](revalidatedEntryLimit)
 	if err != nil {
 		panic(err) // only for a non-positive size
 	}
-	issues, err := lru.New[string, revalidatedEntry](issuePageEntryLimit)
-	if err != nil {
-		panic(err)
-	}
+	// A 304 does not refresh an issue page, so it expires etagTTL after its 200.
+	issues := ttlcache.New(
+		ttlcache.WithTTL[string, revalidatedEntry](etagTTL),
+		ttlcache.WithDisableTouchOnHit[string, revalidatedEntry](),
+		ttlcache.WithCapacity[string, revalidatedEntry](issuePageEntryLimit),
+		ttlcache.WithMaxCost(issueBytes, issuePageCost),
+	)
 	return &revalidatingTransport{base: base, cache: cache, issues: issues}
+}
+
+func issuePageCost(item ttlcache.CostItem[string, revalidatedEntry]) uint64 {
+	return uint64(len(item.Value.body))
 }
 
 func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -73,15 +87,13 @@ func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, er
 	}
 	key := req.URL.String()
 	issuePage := strings.HasSuffix(req.URL.Path, "/issues")
-	cache, limit := t.cache, revalidatedBodyLimit
+	var cache revalidatedCache = metadataCache{t.cache}
+	limit := revalidatedBodyLimit
 	if issuePage {
-		cache, limit = t.issues, issuePageBodyLimit
+		cache, limit = issuePageCache{t.issues}, issuePageBodyLimit
 	}
-	entry, cached := cache.Get(key)
+	entry, cached := cache.get(key)
 	sent := req
-	if cached && issuePage && time.Since(entry.cachedAt) >= etagTTL {
-		cached = false
-	}
 	if cached {
 		sent = req.Clone(req.Context())
 		sent.Header.Set("If-None-Match", entry.etag)
@@ -97,25 +109,57 @@ func (t *revalidatingTransport) RoundTrip(req *http.Request) (*http.Response, er
 	case resp.StatusCode == http.StatusOK:
 		return store(cache, key, resp, limit)
 	default:
-		cache.Remove(key)
+		cache.remove(key)
 		return resp, nil
 	}
 }
 
-func store(cache *lru.Cache[string, revalidatedEntry], key string, resp *http.Response, limit int) (*http.Response, error) {
+type revalidatedCache interface {
+	get(key string) (revalidatedEntry, bool)
+	add(key string, entry revalidatedEntry)
+	remove(key string)
+}
+
+type metadataCache struct {
+	*lru.Cache[string, revalidatedEntry]
+}
+
+func (c metadataCache) get(key string) (revalidatedEntry, bool) { return c.Get(key) }
+func (c metadataCache) add(key string, entry revalidatedEntry)  { c.Add(key, entry) }
+func (c metadataCache) remove(key string)                       { c.Remove(key) }
+
+type issuePageCache struct {
+	*ttlcache.Cache[string, revalidatedEntry]
+}
+
+func (c issuePageCache) get(key string) (revalidatedEntry, bool) {
+	item := c.Get(key)
+	if item == nil || time.Since(item.Value().cachedAt) >= etagTTL {
+		return revalidatedEntry{}, false
+	}
+	return item.Value(), true
+}
+
+func (c issuePageCache) add(key string, entry revalidatedEntry) {
+	c.Set(key, entry, ttlcache.DefaultTTL)
+}
+
+func (c issuePageCache) remove(key string) { c.Delete(key) }
+
+func store(cache revalidatedCache, key string, resp *http.Response, limit int) (*http.Response, error) {
 	etag := resp.Header.Get("ETag")
 	if etag == "" {
-		cache.Remove(key)
+		cache.remove(key)
 		return resp, nil
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit+1)))
 	if err != nil {
 		_ = resp.Body.Close()
-		cache.Remove(key)
+		cache.remove(key)
 		return nil, err
 	}
 	if len(body) > limit {
-		cache.Remove(key)
+		cache.remove(key)
 		resp.Body = struct {
 			io.Reader
 			io.Closer
@@ -123,7 +167,7 @@ func store(cache *lru.Cache[string, revalidatedEntry], key string, resp *http.Re
 		return resp, nil
 	}
 	_ = resp.Body.Close()
-	cache.Add(key, revalidatedEntry{etag: etag, header: resp.Header.Clone(), body: body, cachedAt: time.Now()})
+	cache.add(key, revalidatedEntry{etag: etag, header: resp.Header.Clone(), body: body, cachedAt: time.Now()})
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	return resp, nil
 }

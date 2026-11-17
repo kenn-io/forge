@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jellydator/ttlcache/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -439,17 +440,19 @@ func TestRevalidatingIssuePageExpiresAndRefreshesLink(t *testing.T) {
 		return resp.Header.Get("Link")
 	}
 	assert.Empty(t, read())
-	entry, ok := transport.issues.Get(url)
-	require.True(t, ok)
+	item := transport.issues.Get(url)
+	require.NotNil(t, item)
+	entry := item.Value()
 	entry.cachedAt = time.Now().Add(-etagTTL + time.Minute)
-	transport.issues.Add(url, entry)
+	expiresAt := transport.issues.Set(url, entry, ttlcache.DefaultTTL).ExpiresAt()
 	expanded.Store(true)
 	assert.Empty(t, read())
-	after304, ok := transport.issues.Get(url)
-	require.True(t, ok)
-	assert.Equal(t, entry.cachedAt, after304.cachedAt)
-	after304.cachedAt = time.Now().Add(-etagTTL - time.Minute)
-	transport.issues.Add(url, after304)
+	after304 := transport.issues.Get(url)
+	require.NotNil(t, after304)
+	assert.Equal(t, entry.cachedAt, after304.Value().cachedAt)
+	assert.Equal(t, expiresAt, after304.ExpiresAt(), "a 304 does not extend expiry")
+	entry.cachedAt = time.Now().Add(-etagTTL - time.Minute)
+	transport.issues.Set(url, entry, ttlcache.DefaultTTL)
 	assert.Equal(t, `<https://example.com/issues?page=3>; rel="next"`, read())
 }
 
@@ -477,6 +480,42 @@ func TestRevalidatingIssuePageCachesLargeBody(t *testing.T) {
 		assert.Equal(t, body, string(got))
 	}
 	assert.Equal(t, int64(1), conditionals.Load())
+}
+
+func TestRevalidatingIssuePagesEvictOverByteBudget(t *testing.T) {
+	t.Parallel()
+	var conditionals atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		etag := `"` + r.URL.RequestURI() + `"`
+		if r.Header.Get("If-None-Match") == etag {
+			conditionals.Add(1)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		_, _ = io.WriteString(w, strings.Repeat("x", 1024))
+	}))
+	t.Cleanup(server.Close)
+	// Two 1 KiB pages fit the budget; a third evicts the least recently read.
+	client := &http.Client{Transport: newRevalidatingTransportWithIssueBytes(http.DefaultTransport, 2048)}
+	read := func(page int) {
+		resp, err := client.Get(fmt.Sprintf("%s/repos/acme/widget/issues?page=%d", server.URL, page))
+		require.NoError(t, err)
+		got, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		require.Len(t, got, 1024)
+	}
+	read(1)
+	read(2)
+	read(1)
+	read(3)
+	assert.Equal(t, int64(1), conditionals.Load(), "page one was cached while two pages fit")
+	read(1)
+	read(3)
+	assert.Equal(t, int64(3), conditionals.Load(), "pages one and three remain cached")
+	read(2)
+	assert.Equal(t, int64(3), conditionals.Load(), "page two was evicted")
 }
 
 func TestRevalidatingIssuePagesSurviveManyRepositories(t *testing.T) {

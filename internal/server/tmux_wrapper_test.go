@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,6 +35,7 @@ import (
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/routepolicy"
 	"go.kenn.io/forge/internal/server/spokeapi"
+	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
@@ -185,6 +187,33 @@ func setupWrapperServerWithScriptAndDBAndServer(
 	srv *Server,
 ) {
 	t.Helper()
+	return setupWrapperServerWithOptions(t, script, ServerOptions{})
+}
+
+// workspaceRefreshClock is a workspace clock that a test can move past the
+// enrichment TTL. Without it, a read refreshes terminal activity at most once
+// every five seconds, so one slow tmux probe on a loaded runner can push new
+// output past a test's wait.
+type workspaceRefreshClock struct{ offset atomic.Int64 }
+
+func (c *workspaceRefreshClock) now() time.Time {
+	return time.Now().Add(time.Duration(c.offset.Load()))
+}
+
+// expire makes the next workspace read start a fresh terminal probe.
+func (c *workspaceRefreshClock) expire() {
+	c.offset.Add(int64(workspaceapi.EnrichmentTTL))
+}
+
+func setupWrapperServerWithOptions(
+	t *testing.T, script string, options ServerOptions,
+) (
+	client *apiclient.Client,
+	baseURL string,
+	database *db.DB,
+	srv *Server,
+) {
+	t.Helper()
 	if testing.Short() {
 		t.Skip("e2e tests skipped in short mode")
 	}
@@ -242,10 +271,9 @@ func setupWrapperServerWithScriptAndDBAndServer(
 			Command: []string{script, "wrap"},
 		},
 	}
-	srv = New(database, syncer, nil, "/", cfg, ServerOptions{
-		Clones:      clones,
-		WorktreeDir: worktreeDir,
-	})
+	options.Clones = clones
+	options.WorktreeDir = worktreeDir
+	srv = New(database, syncer, nil, "/", cfg, options)
 	serverfake.SeedPR(t, database, "acme", "widget", 1)
 
 	// Real listener — WebSocket Dial needs a real TCP endpoint.
@@ -429,7 +457,8 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	assert := assert.New(t)
 	script, record := writeTmuxRecorder(t)
 	setTmuxRecorderPaneOutput(t, record, "baseline output")
-	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	clock := &workspaceRefreshClock{}
+	client, _, database, srv := setupWrapperServerWithOptions(t, script, ServerOptions{WorkspaceNow: clock.now})
 	srv.cfgMu.Lock()
 	srv.cfg.Activity.UseWorkspaceActivityForRecency = true
 	srv.cfgMu.Unlock()
@@ -473,6 +502,7 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	require.Equalf(http.StatusOK, probe.StatusCode, "activity response: %s", probe.Body)
 	var initial *generated.ListActivityResp
 	require.Eventually(func() bool {
+		clock.expire()
 		response, requestErr := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Search: &search, Since: &since}})
 		if requestErr != nil || response.JSON200 == nil || response.JSON200.WorkspaceActivity == nil {
 			return false
@@ -621,7 +651,8 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 	assert := assert.New(t)
 	script, record := writeTmuxRecorder(t)
 	setTmuxRecorderPaneOutput(t, record, "baseline output")
-	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	clock := &workspaceRefreshClock{}
+	client, _, database, srv := setupWrapperServerWithOptions(t, script, ServerOptions{WorkspaceNow: clock.now})
 	srv.cfgMu.Lock()
 	srv.cfg.Activity.UseWorkspaceActivityForRecency = true
 	srv.cfgMu.Unlock()
@@ -656,6 +687,7 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 	params := &generated.ListActivityAuthorsQuery{Since: &since}
 	var response *generated.ListActivityAuthorsResp
 	require.Eventually(func() bool {
+		clock.expire()
 		got, requestErr := client.HTTP.ListActivityAuthorsWithResponse(ctx, &generated.ListActivityAuthorsRequestOptions{Query: params})
 		if requestErr != nil || got.JSON200 == nil || got.JSON200.Authors == nil {
 			return false
@@ -700,7 +732,8 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 	require := require.New(t)
 	script, record := writeTmuxRecorder(t)
 	setTmuxRecorderPaneOutput(t, record, "baseline output")
-	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	clock := &workspaceRefreshClock{}
+	client, _, database, srv := setupWrapperServerWithOptions(t, script, ServerOptions{WorkspaceNow: clock.now})
 	srv.cfgMu.Lock()
 	srv.cfg.Fleet.Enabled = true
 	srv.cfgMu.Unlock()
@@ -755,6 +788,7 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 	setTmuxRecorderPaneOutput(t, record, "workspace-only activity")
 	var response *generated.ListActivityResp
 	require.Eventually(func() bool {
+		clock.expire()
 		got, requestErr := client.HTTP.ListActivityWithResponse(t.Context(), &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Since: &since}})
 		if requestErr != nil || got.JSON200 == nil || got.JSON200.WorkspaceActivity == nil {
 			return false
@@ -781,7 +815,8 @@ func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
 	assert := assert.New(t)
 	script, record := writeTmuxRecorder(t)
 	setTmuxRecorderPaneOutput(t, record, "baseline output")
-	client, _, database, srv := setupWrapperServerWithScriptAndDBAndServer(t, script)
+	clock := &workspaceRefreshClock{}
+	client, _, database, srv := setupWrapperServerWithOptions(t, script, ServerOptions{WorkspaceNow: clock.now})
 	srv.cfgMu.Lock()
 	srv.cfg.Activity.UseWorkspaceActivityForRecency = true
 	srv.cfgMu.Unlock()
@@ -820,6 +855,7 @@ func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
 	for _, search := range []string{"1", "#1"} {
 		var response *generated.ListActivityResp
 		require.Eventually(func() bool {
+			clock.expire()
 			got, requestErr := client.HTTP.ListActivityWithResponse(ctx, &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Search: &search, Since: &since}})
 			if requestErr != nil || got.JSON200 == nil || got.JSON200.WorkspaceActivity == nil {
 				return false

@@ -3308,7 +3308,9 @@
   }
 
   function toggleTerminalPanel(): void {
-    if (actionsBlocked) return;
+    // Before the runtime read lands, terminalSessions is empty for every
+    // workspace, so opening would launch a shell beside ones already running.
+    if (actionsBlocked || !runtimeLive) return;
     if (terminalLayout.open) {
       terminalLayout = normalizeLayoutForSessions(runtimeSessions, {
         ...terminalLayout,
@@ -5526,7 +5528,7 @@
                 dock={terminalLayout.dock}
                 height={terminalLayout.height}
                 loading={terminalLaunching}
-                disabled={actionsBlocked}
+                disabled={actionsBlocked || !runtimeLive}
                 hostVisible={dockHostVisible}
                 inputActive={external
                   ? (surfaceLayout?.externalInputActive() ?? false)

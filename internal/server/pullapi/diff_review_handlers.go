@@ -480,6 +480,7 @@ func (s *Handler) syncAfterProviderMutation(
 			"number", number,
 			"source", source,
 		},
+		repo, number,
 		func(ctx context.Context) error {
 			return s.syncMergeRequestIfVisible(ctx, repo, number)
 		},

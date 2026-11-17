@@ -3003,7 +3003,7 @@ func (d *DB) UpdateMRCIStatusForHead(
 	ciHadPending bool,
 	observedAt *time.Time,
 ) error {
-	_, err := d.execContext(ctx, `
+	_, err := d.detailChangeExec(ctx, `
 		UPDATE forge_merge_requests
 		SET ci_status = ?, ci_checks_json = ?, ci_had_pending = ci_had_pending OR ?, ci_observed_at = ?
 		WHERE repo_id = ? AND number = ? AND platform_head_sha = ?`,

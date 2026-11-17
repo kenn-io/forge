@@ -72,7 +72,7 @@ func TestReviewBackgroundSyncsRecheckRemovedUpstream(t *testing.T) {
 	handler := New(Deps{
 		DB: database, Syncer: syncer,
 		EnqueueDetailSyncOrRerun: func(
-			_ string, _ []any, fn func(context.Context) error, _ func(context.Context),
+			_ string, _ []any, _ db.Repo, _ int, fn func(context.Context) error, _ func(context.Context),
 		) bool {
 			queued = fn
 			return true

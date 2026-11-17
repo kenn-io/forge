@@ -328,7 +328,8 @@ func TestDetailChangeTrackingRecordsCIChanges(t *testing.T) {
 	mrID, revision, accepted, err := d.UpsertMergeRequestSnapshotWithLabels(ctx, testMR(repoID, 1))
 	require.NoError(t, err)
 	require.True(t, accepted)
-	_, err = d.UpdateMergeRequestCISnapshot(ctx, mrID, revision, "success", `[{"name":"build"}]`, nil)
+	initialObservedAt := time.Now().Add(-time.Minute)
+	_, err = d.UpdateMergeRequestCISnapshot(ctx, mrID, revision, "success", `[{"name":"build"}]`, &initialObservedAt)
 	require.NoError(t, err)
 	tracked, changed := TrackDetailChanges(ctx, repoID, 1, false)
 	observedAt := time.Now()
@@ -404,4 +405,80 @@ func TestDetailChangeTrackingRecordsCommentEdits(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, applied)
 	require.True(t, changed())
+}
+
+func TestDetailChangeTrackingAuthorMetadata(t *testing.T) {
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "example", "author-metadata")
+	mr := testMR(repoID, 1)
+	mr.CommentCount = 1
+	mr.LastActivityAt = baseTime()
+	mr.AuthorAccountType = new("user")
+	mr.AuthorAssociation = new("CONTRIBUTOR")
+	mrID, revision, _, err := d.UpsertMergeRequestSnapshotWithLabels(ctx, mr)
+	require.NoError(t, err)
+	event := MREvent{MergeRequestID: mrID, EventType: "issue_comment", Author: "actor", AuthorAssociation: new("CONTRIBUTOR"), Body: "comment", DedupeKey: "comment-1", CreatedAt: baseTime()}
+	snapshot := MergeRequestChildSnapshot{MergeRequestID: mrID, ExpectedRevision: revision, CommentsComplete: true, Comments: []MREvent{event}}
+	_, err = d.CommitMergeRequestChildSnapshot(ctx, snapshot)
+	require.NoError(t, err)
+	tracked, changed := TrackDetailChanges(ctx, repoID, 1, false)
+	_, _, _, err = d.UpsertMergeRequestSnapshotWithLabels(tracked, mr)
+	require.NoError(t, err)
+	require.False(t, changed())
+	mr.AuthorAccountType = new("bot")
+	mr.AuthorAssociation = new("MEMBER")
+	_, revision, _, err = d.UpsertMergeRequestSnapshotWithLabels(tracked, mr)
+	require.NoError(t, err)
+	require.True(t, changed())
+	var accountType, association string
+	require.NoError(t, d.ro.QueryRowContext(ctx, `SELECT author_account_type, author_association FROM forge_merge_requests WHERE id = ?`, mrID).Scan(&accountType, &association))
+	require.Equal(t, "bot", accountType)
+	require.Equal(t, "MEMBER", association)
+	tracked, changed = TrackDetailChanges(ctx, repoID, 1, false)
+	snapshot.ExpectedRevision = revision
+	snapshot.Comments[0].AuthorAssociation = new("MEMBER")
+	_, err = d.CommitMergeRequestChildSnapshot(tracked, snapshot)
+	require.NoError(t, err)
+	require.True(t, changed())
+	require.NoError(t, d.ro.QueryRowContext(ctx, `SELECT author_association FROM forge_mr_events WHERE merge_request_id = ?`, mrID).Scan(&association))
+	require.Equal(t, "MEMBER", association)
+}
+
+func TestDetailChangeTrackingIssueAuthorAssociation(t *testing.T) {
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "example", "issue-author")
+	issue := &Issue{RepoID: repoID, PlatformID: 1, Number: 1, Author: "actor", AuthorAssociation: new("CONTRIBUTOR"), State: "open", CreatedAt: baseTime(), UpdatedAt: baseTime(), LastActivityAt: baseTime()}
+	_, _, _, err := d.UpsertIssueSnapshotWithLabels(ctx, issue)
+	require.NoError(t, err)
+	tracked, changed := TrackDetailChanges(ctx, repoID, 1, true)
+	_, _, _, err = d.UpsertIssueSnapshotWithLabels(tracked, issue)
+	require.NoError(t, err)
+	require.False(t, changed())
+	issue.AuthorAssociation = new("MEMBER")
+	_, _, _, err = d.UpsertIssueSnapshotWithLabels(tracked, issue)
+	require.NoError(t, err)
+	require.True(t, changed())
+	var association string
+	require.NoError(t, d.ro.QueryRowContext(ctx, `SELECT author_association FROM forge_issues WHERE repo_id = ? AND number = ?`, repoID, 1).Scan(&association))
+	require.Equal(t, "MEMBER", association)
+}
+
+func TestDetailChangeTrackingRecognizesFirstCIObservation(t *testing.T) {
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "example", "ci-observation")
+	mrID, revision, _, err := d.UpsertMergeRequestSnapshotWithLabels(ctx, testMR(repoID, 1))
+	require.NoError(t, err)
+	observed := time.Now().UTC()
+	tracked, changed := TrackDetailChanges(ctx, repoID, 1, false)
+	_, err = d.UpdateMergeRequestCISnapshot(tracked, mrID, revision, "", "", &observed)
+	require.NoError(t, err)
+	require.True(t, changed())
+	tracked, changed = TrackDetailChanges(ctx, repoID, 1, false)
+	later := observed.Add(time.Minute)
+	_, err = d.UpdateMergeRequestCISnapshot(tracked, mrID, revision, "", "", &later)
+	require.NoError(t, err)
+	require.False(t, changed())
 }

@@ -5,17 +5,20 @@ import (
 	"errors"
 	"log/slog"
 
+	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/platform"
 )
 
 type DetailSyncJob struct {
-	attrs []any
-	fn    func(context.Context) (bool, error)
-	batch func(context.Context) ([]RepositoryEvent, error)
-	force bool
-	repo  *RepositoryEvent
-	after func(context.Context)
+	attrs  []any
+	fn     func(context.Context) (bool, error)
+	batch  func(context.Context) ([]RepositoryEvent, error)
+	force  bool
+	repo   *RepositoryEvent
+	after  func(context.Context)
+	repoID int64
+	number int
 }
 
 // RepositoryEvent identifies the repository whose stored data changed.
@@ -50,6 +53,20 @@ func (s *Handlers) EnqueueRepositoryDetailSyncOrRerun(key string, attrs []any, r
 
 func (s *Handlers) EnqueueRepositoryBatchDetailSyncOrRerun(key string, attrs []any, fn func(context.Context) ([]RepositoryEvent, error)) bool {
 	return s.enqueueDetailSyncJob(key, DetailSyncJob{attrs: attrs, batch: fn}, true)
+}
+
+// EnqueueRepositoryDetailSyncWithCompletion tracks writes from the whole job.
+func (s *Handlers) EnqueueRepositoryDetailSyncWithCompletion(key string, attrs []any, repo db.Repo, number int, fn func(context.Context) error, after func(context.Context)) bool {
+	return s.enqueueTrackedDetailSync(key, attrs, repo, number, fn, after, false)
+}
+
+func (s *Handlers) EnqueueRepositoryDetailSyncOrRerunWithCompletion(key string, attrs []any, repo db.Repo, number int, fn func(context.Context) error, after func(context.Context)) bool {
+	return s.enqueueTrackedDetailSync(key, attrs, repo, number, fn, after, true)
+}
+
+func (s *Handlers) enqueueTrackedDetailSync(key string, attrs []any, repo db.Repo, number int, fn func(context.Context) error, after func(context.Context), rerun bool) bool {
+	event := RepositoryEvent{Provider: repo.Platform, PlatformHost: repo.PlatformHost, RepoPath: repo.RepoPath, Key: repo.Key}
+	return s.enqueueDetailSyncJob(key, DetailSyncJob{attrs: attrs, repo: &event, repoID: repo.ID, number: number, fn: func(ctx context.Context) (bool, error) { return false, fn(ctx) }, after: after}, rerun)
 }
 
 func (s *Handlers) EnqueueDetailSync(
@@ -102,7 +119,7 @@ func (s *Handlers) enqueueDetailSyncOpts(
 	after func(context.Context),
 	rerun bool,
 ) bool {
-	job := DetailSyncJob{attrs: attrs, fn: func(ctx context.Context) (bool, error) { return true, fn(ctx) }, after: after}
+	job := DetailSyncJob{attrs: attrs, fn: func(ctx context.Context) (bool, error) { err := fn(ctx); return err == nil, err }, after: after}
 	return s.enqueueDetailSyncJob(key, job, rerun)
 }
 
@@ -119,6 +136,9 @@ func (s *Handlers) enqueueDetailSyncJob(key string, job DetailSyncJob, rerun boo
 			if replaced, ok := (*s.DetailSyncPending)[key]; ok {
 				if replaced.after != nil {
 					job.after = chainDetailSyncCompletions(replaced.after, job.after)
+					if job.repoID == 0 && job.repo != nil {
+						job.repoID, job.number = replaced.repoID, replaced.number
+					}
 				}
 				job.force = replaced.force || (replaced.repo == nil && replaced.batch == nil)
 			}
@@ -162,6 +182,10 @@ func (s *Handlers) startDetailSyncJob(key string, job DetailSyncJob) bool {
 			}
 		}()
 
+		var tracked func() bool
+		if job.repoID != 0 {
+			ctx, tracked = db.TrackDetailChanges(ctx, job.repoID, job.number, false)
+		}
 		var changed bool
 		var repos []RepositoryEvent
 		var err error
@@ -174,19 +198,23 @@ func (s *Handlers) startDetailSyncJob(key string, job DetailSyncJob) bool {
 		diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err)
 		if err != nil && !isDiffErr {
 			slog.Warn("background detail sync failed", append(job.attrs, "err", err)...)
-			return
 		}
 		if diffErr != nil {
+			if job.repo == nil && job.batch == nil {
+				changed = true
+			}
 			slog.Warn(
 				"background PR diff sync failed",
 				append(job.attrs, "code", diffErr.Code, "err", diffErr.Err)...,
 			)
 		}
-		if job.after != nil {
+		if job.after != nil && (err == nil || isDiffErr) {
 			job.after(ctx)
-			changed = true
 		}
-		if changed || job.force {
+		if tracked != nil {
+			changed = changed || tracked()
+		}
+		if changed || (job.force && (err == nil || isDiffErr)) {
 			if job.force || (job.repo == nil && job.batch == nil) {
 				(*s.Hub).Broadcast(Event{Type: "data_changed", Data: struct{}{}})
 			} else {

@@ -39,7 +39,7 @@ func TestPublishWorkspacePushedHeadResultBroadcastsDomainEvents(t *testing.T) {
 	}})
 	observedAt := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
 
-	h.publishWorkspacePushedHeadResult(workspace.PushedHeadPassResult{
+	h.publishWorkspacePushedHeadResult(t.Context(), workspace.PushedHeadPassResult{
 		Associations: []workspace.WorkspacePRAssociation{{
 			WorkspaceID: "ws-issue", Provider: platform.KindGitHub,
 			PlatformHost: "github.com", RepoPath: "acme/widget",

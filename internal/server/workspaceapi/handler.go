@@ -108,7 +108,7 @@ type Deps struct {
 		context.Context, providerplane.RepositoryRoute, platform.RepositoryKey,
 	) (*db.Repo, error)
 	EnqueueDetailSync func(
-		string, []any, func(context.Context) error, func(context.Context),
+		string, []any, db.Repo, int, func(context.Context) error, func(context.Context),
 	) bool
 	ProviderWriteGate           providerplane.WriteAdmitter
 	LaunchSpecResolver          providerplane.WorkspaceLaunchSpecResolver
@@ -146,7 +146,7 @@ type Handler struct {
 	refreshProjectInventory        func(context.Context, string) error
 	lookupRepo                     func(context.Context, string, string, string, string) (*db.ActiveRepo, error)
 	resolveRepository              func(context.Context, providerplane.RepositoryRoute, platform.RepositoryKey) (*db.Repo, error)
-	enqueueDetailSync              func(string, []any, func(context.Context) error, func(context.Context)) bool
+	enqueueDetailSync              func(string, []any, db.Repo, int, func(context.Context) error, func(context.Context)) bool
 	providerWriteGate              providerplane.WriteAdmitter
 	launchSpecResolver             providerplane.WorkspaceLaunchSpecResolver
 	pullCandidates                 workspace.PullCandidateSource
@@ -349,13 +349,14 @@ func (h *Handler) RevalidateSelectedDiffs() {
 func (h *Handler) enqueueDetailSyncWithCompletion(
 	key string,
 	attrs []any,
+	repo db.Repo, number int,
 	run func(context.Context) error,
 	onSuccess func(context.Context),
 ) bool {
 	if h.enqueueDetailSync == nil {
 		return false
 	}
-	return h.enqueueDetailSync(key, attrs, run, onSuccess)
+	return h.enqueueDetailSync(key, attrs, repo, number, run, onSuccess)
 }
 
 // Register registers workspace and local-project REST operations.

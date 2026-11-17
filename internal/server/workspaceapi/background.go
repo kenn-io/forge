@@ -80,7 +80,7 @@ func (s *Handler) runWorkspacePushedHeadObserverPass(ctx context.Context) {
 		slog.Warn("workspace pushed-head observer pass failed", "err", err)
 		return
 	}
-	s.publishWorkspacePushedHeadResult(result)
+	s.publishWorkspacePushedHeadResult(ctx, result)
 	for _, fetch := range result.HeadRefFetches {
 		s.runBackground(func(ctx context.Context) {
 			s.runWorkspaceHeadRefFetch(ctx, fetch)
@@ -112,6 +112,7 @@ func (s *Handler) publishWorkspaceHeadRefRefreshed(workspaceID string) {
 }
 
 func (s *Handler) publishWorkspacePushedHeadResult(
+	ctx context.Context,
 	result workspace.PushedHeadPassResult,
 ) {
 	for i := range result.Associations {
@@ -153,7 +154,7 @@ func (s *Handler) publishWorkspacePushedHeadResult(
 				ObservedAt:   formatUTCRFC3339(change.ObservedAt),
 			},
 		})
-		s.enqueueWorkspacePushedHeadRefresh(change)
+		s.enqueueWorkspacePushedHeadRefresh(ctx, change)
 	}
 }
 

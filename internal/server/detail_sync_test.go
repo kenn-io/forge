@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -11,6 +12,7 @@ import (
 	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/syncevents"
 
@@ -96,8 +98,11 @@ func TestEnqueueIssueSyncBroadcastsOnlyPersistedChanges(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	body := "original"
 	when := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute).Truncate(time.Second)}
+	commentWhen := gh.Timestamp{Time: when.Time.Add(time.Minute)}
 	mock := &serverfake.MockGH{GetIssueFn: func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
 		return &gh.Issue{ID: new(int64(202)), Number: &number, State: new("open"), Title: new("Example issue"), Body: &body, CreatedAt: &when, UpdatedAt: &when}, nil
+	}, ListIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+		return []*gh.IssueComment{{ID: new(int64(99)), Body: new("comment"), CreatedAt: &commentWhen, UpdatedAt: &commentWhen}}, nil
 	}}
 	srv, database, _ := setupTestServerWithMock(t, mock)
 	serverfake.SeedIssue(t, database, "acme", "widget", 5, "open")
@@ -162,13 +167,14 @@ func TestEnqueuePRSyncBroadcastsChangesToChecksAndComments(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	when := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute).Truncate(time.Second)}
 	comment := "original"
+	commentWhen := gh.Timestamp{Time: when.Time.Add(time.Minute)}
 	check := "success"
 	mock := &serverfake.MockGH{
 		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
 			return &gh.PullRequest{ID: new(int64(1000)), Number: &number, State: new("open"), Title: new("Example pull"), Body: new("body"), CreatedAt: &when, UpdatedAt: &when, Head: &gh.PullRequestBranch{SHA: new("abc123"), Ref: new("feature")}, Base: &gh.PullRequestBranch{Ref: new("main")}}, nil
 		},
 		ListIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
-			return []*gh.IssueComment{{ID: new(int64(99)), Body: &comment, CreatedAt: &when, UpdatedAt: &when}}, nil
+			return []*gh.IssueComment{{ID: new(int64(99)), Body: &comment, CreatedAt: &commentWhen, UpdatedAt: &commentWhen}}, nil
 		},
 		ListCheckRunsForRefFn: func(context.Context, string, string, string) ([]*gh.CheckRun, error) {
 			return []*gh.CheckRun{{ID: new(int64(1)), Name: new("build"), Status: new("completed"), Conclusion: &check}}, nil
@@ -214,4 +220,89 @@ func TestEnqueuePRSyncBroadcastsChangesToChecksAndComments(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, eventRows, 1)
 	require.Equal(t, "edited", eventRows[0].Body)
+}
+
+func TestRepositoryDetailSyncPublishesPersistedChangesAfterFailure(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	srv, database, _ := setupTestServer(t)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	mr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	repo, err := database.GetRepoByID(t.Context(), mr.RepoID)
+	require.NoError(t, err)
+	require.NotNil(t, repo)
+	eventRepo := syncevents.RepositoryEvent{Provider: repo.Platform, PlatformHost: repo.PlatformHost, RepoPath: repo.RepoPath, Key: repo.Key}
+	events, _ := srv.hub.Subscribe(t.Context(), false)
+	sync := func(body string, syncErr error) {
+		require.True(t, srv.syncevents.EnqueueRepositoryDetailSync("acceptance", nil, eventRepo, func(ctx context.Context) (bool, error) {
+			ctx, changed := db.TrackDetailChanges(ctx, repo.ID, 1, false)
+			current, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
+			if err != nil {
+				return false, err
+			}
+			current.Body = body
+			_, _, _, err = database.UpsertMergeRequestSnapshotWithLabels(ctx, current)
+			if err != nil {
+				return changed(), err
+			}
+			return changed(), syncErr
+		}))
+		srv.bg.Wait()
+	}
+	sync(mr.Body, nil)
+	select {
+	case event := <-events:
+		require.FailNow(t, "unchanged refresh broadcast", "%+v", event)
+	default:
+	}
+	sync("edited", errors.New("later child fetch failed"))
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 1)
+	require.NoError(t, err)
+	require.Equal(t, "edited", stored.Body)
+	select {
+	case event := <-events:
+		require.Equal(t, "data_changed", event.Event.Type)
+		payload, err := json.Marshal(event.Event.Data)
+		require.NoError(t, err)
+		require.Contains(t, string(payload), `"repo_path":"acme/widget"`)
+		var legacy struct{}
+		require.NoError(t, json.Unmarshal(payload, &legacy))
+	default:
+		require.FailNow(t, "persisted change was not broadcast")
+	}
+	select {
+	case event := <-events:
+		require.FailNow(t, "extra event", "%+v", event)
+	default:
+	}
+}
+
+func TestRepositoryDetailSyncIncludesCompletionWrites(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	srv, database, _ := setupTestServer(t)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+	mr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
+	require.NoError(t, err)
+	repo, err := database.GetRepoByID(t.Context(), mr.RepoID)
+	require.NoError(t, err)
+	events, _ := srv.hub.Subscribe(t.Context(), false)
+	result := make(chan error, 1)
+	require.True(t, srv.syncevents.EnqueueRepositoryDetailSyncWithCompletion("completion", nil, *repo, 1, func(context.Context) error { return nil }, func(ctx context.Context) {
+		result <- database.UpdateMRCIStatusForHead(ctx, repo.ID, 1, mr.PlatformHeadSHA, "failure", "[]", false, nil)
+	}))
+	srv.bg.Wait()
+	require.NoError(t, <-result)
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 1)
+	require.NoError(t, err)
+	require.Equal(t, "failure", stored.CIStatus)
+	select {
+	case event := <-events:
+		require.Equal(t, "data_changed", event.Event.Type)
+		payload, err := json.Marshal(event.Event.Data)
+		require.NoError(t, err)
+		require.Contains(t, string(payload), `"repo_path":"acme/widget"`)
+	default:
+		require.FailNow(t, "completion write was not broadcast")
+	}
 }

@@ -106,6 +106,21 @@ func runDevboxGitHub(ctx context.Context, command *cobra.Command, socket, reposi
 	if args[0] != "pr" || !strings.Contains(" create edit comment view list checks close reopen ready merge ", " "+args[1]+" ") {
 		return errors.New("supported GitHub commands: pr create, edit, comment, view, list, checks, close, reopen, ready, merge")
 	}
+	checkAuthor := strings.Contains(" close reopen ready merge ", " "+args[1]+" ")
+	var selector, repo string
+	if checkAuthor {
+		var help bool
+		var err error
+		selector, repo, help, err = devboxGitHubActionFlags(args)
+		if err != nil {
+			return err
+		}
+		if help {
+			child := procutil.CommandContext(ctx, "gh", args...)
+			child.Stdin, child.Stdout, child.Stderr = command.InOrStdin(), command.OutOrStdout(), command.ErrOrStderr()
+			return child.Run()
+		}
+	}
 	if _, _, err := devbox.ParseRepository(repository); err != nil {
 		return err
 	}
@@ -120,11 +135,7 @@ func runDevboxGitHub(ctx context.Context, command *cobra.Command, socket, reposi
 		return err
 	}
 	defer os.RemoveAll(privateConfig)
-	if strings.Contains(" close reopen ready merge ", " "+args[1]+" ") {
-		selector, repo, err := devboxGitHubActionFlags(args)
-		if err != nil {
-			return err
-		}
+	if checkAuthor {
 		viewArgs := []string{"pr", "view"}
 		if selector != "" {
 			viewArgs = append(viewArgs, selector)
@@ -171,9 +182,10 @@ func devboxGitHubEnv(token, config, repository string) []string {
 		"GH_REPO=github.com/"+repository, "GH_HOST=github.com", "GH_PROMPT_DISABLED=1")
 }
 
-func devboxGitHubActionFlags(args []string) (string, string, error) {
+func devboxGitHubActionFlags(args []string) (string, string, bool, error) {
 	flags := pflag.NewFlagSet("gh pr "+args[1], pflag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	flags.BoolP("help", "h", false, "")
 	flags.StringP("repo", "R", "", "")
 	switch args[1] {
 	case "close":
@@ -199,11 +211,12 @@ func devboxGitHubActionFlags(args []string) (string, string, error) {
 		}
 	}
 	if err := flags.Parse(args[2:]); err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 	repo, _ := flags.GetString("repo")
+	help, _ := flags.GetBool("help")
 	if flags.NArg() > 1 {
-		return "", "", errors.New("expected at most one pull request selector")
+		return "", "", false, errors.New("expected at most one pull request selector")
 	}
-	return flags.Arg(0), repo, nil
+	return flags.Arg(0), repo, help, nil
 }

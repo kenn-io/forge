@@ -42,6 +42,24 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("VIEW_LOG", filepath.Join(dir, "view"))
 	t.Setenv("AUTHOR_JSON", `{"author":{"login":"app/example-app","is_bot":true}}`)
+	for _, tc := range []struct{ action, helpFlag string }{
+		{"close", "--help"},
+		{"reopen", "--help"},
+		{"ready", "--help"},
+		{"merge", "--help"},
+		{"close", "-h"},
+	} {
+		t.Run(tc.action+" help "+tc.helpFlag, func(t *testing.T) {
+			before := brokerCalls.Load()
+			var output bytes.Buffer
+			cmd := &cobra.Command{}
+			cmd.SetOut(&output)
+			err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", tc.action, "42", tc.helpFlag})
+			require.NoError(t, err)
+			assert.Contains(t, output.String(), "pr "+tc.action+" 42 "+tc.helpFlag)
+			assert.Equal(t, before, brokerCalls.Load())
+		})
+	}
 
 	for _, tc := range []struct {
 		action string
@@ -95,6 +113,17 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		cmd := &cobra.Command{}
 		cmd.SetOut(&output)
 		require.Error(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42"}))
+		assert.Empty(t, output.String())
+	})
+	t.Run("help false still checks author", func(t *testing.T) {
+		t.Setenv("AUTHOR_JSON", `{"author":{"login":"alice","is_bot":false}}`)
+		before := brokerCalls.Load()
+		var output bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetOut(&output)
+		err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42", "--help=false"})
+		require.ErrorContains(t, err, "alice")
+		assert.Equal(t, before+1, brokerCalls.Load())
 		assert.Empty(t, output.String())
 	})
 	t.Run("invalid action flag", func(t *testing.T) {

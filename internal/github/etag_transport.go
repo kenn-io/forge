@@ -146,11 +146,10 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // checkListDetector reads the repo's most recently updated item for a
 // paginated list. Opening, closing, merging, or editing any item bumps its
-// update time and moves it to the top, so an unchanged top item proves the
-// whole list is unchanged. It then answers the list request with a 304 that
-// costs no quota. Otherwise it returns the detector validator to store once
-// the full list arrives. It vouches only while the list entry is fresh, so a
-// full read still happens every etagTTL.
+// update time and moves it to the top. An unchanged top item answers the list
+// request with a 304 that costs no quota. Deleting or transferring a non-top
+// issue can go unnoticed until the full read after etagTTL. Otherwise it
+// returns the detector validator to store once the full list arrives.
 func (t *etagTransport) checkListDetector(
 	req *http.Request, entry etagEntry, fresh bool,
 ) (*http.Response, string) {
@@ -208,12 +207,11 @@ func listResource(u *urlpkg.URL) (owner, name, resource string, ok bool) {
 }
 
 // detectorEligible reports whether a paginated list can be vouched for by
-// its most recently updated item. Only pull request lists qualify: a pull
-// request cannot be deleted or transferred, but an issue can, and removing
-// one that is not on top changes no update time.
+// its most recently updated item. Deleted or transferred non-top issues are
+// detected by the full read after the validator expires.
 func detectorEligible(u *urlpkg.URL) bool {
-	_, _, resource, ok := listResource(u)
-	return ok && strings.HasPrefix(resource, "pulls?")
+	_, _, _, ok := listResource(u)
+	return ok
 }
 
 // claimSeed moves a saved validator for this list into the cache.

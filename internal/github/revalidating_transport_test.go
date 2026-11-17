@@ -379,36 +379,42 @@ func TestRevalidatingIssueListKeepsOuterConditional(t *testing.T) {
 	assert.Equal(t, int64(1), conditionals.Load())
 }
 
-func TestRevalidatingIssuePagesSkipOversizedBodiesAndComments(t *testing.T) {
+func TestRevalidatingIssuePagesBodyLimitsAndComments(t *testing.T) {
 	t.Parallel()
-	var conditionals atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("If-None-Match") != "" {
-			conditionals.Add(1)
-		}
-		w.Header().Set("ETag", `"page"`)
-		if strings.HasSuffix(r.URL.Path, "/issues") {
-			_, _ = w.Write([]byte(strings.Repeat("x", issuePageBodyLimit+1)))
-			return
-		}
-		if strings.HasSuffix(r.URL.Path, "/labels") {
-			_, _ = w.Write([]byte(strings.Repeat("x", revalidatedBodyLimit+1)))
-			return
-		}
-		_, _ = w.Write([]byte("comments"))
-	}))
-	t.Cleanup(server.Close)
-	client := &http.Client{Transport: newRevalidatingTransport(http.DefaultTransport)}
-	for _, path := range []string{"/repos/acme/widget/issues?state=open", "/repos/acme/widget/labels", "/repos/acme/widget/issues/1/comments"} {
-		for range 2 {
-			resp, err := client.Get(server.URL + path)
-			require.NoError(t, err)
-			_, err = io.Copy(io.Discard, resp.Body)
-			require.NoError(t, err)
-			require.NoError(t, resp.Body.Close())
-		}
+	for _, tc := range []struct {
+		name, path             string
+		size, wantConditionals int
+	}{
+		{"large issue page", "/repos/acme/widget/issues?state=open", 100 * 45 * 1024, 1},
+		{"oversized issue page", "/repos/acme/widget/issues?state=open", issuePageBodyLimit + 1, 0},
+		{"oversized labels", "/repos/acme/widget/labels", revalidatedBodyLimit + 1, 0},
+		{"comments", "/repos/acme/widget/issues/1/comments", 8, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := strings.Repeat("x", tc.size)
+			var conditionals atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("If-None-Match") == `"page"` {
+					conditionals.Add(1)
+					w.WriteHeader(http.StatusNotModified)
+					return
+				}
+				w.Header().Set("ETag", `"page"`)
+				_, _ = io.WriteString(w, body)
+			}))
+			t.Cleanup(server.Close)
+			client := &http.Client{Transport: newRevalidatingTransport(http.DefaultTransport)}
+			for range 2 {
+				resp, err := client.Get(server.URL + tc.path)
+				require.NoError(t, err)
+				got, err := io.ReadAll(resp.Body)
+				require.NoError(t, err)
+				require.NoError(t, resp.Body.Close())
+				assert.Equal(t, body, string(got))
+			}
+			assert.Equal(t, int64(tc.wantConditionals), conditionals.Load())
+		})
 	}
-	assert.Zero(t, conditionals.Load())
 }
 
 func TestRevalidatingIssuePageExpiresAndRefreshesLink(t *testing.T) {
@@ -453,129 +459,68 @@ func TestRevalidatingIssuePageExpiresAndRefreshesLink(t *testing.T) {
 	assert.Equal(t, `<https://example.com/issues?page=3>; rel="next"`, read())
 }
 
-func TestRevalidatingIssuePageCachesLargeBody(t *testing.T) {
+func TestRevalidatingIssuePagesKeepHitsOverLimits(t *testing.T) {
 	t.Parallel()
-	body := strings.Repeat("x", 100*45*1024) // 100 issues averaging 45 KB
-	var conditionals atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("If-None-Match") == `"page"` {
-			conditionals.Add(1)
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", `"page"`)
-		_, _ = io.WriteString(w, body)
-	}))
-	t.Cleanup(server.Close)
-	client := &http.Client{Transport: newRevalidatingTransport(http.DefaultTransport)}
-	for range 2 {
-		resp, err := client.Get(server.URL + "/repos/acme/widget/issues?state=open&page=2")
-		require.NoError(t, err)
-		got, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		require.NoError(t, resp.Body.Close())
-		assert.Equal(t, body, string(got))
-	}
-	assert.Equal(t, int64(1), conditionals.Load())
-}
-
-func TestRevalidatingIssuePagesKeepHitsOverByteBudget(t *testing.T) {
-	t.Parallel()
-	var conditionals atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		etag := `"` + r.URL.RequestURI() + `"`
-		if r.Header.Get("If-None-Match") == etag {
-			conditionals.Add(1)
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		_, _ = io.WriteString(w, strings.Repeat("x", 1024))
-	}))
-	t.Cleanup(server.Close)
-	// Two 1 KiB pages fit; each pass reads three repositories' pages in turn.
-	transport := newRevalidatingTransport(http.DefaultTransport)
-	transport.issues.limit = 2048
-	client := &http.Client{Transport: transport}
-	for range 3 {
-		for repo := range 3 {
-			resp, err := client.Get(fmt.Sprintf("%s/repos/acme/repo-%d/issues?state=open", server.URL, repo))
-			require.NoError(t, err)
-			_, err = io.Copy(io.Discard, resp.Body)
-			require.NoError(t, err)
-			require.NoError(t, resp.Body.Close())
-		}
-	}
-	assert.Equal(t, int64(4), conditionals.Load(), "the two pages that fit cost a 304 on each later pass")
-}
-
-func TestRevalidatingIssuePagesSurviveManyRepositories(t *testing.T) {
-	t.Parallel()
-	var conditionals atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		etag := `"` + r.URL.RequestURI() + `"`
-		if r.Header.Get("If-None-Match") == etag {
-			conditionals.Add(1)
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		_, _ = w.Write([]byte(`[]`))
-	}))
-	t.Cleanup(server.Close)
-	client := &http.Client{Transport: newRevalidatingTransport(http.DefaultTransport)}
-	const repos, pages = 513, 4
-	for range 2 {
-		for repo := range repos {
-			for page := 1; page <= pages; page++ {
-				resp, err := client.Get(fmt.Sprintf("%s/repos/acme/repo-%d/issues?state=open&page=%d", server.URL, repo, page))
+	for _, tc := range []struct {
+		name                                            string
+		limit, maxPages, repos, pages, passes, bodySize int
+		want                                            int64
+	}{
+		{"byte limit", 2048, 0, 3, 1, 3, 1024, 4},
+		{"entry limit", 0, 2, 3, 1, 3, 2, 4},
+		{"many repositories", 0, 0, 513, 4, 2, 2, 2052},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var conditionals atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				etag := `"` + r.URL.RequestURI() + `"`
+				if r.Header.Get("If-None-Match") == etag {
+					conditionals.Add(1)
+					w.WriteHeader(http.StatusNotModified)
+					return
+				}
+				w.Header().Set("ETag", etag)
+				_, _ = io.WriteString(w, strings.Repeat("x", tc.bodySize))
+			}))
+			t.Cleanup(server.Close)
+			transport := newRevalidatingTransport(http.DefaultTransport)
+			if tc.limit > 0 {
+				transport.issues.limit = tc.limit
+			}
+			if tc.maxPages > 0 {
+				transport.issues.maxPages = tc.maxPages
+			}
+			client := &http.Client{Transport: transport}
+			key := func(repo, page int) string {
+				return fmt.Sprintf("%s/repos/acme/repo-%d/issues?state=open&page=%d", server.URL, repo, page)
+			}
+			get := func(repo, page int) {
+				resp, err := client.Get(key(repo, page))
+				require.NoError(t, err)
+				_, err = io.Copy(io.Discard, resp.Body)
 				require.NoError(t, err)
 				require.NoError(t, resp.Body.Close())
 			}
-		}
+			for range tc.passes {
+				for repo := range tc.repos {
+					for page := 1; page <= tc.pages; page++ {
+						get(repo, page)
+					}
+				}
+			}
+			assert.Equal(t, tc.want, conditionals.Load())
+			if tc.maxPages == 0 {
+				return
+			}
+			for repo := range 2 {
+				entry, ok := transport.issues.get(key(repo, 1))
+				require.True(t, ok)
+				entry.cachedAt = time.Now().Add(-etagTTL - time.Minute)
+				transport.issues.add(key(repo, 1), entry)
+			}
+			get(2, 1)
+			get(2, 1)
+			assert.Equal(t, int64(5), conditionals.Load())
+		})
 	}
-	assert.Equal(t, int64(2052), conditionals.Load(), "every page of the second pass costs a 304")
-}
-
-func TestRevalidatingIssuePagesKeepHitsOverEntryLimit(t *testing.T) {
-	t.Parallel()
-	var conditionals atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		etag := `"` + r.URL.RequestURI() + `"`
-		if r.Header.Get("If-None-Match") == etag {
-			conditionals.Add(1)
-			w.WriteHeader(http.StatusNotModified)
-			return
-		}
-		w.Header().Set("ETag", etag)
-		_, _ = w.Write([]byte(`[]`))
-	}))
-	t.Cleanup(server.Close)
-	// Two empty pages fit; each pass reads three repositories' pages in turn.
-	transport := newRevalidatingTransport(http.DefaultTransport)
-	transport.issues.maxPages = 2
-	client := &http.Client{Transport: transport}
-	get := func(repo int) {
-		resp, err := client.Get(fmt.Sprintf("%s/repos/acme/repo-%d/issues?state=open", server.URL, repo))
-		require.NoError(t, err)
-		require.NoError(t, resp.Body.Close())
-	}
-	for range 3 {
-		for repo := range 3 {
-			get(repo)
-		}
-	}
-	assert.Equal(t, int64(4), conditionals.Load(), "the two pages that fit cost a 304 on each later pass")
-
-	// Once the cached pages expire, a refused page takes their place.
-	for repo := range 2 {
-		key := fmt.Sprintf("%s/repos/acme/repo-%d/issues?state=open", server.URL, repo)
-		entry, ok := transport.issues.get(key)
-		require.True(t, ok)
-		entry.cachedAt = time.Now().Add(-etagTTL - time.Minute)
-		transport.issues.add(key, entry)
-	}
-	get(2)
-	get(2)
-	assert.Equal(t, int64(5), conditionals.Load(), "the third page is cached after the expired pages are removed")
 }

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,7 +23,9 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 	socket := filepath.Join(dir, "broker.sock")
 	listener, err := net.Listen("unix", socket)
 	require.NoError(t, err)
+	var brokerCalls atomic.Int32
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		brokerCalls.Add(1)
 		assert.Equal(t, "/v1/credentials", r.URL.Path)
 		var body bytes.Buffer
 		_, err := body.ReadFrom(r.Body)
@@ -46,4 +49,14 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 			assert.Equal(t, "pr "+action+" 42|test-token|github.com/example/project", output.String())
 		})
 	}
+	t.Run("reject unsupported verb", func(t *testing.T) {
+		before := brokerCalls.Load()
+		var output bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetOut(&output)
+		err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "review", "42"})
+		require.ErrorContains(t, err, "supported GitHub commands")
+		assert.Equal(t, before, brokerCalls.Load())
+		assert.Empty(t, output.String())
+	})
 }

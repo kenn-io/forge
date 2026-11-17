@@ -23156,7 +23156,7 @@ func TestSyncDropsAndReportsRemovedIssuesAfterIdleSyncs(t *testing.T) {
 			return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotFound}, Message: "Not Found"}
 		}
 		require.Equal(t, 251, number)
-		return &gh.Issue{RepositoryURL: gh.Ptr("https://api.github.com/repos/acme/other")}, nil
+		return &gh.Issue{RepositoryURL: new("https://api.github.com/repos/acme/other")}, nil
 	}
 	d := openTestDB(t)
 	repos := []RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}}

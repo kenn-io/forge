@@ -272,7 +272,7 @@ type issuePageServer struct {
 func (s *issuePageServer) handler(t *testing.T) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v3/repos/acme/widget/issues" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
+			assert.Failf(t, "unexpected path", "%s", r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}

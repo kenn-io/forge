@@ -21,7 +21,7 @@ import (
 func TestDevboxGitHubPullRequestActions(t *testing.T) {
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "broker.sock")
-	listener, err := net.Listen("unix", socket)
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socket)
 	require.NoError(t, err)
 	var brokerCalls atomic.Int32
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

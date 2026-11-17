@@ -154,10 +154,9 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	assert.Zero(provider.calls.Load(), "reports must read SQLite only")
 
 	filter := []string{"github|github.test/owner/repo"}
-	require.NoError(database.CommitArchiveInventoryPage(t.Context(), db.ArchiveInventoryCommit{
-		RepoID: repo.ID, ItemType: db.ArchiveItemTypeIssue, ScanGeneration: 1,
-		Exhausted: true, Now: now,
-	}))
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE forge_archive_repos SET last_progress_at = ? WHERE repo_id = ?`, now, repo.ID)
+	require.NoError(err)
 	statusResponse, err := client.HTTP.ListArchiveStatusWithResponse(t.Context(), &generated.ListArchiveStatusRequestOptions{Query: &generated.ListArchiveStatusQuery{Repo: filter}})
 	require.NoError(err)
 	require.NotNil(statusResponse.JSON200)

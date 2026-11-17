@@ -941,24 +941,36 @@ func TestNewAtDrainsMultipleStaleAdmissionsWithinOneDeadline(t *testing.T) {
 		owner, err := newAt(root)
 		result <- newResult{owner: owner, err: err}
 	}()
+	// One shared deadline stops both stalled startups one cleanupTimeout plus
+	// the stop grace after newAt starts; a deadline per admission stops the
+	// second one at least a cleanupTimeout later. Time the stops, not newAt's
+	// return: after the stops, reaping lists processes and deletes directories
+	// under no cleanup deadline, and a busy disk can stall that for seconds.
+	stopDeadline := time.NewTimer(2*cleanupTimeout + time.Second)
+	defer stopDeadline.Stop()
+	for _, startup := range startups {
+		select {
+		case err := <-startup.done:
+			require.Error(err)
+		case <-stopDeadline.C:
+			stacktest.Dump(t)
+			for _, startup := range startups {
+				_ = startup.command.Process.Kill()
+			}
+			if created := <-result; created.owner != nil {
+				t.Cleanup(func() { _ = created.owner.Cleanup() })
+			}
+			require.Fail("stale admissions did not share one cleanup deadline")
+		}
+		requireProcessGone(t, startup.command.Process.Pid)
+	}
 	select {
 	case created := <-result:
 		require.NoError(created.err)
 		t.Cleanup(func() { _ = created.owner.Cleanup() })
-	case <-time.After(2*cleanupTimeout + time.Second):
+	case <-time.After(30 * time.Second):
 		stacktest.Dump(t)
-		for _, startup := range startups {
-			_ = startup.command.Process.Kill()
-		}
-		created := <-result
-		if created.owner != nil {
-			t.Cleanup(func() { _ = created.owner.Cleanup() })
-		}
-		require.Fail("stale admissions did not share one cleanup deadline")
-	}
-	for _, startup := range startups {
-		require.Error(<-startup.done)
-		requireProcessGone(t, startup.command.Process.Pid)
+		require.Fail("newAt did not return after stopping stale admissions")
 	}
 }
 

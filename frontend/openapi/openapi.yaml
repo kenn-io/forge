@@ -1432,6 +1432,10 @@ components:
         initial_started_at:
           format: date-time
           type: string
+        last_progress_at:
+          description: Latest finished item or committed inventory page
+          format: date-time
+          type: string
         maintenance_succeeded_at:
           format: date-time
           type: string

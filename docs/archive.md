@@ -70,6 +70,8 @@ Progress survives daemon restarts. Repositories advance independently.
 kenn-forge archive status --json
 ```
 
+Each repository's `last_progress_at` records its latest finished item or committed inventory page; it can move backward when work is reopened or blocked.
+
 Common states:
 
 - **current**: supported inventory and item details are complete.

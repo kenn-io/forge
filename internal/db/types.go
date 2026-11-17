@@ -539,6 +539,7 @@ type ArchiveRepoProgress struct {
 	ActivePhases    []ArchivePhase
 	Counts          ArchiveProgressCounts
 	BudgetWaitUntil *time.Time
+	LastProgressAt  *time.Time
 }
 
 type RepoSummary struct {

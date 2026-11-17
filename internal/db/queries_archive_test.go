@@ -1514,6 +1514,46 @@ func TestArchiveDeriveProgressStatusAndOrderedPhases(t *testing.T) {
 	}
 }
 
+func TestArchiveGetProgressReportsLastProgressAt(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	first := insertTestRepo(t, d, "acme", "first")
+	second := insertTestRepo(t, d, "acme", "second")
+	empty := insertTestRepo(t, d, "acme", "empty")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{first, second, empty}, now))
+	require.NoError(d.StartFullArchives(ctx, []int64{first, second, empty}, now))
+	for _, repo := range []int64{first, second} {
+		insertArchiveItemForTest(t, d, repo, ArchiveItemTypeIssue, 1, now)
+		insertArchiveProgressForTest(t, d, repo, ArchiveItemTypeIssue, 1, ArchiveDatasetLookup, ArchiveDatasetProgressComplete)
+	}
+	insertArchiveItemForTest(t, d, first, ArchiveItemTypeIssue, 2, now)
+	insertArchiveProgressForTest(t, d, first, ArchiveItemTypeIssue, 2, ArchiveDatasetLookup, ArchiveDatasetProgressFailed)
+	_, err := d.WriteDB().ExecContext(ctx, `UPDATE forge_archive_dataset_progress SET completed_at = ? WHERE repo_id IN (?, ?)`, formatDatasetProgressTime(now.Add(-time.Hour)), first, second)
+	require.NoError(err)
+	_, err = d.WriteDB().ExecContext(ctx, `UPDATE forge_archive_dataset_progress SET completed_at = ? WHERE repo_id = ? AND item_number = 2`, formatDatasetProgressTime(now.Add(time.Hour)), first)
+	require.NoError(err)
+	_, err = d.WriteDB().ExecContext(ctx, `UPDATE forge_archive_repo_scans SET page_count = 1, status = 'running', updated_at = ? WHERE repo_id = ? AND scan = 'issue_inventory'`, formatDatasetProgressTime(now), first)
+	require.NoError(err)
+	_, err = d.WriteDB().ExecContext(ctx, `UPDATE forge_archive_repo_scans SET page_count = 1, status = 'blocked', updated_at = ? WHERE repo_id = ? AND scan = 'issue_inventory'`, formatDatasetProgressTime(now.Add(time.Hour)), second)
+	require.NoError(err)
+	progress, err := d.GetArchiveProgress(ctx, ArchiveProgressOpts{Now: now})
+	require.NoError(err)
+	require.Len(progress, 3)
+	byRepo := make(map[int64]*time.Time)
+	for _, row := range progress {
+		byRepo[row.RepoID] = row.LastProgressAt
+	}
+	require.NotNil(byRepo[first])
+	require.NotNil(byRepo[second])
+	assert.Equal(now, *byRepo[first])
+	assert.Equal(now.Add(-time.Hour), *byRepo[second])
+	assert.Nil(byRepo[empty])
+}
+
 func TestArchiveGetProgressDerivesCountsFromDurableRows(t *testing.T) {
 	t.Parallel()
 

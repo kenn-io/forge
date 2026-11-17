@@ -67,6 +67,7 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	}, (*started.JSON200)[0].ActivePhases)
 	assert.Equal(generated.ArchiveCoverageResponseCommentsSupported, (*started.JSON200)[0].Coverage.Comments)
 	assert.NotNil((*started.JSON200)[0].InitialStartedAt)
+	assert.NotContains(string(started.Body), "last_progress_at")
 	assert.Equal(int32(1), wakeCount.Load())
 	assert.Zero(provider.calls.Load(), "start must only mutate durable state and wake the worker")
 
@@ -154,11 +155,17 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 	assert.Zero(provider.calls.Load(), "reports must read SQLite only")
 
 	filter := []string{"github|github.test/owner/repo"}
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE forge_archive_repo_scans SET page_count = 1, status = 'running', updated_at = ?
+		WHERE repo_id = ? AND scan = 'issue_inventory'`, now.Format(time.RFC3339Nano), repo.ID)
+	require.NoError(err)
 	statusResponse, err := client.HTTP.ListArchiveStatusWithResponse(t.Context(), &generated.ListArchiveStatusRequestOptions{Query: &generated.ListArchiveStatusQuery{Repo: filter}})
 	require.NoError(err)
 	require.NotNil(statusResponse.JSON200)
 	require.Len(*statusResponse.JSON200, 1)
 	assert.Equal("github", (*statusResponse.JSON200)[0].Repository.Provider)
+	require.NotNil((*statusResponse.JSON200)[0].LastProgressAt)
+	assert.Equal(now, *(*statusResponse.JSON200)[0].LastProgressAt)
 
 	resetAt := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
 	_, err = database.WriteDB().ExecContext(t.Context(), `

@@ -1101,14 +1101,49 @@ func (d *DB) getArchiveProgress(
 	if err != nil {
 		return nil, err
 	}
+	lastProgress, err := loadArchiveLastProgress(ctx, tx, repoIDs)
+	if err != nil {
+		return nil, err
+	}
 	progress := make([]ArchiveRepoProgress, len(states))
 	for i, state := range states {
 		progress[i] = deriveArchiveProgress(state, countsByRepo[state.RepoID], opts.Now)
+		progress[i].LastProgressAt = lastProgress[state.RepoID]
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit archive progress snapshot: %w", err)
 	}
 	return progress, nil
+}
+
+func loadArchiveLastProgress(ctx context.Context, queryer rowQueryer, repoIDs []int64) (map[int64]*time.Time, error) {
+	rows, err := queryer.QueryContext(ctx, fmt.Sprintf(`
+		SELECT repo_id, MAX(progress_at) FROM (
+			SELECT repo_id, updated_at AS progress_at FROM forge_archive_repo_scans
+			WHERE scan IN ('issue_inventory', 'merge_request_inventory')
+				AND page_count > 0 AND status IN ('running', 'complete')
+			UNION ALL
+			SELECT repo_id, completed_at AS progress_at FROM forge_archive_dataset_progress
+			WHERE dataset = 'lookup' AND status IN ('complete', 'terminal')
+		) WHERE repo_id IN (%s) GROUP BY repo_id`, sqlPlaceholders(len(repoIDs))), archiveRepoIDArgs(repoIDs)...)
+	if err != nil {
+		return nil, fmt.Errorf("load archive last progress: %w", err)
+	}
+	defer rows.Close()
+	result := make(map[int64]*time.Time, len(repoIDs))
+	for rows.Next() {
+		var repoID int64
+		var value sql.NullString
+		if err := rows.Scan(&repoID, &value); err != nil {
+			return nil, fmt.Errorf("scan archive last progress: %w", err)
+		}
+		parsed, err := parseDatasetProgressTimePtr(value)
+		if err != nil {
+			return nil, fmt.Errorf("parse archive last progress: %w", err)
+		}
+		result[repoID] = parsed
+	}
+	return result, rows.Err()
 }
 
 func loadArchiveProgressCounts(

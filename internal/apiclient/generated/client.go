@@ -67847,19 +67847,22 @@ type ArchiveSnapshot struct {
 }
 
 type ArchiveStatusResponse struct {
-	ActivePhases           []ArchiveStatusResponseActivePhases `json:"active_phases"`
-	BudgetWaitUntil        *time.Time                          `json:"budget_wait_until,omitempty"`
-	CollectionMode         ArchiveStatusResponseCollectionMode `json:"collection_mode"`
-	Counts                 ArchiveProgressCountsResponse       `json:"counts"`
-	Coverage               ArchiveCoverageResponse             `json:"coverage"`
-	Failure                *ArchiveFailureResponse             `json:"failure,omitempty"`
-	InitialCompletedAt     *time.Time                          `json:"initial_completed_at,omitempty"`
-	InitialStartedAt       *time.Time                          `json:"initial_started_at,omitempty"`
-	MaintenanceSucceededAt *time.Time                          `json:"maintenance_succeeded_at,omitempty"`
-	MaintenanceWatermark   *time.Time                          `json:"maintenance_watermark,omitempty"`
-	OperatorState          ArchiveStatusResponseOperatorState  `json:"operator_state"`
-	Repository             ArchiveRepositoryRef                `json:"repository"`
-	Status                 ArchiveStatusResponseStatus         `json:"status"`
+	ActivePhases       []ArchiveStatusResponseActivePhases `json:"active_phases"`
+	BudgetWaitUntil    *time.Time                          `json:"budget_wait_until,omitempty"`
+	CollectionMode     ArchiveStatusResponseCollectionMode `json:"collection_mode"`
+	Counts             ArchiveProgressCountsResponse       `json:"counts"`
+	Coverage           ArchiveCoverageResponse             `json:"coverage"`
+	Failure            *ArchiveFailureResponse             `json:"failure,omitempty"`
+	InitialCompletedAt *time.Time                          `json:"initial_completed_at,omitempty"`
+	InitialStartedAt   *time.Time                          `json:"initial_started_at,omitempty"`
+
+	// LastProgressAt Latest finished item or committed inventory page
+	LastProgressAt         *time.Time                         `json:"last_progress_at,omitempty"`
+	MaintenanceSucceededAt *time.Time                         `json:"maintenance_succeeded_at,omitempty"`
+	MaintenanceWatermark   *time.Time                         `json:"maintenance_watermark,omitempty"`
+	OperatorState          ArchiveStatusResponseOperatorState `json:"operator_state"`
+	Repository             ArchiveRepositoryRef               `json:"repository"`
+	Status                 ArchiveStatusResponseStatus        `json:"status"`
 }
 
 type Assignment struct {

@@ -238,6 +238,9 @@ that observes the behavior's real owner.
   key bindings, which leak into developer sessions.
 - Terminal input tests wait for the session's `claim_resize` before typing
   (`frontend/tests/e2e-full/support/terminalReadiness.ts::waitForTerminalInputReady`).
+- Wait for inserted terminal text to leave on the socket before pressing a key.
+  Firefox inserts text as an IME composition that xterm sends from a timer, and a
+  key pressed first drops the text (`frontend/tests/e2e-full/support/terminalReadiness.ts::insertTerminalText`).
 - Retry asynchronous resize probes on a bounded timer, never per repaint; repaint
   coupling can overflow subscriber buffers.
 - Terminal-readiness assertions are renderer-agnostic (`canvas, .xterm-screen`):

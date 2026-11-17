@@ -8,7 +8,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServerWithOptions, type IsolatedE2EServer } from "./support/e2eServer";
-import { trackTerminalReadiness, waitForTerminalInputReady } from "./support/terminalReadiness";
+import { insertTerminalText, trackTerminalReadiness, waitForTerminalInputReady } from "./support/terminalReadiness";
 
 type WorkspaceStatusResponse = {
   id: string;
@@ -126,7 +126,7 @@ test("Kitty cursor keys reach and are handled by the PTY application", async ({ 
     const terminal = await openTerminalPanel(page);
     await waitForTerminalInputReady(terminal);
     await terminal.click({ position: { x: 10, y: 10 } });
-    await page.keyboard.insertText(kittyCursorProbeCommand());
+    await insertTerminalText(page, kittyCursorProbeCommand());
     await page.keyboard.press("Enter");
     await expect.poll(() => output.tail(), { timeout: terminalOutputTimeoutMs }).toContain("KITTY_CURSOR_PROBE_READY");
 

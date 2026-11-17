@@ -67,7 +67,7 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 		case "/repos/contributor-a/unavailable":
 			w.WriteHeader(http.StatusInternalServerError)
 		case "/app/installations/23":
-			_, _ = fmt.Fprint(w, `{"id":23,"app_id":17,"account":{"id":99,"login":"example-org"},"repository_selection":"selected","permissions":{"workflows":"write"}}`)
+			_, _ = fmt.Fprint(w, `{"id":23,"app_id":17,"app_slug":"example-app","account":{"id":99,"login":"example-org"},"repository_selection":"selected","permissions":{"workflows":"write"}}`)
 		case "/app/installations/23/access_tokens":
 			var request struct {
 				Repositories  []string          `json:"repositories"`
@@ -187,6 +187,7 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	credential, err := broker.Credential(t.Context(), uid, request)
 	require.NoError(err)
 	assert.True(credential.Writable)
+	assert.Equal("example-app", credential.AppSlug)
 	assert.Equal(int64(1234), credential.GitHubUserID)
 	assert.Equal(int64(42), credential.RepositoryID)
 	assert.Equal(int32(2), minted.Load())

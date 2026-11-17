@@ -38,7 +38,7 @@ personal GitHub credentials stay on the controller.
    the GitHub App authenticates the push. Forge checks GitHub's resolved author
    and committer IDs after pushing and displays a warning if attribution cannot
    be verified. A verification failure does not retry the push.
-6. Agents can run `pr merge --squash` (or use `--merge` or `--rebase`). With
+6. Agents can run `pr merge --squash` (or use `--merge` or `--rebase`) on pull requests the App opened. With
    the recommended **Restrict updates** ruleset, a maintainer must merge pull
    requests targeting protected branches. Delete the remote workspace explicitly
    when finished. Automatic cleanup after a merge is not part of this initial
@@ -171,6 +171,8 @@ kenn-forge devbox github --socket /run/forge-broker/broker.sock \
 
 The wrapper supports `pr create`, `edit`, `comment`, `view`, `list`, `checks`,
 `close`, `reopen`, `ready`, and `merge`.
+The wrapper refuses `close`, `reopen`, `ready`, and `merge` on pull requests
+authored by anyone other than the App.
 For `pr close` and `pr merge`, `--delete-branch` leaves local branches untouched
 when you specify a pull request number, URL, or branch.
 Its token goes only to that child process. Git and the wrapper explain broker

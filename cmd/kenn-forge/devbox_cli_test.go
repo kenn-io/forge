@@ -33,13 +33,15 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		_, err := body.ReadFrom(r.Body)
 		assert.NoError(t, err)
 		assert.JSONEq(t, `{"repository":"example/project","profile":"pr"}`, body.String())
-		_, _ = fmt.Fprintf(w, `{"token":"test-token","expires_at":%q}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
+		_, _ = fmt.Fprintf(w, `{"token":"test-token","app_slug":"example-app","expires_at":%q}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
 	})}
 	done := make(chan struct{})
 	go func() { defer close(done); _ = server.Serve(listener) }()
 	t.Cleanup(func() { _ = server.Close(); <-done })
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "gh"), []byte("#!/bin/sh\nprintf '%s|%s|%s' \"$*\" \"$GH_TOKEN\" \"$GH_REPO\"\n"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "gh"), []byte("#!/bin/sh\nif [ \"$2\" = view ]; then printf '%s' \"$*\" > \"$VIEW_LOG\"; printf '%s' \"$AUTHOR_JSON\"; exit \"${VIEW_EXIT:-0}\"; fi\nprintf '%s|%s|%s' \"$*\" \"$GH_TOKEN\" \"$GH_REPO\"\n"), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("VIEW_LOG", filepath.Join(dir, "view"))
+	t.Setenv("AUTHOR_JSON", `{"author":{"login":"app/example-app","is_bot":true}}`)
 
 	for _, tc := range []struct {
 		action string
@@ -54,6 +56,8 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 		{"merge and delete", []string{"pr", "merge", "-ds", "42"}, "pr merge --repo github.com/example/project -ds 42"},
 		{"selector after separator", []string{"pr", "merge", "-d", "--", "42"}, "pr merge --repo github.com/example/project -d -- 42"},
 		{"merge current branch and delete", []string{"pr", "merge", "--body", "message", "-d"}, "pr merge --body message -d"},
+		{"reopen with comment", []string{"pr", "reopen", "42", "-c", "message"}, "pr reopen 42 -c message"},
+		{"ready undo", []string{"pr", "ready", "42", "--undo"}, "pr ready 42 --undo"},
 	} {
 		t.Run(tc.action, func(t *testing.T) {
 			var output bytes.Buffer
@@ -64,6 +68,46 @@ func TestDevboxGitHubPullRequestActions(t *testing.T) {
 			assert.Equal(t, tc.want+"|test-token|github.com/example/project", output.String())
 		})
 	}
+	t.Run("view uses selector and repository", func(t *testing.T) {
+		cmd := &cobra.Command{}
+		cmd.SetOut(&bytes.Buffer{})
+		require.NoError(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "ready", "42", "-R", "example/other"}))
+		view, err := os.ReadFile(filepath.Join(dir, "view"))
+		require.NoError(t, err)
+		assert.Equal(t, "pr view 42 --repo example/other --json author", string(view))
+	})
+	for _, action := range []string{"close", "reopen", "ready", "merge"} {
+		for _, author := range []struct{ json, want string }{
+			{`{"author":{"login":"alice","is_bot":false}}`, "alice"},
+			{`{"author":{"login":"app/other-app","is_bot":true}}`, "app/other-app"},
+			{`invalid`, "read pull request author"},
+		} {
+			t.Run(action+"/"+author.want, func(t *testing.T) {
+				t.Setenv("AUTHOR_JSON", author.json)
+				var output bytes.Buffer
+				cmd := &cobra.Command{}
+				cmd.SetOut(&output)
+				err := runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", action, "42"})
+				require.ErrorContains(t, err, author.want)
+				assert.Empty(t, output.String())
+			})
+		}
+	}
+	t.Run("failed view", func(t *testing.T) {
+		t.Setenv("VIEW_EXIT", "1")
+		var output bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetOut(&output)
+		require.Error(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42"}))
+		assert.Empty(t, output.String())
+	})
+	t.Run("invalid action flag", func(t *testing.T) {
+		var output bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetOut(&output)
+		require.Error(t, runDevboxGitHub(t.Context(), cmd, socket, "example/project", []string{"pr", "close", "42", "--unknown"}))
+		assert.Empty(t, output.String())
+	})
 	t.Run("reject unsupported verb", func(t *testing.T) {
 		before := brokerCalls.Load()
 		var output bytes.Buffer

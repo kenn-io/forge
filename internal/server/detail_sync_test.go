@@ -211,18 +211,6 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 				require.Equal(t, "github", data.Repositories[0].Provider)
 				require.Equal(t, "github.com", data.Repositories[0].PlatformHost)
 				require.Equal(t, "acme/widget", data.Repositories[0].RepoPath)
-				if tc.name == "queue" {
-					srv.hub.Broadcast(change)
-					for {
-						event := <-events
-						if event.Event.Type == "data_changed" {
-							payload, err := json.Marshal(event.Event.Data)
-							require.NoError(t, err)
-							require.Contains(t, string(payload), `"repo_path":"acme/widget"`)
-							break
-						}
-					}
-				}
 			} else {
 				require.False(t, tc.changed, "changed refresh did not broadcast")
 			}

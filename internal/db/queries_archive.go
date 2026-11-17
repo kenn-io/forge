@@ -505,10 +505,18 @@ func recordArchiveRepositoryFailureTx(
 	if retryAt != nil {
 		retry = retryAt.UTC()
 	}
+	// A wait never replaces an authentication failure or a repository block.
+	// Items of one repository run together, and one that runs out of budget
+	// says nothing about the one the provider refused.
+	const blocked = `(?1 IN (?6, ?7) AND last_error_code IN (?8, ?9))`
 	result, err := tx.ExecContext(ctx, `
 		UPDATE forge_archive_repos
-		SET last_error_code = ?, last_error_detail = ?, next_retry_at = ?, updated_at = MAX(updated_at, ?)
-		WHERE repo_id = ?`, code, sanitizeArchiveErrorDetail(detail), retry, now.UTC(), repoID)
+		SET last_error_code = CASE WHEN `+blocked+` THEN last_error_code ELSE ?1 END,
+			last_error_detail = CASE WHEN `+blocked+` THEN last_error_detail ELSE ?2 END,
+			next_retry_at = CASE WHEN `+blocked+` THEN next_retry_at ELSE ?3 END,
+			updated_at = MAX(updated_at, ?4)
+		WHERE repo_id = ?5`, code, sanitizeArchiveErrorDetail(detail), retry, now.UTC(), repoID,
+		ArchiveErrorCodeBudgetExhausted, ArchiveErrorCodeTransient, ArchiveErrorCodeAuthentication, ArchiveErrorCodeRepoBlocked)
 	if err != nil {
 		return fmt.Errorf("record archive repository failure: %w", err)
 	}
@@ -767,14 +775,35 @@ func (d *DB) ClaimArchiveItem(ctx context.Context, opts ClaimArchiveItemOpts) (*
 	return d.claimArchiveItem(ctx, opts, nil)
 }
 
+// ClaimArchiveItems returns up to limit due items, oldest first, in the order
+// ClaimArchiveItem would return them one at a time.
+func (d *DB) ClaimArchiveItems(
+	ctx context.Context, opts ClaimArchiveItemOpts, limit int,
+) ([]ArchiveItemWork, error) {
+	return d.claimArchiveItems(ctx, opts, limit, nil)
+}
+
 func (d *DB) claimArchiveItem(
 	ctx context.Context,
 	opts ClaimArchiveItemOpts,
 	inspectCandidates func([]ArchiveItemWork),
 ) (*ArchiveItemWork, error) {
+	items, err := d.claimArchiveItems(ctx, opts, 1, inspectCandidates)
+	if err != nil || len(items) == 0 {
+		return nil, err
+	}
+	return &items[0], nil
+}
+
+func (d *DB) claimArchiveItems(
+	ctx context.Context,
+	opts ClaimArchiveItemOpts,
+	limit int,
+	inspectCandidates func([]ArchiveItemWork),
+) ([]ArchiveItemWork, error) {
 	repoIDs := normalizedArchiveRepoIDs(opts.RepoIDs)
 	opts.Now = opts.Now.UTC()
-	if len(repoIDs) == 0 {
+	if len(repoIDs) == 0 || limit <= 0 {
 		return nil, nil
 	}
 	tx, err := d.ro.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
@@ -784,15 +813,13 @@ func (d *DB) claimArchiveItem(
 	defer func() { _ = tx.Rollback() }()
 	candidates := make([]ArchiveItemWork, 0, len(repoIDs))
 	for _, repoID := range repoIDs {
-		candidate, err := claimArchiveItemForRepo(
-			ctx, tx, repoID, opts.Now, excludedArchiveItemTypes(opts.ExcludedScopes, repoID),
+		due, err := claimArchiveItemsForRepo(
+			ctx, tx, repoID, opts.Now, excludedArchiveItemTypes(opts.ExcludedScopes, repoID), limit,
 		)
 		if err != nil {
 			return nil, err
 		}
-		if candidate != nil {
-			candidates = append(candidates, *candidate)
-		}
+		candidates = append(candidates, due...)
 	}
 	if inspectCandidates != nil {
 		inspectCandidates(candidates)
@@ -800,16 +827,20 @@ func (d *DB) claimArchiveItem(
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit archive item claim snapshot: %w", err)
 	}
-	if len(candidates) == 0 {
-		return nil, nil
-	}
-	oldest := candidates[0]
-	for i := 1; i < len(candidates); i++ {
-		if archiveItemStableLess(candidates[i], oldest) {
-			oldest = candidates[i]
+	return oldestArchiveItems(candidates, limit), nil
+}
+
+func oldestArchiveItems(items []ArchiveItemWork, limit int) []ArchiveItemWork {
+	slices.SortFunc(items, func(left, right ArchiveItemWork) int {
+		switch {
+		case archiveItemStableLess(left, right):
+			return -1
+		case archiveItemStableLess(right, left):
+			return 1
 		}
-	}
-	return &oldest, nil
+		return 0
+	})
+	return items[:min(limit, len(items))]
 }
 
 const dueArchiveItemsQuery = `
@@ -830,38 +861,58 @@ const dueArchiveItemsQuery = `
 	  AND p.status IN ('pending', 'running', 'failed')
 	  AND (p.next_retry_at IS NULL OR p.next_retry_at <= ?)`
 
-func claimArchiveItemForRepo(
+// claimArchiveItemsForRepo returns the repository's limit oldest due items.
+func claimArchiveItemsForRepo(
 	ctx context.Context,
 	queryer rowQueryer,
 	repoID int64,
 	now time.Time,
 	excludedItemTypes []ArchiveItemType,
-) (*ArchiveItemWork, error) {
-	var oldest *ArchiveItemWork
+	limit int,
+) ([]ArchiveItemWork, error) {
+	var due []ArchiveItemWork
 	for _, itemType := range []ArchiveItemType{ArchiveItemTypeIssue, ArchiveItemTypeMergeRequest} {
 		if slices.Contains(excludedItemTypes, itemType) {
 			continue
 		}
-		var work ArchiveItemWork
-		err := queryer.QueryRowContext(
-			ctx, dueArchiveItemsQuery+` AND p.item_type = ? ORDER BY p.item_created_at, p.item_number LIMIT 1`,
-			repoID, repoID, now, formatDatasetProgressTime(now), itemType,
-		).Scan(
-			&work.RepoID, &work.ItemType, &work.ItemNumber,
-			&work.ProviderCreatedAt, &work.ScanGeneration, &work.AttemptCount,
-		)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue
-		}
+		items, err := dueArchiveItemsOfType(ctx, queryer, repoID, now, itemType, limit)
 		if err != nil {
 			return nil, fmt.Errorf("claim archive item: %w", err)
 		}
-		work.ProviderCreatedAt = work.ProviderCreatedAt.UTC()
-		if oldest == nil || archiveItemStableLess(work, *oldest) {
-			oldest = &work
-		}
+		due = append(due, items...)
 	}
-	return oldest, nil
+	return oldestArchiveItems(due, limit), nil
+}
+
+func dueArchiveItemsOfType(
+	ctx context.Context,
+	queryer rowQueryer,
+	repoID int64,
+	now time.Time,
+	itemType ArchiveItemType,
+	limit int,
+) ([]ArchiveItemWork, error) {
+	rows, err := queryer.QueryContext(
+		ctx, dueArchiveItemsQuery+` AND p.item_type = ? ORDER BY p.item_created_at, p.item_number LIMIT ?`,
+		repoID, repoID, now, formatDatasetProgressTime(now), itemType, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var due []ArchiveItemWork
+	for rows.Next() {
+		var work ArchiveItemWork
+		if err := rows.Scan(
+			&work.RepoID, &work.ItemType, &work.ItemNumber,
+			&work.ProviderCreatedAt, &work.ScanGeneration, &work.AttemptCount,
+		); err != nil {
+			return nil, err
+		}
+		work.ProviderCreatedAt = work.ProviderCreatedAt.UTC()
+		due = append(due, work)
+	}
+	return due, rows.Err()
 }
 
 func excludedArchiveItemTypes(
@@ -1655,6 +1706,10 @@ func reactivateTerminalArchiveWorkTx(
 	return nil
 }
 
+// clearArchiveRepositoryFailureTx clears a wait that finished work has
+// outlived. An authentication failure or a repository block stays until an
+// explicit retry. Items of one repository run together, and one that succeeds
+// says nothing about the one the provider refused.
 func clearArchiveRepositoryFailureTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -1663,9 +1718,12 @@ func clearArchiveRepositoryFailureTx(
 ) error {
 	_, err := tx.ExecContext(ctx, `
 		UPDATE forge_archive_repos
-		SET last_error_code = NULL, last_error_detail = NULL, next_retry_at = NULL,
-			updated_at = MAX(updated_at, ?)
-		WHERE repo_id = ?`, now.UTC(), repoID)
+		SET last_error_code = CASE WHEN last_error_code IN (?1, ?2) THEN last_error_code ELSE NULL END,
+			last_error_detail = CASE WHEN last_error_code IN (?1, ?2) THEN last_error_detail ELSE NULL END,
+			next_retry_at = CASE WHEN last_error_code IN (?1, ?2) THEN next_retry_at ELSE NULL END,
+			updated_at = MAX(updated_at, ?3)
+		WHERE repo_id = ?4`,
+		ArchiveErrorCodeAuthentication, ArchiveErrorCodeRepoBlocked, now.UTC(), repoID)
 	if err != nil {
 		return fmt.Errorf("clear archive repository failure: %w", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -206,26 +207,71 @@ func (s *Service) runNextHydrationWork(
 ) (bool, error) {
 	var excluded []db.ArchiveItemScope
 	for {
-		item, err := s.db.ClaimArchiveItem(ctx, db.ClaimArchiveItemOpts{
+		items, err := s.db.ClaimArchiveItems(ctx, db.ClaimArchiveItemOpts{
 			RepoIDs: repoIDs, Now: s.now(), ExcludedScopes: excluded,
-		})
+		}, hydrationParallel)
 		if err != nil {
 			return false, err
 		}
-		if item == nil {
+		if len(items) == 0 {
 			return false, nil
 		}
-		repo := resolvedRepoByID(repos, item.RepoID)
-		err = s.hydrateItem(ctx, repo, *item)
-		if featureDeferredBeforeProvider(err) {
-			excluded = append(excluded, db.ArchiveItemScope{
-				RepoID: item.RepoID, ItemType: item.ItemType,
+
+		// Admission runs in claim order before any item starts, and the first
+		// denial ends it for the pass, as it did when a pass hydrated one
+		// item. An item of the same repository that then succeeds clears the
+		// denial's deferral, so that repository is asked again next pass.
+		var admitted []func() error
+		var stopped error
+		for _, item := range items {
+			repo := resolvedRepoByID(repos, item.RepoID)
+			requestCtx, complete, err := s.admitItem(ctx, repo, item)
+			if featureDeferredBeforeProvider(err) {
+				scope := db.ArchiveItemScope{RepoID: item.RepoID, ItemType: item.ItemType}
+				if !slices.Contains(excluded, scope) {
+					excluded = append(excluded, scope)
+				}
+				continue
+			}
+			if err != nil {
+				stopped = err
+				break
+			}
+			admitted = append(admitted, func() error {
+				return s.hydrateItem(ctx, requestCtx, complete, repo, item)
 			})
+		}
+		if len(admitted) == 0 && stopped == nil {
 			continue
 		}
-		return s.finishWork(err)
+
+		results := make([]error, len(admitted), len(admitted)+1)
+		var wg sync.WaitGroup
+		for i, hydrate := range admitted {
+			wg.Go(func() { results[i] = hydrate() })
+		}
+		wg.Wait()
+		if stopped != nil {
+			results = append(results, stopped)
+		}
+		var handled bool
+		var errs []error
+		for _, err := range results {
+			itemHandled, itemErr := s.finishWork(err)
+			handled = handled || itemHandled
+			errs = append(errs, itemErr)
+		}
+		return handled, errors.Join(errs...)
 	}
 }
+
+// hydrationParallel is how many items one pass hydrates at once. An item is
+// mostly time spent waiting on the provider, so a pass that hydrates one item
+// leaves admitted quota unused. Every request an item makes still reserves
+// quota, so the reserve holds. Items admitted in one pass read the same
+// headroom, so a pass can dip below the pacing floor by the requests of the
+// other items it started.
+const hydrationParallel = 4
 
 func (s *Service) runNextInventoryWork(
 	ctx context.Context,

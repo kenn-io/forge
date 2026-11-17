@@ -19,11 +19,11 @@ type archiveClaimPlanQueryer struct {
 	ro *sql.DB
 }
 
-func (q archiveClaimPlanQueryer) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+func (q archiveClaimPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	plan := strings.Join(explainQueryPlan(q.t, q.ro, query, args...), "\n")
 	assert.Contains(q.t, plan, "SEARCH p USING INDEX idx_archive_dataset_progress_claim_order (repo_id=? AND item_type=?)")
 	assert.NotContains(q.t, plan, "TEMP B-TREE FOR ORDER BY")
-	return q.rowQueryer.QueryRowContext(ctx, query, args...)
+	return q.rowQueryer.QueryContext(ctx, query, args...)
 }
 
 func TestClaimArchiveItemQueryPlan(t *testing.T) {
@@ -51,7 +51,7 @@ func TestClaimArchiveItemQueryPlan(t *testing.T) {
 				}
 				t.Run(stats, func(t *testing.T) {
 					q := archiveClaimPlanQueryer{rowQueryer: d.roStmts, t: t, ro: d.ReadDB()}
-					_, err := claimArchiveItemForRepo(t.Context(), q, repoID, now, nil)
+					_, err := claimArchiveItemsForRepo(t.Context(), q, repoID, now, nil, 4)
 					require.NoError(t, err)
 				})
 			}
@@ -656,6 +656,48 @@ func TestArchiveStartAndPauseAreAtomicAndIdempotent(t *testing.T) {
 	assert.Equal(ArchiveOperatorStatePaused, states[1].OperatorState)
 	assert.Equal(now, *states[0].InitialStartedAt)
 	assert.Equal(now, *states[1].InitialStartedAt)
+}
+
+func TestClaimArchiveItemsReturnsOldestDueAcrossRepositories(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	firstRepoID := insertTestRepoWithHost(t, d, "acme", "widget", "github.com")
+	secondRepoID := insertTestRepoWithHost(t, d, "acme", "widget", "github.example.com")
+	require.NoError(d.EnsureDiscoveryArchives(ctx, []int64{firstRepoID, secondRepoID}, now))
+	require.NoError(d.StartFullArchives(ctx, []int64{firstRepoID, secondRepoID}, now))
+
+	type item struct {
+		repoID   int64
+		itemType ArchiveItemType
+		number   int
+	}
+	created := now.Add(-4 * time.Hour)
+	byAge := []item{
+		{firstRepoID, ArchiveItemTypeIssue, 1},
+		{secondRepoID, ArchiveItemTypeIssue, 1},
+		{firstRepoID, ArchiveItemTypeIssue, 2},
+		{secondRepoID, ArchiveItemTypeMergeRequest, 2},
+		{firstRepoID, ArchiveItemTypeMergeRequest, 3},
+		{firstRepoID, ArchiveItemTypeIssue, 4},
+	}
+	for age, due := range byAge {
+		insertArchiveItemForTest(t, d, due.repoID, due.itemType, due.number, created.Add(time.Duration(age)*time.Minute))
+		insertArchiveProgressForTest(t, d, due.repoID, due.itemType, due.number, ArchiveDatasetLookup, ArchiveDatasetProgressPending)
+	}
+
+	claimed, err := d.ClaimArchiveItems(ctx, ClaimArchiveItemOpts{
+		RepoIDs: []int64{secondRepoID, firstRepoID}, Now: now,
+	}, 4)
+	require.NoError(err)
+	var got []item
+	for _, work := range claimed {
+		got = append(got, item{work.RepoID, work.ItemType, work.ItemNumber})
+	}
+	require.Equal(byAge[:4], got)
 }
 
 func TestArchiveClaimItemUsesEligibleDueWorkAndStableOrder(t *testing.T) {
@@ -1879,6 +1921,49 @@ func TestLiveMergeRequestPresenceRejectsUnprovenRediscovery(t *testing.T) {
 			assert.Equal(ArchiveDatasetProgressTerminal, progress.Status)
 			require.NotNil(progress.LastErrorCode)
 			assert.Equal("not_found", *progress.LastErrorCode)
+		})
+	}
+}
+
+func TestArchiveRepositoryWaitKeepsBlock(t *testing.T) {
+	t.Parallel()
+	now := archiveTestTime()
+	retryAt := now.Add(time.Minute)
+	for _, tc := range []struct {
+		name          string
+		first, second ArchiveErrorCode
+		want          ArchiveErrorCode
+	}{
+		{name: "budget wait after authentication failure", first: ArchiveErrorCodeAuthentication, second: ArchiveErrorCodeBudgetExhausted, want: ArchiveErrorCodeAuthentication},
+		{name: "budget wait after repository block", first: ArchiveErrorCodeRepoBlocked, second: ArchiveErrorCodeBudgetExhausted, want: ArchiveErrorCodeRepoBlocked},
+		{name: "transient wait after repository block", first: ArchiveErrorCodeRepoBlocked, second: ArchiveErrorCodeTransient, want: ArchiveErrorCodeRepoBlocked},
+		{name: "repository block after budget wait", first: ArchiveErrorCodeBudgetExhausted, second: ArchiveErrorCodeRepoBlocked, want: ArchiveErrorCodeRepoBlocked},
+		{name: "authentication failure after repository block", first: ArchiveErrorCodeRepoBlocked, second: ArchiveErrorCodeAuthentication, want: ArchiveErrorCodeAuthentication},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			d := openTestDB(t)
+			ctx := t.Context()
+			repoID := insertTestRepo(t, d, "acme", "archive")
+			require.NoError(t, d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+			record := func(code ArchiveErrorCode) {
+				var retry *time.Time
+				if code == ArchiveErrorCodeBudgetExhausted || code == ArchiveErrorCodeTransient {
+					retry = &retryAt
+				}
+				require.NoError(t, d.RecordArchiveRepositoryFailure(ctx, repoID, code, string(code)+" detail", retry, now))
+			}
+			record(tc.first)
+			record(tc.second)
+
+			states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
+			require.NoError(t, err)
+			require.Len(t, states, 1)
+			require.NotNil(t, states[0].LastErrorCode)
+			assert.Equal(t, string(tc.want), *states[0].LastErrorCode)
+			require.NotNil(t, states[0].LastErrorDetail)
+			assert.Equal(t, string(tc.want)+" detail", *states[0].LastErrorDetail)
+			assert.Nil(t, states[0].NextRetryAt)
 		})
 	}
 }

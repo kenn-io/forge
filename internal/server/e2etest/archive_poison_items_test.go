@@ -133,9 +133,8 @@ func TestArchiveAPIPersistsTerminalAndBackoffOutcomesE2E(t *testing.T) {
 
 	require.NoError(archiveService.RunEligible(t.Context())) // issue inventory
 	require.NoError(archiveService.RunEligible(t.Context())) // merge-request inventory
-	require.NoError(archiveService.RunEligible(t.Context())) // PR-shaped issue hydration
-	require.Error(archiveService.RunEligible(t.Context()))   // first transient failure
-	require.NoError(archiveService.RunEligible(t.Context())) // deleted issue hydration
+	// One pass hydrates all three issues and reports the transient failure.
+	require.Error(archiveService.RunEligible(t.Context()))
 
 	repo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
 	require.NoError(err)

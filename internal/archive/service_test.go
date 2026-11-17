@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -948,14 +949,17 @@ func TestArchiveHydrationRetryClassifierReceivesStoredAttemptCount(t *testing.T)
 	// Early polls run inventory bootstrap pages and succeed; hydration
 	// failures begin once an item is claimable, so poll until three
 	// failures have been classified.
+	// A pass hydrates both of the repository's items, so each failed pass
+	// classifies both with the same stored count.
+	var attempts []int
 	for range 8 {
 		_ = service.RunEligible(t.Context())
-		if len(classifier.recorded()) >= 3 {
+		attempts = slices.Compact(classifier.recorded())
+		if len(attempts) >= 3 {
 			break
 		}
 	}
 
-	attempts := classifier.recorded()
 	require.GreaterOrEqual(len(attempts), 3)
 	assert.Equal(t, []int{0, 1, 2}, attempts[:3],
 		"each retry must classify with the item's stored attempt count so backoff can grow")
@@ -1028,6 +1032,112 @@ func TestArchiveHydrationBudgetDeferralKeepsWorkPending(t *testing.T) {
 	assert.Equal(db.ArchiveDatasetProgressComplete, progress.Status)
 	assert.Nil(progress.NextRetryAt)
 	assert.Zero(progress.AttemptCount)
+}
+
+func TestArchiveHydrationRunsDueItemsTogether(t *testing.T) {
+	t.Parallel()
+	database := dbtest.Open(t)
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+	// Each sync returns only once both of the repository's items are in
+	// flight, so a pass that hydrates one item at a time never finishes.
+	source := &archiveMeetingItemSource{
+		refs: []platform.RepoRef{ref}, want: 2, met: make(chan struct{}),
+	}
+	service, err := NewService(database, registry, nil, source, nil, fixedClock{value: archiveTestTime()})
+	require.NoError(t, err)
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(t, err)
+	// The first two passes discover the issue and PR inventories.
+	require.NoError(t, service.RunEligible(t.Context()))
+	require.NoError(t, service.RunEligible(t.Context()))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	worked, err := service.RunPass(ctx)
+	require.NoError(t, err)
+	assert.True(t, worked)
+	for itemType, number := range map[db.ArchiveItemType]int{
+		db.ArchiveItemTypeIssue: 1, db.ArchiveItemTypeMergeRequest: 2,
+	} {
+		progress, err := database.GetDatasetProgress(t.Context(), repoID, itemType, number, db.ArchiveDatasetLookup)
+		require.NoError(t, err)
+		assert.Equal(t, db.ArchiveDatasetProgressComplete, progress.Status, "%s %d", itemType, number)
+	}
+}
+
+func TestArchiveHydrationDenialKeepsEarlierAdmittedItem(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	database := dbtest.Open(t)
+	now := archiveTestTime()
+	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
+	repoID := archiveServiceSeedRepo(t, database, ref)
+	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+	service := newArchiveTestService(t, database, registry, []platform.RepoRef{ref}, nil, now)
+	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
+	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
+	require.NoError(t, err)
+	// The first two passes discover the issue and PR inventories.
+	require.NoError(t, service.RunEligible(t.Context()))
+	require.NoError(t, service.RunEligible(t.Context()))
+
+	service.admission = &archiveTestAdmission{denyAfter: 1, retryAt: now.Add(time.Hour)}
+	worked, err := service.RunPass(t.Context())
+	require.NoError(t, err)
+	assert.True(worked, "the admitted item reached the provider")
+
+	// Items are admitted oldest first, so the issue runs and the PR waits.
+	issue, err := database.GetDatasetProgress(t.Context(), repoID, db.ArchiveItemTypeIssue, 1, db.ArchiveDatasetLookup)
+	require.NoError(t, err)
+	assert.Equal(db.ArchiveDatasetProgressComplete, issue.Status)
+	mr, err := database.GetDatasetProgress(t.Context(), repoID, db.ArchiveItemTypeMergeRequest, 2, db.ArchiveDatasetLookup)
+	require.NoError(t, err)
+	assert.Equal(db.ArchiveDatasetProgressPending, mr.Status)
+	assert.Zero(mr.AttemptCount, "a denial is not a failed attempt")
+
+	// A later admission completes the denied item without operator repair.
+	service.admission = nil
+	require.NoError(t, service.RunEligible(t.Context()))
+	mr, err = database.GetDatasetProgress(t.Context(), repoID, db.ArchiveItemTypeMergeRequest, 2, db.ArchiveDatasetLookup)
+	require.NoError(t, err)
+	assert.Equal(db.ArchiveDatasetProgressComplete, mr.Status)
+}
+
+// archiveMeetingItemSource holds every item sync until want of them are in
+// flight at once.
+type archiveMeetingItemSource struct {
+	archiveTestSource
+	want    int
+	mu      sync.Mutex
+	arrived int
+	met     chan struct{}
+}
+
+func (s *archiveMeetingItemSource) SyncArchiveItem(
+	ctx context.Context,
+	_ platform.RepoRef,
+	_ db.ArchiveItemType,
+	_ int,
+) (ItemSyncResult, error) {
+	s.mu.Lock()
+	s.arrived++
+	if s.arrived == s.want {
+		close(s.met)
+	}
+	s.mu.Unlock()
+	select {
+	case <-s.met:
+		return ItemSyncResult{ProviderAttempted: true}, nil
+	case <-ctx.Done():
+		return ItemSyncResult{}, ctx.Err()
+	}
 }
 
 type archiveFailingItemSource struct {

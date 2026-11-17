@@ -1,0 +1,2 @@
+DROP INDEX idx_mr_events_repo_roles;
+DROP INDEX idx_mr_events_cross_references;

@@ -105,12 +105,16 @@ const (
 )
 
 // All three snapshot queries share the root-anchored pull and relation set.
+// A reference reaches the result only when its target is a root or its source
+// is one, so reference_events keeps those and the joins after it resolve only
+// them. It reads the columns idx_mr_events_cross_references holds.
 const archiveSnapshotPullScope = `WITH scoped_repos AS (SELECT value AS id FROM json_each(?)),
  roots AS (
  SELECT p.id,p.repo_id,p.number FROM forge_merge_requests p JOIN scoped_repos r ON r.id=p.repo_id
  WHERE (p.state='open' OR (? AND p.state IN ('closed','merged') AND COALESCE(p.merged_at,p.closed_at)>=? AND COALESCE(p.merged_at,p.closed_at)<=?)) AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id=p.repo_id AND a.item_type='merge_request' AND a.item_number=p.number AND a.lifecycle_state='removed_upstream')
  ), reference_events AS MATERIALIZED (
- SELECT e.*, CASE WHEN json_valid(e.metadata_json) THEN e.metadata_json ELSE '{}' END AS metadata FROM forge_mr_events e WHERE e.event_type='cross_referenced'
+ SELECT e.repo_id,e.merge_request_id,e.dedupe_key,e.created_at,` + archiveSnapshotMetadata + ` AS metadata FROM forge_mr_events e
+ WHERE e.event_type='cross_referenced' AND (e.merge_request_id IN (SELECT id FROM roots) OR json_extract(` + archiveSnapshotMetadata + `,'$.source_number') IN (SELECT number FROM roots))
  ), reference_candidates AS MATERIALIZED (
  SELECT source.id AS source_id, target.id AS target_id, target.repo_id, target.number AS target_number, json_extract(e.metadata,'$.source_number') AS source_number,
  CASE WHEN json_extract(e.metadata,'$.is_cross_repository')=0 THEN 0

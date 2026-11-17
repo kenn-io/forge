@@ -557,8 +557,6 @@ func TestArchiveStartFullPromotesDiscoveryAndPreservesResumedProgress(t *testing
 	insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 8, now.Add(-time.Hour))
 	insertArchiveProgressForTest(t, d, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup, ArchiveDatasetProgressComplete)
 	insertArchiveProgressForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 8, ArchiveDatasetLookup, ArchiveDatasetProgressFailed)
-	_, err = d.WriteDB().ExecContext(ctx, `UPDATE forge_archive_dataset_progress SET completed_at = ? WHERE repo_id = ?`, formatDatasetProgressTime(now), repoID)
-	require.NoError(err)
 
 	require.NoError(d.StartFullArchives(ctx, []int64{repoID}, now.Add(2*time.Hour)))
 	states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
@@ -578,9 +576,6 @@ func TestArchiveStartFullPromotesDiscoveryAndPreservesResumedProgress(t *testing
 		archiveProgressStatusForTest(t, d, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup))
 	assert.Equal(ArchiveDatasetProgressPending,
 		archiveProgressStatusForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 8, ArchiveDatasetLookup))
-	promoted, err := d.GetDatasetProgress(ctx, repoID, ArchiveItemTypeIssue, 7, ArchiveDatasetLookup)
-	require.NoError(err)
-	assert.Nil(promoted.CompletedAt)
 
 	_, err = d.WriteDB().ExecContext(ctx, `
 		UPDATE forge_archive_repos
@@ -1030,9 +1025,9 @@ func TestRequeueArchiveLifecycleDetailsOnlyReopensIncompleteGitHubRows(t *testin
 	)
 	_, err = database.WriteDB().ExecContext(ctx, `
 		UPDATE forge_archive_dataset_progress
-		SET scan_generation = ?, completed_at = ?
+		SET scan_generation = ?
 		WHERE repo_id = ? AND item_type = 'merge_request'
-		  AND item_number = 7 AND dataset = 'lookup'`, int64(1<<32), formatDatasetProgressTime(now), repoID)
+		  AND item_number = 7 AND dataset = 'lookup'`, int64(1<<32), repoID)
 	require.NoError(err)
 	issueID := insertArchiveReportIssue(
 		t, database, repoID, 8, "issue-8", "Closed issue", "author", mergedAt.Add(-time.Hour),
@@ -1057,7 +1052,6 @@ func TestRequeueArchiveLifecycleDetailsOnlyReopensIncompleteGitHubRows(t *testin
 	)
 	require.NoError(err)
 	assert.Equal(ArchiveDatasetProgressPending, progress.Status)
-	assert.Nil(progress.CompletedAt)
 	assert.Zero(progress.ScanGeneration % 2)
 	issueProgress, err := database.GetDatasetProgress(
 		ctx, repoID, ArchiveItemTypeIssue, 8, ArchiveDatasetLookup,
@@ -1266,10 +1260,10 @@ func TestReconcileArchiveCoverageRequeuesKnownItemsWhenInventoryReturns(t *testi
 	)
 	_, err = database.WriteDB().ExecContext(ctx, `
 		UPDATE forge_archive_dataset_progress
-		SET scan_generation = ?, completed_at = ?
+		SET scan_generation = ?
 		WHERE repo_id = ? AND item_type = 'merge_request'
 		  AND item_number = 7 AND dataset = 'lookup'`,
-		archiveLifecycleDetailsGeneration, formatDatasetProgressTime(now), repoID)
+		archiveLifecycleDetailsGeneration, repoID)
 	require.NoError(err)
 
 	require.NoError(database.ReconcileArchiveCoverage(ctx, repoID, ArchiveCoverageSet{
@@ -1282,7 +1276,6 @@ func TestReconcileArchiveCoverageRequeuesKnownItemsWhenInventoryReturns(t *testi
 	)
 	require.NoError(err)
 	require.Equal(ArchiveDatasetProgressPending, progress.Status)
-	require.Nil(progress.CompletedAt)
 	require.Greater(progress.ScanGeneration, archiveLifecycleDetailsGeneration)
 }
 

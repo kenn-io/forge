@@ -1884,3 +1884,46 @@ func TestLiveMergeRequestPresenceRejectsUnprovenRediscovery(t *testing.T) {
 		})
 	}
 }
+
+func TestArchiveRepositoryWaitKeepsBlock(t *testing.T) {
+	t.Parallel()
+	now := archiveTestTime()
+	retryAt := now.Add(time.Minute)
+	for _, tc := range []struct {
+		name          string
+		first, second ArchiveErrorCode
+		want          ArchiveErrorCode
+	}{
+		{name: "budget wait after authentication failure", first: ArchiveErrorCodeAuthentication, second: ArchiveErrorCodeBudgetExhausted, want: ArchiveErrorCodeAuthentication},
+		{name: "budget wait after repository block", first: ArchiveErrorCodeRepoBlocked, second: ArchiveErrorCodeBudgetExhausted, want: ArchiveErrorCodeRepoBlocked},
+		{name: "transient wait after repository block", first: ArchiveErrorCodeRepoBlocked, second: ArchiveErrorCodeTransient, want: ArchiveErrorCodeRepoBlocked},
+		{name: "repository block after budget wait", first: ArchiveErrorCodeBudgetExhausted, second: ArchiveErrorCodeRepoBlocked, want: ArchiveErrorCodeRepoBlocked},
+		{name: "authentication failure after repository block", first: ArchiveErrorCodeRepoBlocked, second: ArchiveErrorCodeAuthentication, want: ArchiveErrorCodeAuthentication},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			d := openTestDB(t)
+			ctx := t.Context()
+			repoID := insertTestRepo(t, d, "acme", "archive")
+			require.NoError(t, d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+			record := func(code ArchiveErrorCode) {
+				var retry *time.Time
+				if code == ArchiveErrorCodeBudgetExhausted || code == ArchiveErrorCodeTransient {
+					retry = &retryAt
+				}
+				require.NoError(t, d.RecordArchiveRepositoryFailure(ctx, repoID, code, string(code)+" detail", retry, now))
+			}
+			record(tc.first)
+			record(tc.second)
+
+			states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
+			require.NoError(t, err)
+			require.Len(t, states, 1)
+			require.NotNil(t, states[0].LastErrorCode)
+			assert.Equal(t, string(tc.want), *states[0].LastErrorCode)
+			require.NotNil(t, states[0].LastErrorDetail)
+			assert.Equal(t, string(tc.want)+" detail", *states[0].LastErrorDetail)
+			assert.Nil(t, states[0].NextRetryAt)
+		})
+	}
+}

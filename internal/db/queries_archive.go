@@ -505,10 +505,18 @@ func recordArchiveRepositoryFailureTx(
 	if retryAt != nil {
 		retry = retryAt.UTC()
 	}
+	// A wait never replaces an authentication failure or a repository block.
+	// Items of one repository run together, and one that runs out of budget
+	// says nothing about the one the provider refused.
+	const blocked = `(?1 IN (?6, ?7) AND last_error_code IN (?8, ?9))`
 	result, err := tx.ExecContext(ctx, `
 		UPDATE forge_archive_repos
-		SET last_error_code = ?, last_error_detail = ?, next_retry_at = ?, updated_at = MAX(updated_at, ?)
-		WHERE repo_id = ?`, code, sanitizeArchiveErrorDetail(detail), retry, now.UTC(), repoID)
+		SET last_error_code = CASE WHEN `+blocked+` THEN last_error_code ELSE ?1 END,
+			last_error_detail = CASE WHEN `+blocked+` THEN last_error_detail ELSE ?2 END,
+			next_retry_at = CASE WHEN `+blocked+` THEN next_retry_at ELSE ?3 END,
+			updated_at = MAX(updated_at, ?4)
+		WHERE repo_id = ?5`, code, sanitizeArchiveErrorDetail(detail), retry, now.UTC(), repoID,
+		ArchiveErrorCodeBudgetExhausted, ArchiveErrorCodeTransient, ArchiveErrorCodeAuthentication, ArchiveErrorCodeRepoBlocked)
 	if err != nil {
 		return fmt.Errorf("record archive repository failure: %w", err)
 	}

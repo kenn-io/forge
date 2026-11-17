@@ -161,9 +161,6 @@ func (d *DB) CommitArchiveItemSync(ctx context.Context, commit ArchiveItemSyncCo
 			return completeArchiveInitialIfReadyTx(ctx, tx, commit.RepoID, commit.Now)
 		}
 
-		if status == ArchiveDatasetProgressTerminal {
-			return nil
-		}
 		lifecycle := ArchiveLifecycleStateRemovedUpstream
 		if commit.Outcome == ArchiveLookupInaccessible {
 			lifecycle = ArchiveLifecycleStateInaccessible

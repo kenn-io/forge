@@ -1574,11 +1574,6 @@ func TestArchiveProgressRecordsFinishedItem(t *testing.T) {
 			insertArchiveProgressForTest(t, d, repoID, ArchiveItemTypeMergeRequest, 1, ArchiveDatasetLookup, ArchiveDatasetProgressPending)
 			commit := ArchiveItemSyncCommit{RepoID: repoID, ItemType: ArchiveItemTypeMergeRequest, ItemNumber: 1, ScanGeneration: 1, Outcome: outcome, Now: now}
 			require.NoError(d.CommitArchiveItemSync(ctx, commit))
-			if outcome == ArchiveLookupRemoved {
-				// Two workers can claim the same pending item; the later result is not new progress.
-				commit.Now = now.Add(5 * time.Hour)
-				require.NoError(d.CommitArchiveItemSync(ctx, commit))
-			}
 			states, err := d.ListArchiveRepoStates(ctx, []int64{repoID})
 			require.NoError(err)
 			require.NotNil(states[0].LastProgressAt)

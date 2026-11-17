@@ -463,10 +463,8 @@ func (h *Handler) HandleRuntimeSessionExit(info localruntime.SessionInfo) {
 		return
 	}
 	forget := func(ctx context.Context) {
-		cleanupCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		defer cancel()
 		forgotten, err := h.workspaces.ForgetRuntimeSessionAfterExit(
-			cleanupCtx, info.WorkspaceID, info.Key, info.CreatedAt, info.TmuxSession,
+			ctx, info.WorkspaceID, info.Key, info.CreatedAt, info.TmuxSession,
 		)
 		if err != nil {
 			slog.Warn("forget exited runtime session",

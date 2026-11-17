@@ -2961,12 +2961,8 @@ func (s *Handler) forgetRecordedRuntimeSessionIfExited(
 		s.invalidateWorkspaceEnrichment(session.WorkspaceID)
 		return
 	}
-	cleanupCtx, cancel := context.WithTimeout(
-		context.WithoutCancel(ctx), runtimeSessionCleanupTimeout,
-	)
-	defer cancel()
 	forgotten, err := s.workspaces.ForgetRuntimeSessionAfterExit(
-		cleanupCtx,
+		context.WithoutCancel(ctx),
 		session.WorkspaceID,
 		session.Key,
 		session.CreatedAt,

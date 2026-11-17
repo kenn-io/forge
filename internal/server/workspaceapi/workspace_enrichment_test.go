@@ -3,6 +3,7 @@ package workspaceapi
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"os"
@@ -1090,6 +1091,51 @@ func TestWorkspaceRuntimeExitInvalidatesCachedTmuxEnrichment(t *testing.T) {
 		workspace, []string{"agent-runtime"},
 	)
 	assert.False(ok)
+}
+
+func TestRuntimeExitForgetsSessionWithoutTmuxAfterWaitingForBusyWriter(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	srv := newEnrichmentTestHandler(t, "")
+	require.NoError(srv.db.InsertWorkspace(ctx, &db.Workspace{
+		ID: "ws-busy", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/busy"), GitHeadRef: "work/busy",
+		WorkspaceBranch: "work/busy", WorktreePath: t.TempDir(), Status: "ready",
+	}))
+	createdAt := time.Date(2026, 11, 12, 3, 37, 1, 0, time.UTC)
+	require.NoError(srv.db.RecordWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
+		WorkspaceID: "ws-busy", SessionKey: "ws-busy_agent", TargetKey: "helper",
+		Label: "Helper", Kind: string(localruntime.LaunchTargetAgent), CreatedAt: createdAt,
+	}))
+
+	// SQLite has one writer. Busy machines have kept it longer than the two
+	// seconds the exit handler once gave its delete, which left the row of a
+	// finished agent for recovery to resume. Hold it longer than that.
+	held := make(chan struct{})
+	release := make(chan struct{})
+	holderDone := make(chan error, 1)
+	go func() {
+		holderDone <- srv.db.Tx(context.WithoutCancel(ctx), func(*sql.Tx) error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	releaseTimer := time.AfterFunc(3*time.Second, func() { close(release) })
+	defer releaseTimer.Stop()
+
+	srv.HandleRuntimeSessionExit(localruntime.SessionInfo{
+		WorkspaceID: "ws-busy", Key: "ws-busy_agent",
+		Kind: localruntime.LaunchTargetAgent, CreatedAt: createdAt,
+	})
+
+	require.NoError(<-holderDone)
+	stored, err := srv.db.ListWorkspaceRuntimeSessions(ctx, "ws-busy")
+	require.NoError(err)
+	require.Empty(stored)
 }
 
 func TestWorkspaceEnrichmentCachesWorkingActivityDespiteSlowSession(t *testing.T) {

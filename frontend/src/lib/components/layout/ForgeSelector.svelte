@@ -28,8 +28,9 @@
   let refreshing = false;
   let selectorEl = $state<HTMLDetailsElement>();
   let selectorOpen = $state(false);
-  // The host whose sign-in link is being requested or opened. It stays set
-  // after navigation starts so a second click cannot mint another ticket.
+  // The host whose sign-in link is being requested. It is cleared once the
+  // destination is handed to the browser, because the browser may cancel that
+  // navigation and leave this page in place.
   let switchingNodeID = $state<string | null>(null);
 
   const directoryHosts = $derived(hosts.filter((host) => host.kind === "self" || host.kind === "devbox" || Boolean(host.baseURL)));
@@ -104,7 +105,11 @@
               switchingNodeID = null;
               showFlash(fleetBrowserLoginFailureMessage(failure), { tone: "danger" });
             }),
-          onSuccess: (url) => Effect.sync(() => navigateToURL(url)),
+          onSuccess: (url) =>
+            Effect.sync(() => {
+              switchingNodeID = null;
+              navigateToURL(url);
+            }),
         }),
       ),
       {

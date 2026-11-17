@@ -173,6 +173,35 @@ describe("ForgeSelector (browser)", () => {
       expect(browserLoginRequests).toHaveLength(1);
     });
 
+    it("accepts another host after the browser leaves the page in place", async () => {
+      snapshotHosts = [...snapshotHosts, host("spoke-b", "Build node", { baseURL: "https://build.example:8443" })];
+      browserLoginResponse = () => {
+        const target = browserLoginRequests.at(-1)?.url.includes("/fleet/hosts/hub/")
+          ? "https://hub.example:8443/?login_ticket=ticket-hub"
+          : "https://build.example:8443/?login_ticket=ticket-build";
+        return Response.json({ url: target, expires_at: "2026-09-22T12:01:00Z" });
+      };
+      const hub = await openHubRow();
+      hub.click();
+      await vi.waitFor(() => {
+        expect(navigateToURL).toHaveBeenCalledWith("https://hub.example:8443/?login_ticket=ticket-hub");
+      });
+
+      const buildNode = Array.from(document.querySelectorAll<HTMLAnchorElement>(".forge-selector li a")).find(
+        (link) => link.querySelector("strong")?.textContent === "Build node",
+      );
+      expect(buildNode).toBeDefined();
+      buildNode!.click();
+
+      await vi.waitFor(() => {
+        expect(navigateToURL).toHaveBeenLastCalledWith("https://build.example:8443/?login_ticket=ticket-build");
+      });
+      expect(browserLoginRequests.map((request) => request.url)).toEqual([
+        expect.stringContaining("/fleet/hosts/hub/browser-login"),
+        expect.stringContaining("/fleet/hosts/spoke-b/browser-login"),
+      ]);
+    });
+
     it("opens the plain address when this Forge has no direct credential", async () => {
       browserLoginResponse = () =>
         problemResponse(409, "conflict", "no active federation credential", "noDirectFederationCredential");

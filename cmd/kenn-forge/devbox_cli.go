@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/devbox"
@@ -117,6 +119,9 @@ func runDevboxGitHub(ctx context.Context, command *cobra.Command, socket, reposi
 		return err
 	}
 	defer os.RemoveAll(privateConfig)
+	if devboxGitHubDeletesSelectedBranch(args) {
+		args = append([]string{args[0], args[1], "--repo", "github.com/" + repository}, args[2:]...)
+	}
 	child := procutil.CommandContext(ctx, "gh", args...)
 	child.Stdin, child.Stdout, child.Stderr = command.InOrStdin(), command.OutOrStdout(), command.ErrOrStderr()
 	for _, entry := range os.Environ() {
@@ -128,4 +133,36 @@ func runDevboxGitHub(ctx context.Context, command *cobra.Command, socket, reposi
 	child.Env = append(child.Env, "GH_TOKEN="+credential.Token, "GH_CONFIG_DIR="+privateConfig,
 		"GH_REPO=github.com/"+repository, "GH_HOST=github.com", "GH_PROMPT_DISABLED=1")
 	return child.Run()
+}
+
+func devboxGitHubDeletesSelectedBranch(args []string) bool {
+	if args[1] != "close" && args[1] != "merge" {
+		return false
+	}
+	flags := pflag.NewFlagSet("gh pr "+args[1], pflag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.BoolP("delete-branch", "d", false, "")
+	flags.StringP("repo", "R", "", "")
+	flags.Bool("help", false, "")
+	if args[1] == "close" {
+		flags.StringP("comment", "c", "", "")
+	} else {
+		for _, flag := range []struct{ name, short string }{
+			{"author-email", "A"}, {"body", "b"}, {"body-file", "F"}, {"subject", "t"},
+		} {
+			flags.StringP(flag.name, flag.short, "", "")
+		}
+		flags.String("match-head-commit", "", "")
+		for _, name := range []string{"admin", "auto", "disable-auto"} {
+			flags.Bool(name, false, "")
+		}
+		for _, flag := range []struct{ name, short string }{{"merge", "m"}, {"rebase", "r"}, {"squash", "s"}} {
+			flags.BoolP(flag.name, flag.short, false, "")
+		}
+	}
+	if err := flags.Parse(args[2:]); err != nil {
+		return false
+	}
+	deletes, _ := flags.GetBool("delete-branch")
+	return deletes && flags.NArg() > 0
 }

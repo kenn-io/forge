@@ -4625,6 +4625,14 @@ func (m *Manager) ForgetRuntimeSessionCreatedAt(
 	)
 }
 
+// exitedRuntimeTmuxCheckTimeout bounds the tmux probe that decides whether an
+// exited runtime's session is gone.
+const exitedRuntimeTmuxCheckTimeout = 2 * time.Second
+
+// ForgetRuntimeSessionAfterExit deletes an exited runtime's row once its tmux
+// session, if it had one, is gone. Only the tmux probe has a deadline: the
+// delete waits for SQLite's single writer under ctx, because no later pass
+// deletes the row of a runtime without tmux.
 func (m *Manager) ForgetRuntimeSessionAfterExit(
 	ctx context.Context,
 	workspaceID string,
@@ -4637,7 +4645,9 @@ func (m *Manager) ForgetRuntimeSessionAfterExit(
 	}
 	tmuxSession = strings.TrimSpace(tmuxSession)
 	if tmuxSession != "" {
-		exists, err := m.tmuxSessionExists(ctx, tmuxSession)
+		checkCtx, cancel := context.WithTimeout(ctx, exitedRuntimeTmuxCheckTimeout)
+		exists, err := m.tmuxSessionExists(checkCtx, tmuxSession)
+		cancel()
 		if err != nil {
 			return false, fmt.Errorf(
 				"check exited runtime tmux session %q: %w",

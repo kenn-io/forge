@@ -804,6 +804,9 @@ func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
 	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
 	require.NotNil(launchResp.JSON200)
 
+	// The exit deletes the row through SQLite's single writer, which can sit
+	// behind other commits for seconds on a busy race runner. A delete that
+	// gave up would leave the row for good, so a longer wait still catches it.
 	require.Eventually(func() bool {
 		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
 		if runtimeErr != nil ||
@@ -815,7 +818,7 @@ func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
 		}
 		stored, storedErr := database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
 		return storedErr == nil && len(stored) == 0
-	}, 2*time.Second, 20*time.Millisecond)
+	}, 10*time.Second, 20*time.Millisecond)
 	assert.NotEmpty(launchResp.JSON200.Key)
 }
 

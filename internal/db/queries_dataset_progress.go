@@ -155,7 +155,7 @@ func (d *DB) CommitArchiveItemSync(ctx context.Context, commit ArchiveItemSyncCo
 			); err != nil {
 				return fmt.Errorf("complete archive item sync: %w", err)
 			}
-			if err := clearArchiveRepositoryFailureTx(ctx, tx, commit.RepoID, commit.Now); err != nil {
+			if err := recordArchiveProgressTx(ctx, tx, commit.RepoID, commit.Now); err != nil {
 				return err
 			}
 			return completeArchiveInitialIfReadyTx(ctx, tx, commit.RepoID, commit.Now)

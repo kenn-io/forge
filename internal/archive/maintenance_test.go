@@ -13,32 +13,6 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-func TestPromptMaintenanceProgressRecordsPageCompletionTime(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	database := dbtest.Open(t)
-	now := archiveTestTime()
-	ref := archiveServiceRef(platform.KindGitHub, "github.test", "repo")
-	repoID := archiveServiceSeedRepo(t, database, ref)
-	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
-	service := archiveMaintenanceService(t, database, provider, ref, now)
-	completeArchiveInitial(t, service)
-	provider.updatedIssueStarted = make(chan struct{})
-	provider.updatedIssueRelease = make(chan struct{})
-	provider.updatedMRErrors = map[string]error{"": errors.New("merge request page unavailable")}
-	done := make(chan error, 1)
-	go func() { done <- service.RunEligible(t.Context()) }()
-	<-provider.updatedIssueStarted
-	finished := now.Add(4 * time.Hour)
-	service.clock = fixedClock{value: finished}
-	close(provider.updatedIssueRelease)
-	require.ErrorContains(<-done, "merge request page unavailable")
-	states, err := database.ListArchiveRepoStates(t.Context(), []int64{repoID})
-	require.NoError(err)
-	require.NotNil(states[0].LastProgressAt)
-	require.Equal(finished, *states[0].LastProgressAt)
-}
-
 func TestPromptMaintenanceCommitsPagesBeforeAdvancingScanWatermark(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

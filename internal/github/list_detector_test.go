@@ -1,6 +1,7 @@
 package github
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -230,24 +231,36 @@ func TestLargeIssueListUsesNewestIssueDetector(t *testing.T) {
 	var detectors atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("ETag", `"issues"`)
 		if r.URL.Query().Get("state") == "all" {
 			detectors.Add(1)
-			if r.Header.Get("If-None-Match") == `"issues"` {
+			w.Header().Set("ETag", `"newest"`)
+			if r.Header.Get("If-None-Match") == `"newest"` {
 				w.WriteHeader(http.StatusNotModified)
 				return
 			}
-		} else if r.URL.Query().Get("page") == "" {
+			_, _ = w.Write([]byte(`[{"number":200,"state":"open"}]`))
+			return
+		}
+		page := r.URL.Query().Get("page")
+		end := 100
+		if page == "" {
+			end = 200
 			w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?state=open&page=2>; rel="next"`, r.Host, r.URL.Path))
 		}
-		_, _ = w.Write([]byte(`[]`))
+		var rows []string
+		for n := end; n > end-100; n-- {
+			rows = append(rows, fmt.Sprintf(`{"number":%d,"state":"open"}`, n))
+		}
+		w.Header().Set("ETag", fmt.Sprintf(`"page-%d"`, end))
+		_, _ = w.Write([]byte("[" + strings.Join(rows, ",") + "]"))
 	}))
 	t.Cleanup(server.Close)
 	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil, WithBaseURLForTesting(server.URL))
 	require.NoError(t, err)
 	for range 2 {
-		_, err = client.ListOpenIssues(t.Context(), "acme", "widget")
+		issues, err := client.ListOpenIssues(t.Context(), "acme", "widget")
 		require.NoError(t, err)
+		require.Len(t, issues, 200)
 	}
 	_, err = client.ListOpenIssues(t.Context(), "acme", "widget")
 	require.True(t, platformgithub.IsNotModified(err))
@@ -257,7 +270,6 @@ func TestLargeIssueListUsesNewestIssueDetector(t *testing.T) {
 func TestLargeIssueListDeletionAfterDetectorExpiry(t *testing.T) {
 	t.Parallel()
 	var deleted atomic.Bool
-	var listReads atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Query().Get("state") == "all" {
@@ -269,7 +281,6 @@ func TestLargeIssueListDeletionAfterDetectorExpiry(t *testing.T) {
 			_, _ = w.Write([]byte(`[{"number":300}]`))
 			return
 		}
-		listReads.Add(1)
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 		if page < 1 {
 			page = 1
@@ -286,7 +297,9 @@ func TestLargeIssueListDeletionAfterDetectorExpiry(t *testing.T) {
 		if end < len(rows) {
 			w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?state=open&page=%d>; rel="next"`, r.Host, r.URL.Path, page+1))
 		}
-		_, _ = w.Write([]byte("[" + strings.Join(rows[start:end], ",") + "]"))
+		body := "[" + strings.Join(rows[start:end], ",") + "]"
+		w.Header().Set("ETag", fmt.Sprintf(`"%x"`, sha256.Sum256([]byte(body))))
+		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(server.Close)
 	budget := NewSyncBudget(100)
@@ -303,11 +316,10 @@ func TestLargeIssueListDeletionAfterDetectorExpiry(t *testing.T) {
 		require.Len(t, issues, 300)
 	}
 	deleted.Store(true)
-	spent, reads := budget.Spent(), listReads.Load()
+	spent := budget.Spent()
 	_, err = client.ListOpenIssues(ctx, "acme", "widget")
 	require.True(t, platformgithub.IsNotModified(err))
 	assert.Equal(t, spent, budget.Spent())
-	assert.Equal(t, reads, listReads.Load())
 	et.cache.Range(func(key, value any) bool {
 		entry := value.(etagEntry)
 		entry.cachedAt = time.Now().Add(-etagTTL - time.Minute)

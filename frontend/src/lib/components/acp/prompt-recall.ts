@@ -38,18 +38,25 @@ export function caretOnEdgeLine(field: HTMLTextAreaElement, edge: "first" | "las
     whiteSpace: "pre-wrap",
     overflowWrap: "break-word",
   });
-  // Empty markers add no break opportunity, so the copy wraps as the field
-  // does. The end marker holds a zero-width space so a trailing newline still
-  // opens the line the caret would sit on.
-  const start = document.createElement("span");
-  const caret = document.createElement("span");
-  const end = document.createElement("span");
-  end.textContent = "\u200b";
-  mirror.append(start, value.slice(0, selectionStart), caret, value.slice(selectionStart), end);
+  // Each marker wraps a character, since Firefox places an empty span at a
+  // different height. At a soft wrap the field draws the caret at the start
+  // of the next line, so the caret takes the line of the character after it.
+  // Only the end marker adds text: a zero-width space, which also opens the
+  // line after a trailing newline.
+  const marker = (text: string) => Object.assign(document.createElement("span"), { textContent: text });
+  const charAt = (index: number) => String.fromCodePoint(value.codePointAt(index)!);
+  const caretChar = selectionStart < value.length ? charAt(selectionStart) : "\u200b";
+  const caret = marker(caretChar);
+  const firstChar = selectionStart === 0 ? caretChar : charAt(0);
+  const first = selectionStart === 0 ? caret : marker(firstChar);
+  const last = selectionStart === value.length ? caret : marker("\u200b");
+  if (first !== caret) mirror.append(first, value.slice(firstChar.length, selectionStart));
+  mirror.append(caret, value.slice(selectionStart + caretChar.length));
+  if (last !== caret) mirror.append(last);
   document.body.append(mirror);
   try {
     const top = caret.getBoundingClientRect().top;
-    const edgeTop = (edge === "first" ? start : end).getBoundingClientRect().top;
+    const edgeTop = (edge === "first" ? first : last).getBoundingClientRect().top;
     return Math.abs(top - edgeTop) < 1;
   } finally {
     mirror.remove();

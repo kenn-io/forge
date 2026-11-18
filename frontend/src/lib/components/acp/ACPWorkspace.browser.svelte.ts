@@ -1604,4 +1604,16 @@ describe("ACPWorkspace prompt recall (browser)", () => {
     for (let press = 0; press < 5 && composer.value === longPrompt; press += 1) await userEvent.keyboard("{ArrowUp}");
     expect(composer.value).toBe("Short prompt");
   });
+
+  it("places a caret at the start of a wrapped line on that line, not the one above", async () => {
+    const composer = await renderHistory(360, [{ role: "user", text: longPrompt }]);
+
+    await userEvent.keyboard("{ArrowUp}");
+    await expect.poll(() => composer.value).toBe(longPrompt);
+    // Home leaves the caret at a soft wrap, drawn at the start of the last line.
+    await userEvent.keyboard("{Home}");
+    expect(composer.selectionStart).toBeGreaterThan(0);
+    await userEvent.keyboard("{ArrowDown}");
+    await expect.poll(() => composer.value).toBe("");
+  });
 });

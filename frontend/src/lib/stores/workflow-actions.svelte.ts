@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { appendBatch, type ListProblem } from "@kenn-io/kit-ui";
-import { isTransientPickerReadFailure } from "../api/retry-policy.js";
+import { isRetryableListFailure } from "../api/retry-policy.js";
 import { readErrorMessage } from "./sync.svelte.js";
 
 import type { RepoRefResponse } from "../api/generated/models/repoRefResponse.js";
@@ -193,21 +193,6 @@ function mergeNamedRun(
   return { runs: upsertRun(runs, run), run };
 }
 
-function mergeRunPage(
-  shown: readonly WorkflowRun[],
-  items: WorkflowRun[],
-  previousPageEnd: string | undefined,
-  exhausted: boolean,
-): WorkflowRun[] {
-  const split = previousPageEnd === undefined ? 0 : shown.findIndex((run) => run.id === previousPageEnd) + 1;
-  const merged = appendBatch({ items: shown.slice(0, split) }, { items }, (run) => run.id);
-  const returned = new Set(items.map((run) => run.id));
-  const covered = shown.findLastIndex((run, index) => index >= split && returned.has(run.id)) + 1;
-  return exhausted
-    ? merged.items
-    : appendBatch(merged, { items: shown.slice(Math.max(split, covered)) }, (run) => run.id).items;
-}
-
 function isOutcomeUncertain(error: WorkflowActionsError): boolean {
   return (
     error._tag === "TransientTransportError" ||
@@ -225,7 +210,6 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   let enabled = true;
   let snapshots = $state.raw<Readonly<Record<string, WorkflowActionsSnapshot>>>({});
   const generations = new Map<string, Generations>();
-  const runPageEnds = new Map<string, string>();
   const executions = new Map<string, AppExecution<unknown, never>>();
   // Progress events can arrive before the POST response names the dispatch;
   // hold them until the cycle owns that dispatch id.
@@ -345,8 +329,8 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   }
 
   function readRuns(ref: WorkflowRepositoryRef, workflowId: string, cursor: string | undefined): void {
-    const initial = snapshotFor(ref);
-    const dispatchAtStart = initial.dispatches[workflowId];
+    const dispatchAtStart = snapshotFor(ref).dispatches[workflowId];
+    const pages = cursor === undefined ? Math.max(1, Math.ceil(snapshotFor(ref).runs.length / runsPageSize)) : 1;
     const generation =
       cursor === undefined ? nextGeneration(ref, "runs") : (generations.get(workflowRepositoryKey(ref))?.runs ?? 0);
     run(
@@ -354,21 +338,32 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
       "GET workflow runs",
       ref,
       (api) =>
-        api
-          .execute("GET workflow runs", (signal) =>
-            providerUsesHostRoute(ref)
-              ? api.client.WorkflowsService.listWorkflowRunsOnHost(
-                  providerHostRouteParams(ref),
-                  { workflow_id: workflowId, per_page: runsPageSize, ...(cursor !== undefined && { cursor }) },
-                  { signal },
-                )
-              : api.client.WorkflowsService.listWorkflowRuns(
-                  providerRouteParams(ref),
-                  { workflow_id: workflowId, per_page: runsPageSize, ...(cursor !== undefined && { cursor }) },
-                  { signal },
-                ),
-          )
-          .pipe(Effect.flatMap((response) => verifyRepository(ref, response))),
+        Effect.gen(function* () {
+          let next = cursor;
+          let items: WorkflowRun[] = [];
+          let page;
+          for (let index = 0; index < pages; index++) {
+            page = yield* api
+              .execute("GET workflow runs", (signal) =>
+                providerUsesHostRoute(ref)
+                  ? api.client.WorkflowsService.listWorkflowRunsOnHost(
+                      providerHostRouteParams(ref),
+                      { workflow_id: workflowId, per_page: runsPageSize, ...(next !== undefined && { cursor: next }) },
+                      { signal },
+                    )
+                  : api.client.WorkflowsService.listWorkflowRuns(
+                      providerRouteParams(ref),
+                      { workflow_id: workflowId, per_page: runsPageSize, ...(next !== undefined && { cursor: next }) },
+                      { signal },
+                    ),
+              )
+              .pipe(Effect.flatMap((response) => verifyRepository(ref, response)));
+            items = appendBatch({ items }, { items: page.items ?? [] }, (item) => item.id).items;
+            next = page.next_cursor || undefined;
+            if (page.exhausted || !next) break;
+          }
+          return { ...page!, items };
+        }),
       {
         onFailure: (error) => {
           if (!isCurrent(ref, "runs", generation)) return;
@@ -384,7 +379,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
                   ? snapshot.runsPage.problem
                   : {
                       detail: readErrorMessage(error, "Could not load runs."),
-                      retryable: isTransientPickerReadFailure(error),
+                      retryable: isRetryableListFailure(error),
                     },
             },
           }));
@@ -398,17 +393,11 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
             const retainedRun = cycle?.kind === "succeeded" || cycle?.kind === "timed_out" ? cycle.run : undefined;
             const retainRun =
               retainedRun && (cycle !== dispatchAtStart || !items.some((run) => run.id === retainedRun.id));
-            const key = workflowRepositoryKey(ref);
-            const merged = mergeRunPage(
-              snapshot.runs,
-              items,
-              cursor === undefined ? undefined : runPageEnds.get(key),
-              page.exhausted,
-            );
+            const merged =
+              cursor === undefined
+                ? items
+                : appendBatch({ items: [...snapshot.runs] }, { items }, (run) => run.id).items;
             const runs = cursor === undefined && retainRun ? mergeNamedRun(merged, retainedRun).runs : merged;
-            const pageEnd = items.at(-1)?.id;
-            if (pageEnd !== undefined) runPageEnds.set(key, pageEnd);
-            else if (cursor === undefined) runPageEnds.delete(key);
             return {
               ...snapshot,
               runs,
@@ -435,7 +424,6 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
         ? null
         : (snapshot.catalog?.workflows?.find((candidate) => candidate.id === workflowId) ?? null);
     executions.get(`${workflowRepositoryKey(ref)}:runs`)?.interrupt();
-    runPageEnds.delete(workflowRepositoryKey(ref));
     nextGeneration(ref, "runs");
     update(ref, (current) => ({
       ...current,
@@ -617,7 +605,6 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     for (const execution of executions.values()) execution.interrupt();
     executions.clear();
     generations.clear();
-    runPageEnds.clear();
     earlyProgress.clear();
     snapshots = {};
   }

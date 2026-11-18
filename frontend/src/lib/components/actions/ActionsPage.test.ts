@@ -280,6 +280,20 @@ describe("ActionsPage", () => {
   it("refreshes only the selected workflow in the visible repository", async () => {
     api = createMockApiFetch([
       (request) => {
+        if (
+          request.url.pathname === "/api/v1/actions/github/acme/alpha/runs" &&
+          request.url.searchParams.get("workflow_id") === "alpha-deploy.yml"
+        ) {
+          const older = request.url.searchParams.has("cursor");
+          return jsonResponse({
+            repo: repoSummary("alpha").repo,
+            items: older
+              ? [workflowRun("alpha", { id: "older", run_number: 5 })]
+              : Array.from({ length: 50 }, (_, i) => workflowRun("alpha", { id: `run-${i}`, run_number: i + 7 })),
+            exhausted: older,
+            ...(!older && { next_cursor: "older-page" }),
+          });
+        }
         const match = request.url.pathname.match(/^\/api\/v1\/actions\/github\/acme\/(alpha|beta)\/workflows$/);
         if (!match) return null;
         const name = match[1]!;
@@ -311,7 +325,7 @@ describe("ActionsPage", () => {
     emit({ ...payload, platform_repo_id: 1004 });
     emit({ ...payload, platform_host: "github.example.com" });
     emit(payload);
-    await waitFor(() => expect(reads()).toHaveLength(3));
+    await waitFor(() => expect(reads()).toHaveLength(4));
     const ref = {
       provider: "github",
       platformHost: "github.com",
@@ -319,20 +333,21 @@ describe("ActionsPage", () => {
       name: "alpha",
       repositoryKey: { kind: "id", id: 1003 },
     };
-    expect(store.getRuns(ref)).toHaveLength(3);
+    await waitFor(() => expect(store.getLoading(ref).runs).toBe(false));
+    expect(store.getRuns(ref)).toHaveLength(51);
     expect(refInput.value).toBe("feature/draft");
     await fireEvent.click(screen.getByRole("button", { name: /alpha verify/ }));
-    await waitFor(() => expect(reads()).toHaveLength(4));
+    await waitFor(() => expect(reads()).toHaveLength(5));
     const rail = screen.getByRole("navigation", { name: "Actions repositories" });
     await fireEvent.click(within(rail).getByRole("button", { name: /beta/ }));
     await screen.findByRole("button", { name: /beta deploy/ });
     emit({ ...payload, platform_repo_id: 1004 });
-    expect(reads()).toHaveLength(4);
+    expect(reads()).toHaveLength(5);
     await fireEvent.click(screen.getByRole("button", { name: /beta deploy/ }));
-    await waitFor(() => expect(reads()).toHaveLength(5));
+    await waitFor(() => expect(reads()).toHaveLength(6));
     emit({ ...payload, platform_repo_id: 1003 });
     emit({ ...payload, platform_repo_id: 1004 });
-    await waitFor(() => expect(reads()).toHaveLength(6));
+    await waitFor(() => expect(reads()).toHaveLength(7));
     expect(
       reads().map((request) => [
         request.url.pathname,
@@ -343,6 +358,7 @@ describe("ActionsPage", () => {
       ["/api/v1/actions/github/acme/alpha/runs", "alpha-deploy.yml", null],
       ["/api/v1/actions/github/acme/alpha/runs", "alpha-deploy.yml", "older-page"],
       ["/api/v1/actions/github/acme/alpha/runs", "alpha-deploy.yml", null],
+      ["/api/v1/actions/github/acme/alpha/runs", "alpha-deploy.yml", "older-page"],
       ["/api/v1/actions/github/acme/alpha/runs", "alpha-verify.yml", null],
       ["/api/v1/actions/github/acme/beta/runs", "beta-deploy.yml", null],
       ["/api/v1/actions/github/acme/beta/runs", "beta-deploy.yml", null],

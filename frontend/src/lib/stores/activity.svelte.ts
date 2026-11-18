@@ -2,7 +2,7 @@ import { Effect, Result } from "effect";
 import type { AppRuntime } from "../app/runtime.js";
 import type { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
-import { isTransientPickerReadFailure, retryIdempotentRead } from "../api/retry-policy.js";
+import { isRetryableListFailure, retryIdempotentRead } from "../api/retry-policy.js";
 import type { ListProblem } from "@kenn-io/kit-ui";
 import type {
   ActivityItem,
@@ -819,10 +819,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return JSON.stringify([activityProjectionScope(params), params.projection]);
   }
 
-  const activityScrollScopeKey = $derived.by(() => JSON.stringify([
-    activityProjectionScope({ ...buildParams(), limit: undefined }),
-    [...enabledEvents], showNotifications, pullAttributeFilters,
-  ]));
+  const activityScrollScopeKey = $derived.by(() =>
+    JSON.stringify([
+      activityProjectionScope({ ...buildParams(), limit: undefined }),
+      [...enabledEvents],
+      showNotifications,
+      pullAttributeFilters,
+    ]),
+  );
 
   function rememberActivitySnapshot(): void {
     if (snapshotScope === undefined || snapshotFilterScope === undefined) return;
@@ -1426,6 +1430,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     generation: number,
     scope: string,
     page?: { cursor: string; depth: number },
+    onBatchFailure?: (problem: ListProblem) => void,
   ) {
     const ownsProjection = () =>
       page
@@ -1442,9 +1447,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       Effect.tapError((failure) =>
         Effect.sync(() => {
           if (!ownsProjection()) return;
-          const problem = { detail: readErrorMessage(failure), retryable: isTransientPickerReadFailure(failure) };
+          const problem = { detail: readErrorMessage(failure), retryable: isRetryableListFailure(failure) };
           if (page) olderItemsProblem = problem;
-          else {
+          else if (onBatchFailure) {
+            loading = false;
+            storeError = null;
+            onBatchFailure(problem);
+          } else {
             loading = false;
             if (!flatPaging.rollback(activityPageQuery(params), undefined, problem)) storeError = problem.detail;
           }
@@ -1718,7 +1727,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (initialized) retainedFeedStale = true;
   }
 
-  function loadActivity(forceAuthors = false): void {
+  function loadActivity(forceAuthors = false, onBatchFailure?: (problem: ListProblem) => void): void {
     retainedFeedStale = false;
     invalidatePagedActivityRequests();
     const generation = pagedActivityGeneration;
@@ -1726,11 +1735,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     restoreRepositoryActivity(params);
     const scope = activityProjectionScope(params);
     loadActivityAuthors(forceAuthors || authorsLoading);
-    runtime.runCommand(loadActivityEffect(params, generation, scope), {
+    runtime.runCommand(loadActivityEffect(params, generation, scope, undefined, onBatchFailure), {
       operation: "load activity",
       safeContext: {},
       onFailure: (failure) => {
-        if (!ownsForegroundSnapshot(generation, scope)) return;
+        if (onBatchFailure || !ownsForegroundSnapshot(generation, scope)) return;
         storeError = readErrorMessage(failure);
         loading = false;
       },

@@ -4374,6 +4374,26 @@ describe("activity store author candidates", () => {
 });
 
 describe("activity store projection scope", () => {
+  it("reports a failed phone batch without replacing the loaded activity", async () => {
+    let fail = false;
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      if (fail) return { error: { detail: "unavailable" }, response: new Response(null, { status: 500 }) };
+      return { data: { items: [], item_activity: [itemActivity(7)], capped: true }, error: null };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.setActivityPageLimit(30);
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(1));
+    fail = true;
+    store.setActivityPageLimit(60);
+    const onFailure = vi.fn();
+    store.loadActivity(false, onFailure);
+    await vi.waitFor(() => expect(onFailure).toHaveBeenCalledWith({ detail: "unavailable", retryable: true }));
+    expect(store.getItemActivity()).toHaveLength(1);
+    expect(store.getActivityError()).toBeNull();
+  });
+
   it("keeps the scroll scope when page depth grows and changes it for filters", () => {
     const store = createActivityStore({ client: fakeClient });
     store.setActivityPageLimit(30);

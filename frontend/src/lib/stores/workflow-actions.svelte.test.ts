@@ -143,7 +143,7 @@ describe("workflow actions store", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
-  it("refreshes all 350 loaded runs and keeps the window if a page fails", async () => {
+  it("bounds refresh at 300 runs, retains the tail, and continues paging", async () => {
     let refreshed = false;
     let fail = false;
     const reads: string[] = [];
@@ -159,33 +159,35 @@ describe("workflow actions store", () => {
         items: Array.from({ length: 50 }, (_, i) =>
           run(String(i + (page - 1) * 50), refreshed ? "completed" : "queued"),
         ),
-        exhausted: page === 7,
-        ...(page < 7 && { next_cursor: String(page + 1) }),
+        exhausted: page === 21,
+        ...(page < 21 && { next_cursor: String(page + 1) }),
       });
     };
     store.loadCatalog(ref);
     await settle();
     store.selectWorkflow(ref, "deploy.yml");
     await settle();
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 19; i++) {
       store.loadMoreRuns(ref);
       await settle();
     }
-    expect(store.getRuns(ref)).toHaveLength(350);
+    expect(store.getRuns(ref)).toHaveLength(1000);
     refreshed = true;
     reads.length = 0;
     store.refreshRuns(ref);
     await settle();
-    expect(reads).toEqual(["1", "2", "3", "4", "5", "6", "7"]);
-    expect(store.getRuns(ref)[349]?.status).toBe("completed");
-    expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ nextCursor: null, exhausted: true });
+    expect(reads).toEqual(["1", "2", "3", "4", "5", "6"]);
+    expect(store.getRuns(ref)).toHaveLength(1000);
+    expect(store.getRuns(ref)[299]?.status).toBe("completed");
+    expect(store.getRuns(ref)[999]?.status).toBe("queued");
+    expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ nextCursor: "21", exhausted: false });
     store.loadMoreRuns(ref);
-    expect(reads).toHaveLength(7);
+    await settle();
+    expect(reads.at(-1)).toBe("21");
     fail = true;
     store.refreshRuns(ref);
     await settle();
-    expect(store.getRuns(ref)).toHaveLength(350);
-    expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ nextCursor: null, exhausted: true });
+    expect(store.getRuns(ref)).toHaveLength(1050);
     expect(store.getSnapshot(ref)?.error).not.toBeNull();
   });
 
@@ -238,15 +240,15 @@ describe("workflow actions store", () => {
     );
   });
 
-  it("keeps runs and exposes a failed older page for retry", async () => {
+  it.each([429, 500])("keeps runs and exposes a %s older page failure for retry", async (status) => {
     let fail = true;
     globalThis.fetch = async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
       if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
       if (url.searchParams.has("cursor") && fail) {
         return jsonResponse(
-          { status: 500, code: "internalError", title: "Unavailable", detail: "Page unavailable" },
-          500,
+          { status, code: "internalError", title: "Unavailable", detail: "Page unavailable" },
+          status,
         );
       }
       const older = url.searchParams.has("cursor");
@@ -544,6 +546,40 @@ describe("workflow actions store", () => {
     expect(store.getRuns(ref)[0]?.status).toBe("completed");
     expect(store.getLoading(ref).runs).toBe(false);
     expect(store.getSnapshot(ref)?.runsPage.loadingMore).toBe(false);
+  });
+
+  it("does not count an unlisted dispatched run in refresh depth", async () => {
+    const reads: string[] = [];
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
+      reads.push(url.searchParams.get("cursor") ?? "1");
+      return jsonResponse({
+        repo,
+        items: Array.from({ length: 50 }, (_, i) => run(String(i), "queued")),
+        exhausted: false,
+        next_cursor: "2",
+      });
+    };
+    fixture.dispatchResponse = () =>
+      jsonResponse({ accepted: true, dispatch_id: "dispatch-1", actor: "maintainer", run: run("new", "queued") }, 202);
+    store.loadCatalog(ref);
+    await settle();
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+    store.dispatch({
+      ref,
+      workflowId: "deploy.yml",
+      expectedDefinitionSha: "definition-1",
+      dispatchRef: "main",
+      inputs: {},
+    });
+    await settle();
+    reads.length = 0;
+    store.refreshRuns(ref);
+    await settle();
+    expect(reads).toEqual(["1"]);
+    expect(store.getRuns(ref)).toHaveLength(51);
   });
 
   it("uses fresh run status instead of retaining an older dispatch snapshot on refresh", async () => {

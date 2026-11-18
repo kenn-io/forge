@@ -57,6 +57,39 @@ test("threaded activity scrolls past 5,000 subjects", async ({ page }) => {
   }).toPass({ timeout: 100_000 });
 });
 
+test("returns to a loaded older activity item", async ({ page }) => {
+  await mockApi(page);
+  await page.route("**/api/v1/activity**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/thread-events")) return route.fulfill({ json: { items: [], capped: false } });
+    if (url.pathname !== "/api/v1/activity") return route.fallback();
+    const older = url.searchParams.has("subject_before");
+    await route.fulfill({
+      json: {
+        items: [],
+        capped: false,
+        item_activity: Array.from({ length: older ? 100 : 200 }, (_, i) => subject(i + (older ? 201 : 1))),
+        item_activity_capped: !older,
+        next_subject_cursor: older ? "" : "older",
+      },
+    });
+  });
+  await page.goto("/?view=threaded");
+  const viewport = page.getByRole("region", { name: "Threaded activity" });
+  await expect(async () => {
+    await viewport.dispatchEvent("wheel");
+    await viewport.evaluate((node) => {
+      node.scrollTop = node.scrollHeight;
+    });
+    await expect(page.getByText("Pull request 250", { exact: true })).toBeAttached({ timeout: 300 });
+  }).toPass();
+  const older = page.getByText("Pull request 250", { exact: true });
+  await older.scrollIntoViewIfNeeded();
+  await page.getByRole("button", { name: "PRs", exact: true }).click();
+  await page.goBack();
+  await expect(older).toBeInViewport();
+});
+
 test("flat activity scrolls to its 5,000 event ceiling", async ({ page }) => {
   test.setTimeout(120_000);
   await mockApi(page);

@@ -29,7 +29,10 @@ export function createListPaging() {
   }
 
   function apply({ limit: want, ...query }: ListQuery, params?: ListQuery): void {
-    if (want !== undefined && isCurrentQuery(query, params)) page = { ...page, want, got: want };
+    if (want !== undefined && isCurrentQuery(query, params)) {
+      page = { ...page, want, got: want };
+      problem = null;
+    }
   }
 
   function isLoadingMore(): boolean {

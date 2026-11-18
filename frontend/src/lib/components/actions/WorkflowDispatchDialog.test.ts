@@ -57,7 +57,7 @@ it.each([
 ])("dismisses $kind without resetting or submitting the operation", async (state) => {
   const base = props();
   render(WorkflowDispatchDialog, { ...base, state });
-  await fireEvent.keyDown(window, { key: "Escape" });
+  await fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
   expect(base.onclose).toHaveBeenCalledTimes(1);
   await pressBackdrop(screen.getByRole("dialog").parentElement as HTMLElement);
   expect(base.onclose).toHaveBeenCalledTimes(2);

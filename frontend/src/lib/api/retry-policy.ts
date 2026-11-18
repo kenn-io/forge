@@ -28,10 +28,13 @@ export function isTransientPickerReadFailure(failure: unknown): boolean {
 export function isRetryableListFailure(failure: unknown): boolean {
   if (isTransientFailure(failure)) {
     if (failure.cause instanceof InvalidGeneratedErrorResponse)
-      return failure.cause.status >= 500 && failure.cause.status < 600;
+      return failure.cause.status === 429 || (failure.cause.status >= 500 && failure.cause.status < 600);
     return !(failure.cause instanceof SyntaxError);
   }
-  return failure instanceof ApiProblemError && (failure.httpStatus ?? 0) >= 500 && (failure.httpStatus ?? 0) < 600;
+  return (
+    failure instanceof ApiProblemError &&
+    (failure.httpStatus === 429 || ((failure.httpStatus ?? 0) >= 500 && (failure.httpStatus ?? 0) < 600))
+  );
 }
 
 export const retryIdempotentRead = <A, E, R>(

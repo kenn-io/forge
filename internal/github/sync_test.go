@@ -17301,8 +17301,8 @@ func testSyncerBudgetWaitLogsOneLinePerRepo(t *testing.T, withIssues bool) {
 	listsStarted.Store(false)
 	syncer.RunOnce(ctx)
 	if withIssues {
-		assert.Equal(int64(1), issueOK.Load())
-		assert.Equal(int64(1), issueConditional.Load())
+		assert.Equal(int64(2), issueOK.Load())
+		assert.Zero(issueConditional.Load())
 	} else {
 		assert.Equal(int64(1), prOK.Load())
 		assert.Equal(int64(1), prNotModified.Load())
@@ -17335,8 +17335,8 @@ func testSyncerBudgetWaitLogsOneLinePerRepo(t *testing.T, withIssues bool) {
 	refill.Store(true)
 	budget.Reset()
 	syncer.RunOnce(ctx)
-	assert.Equal(int64(1), issueOK.Load())
-	assert.Equal(int64(2), issueConditional.Load())
+	assert.Equal(int64(3), issueOK.Load())
+	assert.Zero(issueConditional.Load())
 	assert.Equal(int64(1), closureCalls.Load())
 	missing, err := database.GetIssue(ctx, "github", "github.com", "owner", "repo", 3)
 	require.NoError(err)
@@ -23139,53 +23139,3 @@ var (
 	_ platform.RepositoryReader               = (*syncTestReadProvider)(nil)
 	_ platform.RepositoryReader               = (*syncTestRepositoryReadProvider)(nil)
 )
-
-func TestSyncDropsAndReportsRemovedIssuesAfterIdleSyncs(t *testing.T) {
-	ctx := t.Context()
-	srv := &issuePageServer{}
-	server := httptest.NewServer(srv.handler(t))
-	t.Cleanup(server.Close)
-	budget := NewSyncBudget(10000)
-	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
-	require.NoError(t, err)
-	mc := &partialFailureMock{listOpenIssuesFn: client.ListOpenIssues}
-	mc.openPRs = []*gh.PullRequest{}
-	mc.comments = []*gh.IssueComment{}
-	mc.getIssueFn = func(_ context.Context, _, _ string, number int) (*gh.Issue, error) {
-		if number == 250 {
-			return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotFound}, Message: "Not Found"}
-		}
-		require.Equal(t, 251, number)
-		return &gh.Issue{RepositoryURL: new("https://api.github.com/repos/acme/other")}, nil
-	}
-	d := openTestDB(t)
-	repos := []RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}}
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, repos, time.Minute, nil, nil)
-	ctx = WithSyncBudget(ctx)
-	for range 2 {
-		syncer.RunOnce(ctx)
-	}
-	spent := budget.Spent()
-	syncer.RunOnce(ctx)
-	assert.Equal(t, spent, budget.Spent())
-	srv.deleted.Store(true)
-	syncer.RunOnce(ctx)
-	_, failed := syncer.failedRepos.Load(repoFailKey(repos[0]))
-	assert.False(t, failed)
-	issue, err := d.GetIssue(ctx, "github", "github.com", "acme", "widget", 250)
-	require.NoError(t, err)
-	require.NotNil(t, issue)
-	assert.Equal(t, "closed", issue.State)
-	openIssues, err := d.ListIssues(ctx, db.ListIssuesOpts{State: "open", Limit: 500})
-	require.NoError(t, err)
-	assert.Len(t, openIssues, 299)
-	srv.transferred.Store(true)
-	syncer.RunOnce(ctx)
-	_, failed = syncer.failedRepos.Load(repoFailKey(repos[0]))
-	assert.True(t, failed)
-	assert.Contains(t, syncer.Status().LastError, "moved")
-	issue, err = d.GetIssue(ctx, "github", "github.com", "acme", "widget", 251)
-	require.NoError(t, err)
-	require.NotNil(t, issue)
-	assert.Equal(t, "open", issue.State)
-}

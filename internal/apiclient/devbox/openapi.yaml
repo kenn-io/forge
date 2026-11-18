@@ -58,6 +58,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        app_slug:
+          type: string
         default_branch:
           type: string
         expires_at:
@@ -75,6 +77,7 @@ components:
           type: boolean
       required:
         - token
+        - app_slug
         - expires_at
         - writable
         - github_user_id

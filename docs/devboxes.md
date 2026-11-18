@@ -167,7 +167,10 @@ kenn-forge devbox github --socket /run/forge-broker/broker.sock \
   --repository example-org/project-a -- pr create
 ```
 
-The wrapper supports `pr create`, `edit`, `comment`, `view`, `list` and `checks`.
+The wrapper supports `pr create`, `edit`, `comment`, `view`, `list`, `checks`,
+`close`, `reopen`, and `ready`.
+The wrapper refuses `close`, `reopen`, and `ready` on pull requests
+authored by anyone other than the App.
 Its token goes only to that child process. Git and the wrapper explain broker
 failures, such as a repository not being admitted or missing write permission.
 

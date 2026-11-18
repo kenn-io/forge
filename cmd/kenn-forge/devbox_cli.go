@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/devbox"
@@ -100,8 +103,23 @@ func newDevboxCommand(run serve.Runner) *cobra.Command {
 }
 
 func runDevboxGitHub(ctx context.Context, command *cobra.Command, socket, repository string, args []string) error {
-	if args[0] != "pr" || !strings.Contains(" create edit comment view list checks ", " "+args[1]+" ") {
-		return errors.New("supported GitHub commands: pr create, edit, comment, view, list, checks")
+	if args[0] != "pr" || !strings.Contains(" create edit comment view list checks close reopen ready ", " "+args[1]+" ") {
+		return errors.New("supported GitHub commands: pr create, edit, comment, view, list, checks, close, reopen, ready")
+	}
+	checkAuthor := strings.Contains(" close reopen ready ", " "+args[1]+" ")
+	selector, repo, actionFlags := "", "", []string(nil)
+	if checkAuthor {
+		var help bool
+		var err error
+		selector, repo, actionFlags, help, err = devboxGitHubActionFlags(args)
+		if err != nil {
+			return err
+		}
+		if help {
+			child := procutil.CommandContext(ctx, "gh", args...)
+			child.Stdin, child.Stdout, child.Stderr = command.InOrStdin(), command.OutOrStdout(), command.ErrOrStderr()
+			return child.Run()
+		}
 	}
 	if _, _, err := devbox.ParseRepository(repository); err != nil {
 		return err
@@ -117,15 +135,83 @@ func runDevboxGitHub(ctx context.Context, command *cobra.Command, socket, reposi
 		return err
 	}
 	defer os.RemoveAll(privateConfig)
+	if checkAuthor {
+		url, err := devboxAppPullRequest(ctx, command, devboxGitHubEnv(credential.Token, privateConfig, repository), credential.AppSlug, selector, repo)
+		if err != nil {
+			return err
+		}
+		args = append([]string{"pr", args[1], url}, actionFlags...)
+	}
 	child := procutil.CommandContext(ctx, "gh", args...)
 	child.Stdin, child.Stdout, child.Stderr = command.InOrStdin(), command.OutOrStdout(), command.ErrOrStderr()
+	child.Env = devboxGitHubEnv(credential.Token, privateConfig, repository)
+	return child.Run()
+}
+
+func devboxGitHubEnv(token, config, repository string) []string {
+	var env []string
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
 		if !strings.HasPrefix(name, "GH_") && !strings.HasPrefix(name, "GITHUB_") {
-			child.Env = append(child.Env, entry)
+			env = append(env, entry)
 		}
 	}
-	child.Env = append(child.Env, "GH_TOKEN="+credential.Token, "GH_CONFIG_DIR="+privateConfig,
+	return append(env, "GH_TOKEN="+token, "GH_CONFIG_DIR="+config,
 		"GH_REPO=github.com/"+repository, "GH_HOST=github.com", "GH_PROMPT_DISABLED=1")
-	return child.Run()
+}
+
+// devboxAppPullRequest returns the URL of the selected pull request after
+// checking that the GitHub App authored it.
+func devboxAppPullRequest(ctx context.Context, command *cobra.Command, env []string, appSlug, selector, repo string) (string, error) {
+	viewArgs := []string{"pr", "view", "--json", "author,url"}
+	if repo != "" {
+		viewArgs = append(viewArgs, "--repo", repo)
+	}
+	if selector != "" {
+		viewArgs = append(viewArgs, "--", selector)
+	}
+	view := procutil.CommandContext(ctx, "gh", viewArgs...)
+	view.Env = env
+	view.Stderr = command.ErrOrStderr()
+	output, err := view.Output()
+	if err != nil {
+		return "", fmt.Errorf("look up pull request author: %w", err)
+	}
+	var result struct {
+		URL    string `json:"url"`
+		Author struct {
+			Login string `json:"login"`
+			IsBot bool   `json:"is_bot"`
+		} `json:"author"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return "", fmt.Errorf("read pull request author: %w", err)
+	}
+	if !result.Author.IsBot || result.Author.Login != "app/"+appSlug {
+		return "", fmt.Errorf("pull request author %q is not GitHub App %q", result.Author.Login, appSlug)
+	}
+	return result.URL, nil
+}
+
+func devboxGitHubActionFlags(args []string) (string, string, []string, bool, error) {
+	flags := pflag.NewFlagSet("gh pr "+args[1], pflag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.BoolP("help", "h", false, "")
+	flags.StringP("repo", "R", "", "")
+	switch args[1] {
+	case "close", "reopen":
+		flags.StringP("comment", "c", "", "")
+	}
+	if err := flags.Parse(args[2:]); err != nil {
+		return "", "", nil, false, err
+	}
+	repo, _ := flags.GetString("repo")
+	help, _ := flags.GetBool("help")
+	var actionFlags []string
+	flags.Visit(func(flag *pflag.Flag) {
+		if flag.Name != "help" {
+			actionFlags = append(actionFlags, "--"+flag.Name+"="+flag.Value.String())
+		}
+	})
+	return flags.Arg(0), repo, actionFlags, help, nil
 }

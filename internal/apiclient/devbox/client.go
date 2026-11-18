@@ -759,6 +759,7 @@ type Assignment struct {
 type Credential struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema        *string   `json:"$schema,omitempty"`
+	AppSlug       string    `json:"app_slug"`
 	DefaultBranch string    `json:"default_branch"`
 	ExpiresAt     time.Time `json:"expires_at"`
 	GithubUserID  int64     `json:"github_user_id"`

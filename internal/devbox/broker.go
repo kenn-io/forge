@@ -56,6 +56,7 @@ type CredentialRequest struct {
 
 type Credential struct {
 	Token         string    `json:"token"`
+	AppSlug       string    `json:"app_slug"`
 	ExpiresAt     time.Time `json:"expires_at"`
 	Writable      bool      `json:"writable"`
 	GitHubUserID  int64     `json:"github_user_id"`
@@ -304,7 +305,7 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 		repoID, repo = fork.GetID(), fork
 	}
 	return &Credential{
-		Token: token.Token, ExpiresAt: token.ExpiresAt, Writable: writable,
+		Token: token.Token, AppSlug: installation.GetAppSlug(), ExpiresAt: token.ExpiresAt, Writable: writable,
 		GitHubUserID: account.GitHubUserID, RepositoryID: repoID, DefaultBranch: repo.GetDefaultBranch(),
 	}, nil
 }

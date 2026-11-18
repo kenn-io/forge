@@ -824,7 +824,6 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       activityProjectionScope({ ...buildParams(), limit: undefined }),
       [...enabledEvents],
       showNotifications,
-      pullAttributeFilters,
     ]),
   );
 

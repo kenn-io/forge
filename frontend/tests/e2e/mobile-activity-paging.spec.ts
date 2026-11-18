@@ -99,9 +99,9 @@ test("returns to a loaded older activity card", async ({ page }) => {
     provider: "github",
     platform_host: "github.com",
     platform_repo_id: 1007,
-    owner: "acme",
-    name: "widgets",
-    repo_path: "acme/widgets",
+    owner: "org-a",
+    name: "project-a",
+    repo_path: "org-a/project-a",
   };
   const time = new Date().toISOString();
   let limit = 0;
@@ -116,7 +116,7 @@ test("returns to a loaded older activity card", async ({ page }) => {
       item_state: "open",
       item_title: `Pull request ${i + 1}`,
       item_type: "pr",
-      item_url: `https://github.com/acme/widgets/pull/${i + 1}`,
+      item_url: `https://github.com/org-a/project-a/pull/${i + 1}`,
       repo,
     }));
     await route.fulfill({

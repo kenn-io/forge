@@ -44,9 +44,9 @@ test("scrolls to the oldest workflow run", async ({ page }) => {
     provider: "github",
     platform_host: "github.com",
     platform_repo_id: 1014,
-    owner: "acme",
-    name: "app",
-    repo_path: "acme/app",
+    owner: "org-a",
+    name: "project-a",
+    repo_path: "org-a/project-a",
     default_branch: "main",
     capabilities,
     operations: { dispatch_workflow: { available: true } },
@@ -58,8 +58,8 @@ test("scrolls to the oldest workflow run", async ({ page }) => {
     route.fulfill({
       json: [
         {
-          owner: "acme",
-          name: "app",
+          owner: "org-a",
+          name: "project-a",
           platform_host: "github.com",
           default_platform_host: "github.com",
           repo,
@@ -77,7 +77,7 @@ test("scrolls to the oldest workflow run", async ({ page }) => {
       ],
     }),
   );
-  await page.route("**/api/v1/actions/github/acme/app/workflows", async (route) =>
+  await page.route("**/api/v1/actions/github/org-a/project-a/workflows", async (route) =>
     route.fulfill({
       json: {
         repo,
@@ -96,10 +96,10 @@ test("scrolls to the oldest workflow run", async ({ page }) => {
       },
     }),
   );
-  await page.route("**/api/v1/actions/github/acme/app/runs**", async (route) => {
+  await page.route("**/api/v1/actions/github/org-a/project-a/runs**", async (route) => {
     const older = new URL(route.request().url()).searchParams.has("cursor");
     const items = Array.from({ length: older ? 1 : 50 }, (_, i) => ({
-      actor: "alice",
+      actor: "user-a",
       conclusion: "success",
       created_at: "2026-08-27T12:30:00Z",
       event: "workflow_dispatch",

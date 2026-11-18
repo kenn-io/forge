@@ -5,9 +5,9 @@ const repo = {
   provider: "github",
   platform_host: "github.com",
   platform_repo_id: 1007,
-  owner: "acme",
-  name: "widgets",
-  repo_path: "acme/widgets",
+  owner: "org-a",
+  name: "project-a",
+  repo_path: "org-a/project-a",
 };
 const time = new Date().toISOString();
 const subject = (number: number) => ({
@@ -16,14 +16,14 @@ const subject = (number: number) => ({
   item_state: "open",
   item_title: `Pull request ${number}`,
   item_type: "pr",
-  item_url: `https://github.com/acme/widgets/pull/${number}`,
+  item_url: `https://github.com/org-a/project-a/pull/${number}`,
   repo,
 });
 const event = (number: number) => ({
   id: `comment:${number}`,
   cursor: `comment:${number}`,
   activity_type: "comment",
-  author: "alice",
+  author: "user-a",
   body_preview: `Comment ${number}`,
   created_at: time,
   ...subject(number),

@@ -48,6 +48,10 @@ to the application.
   description copy sits left of Edit on every viewport.
 - PR list rows use the workspace indicator only; no separate worktree icon or
   branch-name label.
+- Host names must not displace repository names in PR table cells; dense lists
+  prioritize scanning repositories, with full identities available in tooltips.
+- Table is a desktop PR sidebar preference; focus and phone lists retain their
+  dedicated row layouts.
 - Repositories the provider reported private show `RepoPrivateIcon` beside their name; public
   and unknown repositories show nothing, and there is no public icon. In a repo chip the lock
   sits outside the chip, because the chip label's ellipsis would wrap it to a second line.
@@ -186,8 +190,10 @@ to the application.
   fixed layer below shell chrome and above modal backdrops, never inside features.
 - Commit timeline rows keep type, author, SHA, and relative time in the compact
   header; the SHA is metadata, not card action content.
-- `PullItem`/`IssueItem` rows have a uniform two-line height; any icon inside must fit
+- The two-line `PullItem`/`IssueItem` layouts keep uniform heights; icons must fit
   the row's line-height (`frontend/src/lib/components/shared/CITokenCluster.svelte`).
+- Desktop PR tables prioritize readable titles and complete metadata over forcing
+  one line; busy Item cells may wrap while column boundaries remain aligned.
 - Compact label chips outrank the title on list rows: the title yields to a small floor,
   below which it shrinks only to keep the status, number, and badge in view, and a chip
   that cannot fit whole moves into the `+N` badge; chip and badge text is never cut

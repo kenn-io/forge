@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import { Spinner } from "@kenn-io/kit-ui";
   import type { CIBucketedChecks } from "../../utils/ci-buckets.js";
   import CITokenCluster, { composeAriaLabel } from "./CITokenCluster.svelte";
@@ -22,6 +23,7 @@
     mergeQueueLabel?: string | undefined;
     mergeQueueRemoved?: boolean;
     stack?: { position: number; size: number } | undefined;
+    stackControl?: Snippet | undefined;
     bucketed: CIBucketedChecks;
     ciError?: string | null;
     conflict?: boolean;
@@ -35,6 +37,7 @@
     mergeQueueLabel = undefined,
     mergeQueueRemoved = false,
     stack = undefined,
+    stackControl,
     bucketed,
     ciError = null,
     conflict = false,
@@ -91,7 +94,9 @@
     <ListOrderedIcon size={13} strokeWidth={2.2} aria-hidden="true" />
   </span>
 {/if}
-{#if stack}
+{#if stackControl}
+  {@render stackControl()}
+{:else if stack}
   <span
     class="stack-indicator"
     aria-label={`Stacked: ${stack.position}/${stack.size}`}

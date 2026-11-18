@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import type { PullRequest } from "../../api/types.js";
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
   import { isPullMerging } from "../../stores/pull-merges.svelte.js";
@@ -15,7 +16,11 @@
   // and the PullStatusTokens for a synced pull request. Rendered without a
   // wrapper so the host row's flex gap spaces the icons. The merge queue page
   // turns off the merge queue icon, since its rows are grouped by queue already.
-  const { pr, showMergeQueue = true }: { pr: PullRequest; showMergeQueue?: boolean } = $props();
+  const { pr, showMergeQueue = true, stackControl }: {
+    pr: PullRequest;
+    showMergeQueue?: boolean;
+    stackControl?: Snippet | undefined;
+  } = $props();
 
   const merging = $derived(
     isPullMerging(
@@ -57,6 +62,7 @@
   mergeQueueLabel={showMergeQueue ? mergeQueueLabel : undefined}
   mergeQueueRemoved={!pr.merge_queue}
   stack={pr.stack}
+  {stackControl}
   {bucketed}
   ciError={parsed.error === null ? null : safeDiagnosticText(parsed.error)}
   conflict={pr.MergeableState === "dirty"}

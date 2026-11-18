@@ -5,6 +5,8 @@ import type { PullRequest } from "../../api/types.js";
 import { HOST_STATE_KEY, STORES_KEY } from "../../context.js";
 import { __resetCIWarnings } from "../../utils/ci-buckets-warn.js";
 import { hashColor } from "@kenn-io/kit-ui";
+import { repositoryKeyFromWire } from "../../api/repository-key.js";
+import { finishPullMerge, pullMergeKey, startPullMerge } from "../../stores/pull-merges.svelte.js";
 import PullItem from "./PullItem.svelte";
 
 const mkPR = (overrides: Record<string, unknown>): PullRequest =>
@@ -41,13 +43,14 @@ function setElementWidths(el: Element, widths: { scrollWidth: number; clientWidt
   Object.defineProperty(el, "clientWidth", { configurable: true, value: widths.clientWidth });
 }
 
-function renderItem(pr: PullRequest, useWorkspaceActivityForRecency = false): void {
+function renderItem(pr: PullRequest, useWorkspaceActivityForRecency = false, table = false): void {
   render(PullItem, {
     props: {
       pr,
       selected: false,
       showRepo: false,
       repoLabel: "o/n",
+      table,
       onclick: () => {},
     },
     context: new Map<symbol, unknown>([
@@ -484,6 +487,50 @@ describe("PullItem compact layout", () => {
       expect(screen.queryByRole("tooltip")).toBeNull();
     } finally {
       vi.useRealTimers();
+    }
+  });
+});
+
+describe("PullItem table row", () => {
+  afterEach(() => cleanup());
+
+  it("identifies an open draft", () => {
+    renderItem(mkPR({ IsDraft: true }), false, true);
+    expect(screen.getByRole("img", { name: "Draft pull request" })).toBeTruthy();
+  });
+
+  it("does not mark a ready PR as a draft", () => {
+    renderItem(mkPR({ IsDraft: false }), false, true);
+    expect(screen.queryByRole("img", { name: "Draft pull request" })).toBeNull();
+  });
+
+  it.each(["merged", "closed"])("preserves the %s state when the draft flag is set", (state) => {
+    renderItem(mkPR({ State: state, IsDraft: true }), false, true);
+    expect(screen.getByText(state === "merged" ? "Merged" : "Closed")).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "Draft pull request" })).toBeNull();
+  });
+
+  it("shows a merge that is still pending", () => {
+    const pr = mkPR({
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: 42,
+        owner: "o",
+        name: "n",
+        repo_path: "o/n",
+      },
+    });
+    const key = pullMergeKey(
+      { provider: "github", platformHost: "github.com", repositoryKey: repositoryKeyFromWire(pr.repo) },
+      pr.Number,
+    )!;
+    startPullMerge(key);
+    try {
+      renderItem(pr, false, true);
+      expect(screen.getByText("Merging")).toBeTruthy();
+    } finally {
+      finishPullMerge(key);
     }
   });
 });

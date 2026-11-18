@@ -6,19 +6,8 @@ import { mockApi } from "./support/mockApi";
 test("Closed loads bounded pages and reaches the end of the history", async ({ page }) => {
   await mockApi(page);
   const template = mockPullFixture(42);
-  const repo = { ...template.repo, owner: "org-a", name: "project-a", repo_path: "org-a/project-a" };
-  await page.route("**/api/v1/repos", (route) =>
-    route.fulfill({
-      json: [{ ID: 1, Owner: "org-a", Name: "project-a", Platform: "github", PlatformHost: "github.com" }],
-    }),
-  );
   const rows = Array.from({ length: 450 }, (_, index) => ({
     ...template,
-    URL: `https://github.com/org-a/project-a/pull/${index + 1}`,
-    Author: "user-a",
-    repo_owner: "org-a",
-    repo_name: "project-a",
-    repo,
     ID: index + 1,
     Number: index + 1,
     Title: `Closed change ${index + 1}`,
@@ -92,7 +81,7 @@ test("Closed loads bounded pages and reaches the end of the history", async ({ p
   await page.getByRole("button", { name: "Select repository: Global" }).click();
   await page
     .getByRole("listbox", { name: "Repositories" })
-    .getByRole("option", { name: "github/github.com/org-a/project-a" })
+    .getByRole("option", { name: "github/github.com/acme/widgets" })
     .click();
   await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(0);
 });

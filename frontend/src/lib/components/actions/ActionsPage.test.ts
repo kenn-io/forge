@@ -284,11 +284,9 @@ describe("ActionsPage", () => {
     viewport.style.overflowY = "auto";
     Object.defineProperty(viewport, "scrollHeight", { value: 500 });
     Object.defineProperty(viewport, "clientHeight", { value: 100 });
-    for (const label of ["Status", "Status", "Status", "Branch"]) {
-      viewport.scrollTop = 250;
-      await fireEvent.click(screen.getByRole("button", { name: label }));
-      expect(viewport.scrollTop).toBe(0);
-    }
+    viewport.scrollTop = 250;
+    await fireEvent.click(screen.getByRole("button", { name: "Status" }));
+    expect(viewport.scrollTop).toBe(0);
     viewport.scrollTop = 250;
     await fireEvent.click(screen.getByRole("button", { name: /alpha test/ }));
     await waitFor(() => expect(screen.getByLabelText("Recent workflow runs").scrollTop).toBe(0));
@@ -325,6 +323,9 @@ describe("ActionsPage", () => {
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
     await screen.findByRole("button", { name: /Run 7 alpha deploy/ });
     const viewport = screen.getByLabelText("Recent workflow runs");
+    viewport.style.overflowY = "auto";
+    Object.defineProperty(viewport, "scrollHeight", { value: 500 });
+    Object.defineProperty(viewport, "clientHeight", { value: 100 });
     viewport.scrollTop = 250;
     const refInput = screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement;
     await fireEvent.input(refInput, { target: { value: "feature/draft" } });

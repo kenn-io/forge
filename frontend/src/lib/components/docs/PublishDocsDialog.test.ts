@@ -41,16 +41,6 @@ describe("PublishDocsDialog", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
-  test("closes on Escape when idle", async () => {
-    const onClose = vi.fn();
-    render(PublishDocsDialogTestHarness, {
-      props: { runtime, open: true, folderID: "notes", api: fakeApi(), onClose, onPublished: () => {} },
-    });
-    await screen.findByRole("textbox", { name: /commit message/i });
-    await fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-    expect(onClose).toHaveBeenCalledOnce();
-  });
-
   test("renders the suggested message and the file list once preview loads", async () => {
     render(PublishDocsDialogTestHarness, {
       props: {
@@ -420,6 +410,9 @@ describe("PublishDocsDialog", () => {
       },
     });
     await screen.findByRole("textbox", { name: /commit message/i });
+    await fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
+    onClose.mockClear();
     await fireEvent.click(screen.getByRole("button", { name: /commit & push/i }));
     // While publishing is in flight, the Cancel button must be disabled.
     expect((screen.getByRole("button", { name: /cancel/i }) as HTMLButtonElement).disabled).toBe(true);

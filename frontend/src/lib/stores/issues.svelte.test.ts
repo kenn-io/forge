@@ -1,3 +1,4 @@
+import { GeneratedProblemResponse } from "../api/runtime.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
 import { startTestTelemetry } from "../testing/telemetry.js";
 import { Effect } from "effect";
@@ -164,6 +165,25 @@ describe("issues store paging", () => {
     store.hydrateDefaults({ hide_bots: true });
     await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
     expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 200, hide_bots: true }, expect.anything());
+  });
+
+  it("retains issues and offers retry after a failed load more", async () => {
+    const rows = Array.from({ length: 400 }, (_, index) => issue(index + 1, "alice"));
+    const get = vi.fn(async (query?: IssuesParams) => rows.slice(0, query?.limit));
+    const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
+    store.setIssueFilterState("closed");
+    await loadIssues(store);
+    get.mockRejectedValueOnce(
+      new GeneratedProblemResponse(
+        { code: "badRequest", status: 400, title: "Bad request" },
+        Response.json({}, { status: 400 }),
+      ),
+    );
+    store.loadMoreIssues();
+    await vi.waitFor(() => expect(store.isIssueListLoadingMore()).toBe(false));
+    expect(store.getMoreRows().problem).toMatchObject({ retryable: true });
+    expect(getFlash()).toBeNull();
+    expect(store.getIssues()).toHaveLength(200);
   });
 
   it("sends required and excluded labels to the server and reloads on each change", async () => {

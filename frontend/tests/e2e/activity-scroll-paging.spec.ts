@@ -59,7 +59,6 @@ test("returns to a loaded older activity item", async ({ page }) => {
   await page.goto("/?view=threaded");
   const viewport = page.getByRole("region", { name: "Threaded activity" });
   await expect(async () => {
-    await viewport.dispatchEvent("wheel");
     await viewport.evaluate((node) => {
       node.scrollTop = node.scrollHeight;
     });

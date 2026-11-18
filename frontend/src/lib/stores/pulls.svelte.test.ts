@@ -142,7 +142,7 @@ describe("pulls store display order", () => {
   });
 
   it("reloads from the first page with an attribute filter applied on the server", async () => {
-    const rows = Array.from({ length: 400 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
+    const rows = Array.from({ length: 600 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
     const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
     store.setFilterState("closed");
@@ -157,7 +157,7 @@ describe("pulls store display order", () => {
   });
 
   it("rolls back the page after a failed load more and allows retry", async () => {
-    const rows = Array.from({ length: 600 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
+    const rows = Array.from({ length: 400 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
     const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
     store.setFilterState("closed");

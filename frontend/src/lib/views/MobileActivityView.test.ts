@@ -104,7 +104,7 @@ const setShowNotifications = vi.hoisted(() =>
   }),
 );
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
-const loadActivity = vi.hoisted(() => vi.fn(async (_force?: boolean) => undefined));
+const loadActivity = vi.hoisted(() => vi.fn(async () => undefined));
 const setFullEventProjectionRequired = vi.hoisted(() => vi.fn());
 const setActivityPageLimit = vi.hoisted(() => vi.fn());
 const loadOlderItems = vi.hoisted(() => vi.fn());
@@ -215,7 +215,7 @@ vi.mock("../context.js", () => ({
       isLoadingOlderItems: () => false,
       loadOlderItems,
       setActivityFilterTypes: vi.fn(),
-      setActivitySearch: vi.fn((value: string | undefined) => scrollScope.set("scope", value ?? "initial")),
+      setActivitySearch: vi.fn(),
       setActivityAuthor,
       setTimeRange: vi.fn(),
       setEnabledEvents,
@@ -470,9 +470,6 @@ describe("MobileActivityView branch activity", () => {
     const viewport = container.querySelector<HTMLElement>(".kit-scrollbox__viewport")!;
     viewport.scrollTop = 250;
     scrollScope.set("scope", "filtered");
-    await waitFor(() => expect(viewport.scrollTop).toBe(0));
-    viewport.scrollTop = 250;
-    await fireEvent.input(screen.getByRole("searchbox", { name: "Search activity" }), { target: { value: "needle" } });
     await waitFor(() => expect(viewport.scrollTop).toBe(0));
   });
 

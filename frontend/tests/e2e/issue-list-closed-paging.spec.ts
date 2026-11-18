@@ -6,19 +6,8 @@ import { mockApi, mockSettings } from "./support/mockApi";
 test("Closed issues load bounded pages and reach the end of the history", async ({ page }) => {
   await mockApi(page);
   const template = mockIssueFixture(7);
-  const repo = { ...template.repo, owner: "org-a", name: "project-a", repo_path: "org-a/project-a" };
-  await page.route("**/api/v1/repos", (route) =>
-    route.fulfill({
-      json: [{ ID: 1, Owner: "org-a", Name: "project-a", Platform: "github", PlatformHost: "github.com" }],
-    }),
-  );
   const rows = Array.from({ length: 450 }, (_, index) => ({
     ...template,
-    URL: `https://github.com/org-a/project-a/issues/${index + 1}`,
-    Author: "user-a",
-    repo_owner: "org-a",
-    repo_name: "project-a",
-    repo,
     ID: index + 1,
     Number: index + 1,
     Title: `Closed issue ${index + 1}`,
@@ -63,7 +52,7 @@ test("Closed issues load bounded pages and reach the end of the history", async 
   await page.getByRole("button", { name: "Select repository: Global" }).click();
   await page
     .getByRole("listbox", { name: "Repositories" })
-    .getByRole("option", { name: "github/github.com/org-a/project-a" })
+    .getByRole("option", { name: "github/github.com/acme/widgets" })
     .click();
   await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(0);
 });
@@ -78,18 +67,13 @@ test("Closed issues load past hidden bot rows", async ({ page }) => {
     await route.fulfill({ json: { ...mockSettings, issues: { ...mockSettings.issues, hide_bots: true } } });
   });
   const template = mockIssueFixture(7);
-  const repo = { ...template.repo, owner: "org-a", name: "project-a", repo_path: "org-a/project-a" };
   const rows = Array.from({ length: 250 }, (_, index) => ({
     ...template,
-    URL: `https://github.com/org-a/project-a/issues/${index + 1}`,
-    repo_owner: "org-a",
-    repo_name: "project-a",
-    repo,
     ID: index + 1,
     Number: index + 1,
     Title: `Closed issue ${index + 1}`,
     State: "closed",
-    Author: index < 200 ? "release-bot" : "user-a",
+    Author: index < 200 ? "release-bot" : "human-author",
   }));
   await routeClosedPaging(page, "/api/v1/issues", rows);
   const { promise: nextPage, resolve: release } = Promise.withResolvers<void>();
@@ -102,7 +86,6 @@ test("Closed issues load past hidden bot rows", async ({ page }) => {
   await trigger.click();
   await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Closed", exact: true }).click();
   await trigger.click();
-
   await expect(page.locator(".list-count-chip")).toHaveText("0+ issues");
   await expect(page.getByText("No issues found.")).toHaveCount(0);
   release();

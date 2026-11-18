@@ -47,7 +47,12 @@ function encodeFixture(frame: Record<string, unknown>) {
 
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
 
-async function renderChat(width: number, props: { active?: boolean } = {}) {
+const gutterMessages = [
+  { role: "user", text: "Summarize the change", createdAt: "2026-09-28T21:09:00Z" },
+  { role: "assistant", text: "The change adds a gutter.", createdAt: "2026-09-28T21:10:00Z" },
+];
+
+async function renderChat(width: number, props: { active?: boolean } = {}, messages = gutterMessages) {
   const host = document.createElement("div");
   // Mirrors the pooled session host: a full-size flex column.
   host.style.cssText = `width: ${width}px; height: 600px; display: flex; flex-direction: column;`;
@@ -61,13 +66,10 @@ async function renderChat(width: number, props: { active?: boolean } = {}) {
   socket.options!.onOpen?.();
   socket.options!.onMessage(
     encodeFixture({
-      messages: [
-        { role: "user", text: "Summarize the change", createdAt: "2026-09-28T21:09:00Z" },
-        { role: "assistant", text: "The change adds a gutter.", createdAt: "2026-09-28T21:10:00Z" },
-      ],
-      messageCursor: 1,
+      messages,
+      messageCursor: messages.length - 1,
       messageOffset: 0,
-      messageCount: 2,
+      messageCount: messages.length,
       configOptions: [],
       configuring: false,
       permissions: [],
@@ -118,7 +120,8 @@ describe("ACPWorkspace message gutter (browser)", () => {
     expect(gutterRect.right).toBeLessThanOrEqual(cell.getBoundingClientRect().left);
     expect(gutterRect.left).toBeGreaterThanOrEqual(conversation.getBoundingClientRect().left);
     // Earlier-day stamps stack the date over the time inside the reserved gutter.
-    const [date, clock] = [...gutter.querySelectorAll("time > span")].map((span) => span.getBoundingClientRect());
+    const date = gutter.querySelector(".date")!.getBoundingClientRect();
+    const clock = gutter.querySelector("time > span:last-child")!.getBoundingClientRect();
     expect(date.left).toBeGreaterThanOrEqual(gutterRect.left);
     expect(clock.left).toBeGreaterThanOrEqual(gutterRect.left);
     expect(clock.top).toBeGreaterThanOrEqual(date.bottom);
@@ -127,6 +130,22 @@ describe("ACPWorkspace message gutter (browser)", () => {
     await expect.poll(() => getComputedStyle(gutter).opacity).toBe("0");
     gutter.querySelector<HTMLButtonElement>('button[aria-label="Copy message"]')!.focus();
     await expect.poll(() => getComputedStyle(gutter).opacity).toBe("1");
+  });
+
+  it("keeps copy inside its own message's gutter when the stamp carries a year", async () => {
+    await page.viewport(1000, 700);
+    const { host } = await renderChat(900, {}, [
+      { role: "assistant", text: "First.", createdAt: "2025-09-28T21:10:00Z" },
+      { role: "assistant", text: "Second.", createdAt: "2025-09-28T21:11:00Z" },
+    ]);
+    const first = host.querySelector<HTMLElement>('article[aria-label="Assistant"]')!;
+    const gutter = first.querySelector<HTMLElement>(".gutter")!;
+    await userEvent.hover(first.querySelector<HTMLElement>(".cell")!);
+    await expect.poll(() => getComputedStyle(gutter).opacity).toBe("1");
+
+    const copy = gutter.querySelector<HTMLButtonElement>('button[aria-label="Copy message"]')!.getBoundingClientRect();
+    const hit = document.elementFromPoint(copy.left + copy.width / 2, copy.top + copy.height / 2);
+    expect(hit?.closest("article")).toBe(first);
   });
 
   it("shows time and copy as a visible line below the message in a narrow pane", async () => {

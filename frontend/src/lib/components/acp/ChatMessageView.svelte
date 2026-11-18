@@ -186,7 +186,7 @@
     <div class="gutter" class:pinned={!!copyError || copied}>
     {#if timestamp && stamp}
       <time datetime={message.createdAt} title={timestamp.toLocaleString()}
-        >{#if stamp.date}<span>{stamp.date}</span>{" "}{/if}<span>{stamp.time}</span></time
+        >{#if stamp.date}<span class="date">{stamp.date}</span>{" "}{/if}<span>{stamp.time}</span></time
       >
     {/if}
     {#if !thought && !streaming && message.text}{@render copyAction()}{/if}
@@ -343,10 +343,13 @@
       opacity: 0;
       transition: opacity var(--transition-fast) ease-out;
     }
-    /* Past-day stamps stack the date over the time to fit the gutter. */
+    /* A past-day date takes its own row so the time and copy keep theirs. */
     .gutter time {
-      flex-direction: column;
-      align-items: flex-end;
+      display: contents;
+    }
+    .gutter .date {
+      flex-basis: 100%;
+      text-align: right;
     }
     .cell:hover .gutter,
     .cell:focus-within .gutter,

@@ -117,7 +117,16 @@
     </div>
   </div>
 
-  <div class="user-picker__filter">
+  <!-- The modal's document listener runs before Svelte's delegated input
+       handler. Claim Escape here so SearchInput can clear the filter. -->
+  <div
+    class="user-picker__filter"
+    onkeydowncapture={(event) => {
+      if (event.key === "Escape" && query !== "" && event.target instanceof HTMLInputElement && !event.isComposing && event.keyCode !== 229) {
+        event.preventDefault();
+      }
+    }}
+  >
     <SearchInput
       bind:value={query}
       size="sm"

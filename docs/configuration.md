@@ -780,68 +780,6 @@ relationships alone, which also remain the fallback when GitHub's stack data
 is unusable. Forge does not create or reorder stacks. Mid-stack merges stay
 blocked by default for stacks Forge infers from branches.
 
-## Telemetry
-
-Forge sends limited anonymous telemetry by default: daemon activity, an app
-open about once a day per browser, which screens were opened (each counted once
-per installation per UTC day), `pr_viewed`, `workspace_opened`, `sync_failed`,
-`search_empty`, `error_shown`, version, commit, OS and architecture, and an
-anonymous install ID. Each event also carries `distribution`, which names the
-release channel that built the binary and is empty for source builds. The
-browser reports app opens to the daemon, never to the analytics service.
-Once per installation, the daemon reports `setup_finished` with no properties
-the first time Forge has a ready workspace or a pull request or issue it can
-show. Installations that already had work when they upgraded are not reported.
-At startup and daily while running, the daemon reports the number of tracked
-repositories as `repo_count`: `0-5`, `6-20`, `21-100`, or `over-100`.
-Earlier events retain exact numeric values; newer events use string ranges.
-A full sync pass sends at most one `sync_failed` event per source, when a
-repository newly fails that source. A repository that keeps failing stays quiet
-until a full pass reads that repository and source successfully.
-The event sends only `sync_source` (`merge_requests`, `issues`, or `checks`)
-and `reason` (`auth`, `rate_limited`, `not_found`, or `other`).
-These properties identify no repository. A restart can count one outage twice.
-Closing a tab or leaving it hidden for 30 minutes reports `session_ended` with
-`surface: web` and a `duration_bucket` of `under_1m`, `1_to_5m`, `5_to_30m`,
-`30m_to_2h`, or `over_2h`.
-Tabs opened before an upgrade may report `over_30m`, meaning more than 30 minutes
-without finer detail. Forge accepts that bucket and rejects missing or unknown durations.
-Each duration sums visible time across tab switches and excludes hidden time.
-A hidden tab that the browser or phone closes without notice reports nothing.
-Screen names are activity, actions, repos, repo-browser, pulls, issues, docs,
-workspaces, terminal, workspace-item, settings, project-intake, design-system,
-and onboarding. Screen counts persist across tabs and daemon restarts.
-An upgrade preserves prior screen counts in the private `telemetry-daily.json`
-file beside the database. Keep that file to retain daily counts across restarts.
-Forge also sends `pr_viewed` with the provider when a PR's detail is on screen,
-and `workspace_opened` with its type when you open its own page or launch a
-session or quick action in it. Automatic display beside a PR or issue, or
-creating a workspace without launching anything, sends nothing.
-Each event counts once per installation per UTC day for each provider or
-workspace type. Supported providers are GitHub, GitLab, Forgejo, Gitea, and
-Bitbucket. Workspace types are pull request, issue, Kata task, and ad hoc.
-These events send only `surface: web` and the provider or workspace type.
-It does not send repository names, item content, tokens, usernames, hostnames,
-or paths.
-
-Only release builds send telemetry, and it stays off in CI. Disable it with
-`TELEMETRY_ENABLED=0` or `DO_NOT_TRACK=1` in the daemon's environment, then
-restart the daemon:
-
-```sh
-TELEMETRY_ENABLED=0 kenn-forge daemon restart
-```
-
-Once the daemon reports telemetry as disabled, the web UI stops sending events.
-If you turn telemetry back on, the web UI resumes on the next UTC day, even if
-you reload the page sooner.
-
-`search_empty` counts each distinct submitted query that returns no results from
-the server, resetting when the text changes. Typing previews send nothing.
-`error_shown` counts failed PR views and workspace opens or launches once per
-attempt when the error comes on screen, with `kind` set to `pr_viewed` or
-`workspace_opened`. Queries and error text stay on your machine.
-
 ## Container startup
 
 Build a local image from the repository root:

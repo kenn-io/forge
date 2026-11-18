@@ -1,48 +1,14 @@
 # Server Runtime
 
 Use this document for daemon startup, discovery, request-origin validation,
-the root event stream, telemetry, the activity relay, and execution workers.
+the root event stream, the activity relay, and execution workers.
 Federation peers and the hub event stream live in
 [`fleet-architecture.md`](./fleet-architecture.md).
 
-## Telemetry
+## Health checks
 
-- Startup and daily daemon telemetry send tracked repository counts only in the ranges documented
-  in [Telemetry](../docs/configuration.md#telemetry) (`cmd/kenn-forge/notifications.go::captureDaemonActive`).
-- Full sync passes report `sync_failed` once per source when a repository newly fails; a successful
-  read wins within each repository/source, and checks 404s count as `not_found` (`internal/github/sync_outcomes.go::syncPass.observe`).
-- Observe only repository, list, and checks reads; exclude local filesystem/capacity errors, budget
-  waits, disabled features, and non-check item reads. HTTP 304 counts as success.
-- A successful source read clears its outage state. Reasons are `auth`, `rate_limited`, `not_found`,
-  or `other`, never identifiers (`internal/github/sync_outcomes.go::Syncer.finishSyncPass`).
-- An outage may report again after restart or first repository ID resolution.
-- Setup counts as finished once a ready workspace or a readable PR or issue exists (for an active
-  spoke, through the hub). Worker daemons and daemons booted with telemetry off never check
-  (`internal/server/setup.go::Server.HasSetupWork`).
-- `telemetry.setup_finished` means accepted, not delivered, and is written only after the reporter
-  queues the event. Upgrades of databases that already held work must not count as first-run setups
-  (`cmd/kenn-forge/notifications.go::setupFinished.capture`).
 - Liveness and ready probes expose the running build identity without a workspace bearer; builds
   without VCS metadata must stamp the full commit (`internal/server/routepolicy/health_routes.go::HealthyResponse`).
-- Screen telemetry uses Kit's durable claims per installation and UTC day; preserve existing claims
-  during upgrades (`internal/telemetry/daily.go::initializeDailyClaims`).
-- Browser screens, visits, and core actions share kit-ui's daily permission gate. Quiet pauses visit
-  timing until a later UTC day; preserve accrued time, expire pending core actions with their day,
-  and a `disabled` reply clears all claims (`frontend/src/lib/app/telemetry.ts::startRuntimeTelemetry`).
-- Core actions count once per installation and UTC day with `surface: web`: `pr_viewed` per provider
-  while PR detail is on screen in a visible tab, `workspace_opened` per workspace type.
-- A workspace counts as opened only on its own visible page or when a session or quick action
-  launches in it; embedded display sends nothing, so new entry points need no telemetry hooks.
-- `search_empty` counts distinct submitted queries with empty server results, resetting when text
-  changes (`frontend/src/lib/app/telemetry.ts::searchEmptyReporter`).
-- `error_shown` counts a failed core action when its error comes on screen, once until that error
-  unmounts; retry starts another attempt (`frontend/src/lib/components/shared/ErrorShown.svelte`).
-- Launch flashes count only when the document is visible at failure time; telemetry preserves their
-  presentation (`frontend/src/lib/stores/workspace-quick-actions.ts::runWorkspaceQuickAction`).
-- Outcomes go through kit-ui's `reportVisit`, which waits through permission checks and drops reports
-  during backoff; posted failures are not replayed.
-- Add screen names to both the daemon allowlist and the SPA list; the daemon rejects unknown
-  screens (`frontend/src/lib/app/telemetry.ts::SCREEN_NAMES`).
 
 ## Tracing
 

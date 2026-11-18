@@ -36,8 +36,10 @@ to the application.
 - Workspace terminals follow the app theme, with `--terminal-bg` matching; light ANSI
   hues clear 4.5:1 on the light page, and the contrast floor darkens colors a TUI chose
   for a dark background (`frontend/src/lib/components/terminal/terminal-appearance.ts`).
-- PR background refresh uses an out-of-flow top progress bar at every width so narrow
-  workspace panels do not reflow (`frontend/src/lib/components/detail/PullDetail.svelte::.sync-indicator`).
+- PR background refresh shows a small kit spinner out of flow above the content's
+  top-right corner. It fades in after a short delay so the sync on opening a PR does
+  not flash, and it never reflows narrow workspace panels. Do not bring back a
+  full-width animated bar (`frontend/src/lib/components/detail/PullDetail.svelte::.sync-indicator`).
 - Issue background refresh uses the metadata-row `Syncing` indicator.
 - Manual Activity refresh reports progress only in its initiating icon button; add no
   stale-data banners or other progress surfaces. The control stays disabled while

@@ -345,6 +345,29 @@ describe("PullDetail provider workflow actions", () => {
     }
   });
 
+  it("hides the sync spinner during a short sync and reveals it during a long one", async () => {
+    const { state, wrapper } = await renderWorkflowDetail();
+    await vi.waitFor(() => expect(visibleButton("Run workflow")).not.toBeNull(), WAIT);
+
+    state.syncing = true;
+    await tick();
+    const indicator = wrapper.querySelector<HTMLElement>(".sync-indicator")!;
+    expect(indicator).not.toBeNull();
+    // Step the real CSS animation to fixed times so slow runners cannot race it.
+    const [reveal] = indicator.getAnimations();
+    expect(reveal).toBeDefined();
+    reveal!.pause();
+    const opacityAt = (ms: number) => {
+      reveal!.currentTime = ms;
+      return Number(getComputedStyle(indicator).opacity);
+    };
+
+    expect(opacityAt(0)).toBe(0);
+    expect(opacityAt(350)).toBe(0);
+    expect(opacityAt(1_000)).toBe(1);
+    wrapper.remove();
+  });
+
   it("keeps review menus usable across compact and phone layouts", async () => {
     const { state, detailProps, wrapper } = await renderWorkflowDetail();
     state.detail.repo.capabilities.supported_review_actions = ["comment", "request_changes"];

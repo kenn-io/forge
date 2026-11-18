@@ -282,6 +282,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let pollCount = 0;
   let pollingStarted = false;
   let retainedFeedStale = false;
+  let scrollPosition: { scope: string; top: number; mounted: number } | undefined;
   let snapshotScope: string | undefined;
   let snapshotFilterScope: string | undefined;
   let displayedRepo: string | undefined;
@@ -2056,6 +2057,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     }),
     getMoreActivity: () => flatPaging,
     getActivityScopeKey: () => activityScrollScopeKey,
+    getScrollPosition: () => (scrollPosition?.scope === activityScrollScopeKey ? scrollPosition : undefined),
+    setScrollPosition: (top: number, mounted: number) => {
+      scrollPosition = { scope: activityScrollScopeKey, top, mounted };
+    },
     canLoadMoreActivity,
     isLoadingMoreActivity,
     loadMoreActivity,

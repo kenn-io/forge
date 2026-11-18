@@ -217,6 +217,8 @@ vi.mock("../context.js", () => ({
       isActivityCapped: () => activityCapped.value,
       isItemActivityCapped: () => itemActivityCapped.value,
       getActivityScopeKey: () => "scope",
+      getScrollPosition: () => undefined,
+      setScrollPosition: vi.fn(),
       getOlderItems: () => ({
         loading: false,
         problem: pagingProblem.value,

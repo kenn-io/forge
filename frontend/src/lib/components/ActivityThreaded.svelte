@@ -43,13 +43,14 @@
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import { repositoryKeyFromWire, type RepositoryKey } from "../api/repository-key.js";
 
-  let viewport = $state<HTMLDivElement>();
   $effect(() => {
     void activity.getActivityScopeKey();
     if (viewport) showListTop(viewport);
   });
 
   interface Props {
+    viewport?: HTMLDivElement | undefined;
+    mountedCount?: number;
     children?: Snippet;
     items: ActivityItem[];
     itemActivity?: ActivitySubject[];
@@ -81,6 +82,8 @@
   };
 
   let {
+    viewport = $bindable(),
+    mountedCount = $bindable(0),
     children,
     items,
     itemActivity = [],
@@ -390,11 +393,10 @@
 
   const progressiveMountBatchSize = 25;
   const mountController = createProgressiveMountController({ batchSize: progressiveMountBatchSize });
-  let mountedEntryCount = $state(0);
   let lastMountProjectionKey = "";
   const totalEntryCount = $derived(grouped.reduce((count, group) => count + group.items.length, 0));
   const visibleGrouped = $derived.by(() => {
-    let remaining = mountedEntryCount;
+    let remaining = mountedCount;
     const visible: RepoGroup[] = [];
     for (const group of grouped) {
       if (remaining <= 0) break;
@@ -414,12 +416,12 @@
     untrack(() => {
       lastMountProjectionKey = projectionKey;
       mountController.cancel();
-      mountedEntryCount = Math.min(
-        Math.max(mountedEntryCount, progressiveMountBatchSize),
+      mountedCount = Math.min(
+        Math.max(mountedCount, progressiveMountBatchSize),
         totalEntryCount,
       );
-      mountController.start(mountedEntryCount, totalEntryCount, (count) => {
-        mountedEntryCount = count;
+      mountController.start(mountedCount, totalEntryCount, (count) => {
+        mountedCount = count;
       });
     });
   });
@@ -998,7 +1000,7 @@
     <EmptyState title="No activity found" />
   {/if}
 </div>
-{#if mountedEntryCount >= totalEntryCount}{@render children?.()}{/if}
+{#if mountedCount >= totalEntryCount}{@render children?.()}{/if}
 </ScrollBox>
 
 <style>

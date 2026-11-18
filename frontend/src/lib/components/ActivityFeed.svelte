@@ -8,7 +8,7 @@
     type TypeaheadOption,
   } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
   import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
   import type { ActivityItem } from "../api/types.js";
   import type { AppExecution } from "../app/runtime.js";
@@ -58,6 +58,31 @@
 
   const { activity, settings, sync, grouping, issues } = getStores();
   let flatViewport = $state<HTMLDivElement>();
+  let threadedViewport = $state<HTMLDivElement>();
+  let mountedCount = $state(0);
+  let pendingPosition = $state<ReturnType<typeof activity.getScrollPosition>>();
+  $effect(() => {
+    const viewport = activity.getViewMode() === "threaded" ? threadedViewport : flatViewport;
+    if (!viewport) return;
+    const remember = () => {
+      if (!pendingPosition) activity.setScrollPosition(viewport.scrollTop, mountedCount);
+    };
+    viewport.addEventListener("scroll", remember);
+    return () => viewport.removeEventListener("scroll", remember);
+  });
+  $effect(() => {
+    const saved = pendingPosition;
+    if (saved && saved.scope !== activity.getActivityScopeKey()) {
+      pendingPosition = undefined;
+      return;
+    }
+    const viewport = activity.getViewMode() === "threaded" ? threadedViewport : flatViewport;
+    if (!saved || !viewport || (activity.getViewMode() === "threaded" && mountedCount < saved.mounted)) return;
+    pendingPosition = undefined;
+    void tick().then(() => {
+      viewport.scrollTop = saved.top;
+    });
+  });
   $effect(() => {
     void activity.getActivityScopeKey();
     if (flatViewport) showListTop(flatViewport);
@@ -111,6 +136,7 @@
 
   onMount(() => {
     activity.initializeFromMount();
+    pendingPosition = activity.getScrollPosition();
     searchInput = activity.getActivitySearch() ?? "";
     activity.setActivityPageLimit(undefined);
     activity.ensureActivityLoaded();
@@ -513,6 +539,8 @@
       </ScrollBox>
     {:else}
       <ActivityThreaded
+        bind:viewport={threadedViewport}
+        bind:mountedCount
         items={displayItems}
         itemActivity={visibleItemActivity}
         workspaceActivity={visibleWorkspaceActivity}

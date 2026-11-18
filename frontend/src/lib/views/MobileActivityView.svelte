@@ -111,9 +111,9 @@
   let unsubSync: (() => void) | undefined;
 
   onMount(() => {
+    const parked = takeMobileListPosition("activity");
     activity.initializeFromMount();
     searchInput = activity.getActivitySearch() ?? "";
-    const parked = takeMobileListPosition("activity");
     activityPageLimit = parked?.pageLimit ?? 30;
     pendingScrollTop = parked?.scrollTop ?? null;
     activity.setActivityPageLimit(activityPageLimit);

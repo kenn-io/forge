@@ -193,10 +193,8 @@ function mergeNamedRun(
   return { runs: upsertRun(runs, run), run };
 }
 
-function mergeRunPage(shown: WorkflowRun[], items: WorkflowRun[]): WorkflowRun[] {
-  const ids = new Set(items.map((run) => run.id));
-  const overlap = shown.findIndex((run) => ids.has(run.id));
-  const split = overlap < 0 ? shown.length : overlap;
+function mergeRunPage(shown: WorkflowRun[], items: WorkflowRun[], previousPageEnd: string | undefined): WorkflowRun[] {
+  const split = previousPageEnd === undefined ? 0 : shown.findIndex((run) => run.id === previousPageEnd) + 1;
   const merged = appendBatch({ items: shown.slice(0, split) }, { items }, (run) => run.id);
   return appendBatch(merged, { items: shown.slice(split) }, (run) => run.id).items;
 }
@@ -218,6 +216,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   let enabled = true;
   let snapshots = $state.raw<Readonly<Record<string, WorkflowActionsSnapshot>>>({});
   const generations = new Map<string, Generations>();
+  const runPageEnds = new Map<string, string>();
   const executions = new Map<string, AppExecution<unknown, never>>();
   // Progress events can arrive before the POST response names the dispatch;
   // hold them until the cycle owns that dispatch id.
@@ -391,10 +390,14 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
             const retainRun =
               retainedRun && (cycle !== dispatchAtStart || !items.some((run) => run.id === retainedRun.id));
             const refreshed = retainRun ? mergeNamedRun(items, retainedRun).runs : items;
+            const key = workflowRepositoryKey(ref);
             const runs =
               cursor === undefined
                 ? appendBatch({ items: refreshed }, { items: snapshot.runs }, (run) => run.id).items
-                : mergeRunPage(snapshot.runs, items);
+                : mergeRunPage(snapshot.runs, items, runPageEnds.get(key));
+            const pageEnd = items.at(-1)?.id;
+            if (pageEnd !== undefined) runPageEnds.set(key, pageEnd);
+            else if (cursor === undefined) runPageEnds.delete(key);
             return {
               ...snapshot,
               runs,
@@ -421,6 +424,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
         ? null
         : (snapshot.catalog?.workflows?.find((candidate) => candidate.id === workflowId) ?? null);
     executions.get(`${workflowRepositoryKey(ref)}:runs`)?.interrupt();
+    runPageEnds.delete(workflowRepositoryKey(ref));
     nextGeneration(ref, "runs");
     update(ref, (current) => ({
       ...current,
@@ -602,6 +606,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
     for (const execution of executions.values()) execution.interrupt();
     executions.clear();
     generations.clear();
+    runPageEnds.clear();
     earlyProgress.clear();
     snapshots = {};
   }

@@ -19,6 +19,8 @@ export function sentPrompts(messages: readonly ChatMessage[]): ChatMessage[] {
 export function caretOnEdgeLine(field: HTMLTextAreaElement, edge: "first" | "last"): boolean {
   const { selectionStart, selectionEnd, value } = field;
   if (selectionStart !== selectionEnd) return false;
+  // The caret at either end of the text is on that end's line.
+  if (selectionStart === (edge === "first" ? 0 : value.length)) return true;
   const mirror = document.createElement("div");
   const style = getComputedStyle(field);
   for (const name of style) mirror.style.setProperty(name, style.getPropertyValue(name));
@@ -38,33 +40,46 @@ export function caretOnEdgeLine(field: HTMLTextAreaElement, edge: "first" | "las
     whiteSpace: "pre-wrap",
     overflowWrap: "break-word",
   });
-  // Each marker wraps a character, since Firefox places an empty span at a
-  // different height. At a soft wrap one caret offset is drawn either at the
-  // end of the upper line (after End) or the start of the lower one (after
-  // Home), and the field does not say which. So the caret counts as on an
-  // edge line only if both places are: the first line takes the character
-  // after the caret, and the last line the one before it, unless that is a
-  // newline. Otherwise the arrow moves the caret as usual. The end marker is
-  // a zero-width space, which also opens the line after a trailing newline.
+  // Each marker wraps a character of the text, since Firefox places an empty
+  // span at a different height and an added character can wrap onto a line
+  // of its own. At a soft wrap one caret offset is drawn either at the end of
+  // the upper line (after End) or the start of the lower one (after Home),
+  // and the field does not say which. So the caret counts as on an edge line
+  // only if both places are: the first line takes the character after the
+  // caret, and the last line the one before it, unless that is a newline.
+  // Otherwise the arrow moves the caret as usual.
   const marker = (text: string) => Object.assign(document.createElement("span"), { textContent: text });
+  const codePointBefore = (index: number) =>
+    index > 1 && /[\uDC00-\uDFFF]/.test(value[index - 1]!) ? index - 2 : index - 1;
   let from = selectionStart;
   let to = selectionStart;
-  if (edge === "last" && selectionStart > 0 && value[selectionStart - 1] !== "\n") {
-    from -= /[\uDC00-\uDFFF]/.test(value[selectionStart - 1]!) && selectionStart > 1 ? 2 : 1;
-  } else if (selectionStart < value.length) {
-    to += value.codePointAt(selectionStart)! > 0xffff ? 2 : 1;
+  if ((edge === "last" || to === value.length) && from > 0 && value[from - 1] !== "\n") from = codePointBefore(from);
+  else if (to < value.length) to += value.codePointAt(from)! > 0xffff ? 2 : 1;
+  // At the end of the text, right after a newline: a line comes before it.
+  else return false;
+  const caret = marker(value.slice(from, to));
+  let edgeMarker: HTMLElement;
+  if (edge === "first") {
+    const firstEnd = value.codePointAt(0)! > 0xffff ? 2 : 1;
+    edgeMarker = from < firstEnd ? caret : marker(value.slice(0, firstEnd));
+    mirror.append(...(edgeMarker === caret ? [] : [edgeMarker, value.slice(firstEnd, from)]), caret, value.slice(to));
+  } else if (value.endsWith("\n")) {
+    // A trailing newline opens a line only once something follows it.
+    edgeMarker = marker("\u200b");
+    mirror.append(value.slice(0, from), caret, value.slice(to), edgeMarker);
+  } else {
+    const lastStart = codePointBefore(value.length);
+    edgeMarker = to > lastStart ? caret : marker(value.slice(lastStart));
+    mirror.append(
+      value.slice(0, from),
+      caret,
+      ...(edgeMarker === caret ? [value.slice(to)] : [value.slice(to, lastStart), edgeMarker]),
+    );
   }
-  const caret = marker(value.slice(from, to) || "\u200b");
-  const firstLength = value.length && value.codePointAt(0)! > 0xffff ? 2 : 1;
-  const first = from === 0 ? caret : marker(value.slice(0, firstLength));
-  const last = from === value.length ? caret : marker("\u200b");
-  if (first !== caret) mirror.append(first, value.slice(firstLength, from));
-  mirror.append(caret, value.slice(to));
-  if (last !== caret) mirror.append(last);
   document.body.append(mirror);
   try {
     const top = caret.getBoundingClientRect().top;
-    const edgeTop = (edge === "first" ? first : last).getBoundingClientRect().top;
+    const edgeTop = edgeMarker.getBoundingClientRect().top;
     return Math.abs(top - edgeTop) < 1;
   } finally {
     mirror.remove();

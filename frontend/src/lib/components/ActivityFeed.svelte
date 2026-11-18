@@ -85,7 +85,8 @@
   });
   $effect(() => {
     void activity.getActivityScopeKey();
-    if (flatViewport) showListTop(flatViewport);
+    const viewport = activity.getViewMode() === "threaded" ? threadedViewport : flatViewport;
+    if (viewport) showListTop(viewport);
   });
   const runtime = getAppRuntime();
   const navigate = getNavigate();

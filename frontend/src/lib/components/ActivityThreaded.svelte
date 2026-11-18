@@ -1,7 +1,7 @@
 <script lang="ts">
   import RepoPrivateIcon from "./shared/RepoPrivateIcon.svelte";
   import { EmptyState } from "@kenn-io/kit-ui";
-  import { ScrollBox, showListTop } from "@kenn-io/kit-ui";
+  import { ScrollBox } from "@kenn-io/kit-ui";
   import { onDestroy, untrack } from "svelte";
   import type { Snippet } from "svelte";
   import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
@@ -42,11 +42,6 @@
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import { repositoryKeyFromWire, type RepositoryKey } from "../api/repository-key.js";
-
-  $effect(() => {
-    void activity.getActivityScopeKey();
-    if (viewport) showListTop(viewport);
-  });
 
   interface Props {
     viewport?: HTMLDivElement | undefined;

@@ -138,9 +138,11 @@ describe("ACPWorkspace message gutter (browser)", () => {
       { role: "assistant", text: "First.", createdAt: "2025-09-28T21:10:00Z" },
       { role: "assistant", text: "Second.", createdAt: "2025-09-28T21:11:00Z" },
     ]);
-    const first = host.querySelector<HTMLElement>('article[aria-label="Assistant"]')!;
-    const gutter = first.querySelector<HTMLElement>(".gutter")!;
-    await userEvent.hover(first.querySelector<HTMLElement>(".cell")!);
+    const [first, second] = host.querySelectorAll<HTMLElement>('article[aria-label="Assistant"]');
+    const gutter = first!.querySelector<HTMLElement>(".gutter")!;
+    // Copying the next message first leaves its gutter revealed by focus.
+    second!.querySelector<HTMLButtonElement>('button[aria-label="Copy message"]')!.focus();
+    await userEvent.hover(first!.querySelector<HTMLElement>(".cell")!);
     await expect.poll(() => getComputedStyle(gutter).opacity).toBe("1");
 
     const copy = gutter.querySelector<HTMLButtonElement>('button[aria-label="Copy message"]')!.getBoundingClientRect();

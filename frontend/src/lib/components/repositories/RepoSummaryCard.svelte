@@ -1,6 +1,6 @@
 <script lang="ts">
   import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
-  import { Button, Chip } from "@kenn-io/kit-ui";
+  import { Avatar, Button, Chip } from "@kenn-io/kit-ui";
   import { operationGate } from "../detail/operation-gates.js";
   import { Card, formatRelativeTime, type ChipTone } from "@kenn-io/kit-ui";
   import { ExternalLinkIcon, FolderTreeIcon } from "../../icons.js";
@@ -354,13 +354,7 @@
               <span>{issue.title}</span>
             </span>
             <span class="repo-card__issue-meta">
-              <img
-                class="repo-card__avatar"
-                src={avatarURL(issue.author)}
-                alt=""
-                title={issue.author}
-                loading="lazy"
-              />
+              <span title={issue.author}><Avatar name={issue.author} src={avatarURL(issue.author)} size={18} decorative /></span>
               <span>{formatRelativeTime(issue.last_activity_at)}</span>
             </span>
           </button>
@@ -695,15 +689,6 @@
     gap: 8px;
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
-  }
-
-  .repo-card__avatar {
-    width: 18px;
-    height: 18px;
-    border: 1px solid var(--border-default);
-    border-radius: 50%;
-    object-fit: cover;
-    background: var(--bg-inset);
   }
 
   .repo-card__empty-note {

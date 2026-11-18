@@ -407,9 +407,9 @@ describe("PublishDocsDialog", () => {
     });
     await screen.findByRole("textbox", { name: /commit message/i });
     // Same event path as the in-flight test below: the shared Modal shell
-    // listens on window, and with no header X this is the shell-owned
+    // listens on document, and with no header X this is the shell-owned
     // dismissal that must keep working.
-    await fireEvent.keyDown(window, { key: "Escape" });
+    await fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -439,7 +439,7 @@ describe("PublishDocsDialog", () => {
     // bypass `disabled` on Cancel and discard publish_failed errors
     // mid-flight.
     expect(screen.queryByRole("button", { name: /^close$/i })).toBeNull();
-    await fireEvent.keyDown(window, { key: "Escape" });
+    await fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(onClose).not.toHaveBeenCalled();
     // Now resolve the publish and confirm normal flow resumes.
     resolvePublish!({

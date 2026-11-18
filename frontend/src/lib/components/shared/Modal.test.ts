@@ -36,7 +36,7 @@ describe("Modal shell", () => {
     renderModal({ onClose });
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
 
-    await fireEvent.keyDown(window, { key: "Escape" });
+    await fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, SearchInput } from "@kenn-io/kit-ui";
+  import { Avatar, Button, SearchInput } from "@kenn-io/kit-ui";
   import CheckIcon from "@lucide/svelte/icons/check";
   import EraserIcon from "@lucide/svelte/icons/eraser";
   import XIcon from "@lucide/svelte/icons/x";
@@ -49,7 +49,6 @@
   }: Props = $props();
 
   let query = $state("");
-  let failedAvatarKeys = $state<string[]>([]);
 
   const selectedNames = $derived(new Set(selected.map((name) => name.toLowerCase())));
   // Selected users always appear in the list even when they are not in
@@ -85,16 +84,6 @@
   function clearSelectedUsers(): void {
     if (pendingUser !== null || selectedNames.size === 0) return;
     void onclear?.();
-  }
-
-  function avatarKey(username: string): string {
-    return username.toLowerCase();
-  }
-
-  function markAvatarFailed(username: string): void {
-    const key = avatarKey(username);
-    if (failedAvatarKeys.includes(key)) return;
-    failedAvatarKeys = [...failedAvatarKeys, key];
   }
 </script>
 
@@ -153,7 +142,6 @@
     {#each listedUsers as username (username.toLowerCase())}
       {@const isSelected = selectedNames.has(username.toLowerCase())}
       {@const avatarURL = avatarUrlForUser?.(username) ?? ""}
-      {@const showAvatarImage = avatarURL !== "" && !failedAvatarKeys.includes(avatarKey(username))}
       <button
         type="button"
         class={["user-picker__row", { "user-picker__row--selected": isSelected }]}
@@ -162,18 +150,7 @@
         disabled={pendingUser !== null}
         onclick={() => ontoggle(username)}
       >
-        {#if showAvatarImage}
-          <img
-            class="user-picker__avatar"
-            src={avatarURL}
-            alt=""
-            loading="lazy"
-            aria-hidden="true"
-            onerror={() => markAvatarFailed(username)}
-          />
-        {:else}
-          <span class="user-picker__avatar" aria-hidden="true">{labelForUser(username).slice(0, 1).toUpperCase()}</span>
-        {/if}
+        <Avatar name={labelForUser(username)} src={avatarURL} initials={labelForUser(username).slice(0, 1).toUpperCase()} size={16} tone="neutral" decorative />
         <span class="user-picker__name">{labelForUser(username)}</span>
         <span class="user-picker__status">
           {#if pendingUser === username}
@@ -197,7 +174,7 @@
         disabled={pendingUser !== null}
         onclick={() => ontoggle(freeEntryUser)}
       >
-        <span class="user-picker__avatar" aria-hidden="true">@</span>
+        <Avatar name={freeEntryUser} initials="@" size={16} tone="neutral" decorative />
         <span class="user-picker__name">Add “{freeEntryUser}”</span>
         <span class="user-picker__status">
           {#if pendingUser === freeEntryUser}
@@ -327,27 +304,9 @@
     color: var(--accent-blue);
   }
 
-  .user-picker__row--free-entry .user-picker__avatar {
-    color: var(--accent-blue);
-  }
-
   .user-picker__row:disabled {
     cursor: wait;
     opacity: var(--opacity-disabled);
-  }
-
-  .user-picker__avatar {
-    width: 16px;
-    height: 16px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 999px;
-    background: var(--bg-inset);
-    color: var(--text-secondary);
-    font-size: var(--font-size-xs);
-    font-weight: 700;
-    object-fit: cover;
   }
 
   .user-picker__name {

@@ -237,7 +237,9 @@ describe("RepoSummaryPage", () => {
     expect(screen.getByText("v2.8.1")).toBeTruthy();
     expect(screen.getByText("8 commits")).toBeTruthy();
     expect(screen.getByText("Investigate repo summary card")).toBeTruthy();
-    expect(screen.getByTitle("alice").getAttribute("src")).toContain("https://github.com/alice.png?size=40");
+    expect(screen.getByTitle("alice").querySelector("img")?.getAttribute("src")).toContain(
+      "https://github.com/alice.png?size=40",
+    );
     expect(screen.getByRole("button", { name: "Release v2.8.0" })).toBeTruthy();
 
     const commitDot = screen.getByRole("button", {

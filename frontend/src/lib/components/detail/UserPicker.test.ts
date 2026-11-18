@@ -100,7 +100,7 @@ describe("UserPicker", () => {
     });
 
     const aliceRow = screen.getByRole("menuitemcheckbox", { name: /alice/i });
-    const aliceAvatar = aliceRow.querySelector("img.user-picker__avatar");
+    const aliceAvatar = aliceRow.querySelector("img");
     expect(aliceAvatar?.getAttribute("src")).toBe("https://github.example/alice.png?size=40");
     expect(aliceAvatar?.getAttribute("alt")).toBe("");
 
@@ -120,12 +120,12 @@ describe("UserPicker", () => {
     });
 
     const row = screen.getByRole("menuitemcheckbox", { name: /roborev-ci/i });
-    const avatar = row.querySelector("img.user-picker__avatar");
+    const avatar = row.querySelector("img");
     expect(avatar).toBeTruthy();
 
     await fireEvent.error(avatar as HTMLImageElement);
 
-    expect(row.querySelector("img.user-picker__avatar")).toBeNull();
+    expect(row.querySelector("img")).toBeNull();
     expect(row.textContent).toContain("R");
   });
 

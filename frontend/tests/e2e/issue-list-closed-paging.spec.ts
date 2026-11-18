@@ -67,12 +67,32 @@ test("Closed issues load past hidden bot rows", async ({ page }) => {
     Author: index < 200 ? "release-bot" : "human-author",
   }));
   await routeClosedPaging(page, "/api/v1/issues", rows);
+  let release: (() => void) | undefined;
+  const nextPage = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/v1/issues**", async (route) => {
+    const url = new URL(route.request().url());
+    if (
+      url.pathname === "/api/v1/issues" &&
+      url.searchParams.get("state") === "closed" &&
+      Number(url.searchParams.get("limit")) > 200
+    )
+      await nextPage;
+    await route.fallback();
+  });
   await page.goto("/issues");
   const trigger = page.locator(".compact-filter-menu .kit-filter-dropdown__btn");
   await trigger.click();
   await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Closed", exact: true }).click();
   await trigger.click();
 
+  try {
+    await expect(page.locator(".list-count-chip")).toHaveText("0+ issues");
+    await expect(page.getByText("No issues found.")).toHaveCount(0);
+  } finally {
+    release?.();
+  }
   await expect(page.locator(".list-count-chip")).toHaveText("50 issues");
   await expect(page.getByText("Closed issue 201", { exact: true })).toBeVisible();
 });

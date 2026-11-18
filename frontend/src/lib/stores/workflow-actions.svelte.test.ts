@@ -143,28 +143,6 @@ describe("workflow actions store", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
-  it.each([false, true])("drops deleted runs after an exhausted first page (empty: %s)", async (empty) => {
-    let refreshed = false;
-    globalThis.fetch = async (input, init) => {
-      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
-      if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
-      return jsonResponse({
-        repo,
-        items: refreshed ? (empty ? [] : [run("B", "completed")]) : [run("A", "queued"), run("B", "queued")],
-        exhausted: true,
-      });
-    };
-    store.loadCatalog(ref);
-    await settle();
-    store.selectWorkflow(ref, "deploy.yml");
-    await settle();
-    refreshed = true;
-    store.refreshRuns(ref);
-    await settle();
-    expect(store.getRuns(ref).map((item) => item.id)).toEqual(empty ? [] : ["B"]);
-    expect(store.getSnapshot(ref)?.runsPage.exhausted).toBe(true);
-  });
-
   it("refreshes all 350 loaded runs and keeps the window if a page fails", async () => {
     let refreshed = false;
     let fail = false;
@@ -211,12 +189,23 @@ describe("workflow actions store", () => {
     expect(store.getSnapshot(ref)?.error).not.toBeNull();
   });
 
-  it("drops deleted runs from a non-exhausted refresh", async () => {
+  it.each(["exhausted", "empty", "non-exhausted"] as const)("drops deleted runs on refresh (%s)", async (scenario) => {
     let refreshed = false;
     const old = Array.from({ length: 100 }, (_, i) => `old-${i}`);
     globalThis.fetch = async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
       if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
+      if (scenario !== "non-exhausted") {
+        return jsonResponse({
+          repo,
+          items: refreshed
+            ? scenario === "empty"
+              ? []
+              : [run("B", "completed")]
+            : [run("A", "queued"), run("B", "queued")],
+          exhausted: true,
+        });
+      }
       const ids = refreshed ? ["new-1", "new-2", ...old.filter((id) => id !== "old-24")] : old;
       const start = url.searchParams.has("cursor") ? 50 : 0;
       return jsonResponse({
@@ -230,17 +219,23 @@ describe("workflow actions store", () => {
     await settle();
     store.selectWorkflow(ref, "deploy.yml");
     await settle();
-    store.loadMoreRuns(ref);
-    await settle();
+    if (scenario === "non-exhausted") {
+      store.loadMoreRuns(ref);
+      await settle();
+    }
     refreshed = true;
     store.refreshRuns(ref);
     await settle();
-    expect(store.getRuns(ref).map((item) => item.id)).toEqual([
-      "new-1",
-      "new-2",
-      ...old.filter((id) => id !== "old-24").slice(0, 98),
-    ]);
-    expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ exhausted: false, nextCursor: "2" });
+    const expected =
+      scenario === "empty"
+        ? []
+        : scenario === "exhausted"
+          ? ["B"]
+          : ["new-1", "new-2", ...old.filter((id) => id !== "old-24").slice(0, 98)];
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual(expected);
+    expect(store.getSnapshot(ref)?.runsPage).toMatchObject(
+      scenario === "non-exhausted" ? { exhausted: false, nextCursor: "2" } : { exhausted: true },
+    );
   });
 
   it("keeps runs and exposes a failed older page for retry", async () => {

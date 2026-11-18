@@ -133,8 +133,10 @@ it("requests jobs only when a run expands and preserves provider order", async (
 
 it("sorts runs from the column headers and returns to provider order", async () => {
   const older: Run = { ...runs[0]!, id: "run-1", run_number: 41, name: "Build", actor: "zed", conclusion: "failure" };
+  const onsort = vi.fn();
   render(WorkflowRunList, {
     ...paging,
+    onsort,
     runs: [runs[0]!, older],
     jobs: {},
     jobErrors: {},
@@ -149,7 +151,7 @@ it("sorts runs from the column headers and returns to provider order", async () 
   await fireEvent.click(status);
   expect(order()).toEqual(["Run 41 Build", "Run 42 Deploy"]);
   expect(status.closest("th")?.getAttribute("aria-sort")).toBe("ascending");
-  expect(paging.onsort).toHaveBeenCalled();
+  expect(onsort).toHaveBeenCalledOnce();
 
   await fireEvent.click(status);
   await fireEvent.click(status);

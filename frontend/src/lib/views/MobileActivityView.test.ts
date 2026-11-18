@@ -287,6 +287,7 @@ vi.mock("../context.js", () => ({
 }));
 
 beforeEach(() => {
+  scrollScope.set("scope", "initial");
   olderItemsAvailable.value = false;
   loadOlderItems.mockClear();
   hideBots.value = false;

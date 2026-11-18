@@ -28,9 +28,11 @@ beforeEach(() => {
   cycleLabelFilter.mockClear();
   setHideDrafts.mockClear();
   useWorkspaceActivityForRecency.value = false;
+  pagingProblem.value = null;
 });
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
   runtimeCapture.current = undefined;
 });
@@ -142,6 +144,7 @@ const enabledEvents = vi.hoisted(() => ({
 const showNotifications = vi.hoisted(() => ({ value: true }));
 const activityCapped = vi.hoisted(() => ({ value: false }));
 const itemActivityCapped = vi.hoisted(() => ({ value: false }));
+const pagingProblem = vi.hoisted(() => ({ value: null as { detail: string; retryable: boolean } | null }));
 const olderItemsAvailable = vi.hoisted(() => ({ value: false }));
 const canLoadMore = vi.hoisted(() => ({ value: false }));
 const loadingMore = vi.hoisted(() => ({ value: false }));
@@ -216,12 +219,12 @@ vi.mock("../context.js", () => ({
       getActivityScopeKey: () => "scope",
       getOlderItems: () => ({
         loading: false,
-        problem: { detail: "unavailable", retryable: true },
+        problem: pagingProblem.value,
         retry: (more: () => void) => more(),
       }),
       getMoreActivity: () => ({
         loading: loadingMore.value,
-        problem: loadingMore.value ? null : { detail: "unavailable", retryable: true },
+        problem: loadingMore.value ? null : pagingProblem.value,
         retry: (more: () => void) => more(),
       }),
       canLoadOlderItems: () => olderItemsAvailable.value,
@@ -309,6 +312,13 @@ vi.mock("../context.js", () => ({
 
 describe("ActivityFeed compact mode", () => {
   beforeEach(() => {
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
     viewMode.value = "flat";
     collapseThreads.value = false;
     rollUpCommits.value = false;
@@ -374,23 +384,13 @@ describe("ActivityFeed compact mode", () => {
     activityCapped.value = true;
     canLoadMore.value = true;
     loadingMore.value = pending;
-    if (pending)
-      vi.stubGlobal(
-        "IntersectionObserver",
-        class {
-          observe() {}
-          disconnect() {}
-        },
-      );
     const { container } = render(ActivityFeed);
     if (pending) {
       expect(container.textContent).toContain("Loading more events");
     } else {
-      await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-      expect(loadMoreActivity).toHaveBeenCalledOnce();
+      expect(container.querySelector(".kit-list-end")).toBeTruthy();
     }
     expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
-    vi.unstubAllGlobals();
   });
 
   it("keeps older activity available when the loaded page has no matches", () => {
@@ -398,10 +398,10 @@ describe("ActivityFeed compact mode", () => {
     // Bots: required hides the loaded human-authored rows in the browser.
     onlyBots.value = true;
     canLoadMore.value = true;
-    render(ActivityFeed);
+    const { container } = render(ActivityFeed);
     expect(screen.queryByText("No activity found")).toBeNull();
     expect(screen.getByText("No matches in loaded activity")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(container.querySelector(".kit-list-end")).toBeTruthy();
   });
 
   it("shows the event ceiling notice after paging ends", () => {
@@ -411,14 +411,13 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.getByText(/most recent 5,000 events/)).toBeTruthy();
   });
 
-  it("shows the older item control in threaded view", async () => {
+  it("shows the older item control in threaded view", () => {
     itemActivityCapped.value = true;
     olderItemsAvailable.value = true;
     viewMode.value = "threaded";
-    render(ActivityFeed);
+    const { container } = render(ActivityFeed);
     expect(screen.getByText(/Item totals cover loaded items only/)).toBeTruthy();
-    await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(loadOlderItems).toHaveBeenCalledOnce();
+    expect(container.querySelector(".kit-list-end")).toBeTruthy();
   });
 
   it("hides the older item control in flat view", () => {

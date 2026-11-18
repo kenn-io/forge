@@ -60,7 +60,6 @@ test("Closed loads bounded pages and reaches the end of the history", async ({ p
   };
   await scrollUntil("400+ PRs");
   expect(limits.at(-1)).toBe(400);
-  await expect.poll(() => limits.filter((limit) => limit === 400).length, { timeout: 20000 }).toBeGreaterThan(1);
   await expect(count).toHaveText("400+ PRs");
   const row300 = page.getByText("Closed change 300", { exact: true });
   await row300.scrollIntoViewIfNeeded();

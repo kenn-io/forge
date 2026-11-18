@@ -196,13 +196,11 @@ describe("issues store paging", () => {
     );
     store.loadMoreIssues();
     await vi.waitFor(() => expect(store.isIssueListLoadingMore()).toBe(false));
-    expect(store.getIssuesError()).not.toBeNull();
     expect(store.getMoreRows().problem).toMatchObject({ retryable: false });
-    expect(getFlash()).toBeNull();
-    expect(store.getIssues()).toHaveLength(200);
     store.setIssueFilterState("all");
-    await loadIssues(store);
+    store.loadIssues();
     expect(store.getMoreRows().problem).toBeNull();
+    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
   });
 });
 

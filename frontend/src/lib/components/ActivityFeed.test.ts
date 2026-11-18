@@ -303,10 +303,15 @@ vi.mock("../context.js", () => ({
 }));
 
 describe("ActivityFeed compact mode", () => {
+  let observeEnd: IntersectionObserverCallback | undefined;
   beforeEach(() => {
+    observeEnd = undefined;
     vi.stubGlobal(
       "IntersectionObserver",
       class {
+        constructor(callback: IntersectionObserverCallback) {
+          observeEnd = callback;
+        }
         observe() {}
         disconnect() {}
       },
@@ -381,6 +386,8 @@ describe("ActivityFeed compact mode", () => {
       expect(container.textContent).toContain("Loading more events");
     } else {
       expect(container.querySelector(".kit-list-end")).toBeTruthy();
+      observeEnd!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+      expect(loadMoreActivity).toHaveBeenCalledOnce();
     }
     expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
   });
@@ -394,6 +401,8 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.queryByText("No activity found")).toBeNull();
     expect(screen.getByText("No matches in loaded activity")).toBeTruthy();
     expect(container.querySelector(".kit-list-end")).toBeTruthy();
+    observeEnd!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+    expect(loadMoreActivity).toHaveBeenCalledOnce();
   });
 
   it("shows the event ceiling notice after paging ends", () => {
@@ -410,15 +419,17 @@ describe("ActivityFeed compact mode", () => {
     const { container } = render(ActivityFeed);
     expect(screen.getByText(/Item totals cover loaded items only/)).toBeTruthy();
     expect(container.querySelector(".kit-list-end")).toBeTruthy();
+    observeEnd!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+    expect(loadOlderItems).toHaveBeenCalledOnce();
   });
 
   it("hides the older item control in flat view", () => {
     itemActivityCapped.value = true;
     olderItemsAvailable.value = true;
     viewMode.value = "flat";
-    render(ActivityFeed);
+    const { container } = render(ActivityFeed);
     expect(screen.queryByText(/Item totals cover loaded items only/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(container.querySelector(".kit-list-end")).toBeNull();
   });
 
   it("offers to retry a failed thread history load", async () => {

@@ -224,7 +224,7 @@ describe("workflow actions store", () => {
         repo,
         items: ids.slice(start, start + 50).map((id) => run(id, "queued")),
         exhausted: false,
-        next_cursor: "2",
+        next_cursor: start === 0 ? "2" : "3",
       });
     });
     await openDeploy();
@@ -243,7 +243,7 @@ describe("workflow actions store", () => {
           : ["new-1", "new-2", ...old.filter((id) => id !== "old-24").slice(0, 98)];
     expect(store.getRuns(ref).map((item) => item.id)).toEqual(expected);
     expect(store.getSnapshot(ref)?.runsPage).toMatchObject(
-      scenario === "non-exhausted" ? { exhausted: false, nextCursor: "2" } : { exhausted: true },
+      scenario === "non-exhausted" ? { exhausted: false, nextCursor: "3" } : { exhausted: true },
     );
   });
 

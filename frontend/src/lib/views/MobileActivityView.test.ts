@@ -212,7 +212,7 @@ vi.mock("../context.js", () => ({
       isItemActivityCapped: () => itemActivityCapped.value,
       getOlderItems: () => ({
         loading: false,
-        problem: { detail: "unavailable", retryable: true },
+        problem: null,
         retry: (more: () => void) => more(),
       }),
       canLoadOlderItems: () => olderItemsAvailable.value,
@@ -539,6 +539,7 @@ describe("MobileActivityView branch activity", () => {
   });
 
   it("loads older items after reaching the phone page limit", async () => {
+    const observed = stubIntersectionObserver();
     rememberMobileListPosition("activity", { scrollTop: 0, pageLimit: 500 });
     olderItemsAvailable.value = true;
     itemActivityCapped.value = true;
@@ -547,7 +548,8 @@ describe("MobileActivityView branch activity", () => {
     );
     const { container } = render(MobileActivityView, { props: { onSelectItem } });
     expect(container.querySelectorAll("article")).toHaveLength(501);
-    await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    const sentinel = container.querySelector(".kit-list-end")!;
+    observed.get(sentinel)!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
     expect(loadOlderItems).toHaveBeenCalledOnce();
   }, 20000);
 

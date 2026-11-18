@@ -277,58 +277,57 @@ describe("ActionsPage", () => {
     expect(viewport.scrollTop).toBe(0);
   });
 
-  it("refreshes only the selected workflow in the visible repository", async () => {
+  it("refreshes only the visible repository's runs from workflow activity and preserves the form", async () => {
+    let reads = 0;
     api = createMockApiFetch([
       (request) => {
-        const match = request.url.pathname.match(/^\/api\/v1\/actions\/github\/acme\/(alpha|beta)\/workflows$/);
-        if (!match) return null;
-        const name = match[1]!;
+        if (request.url.pathname !== "/api/v1/actions/github/acme/alpha/runs") return null;
+        reads++;
         return jsonResponse({
-          repo: repoSummary(name).repo,
-          environments: [],
-          workflows: [workflow(name), workflow(name, "verify")],
+          repo: repoSummary("alpha").repo,
+          items: [
+            workflowRun("alpha", {
+              status: reads === 1 ? "in_progress" : "completed",
+              conclusion: reads === 1 ? "" : "success",
+            }),
+          ],
+          exhausted: true,
         });
       },
       workflowFixtures(),
     ]);
     globalThis.fetch = api.fetch;
-    renderPage();
-    const payload = { provider: "github", platform_host: "github.com", platform_repo_id: 1003 };
-    const emit = (identity: typeof payload) => {
-      for (const listener of listeners) listener({ type: "workflow_runs_changed", payload: identity });
-    };
-    const reads = () => api.requests.filter((request) => request.url.pathname.endsWith("/runs"));
-    await screen.findByRole("button", { name: /alpha deploy/ });
-    emit(payload);
-    expect(reads()).toHaveLength(0);
-    await fireEvent.click(screen.getByRole("button", { name: /alpha deploy/ }));
+    const store = renderPage();
+    await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
     await screen.findByRole("button", { name: /Run 7 alpha deploy/ });
     const refInput = screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement;
     await fireEvent.input(refInput, { target: { value: "feature/draft" } });
-    emit({ ...payload, platform_repo_id: 1004 });
-    emit({ ...payload, platform_host: "github.example.com" });
-    emit(payload);
-    await waitFor(() => expect(reads()).toHaveLength(2));
-    expect(refInput.value).toBe("feature/draft");
-    await fireEvent.click(screen.getByRole("button", { name: /alpha verify/ }));
-    await waitFor(() => expect(reads()).toHaveLength(3));
+    const payload = { provider: "github", platform_host: "github.com", platform_repo_id: 1003 };
+    for (const identity of [
+      { ...payload, platform_repo_id: 1004 },
+      { ...payload, platform_host: "github.example.com" },
+      payload,
+    ]) {
+      for (const listener of listeners) listener({ type: "workflow_runs_changed", payload: identity });
+    }
+    const ref = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "alpha",
+      repositoryKey: { kind: "id", id: 1003 },
+    };
+    await waitFor(() => expect(store.getRuns(ref)[0]?.status).toBe("completed"));
+    expect(reads).toBe(2);
+    expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("feature/draft");
     const rail = screen.getByRole("navigation", { name: "Actions repositories" });
     await fireEvent.click(within(rail).getByRole("button", { name: /beta/ }));
-    await screen.findByRole("button", { name: /beta deploy/ });
-    emit({ ...payload, platform_repo_id: 1004 });
-    expect(reads()).toHaveLength(3);
-    await fireEvent.click(screen.getByRole("button", { name: /beta deploy/ }));
-    await waitFor(() => expect(reads()).toHaveLength(4));
-    emit({ ...payload, platform_repo_id: 1003 });
-    emit({ ...payload, platform_repo_id: 1004 });
-    await waitFor(() => expect(reads()).toHaveLength(5));
-    expect(reads().map((request) => [request.url.pathname, request.url.searchParams.get("workflow_id")])).toEqual([
-      ["/api/v1/actions/github/acme/alpha/runs", "alpha-deploy.yml"],
-      ["/api/v1/actions/github/acme/alpha/runs", "alpha-deploy.yml"],
-      ["/api/v1/actions/github/acme/alpha/runs", "alpha-verify.yml"],
-      ["/api/v1/actions/github/acme/beta/runs", "beta-deploy.yml"],
-      ["/api/v1/actions/github/acme/beta/runs", "beta-deploy.yml"],
-    ]);
+    await fireEvent.click(await screen.findByRole("button", { name: /beta deploy/ }));
+    await screen.findByRole("button", { name: /Run 7 beta deploy/ });
+    for (const listener of listeners) listener({ type: "workflow_runs_changed", payload });
+    for (const listener of listeners) listener({ type: "workflow_runs_changed", payload: { ...payload, platform_repo_id: 1004 } });
+    await waitFor(() => expect(api.requests.filter((request) => request.url.pathname === "/api/v1/actions/github/acme/beta/runs")).toHaveLength(2));
+    expect(reads).toBe(2);
     cleanup();
     expect(listeners.size).toBe(0);
   });

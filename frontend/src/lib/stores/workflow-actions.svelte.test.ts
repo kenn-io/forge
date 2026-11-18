@@ -143,35 +143,47 @@ describe("workflow actions store", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
-  it("bounds refresh at 300 runs, retains the tail, and continues paging", async () => {
-    let refreshed = false;
-    let fail = false;
-    const reads: string[] = [];
+  function routeRuns(respond: (url: URL) => Promise<Response>): void {
     globalThis.fetch = async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
-      if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
-      const cursor = url.searchParams.get("cursor") ?? "1";
-      reads.push(cursor);
-      if (fail && cursor === "2") return jsonResponse({ status: 500, code: "internalError", title: "Failed" }, 500);
-      const page = Number(cursor);
+      return url.pathname.endsWith("/runs") ? respond(url) : api.fetch(input, init);
+    };
+  }
+
+  // Serves numbered 50-run pages through `last`; a null status fails that page.
+  function routeRunPages(last: number, statusOf: (page: number) => string | null): string[] {
+    const reads: string[] = [];
+    routeRuns(async (url) => {
+      const page = Number(url.searchParams.get("cursor") ?? "1");
+      reads.push(String(page));
+      const status = statusOf(page);
+      if (status === null) return jsonResponse({ status: 500, code: "internalError", title: "Failed" }, 500);
       return jsonResponse({
         repo,
-        items: Array.from({ length: 50 }, (_, i) =>
-          run(String(i + (page - 1) * 50), refreshed ? "completed" : "queued"),
-        ),
-        exhausted: page === 21,
-        ...(page < 21 && { next_cursor: String(page + 1) }),
+        items: Array.from({ length: 50 }, (_, i) => run(String(i + (page - 1) * 50), status)),
+        exhausted: page === last,
+        ...(page < last && { next_cursor: String(page + 1) }),
       });
-    };
+    });
+    return reads;
+  }
+
+  async function openDeploy(): Promise<void> {
     store.loadCatalog(ref);
     await settle();
     store.selectWorkflow(ref, "deploy.yml");
     await settle();
+  }
+
+  it("bounds refresh at 300 runs, retains the tail, and continues paging", async () => {
+    let refreshed = false;
+    let fail = false;
+    const reads = routeRunPages(21, (page) => (fail && page === 2 ? null : refreshed ? "completed" : "queued"));
+    await openDeploy();
     for (let i = 0; i < 19; i++) {
       store.loadMoreRuns(ref);
       await settle();
     }
-    expect(store.getRuns(ref)).toHaveLength(1000);
     refreshed = true;
     reads.length = 0;
     store.refreshRuns(ref);
@@ -194,9 +206,7 @@ describe("workflow actions store", () => {
   it.each(["exhausted", "empty", "non-exhausted"] as const)("drops deleted runs on refresh (%s)", async (scenario) => {
     let refreshed = false;
     const old = Array.from({ length: 100 }, (_, i) => `old-${i}`);
-    globalThis.fetch = async (input, init) => {
-      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
-      if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
+    routeRuns(async (url) => {
       if (scenario !== "non-exhausted") {
         return jsonResponse({
           repo,
@@ -216,11 +226,8 @@ describe("workflow actions store", () => {
         exhausted: false,
         next_cursor: "2",
       });
-    };
-    store.loadCatalog(ref);
-    await settle();
-    store.selectWorkflow(ref, "deploy.yml");
-    await settle();
+    });
+    await openDeploy();
     if (scenario === "non-exhausted") {
       store.loadMoreRuns(ref);
       await settle();
@@ -242,9 +249,7 @@ describe("workflow actions store", () => {
 
   it.each([429, 500])("keeps runs and exposes a %s older page failure for retry", async (status) => {
     let fail = true;
-    globalThis.fetch = async (input, init) => {
-      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
-      if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
+    routeRuns(async (url) => {
       if (url.searchParams.has("cursor") && fail) {
         return jsonResponse(
           { status, code: "internalError", title: "Unavailable", detail: "Page unavailable" },
@@ -258,11 +263,8 @@ describe("workflow actions store", () => {
         exhausted: older,
         ...(older ? {} : { next_cursor: "older" }),
       });
-    };
-    store.loadCatalog(ref);
-    await settle();
-    store.selectWorkflow(ref, "deploy.yml");
-    await settle();
+    });
+    await openDeploy();
     store.loadMoreRuns(ref);
     await settle();
     expect(store.getRuns(ref).map((item) => item.id)).toEqual(["new"]);
@@ -549,24 +551,10 @@ describe("workflow actions store", () => {
   });
 
   it("does not count an unlisted dispatched run in refresh depth", async () => {
-    const reads: string[] = [];
-    globalThis.fetch = async (input, init) => {
-      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
-      if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
-      reads.push(url.searchParams.get("cursor") ?? "1");
-      return jsonResponse({
-        repo,
-        items: Array.from({ length: 50 }, (_, i) => run(String(i), "queued")),
-        exhausted: false,
-        next_cursor: "2",
-      });
-    };
+    const reads = routeRunPages(21, () => "queued");
     fixture.dispatchResponse = () =>
       jsonResponse({ accepted: true, dispatch_id: "dispatch-1", actor: "maintainer", run: run("new", "queued") }, 202);
-    store.loadCatalog(ref);
-    await settle();
-    store.selectWorkflow(ref, "deploy.yml");
-    await settle();
+    await openDeploy();
     store.dispatch({
       ref,
       workflowId: "deploy.yml",

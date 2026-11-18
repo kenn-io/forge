@@ -2050,10 +2050,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       get problem() {
         return olderItemsProblem;
       },
-      retry(more: () => void) {
-        olderItemsProblem = null;
-        more();
-      },
+      retry: (more: () => void) => more(),
     }),
     getMoreActivity: () => flatPaging,
     getActivityScopeKey: () => activityScrollScopeKey,

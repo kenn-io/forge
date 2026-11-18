@@ -8,7 +8,9 @@ test("Closed issues load bounded pages and reach the end of the history", async 
   const template = mockIssueFixture(7);
   const repo = { ...template.repo, owner: "org-a", name: "project-a", repo_path: "org-a/project-a" };
   await page.route("**/api/v1/repos", (route) =>
-    route.fulfill({ json: [{ ID: 1, Owner: "org-a", Name: "project-a", Platform: "github", PlatformHost: "github.com" }] }),
+    route.fulfill({
+      json: [{ ID: 1, Owner: "org-a", Name: "project-a", Platform: "github", PlatformHost: "github.com" }],
+    }),
   );
   const rows = Array.from({ length: 450 }, (_, index) => ({
     ...template,
@@ -81,18 +83,9 @@ test("Closed issues load past hidden bot rows", async ({ page }) => {
     Author: index < 200 ? "release-bot" : "user-a",
   }));
   await routeClosedPaging(page, "/api/v1/issues", rows);
-  let release: (() => void) | undefined;
-  const nextPage = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const { promise: nextPage, resolve: release } = Promise.withResolvers<void>();
   await page.route("**/api/v1/issues**", async (route) => {
-    const url = new URL(route.request().url());
-    if (
-      url.pathname === "/api/v1/issues" &&
-      url.searchParams.get("state") === "closed" &&
-      Number(url.searchParams.get("limit")) > 200
-    )
-      await nextPage;
+    if (Number(new URL(route.request().url()).searchParams.get("limit")) > 200) await nextPage;
     await route.fallback();
   });
   await page.goto("/issues");
@@ -101,12 +94,9 @@ test("Closed issues load past hidden bot rows", async ({ page }) => {
   await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Closed", exact: true }).click();
   await trigger.click();
 
-  try {
-    await expect(page.locator(".list-count-chip")).toHaveText("0+ issues");
-    await expect(page.getByText("No issues found.")).toHaveCount(0);
-  } finally {
-    release?.();
-  }
+  await expect(page.locator(".list-count-chip")).toHaveText("0+ issues");
+  await expect(page.getByText("No issues found.")).toHaveCount(0);
+  release();
   await expect(page.locator(".list-count-chip")).toHaveText("50 issues");
   await expect(page.getByText("Closed issue 201", { exact: true })).toBeVisible();
 });

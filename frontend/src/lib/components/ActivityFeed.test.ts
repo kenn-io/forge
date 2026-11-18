@@ -28,7 +28,6 @@ beforeEach(() => {
   cycleLabelFilter.mockClear();
   setHideDrafts.mockClear();
   useWorkspaceActivityForRecency.value = false;
-  pagingProblem.value = null;
 });
 
 afterEach(async () => {
@@ -144,7 +143,6 @@ const enabledEvents = vi.hoisted(() => ({
 const showNotifications = vi.hoisted(() => ({ value: true }));
 const activityCapped = vi.hoisted(() => ({ value: false }));
 const itemActivityCapped = vi.hoisted(() => ({ value: false }));
-const pagingProblem = vi.hoisted(() => ({ value: null as { detail: string; retryable: boolean } | null }));
 const olderItemsAvailable = vi.hoisted(() => ({ value: false }));
 const canLoadMore = vi.hoisted(() => ({ value: false }));
 const loadingMore = vi.hoisted(() => ({ value: false }));
@@ -219,16 +217,8 @@ vi.mock("../context.js", () => ({
       getActivityScopeKey: () => "scope",
       getScrollPosition: () => undefined,
       setScrollPosition: vi.fn(),
-      getOlderItems: () => ({
-        loading: false,
-        problem: pagingProblem.value,
-        retry: (more: () => void) => more(),
-      }),
-      getMoreActivity: () => ({
-        loading: loadingMore.value,
-        problem: loadingMore.value ? null : pagingProblem.value,
-        retry: (more: () => void) => more(),
-      }),
+      getOlderItems: () => ({ loading: false, problem: null, retry: (more: () => void) => more() }),
+      getMoreActivity: () => ({ loading: loadingMore.value, problem: null, retry: (more: () => void) => more() }),
       canLoadOlderItems: () => olderItemsAvailable.value,
       isLoadingOlderItems: () => false,
       loadOlderItems,

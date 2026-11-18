@@ -1,43 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { mockApi, mockSettings } from "./support/mockApi";
 
-const capabilities = {
-  read_repositories: true,
-  read_merge_requests: true,
-  read_issues: true,
-  read_issue_pr_references: true,
-  read_comments: true,
-  read_releases: true,
-  read_ci: true,
-  read_workflows: true,
-  read_workflow_runs: true,
-  workflow_dispatch: true,
-  read_labels: true,
-  read_markdown_images: true,
-  read_markdown_media: true,
-  read_authenticated_user: true,
-  comment_mutation: true,
-  state_mutation: true,
-  merge_mutation: true,
-  label_mutation: true,
-  assignee_mutation: true,
-  reviewer_mutation: true,
-  review_mutation: true,
-  workflow_approval: true,
-  ready_for_review: true,
-  draft_mutation: true,
-  issue_mutation: true,
-  review_draft_mutation: false,
-  review_thread_resolution: false,
-  review_suggestion_application: false,
-  read_review_threads: false,
-  native_multiline_ranges: false,
-  mutation_head_binding: false,
-  thread_reply: false,
-  thread_resolve: false,
-  supported_review_actions: [],
-};
-
 test("scrolls to the oldest workflow run", async ({ page }) => {
   await mockApi(page);
   const repo = {
@@ -48,34 +11,14 @@ test("scrolls to the oldest workflow run", async ({ page }) => {
     name: "project-a",
     repo_path: "org-a/project-a",
     default_branch: "main",
-    capabilities,
+    capabilities: { read_workflows: true, read_workflow_runs: true, workflow_dispatch: true },
     operations: { dispatch_workflow: { available: true } },
   };
   await page.route("**/api/v1/settings", async (route) =>
     route.fulfill({ json: { ...mockSettings, modes: { ...mockSettings.modes, actions: true } } }),
   );
   await page.route("**/api/v1/repos/summary", async (route) =>
-    route.fulfill({
-      json: [
-        {
-          owner: "org-a",
-          name: "project-a",
-          platform_host: "github.com",
-          default_platform_host: "github.com",
-          repo,
-          operations: repo.operations,
-          cached_pr_count: 0,
-          open_pr_count: 0,
-          draft_pr_count: 0,
-          cached_issue_count: 0,
-          open_issue_count: 0,
-          active_authors: [],
-          recent_issues: [],
-          commit_timeline: [],
-          releases: [],
-        },
-      ],
-    }),
+    route.fulfill({ json: [{ owner: "org-a", name: "project-a", platform_host: "github.com", repo }] }),
   );
   await page.route("**/api/v1/actions/github/org-a/project-a/workflows", async (route) =>
     route.fulfill({

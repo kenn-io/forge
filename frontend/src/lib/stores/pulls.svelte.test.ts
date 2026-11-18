@@ -173,6 +173,7 @@ describe("pulls store display order", () => {
     expect(store.getPulls()).toHaveLength(200);
     await loadPulls(store);
     expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 200 }, expect.anything());
+    expect(store.getMoreRows().problem).toBeNull();
     store.getMoreRows().retry(store.loadMorePulls);
     expect(store.isLoadingMore()).toBe(true);
     await vi.waitFor(() => expect(store.getPulls()).toHaveLength(400));

@@ -1,51 +1,38 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { activitySubject as subject, activityTime } from "./support/activityPaging";
 import { mockApi } from "./support/mockApi";
 
-const repo = {
-  provider: "github",
-  platform_host: "github.com",
-  platform_repo_id: 1007,
-  owner: "org-a",
-  name: "project-a",
-  repo_path: "org-a/project-a",
-};
-const time = new Date().toISOString();
-const subject = (number: number) => ({
-  activity_at: time,
-  item_number: number,
-  item_state: "open",
-  item_title: `Pull request ${number}`,
-  item_type: "pr",
-  item_url: `https://github.com/org-a/project-a/pull/${number}`,
-  repo,
-});
 const event = (number: number) => ({
   id: `comment:${number}`,
   cursor: `comment:${number}`,
   activity_type: "comment",
   author: "user-a",
   body_preview: `Comment ${number}`,
-  created_at: time,
+  created_at: activityTime,
   ...subject(number),
 });
 
-test("threaded activity scrolls past 5,000 subjects", async ({ page }) => {
-  test.setTimeout(240_000);
-  await mockApi(page);
-  await page.route("**/api/v1/activity**", async (route) => {
+const routeSubjects = (page: Page, first: number, older: number) =>
+  page.route("**/api/v1/activity**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/thread-events")) return route.fulfill({ json: { items: [], capped: false } });
     if (url.pathname !== "/api/v1/activity") return route.fallback();
-    const older = url.searchParams.has("subject_before");
+    const next = url.searchParams.has("subject_before");
     await route.fulfill({
       json: {
         items: [],
         capped: false,
-        item_activity: older ? [subject(5001)] : Array.from({ length: 5000 }, (_, i) => subject(i + 1)),
-        item_activity_capped: !older,
-        next_subject_cursor: older ? "" : "older",
+        item_activity: Array.from({ length: next ? older : first }, (_, i) => subject(i + 1 + (next ? first : 0))),
+        item_activity_capped: !next,
+        next_subject_cursor: next ? "" : "older",
       },
     });
   });
+
+test("threaded activity scrolls past 5,000 subjects", async ({ page }) => {
+  test.setTimeout(240_000);
+  await mockApi(page);
+  await routeSubjects(page, 5000, 1);
   await page.goto("/?view=threaded");
   const viewport = page.getByRole("region", { name: "Threaded activity" });
   await expect(page.getByText("Pull request 5000", { exact: true })).toBeAttached({ timeout: 180_000 });
@@ -59,21 +46,7 @@ test("threaded activity scrolls past 5,000 subjects", async ({ page }) => {
 
 test("returns to a loaded older activity item", async ({ page }) => {
   await mockApi(page);
-  await page.route("**/api/v1/activity**", async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname.endsWith("/thread-events")) return route.fulfill({ json: { items: [], capped: false } });
-    if (url.pathname !== "/api/v1/activity") return route.fallback();
-    const older = url.searchParams.has("subject_before");
-    await route.fulfill({
-      json: {
-        items: [],
-        capped: false,
-        item_activity: Array.from({ length: older ? 100 : 200 }, (_, i) => subject(i + (older ? 201 : 1))),
-        item_activity_capped: !older,
-        next_subject_cursor: older ? "" : "older",
-      },
-    });
-  });
+  await routeSubjects(page, 200, 100);
   await page.goto("/?view=threaded");
   const viewport = page.getByRole("region", { name: "Threaded activity" });
   await expect(async () => {

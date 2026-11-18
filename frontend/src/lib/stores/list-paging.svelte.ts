@@ -71,9 +71,6 @@ export function createListPaging() {
     get problem() {
       return problem;
     },
-    retry(more: () => void) {
-      problem = null;
-      more();
-    },
+    retry: (more: () => void) => more(),
   };
 }

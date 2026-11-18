@@ -1,4 +1,5 @@
 import { devices, expect, test } from "@playwright/test";
+import { activitySubject } from "./support/activityPaging";
 import { mockApi } from "./support/mockApi";
 
 test.use({ ...devices["iPhone 13"], browserName: "chromium" });
@@ -95,30 +96,13 @@ test("keeps a visible preview while loading older items", async ({ page }) => {
 
 test("returns to a loaded older activity card", async ({ page }) => {
   await mockApi(page);
-  const repo = {
-    provider: "github",
-    platform_host: "github.com",
-    platform_repo_id: 1007,
-    owner: "org-a",
-    name: "project-a",
-    repo_path: "org-a/project-a",
-  };
-  const time = new Date().toISOString();
   let limit = 0;
   await page.route("**/api/v1/activity**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/thread-events")) return route.fulfill({ json: { items: [], capped: false } });
     if (url.pathname !== "/api/v1/activity") return route.fallback();
     limit = Number(url.searchParams.get("limit"));
-    const items = Array.from({ length: Math.min(limit, 300) }, (_, i) => ({
-      activity_at: time,
-      item_number: i + 1,
-      item_state: "open",
-      item_title: `Pull request ${i + 1}`,
-      item_type: "pr",
-      item_url: `https://github.com/org-a/project-a/pull/${i + 1}`,
-      repo,
-    }));
+    const items = Array.from({ length: Math.min(limit, 300) }, (_, i) => activitySubject(i + 1));
     await route.fulfill({
       json: { items: [], capped: false, item_activity: items, item_activity_capped: limit < 300 },
     });

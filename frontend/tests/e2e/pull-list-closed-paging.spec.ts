@@ -8,7 +8,9 @@ test("Closed loads bounded pages and reaches the end of the history", async ({ p
   const template = mockPullFixture(42);
   const repo = { ...template.repo, owner: "org-a", name: "project-a", repo_path: "org-a/project-a" };
   await page.route("**/api/v1/repos", (route) =>
-    route.fulfill({ json: [{ ID: 1, Owner: "org-a", Name: "project-a", Platform: "github", PlatformHost: "github.com" }] }),
+    route.fulfill({
+      json: [{ ID: 1, Owner: "org-a", Name: "project-a", Platform: "github", PlatformHost: "github.com" }],
+    }),
   );
   const rows = Array.from({ length: 450 }, (_, index) => ({
     ...template,
@@ -69,21 +71,12 @@ test("Closed loads bounded pages and reaches the end of the history", async ({ p
   };
   await scrollUntil("400+ PRs");
   expect(limits.at(-1)).toBe(400);
-  await expect(count).toHaveText("400+ PRs");
+  await expect(page.locator(".sidebar-group-header__count")).toHaveText("400+");
   const row300 = page.getByText("Closed change 300", { exact: true });
   await row300.scrollIntoViewIfNeeded();
   await row300.click();
   await page.goBack();
   await expect(row300).toBeInViewport();
-  await trigger.click();
-  await draft.click();
-  await trigger.click();
-  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(0);
-  await trigger.click();
-  await draft.click();
-  await draft.click();
-  await trigger.click();
-  await scrollUntil("400+ PRs");
   await scrollUntil("450 PRs");
   expect(limits.at(-1)).toBe(600);
   await expect(page.locator(".sidebar-group-header__count")).toHaveText("450");

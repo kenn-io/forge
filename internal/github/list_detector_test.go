@@ -1,10 +1,12 @@
 package github
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -224,37 +226,110 @@ func TestFailedLaterPageCannotLeaveTheDetectorVouching(t *testing.T) {
 	}
 }
 
-func TestLargeIssueListIsNotVouchedForByItsNewestIssue(t *testing.T) {
+func TestLargeIssueListUsesNewestIssueDetector(t *testing.T) {
 	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-
-	var detectors, pages atomic.Int64
+	var detectors atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("ETag", `"issues"`)
 		if r.URL.Query().Get("state") == "all" {
 			detectors.Add(1)
-			_, _ = w.Write([]byte(`[]`))
+			w.Header().Set("ETag", `"newest"`)
+			if r.Header.Get("If-None-Match") == `"newest"` {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			_, _ = w.Write([]byte(`[{"number":200,"state":"open"}]`))
 			return
 		}
-		pages.Add(1)
-		if r.URL.Query().Get("page") == "" {
+		page := r.URL.Query().Get("page")
+		end := 100
+		if page == "" {
+			end = 200
 			w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?state=open&page=2>; rel="next"`, r.Host, r.URL.Path))
 		}
-		_, _ = w.Write([]byte(`[]`))
+		var rows []string
+		for n := end; n > end-100; n-- {
+			rows = append(rows, fmt.Sprintf(`{"number":%d,"state":"open"}`, n))
+		}
+		w.Header().Set("ETag", fmt.Sprintf(`"page-%d"`, end))
+		_, _ = w.Write([]byte("[" + strings.Join(rows, ",") + "]"))
 	}))
 	t.Cleanup(server.Close)
-	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil,
-		WithBaseURLForTesting(server.URL))
-	require.NoError(err)
-	for range 3 {
-		_, err := client.ListOpenIssues(t.Context(), "acme", "widget")
-		require.NoError(err)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil, WithBaseURLForTesting(server.URL))
+	require.NoError(t, err)
+	for range 2 {
+		issues, err := client.ListOpenIssues(t.Context(), "acme", "widget")
+		require.NoError(t, err)
+		require.Len(t, issues, 200)
 	}
-	// An issue can be deleted or transferred without moving the newest
-	// one, so large issue lists are always read in full.
-	assert.Zero(detectors.Load())
-	assert.Equal(int64(6), pages.Load())
+	_, err = client.ListOpenIssues(t.Context(), "acme", "widget")
+	require.True(t, platformgithub.IsNotModified(err))
+	assert.Equal(t, int64(2), detectors.Load())
+}
+
+func TestLargeIssueListDeletionAfterDetectorExpiry(t *testing.T) {
+	t.Parallel()
+	var deleted atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("state") == "all" {
+			w.Header().Set("ETag", `"newest"`)
+			if r.Header.Get("If-None-Match") == `"newest"` {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			_, _ = w.Write([]byte(`[{"number":300}]`))
+			return
+		}
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page < 1 {
+			page = 1
+		}
+		var rows []string
+		for n := 300; n >= 1; n-- {
+			if n == 150 && deleted.Load() {
+				continue
+			}
+			rows = append(rows, fmt.Sprintf(`{"number":%d,"state":"open"}`, n))
+		}
+		start := (page - 1) * 100
+		end := min(start+100, len(rows))
+		if end < len(rows) {
+			w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?state=open&page=%d>; rel="next"`, r.Host, r.URL.Path, page+1))
+		}
+		body := "[" + strings.Join(rows[start:end], ",") + "]"
+		w.Header().Set("ETag", fmt.Sprintf(`"%x"`, sha256.Sum256([]byte(body))))
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(server.Close)
+	budget := NewSyncBudget(100)
+	et := &etagTransport{base: WrapSyncBudgetTransport(http.DefaultTransport, budget)}
+	hc := &http.Client{Transport: et}
+	client, err := platformgithub.NewClient(platformgithub.ClientConfig{
+		Read: hc, Write: hc, Notifications: hc, Clock: time.Now, APIBase: server.URL + "/api/v3/",
+	})
+	require.NoError(t, err)
+	ctx := WithSyncBudget(t.Context())
+	for range 2 {
+		issues, err := client.ListOpenIssues(ctx, "acme", "widget")
+		require.NoError(t, err)
+		require.Len(t, issues, 300)
+	}
+	deleted.Store(true)
+	spent := budget.Spent()
+	_, err = client.ListOpenIssues(ctx, "acme", "widget")
+	require.True(t, platformgithub.IsNotModified(err))
+	assert.Equal(t, spent, budget.Spent())
+	et.cache.Range(func(key, value any) bool {
+		entry := value.(etagEntry)
+		entry.cachedAt = time.Now().Add(-etagTTL - time.Minute)
+		et.cache.Store(key, entry)
+		return true
+	})
+	issues, err := client.ListOpenIssues(ctx, "acme", "widget")
+	require.NoError(t, err)
+	require.Len(t, issues, 299)
+	for _, issue := range issues {
+		assert.NotEqual(t, 150, issue.GetNumber())
+	}
 }

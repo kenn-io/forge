@@ -88,8 +88,8 @@ ETags and 304s:
 - A multi-page open list never stores its page 1 validator. A pull request list is vouched for by a
   conditional read of the repo's single most recently updated pull request
   (`state=all&sort=updated&per_page=1`), because opening, closing, merging, or editing any of them
-  moves it to the top; a 304 answers the list with a 304. Issue lists never use it: deleting or
-  transferring an issue that is not on top moves nothing. The detector validator is read before the
+  moves it to the top; a 304 answers the list with a 304. Issue lists now use the detector too. The
+  detector validator is read before the
   list, stored once page 1 arrives, dropped when any later page fails (including a budget refusal),
   and cannot vouch past `etagTTL` (`internal/github/etag_transport.go::etagTransport.checkListDetector`).
 - Open-list validators are saved to `forge_http_etags` only after their repository synced without

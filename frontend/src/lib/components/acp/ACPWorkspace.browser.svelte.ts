@@ -1571,6 +1571,22 @@ describe("ACPWorkspace prompt recall (browser)", () => {
     expect(composer.selectionStart).toBe(0);
   });
 
+  it("treats a typed draft as typed even when it matches the recalled prompt", async () => {
+    const composer = await renderHistory(900, [
+      { role: "user", text: "Older prompt" },
+      { role: "user", text: "Newer prompt" },
+    ]);
+
+    await userEvent.keyboard("{ArrowUp}");
+    await expect.poll(() => composer.value).toBe("Newer prompt");
+    await userEvent.clear(composer);
+    await userEvent.keyboard("Newer prompt");
+    await userEvent.keyboard("{ArrowUp}");
+    expect(composer.value).toBe("Newer prompt");
+    await userEvent.keyboard("{ArrowDown}");
+    expect(composer.value).toBe("Newer prompt");
+  });
+
   it("counts wrapped lines, recalling the older prompt only from the first visual line", async () => {
     const composer = await renderHistory(360, [
       { role: "user", text: "Short prompt" },

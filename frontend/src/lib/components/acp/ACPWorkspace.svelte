@@ -712,7 +712,7 @@
           bind:value={draft}
           onpaste={paste}
           onkeydown={keydown}
-          oninput={() => { commandMenuDismissed = false; commandHighlight = 0; syncCaret(); }}
+          oninput={() => { recalled = null; commandMenuDismissed = false; commandHighlight = 0; syncCaret(); }}
           onkeyup={syncCaret}
           onclick={syncCaret}
           rows="2"

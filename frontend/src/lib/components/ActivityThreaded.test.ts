@@ -95,7 +95,6 @@ vi.mock("../context.js", () => ({
       getHideOrgName: () => hideOrgName.value,
     },
     activity: {
-      getActivityScopeKey: () => "scope",
       isThreadItemExpanded: () => expanded.value,
       toggleThreadItem,
       getRollUpCommits: () => rollUpCommits.value,

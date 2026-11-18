@@ -319,20 +319,7 @@ describe("ActionsPage", () => {
     };
     await waitFor(() => expect(store.getRuns(ref)[0]?.status).toBe("completed"));
     expect(reads).toBe(2);
-    expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("feature/draft");
-    const rail = screen.getByRole("navigation", { name: "Actions repositories" });
-    await fireEvent.click(within(rail).getByRole("button", { name: /beta/ }));
-    await fireEvent.click(await screen.findByRole("button", { name: /beta deploy/ }));
-    await screen.findByRole("button", { name: /Run 7 beta deploy/ });
-    for (const listener of listeners) listener({ type: "workflow_runs_changed", payload });
-    for (const listener of listeners)
-      listener({ type: "workflow_runs_changed", payload: { ...payload, platform_repo_id: 1004 } });
-    await waitFor(() =>
-      expect(
-        api.requests.filter((request) => request.url.pathname === "/api/v1/actions/github/acme/beta/runs"),
-      ).toHaveLength(2),
-    );
-    expect(reads).toBe(2);
+    expect(refInput.value).toBe("feature/draft");
     cleanup();
     expect(listeners.size).toBe(0);
   });

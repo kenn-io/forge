@@ -412,7 +412,7 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.getByText(/most recent 5,000 events/)).toBeTruthy();
   });
 
-  it("shows the older item control in threaded view", () => {
+  it("loads older items at the end of the threaded view", () => {
     itemActivityCapped.value = true;
     olderItemsAvailable.value = true;
     viewMode.value = "threaded";

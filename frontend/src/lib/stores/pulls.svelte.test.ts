@@ -157,7 +157,7 @@ describe("pulls store display order", () => {
   });
 
   it("rolls back the page after a failed load more and allows retry", async () => {
-    const rows = Array.from({ length: 400 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
+    const rows = Array.from({ length: 600 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
     const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
     store.setFilterState("closed");
@@ -179,6 +179,16 @@ describe("pulls store display order", () => {
     await vi.waitFor(() => expect(store.getPulls()).toHaveLength(400));
     expect(store.isLoadingMore()).toBe(false);
     expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
+    get.mockRejectedValueOnce(
+      new GeneratedProblemResponse({ status: 400, title: "Bad request" }, Response.json({}, { status: 400 })),
+    );
+    store.loadMorePulls();
+    await vi.waitFor(() => expect(store.isLoadingMore()).toBe(false));
+    expect(store.getMoreRows().problem).toMatchObject({ retryable: false });
+    store.setFilterState("all");
+    store.loadPulls();
+    expect(store.getMoreRows().problem).toBeNull();
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
   });
 
   it("reports when a bounded list filled the requested chunk", async () => {

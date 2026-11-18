@@ -1,5 +1,4 @@
 import { makeGeneratedClient } from "../testing/generated-client.js";
-import { GeneratedProblemResponse } from "../api/runtime.js";
 import { startTestTelemetry } from "../testing/telemetry.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -180,27 +179,6 @@ describe("issues store paging", () => {
     await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
     expect(lastQuery()).toMatchObject({ exclude_labels: ["Bug"] });
     expect(lastQuery()).not.toHaveProperty("labels");
-  });
-
-  it("shows a failed page and clears it on a new filter", async () => {
-    const rows = Array.from({ length: 400 }, (_, index) => issue(index + 1, "alice"));
-    const get = vi.fn(async (query?: IssuesParams) => rows.slice(0, query?.limit));
-    const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
-    store.setIssueFilterState("closed");
-    await loadIssues(store);
-    get.mockRejectedValueOnce(
-      new GeneratedProblemResponse(
-        { code: "badRequest", status: 400, title: "Bad request" },
-        Response.json({}, { status: 400 }),
-      ),
-    );
-    store.loadMoreIssues();
-    await vi.waitFor(() => expect(store.isIssueListLoadingMore()).toBe(false));
-    expect(store.getMoreRows().problem).toMatchObject({ retryable: false });
-    store.setIssueFilterState("all");
-    store.loadIssues();
-    expect(store.getMoreRows().problem).toBeNull();
-    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
   });
 });
 

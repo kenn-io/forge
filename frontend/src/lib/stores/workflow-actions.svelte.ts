@@ -201,7 +201,11 @@ function mergeRunPage(
 ): WorkflowRun[] {
   const split = previousPageEnd === undefined ? 0 : shown.findIndex((run) => run.id === previousPageEnd) + 1;
   const merged = appendBatch({ items: shown.slice(0, split) }, { items }, (run) => run.id);
-  return exhausted ? merged.items : appendBatch(merged, { items: shown.slice(split) }, (run) => run.id).items;
+  const returned = new Set(items.map((run) => run.id));
+  const covered = shown.findLastIndex((run, index) => index >= split && returned.has(run.id)) + 1;
+  return exhausted
+    ? merged.items
+    : appendBatch(merged, { items: shown.slice(Math.max(split, covered)) }, (run) => run.id).items;
 }
 
 function isOutcomeUncertain(error: WorkflowActionsError): boolean {

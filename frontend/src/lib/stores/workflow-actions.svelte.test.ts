@@ -248,6 +248,38 @@ describe("workflow actions store", () => {
     expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ nextCursor: "2", exhausted: false });
   });
 
+  it("drops deleted runs in a refreshed page and keeps displaced and older runs", async () => {
+    let refreshed = false;
+    const old = Array.from({ length: 100 }, (_, i) => `old-${i}`);
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
+      const ids = refreshed ? ["new-1", "new-2", ...old.filter((id) => id !== "old-24")] : old;
+      const start = url.searchParams.has("cursor") ? 50 : 0;
+      return jsonResponse({
+        repo,
+        items: ids.slice(start, start + 50).map((id) => run(id, "queued")),
+        exhausted: false,
+        next_cursor: "2",
+      });
+    };
+    store.loadCatalog(ref);
+    await settle();
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+    store.loadMoreRuns(ref);
+    await settle();
+    refreshed = true;
+    store.refreshRuns(ref);
+    await settle();
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual([
+      "new-1",
+      "new-2",
+      ...old.filter((id) => id !== "old-24"),
+    ]);
+    expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ exhausted: false, nextCursor: "2" });
+  });
+
   it("fills the gap after new runs shift the refreshed page", async () => {
     let refreshed = false;
     const reads: string[] = [];

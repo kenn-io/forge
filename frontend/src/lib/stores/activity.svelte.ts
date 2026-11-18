@@ -819,13 +819,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return JSON.stringify([activityProjectionScope(params), params.projection]);
   }
 
-  const activityScrollScopeKey = $derived.by(() =>
-    JSON.stringify([
-      activityProjectionScope({ ...buildParams(), limit: undefined }),
-      [...enabledEvents],
-      showNotifications,
-    ]),
-  );
+  const activityScrollScopeKey = $derived.by(() => {
+    const params = buildParams();
+    delete params.limit;
+    return JSON.stringify([activityProjectionScope(params), [...enabledEvents], showNotifications]);
+  });
 
   function rememberActivitySnapshot(): void {
     if (snapshotScope === undefined || snapshotFilterScope === undefined) return;

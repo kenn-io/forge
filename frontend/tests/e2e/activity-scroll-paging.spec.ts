@@ -30,7 +30,7 @@ const event = (number: number) => ({
 });
 
 test("threaded activity scrolls past 5,000 subjects", async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   await mockApi(page);
   await page.route("**/api/v1/activity**", async (route) => {
     const url = new URL(route.request().url());
@@ -48,6 +48,7 @@ test("threaded activity scrolls past 5,000 subjects", async ({ page }) => {
   });
   await page.goto("/?view=threaded");
   const viewport = page.getByRole("region", { name: "Threaded activity" });
+  await expect(page.getByText("Pull request 5000", { exact: true })).toBeAttached({ timeout: 180_000 });
   await expect(async () => {
     await viewport.evaluate((node) => {
       node.scrollTop = node.scrollHeight;

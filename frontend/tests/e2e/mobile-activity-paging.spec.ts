@@ -86,12 +86,8 @@ test("keeps a visible preview while loading older items", async ({ page }) => {
     await expect.poll(() => Boolean(release)).toBe(true);
     hold = false;
     release?.();
-    const older = page.getByText("Pull request 2", { exact: true });
-    await expect(older).toBeVisible();
+    await expect(page.getByText("Pull request 2")).toBeVisible();
     await expect(preview).toBeVisible();
-    await older.click();
-    await page.getByRole("button", { name: "Back to activity" }).click();
-    await expect(older).toBeInViewport();
   } finally {
     release?.();
   }

@@ -688,6 +688,61 @@ describe("IssueDetail inline workspace handoff", () => {
     snapshot.resolve({ data: { hosts: [] } });
   });
 
+  it("keeps the issue open when a quick action runs on the saved devbox", async () => {
+    const controller = createTestController("split");
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: {
+          hosts: [
+            {
+              configKey: "devbox:compute-a",
+              kind: "devbox",
+              name: "compute-a",
+              operationAvailability: { workspaceWrite: { available: true } },
+            },
+          ],
+        },
+      }),
+      POST: vi.fn(async (path: string) =>
+        path === "/devboxes/{connection_id}/workspaces"
+          ? { data: { id: "ws-devbox", status: "provisioning" } }
+          : { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } },
+      ),
+    };
+    const { navigate } = renderIssueDetail(
+      issueDetail(),
+      undefined,
+      {
+        defaultExecutionTarget: "devbox:compute-a",
+        inlineWorkspace: controller,
+        quickActions: [{ label: "Triage", agent: "codex", prompt: "Triage this issue" }],
+      },
+      apiClient,
+    );
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Triage/ }));
+
+    await waitFor(() =>
+      expect(apiClient.POST).toHaveBeenCalledWith(
+        "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+        expect.objectContaining({
+          params: { path: { connection_id: "compute-a", id: "ws-devbox" } },
+          body: expect.objectContaining({ target_key: "codex", message: "Triage this issue" }),
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(getFlashes().map((flash) => flash.message)).toEqual(['"Triage" is starting on compute-a (devbox).']),
+    );
+    expect(navigate).not.toHaveBeenCalled();
+
+    getFlashes()[0]!.action!.onclick();
+    expect(navigate).toHaveBeenCalledWith("/terminal/fleet/devbox%3Acompute-a/ws-devbox");
+  });
+
   it("shows a quiet status hint after directory failure and still creates on the saved devbox", async () => {
     const snapshot = Promise.withResolvers<unknown>();
     const apiClient = {

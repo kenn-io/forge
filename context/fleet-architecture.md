@@ -38,6 +38,9 @@ or remote workspace and session operations.
   workspace's starting choice share one create path (`frontend/src/lib/api/item-workspace.ts`). An
   unavailable default never falls back to local; the page names it and offers available machines
   (`frontend/src/lib/stores/workspace-target.svelte.ts::createDefaultWorkspaceTarget`).
+- The workspace pane beside a PR or issue holds only local workspaces. A quick action that a
+  remote default runs leaves the user on the item and offers the workspace from a flash; a plain
+  create on a remote default opens it in Workspaces (`frontend/src/lib/components/detail/PullDetail.svelte::createWorkspace`).
 - Devbox REST and terminal traffic must bypass environment proxies; worker bearer credentials
   belong only on the direct tailnet connection (`internal/server/devboxes.go::registerDevboxTerminalAPI`).
 - Devbox repository admission and launch context use GitHub's integer repository ID, the same ID

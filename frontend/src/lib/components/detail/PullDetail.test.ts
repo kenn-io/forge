@@ -4510,6 +4510,46 @@ describe("PullDetail inline workspace handoff", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith(`/terminal/fleet/${buildBNode}/ws-remote`));
   });
 
+  it("keeps the pull request open when a quick action runs on the default fleet member", async () => {
+    const controller = createTestController("split");
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),
+      POST: vi.fn(async (path: string) =>
+        path === "/fleet/hosts/{host_key}/workspaces"
+          ? { data: { id: "ws-remote", status: "provisioning" } }
+          : { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } },
+      ),
+    };
+    const { navigate, settings } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+      defaultExecutionTarget: "https://build-b.example.test",
+    });
+    settings.setQuickActions([{ label: "Review", agent: "claude", prompt: "Review this change" }]);
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Review/ }));
+
+    await waitFor(() =>
+      expect(apiClient.POST).toHaveBeenCalledWith(
+        "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs",
+        expect.objectContaining({
+          params: { path: { host_key: buildBNode, id: "ws-remote" } },
+          body: expect.objectContaining({ target_key: "claude", message: "Review this change" }),
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(getFlashes().map((flash) => flash.message)).toEqual(['"Review" is starting on build-b.']),
+    );
+    expect(navigate).not.toHaveBeenCalled();
+
+    getFlashes()[0]!.action!.onclick();
+    expect(navigate).toHaveBeenCalledWith(`/terminal/fleet/${buildBNode}/ws-remote`);
+  });
+
   it("names an unavailable default and creates on a machine the user picks instead", async () => {
     const apiClient = {
       GET: vi.fn().mockResolvedValue({

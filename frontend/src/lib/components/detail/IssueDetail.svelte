@@ -19,7 +19,11 @@
   } from "../../context.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import { runReturnedWorkspaceQuickAction, runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
+  import {
+    announceRemoteQuickAction,
+    runReturnedWorkspaceQuickAction,
+    runWorkspaceQuickAction,
+  } from "../../stores/workspace-quick-actions.js";
   import { detailSessionLaunchLeaf } from "../../stores/paneLayout.svelte.js";
   import type { WorkspaceRuntimeLaunchLeaf } from "../terminal/workspace-runtime-workflow.js";
   import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
@@ -909,8 +913,15 @@
             }
             if (responseIsStale()) return;
             pendingWorkspaceHostChoice = null;
-            if (onOpenWorkspace) onOpenWorkspace(data.id, hostKey);
-            else navigate(`/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(data.id)}`);
+            const remoteRoute = `/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(data.id)}`;
+            // The server delivers a quick action's prompt, so a page with a
+            // workspace pane keeps the user here; that pane shows only this
+            // machine's workspaces.
+            if (quickAction && inlineWorkspace) {
+              const machine = hostChoice ? hostChoice.label : workspaceTarget.label;
+              announceRemoteQuickAction(quickAction, machine, () => navigate(remoteRoute));
+            } else if (onOpenWorkspace) onOpenWorkspace(data.id, hostKey);
+            else navigate(remoteRoute);
             return;
           }
           if (data?.id) {

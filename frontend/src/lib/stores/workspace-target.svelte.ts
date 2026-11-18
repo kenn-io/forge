@@ -201,6 +201,10 @@ export function createDefaultWorkspaceTarget(
     get hostKey() {
       return hostKey;
     },
+    /** The default machine's name, or the saved value until the fleet snapshot names it. */
+    get label() {
+      return host ? workspaceHostLabel(host) : target;
+    },
     get reason() {
       return reason;
     },

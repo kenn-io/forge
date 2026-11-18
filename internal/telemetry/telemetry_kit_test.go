@@ -3,6 +3,7 @@
 package telemetry
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -64,6 +65,54 @@ func TestNewReporterDisabledByEnvDoesNotCreateInstallID(t *testing.T) {
 		_, found, err := database.AppMetadataValue(t.Context(), key)
 		require.NoError(err)
 		assert.False(found, key)
+	}
+}
+
+func TestNewReporterRequiresConsent(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		consent bool
+	}{
+		{name: "no answer"},
+		{name: "recorded yes", consent: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+			t.Setenv("DO_NOT_TRACK", "0")
+			for _, key := range []string{EnabledEnv, "KENN_FORGE_TELEMETRY_ENABLED", "CI"} {
+				value, present := os.LookupEnv(key)
+				require.NoError(os.Unsetenv(key))
+				if present {
+					t.Cleanup(func() { require.NoError(os.Setenv(key, value)) }) //nolint:usetesting // Restore an unset environment variable.
+				}
+			}
+			if tc.consent {
+				require.NoError(posthog.RecordConsent(true))
+			}
+			built := 0
+			swapKitReporter(t, func(posthog.Options, ...posthog.Option) (Client, error) {
+				built++
+				return &fakeKitClient{}, nil
+			})
+			database := dbtest.Open(t)
+			reporter, err := newReporter(Options{Database: database, DailyClaimsPath: filepath.Join(home, "daily.json")}, time.Now())
+			require.NoError(err)
+			assert.Equal(tc.consent, reporter.Enabled())
+			if tc.consent {
+				assert.Equal(2, built)
+			} else {
+				assert.Zero(built)
+			}
+			for _, key := range []string{InstallIDMetadataKey, installedAtKey} {
+				_, found, err := database.AppMetadataValue(t.Context(), key)
+				require.NoError(err)
+				assert.Equal(tc.consent, found, key)
+			}
+		})
 	}
 }
 

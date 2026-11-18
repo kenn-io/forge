@@ -165,9 +165,8 @@ var newKitReporter = func(opts posthog.Options, options ...posthog.Option) (Clie
 	return posthog.NewReporter(opts, options...)
 }
 
-// EnabledFromEnv reports whether the environment allows telemetry. Kit honors
-// both the documented generic TELEMETRY_ENABLED=0 opt-out and the prefixed
-// KENN_FORGE_TELEMETRY_ENABLED=0 one.
+// EnabledFromEnv requires recorded consent or TELEMETRY_ENABLED=1. Setting
+// TELEMETRY_ENABLED=0 or KENN_FORGE_TELEMETRY_ENABLED=0 vetoes reporting.
 func EnabledFromEnv() bool {
 	return posthog.EnabledFromEnv(envPrefix)
 }

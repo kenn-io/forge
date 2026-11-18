@@ -78,11 +78,6 @@ everyday Go test construction and commands, also read
 - Forge tests must not assert behavior an imported library owns (kit-ui MediaViewer
   sizing, control placement, focus order); test Forge's wiring, URLs, layering, and
   open/close flow (`frontend/tests/e2e/edit-pr-content.spec.ts`).
-- Go kit telemetry tests cover only the install identity and event routing Forge
-  hands kit (`internal/telemetry/telemetry_kit_test.go`).
-- Only Makefile build targets set kit's PostHog key, and kit reports only for
-  release-shaped versions; plain `go build`, `go test`, and dev stacks need no
-  telemetry opt-out (`Makefile::LDFLAGS`).
 - For kwt, drive Forge entry points (checkout creation, refresh, cleanup); do not
   re-test kwt locking, claiming, base-sync, or error classification with hand-built
   requests (`internal/workspace/manager.go::createWorkspaceCheckout`).

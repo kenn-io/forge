@@ -255,7 +255,10 @@ func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 	)
 
 	require.Contains(readWebSocketUntil(t, conn, "ready"), "ready")
-	second, _, err := websocket.Dial(t.Context(), terminalURL, nil)
+	second, secondResp, err := websocket.Dial(t.Context(), terminalURL, nil)
+	if err != nil && secondResp != nil && secondResp.Body != nil {
+		_ = secondResp.Body.Close()
+	}
 	require.NoError(err)
 	defer second.Close(websocket.StatusNormalClosure, "done")
 	require.Contains(readWebSocketUntil(t, second, "ready"), "ready")

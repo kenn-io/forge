@@ -92,6 +92,16 @@
   // on screen so Back lands on the same cards.
   let pendingScrollTop = $state<number | null>(null);
   let flashedActivityError: string | null = null;
+  let previousScope: string | undefined;
+  $effect(() => {
+    const scope = activity.getActivityScopeKey();
+    if (previousScope !== undefined && scope !== previousScope) {
+      pendingScrollTop = null;
+      const viewport = scrollViewportOf(inboxRoot);
+      if (viewport) viewport.scrollTop = 0;
+    }
+    previousScope = scope;
+  });
   let paginationArmed = true;
   let paginationIntersecting = false;
   let searchExecution: AppExecution<void, never> | null = null;

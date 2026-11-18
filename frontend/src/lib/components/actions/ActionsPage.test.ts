@@ -264,6 +264,19 @@ describe("ActionsPage", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
+  it("returns runs to the top when sorting", async () => {
+    renderPage();
+    await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
+    await screen.findByRole("button", { name: /Run 7 alpha deploy/ });
+    const viewport = screen.getByLabelText("Recent workflow runs");
+    viewport.style.overflowY = "auto";
+    Object.defineProperty(viewport, "scrollHeight", { value: 500 });
+    Object.defineProperty(viewport, "clientHeight", { value: 100 });
+    viewport.scrollTop = 250;
+    await fireEvent.click(screen.getByRole("button", { name: "Status" }));
+    expect(viewport.scrollTop).toBe(0);
+  });
+
   it("refreshes only the visible repository's runs from workflow activity and preserves the form", async () => {
     let reads = 0;
     api = createMockApiFetch([

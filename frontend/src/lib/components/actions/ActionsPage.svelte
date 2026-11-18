@@ -535,6 +535,7 @@
                 jobErrors={snapshot.jobErrors}
                 loadingJobs={snapshot.loading.jobs}
                 onexpand={expandRun}
+                onsort={() => { if (runsViewport) showListTop(runsViewport); }}
                 rows={{ loading: snapshot.runsPage.loadingMore, problem: snapshot.runsPage.problem, retry: (more) => more() }}
                 more={!!snapshot.runsPage.nextCursor && !snapshot.runsPage.exhausted}
                 idle={!snapshot.loading.runs}

@@ -819,6 +819,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return JSON.stringify([activityProjectionScope(params), params.projection]);
   }
 
+  const activityScrollScopeKey = $derived.by(() => JSON.stringify([
+    activityProjectionScope({ ...buildParams(), limit: undefined }),
+    [...enabledEvents], showNotifications, pullAttributeFilters,
+  ]));
+
   function rememberActivitySnapshot(): void {
     if (snapshotScope === undefined || snapshotFilterScope === undefined) return;
     recentSnapshots.delete(snapshotScope);
@@ -2044,7 +2049,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       },
     }),
     getMoreActivity: () => flatPaging,
-    getActivityScopeKey: pagedActivityScopeKey,
+    getActivityScopeKey: () => activityScrollScopeKey,
     canLoadMoreActivity,
     isLoadingMoreActivity,
     loadMoreActivity,

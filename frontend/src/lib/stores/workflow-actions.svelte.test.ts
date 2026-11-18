@@ -148,29 +148,31 @@ describe("workflow actions store", () => {
     globalThis.fetch = async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
       if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
-      const second = url.searchParams.get("cursor") === "page-2";
+      const page = Number(url.searchParams.get("cursor") ?? "0");
       return jsonResponse({
         repo,
         items: Array.from({ length: 50 }, (_, i) =>
-          run(String(i + (second ? 50 : 0)), refreshed && second ? "completed" : "queued"),
+          run(String(i + page * 50), refreshed && page === 7 ? "completed" : "queued"),
         ),
-        exhausted: second,
-        ...(second ? {} : { next_cursor: "page-2" }),
+        exhausted: page === 7,
+        ...(page === 7 ? {} : { next_cursor: String(page + 1) }),
       });
     };
     store.loadCatalog(ref);
     await settle();
     store.selectWorkflow(ref, "deploy.yml");
     await settle();
-    store.loadMoreRuns(ref);
-    await settle();
-    expect(store.getRuns(ref)).toHaveLength(100);
+    for (let i = 0; i < 7; i++) {
+      store.loadMoreRuns(ref);
+      await settle();
+    }
+    expect(store.getRuns(ref)).toHaveLength(400);
     refreshed = true;
     store.refreshRuns(ref);
     await settle();
-    expect(store.getRuns(ref)).toHaveLength(100);
-    expect(store.getRuns(ref)[75]?.status).toBe("completed");
-    expect(new Set(store.getRuns(ref).map((item) => item.id)).size).toBe(100);
+    expect(store.getRuns(ref)).toHaveLength(400);
+    expect(store.getRuns(ref)[375]?.status).toBe("completed");
+    expect(new Set(store.getRuns(ref).map((item) => item.id)).size).toBe(400);
   });
 
   it("keeps runs and exposes a failed older page for retry", async () => {

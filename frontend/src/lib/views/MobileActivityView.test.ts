@@ -1,3 +1,4 @@
+import { SvelteMap } from "svelte/reactivity";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
@@ -36,6 +37,8 @@ function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): 
     ...overrides,
   } as ActivityItem;
 }
+
+const scrollScope = new SvelteMap([["scope", "initial"]]);
 
 const items = vi.hoisted(() => ({ value: [] as ActivityItem[] }));
 const itemActivity = vi.hoisted(() => ({ value: [] as ActivitySubject[] }));
@@ -145,6 +148,7 @@ vi.mock("../context.js", () => ({
       startActivityPolling: vi.fn(),
       stopActivityPolling: vi.fn(),
       getActivitySearch: () => "",
+      getActivityScopeKey: () => scrollScope.get("scope"),
       getActivityAuthor: () => selectedAuthor.value,
       getActivityAuthors: () => ["Alice", "Bob"],
       isActivityAuthorsLoading: () => false,
@@ -458,6 +462,14 @@ describe("MobileActivityView branch activity", () => {
 
     view.unmount();
     expect(setActivityPageLimit).toHaveBeenLastCalledWith(30);
+  });
+
+  it("returns to the top when the activity scope changes", async () => {
+    const { container } = render(MobileActivityView, { props: { onSelectItem } });
+    const viewport = container.querySelector<HTMLElement>(".kit-scrollbox__viewport")!;
+    viewport.scrollTop = 250;
+    scrollScope.set("scope", "filtered");
+    await waitFor(() => expect(viewport.scrollTop).toBe(0));
   });
 
   it("autoloads one direct-activity chunk when the end sentinel enters the viewport", async () => {

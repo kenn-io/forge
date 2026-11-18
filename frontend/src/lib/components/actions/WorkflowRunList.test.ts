@@ -12,6 +12,7 @@ const paging = {
   more: false,
   idle: true,
   onmore: vi.fn(),
+  onsort: vi.fn(),
 };
 
 const runs: Run[] = [
@@ -148,6 +149,7 @@ it("sorts runs from the column headers and returns to provider order", async () 
   await fireEvent.click(status);
   expect(order()).toEqual(["Run 41 Build", "Run 42 Deploy"]);
   expect(status.closest("th")?.getAttribute("aria-sort")).toBe("ascending");
+  expect(paging.onsort).toHaveBeenCalled();
 
   await fireEvent.click(status);
   await fireEvent.click(status);

@@ -32,11 +32,12 @@
     more: boolean;
     idle: boolean;
     onmore: () => void;
+    onsort: () => void;
   }
 
   const COLUMN_COUNT = 7;
 
-  let { runs, jobs, jobErrors, loadingJobs, onexpand, rows, more, idle, onmore }: Props = $props();
+  let { runs, jobs, jobErrors, loadingJobs, onexpand, rows, more, idle, onmore, onsort }: Props = $props();
   let expandedRuns = $state<Record<string, boolean>>({});
   let expandedJobs = $state<Record<string, boolean>>({});
   // null keeps the provider's order (newest first).
@@ -68,6 +69,7 @@
   }
 
   function sortBy(key: SortKey): void {
+    onsort();
     const initial: SortDirection = key === "run" || key === "started" ? "desc" : "asc";
     if (sort?.key !== key) {
       sort = { key, direction: initial };

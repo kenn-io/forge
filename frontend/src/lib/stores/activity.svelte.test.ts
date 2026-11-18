@@ -4374,6 +4374,16 @@ describe("activity store author candidates", () => {
 });
 
 describe("activity store projection scope", () => {
+  it("keeps the scroll scope when page depth grows and changes it for filters", () => {
+    const store = createActivityStore({ client: fakeClient });
+    store.setActivityPageLimit(30);
+    const scope = store.getActivityScopeKey();
+    store.setActivityPageLimit(60);
+    expect(store.getActivityScopeKey()).toBe(scope);
+    store.setActivitySearch("review");
+    expect(store.getActivityScopeKey()).not.toBe(scope);
+  });
+
   it("clears a foreground error when same-scope reconciliation succeeds", async () => {
     const pendingReconciliation = Promise.withResolvers<{
       data: { items: ActivityItem[]; capped: boolean };

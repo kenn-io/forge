@@ -331,7 +331,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   function readRuns(ref: WorkflowRepositoryRef, workflowId: string, cursor: string | undefined): void {
     const initial = snapshotFor(ref);
     const dispatchAtStart = initial.dispatches[workflowId];
-    const targetCount = cursor === undefined ? Math.min(300, initial.runs.length) : 0;
+    const targetCount = cursor === undefined ? initial.runs.length : 0;
     const generation =
       cursor === undefined ? nextGeneration(ref, "runs") : (generations.get(workflowRepositoryKey(ref))?.runs ?? 0);
     run(

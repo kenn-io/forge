@@ -9,7 +9,7 @@ import type {
   WorkspaceItemIdentity,
   WorkspaceRefLite,
 } from "../workspace-inline.js";
-import { canonicalItemType } from "../workspace-inline.js";
+import { canonicalItemType, workspaceRoute } from "../workspace-inline.js";
 import { parseSessionPaneKey, sessionPaneKeyMatchesWorkspace } from "./session-pane-key.js";
 import { canonicalProvider, resolvedPlatformHost } from "../api/provider-routes.js";
 import {
@@ -183,7 +183,7 @@ function sameIdentity(a: WorkspaceItemIdentity, b: WorkspaceItemIdentity): boole
 }
 
 function sameRef(a: WorkspaceRefLite | null, b: WorkspaceRefLite | null): boolean {
-  return a?.id === b?.id && a?.status === b?.status;
+  return a?.id === b?.id && a?.status === b?.status && a?.hostKey === b?.hostKey && a?.hostLabel === b?.hostLabel;
 }
 
 export function desiredSlot(): HostSlot | null {
@@ -210,7 +210,7 @@ export function desiredKey(): HostedWorkspaceKey {
   // socket alive across page detours.
   const surface = PAGE_SURFACE[route.page];
   const claim = surface ? claims[surface] : undefined;
-  if (claim) return { workspaceId: claim.ref.id, hostKey: undefined };
+  if (claim) return { workspaceId: claim.ref.id, hostKey: claim.ref.hostKey };
   return lastInlineKey;
 }
 
@@ -418,8 +418,10 @@ function setClaim(surface: InlineWorkspaceSurface, identity: WorkspaceItemIdenti
     clearSessionFocusRequest();
   }
   claims = { ...claims, [surface]: { identity, ref } };
-  workspaceIdentityById.set(ref.id, identity);
-  lastInlineKey = { workspaceId: ref.id, hostKey: undefined };
+  // Workspace IDs are unique only per machine, and deletion bookkeeping by ID
+  // covers this Forge's workspaces.
+  if (ref.hostKey === undefined) workspaceIdentityById.set(ref.id, identity);
+  lastInlineKey = { workspaceId: ref.id, hostKey: ref.hostKey };
 }
 
 function clearClaim(surface: InlineWorkspaceSurface): void {
@@ -454,9 +456,18 @@ export function rememberTerminalRouteKey(key: HostedWorkspaceKey): void {
 
 export function notifyWorkspaceDeleted(workspaceId: string, hostKey?: string, identity?: WorkspaceItemIdentity): void {
   discardSessionsWithPrefix(sessionHostPrefix(workspaceId, hostKey));
-  // Inline claims only ever hold local workspaces (hostKey undefined);
-  // fleet deletions can't match one.
-  if (hostKey === undefined) {
+  if (hostKey !== undefined) {
+    // Another machine's workspace: drop the claims and links that name it.
+    for (const surface of Object.keys(claims) as InlineWorkspaceSurface[]) {
+      const claim = claims[surface];
+      if (claim?.ref.id !== workspaceId || claim.ref.hostKey !== hostKey) continue;
+      clearClaim(surface);
+      overrides = { ...overrides, [identityKey(claim.identity)]: { deletedId: workspaceId } };
+      for (const listener of invalidationListeners) listener(claim.identity);
+    }
+    dropWorkspaceSessionPanes(workspaceId, hostKey);
+    clearCreatedWorkspaceById(workspaceId, hostKey);
+  } else {
     // Tombstone by remembered identity too, not just active claims: the
     // claim may already be released (its view unmounted) when the deletion
     // arrives from the Workspaces or terminal tab. The caller-supplied
@@ -798,11 +809,15 @@ function workspacePaneRowOnlyFor(surface: InlineWorkspaceSurface): boolean {
  * the neutral name too.
  */
 function workspacePaneLabelFor(surface: InlineWorkspaceSurface): string {
+  // A workspace on another machine says where it runs; otherwise it looks
+  // and behaves like a local one.
+  const ref = claims[surface]?.ref;
+  const where = ref?.hostKey ? ` on ${ref.hostLabel ?? "another machine"}` : "";
   const sessions = promotableSessionsFor(surface);
-  if (sessions.length !== 1) return "Workspace";
-  if (getPaneLayoutStore(surface).paneRender()?.flattened === true) return "Workspace";
+  if (sessions.length !== 1) return `Workspace${where}`;
+  if (getPaneLayoutStore(surface).paneRender()?.flattened === true) return `Workspace${where}`;
   const session = sessions[0]!;
-  return workspacePaneKeysFor(surface).includes(session.paneKey) ? "Workspace" : session.label;
+  return workspacePaneKeysFor(surface).includes(session.paneKey) ? `Workspace${where}` : `${session.label}${where}`;
 }
 
 /**
@@ -857,9 +872,9 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       // there before this response landed). Recording it would overwrite
       // the deletion tombstone and resurrect a dead ref. A recreation
       // always carries a fresh ID and supersedes the tombstone below.
-      if (isWorkspaceIdDeleted(ref.id)) return;
+      if (ref.hostKey === undefined && isWorkspaceIdDeleted(ref.id)) return;
       overrides = { ...overrides, [identityKey(identity)]: { ref, tick: nextWorkspaceLifecycleTick() } };
-      workspaceIdentityById.set(ref.id, identity);
+      if (ref.hostKey === undefined) workspaceIdentityById.set(ref.id, identity);
       const claim = claims[surface];
       // Refresh a matching live claim's ref, but never claim an unclaimed
       // surface from here: a create response can land after its component
@@ -887,10 +902,14 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       // else — absence (deleted by another client) or a replacement
       // workspace under a different ID (deleted and recreated). Stale
       // pre-create envelopes, null or different-ID, must not clear it.
+      // This Forge's envelope never carries another machine's workspace, so
+      // its absence there says nothing; only a local workspace replaces it.
       const agrees = isTombstone(override)
         ? envelopeRef == null || envelopeRef.id !== override.deletedId
-        : (envelopeRef != null && envelopeRef.id === override.ref.id) ||
-          (envelopeTick != null && envelopeTick > override.tick);
+        : override.ref.hostKey !== undefined
+          ? envelopeRef != null
+          : (envelopeRef != null && envelopeRef.id === override.ref.id) ||
+            (envelopeTick != null && envelopeTick > override.tick);
       if (!agrees) return;
       const next = { ...overrides };
       delete next[key];
@@ -997,7 +1016,7 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
         requestHostFocus();
       }
     },
-    openInWorkspaces: (ref) => navigate(`/terminal/${ref.id}`),
+    openInWorkspaces: (ref) => navigate(workspaceRoute(ref)),
     onIdentityInvalidated: (cb) => {
       const wrapped = (identity: WorkspaceItemIdentity) => cb(identity);
       invalidationListeners.add(wrapped);

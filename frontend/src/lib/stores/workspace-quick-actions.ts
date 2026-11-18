@@ -356,17 +356,6 @@ export function startReturnedWorkspaceQuickAction(
   return launchWorkspaceQuickAction(workspace.id, action, hostKey);
 }
 
-/**
- * Tells the user a quick action is starting on another machine, from a page
- * that stays where it is; the action opens that workspace.
- */
-export function announceRemoteQuickAction(action: QuickAction, machine: string, openWorkspace: () => void): void {
-  showFlash(`"${action.label}" is starting on ${machine}.`, {
-    tone: "info",
-    action: { label: "Open workspace", onclick: openWorkspace },
-  });
-}
-
 /** Runs a quick action in a workspace another machine returned for an item. */
 export function runReturnedWorkspaceQuickAction(
   runtime: AppRuntime,

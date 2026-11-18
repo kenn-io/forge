@@ -37,11 +37,7 @@
     type ConflictReason,
   } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import {
-    announceRemoteQuickAction,
-    runReturnedWorkspaceQuickAction,
-    runWorkspaceQuickAction,
-  } from "../../stores/workspace-quick-actions.js";
+  import { runReturnedWorkspaceQuickAction, runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
   import { detailSessionLaunchLeaf } from "../../stores/paneLayout.svelte.js";
   import type { WorkspaceRuntimeLaunchLeaf } from "../terminal/workspace-runtime-workflow.js";
   import {
@@ -170,7 +166,13 @@
     type PRTimelineFilterState,
   } from "./prTimelineFilter.js";
   import type { PullRequestRouteRef } from "../../routes.js";
-  import { identityEquals, type InlineWorkspaceController, type WorkspaceItemIdentity } from "../../workspace-inline.js";
+  import {
+    identityEquals,
+    workspaceRoute,
+    type InlineWorkspaceController,
+    type WorkspaceItemIdentity,
+    type WorkspaceRefLite,
+  } from "../../workspace-inline.js";
   import {
     beginWorkspaceCreate,
     endWorkspaceCreate,
@@ -2038,12 +2040,13 @@
 
   // Runs in the workspace this pull request already has, then shows it the way
   // a create does: the inline pane, or the workspace route.
-  function runQuickActionInWorkspace(workspaceId: string, action: QuickAction): void {
+  function runQuickActionInWorkspace(ref: WorkspaceRefLite, action: QuickAction): void {
+    const { id: workspaceId, hostKey } = ref;
     closeActionMenu();
-    runWorkspaceQuickAction(runtime, workspaceId, "pull_request", action, undefined, undefined, quickActionLeaf());
+    runWorkspaceQuickAction(runtime, workspaceId, "pull_request", action, hostKey, undefined, quickActionLeaf());
     if (inlineWorkspace) inlineWorkspace.revealWorkspace();
-    else if (onOpenWorkspace) onOpenWorkspace(workspaceId);
-    else navigate(`/terminal/${workspaceId}`);
+    else if (onOpenWorkspace) onOpenWorkspace(workspaceId, hostKey);
+    else navigate(workspaceRoute(ref));
   }
 
   // A quick action never queues a frontend launch: the server launches the
@@ -2087,19 +2090,23 @@
         Effect.sync(() => {
           if (data?.id && hostKey) {
             promoteWorkspaceCreateLaunch(requestIdentity, data.id, hostKey, data.reused ? "existing" : "create");
+            // The pane beside the item hosts a workspace on any machine, so a
+            // remote one opens there like a local one.
+            const createdRef = {
+              id: data.id,
+              status: data.status ?? "provisioning",
+              hostKey,
+              hostLabel: hostChoice ? hostChoice.label : workspaceTarget.hostLabel,
+            };
+            recordWorkspaceCreated(requestIdentity, createdRef);
+            inlineWorkspace?.recordCreated(requestIdentity, createdRef);
             if (quickAction) {
               runReturnedWorkspaceQuickAction(runtime, { id: data.id, status: data.status }, "pull_request", quickAction, hostKey);
             }
             if (responseIsStale()) return;
-            const remoteRoute = `/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(data.id)}`;
-            // The server delivers a quick action's prompt, so a page with a
-            // workspace pane keeps the user here; that pane shows only this
-            // machine's workspaces.
-            if (quickAction && inlineWorkspace) {
-              const machine = hostChoice ? hostChoice.label : workspaceTarget.label;
-              announceRemoteQuickAction(quickAction, machine, () => navigate(remoteRoute));
-            } else if (onOpenWorkspace) onOpenWorkspace(data.id, hostKey);
-            else navigate(remoteRoute);
+            if (inlineWorkspace) return;
+            if (onOpenWorkspace) onOpenWorkspace(data.id, hostKey);
+            else navigate(`/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(data.id)}`);
             return;
           }
           if (data?.id) {
@@ -3141,7 +3148,7 @@
                 if (targetKey !== undefined) inlineWorkspace.launchSession(targetKey);
               }}
               quickActions={settings.getQuickActions()}
-              onQuickAction={(action) => runQuickActionInWorkspace(workspace.id, action)}
+              onQuickAction={(action) => runQuickActionInWorkspace(workspace, action)}
             >
               {#snippet primary()}
                 <Button
@@ -3195,7 +3202,7 @@
               launchTargets={settings.getLaunchTargets()}
               disabled={stalePR || workspaceDeletionLifecycle}
               quickActions={settings.getQuickActions()}
-              onQuickAction={(action) => runQuickActionInWorkspace(workspace.id, action)}
+              onQuickAction={(action) => runQuickActionInWorkspace(workspace, action)}
             >
               {#snippet primary()}
                 <Button
@@ -3208,9 +3215,9 @@
                       if (onViewWorkspaces) onViewWorkspaces();
                       else navigate("/workspaces");
                     } else if (onOpenWorkspace) {
-                      onOpenWorkspace(workspace.id);
+                      onOpenWorkspace(workspace.id, workspace.hostKey);
                     } else {
-                      navigate(`/terminal/${workspace.id}`);
+                      navigate(workspaceRoute(workspace));
                     }
                   }}
                   tone="info"

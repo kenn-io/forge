@@ -688,7 +688,7 @@ describe("IssueDetail inline workspace handoff", () => {
     snapshot.resolve({ data: { hosts: [] } });
   });
 
-  it("keeps the issue open when a quick action runs on the saved devbox", async () => {
+  it("opens a quick action's workspace on the saved devbox beside the issue", async () => {
     const controller = createTestController("split");
     const apiClient = {
       GET: vi.fn().mockResolvedValue({
@@ -734,13 +734,13 @@ describe("IssueDetail inline workspace handoff", () => {
         }),
       ),
     );
-    await waitFor(() =>
-      expect(getFlashes().map((flash) => flash.message)).toEqual(['"Triage" is starting on compute-a (devbox).']),
-    );
+    expect(controller.recordCreated).toHaveBeenCalledWith(identity, {
+      id: "ws-devbox",
+      status: "provisioning",
+      hostKey: "devbox:compute-a",
+      hostLabel: "compute-a (devbox)",
+    });
     expect(navigate).not.toHaveBeenCalled();
-
-    getFlashes()[0]!.action!.onclick();
-    expect(navigate).toHaveBeenCalledWith("/terminal/fleet/devbox%3Acompute-a/ws-devbox");
   });
 
   it("shows a quiet status hint after directory failure and still creates on the saved devbox", async () => {

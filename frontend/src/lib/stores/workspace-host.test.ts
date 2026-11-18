@@ -176,6 +176,41 @@ describe("workspace host store", () => {
     prs.reconcile(identityA, null, nextWorkspaceLifecycleTick());
     expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
   });
+  it("hosts a workspace on another machine beside the item, named in its pane label", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const remote = { id: "ws-r", status: "ready", hostKey: "devbox:compute-a", hostLabel: "compute-a (devbox)" };
+    prs.recordCreated(identityA, remote);
+    prs.claim(identityA, prs.effectiveWorkspaceRef(identityA, null)!);
+    expect(desiredSlot()).toBe("prs");
+    expect(desiredKey()).toEqual({ workspaceId: "ws-r", hostKey: "devbox:compute-a" });
+    expect(prs.workspacePaneLabel()).toBe("Workspace on compute-a (devbox)");
+  });
+
+  it("keeps a remote workspace link when this Forge's detail reports no workspace", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const remote = { id: "ws-r", status: "ready", hostKey: "devbox:compute-a" };
+    prs.recordCreated(identityA, remote);
+    // This Forge never lists another machine's workspace, so its absence
+    // from a post-creation fetch is not a deletion.
+    prs.reconcile(identityA, null, nextWorkspaceLifecycleTick());
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(remote);
+    // A local workspace for the item replaces the remote link.
+    prs.reconcile(identityA, refA, nextWorkspaceLifecycleTick());
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toEqual(refA);
+  });
+
+  it("deleting a remote workspace releases the item's claim on it", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const remote = { id: "ws-r", status: "ready", hostKey: "devbox:compute-a" };
+    prs.recordCreated(identityA, remote);
+    prs.claim(identityA, remote);
+    notifyWorkspaceDeleted("ws-r", "devbox:other");
+    expect(desiredSlot()).toBe("prs");
+    notifyWorkspaceDeleted("ws-r", "devbox:compute-a");
+    expect(desiredSlot()).toBeNull();
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
+  });
+
   it("a controller-less recreation under a fresh ID supersedes the tombstone", () => {
     const prs = getInlineWorkspaceController("prs");
     prs.claim(identityA, refA);

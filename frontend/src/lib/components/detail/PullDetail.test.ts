@@ -4510,7 +4510,7 @@ describe("PullDetail inline workspace handoff", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith(`/terminal/fleet/${buildBNode}/ws-remote`));
   });
 
-  it("keeps the pull request open when a quick action runs on the default fleet member", async () => {
+  it("opens a quick action's workspace on the default fleet member beside the pull request", async () => {
     const controller = createTestController("split");
     const apiClient = {
       GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),
@@ -4541,13 +4541,13 @@ describe("PullDetail inline workspace handoff", () => {
         }),
       ),
     );
-    await waitFor(() =>
-      expect(getFlashes().map((flash) => flash.message)).toEqual(['"Review" is starting on build-b.']),
-    );
+    expect(controller.recordCreated).toHaveBeenCalledWith(identity, {
+      id: "ws-remote",
+      status: "provisioning",
+      hostKey: buildBNode,
+      hostLabel: "build-b",
+    });
     expect(navigate).not.toHaveBeenCalled();
-
-    getFlashes()[0]!.action!.onclick();
-    expect(navigate).toHaveBeenCalledWith(`/terminal/fleet/${buildBNode}/ws-remote`);
   });
 
   it("names an unavailable default and creates on a machine the user picks instead", async () => {

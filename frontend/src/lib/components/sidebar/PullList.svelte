@@ -250,6 +250,7 @@
   // otherwise block the main thread for seconds on every filter change.
   // The budget resets whenever the query or grouping changes.
   const renderViewKey = $derived(JSON.stringify([
+    getGlobalRepo(),
     pulls.getFilterState(),
     pulls.getSearchQuery(),
     pulls.getFilterStarred(),

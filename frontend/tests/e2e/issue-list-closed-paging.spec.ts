@@ -33,8 +33,19 @@ test("Closed issues load bounded pages and reach the end of the history", async 
     }).toPass();
   };
   await scrollUntil("400+ issues");
+  const row300 = page.getByText("Closed issue 300", { exact: true });
+  await row300.scrollIntoViewIfNeeded();
+  await row300.click();
+  await page.goBack();
+  await expect(row300).toBeInViewport();
   await scrollUntil("450 issues");
   await expect(page.locator(".sidebar-group-header__count")).toHaveText("450");
+  await page.getByRole("button", { name: "Select repository: Global" }).click();
+  await page
+    .getByRole("listbox", { name: "Repositories" })
+    .getByRole("option", { name: "github/github.com/acme/widgets" })
+    .click();
+  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(0);
 });
 
 test("Closed issues load past hidden bot rows", async ({ page }) => {

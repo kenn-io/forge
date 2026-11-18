@@ -143,19 +143,23 @@ describe("workflow actions store", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
-  it("refreshes all loaded runs through their cursors", async () => {
+  it("refreshes the first page without dropping loaded runs or their cursor", async () => {
     let refreshed = false;
+    let fail = false;
+    const reads: string[] = [];
     globalThis.fetch = async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
       if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
+      reads.push(url.searchParams.get("cursor") ?? "first");
+      if (fail) return jsonResponse({ status: 503, title: "Unavailable", detail: "Refresh failed" }, 503);
       const page = Number(url.searchParams.get("cursor") ?? "0");
       return jsonResponse({
         repo,
         items: Array.from({ length: 50 }, (_, i) =>
-          run(String(i + page * 50), refreshed && page === 7 ? "completed" : "queued"),
+          run(String(i + page * 50), refreshed && page === 0 && i === 25 ? "completed" : "queued"),
         ),
-        exhausted: page === 7,
-        ...(page === 7 ? {} : { next_cursor: String(page + 1) }),
+        exhausted: false,
+        next_cursor: String(page + 1),
       });
     };
     store.loadCatalog(ref);
@@ -168,11 +172,19 @@ describe("workflow actions store", () => {
     }
     expect(store.getRuns(ref)).toHaveLength(400);
     refreshed = true;
+    reads.length = 0;
+    store.refreshRuns(ref);
+    await settle();
+    expect(reads).toEqual(["first"]);
+    expect(store.getRuns(ref)).toHaveLength(400);
+    expect(store.getRuns(ref)[25]?.status).toBe("completed");
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual(Array.from({ length: 400 }, (_, i) => String(i)));
+    expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ nextCursor: "8", exhausted: false });
+    fail = true;
     store.refreshRuns(ref);
     await settle();
     expect(store.getRuns(ref)).toHaveLength(400);
-    expect(store.getRuns(ref)[375]?.status).toBe("completed");
-    expect(new Set(store.getRuns(ref).map((item) => item.id)).size).toBe(400);
+    expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ nextCursor: "8", exhausted: false });
   });
 
   it("keeps runs and exposes a failed older page for retry", async () => {

@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import type { ListProblem } from "@kenn-io/kit-ui";
+import { appendBatch, type ListProblem } from "@kenn-io/kit-ui";
 import { isTransientPickerReadFailure } from "../api/retry-policy.js";
 import { readErrorMessage } from "./sync.svelte.js";
 
@@ -331,7 +331,6 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   function readRuns(ref: WorkflowRepositoryRef, workflowId: string, cursor: string | undefined): void {
     const initial = snapshotFor(ref);
     const dispatchAtStart = initial.dispatches[workflowId];
-    const targetCount = cursor === undefined ? initial.runs.length : 0;
     const generation =
       cursor === undefined ? nextGeneration(ref, "runs") : (generations.get(workflowRepositoryKey(ref))?.runs ?? 0);
     run(
@@ -339,36 +338,21 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
       "GET workflow runs",
       ref,
       (api) =>
-        Effect.gen(function* () {
-          let next = cursor;
-          let items: WorkflowRun[] = [];
-          let page;
-          do {
-            page = yield* api
-              .execute("GET workflow runs", (signal) =>
-                providerUsesHostRoute(ref)
-                  ? api.client.WorkflowsService.listWorkflowRunsOnHost(
-                      providerHostRouteParams(ref),
-                      { workflow_id: workflowId, per_page: runsPageSize, ...(next !== undefined && { cursor: next }) },
-                      { signal },
-                    )
-                  : api.client.WorkflowsService.listWorkflowRuns(
-                      providerRouteParams(ref),
-                      { workflow_id: workflowId, per_page: runsPageSize, ...(next !== undefined && { cursor: next }) },
-                      { signal },
-                    ),
-              )
-              .pipe(Effect.flatMap((response) => verifyRepository(ref, response)));
-            const seen = new Set(items.map((item) => item.id));
-            for (const item of page.items ?? []) {
-              if (seen.has(item.id)) continue;
-              seen.add(item.id);
-              items.push(item);
-            }
-            next = page.next_cursor || undefined;
-          } while (cursor === undefined && items.length < targetCount && next && !page.exhausted);
-          return { ...page, items };
-        }),
+        api
+          .execute("GET workflow runs", (signal) =>
+            providerUsesHostRoute(ref)
+              ? api.client.WorkflowsService.listWorkflowRunsOnHost(
+                  providerHostRouteParams(ref),
+                  { workflow_id: workflowId, per_page: runsPageSize, ...(cursor !== undefined && { cursor }) },
+                  { signal },
+                )
+              : api.client.WorkflowsService.listWorkflowRuns(
+                  providerRouteParams(ref),
+                  { workflow_id: workflowId, per_page: runsPageSize, ...(cursor !== undefined && { cursor }) },
+                  { signal },
+                ),
+          )
+          .pipe(Effect.flatMap((response) => verifyRepository(ref, response))),
       {
         onFailure: (error) => {
           if (!isCurrent(ref, "runs", generation)) return;
@@ -398,17 +382,18 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
             const retainedRun = cycle?.kind === "succeeded" || cycle?.kind === "timed_out" ? cycle.run : undefined;
             const retainRun =
               retainedRun && (cycle !== dispatchAtStart || !items.some((run) => run.id === retainedRun.id));
+            const refreshed = retainRun ? mergeNamedRun(items, retainedRun).runs : items;
+            const runs =
+              cursor === undefined
+                ? appendBatch({ items: refreshed }, { items: snapshot.runs }, (run) => run.id).items
+                : appendBatch({ items: snapshot.runs }, { items }, (run) => run.id).items;
+            const keepCursor = cursor === undefined && snapshot.runs.length > 0;
             return {
               ...snapshot,
-              runs:
-                cursor === undefined
-                  ? retainRun
-                    ? mergeNamedRun(items, retainedRun).runs
-                    : items
-                  : [...snapshot.runs, ...items.filter((item) => !snapshot.runs.some((run) => run.id === item.id))],
+              runs,
               runsPage: {
-                nextCursor: page.next_cursor ?? null,
-                exhausted: page.exhausted,
+                nextCursor: keepCursor ? snapshot.runsPage.nextCursor : (page.next_cursor ?? null),
+                exhausted: keepCursor ? snapshot.runsPage.exhausted : page.exhausted,
                 loadingMore: false,
                 problem: null,
               },

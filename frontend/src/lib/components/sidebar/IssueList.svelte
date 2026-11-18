@@ -154,6 +154,7 @@
   // Mount rows progressively so large result sets do not block the main
   // thread on every filter change. The budget resets when the query changes.
   const renderViewKey = $derived(JSON.stringify([
+    getGlobalRepo(),
     issues.getIssueFilterState(),
     issues.getIssueSearchQuery(),
     issues.getIssueFilterStarred(),

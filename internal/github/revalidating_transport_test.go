@@ -416,6 +416,45 @@ func TestChangedSinglePageIssueListRevalidatesAfterInvalidation(t *testing.T) {
 	assert.Equal(t, int64(2), fullReads.Load())
 }
 
+func TestIssueRecoveryReplayKeepsOriginalExpiry(t *testing.T) {
+	t.Parallel()
+	var fullReads atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") == `"list"` {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		fullReads.Add(1)
+		w.Header().Set("ETag", `"list"`)
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	t.Cleanup(server.Close)
+	inner := newRevalidatingTransport(http.DefaultTransport)
+	outer := &etagTransport{base: inner}
+	client := &http.Client{Transport: outer}
+	url := server.URL + "/repos/acme/widget/issues"
+	read := func() {
+		resp, err := client.Get(url)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		assert.Equal(t, `[]`, string(body))
+	}
+	read()
+	entry, ok := inner.issues.get(url)
+	require.True(t, ok)
+	entry.cachedAt = time.Now().Add(-etagTTL + time.Minute)
+	inner.issues.add(url, entry)
+	outer.invalidateRepo("acme", "widget", "issues")
+	read()
+	assert.Equal(t, int64(1), fullReads.Load(), "recovery replays the cached body")
+	value, ok := outer.cache.Load(url)
+	require.True(t, ok)
+	assert.Equal(t, entry.cachedAt, value.(etagEntry).cachedAt, "replay must retain the body's original deadline")
+}
+
 func TestSinglePageIssueListLeavesRoomForPaginatedList(t *testing.T) {
 	t.Parallel()
 	var paginatedConditionals, singleConditionals atomic.Int64

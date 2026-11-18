@@ -46,6 +46,11 @@ type revalidatedEntry struct {
 	singlePage bool
 }
 
+type replayedBody struct {
+	io.ReadCloser
+	cachedAt time.Time
+}
+
 // revalidatingTransport sends If-None-Match for CI, metadata, and issue reads and answers a
 // 304 Not Modified with the cached 200 response. GitHub does not charge
 // a 304 against the rate limit, and the budget transport refunds it, so
@@ -230,7 +235,7 @@ func replayCachedResponse(entry revalidatedEntry, notModified *http.Response, re
 		ProtoMajor:    notModified.ProtoMajor,
 		ProtoMinor:    notModified.ProtoMinor,
 		Header:        header,
-		Body:          io.NopCloser(bytes.NewReader(entry.body)),
+		Body:          replayedBody{ReadCloser: io.NopCloser(bytes.NewReader(entry.body)), cachedAt: entry.cachedAt},
 		ContentLength: int64(len(entry.body)),
 		Request:       req,
 	}

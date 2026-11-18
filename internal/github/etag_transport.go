@@ -110,6 +110,10 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	switch resp.StatusCode {
 	case http.StatusOK:
 		etag := resp.Header.Get("ETag")
+		cachedAt := time.Now()
+		if body, ok := resp.Body.(replayedBody); ok {
+			cachedAt = body.cachedAt
+		}
 		var stored etagEntry
 		switch {
 		case responseHasPaginationLink(resp) && detectorEligible(req.URL):
@@ -122,7 +126,7 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		case responseHasPaginationLink(resp):
 			t.cache.Delete(url)
 		case etag != "":
-			stored = etagEntry{etag: etag, cachedAt: time.Now()}
+			stored = etagEntry{etag: etag, cachedAt: cachedAt}
 			t.cache.Store(url, stored)
 		default:
 			// No ETag — drop any stale validator so the next request

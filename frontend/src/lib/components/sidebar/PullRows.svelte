@@ -11,6 +11,8 @@
   interface Props {
     rows: PullSidebarRow[];
     showRepo: boolean;
+    table?: boolean;
+    compact?: boolean;
     repoLabel: (pr: PullRequest) => string;
     isSelected: (pr: PullRequest) => boolean;
     isMultiSelected: (pr: PullRequest) => boolean;
@@ -20,7 +22,7 @@
     below?: Snippet<[PullRequest, boolean]>;
   }
 
-  const { rows, showRepo, repoLabel, isSelected, isMultiSelected, onclick, oncontextmenu, below }: Props = $props();
+  const { rows, showRepo, table = false, compact = false, repoLabel, isSelected, isMultiSelected, onclick, oncontextmenu, below }: Props = $props();
   const { pulls } = getStores();
 </script>
 
@@ -29,6 +31,7 @@
   {@const prSelected = isSelected(pr)}
   <div
     class="stack-row"
+    class:stack-row--table={table}
     class:stack-row--member={row.depth > 0}
     class:stack-row--root={row.memberCount > 0}
   >
@@ -40,6 +43,9 @@
         {pr}
         repoLabel={repoLabel(pr)}
         {showRepo}
+        {table}
+        {compact}
+        stackControl={table && row.memberCount > 0 ? stackControl : undefined}
         selected={prSelected}
         multiSelected={isMultiSelected(pr)}
         onclick={(event) => onclick(event, pr)}
@@ -47,29 +53,46 @@
       />
       {@render below?.(pr, prSelected)}
     </div>
-    {#if row.memberCount > 0}
-      {@const countLabel = row.memberCount === pr.stack?.size
-        ? `${row.memberCount} PRs in stack`
-        : `${row.memberCount} of ${pr.stack?.size} PRs in this view`}
+    {#if !table && row.memberCount > 0}
       <div class="stack-control">
-        {#if row.memberCount > 1}
-          <button
-            type="button"
-            class="stack-toggle"
-            aria-expanded={row.expanded}
-            aria-label={`${row.expanded ? "Collapse" : "Expand"} stack at #${pr.Number}: ${countLabel}`}
-            title={countLabel}
-            onclick={() => pulls.toggleStack(row.stackKey, row.expanded)}
-          >
-            <span>{row.memberCount}</span>
-            <ChevronDownIcon size={12} class={row.expanded ? "" : "stack-chevron--collapsed"} aria-hidden="true" />
-          </button>
-        {:else}
-          <span class="stack-partial" title={countLabel} aria-label={countLabel}>1/{pr.stack?.size}</span>
-        {/if}
+        {@render stackControl()}
       </div>
     {/if}
   </div>
+  {#snippet stackControl()}
+    {@const countLabel = row.memberCount === pr.stack?.size
+      ? `${row.memberCount} PRs in stack`
+      : `${row.memberCount} of ${pr.stack?.size} PRs in this view`}
+    {#if row.memberCount > 1}
+      <svelte:element
+        this={table ? "span" : "button"}
+        type={table ? undefined : "button"}
+        role={table ? "button" : undefined}
+        tabindex={table ? 0 : undefined}
+        class="stack-toggle"
+        class:stack-toggle--table={table}
+        aria-expanded={row.expanded}
+        aria-label={`${row.expanded ? "Collapse" : "Expand"} stack at #${pr.Number}: ${countLabel}`}
+        title={countLabel}
+        onclick={(event: MouseEvent) => {
+          event.stopPropagation();
+          pulls.toggleStack(row.stackKey, row.expanded);
+        }}
+        onkeydown={(event: KeyboardEvent) => {
+          if (table && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            event.stopPropagation();
+            pulls.toggleStack(row.stackKey, row.expanded);
+          }
+        }}
+      >
+        <span>{row.memberCount}</span>
+        <ChevronDownIcon size={12} class={row.expanded ? "" : "stack-chevron--collapsed"} aria-hidden="true" />
+      </svelte:element>
+    {:else}
+      <span class="stack-partial" title={countLabel} aria-label={countLabel}>1/{pr.stack?.size}</span>
+    {/if}
+  {/snippet}
 {/each}
 
 <style>
@@ -98,6 +121,11 @@
     padding-left: var(--space-4);
   }
 
+  .stack-row--table.stack-row--member {
+    padding-left: 0;
+    --pull-table-indent: var(--space-4);
+  }
+
   .stack-control {
     display: flex;
     align-items: flex-start;
@@ -124,6 +152,12 @@
   .stack-toggle:hover {
     background: var(--bg-surface-hover);
     color: var(--text-primary);
+  }
+
+  .stack-toggle--table {
+    display: inline-flex;
+    width: auto;
+    min-height: 0;
   }
 
   .stack-toggle:focus-visible {

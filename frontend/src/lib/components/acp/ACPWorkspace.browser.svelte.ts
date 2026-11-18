@@ -144,8 +144,10 @@ describe("ACPWorkspace message gutter (browser)", () => {
     await expect.poll(() => getComputedStyle(gutter).opacity).toBe("1");
 
     const copy = gutter.querySelector<HTMLButtonElement>('button[aria-label="Copy message"]')!.getBoundingClientRect();
-    const hit = document.elementFromPoint(copy.left + copy.width / 2, copy.top + copy.height / 2);
-    expect(hit?.closest("article")).toBe(first);
+    for (const y of [copy.top + copy.height / 2, copy.bottom - 1]) {
+      const hit = document.elementFromPoint(copy.left + copy.width / 2, y);
+      expect(hit?.closest("article")).toBe(first);
+    }
   });
 
   it("shows time and copy as a visible line below the message in a narrow pane", async () => {

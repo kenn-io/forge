@@ -351,9 +351,12 @@
       flex-basis: 100%;
       text-align: right;
     }
+    /* A dated gutter can reach into the next message's gutter; the revealed
+       one stays on top so its copy button gets the click. */
     .cell:hover .gutter,
     .cell:focus-within .gutter,
     .gutter.pinned {
+      z-index: 1;
       opacity: 1;
     }
   }

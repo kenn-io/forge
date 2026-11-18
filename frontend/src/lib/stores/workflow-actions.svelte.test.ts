@@ -143,7 +143,7 @@ describe("workflow actions store", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
-  it("refreshes the first page without dropping loaded runs or their cursor", async () => {
+  it("refreshes the first page without dropping loaded runs", async () => {
     let refreshed = false;
     let fail = false;
     const reads: string[] = [];
@@ -179,12 +179,52 @@ describe("workflow actions store", () => {
     expect(store.getRuns(ref)).toHaveLength(400);
     expect(store.getRuns(ref)[25]?.status).toBe("completed");
     expect(store.getRuns(ref).map((item) => item.id)).toEqual(Array.from({ length: 400 }, (_, i) => String(i)));
-    expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ nextCursor: "8", exhausted: false });
+    expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ nextCursor: "1", exhausted: false });
     fail = true;
     store.refreshRuns(ref);
     await settle();
     expect(store.getRuns(ref)).toHaveLength(400);
-    expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ nextCursor: "8", exhausted: false });
+    expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ nextCursor: "1", exhausted: false });
+  });
+
+  it("fills the gap after new runs shift the refreshed page", async () => {
+    let refreshed = false;
+    const reads: string[] = [];
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
+      const cursor = url.searchParams.get("cursor") ?? "first";
+      reads.push(cursor);
+      const old = Array.from({ length: 100 }, (_, i) => `old-${i}`);
+      const ids = refreshed
+        ? [...old.slice(0, 45), ...Array.from({ length: 10 }, (_, i) => `new-${i + 50}`), ...old.slice(45)]
+        : old;
+      const start = cursor === "first" ? 0 : Number(cursor);
+      return jsonResponse({
+        repo,
+        items: ids.slice(start, start + 50).map((id) => run(id, "queued")),
+        exhausted: start + 50 >= ids.length,
+        next_cursor: String(start + 50),
+      });
+    };
+    store.loadCatalog(ref);
+    await settle();
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+    store.loadMoreRuns(ref);
+    await settle();
+    refreshed = true;
+    store.refreshRuns(ref);
+    await settle();
+    expect(store.getRuns(ref)).toHaveLength(105);
+    store.loadMoreRuns(ref);
+    await settle();
+    expect(reads).toEqual(["first", "50", "first", "50"]);
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual([
+      ...Array.from({ length: 45 }, (_, i) => `old-${i}`),
+      ...Array.from({ length: 10 }, (_, i) => `new-${i + 50}`),
+      ...Array.from({ length: 55 }, (_, i) => `old-${i + 45}`),
+    ]);
   });
 
   it("keeps runs and exposes a failed older page for retry", async () => {

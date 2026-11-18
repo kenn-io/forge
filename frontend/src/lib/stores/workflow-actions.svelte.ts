@@ -193,6 +193,14 @@ function mergeNamedRun(
   return { runs: upsertRun(runs, run), run };
 }
 
+function mergeRunPage(shown: WorkflowRun[], items: WorkflowRun[]): WorkflowRun[] {
+  const ids = new Set(items.map((run) => run.id));
+  const overlap = shown.findIndex((run) => ids.has(run.id));
+  const split = overlap < 0 ? shown.length : overlap;
+  const merged = appendBatch({ items: shown.slice(0, split) }, { items }, (run) => run.id);
+  return appendBatch(merged, { items: shown.slice(split) }, (run) => run.id).items;
+}
+
 function isOutcomeUncertain(error: WorkflowActionsError): boolean {
   return (
     error._tag === "TransientTransportError" ||
@@ -386,14 +394,13 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
             const runs =
               cursor === undefined
                 ? appendBatch({ items: refreshed }, { items: snapshot.runs }, (run) => run.id).items
-                : appendBatch({ items: snapshot.runs }, { items }, (run) => run.id).items;
-            const keepCursor = cursor === undefined && snapshot.runs.length > 0;
+                : mergeRunPage(snapshot.runs, items);
             return {
               ...snapshot,
               runs,
               runsPage: {
-                nextCursor: keepCursor ? snapshot.runsPage.nextCursor : (page.next_cursor ?? null),
-                exhausted: keepCursor ? snapshot.runsPage.exhausted : page.exhausted,
+                nextCursor: page.next_cursor ?? null,
+                exhausted: page.exhausted,
                 loadingMore: false,
                 problem: null,
               },

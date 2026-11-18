@@ -326,6 +326,8 @@
     const content = images.flatMap(image => image.content ? [image.content] : []);
     enqueue({ text: draft, mode, ...(content.length ? { images: content } : {}) });
     draft = "";
+    // Edit can bring the sent text back without typing; it is a draft then.
+    recalled = null;
     images = [];
   }
   function enqueue(outgoing: Omit<Outgoing, "id">) {

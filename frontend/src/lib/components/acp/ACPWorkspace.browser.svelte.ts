@@ -1605,14 +1605,42 @@ describe("ACPWorkspace prompt recall (browser)", () => {
     expect(composer.value).toBe("Short prompt");
   });
 
-  it("places a caret at the start of a wrapped line on that line, not the one above", async () => {
-    const composer = await renderHistory(360, [{ role: "user", text: longPrompt }]);
+  it("treats a sent prompt that Edit brings back as a draft", async () => {
+    const composer = await renderHistory(900, [{ role: "user", text: "Newer prompt" }]);
+
+    await userEvent.keyboard("{ArrowUp}");
+    await expect.poll(() => composer.value).toBe("Newer prompt");
+    await userEvent.keyboard("{Enter}");
+    await expect.poll(() => socket.sent.length).toBeGreaterThan(0);
+    const { id } = JSON.parse(socket.sent.at(-1)!) as { id: string };
+    socket.options!.onMessage(JSON.stringify({ commandError: "The agent is not running.", command: "prompt", id }));
+    await userEvent.click(page.getByRole("button", { name: "Edit" }));
+    await expect.poll(() => composer.value).toBe("Newer prompt");
+    composer.focus();
+    await userEvent.keyboard("{ArrowDown}");
+    expect(composer.value).toBe("Newer prompt");
+  });
+
+  it("moves the caret instead of recalling when it sits at a soft wrap", async () => {
+    const composer = await renderHistory(360, [
+      { role: "user", text: "Short prompt" },
+      { role: "user", text: longPrompt },
+    ]);
 
     await userEvent.keyboard("{ArrowUp}");
     await expect.poll(() => composer.value).toBe(longPrompt);
-    // Home leaves the caret at a soft wrap, drawn at the start of the last line.
+    // Home and End leave the caret at a soft wrap, drawn at the start of the
+    // lower line or the end of the upper one; the offset is the same.
     await userEvent.keyboard("{Home}");
-    expect(composer.selectionStart).toBeGreaterThan(0);
+    const wrap = composer.selectionStart;
+    expect(wrap).toBeGreaterThan(0);
+    await userEvent.keyboard("{ArrowUp}");
+    expect(composer.value).toBe(longPrompt);
+    expect(composer.selectionStart).toBeLessThan(wrap);
+    composer.setSelectionRange(wrap, wrap);
+    await userEvent.keyboard("{ArrowDown}");
+    expect(composer.value).toBe(longPrompt);
+    expect(composer.selectionStart).toBe(longPrompt.length);
     await userEvent.keyboard("{ArrowDown}");
     await expect.poll(() => composer.value).toBe("");
   });

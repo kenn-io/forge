@@ -39,19 +39,27 @@ export function caretOnEdgeLine(field: HTMLTextAreaElement, edge: "first" | "las
     overflowWrap: "break-word",
   });
   // Each marker wraps a character, since Firefox places an empty span at a
-  // different height. At a soft wrap the field draws the caret at the start
-  // of the next line, so the caret takes the line of the character after it.
-  // Only the end marker adds text: a zero-width space, which also opens the
-  // line after a trailing newline.
+  // different height. At a soft wrap one caret offset is drawn either at the
+  // end of the upper line (after End) or the start of the lower one (after
+  // Home), and the field does not say which. So the caret counts as on an
+  // edge line only if both places are: the first line takes the character
+  // after the caret, and the last line the one before it, unless that is a
+  // newline. Otherwise the arrow moves the caret as usual. The end marker is
+  // a zero-width space, which also opens the line after a trailing newline.
   const marker = (text: string) => Object.assign(document.createElement("span"), { textContent: text });
-  const charAt = (index: number) => String.fromCodePoint(value.codePointAt(index)!);
-  const caretChar = selectionStart < value.length ? charAt(selectionStart) : "\u200b";
-  const caret = marker(caretChar);
-  const firstChar = selectionStart === 0 ? caretChar : charAt(0);
-  const first = selectionStart === 0 ? caret : marker(firstChar);
-  const last = selectionStart === value.length ? caret : marker("\u200b");
-  if (first !== caret) mirror.append(first, value.slice(firstChar.length, selectionStart));
-  mirror.append(caret, value.slice(selectionStart + caretChar.length));
+  let from = selectionStart;
+  let to = selectionStart;
+  if (edge === "last" && selectionStart > 0 && value[selectionStart - 1] !== "\n") {
+    from -= /[\uDC00-\uDFFF]/.test(value[selectionStart - 1]!) && selectionStart > 1 ? 2 : 1;
+  } else if (selectionStart < value.length) {
+    to += value.codePointAt(selectionStart)! > 0xffff ? 2 : 1;
+  }
+  const caret = marker(value.slice(from, to) || "\u200b");
+  const firstLength = value.length && value.codePointAt(0)! > 0xffff ? 2 : 1;
+  const first = from === 0 ? caret : marker(value.slice(0, firstLength));
+  const last = from === value.length ? caret : marker("\u200b");
+  if (first !== caret) mirror.append(first, value.slice(firstLength, from));
+  mirror.append(caret, value.slice(to));
   if (last !== caret) mirror.append(last);
   document.body.append(mirror);
   try {

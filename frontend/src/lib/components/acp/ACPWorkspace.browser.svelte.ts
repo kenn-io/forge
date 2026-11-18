@@ -117,7 +117,11 @@ describe("ACPWorkspace message gutter (browser)", () => {
     const gutterRect = gutter.getBoundingClientRect();
     expect(gutterRect.right).toBeLessThanOrEqual(cell.getBoundingClientRect().left);
     expect(gutterRect.left).toBeGreaterThanOrEqual(conversation.getBoundingClientRect().left);
-    expect(gutter.querySelector("time")?.textContent).not.toBe("");
+    // Earlier-day stamps stack the date over the time inside the reserved gutter.
+    const [date, clock] = [...gutter.querySelectorAll("time > span")].map((span) => span.getBoundingClientRect());
+    expect(date.left).toBeGreaterThanOrEqual(gutterRect.left);
+    expect(clock.left).toBeGreaterThanOrEqual(gutterRect.left);
+    expect(clock.top).toBeGreaterThanOrEqual(date.bottom);
 
     await userEvent.unhover(cell);
     await expect.poll(() => getComputedStyle(gutter).opacity).toBe("0");

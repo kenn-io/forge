@@ -74,6 +74,7 @@
   import ChatContentBlock from "./ChatContentBlock.svelte"
   import { senderLabel, type ChatMessage } from "./chat-types.js"
   import { getStores } from "../../context.js"
+  import { localChatTimestamp } from "../../utils/time.js"
 
   // A person's prompt not in the transcript yet: on its way to the host,
   // accepted to steer the reply, or refused before the host took it.
@@ -101,6 +102,7 @@
   const timestamp = $derived(
     message.createdAt ? new Date(message.createdAt) : null,
   )
+  const stamp = $derived(timestamp ? localChatTimestamp(timestamp) : null)
   onDestroy(() => clearTimeout(resetCopy))
   async function copy(): Promise<void> {
     copyError = ""
@@ -182,12 +184,9 @@
          too narrow for the gutter show them as a quiet line below the message. -->
     {#if timestamp || (!thought && ((!streaming && message.text) || copyError))}
     <div class="gutter" class:pinned={!!copyError || copied}>
-    {#if timestamp}
+    {#if timestamp && stamp}
       <time datetime={message.createdAt} title={timestamp.toLocaleString()}
-        >{timestamp.toLocaleTimeString([], {
-          hour: "numeric",
-          minute: "2-digit",
-        })}</time
+        >{#if stamp.date}<span>{stamp.date}</span>{" "}{/if}<span>{stamp.time}</span></time
       >
     {/if}
     {#if !thought && !streaming && message.text}{@render copyAction()}{/if}
@@ -324,6 +323,11 @@
   .user .gutter {
     justify-content: flex-end;
   }
+  .gutter time {
+    display: inline-flex;
+    flex-wrap: wrap;
+    column-gap: 0.35em;
+  }
   /* Wide panes: the conversation reserves --acp-gutter to the left of every
      cell (ACPWorkspace.svelte .messages) and the gutter sits there, revealed on
      hover or focus. */
@@ -338,6 +342,11 @@
       color: var(--text-secondary);
       opacity: 0;
       transition: opacity var(--transition-fast) ease-out;
+    }
+    /* Past-day stamps stack the date over the time to fit the gutter. */
+    .gutter time {
+      flex-direction: column;
+      align-items: flex-end;
     }
     .cell:hover .gutter,
     .cell:focus-within .gutter,

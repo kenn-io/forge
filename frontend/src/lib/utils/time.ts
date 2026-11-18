@@ -40,3 +40,23 @@ export function localDateTimeLabel(dateStr: string): string {
     timeStyle: "short",
   });
 }
+
+/**
+ * Labels a chat message time in local time. Messages from any day other than
+ * today also get a short date, so times in long-running threads stay anchored
+ * to their day; the year appears only when it differs from today's.
+ */
+export function localChatTimestamp(
+  at: Date,
+  now: Date = new Date(),
+  locales?: string | string[],
+): { date?: string; time: string } {
+  const time = at.toLocaleTimeString(locales, { hour: "numeric", minute: "2-digit" });
+  if (at.toDateString() === now.toDateString()) return { time };
+  const date = at.toLocaleDateString(locales, {
+    month: "short",
+    day: "numeric",
+    year: at.getFullYear() === now.getFullYear() ? undefined : "numeric",
+  });
+  return { date, time };
+}

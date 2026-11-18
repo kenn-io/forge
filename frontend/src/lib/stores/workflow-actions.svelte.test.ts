@@ -143,6 +143,67 @@ describe("workflow actions store", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
+  it.each([false, true])("drops deleted runs after an exhausted first page (empty: %s)", async (empty) => {
+    let refreshed = false;
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
+      return jsonResponse({
+        repo,
+        items: refreshed ? (empty ? [] : [run("B", "completed")]) : [run("A", "queued"), run("B", "queued")],
+        exhausted: true,
+      });
+    };
+    store.loadCatalog(ref);
+    await settle();
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+    refreshed = true;
+    store.refreshRuns(ref);
+    await settle();
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual(empty ? [] : ["B"]);
+    expect(store.getSnapshot(ref)?.runsPage.exhausted).toBe(true);
+  });
+
+  it.each([false, true])("drops deleted runs after an exhausted later page (empty: %s)", async (empty) => {
+    let refreshed = false;
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
+      const second = url.searchParams.has("cursor");
+      const ids = second
+        ? refreshed
+          ? empty
+            ? []
+            : ["50"]
+          : Array.from({ length: 50 }, (_, i) => String(i + 50))
+        : Array.from({ length: 50 }, (_, i) => String(i));
+      return jsonResponse({
+        repo,
+        items: ids.map((id) => run(id, "queued")),
+        exhausted: second,
+        ...(!second && { next_cursor: "2" }),
+      });
+    };
+    store.loadCatalog(ref);
+    await settle();
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+    store.loadMoreRuns(ref);
+    await settle();
+    expect(store.getRuns(ref)).toHaveLength(100);
+    refreshed = true;
+    store.refreshRuns(ref);
+    await settle();
+    store.loadMoreRuns(ref);
+    await settle();
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual([
+      ...Array.from({ length: 50 }, (_, i) => String(i)),
+      ...(empty ? [] : ["50"]),
+    ]);
+    expect(store.getSnapshot(ref)?.runsPage.exhausted).toBe(true);
+  });
+
   it("refreshes the first page without dropping loaded runs", async () => {
     let refreshed = false;
     let fail = false;

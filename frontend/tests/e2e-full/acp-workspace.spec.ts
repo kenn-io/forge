@@ -220,6 +220,14 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await expect(
       chat.getByRole("log", { name: "Conversation" }).getByText("Permission received. The turn is complete."),
     ).toBeVisible();
+    // ArrowUp in the empty composer recalls the last prompt from the saved
+    // transcript; ArrowDown past it clears the composer again.
+    const recallComposer = chat.getByRole("textbox", { name: "Message agent" });
+    await recallComposer.focus();
+    await recallComposer.press("ArrowUp");
+    await expect(recallComposer).toHaveValue("Inspect the workspace");
+    await recallComposer.press("ArrowDown");
+    await expect(recallComposer).toHaveValue("");
     // Prompts have no size limit, even once JSON escapes double their frame.
     await chat.getByRole("textbox", { name: "Message agent" }).fill('"'.repeat(256 * 1024));
     await chat.getByRole("button", { name: "Send", exact: true }).click();

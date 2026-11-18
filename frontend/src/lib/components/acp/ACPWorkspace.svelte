@@ -21,6 +21,7 @@
   import ChatDockRail from "./ChatDockRail.svelte";
   import { insertCommand, matchCommands, pendingInputHint, slashToken } from "./chat-commands.js";
   import { chatRows, type ChatRow } from "./chat-timeline.js";
+  import { caretOnEdgeLine, sentPrompts } from "./prompt-recall.js";
   import { runningSubagents, subagentChildCounts } from "./chat-subagents.js";
   import { chatConnects, makeChatSession } from "./chat-session.js";
   import type { ContentScrollPositions } from "./chat-content-scroll.js";
@@ -519,8 +520,38 @@
     if (!section || !(target instanceof Node)) return;
     if (section.contains(target) || section.closest("[data-session-host]") === target) lastFocused = nextChatFocus();
   }
+  // ArrowUp in an empty composer brings back the last prompt sent in this
+  // chat; while that text stays unedited, ArrowUp on its first visual line
+  // goes further back and ArrowDown on its last comes forward, clearing the
+  // composer past the newest. Only the text returns, not attached images.
+  let recalled: { id: string; text: string } | null = null;
+  function recallKeydown(event: KeyboardEvent): boolean {
+    const up = event.key === "ArrowUp";
+    if ((!up && event.key !== "ArrowDown") || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false;
+    if (!textarea || images.length) return false;
+    const prompts = sentPrompts(chatState?.messages ?? []);
+    const current = recalled?.text === draft ? prompts.findIndex((prompt) => prompt.id === recalled?.id) : -1;
+    let target: number;
+    if (current < 0) {
+      if (!up || draft || !prompts.length) return false;
+      target = prompts.length - 1;
+    } else {
+      if (!caretOnEdgeLine(textarea, up ? "first" : "last")) return false;
+      target = current + (up ? -1 : 1);
+      if (target < 0) return false;
+    }
+    event.preventDefault();
+    const prompt = prompts[target];
+    recalled = prompt ? { id: prompt.id, text: prompt.text } : null;
+    draft = prompt?.text ?? "";
+    // A recalled slash command would open the menu, which takes the arrows.
+    commandMenuDismissed = true;
+    caret = draft.length;
+    void tick().then(() => textarea?.setSelectionRange(draft.length, draft.length));
+    return true;
+  }
   function keydown(event: KeyboardEvent) {
-    if (commandKeydown(event)) return;
+    if (commandKeydown(event) || recallKeydown(event)) return;
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !window.matchMedia("(pointer: coarse)").matches) {
       event.preventDefault();
       send(!running ? "send" : event.altKey ? "queue" : busyMode);

@@ -24,6 +24,7 @@ const SCOPE_SPECIFICITY: Record<Action["scope"], number> = {
 };
 
 export function dispatchKeydown(event: KeyboardEvent, contextProvider: () => Context, runtime: AppRuntime): void {
+  if (event.defaultPrevented) return;
   // A focused terminal owns every key except the explicit shifted palette
   // chord, and it otherwise outranks the modal stack too: a frame that did not
   // trap focus cannot be holding the keyboard the user is typing into. Not even

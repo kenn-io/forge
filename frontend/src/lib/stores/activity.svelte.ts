@@ -738,7 +738,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return { ...params, since: timeRange };
   }
 
-  function buildParams(): ActivityParams {
+  function buildParams(includePaging = true): ActivityParams {
     const since = computeSince();
     const p: ActivityParams = { since };
     p.projection =
@@ -773,7 +773,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (hideBotAuthoredIssues) p.hide_bot_authored_issues = true;
     Object.assign(p, labelFilterParams(labelFilters));
     if (hideDefaultBranchActivity) p.hide_default_branch = true;
-    if (activityPageLimit === undefined && viewMode === "flat") {
+    if (includePaging && activityPageLimit === undefined && viewMode === "flat") {
       return { ...flatPaging.withLimit(activityPageQuery(p)), since };
     }
     return p;
@@ -821,7 +821,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   const activityScrollScopeKey = $derived.by(() => {
-    const params = buildParams();
+    const params = buildParams(false);
     delete params.limit;
     return JSON.stringify([activityProjectionScope(params), [...enabledEvents], showNotifications]);
   });

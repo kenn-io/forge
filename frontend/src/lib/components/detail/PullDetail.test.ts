@@ -4550,6 +4550,37 @@ describe("PullDetail inline workspace handoff", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  it("runs a quick action in a linked remote workspace even when this machine lacks the agent", async () => {
+    const controller = {
+      ...createTestController("split"),
+      effectiveWorkspaceRef: () => ({ id: "ws-remote", status: "ready", hostKey: "devbox:compute-a" }),
+    };
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: [] } }),
+      POST: vi.fn().mockResolvedValue({
+        data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } },
+      }),
+    };
+    const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+    });
+    settings.setLaunchTargets([]);
+    settings.setQuickActions([{ label: "Review", agent: "claude", prompt: "Review this change" }]);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
+    const review = screen.getByRole("menuitem", { name: /Review/ });
+    expect(review.hasAttribute("disabled")).toBe(false);
+    await fireEvent.click(review);
+
+    await waitFor(() =>
+      expect(apiClient.POST).toHaveBeenCalledWith(
+        "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+        expect.objectContaining({ params: { path: { connection_id: "compute-a", id: "ws-remote" } } }),
+      ),
+    );
+  });
+
   it("names an unavailable default and creates on a machine the user picks instead", async () => {
     const apiClient = {
       GET: vi.fn().mockResolvedValue({

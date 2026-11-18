@@ -2101,12 +2101,19 @@
             recordWorkspaceCreated(requestIdentity, createdRef);
             inlineWorkspace?.recordCreated(requestIdentity, createdRef);
             if (quickAction) {
-              runReturnedWorkspaceQuickAction(runtime, { id: data.id, status: data.status }, "pull_request", quickAction, hostKey);
+              runReturnedWorkspaceQuickAction(
+                runtime,
+                { id: data.id, status: data.status },
+                "pull_request",
+                quickAction,
+                hostKey,
+                quickActionLeaf(),
+              );
             }
             if (responseIsStale()) return;
             if (inlineWorkspace) return;
             if (onOpenWorkspace) onOpenWorkspace(data.id, hostKey);
-            else navigate(`/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(data.id)}`);
+            else navigate(workspaceRoute({ id: data.id, hostKey }));
             return;
           }
           if (data?.id) {
@@ -3148,6 +3155,7 @@
                 if (targetKey !== undefined) inlineWorkspace.launchSession(targetKey);
               }}
               quickActions={settings.getQuickActions()}
+              remoteHost={workspace.hostKey !== undefined}
               onQuickAction={(action) => runQuickActionInWorkspace(workspace, action)}
             >
               {#snippet primary()}
@@ -3202,6 +3210,7 @@
               launchTargets={settings.getLaunchTargets()}
               disabled={stalePR || workspaceDeletionLifecycle}
               quickActions={settings.getQuickActions()}
+              remoteHost={workspace.hostKey !== undefined}
               onQuickAction={(action) => runQuickActionInWorkspace(workspace, action)}
             >
               {#snippet primary()}

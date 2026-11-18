@@ -1129,6 +1129,8 @@ describe("IssueDetail inline workspace handoff", () => {
       body: { target_key: "codex", message: "/triage-pr\nquestion all assumptions" },
     });
     await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
+    // The retry succeeded, so the conflict dialog no longer covers the pane.
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Use Existing Branch" })).toBeNull());
     await waitFor(() =>
       expect(telemetry).toHaveBeenCalledExactlyOnceWith({
         event: "workspace_opened",

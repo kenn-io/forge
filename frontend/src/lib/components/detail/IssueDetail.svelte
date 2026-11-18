@@ -922,15 +922,23 @@
             recordWorkspaceCreated(requestIdentity, createdRef);
             inlineWorkspace?.recordCreated(requestIdentity, createdRef);
             if (quickAction) {
-              runReturnedWorkspaceQuickAction(runtime, { id: data.id, status: data.status }, "issue", quickAction, hostKey);
+              runReturnedWorkspaceQuickAction(
+                runtime,
+                { id: data.id, status: data.status },
+                "issue",
+                quickAction,
+                hostKey,
+                quickActionLeaf(),
+              );
             }
             if (responseIsStale()) return;
             pendingWorkspaceLaunchTarget = null;
             pendingWorkspaceQuickAction = null;
             pendingWorkspaceHostChoice = null;
+            branchConflict = null;
             if (inlineWorkspace) return;
             if (onOpenWorkspace) onOpenWorkspace(data.id, hostKey);
-            else navigate(`/terminal/fleet/${encodeURIComponent(hostKey)}/${encodeURIComponent(data.id)}`);
+            else navigate(workspaceRoute({ id: data.id, hostKey }));
             return;
           }
           if (data?.id) {
@@ -951,6 +959,7 @@
           pendingWorkspaceLaunchTarget = null;
           pendingWorkspaceQuickAction = null;
           pendingWorkspaceHostChoice = null;
+          branchConflict = null;
           if (!data?.id) return;
           if (inlineWorkspace) {
             refetchDetailForIdentity(requestIdentity);
@@ -1458,6 +1467,7 @@
                 if (targetKey !== undefined) inlineWorkspace.launchSession(targetKey);
               }}
               quickActions={settings.getQuickActions()}
+              remoteHost={workspace.hostKey !== undefined}
               onQuickAction={(action) => runQuickActionInWorkspace(workspace, action)}
             >
               {#snippet primary()}
@@ -1485,6 +1495,7 @@
               launchTargets={settings.getLaunchTargets()}
               disabled={staleIssue || workspaceDeletionLifecycle}
               quickActions={settings.getQuickActions()}
+              remoteHost={workspace.hostKey !== undefined}
               onQuickAction={(action) => runQuickActionInWorkspace(workspace, action)}
             >
               {#snippet primary()}

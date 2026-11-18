@@ -111,8 +111,13 @@ export function launchWorkspaceQuickAction(
  * then launches the quick action there. The retry takes the workspace's place
  * in the launch queue, so launches still run in the order requested.
  */
-export function retryWorkspaceQuickAction(workspaceId: string, action: QuickAction, hostKey?: string) {
-  const { workspaceKey, handoff } = quickActionHandoff(workspaceId, action, hostKey);
+export function retryWorkspaceQuickAction(
+  workspaceId: string,
+  action: QuickAction,
+  hostKey?: string,
+  leaf?: WorkspaceRuntimeLaunchLeaf,
+) {
+  const { workspaceKey, handoff } = quickActionHandoff(workspaceId, action, hostKey, undefined, leaf);
   const retry = (
     hostKey
       ? executeOpaqueGeneratedApiRequest<unknown>("POST retry workspace", (client, signal) =>
@@ -347,13 +352,14 @@ export function startReturnedWorkspaceQuickAction(
   workspace: { readonly id: string; readonly status?: string | undefined },
   action: QuickAction,
   hostKey: string,
+  leaf?: WorkspaceRuntimeLaunchLeaf,
 ): ReturnType<typeof launchWorkspaceQuickAction> {
   if (workspace.status === "deleting" || workspace.status === "deletion_failed") {
     const reason = "its workspace is being deleted";
     return Effect.succeed({ type: "failed", reason, message: `"${action.label}" could not start: ${reason}` });
   }
-  if (workspace.status === "error") return retryWorkspaceQuickAction(workspace.id, action, hostKey);
-  return launchWorkspaceQuickAction(workspace.id, action, hostKey);
+  if (workspace.status === "error") return retryWorkspaceQuickAction(workspace.id, action, hostKey, leaf);
+  return launchWorkspaceQuickAction(workspace.id, action, hostKey, undefined, leaf);
 }
 
 /** Runs a quick action in a workspace another machine returned for an item. */
@@ -363,13 +369,14 @@ export function runReturnedWorkspaceQuickAction(
   itemType: WorkspaceDetail["item_type"],
   action: QuickAction,
   hostKey: string,
+  leaf?: WorkspaceRuntimeLaunchLeaf,
 ): void {
   reportQuickAction(
     runtime,
     workspace.id,
     itemType,
     action,
-    startReturnedWorkspaceQuickAction(workspace, action, hostKey),
+    startReturnedWorkspaceQuickAction(workspace, action, hostKey, leaf),
   );
 }
 

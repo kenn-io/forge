@@ -113,7 +113,9 @@ test("a quick action on a remote default machine opens its workspace beside the 
   await page.getByRole("menuitem", { name: /Fix CI/ }).click();
 
   await expect(page.getByRole("button", { name: "Hide Workspace on compute-a (devbox)" })).toBeVisible();
-  await expect(page.getByRole("img", { name: "Workspace load failed" })).toHaveCount(0);
+  // The branch comes from the devbox's workspace, so this control appears
+  // only once the pane has loaded it from that machine.
+  await expect(page.getByRole("button", { name: "Delete workspace feature/remote" })).toBeVisible();
   await expect
     .poll(() => handoffs)
     .toEqual([expect.objectContaining({ target_key: "codex", message: "Make the failing checks pass." })]);

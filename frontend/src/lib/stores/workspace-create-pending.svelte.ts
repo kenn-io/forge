@@ -336,7 +336,7 @@ export function reconcileWorkspaceCreated(
   // a local workspace there replaces a remote record.
   const agrees =
     entry.ref.hostKey !== undefined
-      ? envelopeRef != null
+      ? envelopeRef != null && !deletedIds.has(envelopeRef.id)
       : (envelopeRef != null && envelopeRef.id === entry.ref.id) || (envelopeTick != null && envelopeTick > entry.tick);
   if (!agrees) return;
   created = created.filter((e) => !identityEquals(e.identity, identity));

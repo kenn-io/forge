@@ -211,6 +211,28 @@ describe("workspace host store", () => {
     expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
   });
 
+  it("names a remote machine from its key until the fleet snapshot names it", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, { id: "ws-r", status: "ready", hostKey: "devbox:compute-a" });
+    expect(prs.workspacePaneLabel()).toBe("Workspace on compute-a (devbox)");
+  });
+
+  it("keeps a remote link when a stale detail still names a deleted local workspace", () => {
+    const prs = getInlineWorkspaceController("prs");
+    notifyWorkspaceDeleted("ws-a");
+    const remote = { id: "ws-r", status: "ready", hostKey: "devbox:compute-a" };
+    prs.recordCreated(identityA, remote);
+    prs.reconcile(identityA, refA, nextWorkspaceLifecycleTick());
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(remote);
+  });
+
+  it("forgets a remote link when its workspace is deleted while the item's pane is closed", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.recordCreated(identityA, { id: "ws-r", status: "ready", hostKey: "devbox:compute-a" });
+    notifyWorkspaceDeleted("ws-r", "devbox:compute-a");
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
+  });
+
   it("a controller-less recreation under a fresh ID supersedes the tombstone", () => {
     const prs = getInlineWorkspaceController("prs");
     prs.claim(identityA, refA);

@@ -14,6 +14,15 @@ export type WorkspaceRefLite = {
   hostLabel?: string | undefined;
 };
 
+/**
+ * A readable name for the machine a host key names, for when the fleet
+ * snapshot has not named it yet.
+ */
+export function hostKeyLabel(hostKey: string): string {
+  if (hostKey.startsWith("devbox:")) return `${hostKey.slice("devbox:".length)} (devbox)`;
+  return URL.canParse(hostKey) ? new URL(hostKey).host : hostKey;
+}
+
 /** The Workspaces-tab route for a linked workspace. */
 export function workspaceRoute(ref: Pick<WorkspaceRefLite, "id" | "hostKey">): string {
   return ref.hostKey

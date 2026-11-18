@@ -9,7 +9,7 @@ import type {
   WorkspaceItemIdentity,
   WorkspaceRefLite,
 } from "../workspace-inline.js";
-import { canonicalItemType, workspaceRoute } from "../workspace-inline.js";
+import { canonicalItemType, hostKeyLabel, workspaceRoute } from "../workspace-inline.js";
 import { parseSessionPaneKey, sessionPaneKeyMatchesWorkspace } from "./session-pane-key.js";
 import { canonicalProvider, resolvedPlatformHost } from "../api/provider-routes.js";
 import {
@@ -457,13 +457,18 @@ export function rememberTerminalRouteKey(key: HostedWorkspaceKey): void {
 export function notifyWorkspaceDeleted(workspaceId: string, hostKey?: string, identity?: WorkspaceItemIdentity): void {
   discardSessionsWithPrefix(sessionHostPrefix(workspaceId, hostKey));
   if (hostKey !== undefined) {
-    // Another machine's workspace: drop the claims and links that name it.
+    // Another machine's workspace: drop the claims and links that name it,
+    // including links for items whose pane is not showing right now.
     for (const surface of Object.keys(claims) as InlineWorkspaceSurface[]) {
       const claim = claims[surface];
       if (claim?.ref.id !== workspaceId || claim.ref.hostKey !== hostKey) continue;
       clearClaim(surface);
       overrides = { ...overrides, [identityKey(claim.identity)]: { deletedId: workspaceId } };
       for (const listener of invalidationListeners) listener(claim.identity);
+    }
+    for (const [key, override] of Object.entries(overrides)) {
+      if (isTombstone(override) || override.ref.id !== workspaceId || override.ref.hostKey !== hostKey) continue;
+      overrides = { ...overrides, [key]: { deletedId: workspaceId } };
     }
     dropWorkspaceSessionPanes(workspaceId, hostKey);
     clearCreatedWorkspaceById(workspaceId, hostKey);
@@ -812,12 +817,14 @@ function workspacePaneLabelFor(surface: InlineWorkspaceSurface): string {
   // A workspace on another machine says where it runs; otherwise it looks
   // and behaves like a local one.
   const ref = claims[surface]?.ref;
-  const where = ref?.hostKey ? ` on ${ref.hostLabel ?? "another machine"}` : "";
+  const where = ref?.hostKey ? ` on ${ref.hostLabel ?? hostKeyLabel(ref.hostKey)}` : "";
   const sessions = promotableSessionsFor(surface);
-  if (sessions.length !== 1) return `Workspace${where}`;
-  if (getPaneLayoutStore(surface).paneRender()?.flattened === true) return `Workspace${where}`;
-  const session = sessions[0]!;
-  return workspacePaneKeysFor(surface).includes(session.paneKey) ? `Workspace${where}` : `${session.label}${where}`;
+  const session = sessions.length === 1 ? sessions[0]! : undefined;
+  const promoted =
+    session !== undefined &&
+    getPaneLayoutStore(surface).paneRender()?.flattened !== true &&
+    !workspacePaneKeysFor(surface).includes(session.paneKey);
+  return `${promoted ? session.label : "Workspace"}${where}`;
 }
 
 /**
@@ -907,7 +914,7 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       const agrees = isTombstone(override)
         ? envelopeRef == null || envelopeRef.id !== override.deletedId
         : override.ref.hostKey !== undefined
-          ? envelopeRef != null
+          ? envelopeRef != null && !isWorkspaceIdDeleted(envelopeRef.id)
           : (envelopeRef != null && envelopeRef.id === override.ref.id) ||
             (envelopeTick != null && envelopeTick > override.tick);
       if (!agrees) return;

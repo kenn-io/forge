@@ -9,6 +9,7 @@ import ACPWorkspace from "./ACPWorkspace.svelte";
 import { STORES_KEY } from "../../context.js";
 import { getStackDepth, getTopFrame } from "../../stores/keyboard/modal-stack.svelte.js";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
+import { localChatTimestamp } from "../../utils/time.js";
 
 let settings: ReturnType<typeof createSettingsStore>;
 
@@ -1469,10 +1470,22 @@ describe("ACPWorkspace message gutter", () => {
     expect(within(article).queryByText("Agent")).toBeNull();
     const time = article.querySelector("time")!;
     expect(time.getAttribute("datetime")).toBe(createdAt);
-    expect(time.textContent).toBe(new Date(createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+    const { date, time: clock } = localChatTimestamp(new Date(createdAt));
+    expect(date).toBeDefined();
+    expect(time.textContent).toBe(`${date} ${clock}`);
 
     await fireEvent.click(within(article).getByRole("button", { name: "Copy message" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("The change is ready."));
+  });
+
+  it("shows only the time for a message sent today", async () => {
+    const today = new Date().toISOString();
+    await openChat({ messages: [{ role: "assistant", text: "Done.", createdAt: today }] });
+
+    const time = screen.getByRole("article", { name: "Assistant" }).querySelector("time")!;
+    expect(time.textContent).toBe(
+      new Date(today).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }),
+    );
   });
 });
 

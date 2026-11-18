@@ -325,8 +325,13 @@ describe("ActionsPage", () => {
     await fireEvent.click(await screen.findByRole("button", { name: /beta deploy/ }));
     await screen.findByRole("button", { name: /Run 7 beta deploy/ });
     for (const listener of listeners) listener({ type: "workflow_runs_changed", payload });
-    for (const listener of listeners) listener({ type: "workflow_runs_changed", payload: { ...payload, platform_repo_id: 1004 } });
-    await waitFor(() => expect(api.requests.filter((request) => request.url.pathname === "/api/v1/actions/github/acme/beta/runs")).toHaveLength(2));
+    for (const listener of listeners)
+      listener({ type: "workflow_runs_changed", payload: { ...payload, platform_repo_id: 1004 } });
+    await waitFor(() =>
+      expect(
+        api.requests.filter((request) => request.url.pathname === "/api/v1/actions/github/acme/beta/runs"),
+      ).toHaveLength(2),
+    );
     expect(reads).toBe(2);
     cleanup();
     expect(listeners.size).toBe(0);

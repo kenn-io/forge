@@ -678,11 +678,12 @@ describe("activity subject paging", () => {
     await vi.waitFor(() => expect(store.isLoadingOlderItems()).toBe(true));
     expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1]);
     pendingFailure.resolve({ error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) });
-    await vi.waitFor(() => expect(store.getActivityError()).toBe("unavailable"));
+    await vi.waitFor(() => expect(store.getOlderItems().problem?.detail).toBe("unavailable"));
+    expect(store.getActivityError()).toBeNull();
     expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1]);
     expect(store.isLoadingOlderItems()).toBe(false);
     fail = false;
-    store.loadOlderItems();
+    store.getOlderItems().retry(store.loadOlderItems);
     await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 2]));
   });
   it("keeps a requested older page when reload overlaps it", async () => {
@@ -793,7 +794,7 @@ describe("activity subject paging", () => {
     const refresh = reconcile(store, "refresh");
     await vi.waitFor(() => expect(pageReads).toBe(2));
     failedPage.resolve({ error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) });
-    await vi.waitFor(() => expect(store.getActivityError()).toBe("unavailable"));
+    await vi.waitFor(() => expect(store.getOlderItems().problem?.detail).toBe("unavailable"));
     refreshedPage.resolve({
       data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] },
       error: null,
@@ -1299,7 +1300,7 @@ describe("flat activity paging", () => {
     if (failed) {
       page.resolve({ error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) });
       await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-      expect(store.getActivityError()).toBe("unavailable");
+      expect(store.getMoreActivity().problem?.detail).toBe("unavailable");
     }
     reconciliation.resolve(response);
     await reconciled;
@@ -1441,7 +1442,7 @@ describe("flat activity paging", () => {
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
     expect(store.getItemActivity()).toHaveLength(1);
     expect(store.isLoadingMoreActivity()).toBe(false);
-    expect(store.getActivityError()).toBe("unavailable");
+    expect(store.getMoreActivity().problem).toMatchObject({ detail: "unavailable", retryable: false });
     expect(getFlash()).toBeNull();
     const requestsBeforeRetry = get.mock.calls.filter(([path]) => path === "/activity").length;
     fail = false;

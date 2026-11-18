@@ -77,11 +77,11 @@ test("keeps a visible preview while loading older items", async ({ page }) => {
         })
         .toBeGreaterThan(previous);
     }
-    const button = page.getByRole("button", { name: "Load older items" });
-    await expect(button).toBeVisible();
     hold = true;
-    await button.click();
-    await expect(page.getByRole("button", { name: "Loading more…" })).toBeDisabled();
+    await viewport.evaluate((node) => {
+      node.scrollTop = node.scrollHeight;
+    });
+    await expect(page.getByRole("status").filter({ hasText: "Loading more older items" })).toBeVisible();
     await expect(preview).toBeVisible();
     await expect.poll(() => Boolean(release)).toBe(true);
     hold = false;

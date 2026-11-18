@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { reuseUnchanged } from "../utils/reuse-unchanged.js";
 import { executeGeneratedApiRequest, GeneratedApi } from "../api/generated-api.js";
 import { TransientTransportError, type ApiProblemError } from "../api/effect-errors.js";
-import { retryIdempotentRead } from "../api/retry-policy.js";
+import { isTransientPickerReadFailure, retryIdempotentRead } from "../api/retry-policy.js";
 import { GeneratedProblemResponse } from "../api/runtime.js";
 import type { PullRequest, PullsParams, UnsetStarredParams } from "../api/types.js";
 import type { VisiblePullRef } from "../api/generated/models/visiblePullRef.js";
@@ -704,9 +704,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
         Effect.sync(() => {
           storeError = readErrorMessage(failure);
           loading = false;
-          if (paging.rollback(query, params)) {
-            showFlash(`Failed to load more pull requests: ${storeError}`, { tone: "danger" });
-          }
+          paging.rollback(query, params, { detail: storeError, retryable: isTransientPickerReadFailure(failure) });
         }),
       ),
     );
@@ -755,6 +753,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     isLoading,
     isListCapped,
     isLoadingMore,
+    getMoreRows: () => paging,
     getError,
     getSelectedPR,
     pullsByRepo,

@@ -233,7 +233,19 @@ describe("ActionsPage", () => {
     return workflowActions;
   }
 
+  let observeEnd: IntersectionObserverCallback | undefined;
   beforeEach(() => {
+    observeEnd = undefined;
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          observeEnd = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
     listeners.clear();
     originalFetch = globalThis.fetch;
     api = createMockApiFetch([workflowFixtures()]);
@@ -245,6 +257,7 @@ describe("ActionsPage", () => {
 
   afterEach(async () => {
     cleanup();
+    vi.unstubAllGlobals();
     setGlobalRepo(undefined);
     globalThis.fetch = originalFetch;
     runtimeHolder.value = undefined;
@@ -443,7 +456,8 @@ describe("ActionsPage", () => {
 
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
     expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("trunk");
-    await fireEvent.click(await screen.findByRole("button", { name: "Load more runs" }));
+    await waitFor(() => expect(observeEnd).toBeDefined());
+    observeEnd!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
     expect(await screen.findByRole("button", { name: /Run 5 alpha deploy/ })).toBeTruthy();
     expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("trunk");
     const olderRequest = api.requests.find(

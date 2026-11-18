@@ -1,6 +1,8 @@
 <script lang="ts">
   import {
     Button,
+    ListEnd,
+    type ListEndState,
     Chip,
     Table,
     TableHeaderCell,
@@ -26,11 +28,15 @@
     jobErrors: Readonly<Record<string, WorkflowActionsError | undefined>>;
     loadingJobs: readonly string[];
     onexpand: (runId: string) => void;
+    rows: ListEndState;
+    more: boolean;
+    idle: boolean;
+    onmore: () => void;
   }
 
   const COLUMN_COUNT = 7;
 
-  let { runs, jobs, jobErrors, loadingJobs, onexpand }: Props = $props();
+  let { runs, jobs, jobErrors, loadingJobs, onexpand, rows, more, idle, onmore }: Props = $props();
   let expandedRuns = $state<Record<string, boolean>>({});
   let expandedJobs = $state<Record<string, boolean>>({});
   // null keeps the provider's order (newest first).
@@ -190,6 +196,7 @@
         </tr>
       {/if}
     {/each}
+    <ListEnd {rows} {more} {idle} {onmore} columns={COLUMN_COUNT} label="runs" />
   </Table>
 </div>
 

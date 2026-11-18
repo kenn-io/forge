@@ -15,7 +15,7 @@
   import { getAppRuntime } from "../app/runtime-context.js";
   import { getStores, getNavigate } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
-  import ListLoadMore from "./sidebar/ListLoadMore.svelte";
+  import ListEndItem from "./sidebar/ListEndItem.svelte";
   import {
     activityFilterMenu,
     activityItemVisible,
@@ -26,7 +26,7 @@
   import LabelFilterMenu from "./shared/LabelFilterMenu.svelte";
   import { getGlobalRepo } from "../stores/filter.svelte.js";
   import { rememberedLabelChoices } from "../utils/label-filter.js";
-  import { FilterDropdown, ScrollBox } from "@kenn-io/kit-ui";
+  import { FilterDropdown, ScrollBox, showListTop } from "@kenn-io/kit-ui";
   import {
     isDefaultBranchActivity,
     isDefaultBranchCommitActivity,
@@ -57,6 +57,11 @@
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
 
   const { activity, settings, sync, grouping, issues } = getStores();
+  let flatViewport = $state<HTMLDivElement>();
+  $effect(() => {
+    void activity.getActivityScopeKey();
+    if (flatViewport) showListTop(flatViewport);
+  });
   const runtime = getAppRuntime();
   const navigate = getNavigate();
 
@@ -518,12 +523,12 @@
         {selectedBranchCommit}
       >
         {#if activity.canLoadOlderItems()}
-          <ListLoadMore loading={activity.isLoadingOlderItems()} onclick={activity.loadOlderItems} label="Load older items" />
+          <ListEndItem rows={activity.getOlderItems()} more={activity.canLoadOlderItems()} idle={!activity.isActivityLoading()} label="older items" onmore={activity.loadOlderItems} />
         {/if}
       </ActivityThreaded>
     {/if}
   {:else}
-    <ScrollBox label="Activity feed">
+    <ScrollBox label="Activity feed" bind:viewport={flatViewport}>
     <div class="table-container">
       {#if compact}
         <div class="activity-compact-list">
@@ -795,11 +800,11 @@
       {#if flatRows.length === 0 && !activity.isActivityLoading()}
         <EmptyState title={activity.canLoadMoreActivity() ? "No matches in loaded activity" : "No activity found"}>
           {#if activity.canLoadMoreActivity()}
-            <ListLoadMore loading={activity.isLoadingMoreActivity()} onclick={activity.loadMoreActivity} />
+            <ListEndItem rows={activity.getMoreActivity()} more={activity.canLoadMoreActivity()} idle={!activity.isActivityLoading()} label="events" onmore={activity.loadMoreActivity} />
           {/if}
         </EmptyState>
       {:else if activity.canLoadMoreActivity()}
-        <ListLoadMore loading={activity.isLoadingMoreActivity()} onclick={activity.loadMoreActivity} />
+        <ListEndItem rows={activity.getMoreActivity()} more={activity.canLoadMoreActivity()} idle={!activity.isActivityLoading()} label="events" onmore={activity.loadMoreActivity} />
       {/if}
     </div>
     </ScrollBox>
@@ -813,8 +818,7 @@
 
   {#if activity.getViewMode() === "threaded" && activity.isItemActivityCapped()}
     <div class="capped-notice item-activity-capped-notice">
-      Showing the most recently active pull requests and issues. Item totals cover loaded items only; select Load older
-      items to see more.
+      Showing the most recently active pull requests and issues. Item totals cover loaded items only.
     </div>
   {/if}
 

@@ -30,7 +30,6 @@ test("Closed loads bounded pages and reaches the end of the history", async ({ p
   await expect(page.locator(".sidebar-group-header__count")).toHaveText("200+");
 
   const viewport = page.locator('[data-test="pr-list"] .kit-scrollbox__viewport');
-  const more = page.getByRole("button", { name: "Load more", exact: true });
   const trigger = page.locator(".compact-filter-menu .kit-filter-dropdown__btn");
   const panel = page.locator(".kit-filter-dropdown__panel");
   // Draft runs on the server, so the two drafts past the first page show up at once.
@@ -45,31 +44,39 @@ test("Closed loads bounded pages and reaches the end of the history", async ({ p
   await trigger.click();
   // Draft cycles from only drafts through hiding drafts back to off.
   await draft.click();
-  await expect(draft).toHaveAccessibleName(/, excluded$/);
+  await expect(draft).toHaveAccessibleName(/, left out of results$/);
   await expect(count).toHaveText("200+ PRs");
   await draft.click();
   await expect(draft).toHaveAttribute("aria-pressed", "false");
   await trigger.click();
   await expect(count).toHaveText("200+ PRs");
-  await expect(async () => {
-    await viewport.evaluate((node) => {
-      node.scrollTop = node.scrollHeight;
-    });
-    await expect(more).toBeVisible();
-  }).toPass();
-  await more.click();
-  await expect(count).toHaveText("400+ PRs");
+  const scrollUntil = async (text: string) => {
+    await expect(async () => {
+      await viewport.evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+      });
+      await expect(count).toHaveText(text);
+    }).toPass();
+  };
+  await scrollUntil("400+ PRs");
   expect(limits.at(-1)).toBe(400);
-  await expect(page.locator(".sidebar-group-header__count")).toHaveText("400+");
-  await expect(async () => {
-    await viewport.evaluate((node) => {
-      node.scrollTop = node.scrollHeight;
-    });
-    await expect(more).toBeVisible();
-  }).toPass();
-  await more.click();
-  await expect(count).toHaveText("450 PRs");
+  await expect.poll(() => limits.filter((limit) => limit === 400).length, { timeout: 20000 }).toBeGreaterThan(1);
+  await expect(count).toHaveText("400+ PRs");
+  const row300 = page.getByText("Closed change 300", { exact: true });
+  await row300.scrollIntoViewIfNeeded();
+  await row300.click();
+  await page.goBack();
+  await expect(row300).toBeInViewport();
+  await trigger.click();
+  await draft.click();
+  await trigger.click();
+  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(0);
+  await trigger.click();
+  await draft.click();
+  await draft.click();
+  await trigger.click();
+  await scrollUntil("400+ PRs");
+  await scrollUntil("450 PRs");
   expect(limits.at(-1)).toBe(600);
   await expect(page.locator(".sidebar-group-header__count")).toHaveText("450");
-  await expect(more).toHaveCount(0);
 });

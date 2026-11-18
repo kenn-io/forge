@@ -202,6 +202,11 @@ vi.mock("../context.js", () => ({
       isActivityLoading: () => activityLoading.value,
       isActivityCapped: () => activityCapped.value,
       isItemActivityCapped: () => itemActivityCapped.value,
+      getOlderItems: () => ({
+        loading: false,
+        problem: { detail: "unavailable", retryable: true },
+        retry: (more: () => void) => more(),
+      }),
       canLoadOlderItems: () => olderItemsAvailable.value,
       isLoadingOlderItems: () => false,
       loadOlderItems,
@@ -509,7 +514,7 @@ describe("MobileActivityView branch activity", () => {
     );
     const { container } = render(MobileActivityView, { props: { onSelectItem } });
     expect(container.querySelectorAll("article")).toHaveLength(501);
-    await fireEvent.click(screen.getByRole("button", { name: "Load older items" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(loadOlderItems).toHaveBeenCalledOnce();
   }, 20000);
 

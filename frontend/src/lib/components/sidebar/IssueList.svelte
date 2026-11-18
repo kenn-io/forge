@@ -12,7 +12,7 @@
   import type { ListItemTarget } from "../../stores/item-actions.js";
   import { createRangeSelection, isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
-  import ListLoadMore from "./ListLoadMore.svelte";
+  import ListEndItem from "./ListEndItem.svelte";
   import ListCountChip from "./ListCountChip.svelte";
   import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
   import { rememberedLabelChoices } from "../../utils/label-filter.js";
@@ -21,6 +21,7 @@
   import {
     FilterDropdown,
     ScrollBox,
+    showListTop,
     SidebarToggle,
     StatusDot,
   } from "@kenn-io/kit-ui";
@@ -163,6 +164,11 @@
     [...issues.getLabelFilters()],
     grouping.getGroupByRepo(),
   ]));
+  let listViewport = $state<HTMLDivElement>();
+  $effect(() => {
+    void renderViewKey;
+    if (listViewport) showListTop(listViewport);
+  });
   let renderBudget = $derived.by(() => {
     void renderViewKey;
     return INITIAL_RENDER_BUDGET;
@@ -352,7 +358,7 @@
   {#if issues.getIssueFilterState() !== "open"}
     <p class="state-note">Showing items closed after kenn-forge began tracking them</p>
   {/if}
-  <ScrollBox class="list-body" label="Issues">
+  <ScrollBox class="list-body" label="Issues" bind:viewport={listViewport}>
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}
       <p class="state-message">No repositories configured.<br />
         <button class="settings-link" onclick={() => navigate("/settings")}>Add one in Settings</button></p>
@@ -435,7 +441,7 @@
       {/if}
     {/if}
     {#if !hasUnmountedRows && issues.isIssueListCapped()}
-      <ListLoadMore loading={issues.isIssueListLoadingMore()} onclick={issues.loadMoreIssues} />
+      <ListEndItem rows={issues.getMoreRows()} more={true} idle={!issues.isIssuesLoading()} label="issues" onmore={issues.loadMoreIssues} />
     {/if}
   </ScrollBox>
   <div class="sidebar-footer">

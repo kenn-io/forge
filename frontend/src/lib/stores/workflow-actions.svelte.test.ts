@@ -143,6 +143,71 @@ describe("workflow actions store", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
+  it("refreshes all loaded runs through their cursors", async () => {
+    let refreshed = false;
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
+      const second = url.searchParams.get("cursor") === "page-2";
+      return jsonResponse({
+        repo,
+        items: Array.from({ length: 50 }, (_, i) =>
+          run(String(i + (second ? 50 : 0)), refreshed && second ? "completed" : "queued"),
+        ),
+        exhausted: second,
+        ...(second ? {} : { next_cursor: "page-2" }),
+      });
+    };
+    store.loadCatalog(ref);
+    await settle();
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+    store.loadMoreRuns(ref);
+    await settle();
+    expect(store.getRuns(ref)).toHaveLength(100);
+    refreshed = true;
+    store.refreshRuns(ref);
+    await settle();
+    expect(store.getRuns(ref)).toHaveLength(100);
+    expect(store.getRuns(ref)[75]?.status).toBe("completed");
+    expect(new Set(store.getRuns(ref).map((item) => item.id)).size).toBe(100);
+  });
+
+  it("keeps runs and exposes a failed older page for retry", async () => {
+    let fail = true;
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      if (!url.pathname.endsWith("/runs")) return api.fetch(input, init);
+      if (url.searchParams.has("cursor") && fail) {
+        return jsonResponse(
+          { status: 503, code: "internalError", title: "Unavailable", detail: "Page unavailable" },
+          503,
+        );
+      }
+      const older = url.searchParams.has("cursor");
+      return jsonResponse({
+        repo,
+        items: [run(older ? "old" : "new", "queued")],
+        exhausted: older,
+        ...(older ? {} : { next_cursor: "older" }),
+      });
+    };
+    store.loadCatalog(ref);
+    await settle();
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+    store.loadMoreRuns(ref);
+    await settle();
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual(["new"]);
+    expect(store.getSnapshot(ref)?.runsPage.problem).toMatchObject({ detail: "Page unavailable", retryable: true });
+    expect(store.getSnapshot(ref)?.error).toBeNull();
+    fail = false;
+    store.loadMoreRuns(ref);
+    await settle();
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual(["new", "old"]);
+    expect(store.getSnapshot(ref)?.runsPage.problem).toBeNull();
+  });
+
   it("reads the catalog once per repository and runs only for the selected workflow", async () => {
     store.loadCatalog(ref);
     store.loadCatalog(ref);

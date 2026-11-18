@@ -1,7 +1,7 @@
 <script lang="ts">
   import RepoPrivateIcon from "./shared/RepoPrivateIcon.svelte";
   import { EmptyState } from "@kenn-io/kit-ui";
-  import { ScrollBox } from "@kenn-io/kit-ui";
+  import { ScrollBox, showListTop } from "@kenn-io/kit-ui";
   import { onDestroy, untrack } from "svelte";
   import type { Snippet } from "svelte";
   import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
@@ -42,6 +42,12 @@
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import { repositoryKeyFromWire, type RepositoryKey } from "../api/repository-key.js";
+
+  let viewport = $state<HTMLDivElement>();
+  $effect(() => {
+    void activity.getActivityScopeKey();
+    if (viewport) showListTop(viewport);
+  });
 
   interface Props {
     children?: Snippet;
@@ -790,7 +796,7 @@
   }
 </script>
 
-<ScrollBox label="Threaded activity">
+<ScrollBox label="Threaded activity" bind:viewport>
 <div
   class="threaded-view"
   class:threaded-view--compact={compact}
@@ -992,7 +998,7 @@
     <EmptyState title="No activity found" />
   {/if}
 </div>
-{@render children?.()}
+{#if mountedEntryCount >= totalEntryCount}{@render children?.()}{/if}
 </ScrollBox>
 
 <style>

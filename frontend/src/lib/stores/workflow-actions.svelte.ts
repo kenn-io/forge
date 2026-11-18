@@ -1,4 +1,7 @@
 import { Effect } from "effect";
+import type { ListProblem } from "@kenn-io/kit-ui";
+import { isTransientPickerReadFailure } from "../api/retry-policy.js";
+import { readErrorMessage } from "./sync.svelte.js";
 
 import type { RepoRefResponse } from "../api/generated/models/repoRefResponse.js";
 import type { WorkflowCatalogResponse } from "../api/generated/models/workflowCatalogResponse.js";
@@ -61,6 +64,7 @@ export interface WorkflowRunsPageState {
   readonly nextCursor: string | null;
   readonly exhausted: boolean;
   readonly loadingMore: boolean;
+  readonly problem: ListProblem | null;
 }
 
 export interface WorkflowActionsSnapshot {
@@ -155,7 +159,7 @@ function emptySnapshot(ref: WorkflowRepositoryRef): WorkflowActionsSnapshot {
     catalog: null,
     selectedWorkflow: null,
     runs: [],
-    runsPage: { nextCursor: null, exhausted: false, loadingMore: false },
+    runsPage: { nextCursor: null, exhausted: false, loadingMore: false, problem: null },
     jobs: {},
     jobErrors: {},
     loading: notLoading,
@@ -325,7 +329,9 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   }
 
   function readRuns(ref: WorkflowRepositoryRef, workflowId: string, cursor: string | undefined): void {
-    const dispatchAtStart = snapshotFor(ref).dispatches[workflowId];
+    const initial = snapshotFor(ref);
+    const dispatchAtStart = initial.dispatches[workflowId];
+    const targetCount = cursor === undefined ? Math.min(300, initial.runs.length) : 0;
     const generation =
       cursor === undefined ? nextGeneration(ref, "runs") : (generations.get(workflowRepositoryKey(ref))?.runs ?? 0);
     run(
@@ -333,29 +339,54 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
       "GET workflow runs",
       ref,
       (api) =>
-        api
-          .execute("GET workflow runs", (signal) =>
-            providerUsesHostRoute(ref)
-              ? api.client.WorkflowsService.listWorkflowRunsOnHost(
-                  providerHostRouteParams(ref),
-                  { workflow_id: workflowId, per_page: runsPageSize, ...(cursor !== undefined && { cursor }) },
-                  { signal },
-                )
-              : api.client.WorkflowsService.listWorkflowRuns(
-                  providerRouteParams(ref),
-                  { workflow_id: workflowId, per_page: runsPageSize, ...(cursor !== undefined && { cursor }) },
-                  { signal },
-                ),
-          )
-          .pipe(Effect.flatMap((response) => verifyRepository(ref, response))),
+        Effect.gen(function* () {
+          let next = cursor;
+          let items: WorkflowRun[] = [];
+          let page;
+          do {
+            page = yield* api
+              .execute("GET workflow runs", (signal) =>
+                providerUsesHostRoute(ref)
+                  ? api.client.WorkflowsService.listWorkflowRunsOnHost(
+                      providerHostRouteParams(ref),
+                      { workflow_id: workflowId, per_page: runsPageSize, ...(next !== undefined && { cursor: next }) },
+                      { signal },
+                    )
+                  : api.client.WorkflowsService.listWorkflowRuns(
+                      providerRouteParams(ref),
+                      { workflow_id: workflowId, per_page: runsPageSize, ...(next !== undefined && { cursor: next }) },
+                      { signal },
+                    ),
+              )
+              .pipe(Effect.flatMap((response) => verifyRepository(ref, response)));
+            const seen = new Set(items.map((item) => item.id));
+            for (const item of page.items ?? []) {
+              if (seen.has(item.id)) continue;
+              seen.add(item.id);
+              items.push(item);
+            }
+            next = page.next_cursor || undefined;
+          } while (cursor === undefined && items.length < targetCount && next && !page.exhausted);
+          return { ...page, items };
+        }),
       {
         onFailure: (error) => {
           if (!isCurrent(ref, "runs", generation)) return;
           update(ref, (snapshot) => ({
             ...snapshot,
-            error,
+            error: cursor === undefined ? error : snapshot.error,
             loading: { ...snapshot.loading, runs: false },
-            runsPage: { ...snapshot.runsPage, loadingMore: false },
+            runsPage: {
+              ...snapshot.runsPage,
+              loadingMore: false,
+              problem:
+                cursor === undefined
+                  ? snapshot.runsPage.problem
+                  : {
+                      detail: readErrorMessage(error, "Could not load runs."),
+                      retryable: isTransientPickerReadFailure(error),
+                    },
+            },
           }));
         },
         onSuccess: (page) => {
@@ -375,7 +406,12 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
                     ? mergeNamedRun(items, retainedRun).runs
                     : items
                   : [...snapshot.runs, ...items.filter((item) => !snapshot.runs.some((run) => run.id === item.id))],
-              runsPage: { nextCursor: page.next_cursor ?? null, exhausted: page.exhausted, loadingMore: false },
+              runsPage: {
+                nextCursor: page.next_cursor ?? null,
+                exhausted: page.exhausted,
+                loadingMore: false,
+                problem: null,
+              },
               loading: { ...snapshot.loading, runs: false },
               error: null,
             };
@@ -398,7 +434,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
       ...current,
       selectedWorkflow: workflow,
       runs: [],
-      runsPage: { nextCursor: null, exhausted: false, loadingMore: false },
+      runsPage: { nextCursor: null, exhausted: false, loadingMore: false, problem: null },
       loading: { ...current.loading, runs: workflow !== null },
     }));
     if (workflow) readRuns(ref, workflow.id, undefined);
@@ -416,7 +452,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
       snapshot.runsPage.loadingMore
     )
       return;
-    update(ref, (current) => ({ ...current, runsPage: { ...current.runsPage, loadingMore: true } }));
+    update(ref, (current) => ({ ...current, runsPage: { ...current.runsPage, loadingMore: true, problem: null } }));
     readRuns(ref, snapshot.selectedWorkflow.id, cursor);
   }
 

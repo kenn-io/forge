@@ -8,7 +8,7 @@
   } from "../components/activityFilters.js";
   import FilterSectionsPanel from "../components/shared/FilterSectionsPanel.svelte";
   import LabelFilterMenu from "../components/shared/LabelFilterMenu.svelte";
-  import ListLoadMore from "../components/sidebar/ListLoadMore.svelte";
+  import ListEndItem from "../components/sidebar/ListEndItem.svelte";
   import AuthorFilterMenu from "../components/shared/AuthorFilterMenu.svelte";
   import { getGlobalRepo } from "../stores/filter.svelte.js";
   import { rememberedLabelChoices } from "../utils/label-filter.js";
@@ -791,7 +791,7 @@
       </div>
     {:else if activityPageLimit >= 500 && activity.canLoadOlderItems()}
       <div class="mobile-activity-older">
-        <ListLoadMore loading={activity.isLoadingOlderItems()} onclick={activity.loadOlderItems} label="Load older items" size="md" />
+        <ListEndItem rows={activity.getOlderItems()} more={activity.canLoadOlderItems()} idle={!activity.isActivityLoading()} label="older items" onmore={activity.loadOlderItems} />
       </div>
     {/if}
   </div>

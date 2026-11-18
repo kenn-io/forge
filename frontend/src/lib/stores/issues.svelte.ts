@@ -17,7 +17,7 @@ import type {
   Label,
   UnsetStarredParams,
 } from "../api/types.js";
-import { retryIdempotentRead } from "../api/retry-policy.js";
+import { isTransientPickerReadFailure, retryIdempotentRead } from "../api/retry-policy.js";
 import {
   canonicalProvider,
   providerDefaultHost,
@@ -520,9 +520,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         Effect.sync(() => {
           storeError = readErrorMessage(failure);
           loading = false;
-          if (paging.rollback(query, params)) {
-            showFlash(`Failed to load more issues: ${storeError}`, { tone: "danger" });
-          }
+          paging.rollback(query, params, { detail: storeError, retryable: isTransientPickerReadFailure(failure) });
         }),
       ),
     );
@@ -2184,6 +2182,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     isIssuesLoading,
     isIssueListCapped,
     isIssueListLoadingMore,
+    getMoreRows: () => paging,
     getIssuesError,
     getSelectedIssue,
     getIssueFilterStarred,

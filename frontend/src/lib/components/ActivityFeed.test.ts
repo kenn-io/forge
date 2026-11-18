@@ -213,6 +213,17 @@ vi.mock("../context.js", () => ({
       isActivityLoading: () => false,
       isActivityCapped: () => activityCapped.value,
       isItemActivityCapped: () => itemActivityCapped.value,
+      getActivityScopeKey: () => "scope",
+      getOlderItems: () => ({
+        loading: false,
+        problem: { detail: "unavailable", retryable: true },
+        retry: (more: () => void) => more(),
+      }),
+      getMoreActivity: () => ({
+        loading: loadingMore.value,
+        problem: loadingMore.value ? null : { detail: "unavailable", retryable: true },
+        retry: (more: () => void) => more(),
+      }),
       canLoadOlderItems: () => olderItemsAvailable.value,
       isLoadingOlderItems: () => false,
       loadOlderItems,
@@ -363,14 +374,23 @@ describe("ActivityFeed compact mode", () => {
     activityCapped.value = true;
     canLoadMore.value = true;
     loadingMore.value = pending;
+    if (pending)
+      vi.stubGlobal(
+        "IntersectionObserver",
+        class {
+          observe() {}
+          disconnect() {}
+        },
+      );
     const { container } = render(ActivityFeed);
     if (pending) {
-      expect(container.querySelector(".list-pagination button")?.hasAttribute("disabled")).toBe(true);
+      expect(container.textContent).toContain("Loading more events");
     } else {
-      await fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+      await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
       expect(loadMoreActivity).toHaveBeenCalledOnce();
     }
     expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
+    vi.unstubAllGlobals();
   });
 
   it("keeps older activity available when the loaded page has no matches", () => {
@@ -381,7 +401,7 @@ describe("ActivityFeed compact mode", () => {
     render(ActivityFeed);
     expect(screen.queryByText("No activity found")).toBeNull();
     expect(screen.getByText("No matches in loaded activity")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 
   it("shows the event ceiling notice after paging ends", () => {
@@ -397,7 +417,7 @@ describe("ActivityFeed compact mode", () => {
     viewMode.value = "threaded";
     render(ActivityFeed);
     expect(screen.getByText(/Item totals cover loaded items only/)).toBeTruthy();
-    await fireEvent.click(screen.getByRole("button", { name: "Load older items" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(loadOlderItems).toHaveBeenCalledOnce();
   });
 
@@ -407,7 +427,7 @@ describe("ActivityFeed compact mode", () => {
     viewMode.value = "flat";
     render(ActivityFeed);
     expect(screen.queryByText(/Item totals cover loaded items only/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Load older items" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
   it("offers to retry a failed thread history load", async () => {
@@ -686,7 +706,9 @@ describe("ActivityFeed compact mode", () => {
     const trigger = screen.getByRole("button", { name: /^Filters/ });
     expect(trigger.textContent).toContain("1");
     await fireEvent.click(trigger);
-    expect(screen.getByRole("button", { name: "Unassigned , excluded" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Unassigned , left out of results" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
 
     await fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
     expect(unassigned.value).toBeUndefined();

@@ -10,10 +10,9 @@ Use **Threaded** mode to group events under their pull request or issue. This is
 usually the quieter view because a busy discussion takes one row. Use **Flat**
 mode when exact event order matters.
 
-Threaded Activity loads up to 5,000 pull requests and issues at a time. When
-more match, select **Load older items** at the bottom of the list. On a phone,
-the list loads as you scroll through the first 500 items, then offers the same
-button. Changing the time range, repository, or search starts a new list;
+Threaded Activity loads older pull requests and issues as you scroll. Flat Activity
+loads events as you scroll, up to 5,000. If a request fails, use **Retry** when
+available. Changing the time range, repository, or search starts a new list;
 Activity updates refresh the number of pages you loaded. Newly active items can
 move older items onto the next page.
 

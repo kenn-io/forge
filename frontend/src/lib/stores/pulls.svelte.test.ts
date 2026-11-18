@@ -168,14 +168,12 @@ describe("pulls store display order", () => {
     store.loadMorePulls();
     await vi.waitFor(() => expect(store.isLoadingMore()).toBe(false));
     expect(store.getError()).not.toBeNull();
-    expect(getFlash()).toMatchObject({
-      message: `Failed to load more pull requests: ${store.getError()}`,
-      tone: "danger",
-    });
+    expect(store.getMoreRows().problem).toMatchObject({ retryable: false });
+    expect(getFlash()).toBeNull();
     expect(store.getPulls()).toHaveLength(200);
     await loadPulls(store);
     expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 200 }, expect.anything());
-    store.loadMorePulls();
+    store.getMoreRows().retry(store.loadMorePulls);
     expect(store.isLoadingMore()).toBe(true);
     await vi.waitFor(() => expect(store.getPulls()).toHaveLength(400));
     expect(store.isLoadingMore()).toBe(false);

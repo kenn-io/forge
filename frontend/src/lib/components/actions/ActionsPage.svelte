@@ -6,6 +6,7 @@
     FilterDropdown,
     PageHeader,
     ScrollBox,
+    showListTop,
     SearchInput,
     SplitResizeHandle,
     type SplitResizeEvent,
@@ -74,6 +75,12 @@
   const snapshot = $derived(selectedRef ? workflowActions.getSnapshot(selectedRef) : null);
   const catalog = $derived(snapshot?.catalog ?? null);
   const selectedWorkflow = $derived(snapshot?.selectedWorkflow ?? null);
+  let runsViewport = $state<HTMLDivElement>();
+  $effect(() => {
+    void selectedRef;
+    void selectedWorkflow?.id;
+    if (runsViewport) showListTop(runsViewport);
+  });
   const showRepositoryRail = $derived(capableSummaries.length > 1 || unsupportedSummaries.length > 0);
 
   type RailSort = "name" | "activity";
@@ -510,7 +517,7 @@
             <h2 id="runs-title">Recent runs</h2>
             {#if snapshot}<Chip size="xs" tone="muted" uppercase={false}>{snapshot.runs.length}</Chip>{/if}
           </header>
-          <ScrollBox label="Recent workflow runs">
+          <ScrollBox label="Recent workflow runs" bind:viewport={runsViewport}>
             {#if snapshot?.error}
               <div class="workflow-data-error" role="alert">
                 <strong>Workflow data may be stale.</strong>
@@ -528,19 +535,11 @@
                 jobErrors={snapshot.jobErrors}
                 loadingJobs={snapshot.loading.jobs}
                 onexpand={expandRun}
+                rows={{ loading: snapshot.runsPage.loadingMore, problem: snapshot.runsPage.problem, retry: (more) => more() }}
+                more={!!snapshot.runsPage.nextCursor && !snapshot.runsPage.exhausted}
+                idle={!snapshot.loading.runs}
+                onmore={() => workflowActions.loadMoreRuns(selectedRef)}
               />
-              {#if snapshot.runsPage.nextCursor && !snapshot.runsPage.exhausted}
-                <div class="runs-pagination">
-                  <Button
-                    size="sm"
-                    surface="soft"
-                    disabled={snapshot.runsPage.loadingMore}
-                    onclick={() => workflowActions.loadMoreRuns(selectedRef)}
-                  >
-                    {snapshot.runsPage.loadingMore ? "Loading more runs…" : "Load more runs"}
-                  </Button>
-                </div>
-              {/if}
             {/if}
           </ScrollBox>
         </section>
@@ -800,12 +799,6 @@
     display: grid;
     justify-items: start;
     gap: var(--space-3);
-  }
-
-  .runs-pagination {
-    display: flex;
-    justify-content: center;
-    padding: var(--space-4);
   }
 
   .workflow-data-error {

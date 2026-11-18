@@ -44,7 +44,7 @@ Open **Pulls**, then select an item. The detail view combines description,
 discussion, CI, branch state, review state, changed files, and provider
 actions.
 
-In the Pulls and Issues sidebars, **Closed** and **All** load the 200 most recently active items; **Load more** fetches more, and browser-only filters apply to the loaded rows.
+In the Pulls and Issues sidebars, **Closed** and **All** load the 200 most recently active items; more load as you scroll, with Retry if a request fails, and browser-only filters apply to the loaded rows.
 
 Use the **View** menu to filter the timeline or compact rows. Open the file
 tree for line-by-line review. Comment, approve, mark ready, close, reopen, or
@@ -102,7 +102,7 @@ Actions is opt-in. Open **Settings → Visible modes**, enable **Actions**, and
 save. In **Actions**, choose a repository and a manual workflow, select a Git
 ref, complete its typed inputs, and run it.
 
-Recent runs show their status, jobs, and steps. Follow the provider link on a
+Recent runs show their status, jobs, and steps. Older runs load as you scroll; retryable failures offer **Retry**. Follow the provider link on a
 run to inspect its full logs. Pull requests also offer available workflows in
 the **Actions** menu: open same-repository pull requests start from the head
 branch, while fork and merged pull requests start from the target branch.

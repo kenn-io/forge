@@ -299,7 +299,7 @@ and back.
   stay in step; the TypeScript twin is `frontend/src/lib/utils/search-query.ts`
   (`internal/db/search_query.go::ParseSearchQuery`).
 - Activity excludes parents by their own fields; only included terms may match through child events.
-- The PR and Issues sidebars load Closed and All in pages of 200, ordered by recent activity; Load more grows the page.
+- The PR and Issues sidebars load Closed and All in pages of 200, ordered by recent activity; Scrolling grows the page; a retryable failure offers Retry.
 - Every PR, issue, and Activity filter applies on the server before the limit, so a bounded phone page
   never hides matches further down (maintainer decision). The browser re-checks loaded rows only so a
   failed refresh never shows rows from earlier filters (`frontend/src/lib/stores/pulls.svelte.ts::listQuery`).
@@ -778,7 +778,7 @@ Not every visibility control means "remove this entity entirely."
 
 ### Activity Snapshots And Paging
 
-- Flat Activity requests 200 events initially; event overflow offers Load more in 200-event increments through 5,000. Pending pages retain rows and a disabled control; the ceiling notice appears only after the final page succeeds.
+- Flat Activity requests 200 events initially; scrolling loads event overflow in 200-event increments through 5,000. Pending pages retain rows, and retryable failures offer Retry; the ceiling notice appears only after the final page succeeds.
 - Server filters, repositories, and ranges reset the flat page to 200; flat/threaded toggles and refreshes preserve its size. Flat authoritative snapshots replace the event page; threaded snapshots retain cached children. Cached repository rows are previews until the new page arrives.
 - Flat status counts cover loaded subjects and carry `+` when either events or parent summaries overflow. Browser-only filters apply to loaded events; an empty filtered page says `No matches in loaded activity` while more event pages remain.
 - Search finds event-matched parents before the subject page limit. Loading older subjects uses

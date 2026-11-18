@@ -182,7 +182,7 @@ describe("issues store paging", () => {
     expect(lastQuery()).not.toHaveProperty("labels");
   });
 
-  it("reports a failed load more through the issues error and flash", async () => {
+  it("shows a failed page and clears it on a new filter", async () => {
     const rows = Array.from({ length: 400 }, (_, index) => issue(index + 1, "alice"));
     const get = vi.fn(async (query?: IssuesParams) => rows.slice(0, query?.limit));
     const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
@@ -197,11 +197,12 @@ describe("issues store paging", () => {
     store.loadMoreIssues();
     await vi.waitFor(() => expect(store.isIssueListLoadingMore()).toBe(false));
     expect(store.getIssuesError()).not.toBeNull();
-    expect(getFlash()).toMatchObject({
-      message: `Failed to load more issues: ${store.getIssuesError()}`,
-      tone: "danger",
-    });
+    expect(store.getMoreRows().problem).toMatchObject({ retryable: false });
+    expect(getFlash()).toBeNull();
     expect(store.getIssues()).toHaveLength(200);
+    store.setIssueFilterState("all");
+    await loadIssues(store);
+    expect(store.getMoreRows().problem).toBeNull();
   });
 });
 

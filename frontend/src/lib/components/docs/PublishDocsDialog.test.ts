@@ -41,6 +41,16 @@ describe("PublishDocsDialog", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
+  test("closes on Escape when idle", async () => {
+    const onClose = vi.fn();
+    render(PublishDocsDialogTestHarness, {
+      props: { runtime, open: true, folderID: "notes", api: fakeApi(), onClose, onPublished: () => {} },
+    });
+    await screen.findByRole("textbox", { name: /commit message/i });
+    await fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   test("renders the suggested message and the file list once preview loads", async () => {
     render(PublishDocsDialogTestHarness, {
       props: {

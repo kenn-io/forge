@@ -17,7 +17,7 @@ import type {
   Label,
   UnsetStarredParams,
 } from "../api/types.js";
-import { isRetryableListFailure, retryIdempotentRead } from "../api/retry-policy.js";
+import { retryIdempotentRead } from "../api/retry-policy.js";
 import {
   canonicalProvider,
   providerDefaultHost,
@@ -520,7 +520,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         Effect.sync(() => {
           storeError = readErrorMessage(failure);
           loading = false;
-          paging.rollback(query, params, { detail: storeError, retryable: isRetryableListFailure(failure) });
+          paging.rollback(query, params, { detail: storeError, retryable: true });
         }),
       ),
     );

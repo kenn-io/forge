@@ -27,7 +27,6 @@
     ScrollBox,
     Timeline,
     TimelineItem,
-    type ListProblem,
     type TypeaheadOption,
     type TimelineTone,
   } from "@kenn-io/kit-ui";
@@ -87,7 +86,6 @@
   );
   let searchInput = $state("");
   let activityPageLimit = $state(30);
-  let batchProblem = $state<ListProblem | null>(null);
   let filtersExpanded = $state(false);
   let inboxRoot = $state<HTMLElement | null>(null);
   // Scroll offset parked when a card opened a detail, applied once cards are
@@ -98,7 +96,6 @@
   $effect(() => {
     const scope = activity.getActivityScopeKey();
     if (previousScope !== undefined && scope !== previousScope) {
-      batchProblem = null;
       pendingScrollTop = null;
       const viewport = scrollViewportOf(inboxRoot);
       if (viewport) viewport.scrollTop = 0;
@@ -429,20 +426,14 @@
   }
 
   function loadMoreActivity(): void {
-    const previous = activityPageLimit;
-    batchProblem = null;
     activityPageLimit = Math.min(activityPageLimit + 30, 500);
     activity.setActivityPageLimit(activityPageLimit);
-    activity.loadActivity(false, (problem) => {
-      activityPageLimit = previous;
-      activity.setActivityPageLimit(previous);
-      batchProblem = problem;
-    });
+    activity.loadActivity();
   }
 
   const autoloadMoreActivity: Attachment<HTMLElement> = (node) => {
     if (typeof IntersectionObserver === "undefined") {
-      if (paginationArmed && !batchProblem) {
+      if (paginationArmed) {
         paginationArmed = false;
         loadMoreActivity();
       }
@@ -451,7 +442,7 @@
 
     const root = node.closest<HTMLElement>(".kit-scrollbox__viewport");
     const armPagination = () => {
-      if (paginationArmed || activity.isActivityLoading() || batchProblem) return;
+      if (paginationArmed || activity.isActivityLoading()) return;
       paginationArmed = true;
       if (!paginationIntersecting) return;
       paginationArmed = false;
@@ -469,7 +460,7 @@
           (entries) => {
             const nextIntersecting = entries[0]?.isIntersecting === true;
             paginationIntersecting = nextIntersecting;
-            if (nextIntersecting && paginationArmed && !batchProblem) {
+            if (nextIntersecting && paginationArmed) {
               paginationArmed = false;
               loadMoreActivity();
             }
@@ -806,9 +797,7 @@
         aria-live="polite"
         {@attach autoloadMoreActivity}
       >
-        {#if batchProblem}
-          <ListEndItem rows={{ loading: false, problem: batchProblem, retry: (more) => more() }} more={true} idle={false} label="activity" onmore={loadMoreActivity} />
-        {:else if activity.isActivityLoading()}Loading more…{/if}
+        {#if activity.isActivityLoading()}Loading more…{/if}
       </div>
     {:else if activityPageLimit >= 500 && activity.canLoadOlderItems()}
       <div class="mobile-activity-older">

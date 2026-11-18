@@ -104,11 +104,7 @@ const setShowNotifications = vi.hoisted(() =>
   }),
 );
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
-const loadActivity = vi.hoisted(() =>
-  vi.fn(
-    async (_force?: boolean, _onBatchFailure?: (problem: { detail: string; retryable: boolean }) => void) => undefined,
-  ),
-);
+const loadActivity = vi.hoisted(() => vi.fn(async (_force?: boolean) => undefined));
 const setFullEventProjectionRequired = vi.hoisted(() => vi.fn());
 const setActivityPageLimit = vi.hoisted(() => vi.fn());
 const loadOlderItems = vi.hoisted(() => vi.fn());
@@ -219,7 +215,7 @@ vi.mock("../context.js", () => ({
       isLoadingOlderItems: () => false,
       loadOlderItems,
       setActivityFilterTypes: vi.fn(),
-      setActivitySearch: vi.fn(),
+      setActivitySearch: vi.fn((value: string | undefined) => scrollScope.set("scope", value ?? "initial")),
       setActivityAuthor,
       setTimeRange: vi.fn(),
       setEnabledEvents,
@@ -475,6 +471,9 @@ describe("MobileActivityView branch activity", () => {
     viewport.scrollTop = 250;
     scrollScope.set("scope", "filtered");
     await waitFor(() => expect(viewport.scrollTop).toBe(0));
+    viewport.scrollTop = 250;
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Search activity" }), { target: { value: "needle" } });
+    await waitFor(() => expect(viewport.scrollTop).toBe(0));
   });
 
   it("autoloads one direct-activity chunk when the end sentinel enters the viewport", async () => {
@@ -501,22 +500,6 @@ describe("MobileActivityView branch activity", () => {
     await fireEvent.touchStart(viewport!);
     expect(setActivityPageLimit).toHaveBeenLastCalledWith(90);
     expect(loadActivity).toHaveBeenCalledTimes(3);
-  });
-
-  it("retries a failed phone batch and continues scrolling", async () => {
-    const observed = stubIntersectionObserver();
-    activityCapped.value = true;
-    const { container } = render(MobileActivityView, { props: { onSelectItem } });
-    const sentinel = container.querySelector(".mobile-activity-loading-sentinel")!;
-    loadActivity.mockImplementationOnce(async (_force, onFailure) => {
-      onFailure?.({ detail: "unavailable", retryable: true });
-    });
-    observed.get(sentinel)!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
-    expect(setActivityPageLimit).toHaveBeenLastCalledWith(30);
-    await fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
-    expect(setActivityPageLimit).toHaveBeenLastCalledWith(60);
-    await fireEvent.wheel(sentinel.closest(".kit-scrollbox__viewport")!);
-    expect(setActivityPageLimit).toHaveBeenLastCalledWith(90);
   });
 
   it("renders the next parent chunk after autoloading it", async () => {

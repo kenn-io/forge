@@ -25,16 +25,6 @@ export function isTransientPickerReadFailure(failure: unknown): boolean {
   return failure instanceof ApiProblemError && [502, 503, 504].includes(failure.httpStatus ?? 0);
 }
 
-const isRetryableListStatus = (status = 0) => status === 429 || (status >= 500 && status < 600);
-
-export function isRetryableListFailure(failure: unknown): boolean {
-  if (isTransientFailure(failure)) {
-    if (failure.cause instanceof InvalidGeneratedErrorResponse) return isRetryableListStatus(failure.cause.status);
-    return !(failure.cause instanceof SyntaxError);
-  }
-  return failure instanceof ApiProblemError && isRetryableListStatus(failure.httpStatus);
-}
-
 export const retryIdempotentRead = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   isRetryable: (failure: unknown) => boolean = isTransientFailure,

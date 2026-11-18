@@ -317,6 +317,26 @@ describe("activity subject paging", () => {
     expect(bulkReads).toBe(1);
   });
 
+  it("loads the subject after the first 5000", async () => {
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      return options?.params?.query?.subject_before === "older"
+        ? subjectPage([5001], "")
+        : subjectPage(
+            Array.from({ length: 5000 }, (_, i) => i + 1),
+            "older",
+          );
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(false));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(5000));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(5001));
+    expect(store.getItemActivity().at(-1)?.item_number).toBe(5001);
+    expect(store.canLoadOlderItems()).toBe(false);
+  });
+
   it("refreshes cached event labels when an older parent arrives", async () => {
     const label = { name: "bug", color: "d73a4a", is_default: false };
     const event = { ...threadEvent("comment:2", 2), labels: [label] };
@@ -1442,7 +1462,7 @@ describe("flat activity paging", () => {
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
     expect(store.getItemActivity()).toHaveLength(1);
     expect(store.isLoadingMoreActivity()).toBe(false);
-    expect(store.getMoreActivity().problem).toMatchObject({ detail: "unavailable", retryable: false });
+    expect(store.getMoreActivity().problem).toMatchObject({ detail: "unavailable", retryable: true });
     expect(getFlash()).toBeNull();
     const requestsBeforeRetry = get.mock.calls.filter(([path]) => path === "/activity").length;
     fail = false;
@@ -4374,26 +4394,6 @@ describe("activity store author candidates", () => {
 });
 
 describe("activity store projection scope", () => {
-  it("reports a failed phone batch without replacing the loaded activity", async () => {
-    let fail = false;
-    const get = vi.fn(async (path: string) => {
-      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
-      if (fail) return { error: { detail: "unavailable" }, response: new Response(null, { status: 500 }) };
-      return { data: { items: [], item_activity: [itemActivity(7)], capped: true }, error: null };
-    });
-    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
-    store.setActivityPageLimit(30);
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(1));
-    fail = true;
-    store.setActivityPageLimit(60);
-    const onFailure = vi.fn();
-    store.loadActivity(false, onFailure);
-    await vi.waitFor(() => expect(onFailure).toHaveBeenCalledWith({ detail: "unavailable", retryable: true }));
-    expect(store.getItemActivity()).toHaveLength(1);
-    expect(store.getActivityError()).toBeNull();
-  });
-
   it("keeps the scroll scope when page depth grows and changes it for filters", () => {
     const store = createActivityStore({ client: fakeClient });
     store.setActivityPageLimit(30);

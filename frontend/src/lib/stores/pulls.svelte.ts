@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { reuseUnchanged } from "../utils/reuse-unchanged.js";
 import { executeGeneratedApiRequest, GeneratedApi } from "../api/generated-api.js";
 import { TransientTransportError, type ApiProblemError } from "../api/effect-errors.js";
-import { isRetryableListFailure, retryIdempotentRead } from "../api/retry-policy.js";
+import { retryIdempotentRead } from "../api/retry-policy.js";
 import { GeneratedProblemResponse } from "../api/runtime.js";
 import type { PullRequest, PullsParams, UnsetStarredParams } from "../api/types.js";
 import type { VisiblePullRef } from "../api/generated/models/visiblePullRef.js";
@@ -704,7 +704,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
         Effect.sync(() => {
           storeError = readErrorMessage(failure);
           loading = false;
-          paging.rollback(query, params, { detail: storeError, retryable: isRetryableListFailure(failure) });
+          paging.rollback(query, params, { detail: storeError, retryable: true });
         }),
       ),
     );

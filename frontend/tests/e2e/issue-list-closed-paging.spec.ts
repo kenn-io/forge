@@ -51,6 +51,15 @@ test("Closed issues load bounded pages and reach the end of the history", async 
   await expect(row300).toBeInViewport();
   await scrollUntil("450 issues");
   await expect(page.locator(".sidebar-group-header__count")).toHaveText("450");
+  const search = page.getByRole("searchbox", { name: "Search issues" });
+  await search.fill("300");
+  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(0);
+  await search.fill("");
+  await expect.poll(() => viewport.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+  await viewport.evaluate((node) => {
+    node.scrollTop = node.scrollHeight / 2;
+  });
+  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Select repository: Global" }).click();
   await page
     .getByRole("listbox", { name: "Repositories" })

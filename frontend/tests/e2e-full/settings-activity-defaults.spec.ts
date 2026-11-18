@@ -81,7 +81,7 @@ test("Activity filter defaults save to TOML and apply in a new browser session",
       );
     }
     // The saved Hide queued for merge and Hide drafts defaults show as excluded condition rows.
-    for (const name of [/^Merge queued\b.*excluded$/, /^Draft\b.*excluded$/]) {
+    for (const name of [/^Merge queued\b.*left out of results$/, /^Draft\b.*left out of results$/]) {
       await expect(freshPage.getByRole("button", { name })).toHaveAttribute("aria-pressed", "true");
     }
   } finally {

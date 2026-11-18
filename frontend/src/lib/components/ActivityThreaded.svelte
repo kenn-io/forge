@@ -46,6 +46,7 @@
   interface Props {
     viewport?: HTMLDivElement | undefined;
     mountedCount?: number;
+    totalEntryCount?: number;
     children?: Snippet;
     items: ActivityItem[];
     itemActivity?: ActivitySubject[];
@@ -79,6 +80,7 @@
   let {
     viewport = $bindable(),
     mountedCount = $bindable(0),
+    totalEntryCount = $bindable(0),
     children,
     items,
     itemActivity = [],
@@ -389,7 +391,9 @@
   const progressiveMountBatchSize = 25;
   const mountController = createProgressiveMountController({ batchSize: progressiveMountBatchSize });
   let lastMountProjectionKey = "";
-  const totalEntryCount = $derived(grouped.reduce((count, group) => count + group.items.length, 0));
+  $effect(() => {
+    totalEntryCount = grouped.reduce((count, group) => count + group.items.length, 0);
+  });
   const visibleGrouped = $derived.by(() => {
     let remaining = mountedCount;
     const visible: RepoGroup[] = [];

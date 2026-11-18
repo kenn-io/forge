@@ -80,6 +80,15 @@ test("Closed loads bounded pages and reaches the end of the history", async ({ p
   await scrollUntil("450 PRs");
   expect(limits.at(-1)).toBe(600);
   await expect(page.locator(".sidebar-group-header__count")).toHaveText("450");
+  const search = page.getByRole("searchbox", { name: "Search PRs" });
+  await search.fill("300");
+  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(0);
+  await search.fill("");
+  await expect.poll(() => viewport.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+  await viewport.evaluate((node) => {
+    node.scrollTop = node.scrollHeight / 2;
+  });
+  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
   await page.getByRole("button", { name: "Select repository: Global" }).click();
   await page
     .getByRole("listbox", { name: "Repositories" })

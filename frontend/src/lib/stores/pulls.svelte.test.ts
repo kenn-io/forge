@@ -168,7 +168,7 @@ describe("pulls store display order", () => {
     store.loadMorePulls();
     await vi.waitFor(() => expect(store.isLoadingMore()).toBe(false));
     expect(store.getError()).not.toBeNull();
-    expect(store.getMoreRows().problem).toMatchObject({ retryable: false });
+    expect(store.getMoreRows().problem).toMatchObject({ retryable: true });
     expect(getFlash()).toBeNull();
     expect(store.getPulls()).toHaveLength(200);
     await loadPulls(store);
@@ -184,7 +184,7 @@ describe("pulls store display order", () => {
     );
     store.loadMorePulls();
     await vi.waitFor(() => expect(store.isLoadingMore()).toBe(false));
-    expect(store.getMoreRows().problem).toMatchObject({ retryable: false });
+    expect(store.getMoreRows().problem).toMatchObject({ retryable: true });
     store.setFilterState("all");
     store.loadPulls();
     expect(store.getMoreRows().problem).toBeNull();

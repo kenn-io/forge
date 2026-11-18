@@ -29,19 +29,28 @@ const routeSubjects = (page: Page, first: number, older: number) =>
     });
   });
 
-test("threaded activity scrolls past 5,000 subjects", async ({ page }) => {
-  test.setTimeout(240_000);
+test("threaded activity scrolls to older subjects", async ({ page }) => {
   await mockApi(page);
-  await routeSubjects(page, 5000, 1);
+  await routeSubjects(page, 51, 1);
   await page.goto("/?view=threaded");
   const viewport = page.getByRole("region", { name: "Threaded activity" });
-  await expect(page.getByText("Pull request 5000", { exact: true })).toBeAttached({ timeout: 180_000 });
+  await expect(page.getByText("Pull request 51", { exact: true })).toBeAttached();
+  const olderRequest = page.waitForRequest(
+    (request) => new URL(request.url()).searchParams.get("subject_before") === "older",
+  );
   await expect(async () => {
     await viewport.evaluate((node) => {
       node.scrollTop = node.scrollHeight;
     });
-    await expect(page.getByText("Pull request 5001", { exact: true })).toBeVisible();
-  }).toPass({ timeout: 100_000 });
+    await expect(page.getByText("Pull request 52", { exact: true })).toBeVisible();
+  }).toPass();
+  await olderRequest;
+  await viewport.evaluate((node) => {
+    node.scrollTop = 300;
+  });
+  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  await page.getByRole("searchbox", { name: "Search activity" }).fill("needle");
+  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(0);
 });
 
 test("returns to a loaded older activity item", async ({ page }) => {
@@ -63,8 +72,7 @@ test("returns to a loaded older activity item", async ({ page }) => {
   await expect(older).toBeInViewport();
 });
 
-test("flat activity scrolls to its 5,000 event ceiling", async ({ page }) => {
-  test.setTimeout(120_000);
+test("flat activity scrolls to the next page", async ({ page }) => {
   await mockApi(page);
   await page.route("**/api/v1/activity**", async (route) => {
     const url = new URL(route.request().url());
@@ -73,7 +81,7 @@ test("flat activity scrolls to its 5,000 event ceiling", async ({ page }) => {
     await route.fulfill({
       json: {
         items: Array.from({ length: limit }, (_, i) => event(i + 1)),
-        capped: true,
+        capped: limit < 400,
         item_activity: [],
         item_activity_capped: false,
       },
@@ -81,10 +89,19 @@ test("flat activity scrolls to its 5,000 event ceiling", async ({ page }) => {
   });
   await page.goto("/?view=flat");
   const viewport = page.getByRole("region", { name: "Activity feed" });
+  await expect(page.getByText("Pull request 200", { exact: true })).toBeAttached();
+  const nextPage = page.waitForRequest((request) => new URL(request.url()).searchParams.get("limit") === "400");
   await expect(async () => {
     await viewport.evaluate((node) => {
       node.scrollTop = node.scrollHeight;
     });
-    await expect(page.getByText(/Showing most recent 5,000 events/)).toBeVisible({ timeout: 300 });
-  }).toPass({ timeout: 100_000 });
+    await expect(page.getByText("Pull request 400", { exact: true })).toBeVisible({ timeout: 300 });
+  }).toPass();
+  await nextPage;
+  await viewport.evaluate((node) => {
+    node.scrollTop = 300;
+  });
+  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  await page.getByRole("searchbox", { name: "Search activity" }).fill("needle");
+  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(0);
 });

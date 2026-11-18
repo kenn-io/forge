@@ -2,7 +2,7 @@ import { Effect, Result } from "effect";
 import type { AppRuntime } from "../app/runtime.js";
 import type { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
-import { isRetryableListFailure, retryIdempotentRead } from "../api/retry-policy.js";
+import { retryIdempotentRead } from "../api/retry-policy.js";
 import type { ListProblem } from "@kenn-io/kit-ui";
 import type {
   ActivityItem,
@@ -1428,7 +1428,6 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     generation: number,
     scope: string,
     page?: { cursor: string; depth: number },
-    onBatchFailure?: (problem: ListProblem) => void,
   ) {
     const ownsProjection = () =>
       page
@@ -1445,13 +1444,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       Effect.tapError((failure) =>
         Effect.sync(() => {
           if (!ownsProjection()) return;
-          const problem = { detail: readErrorMessage(failure), retryable: isRetryableListFailure(failure) };
+          const problem = { detail: readErrorMessage(failure), retryable: true };
           if (page) olderItemsProblem = problem;
-          else if (onBatchFailure) {
-            loading = false;
-            storeError = null;
-            onBatchFailure(problem);
-          } else {
+          else {
             loading = false;
             if (!flatPaging.rollback(activityPageQuery(params), undefined, problem)) storeError = problem.detail;
           }
@@ -1725,7 +1720,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (initialized) retainedFeedStale = true;
   }
 
-  function loadActivity(forceAuthors = false, onBatchFailure?: (problem: ListProblem) => void): void {
+  function loadActivity(forceAuthors = false): void {
     retainedFeedStale = false;
     invalidatePagedActivityRequests();
     const generation = pagedActivityGeneration;
@@ -1733,11 +1728,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     restoreRepositoryActivity(params);
     const scope = activityProjectionScope(params);
     loadActivityAuthors(forceAuthors || authorsLoading);
-    runtime.runCommand(loadActivityEffect(params, generation, scope, undefined, onBatchFailure), {
+    runtime.runCommand(loadActivityEffect(params, generation, scope), {
       operation: "load activity",
       safeContext: {},
       onFailure: (failure) => {
-        if (onBatchFailure || !ownsForegroundSnapshot(generation, scope)) return;
+        if (!ownsForegroundSnapshot(generation, scope)) return;
         storeError = readErrorMessage(failure);
         loading = false;
       },

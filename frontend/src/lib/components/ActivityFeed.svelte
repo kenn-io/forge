@@ -60,6 +60,7 @@
   let flatViewport = $state<HTMLDivElement>();
   let threadedViewport = $state<HTMLDivElement>();
   let mountedCount = $state(0);
+  let totalEntryCount = $state(0);
   let pendingPosition = $state<ReturnType<typeof activity.getScrollPosition>>();
   $effect(() => {
     const viewport = activity.getViewMode() === "threaded" ? threadedViewport : flatViewport;
@@ -77,7 +78,7 @@
       return;
     }
     const viewport = activity.getViewMode() === "threaded" ? threadedViewport : flatViewport;
-    if (!saved || !viewport || (activity.getViewMode() === "threaded" && mountedCount < saved.mounted)) return;
+    if (!saved || !viewport || activity.isActivityLoading() || (activity.getViewMode() === "threaded" && mountedCount < Math.min(saved.mounted, totalEntryCount))) return;
     pendingPosition = undefined;
     void tick().then(() => {
       viewport.scrollTop = saved.top;
@@ -542,6 +543,7 @@
       <ActivityThreaded
         bind:viewport={threadedViewport}
         bind:mountedCount
+        bind:totalEntryCount
         items={displayItems}
         itemActivity={visibleItemActivity}
         workspaceActivity={visibleWorkspaceActivity}

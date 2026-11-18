@@ -1,6 +1,5 @@
 import { Effect } from "effect";
 import { appendBatch, type ListProblem } from "@kenn-io/kit-ui";
-import { isRetryableListFailure } from "../api/retry-policy.js";
 import { readErrorMessage } from "./sync.svelte.js";
 
 import type { RepoRefResponse } from "../api/generated/models/repoRefResponse.js";
@@ -210,7 +209,6 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   let enabled = true;
   let snapshots = $state.raw<Readonly<Record<string, WorkflowActionsSnapshot>>>({});
   const generations = new Map<string, Generations>();
-  const listedRuns = new Map<string, Set<string>>();
   const executions = new Map<string, AppExecution<unknown, never>>();
   // Progress events can arrive before the POST response names the dispatch;
   // hold them until the cycle owns that dispatch id.
@@ -331,8 +329,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
 
   function readRuns(ref: WorkflowRepositoryRef, workflowId: string, cursor: string | undefined): void {
     const dispatchAtStart = snapshotFor(ref).dispatches[workflowId];
-    const key = workflowRepositoryKey(ref);
-    const count = listedRuns.get(key)?.size ?? 0;
+    const count = snapshotFor(ref).runs.length;
     const pages = cursor === undefined ? Math.min(6, Math.max(1, Math.ceil(count / runsPageSize))) : 1;
     const generation =
       cursor === undefined ? nextGeneration(ref, "runs") : (generations.get(workflowRepositoryKey(ref))?.runs ?? 0);
@@ -382,7 +379,7 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
                   ? snapshot.runsPage.problem
                   : {
                       detail: readErrorMessage(error, "Could not load runs."),
-                      retryable: isRetryableListFailure(error),
+                      retryable: true,
                     },
             },
           }));
@@ -396,24 +393,17 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
             const retainedRun = cycle?.kind === "succeeded" || cycle?.kind === "timed_out" ? cycle.run : undefined;
             const retainRun =
               retainedRun && (cycle !== dispatchAtStart || !items.some((run) => run.id === retainedRun.id));
-            const capped = cursor === undefined && count > pages * runsPageSize && !page.exhausted;
-            const boundary = snapshot.runs.findIndex((run) => run.id === items.at(-1)?.id);
-            const tail = capped ? snapshot.runs.slice(boundary >= 0 ? boundary + 1 : pages * runsPageSize) : [];
             const merged =
               cursor === undefined
-                ? appendBatch({ items }, { items: tail }, (run) => run.id).items
+                ? items
                 : appendBatch({ items: [...snapshot.runs] }, { items }, (run) => run.id).items;
-            const listed =
-              cursor === undefined && !capped ? new Set<string>() : (listedRuns.get(key) ?? new Set<string>());
-            for (const run of items) listed.add(run.id);
-            listedRuns.set(key, new Set(merged.filter((run) => listed.has(run.id)).map((run) => run.id)));
             const runs = cursor === undefined && retainRun ? mergeNamedRun(merged, retainedRun).runs : merged;
             return {
               ...snapshot,
               runs,
               runsPage: {
-                nextCursor: capped ? snapshot.runsPage.nextCursor : (page.next_cursor ?? null),
-                exhausted: capped ? snapshot.runsPage.exhausted : page.exhausted,
+                nextCursor: page.next_cursor ?? null,
+                exhausted: page.exhausted,
                 loadingMore: false,
                 problem: null,
               },
@@ -429,7 +419,6 @@ export function createWorkflowActionsStore(options: WorkflowActionsStoreOptions)
   function selectWorkflow(ref: WorkflowRepositoryRef, workflowId: string | null): void {
     if (!enabled) return;
     const snapshot = snapshotFor(ref);
-    listedRuns.delete(workflowRepositoryKey(ref));
     const workflow =
       workflowId === null
         ? null

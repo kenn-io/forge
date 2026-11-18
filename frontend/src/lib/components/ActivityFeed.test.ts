@@ -148,6 +148,10 @@ const canLoadMore = vi.hoisted(() => ({ value: false }));
 const loadingMore = vi.hoisted(() => ({ value: false }));
 const loadMoreActivity = vi.hoisted(() => vi.fn());
 const loadOlderItems = vi.hoisted(() => vi.fn());
+const savedPosition = vi.hoisted(() => ({
+  value: undefined as { scope: string; top: number; mounted: number } | undefined,
+}));
+const setScrollPosition = vi.hoisted(() => vi.fn());
 const involvesMe = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const unassigned = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
@@ -215,8 +219,8 @@ vi.mock("../context.js", () => ({
       isActivityCapped: () => activityCapped.value,
       isItemActivityCapped: () => itemActivityCapped.value,
       getActivityScopeKey: () => "scope",
-      getScrollPosition: () => undefined,
-      setScrollPosition: vi.fn(),
+      getScrollPosition: () => savedPosition.value,
+      setScrollPosition,
       getOlderItems: () => ({ loading: false, problem: null, retry: (more: () => void) => more() }),
       getMoreActivity: () => ({ loading: loadingMore.value, problem: null, retry: (more: () => void) => more() }),
       canLoadOlderItems: () => olderItemsAvailable.value,
@@ -338,6 +342,8 @@ describe("ActivityFeed compact mode", () => {
     loadingMore.value = false;
     loadMoreActivity.mockClear();
     loadOlderItems.mockClear();
+    savedPosition.value = undefined;
+    setScrollPosition.mockClear();
     selectedAuthor.value = undefined;
     setActivityAuthor.mockClear();
     setActivityFilterTypes.mockClear();
@@ -357,6 +363,18 @@ describe("ActivityFeed compact mode", () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it.each([80, 0])("restores a saved position when the threaded list shrinks to %i entries", async (count) => {
+    viewMode.value = "threaded";
+    savedPosition.value = { scope: "scope", top: 600, mounted: 100 };
+    items.value = Array.from({ length: count }, (_, i) => activityItem(String(i), { item_number: i + 1 }));
+    render(ActivityFeed, { props: { compact: false, onSelectItem: vi.fn() } });
+    const viewport = await screen.findByRole("region", { name: "Threaded activity" });
+    await vi.waitFor(() => expect(viewport.scrollTop).toBe(600));
+    viewport.scrollTop = 300;
+    await fireEvent.scroll(viewport);
+    expect(setScrollPosition).toHaveBeenLastCalledWith(300, count);
   });
 
   it("renders compact rows instead of the wide table", () => {

@@ -185,7 +185,7 @@ test.describe("Involves me standard filters", () => {
         const response = await excluded;
         expect(response.ok(), await response.text()).toBe(true);
         expect(new URL(response.url()).searchParams.get(filter.on)).toBeNull();
-        await expect(item).toHaveAccessibleName(/, excluded$/);
+        await expect(item).toHaveAccessibleName(/, left out of results$/);
         const storageKey = `kenn-forge:filters:${surface.key}:${filter.storage}`;
         await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), storageKey)).toBe("0");
 

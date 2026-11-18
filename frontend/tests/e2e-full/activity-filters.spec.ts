@@ -196,7 +196,7 @@ test.describe("activity feed filters", () => {
     await expect(issueBadges.first()).toBeVisible();
 
     await draft.click();
-    await expect(draft).toHaveAccessibleName(/, excluded$/);
+    await expect(draft).toHaveAccessibleName(/, left out of results$/);
     await expect(draftRows).toHaveCount(0, { timeout: 5_000 });
     await expect(issueBadges.first()).toBeVisible();
 
@@ -226,12 +226,12 @@ test.describe("activity feed filters", () => {
     await row.click();
     expect((await filtered).status()).toBe(200);
     await expect(page).toHaveURL(/hide_merge_queued=1/);
-    await expect(row).toHaveAccessibleName(/, excluded$/);
+    await expect(row).toHaveAccessibleName(/, left out of results$/);
 
     await page.reload();
     await waitForTable(page);
     await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
-    await expect(row).toHaveAccessibleName(/, excluded$/);
+    await expect(row).toHaveAccessibleName(/, left out of results$/);
     await page.keyboard.press("Escape");
     await page.getByTitle("Settings", { exact: true }).click();
     await page.getByRole("button", { name: "Back to app" }).click();
@@ -240,7 +240,7 @@ test.describe("activity feed filters", () => {
     await page.goto("/?view=flat");
     await waitForTable(page);
     await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
-    await expect(row).toHaveAccessibleName(/, excluded$/);
+    await expect(row).toHaveAccessibleName(/, left out of results$/);
     await page.getByRole("button", { name: "Reset filters" }).click();
     await expect(row).toHaveAttribute("aria-pressed", "false");
     await expect(page).toHaveURL(/hide_merge_queued=0/);

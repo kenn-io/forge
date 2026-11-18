@@ -204,6 +204,7 @@ func newReporter(opts Options, now time.Time) (*Reporter, error) {
 	}
 
 	base := posthog.Options{
+		Logger:      slog.New(slog.DiscardHandler),
 		Endpoint:    postHogEndpoint,
 		Application: applicationSlug,
 		EnvPrefix:   envPrefix,

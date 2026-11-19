@@ -24,9 +24,6 @@
   ];
 </script>
 
-<svelte:head>
-  <title>kenn-forge design system</title>
-</svelte:head>
 
 <div class="design-system-page">
   <div class="page-shell">

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { mobileWorkspaceDisplayName } from "../mobile/mobile-workspace-list.js";
+  import { publishWorkspaceTitle } from "../../app/tab-title.svelte.js";
   import ErrorShown from "../shared/ErrorShown.svelte";
   import { reportWorkspaceOpenError, reportWorkspaceOpened } from "../../app/telemetry.js";
   import { documentVisible } from "../../browser/document-visible.svelte.js";
@@ -408,6 +410,13 @@
   );
 
   let workspace = $state<Workspace | null>(null);
+  $effect(() => {
+    const name = workspace && workspace.id === workspaceId && workspace.fleet_host_key === workspaceHostKey
+      ? mobileWorkspaceDisplayName(workspace) : null;
+    const id = workspaceId;
+    const host = workspaceHostKey;
+    untrack(() => publishWorkspaceTitle(host, id, name));
+  });
   let workspaceReadinessGeneration = 0;
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
   let appliedRuntimeState:

@@ -148,6 +148,7 @@
   import { registerPRDetailActions } from "./lib/stores/keyboard/pr-detail-actions.js";
   import type { PRDetailActionInput } from "./lib/components/detail/keyboard-actions.js";
   import type { Context } from "./lib/stores/keyboard/types.js";
+  import { routeTabTitle, workspaceTitle } from "./lib/app/tab-title.svelte.js";
   import { repositoryKeyFromWire } from "./lib/api/repository-key.js";
 
   type DocsRouteState = {
@@ -945,6 +946,13 @@
 
   let drawerItem = $state<DrawerItem | null>(null);
   let activitySelectionRevealKey = $state(0);
+  const tabTitle = $derived.by(() => {
+    if (!appReady || onboardingActive) return "Forge";
+    const route = getRoute();
+    const workspaceName = route.page === "terminal" || route.page === "mobile-workspace-terminal" || route.page === "mobile-workspace-item"
+      ? workspaceTitle(route.hostKey, route.workspaceId) : undefined;
+    return routeTabTitle(route, { pull: stores?.detail.getDetail(), issue: stores?.issues.getIssueDetail(), activitySelection: drawerItem, workspaceName });
+  });
   // Owned here for the same reason drawerItem is: the Activity selection lives
   // in the page's query string, and only this component writes it.
   let commitItem = $state<ActivityCommitSelection | null>(null);
@@ -1224,6 +1232,8 @@
     return registerPRDetailActions(buildPRDetailInput);
   });
 </script>
+
+<svelte:head><title>{tabTitle}</title></svelte:head>
 
 <svelte:window onresize={updateViewportState} />
 

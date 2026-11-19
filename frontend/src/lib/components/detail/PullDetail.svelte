@@ -38,7 +38,6 @@
   } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
-    runLinkedRemoteWorkspaceQuickAction,
     runReturnedWorkspaceQuickAction,
     runWorkspaceQuickAction,
   } from "../../stores/workspace-quick-actions.js";
@@ -121,6 +120,7 @@
   import WorkspaceCreateSplitButton from "../workspace/WorkspaceCreateSplitButton.svelte";
   import { createDefaultWorkspaceTarget, type WorkspaceHostChoice } from "../../stores/workspace-target.svelte.js";
   import { createItemWorkspace, type ItemWorkspaceRequest } from "../../api/item-workspace.js";
+  import { runLinkedRemoteItemQuickAction } from "../../stores/bulk-quick-action.js";
   import WorkspaceHostAlternatives from "../workspace/WorkspaceHostAlternatives.svelte";
   import { ScrollBox } from "@kenn-io/kit-ui";
   import LabelPicker from "./LabelPicker.svelte";
@@ -171,7 +171,6 @@
   } from "./prTimelineFilter.js";
   import type { PullRequestRouteRef } from "../../routes.js";
   import {
-    hostKeyLabel,
     identityEquals,
     workspaceRoute,
     type InlineWorkspaceController,
@@ -2049,19 +2048,44 @@
     const { id: workspaceId, hostKey } = ref;
     closeActionMenu();
     if (hostKey !== undefined) {
-      // This Forge cannot see another machine's workspace status. When that
-      // machine reports the workspace gone or its setup failed, ask it for the
-      // item's workspace again, as a create does: it sets the workspace up again
-      // or makes a new one, then runs the action there.
+      const detail = detailStore.getDetail();
+      if (!detail) return;
       const clickedIdentity = $state.snapshot(itemIdentity);
-      runLinkedRemoteWorkspaceQuickAction(runtime, ref, "pull_request", action, hostKey, quickActionLeaf(), () => {
-        if (componentDestroyed || !identityEquals(clickedIdentity, $state.snapshot(itemIdentity))) return false;
-        createWorkspace(undefined, action, { hostKey, label: ref.hostLabel ?? hostKeyLabel(hostKey) });
-        return true;
-      });
-    } else {
-      runWorkspaceQuickAction(runtime, workspaceId, "pull_request", action, hostKey, undefined, quickActionLeaf());
+      const request: ItemWorkspaceRequest = {
+        kind: "pull",
+        repo: {
+          provider: clickedIdentity.provider,
+          platformHost: detail.platform_host,
+          repositoryKey: repositoryKeyFromWire(detail.repo),
+          owner: detail.repo_owner,
+          name: detail.repo_name,
+          repoPath: clickedIdentity.repoPath,
+        },
+        number: detail.merge_request.Number,
+      };
+      // A view with no pane beside the item opens the workspace the action
+      // ran in once it is known: its machine may replace the linked one.
+      const openWorkspace = inlineWorkspace
+        ? undefined
+        : (workspace: WorkspaceRefLite) => {
+            if (componentDestroyed || !identityEquals(clickedIdentity, $state.snapshot(itemIdentity))) return;
+            if (onOpenWorkspace) onOpenWorkspace(workspace.id, workspace.hostKey);
+            else navigate(workspaceRoute(workspace));
+          };
+      runLinkedRemoteItemQuickAction(
+        runtime,
+        clickedIdentity,
+        request,
+        { ...ref, hostKey },
+        "pull_request",
+        action,
+        quickActionLeaf(),
+        openWorkspace,
+      );
+      inlineWorkspace?.revealWorkspace();
+      return;
     }
+    runWorkspaceQuickAction(runtime, workspaceId, "pull_request", action, hostKey, undefined, quickActionLeaf());
     if (inlineWorkspace) inlineWorkspace.revealWorkspace();
     else if (onOpenWorkspace) onOpenWorkspace(workspaceId, hostKey);
     else navigate(workspaceRoute(ref));

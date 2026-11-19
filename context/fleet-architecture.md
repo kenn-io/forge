@@ -42,6 +42,10 @@ or remote workspace and session operations.
   machine when the workspace is remote. The item's detail lists only this Forge's workspaces, so
   the pane keeps a remote link until a local workspace replaces it or the remote one is deleted
   (`frontend/src/lib/stores/workspace-host.svelte.ts::reconcile`).
+- A quick action on an item linked to another machine's workspace launches there directly, as in a
+  local workspace. Only when that machine reports the workspace gone (404) or its setup failed (409)
+  is it asked for the item's workspace again; recoveries for one linked workspace run in order
+  (`frontend/src/lib/stores/bulk-quick-action.ts::runOnLinkedRemoteWorkspace`).
 - Devbox REST and terminal traffic must bypass environment proxies; worker bearer credentials
   belong only on the direct tailnet connection (`internal/server/devboxes.go::registerDevboxTerminalAPI`).
 - Devbox repository admission and launch context use GitHub's integer repository ID, the same ID

@@ -4819,6 +4819,35 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.queryByText("Launching Codex...")).toBeNull();
   });
 
+  it("reads a workspace that failed setup again once a quick action launch in it ends", async () => {
+    capturePollingIntervals([]);
+    let details = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: Request | URL | string) => {
+        const url = input instanceof Request ? input.url : String(input);
+        const path = new URL(url, "http://localhost").pathname;
+        if (path.endsWith("/workspaces/ws-1")) {
+          details += 1;
+          return Response.json({ ...workspaceResponse, status: details === 1 ? "error" : "ready" });
+        }
+        return Response.json({ workspaces: [] });
+      }),
+    );
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("button", { name: "Retry" });
+    expect(details).toBe(1);
+
+    // The launch's agent started but its prompt was not delivered, so the
+    // launch ends without a session.
+    quickActionLaunches.set("ws-1", { targetKey: "helper" });
+    await tick();
+    expect(details).toBe(1);
+    quickActionLaunches.delete("ws-1");
+    await waitFor(() => expect(details).toBe(2));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Retry" })).toBeNull());
+  });
+
   it.each(["creating", "deleting"])("handles delayed %s details after retry reaches ready", async (status) => {
     const events = installEventSourceRecorder();
     const oldDetail = deferred<Response>();

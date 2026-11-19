@@ -5,7 +5,12 @@ import type { AppRuntime } from "../app/runtime.js";
 import { reportWorkspaceOpened, reportWorkspaceOpenError } from "../app/telemetry.js";
 import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
 import type { WorkspaceRuntimeLaunchLeaf } from "../components/terminal/workspace-runtime-workflow.js";
-import { executeGeneratedApiRequest, executeOpaqueGeneratedApiRequest } from "../api/generated-api.js";
+import type { FleetSnapshotReads } from "../api/fleet-snapshot.js";
+import {
+  executeGeneratedApiRequest,
+  executeOpaqueGeneratedApiRequest,
+  type GeneratedApi,
+} from "../api/generated-api.js";
 import { ProblemCodes } from "../api/problems.js";
 import { showFlash } from "./flash.svelte.js";
 
@@ -71,12 +76,15 @@ export type QuickActionOutcome =
    * setup failed, so asking that machine for the item's workspace again can
    * recover where this launch could not.
    */
-  | { type: "failed"; reason: string; message: string; workspaceUnusable?: true };
+  | { type: "failed"; reason: string; message: string; workspaceUnusable?: "gone" | "setupFailed" };
 
 // Launches for one workspace run one after another, in the order requested.
 const launchQueues = new Map<string, Deferred.Deferred<void>>();
 
-function enqueueLaunch<A, R>(workspaceKey: string, launch: Effect.Effect<A, never, R>): Effect.Effect<A, never, R> {
+export function enqueueLaunch<A, R>(
+  workspaceKey: string,
+  launch: Effect.Effect<A, never, R>,
+): Effect.Effect<A, never, R> {
   return Effect.gen(function* () {
     const previous = launchQueues.get(workspaceKey);
     const done = yield* Deferred.make<void>();
@@ -243,14 +251,18 @@ function quickActionHandoff(
         }
         const problem = failure.problem;
         const workspaceUnusable =
-          hostKey !== undefined &&
-          ((problem.status === 404 && problem.code === ProblemCodes.workspaceNotFound) ||
-            (problem.status === 409 && problem.code === ProblemCodes.conflict));
+          hostKey === undefined
+            ? undefined
+            : problem.status === 404 && problem.code === ProblemCodes.workspaceNotFound
+              ? ("gone" as const)
+              : problem.status === 409 && problem.code === ProblemCodes.conflict
+                ? ("setupFailed" as const)
+                : undefined;
         return {
           type: "failed",
           reason: detail,
           message: `"${action.label}" could not start: ${detail}`,
-          ...(workspaceUnusable ? { workspaceUnusable: true as const } : {}),
+          ...(workspaceUnusable ? { workspaceUnusable } : {}),
         };
       },
     }),
@@ -395,39 +407,13 @@ export function runReturnedWorkspaceQuickAction(
   );
 }
 
-/**
- * Runs a quick action in the workspace another machine runs for an item. This
- * Forge cannot see that workspace's current status, so when its machine reports
- * it gone or its setup failed, recover() asks that machine for the item's
- * workspace again. recover() returns false when it cannot, and the failure is
- * reported as usual.
- */
-export function runLinkedRemoteWorkspaceQuickAction(
-  runtime: AppRuntime,
-  workspace: { readonly id: string; readonly status?: string | undefined },
-  itemType: WorkspaceDetail["item_type"],
-  action: QuickAction,
-  hostKey: string,
-  leaf: WorkspaceRuntimeLaunchLeaf | undefined,
-  recover: () => boolean,
-): void {
-  reportQuickAction(
-    runtime,
-    workspace.id,
-    itemType,
-    action,
-    startReturnedWorkspaceQuickAction(workspace, action, hostKey, leaf),
-    recover,
-  );
-}
-
-function reportQuickAction(
+/** Runs a quick action's launch in the background and reports anything but a clean start. */
+export function reportQuickAction(
   runtime: AppRuntime,
   workspaceId: string,
   itemType: WorkspaceDetail["item_type"] | undefined,
   action: QuickAction,
-  launch: ReturnType<typeof launchWorkspaceQuickAction>,
-  recover?: () => boolean,
+  launch: Effect.Effect<QuickActionOutcome, never, GeneratedApi | FleetSnapshotReads>,
 ): void {
   if (itemType !== undefined) reportWorkspaceOpened(runtime, itemType);
   runtime.runCommand(
@@ -435,7 +421,6 @@ function reportQuickAction(
       Effect.flatMap((outcome) =>
         Effect.sync(() => {
           if (outcome.type === "started") return;
-          if (outcome.type === "failed" && outcome.workspaceUnusable && recover?.()) return;
           if (outcome.type === "failed") {
             showFlash(outcome.message, { tone: "danger" });
             reportWorkspaceOpenError(runtime);

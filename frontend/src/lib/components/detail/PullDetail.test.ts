@@ -4669,6 +4669,53 @@ describe("PullDetail inline workspace handoff", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  it("opens the replacement once a remote workspace's machine reports it gone, with no pane beside the item", async () => {
+    const posts: string[] = [];
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),
+      POST: vi.fn(async (path: string, init: { params?: { path?: { id?: string } } }) => {
+        const id = init.params?.path?.id;
+        posts.push(id ? `${path} ${id}` : path);
+        if (path === "/fleet/hosts/{host_key}/workspaces") {
+          return { data: { id: posts.length === 1 ? "ws-remote" : "ws-new", status: "ready" } };
+        }
+        if (id === "ws-remote") {
+          return {
+            error: { status: 404, code: "workspaceNotFound", title: "Not Found", detail: "workspace not found" },
+            response: new Response(null, { status: 404 }),
+          };
+        }
+        return { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } };
+      }),
+    };
+    const onOpenWorkspace = vi.fn();
+    const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "https://build-b.example.test",
+      onOpenWorkspace,
+    });
+    settings.setQuickActions([{ label: "Review", agent: "claude", prompt: "Review this change" }]);
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    await fireEvent.click(create);
+    await waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledWith("ws-remote", buildBNode));
+    onOpenWorkspace.mockClear();
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Review/ }));
+
+    await waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledExactlyOnceWith("ws-new", buildBNode));
+    await waitFor(() =>
+      expect(posts).toEqual([
+        "/fleet/hosts/{host_key}/workspaces",
+        "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs ws-remote",
+        "/fleet/hosts/{host_key}/workspaces",
+        "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs ws-new",
+      ]),
+    );
+    expect(getFlashes()).toEqual([]);
+  });
+
   it("enables creation when an unavailable default machine comes back", async () => {
     let snapshots = 0;
     const apiClient = {

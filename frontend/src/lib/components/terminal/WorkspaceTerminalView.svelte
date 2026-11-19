@@ -4624,24 +4624,20 @@
     void loadEmptyLaunchTargets();
   });
 
-  // A quick action's session proves its workspace is ready. When this view last
-  // saw the workspace fail setup, and the action set it up again on another
-  // machine, no workspace event reaches this Forge, so read the workspace once.
-  let quickActionRefreshedSession: string | null = null;
+  // A quick action can set this workspace up again on another machine, and no
+  // workspace event reaches this Forge when it does. Read the workspace once
+  // each launch ends, including a launch whose agent started but whose prompt
+  // was not delivered, so a view that last saw the setup fail catches up.
+  let quickActionLaunchPending = false;
   $effect(() => {
-    const session = quickActionLaunches.get(quickActionWorkspaceKey(workspaceId, workspaceHostKey))?.session;
-    if (!session || !workspaceLive || workspace?.status === "ready") return;
-    if (quickActionRefreshedSession === session.key) return;
-    quickActionRefreshedSession = session.key;
-    const id = workspaceId;
-    const hostKey = workspaceHostKey;
-    untrack(() =>
-      appRuntime.runCommand(fetchWorkspaceProgram(id, hostKey).pipe(Effect.asVoid), {
-        operation: "workspace.details.refresh",
-        safeContext: { surface: "workspace" },
-        onFailure: () => undefined,
-      }),
-    );
+    const launch = quickActionLaunches.get(quickActionWorkspaceKey(workspaceId, workspaceHostKey));
+    if (launch && !launch.session) {
+      quickActionLaunchPending = true;
+      return;
+    }
+    if (!quickActionLaunchPending) return;
+    quickActionLaunchPending = false;
+    if (workspaceLive && workspace?.status !== "ready") untrack(requestWorkspace);
   });
 
   $effect(() => {

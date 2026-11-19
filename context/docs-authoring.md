@@ -28,6 +28,9 @@ screenshots, or the Zensical site.
 - User-facing docs are concise and workflow-oriented: state UI capabilities and
   the maintainer workflows Forge enables. The HTTP API is internal, not user
   guidance.
+- Usage reporting gets a few public sentences in `docs/configuration.md`: off
+  unless the user opted in, its off switches, and no reports from dev builds.
+  Never list telemetry events, properties, fields, or routes (maintainer decision).
 - In published docs and marketing prose, introduce the product by its full
   title-cased name once per page, then say Forge; reserve `kenn-forge` for
   binary, CLI, config, and path references in code spans. Internal docs keep

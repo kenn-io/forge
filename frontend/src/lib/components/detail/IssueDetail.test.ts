@@ -466,7 +466,11 @@ describe("IssueDetail activity view", () => {
     const fresh = issueDetail();
     fresh.issue.Title = "Fresh issue detail";
     const syncResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
-    const get = vi.fn(async () => ({ data: cached, error: undefined }));
+    const get = vi.fn(async (path: string) =>
+      path === "/snapshot" ? { data: {}, error: undefined } : { data: cached, error: undefined },
+    );
+    // The page also looks for the issue's workspace on other machines.
+    const detailReads = () => get.mock.calls.filter(([path]) => path !== "/snapshot");
     const post = vi.fn(() => syncResponse.promise);
     issueRuntime = makeTestAppRuntime({ GET: get, POST: post } as unknown as GeneratedClient);
     const issuesStore = createIssuesStore({ runtime: issueRuntime });
@@ -500,7 +504,7 @@ describe("IssueDetail activity view", () => {
         [NAVIGATE_KEY, vi.fn()],
       ]),
     });
-    await waitFor(() => expect(get).toHaveBeenCalledOnce());
+    await waitFor(() => expect(detailReads()).toHaveLength(1));
     await waitFor(() => expect(issuesStore.isIssueDetailLoading()).toBe(false));
 
     await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));
@@ -510,7 +514,7 @@ describe("IssueDetail activity view", () => {
     syncResponse.resolve({ data: fresh, error: undefined });
 
     await waitFor(() => expect(screen.queryByLabelText("Refreshing detail")).toBeNull());
-    expect(get).toHaveBeenCalledOnce();
+    expect(detailReads()).toHaveLength(1);
     expect(issuesStore.getIssueDetail()?.issue.Title).toBe("Fresh issue detail");
   });
 
@@ -1380,6 +1384,40 @@ describe("IssueDetail inline workspace handoff", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  it("opens the workspace another fleet member runs for the issue", async () => {
+    const buildBNode = "b".repeat(32);
+    const fleetWorkspace = (id: string, number: number) => ({
+      id,
+      status: "ready",
+      fleet_host_key: buildBNode,
+      item_type: "issue",
+      item_number: number,
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widget",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: 1001,
+        owner: "acme",
+        name: "widget",
+        repo_path: "acme/widget",
+      },
+    });
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: { hosts: [], workspaces: [fleetWorkspace("ws-other-issue", 8), fleetWorkspace("ws-remote", 7)] },
+      })),
+      POST: vi.fn(),
+    };
+    const onOpenWorkspace = vi.fn();
+    renderIssueDetail(issueDetail(), undefined, { onOpenWorkspace }, apiClient);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Open Workspace", exact: true }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith("ws-remote", buildBNode);
+    expect(apiClient.POST).not.toHaveBeenCalled();
+  });
+
   it("discards a create failure that lands after the component unmounted (no flash)", async () => {
     const controller = createTestController("split");
     let resolvePost!: (value: { error?: { detail?: string } }) => void;
@@ -1674,7 +1712,9 @@ describe("IssueDetail inline workspace handoff", () => {
     detail.repo.capabilities = { ...capabilities, read_labels: true, label_mutation: true };
     const oldCatalog = Promise.withResolvers<{ data: { labels: Label[] } }>();
     const freshCatalog = Promise.withResolvers<{ data: { labels: Label[] } }>();
-    const get = vi.fn().mockReturnValueOnce(oldCatalog.promise).mockReturnValueOnce(freshCatalog.promise);
+    const catalogs = [oldCatalog.promise, freshCatalog.promise];
+    // The page also looks for the issue's workspace on other machines.
+    const get = vi.fn((path: string) => (path === "/snapshot" ? Promise.resolve({ data: {} }) : catalogs.shift()));
     renderIssueDetail(detail, undefined, {}, { GET: get, POST: vi.fn() });
     const command = {
       itemType: "issue" as const,

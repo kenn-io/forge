@@ -4810,7 +4810,7 @@ describe("PullDetail inline workspace handoff", () => {
     ]);
   });
 
-  it("opens the existing workspace on the default fleet member instead of failing a repeat create", async () => {
+  it("opens the workspace another fleet member runs for the pull request", async () => {
     const fleetWorkspace = (id: string, number: number) => ({
       id,
       status: "ready",
@@ -4833,18 +4833,64 @@ describe("PullDetail inline workspace handoff", () => {
       GET: vi.fn().mockResolvedValue({
         data: {
           hosts: fleetHosts({ available: true }),
-          workspaces: [fleetWorkspace("ws-other-pr", 2), fleetWorkspace("ws-existing", 1)],
+          workspaces: [fleetWorkspace("ws-other-pr", 2), fleetWorkspace("ws-remote", 1)],
         },
       }),
-      POST: vi.fn().mockResolvedValue({
-        error: {
-          type: "about:blank",
-          title: "Conflict",
-          status: 409,
-          code: "workspaceAlreadyExists",
-          detail: "workspace already exists for this MR",
+      POST: vi.fn(),
+    };
+    const onOpenWorkspace = vi.fn();
+    // This machine has no workspace for the pull request and no default machine.
+    renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false, onOpenWorkspace });
+
+    const open = (await screen.findAllByRole("button", { name: "Open Workspace", exact: true }))[0]!;
+    expect(screen.queryByRole("button", { name: "Create Workspace", exact: true })).toBeNull();
+    await fireEvent.click(open);
+    expect(onOpenWorkspace).toHaveBeenCalledWith("ws-remote", buildBNode);
+    expect(apiClient.POST).not.toHaveBeenCalled();
+  });
+
+  it("opens the existing workspace on the default fleet member instead of failing a repeat create", async () => {
+    const fleetWorkspace = (id: string, number: number) => ({
+      id,
+      status: "ready",
+      fleet_host_key: buildBNode,
+      item_type: "pull_request",
+      item_number: number,
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widget",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: 1001,
+        owner: "acme",
+        name: "widget",
+        repo_path: "acme/widget",
+      },
+    });
+    // Another tab created the workspace after this page looked for one.
+    let posted = false;
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: {
+          hosts: fleetHosts({ available: true }),
+          workspaces: posted
+            ? [fleetWorkspace("ws-other-pr", 2), fleetWorkspace("ws-existing", 1)]
+            : [fleetWorkspace("ws-other-pr", 2)],
         },
-        response: new Response(null, { status: 409 }),
+      })),
+      POST: vi.fn(async () => {
+        posted = true;
+        return {
+          error: {
+            type: "about:blank",
+            title: "Conflict",
+            status: 409,
+            code: "workspaceAlreadyExists",
+            detail: "workspace already exists for this MR",
+          },
+          response: new Response(null, { status: 409 }),
+        };
       }),
     };
     const { navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
@@ -4864,40 +4910,45 @@ describe("PullDetail inline workspace handoff", () => {
   ] as const)(
     "asks for the agent chosen at create in %s on the default fleet member",
     async (_label, exists, origin) => {
+      // The existing workspace was created elsewhere after this page loaded.
+      let posted = false;
       const apiClient = {
-        GET: vi.fn().mockResolvedValue({
+        GET: vi.fn(async () => ({
           data: {
             hosts: fleetHosts({ available: true }),
-            workspaces: [
-              {
-                id: "ws-existing",
-                status: "ready",
-                fleet_host_key: buildBNode,
-                item_type: "pull_request",
-                item_number: 1,
-                platform_host: "github.com",
-                repo_owner: "acme",
-                repo_name: "widget",
-                repo: {
-                  provider: "github",
-                  platform_host: "github.com",
-                  platform_repo_id: 1001,
-                  owner: "acme",
-                  name: "widget",
-                  repo_path: "acme/widget",
-                },
-              },
-            ],
+            workspaces: !(exists && posted)
+              ? []
+              : [
+                  {
+                    id: "ws-existing",
+                    status: "ready",
+                    fleet_host_key: buildBNode,
+                    item_type: "pull_request",
+                    item_number: 1,
+                    platform_host: "github.com",
+                    repo_owner: "acme",
+                    repo_name: "widget",
+                    repo: {
+                      provider: "github",
+                      platform_host: "github.com",
+                      platform_repo_id: 1001,
+                      owner: "acme",
+                      name: "widget",
+                      repo_path: "acme/widget",
+                    },
+                  },
+                ],
           },
-        }),
-        POST: vi.fn().mockResolvedValue(
-          exists
+        })),
+        POST: vi.fn(async () => {
+          posted = true;
+          return exists
             ? {
                 error: { type: "about:blank", title: "Conflict", status: 409, code: "workspaceAlreadyExists" },
                 response: new Response(null, { status: 409 }),
               }
-            : { data: { id: "ws-new", status: "creating" } },
-        ),
+            : { data: { id: "ws-new", status: "creating" } };
+        }),
       };
       renderPullDetail(pullDetail(), undefined, apiClient, {
         hideWorkspaceAction: false,

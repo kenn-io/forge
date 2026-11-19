@@ -40,6 +40,7 @@
   import { createDefaultWorkspaceTarget, type WorkspaceHostChoice } from "../../stores/workspace-target.svelte.js";
   import { createItemWorkspace, type ItemWorkspaceRequest } from "../../api/item-workspace.js";
   import { runLinkedRemoteItemQuickAction } from "../../stores/bulk-quick-action.js";
+  import { createFleetItemWorkspace, type FleetItemWorkspaceItem } from "../../stores/fleet-item-workspace.svelte.js";
   import WorkspaceHostAlternatives from "../workspace/WorkspaceHostAlternatives.svelte";
     import { AdaptiveActionGrid, Button, Chip, Modal } from "@kenn-io/kit-ui";
   import { Spinner } from "@kenn-io/kit-ui";
@@ -714,17 +715,37 @@
     if (branchConflict == null) return;
     return untrack(() => pushModalFrame("issue-detail-confirm", []));
   });
+  // The detail lists only this Forge's workspaces; a workspace for this issue
+  // on another machine comes from the fleet snapshot.
+  const fleetWorkspaceItem = $derived.by((): FleetItemWorkspaceItem | null => {
+    const detail = issues.getIssueDetail();
+    if (!detail || detail.workspace || !detailMatchesIdentity(detail, itemIdentity)) return null;
+    return {
+      kind: "issue",
+      repo: {
+        provider: itemIdentity.provider,
+        platformHost: itemIdentity.platformHost,
+        repositoryKey: repositoryKeyFromWire(detail.repo),
+        owner: itemIdentity.owner,
+        name: itemIdentity.name,
+        repoPath: itemIdentity.repoPath,
+      },
+      number: itemIdentity.number,
+    };
+  });
+  const fleetWorkspace = createFleetItemWorkspace(runtime, () => fleetWorkspaceItem, () => issues.getIssueDetailEnvelopeTick());
+  const envelopeWorkspace = $derived(issues.getIssueDetail()?.workspace ?? fleetWorkspace.ref(fleetWorkspaceItem));
   const workspace = $derived(
     staleIssue
       ? null
       : inlineWorkspace
-      ? inlineWorkspace.effectiveWorkspaceRef(itemIdentity, issues.getIssueDetail()?.workspace ?? null)
+      ? inlineWorkspace.effectiveWorkspaceRef(itemIdentity, envelopeWorkspace)
       : // Without a controller there is no override store: the shared
         // resolver stands in — the confirmed created record wins over a
         // stale cached envelope, and an envelope still carrying a
         // session-deleted workspace ID is masked instead of re-offering
         // "Open Workspace" for a workspace that no longer exists.
-        resolveControllerlessWorkspaceRef(itemIdentity, issues.getIssueDetail()?.workspace ?? null),
+        resolveControllerlessWorkspaceRef(itemIdentity, envelopeWorkspace),
   );
   const workspaceDeletionLifecycle = $derived(
     workspace?.status === "deleting" || workspace?.status === "deletion_failed",

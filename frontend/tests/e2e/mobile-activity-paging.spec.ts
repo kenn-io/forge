@@ -38,7 +38,6 @@ test("keeps a visible preview while loading older items", async ({ page }) => {
     item_url: "https://github.com/acme/widgets/pull/1",
     repo,
   };
-  let hold = false;
   let release: (() => void) | undefined;
   let limit = 0;
   await page.route("**/api/v1/activity**", async (route) => {
@@ -50,7 +49,9 @@ test("keeps a visible preview while loading older items", async ({ page }) => {
     if (url.pathname !== "/api/v1/activity") return route.fallback();
     const older = url.searchParams.has("subject_before");
     limit = Number(url.searchParams.get("limit"));
-    if (hold && older)
+    // The short list can prefetch older items as soon as the final batch finishes.
+    // Hold that request from the start, before it can race the loading assertion.
+    if (older)
       await new Promise<void>((resolve) => {
         release = resolve;
       });
@@ -78,14 +79,12 @@ test("keeps a visible preview while loading older items", async ({ page }) => {
         })
         .toBeGreaterThan(previous);
     }
-    hold = true;
     await viewport.evaluate((node) => {
       node.scrollTop = node.scrollHeight;
     });
     await expect(page.getByRole("status").filter({ hasText: "Loading more older items" })).toBeVisible();
     await expect(preview).toBeVisible();
     await expect.poll(() => Boolean(release)).toBe(true);
-    hold = false;
     release?.();
     await expect(page.getByText("Pull request 2")).toBeVisible();
     await expect(preview).toBeVisible();

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json/v2"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -271,6 +272,12 @@ func (s *Server) registerDevboxProxy(api huma.API, route devboxapi.DevboxProxyRo
 		}
 		if refreshContext {
 			if err := s.refreshDevboxContext(r.Context(), connections, r.PathValue("connection_id"), r.PathValue("id")); err != nil {
+				// The worker no longer has the workspace. Callers drop their link to a
+				// deleted workspace on this answer, which a conflict would hide.
+				if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok && problem.Code == httpapi.CodeWorkspaceNotFound {
+					routepolicy.WriteProblemResponse(w, problem)
+					return
+				}
 				routepolicy.WriteProblemResponse(w, httpapi.NewProblem(409, httpapi.CodeConflict, "Workspace context needs refresh: "+err.Error(), nil))
 				return
 			}
@@ -337,6 +344,20 @@ func (s *Server) refreshDevboxContext(ctx context.Context, connections *devbox.C
 		return err
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusNotFound {
+		// Keep the worker's answer that the workspace is gone; any other 404 is
+		// reported like other failed reads.
+		var problem httpapi.ProblemError
+		_ = json.UnmarshalRead(io.LimitReader(response.Body, 64<<10), &problem)
+		code := httpapi.CodeUpstreamError
+		if problem.Code == httpapi.CodeWorkspaceNotFound {
+			code = httpapi.CodeWorkspaceNotFound
+		}
+		if problem.Detail == "" {
+			problem.Detail = http.StatusText(response.StatusCode)
+		}
+		return httpapi.NewProblem(response.StatusCode, code, problem.Detail, nil)
+	}
 	if response.StatusCode != http.StatusOK {
 		return devboxapi.DevboxResponseProblem(response)
 	}

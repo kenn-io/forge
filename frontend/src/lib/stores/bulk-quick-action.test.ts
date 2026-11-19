@@ -555,17 +555,39 @@ describe("quick actions in an item's workspace on another machine", () => {
       start();
       start();
       await vi.waitFor(() => expect(opened).toEqual(["ws-new", "ws-new"]));
+      expect(posts).toEqual([
+        "/api/v1/devboxes/compute-a/workspaces/ws-old/runtime/agent-handoffs",
+        "/api/v1/devboxes/compute-a/workspaces",
+        "/api/v1/devboxes/compute-a/workspaces/ws-new/runtime/agent-handoffs",
+        "/api/v1/devboxes/compute-a/workspaces/ws-new/runtime/agent-handoffs",
+      ]);
+      expect(getFlashes()).toEqual([]);
+    } finally {
+      await Effect.runPromise(runtime.disposeEffect);
+    }
+  });
+
+  it("opens a replacement only once the action starts there", async () => {
+    const { posts, opened, start, runtime } = run((path) => {
+      if (path === "/api/v1/devboxes/compute-a/workspaces/ws-old/runtime/agent-handoffs") {
+        return problem(404, "workspaceNotFound", "workspace not found");
+      }
+      if (path === "/api/v1/devboxes/compute-a/workspaces") return Response.json({ id: "ws-new", status: "ready" });
+      return path.endsWith("/agent-handoffs") ? problem(403, "forbidden", "agent unavailable") : undefined;
+    });
+    try {
+      start();
       await vi.waitFor(() =>
-        expect(posts).toEqual([
-          "/api/v1/devboxes/compute-a/workspaces/ws-old/runtime/agent-handoffs",
-          "/api/v1/devboxes/compute-a/workspaces",
-          "/api/v1/devboxes/compute-a/workspaces/ws-new/runtime/agent-handoffs",
-          "/api/v1/devboxes/compute-a/workspaces/ws-old/runtime/agent-handoffs",
-          "/api/v1/devboxes/compute-a/workspaces",
-          "/api/v1/devboxes/compute-a/workspaces/ws-new/runtime/agent-handoffs",
+        expect(getFlashes()).toEqual([
+          expect.objectContaining({ tone: "danger", message: '"Review" could not start: agent unavailable' }),
         ]),
       );
-      expect(getFlashes()).toEqual([]);
+      expect(posts).toEqual([
+        "/api/v1/devboxes/compute-a/workspaces/ws-old/runtime/agent-handoffs",
+        "/api/v1/devboxes/compute-a/workspaces",
+        "/api/v1/devboxes/compute-a/workspaces/ws-new/runtime/agent-handoffs",
+      ]);
+      expect(opened).toEqual([]);
     } finally {
       await Effect.runPromise(runtime.disposeEffect);
     }
@@ -588,4 +610,84 @@ describe("quick actions in an item's workspace on another machine", () => {
       await Effect.runPromise(runtime.disposeEffect);
     }
   });
+});
+
+it("runs a row action on an item whose remote workspace is being set up again, after that setup", async () => {
+  const api = createMockApiFetch();
+  const pulls: PullRequest[] = await (await api.fetch("/api/v1/pulls")).json();
+  const pull = pulls[0]!;
+  const identity = {
+    provider: pull.repo.provider,
+    platformHost: pull.repo.platform_host,
+    owner: pull.repo.owner,
+    name: pull.repo.name,
+    repoPath: pull.repo.repo_path,
+    number: pull.Number,
+    itemType: "pull",
+  } as const;
+  const linked = { id: "ws-remote", status: "ready", hostKey: "devbox:compute-a", hostLabel: "compute-a (devbox)" };
+  recordWorkspaceCreated(identity, linked);
+  const create = Promise.withResolvers<Response>();
+  const posts: string[] = [];
+  let handoffs = 0;
+  const mixed = createMockApiFetch([
+    ({ method, url }) => {
+      if (method !== "POST") return undefined;
+      posts.push(url.pathname);
+      if (url.pathname === "/api/v1/devboxes/compute-a/workspaces") return create.promise;
+      if (url.pathname === "/api/v1/devboxes/compute-a/workspaces/ws-remote/retry") {
+        return Response.json({ id: "ws-remote", status: "creating" });
+      }
+      if (url.pathname.endsWith("/runtime/agent-handoffs")) {
+        if (handoffs++ === 0) {
+          return Response.json(
+            { code: "conflict", title: "Conflict", detail: "workspace setup failed: clone failed", status: 409 },
+            { status: 409 },
+          );
+        }
+        return Response.json({
+          session: { key: `runtime-${handoffs}`, target_key: "helper" },
+          initial_message: { state: "delivered", target_key: "helper", message_bytes: 18 },
+        });
+      }
+      return undefined;
+    },
+  ]);
+  vi.stubGlobal("fetch", mixed.fetch);
+  const runtime = makeAppRuntime();
+  const action = { label: "Review", agent: "helper", prompt: "Review this change" };
+  try {
+    runLinkedRemoteItemQuickAction(
+      runtime,
+      identity,
+      {
+        kind: "pull",
+        repo: {
+          provider: pull.repo.provider,
+          platformHost: pull.repo.platform_host,
+          owner: pull.repo.owner,
+          name: pull.repo.name,
+        },
+        number: pull.Number,
+      },
+      linked,
+      "pull_request",
+      action,
+    );
+    await vi.waitFor(() => expect(posts).toContain("/api/v1/devboxes/compute-a/workspaces"));
+    runQuickActionOnItems(runtime, [{ kind: "pull", item: { ...pull, workspace: undefined } }], action, "");
+    create.resolve(Response.json({ id: "ws-remote", status: "error", reused: true }));
+    await vi.waitFor(() => expect(getFlashes()).toEqual([expect.objectContaining({ tone: "success" })]));
+    expect(posts).toEqual([
+      "/api/v1/devboxes/compute-a/workspaces/ws-remote/runtime/agent-handoffs",
+      "/api/v1/devboxes/compute-a/workspaces",
+      "/api/v1/devboxes/compute-a/workspaces/ws-remote/retry",
+      "/api/v1/devboxes/compute-a/workspaces/ws-remote/runtime/agent-handoffs",
+      "/api/v1/devboxes/compute-a/workspaces/ws-remote/runtime/agent-handoffs",
+    ]);
+  } finally {
+    await Effect.runPromise(runtime.disposeEffect);
+    for (const flash of getFlashes()) dismissFlash(flash.id);
+    vi.unstubAllGlobals();
+  }
 });

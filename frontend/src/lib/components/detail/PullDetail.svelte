@@ -172,6 +172,7 @@
   import type { PullRequestRouteRef } from "../../routes.js";
   import {
     identityEquals,
+    hostKeyLabel,
     workspaceRoute,
     type InlineWorkspaceController,
     type WorkspaceItemIdentity,
@@ -2042,6 +2043,21 @@
     return detailSessionLaunchLeaf(inlineWorkspace.surface, settings.getWorkspaceSettings().detail_session_placement);
   }
 
+  function workspaceRequest(identity: WorkspaceItemIdentity, detail: PullDetail): ItemWorkspaceRequest {
+    return {
+      kind: "pull",
+      repo: {
+        provider: identity.provider,
+        platformHost: detail.platform_host,
+        repositoryKey: repositoryKeyFromWire(detail.repo),
+        owner: detail.repo_owner,
+        name: detail.repo_name,
+        repoPath: identity.repoPath,
+      },
+      number: detail.merge_request.Number,
+    };
+  }
+
   // Runs in the workspace this pull request already has, then shows it the way
   // a create does: the inline pane, or the workspace route.
   function runQuickActionInWorkspace(ref: WorkspaceRefLite, action: QuickAction): void {
@@ -2051,18 +2067,6 @@
       const detail = detailStore.getDetail();
       if (!detail) return;
       const clickedIdentity = $state.snapshot(itemIdentity);
-      const request: ItemWorkspaceRequest = {
-        kind: "pull",
-        repo: {
-          provider: clickedIdentity.provider,
-          platformHost: detail.platform_host,
-          repositoryKey: repositoryKeyFromWire(detail.repo),
-          owner: detail.repo_owner,
-          name: detail.repo_name,
-          repoPath: clickedIdentity.repoPath,
-        },
-        number: detail.merge_request.Number,
-      };
       // A view with no pane beside the item opens the workspace the action
       // ran in once it is known: its machine may replace the linked one.
       const openWorkspace = inlineWorkspace
@@ -2075,7 +2079,7 @@
       runLinkedRemoteItemQuickAction(
         runtime,
         clickedIdentity,
-        request,
+        workspaceRequest(clickedIdentity, detail),
         { ...ref, hostKey },
         "pull_request",
         action,
@@ -2111,18 +2115,7 @@
       requestGen !== wsRequestGen ||
       !identityEquals(requestIdentity, $state.snapshot(itemIdentity));
     const responseIsStale = () => componentDestroyed || identityLeft();
-    const request: ItemWorkspaceRequest = {
-      kind: "pull",
-      repo: {
-        provider: requestIdentity.provider,
-        platformHost: detail.platform_host,
-        repositoryKey: repositoryKeyFromWire(detail.repo),
-        owner: detail.repo_owner,
-        name: detail.repo_name,
-        repoPath: requestIdentity.repoPath,
-      },
-      number: detail.merge_request.Number,
-    };
+    const request = workspaceRequest(requestIdentity, detail);
 
     wsCreating = true;
     beginWorkspaceCreate(requestIdentity, launchTargetKey);
@@ -2131,6 +2124,18 @@
       Effect.flatMap((data) =>
         Effect.sync(() => {
           if (data?.id && hostKey) {
+            // Another machine can return the item's workspace while it is being
+            // deleted. It never becomes ready and no deletion event for it
+            // reaches this Forge, so it is not linked.
+            if (data.status === "deleting" || data.status === "deletion_failed") {
+              if (quickAction) {
+                runReturnedWorkspaceQuickAction(runtime, { id: data.id, status: data.status }, "pull_request", quickAction, hostKey);
+              } else if (!responseIsStale()) {
+                const label = (hostChoice ? hostChoice.label : workspaceTarget.hostLabel) ?? hostKeyLabel(hostKey);
+                showFlash(`This pull request's workspace on ${label} is being deleted. Try again once it is gone.`, { tone: "warning" });
+              }
+              return;
+            }
             promoteWorkspaceCreateLaunch(requestIdentity, data.id, hostKey, data.reused ? "existing" : "create");
             // The pane beside the item hosts a workspace on any machine, so a
             // remote one opens there like a local one.

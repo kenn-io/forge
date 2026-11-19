@@ -67,6 +67,7 @@
   import XIcon from "@lucide/svelte/icons/x";
   import {
     identityEquals,
+    hostKeyLabel,
     workspaceRoute,
     type InlineWorkspaceController,
     type WorkspaceItemIdentity,
@@ -839,24 +840,27 @@
 
   // Runs in the workspace this issue already has, then shows it the way a
   // create does: the inline pane, or the workspace route.
+  function workspaceRequest(identity: WorkspaceItemIdentity, detail: IssueDetail): ItemWorkspaceRequest {
+    return {
+      kind: "issue",
+      repo: {
+        provider: identity.provider,
+        platformHost: identity.platformHost,
+        repositoryKey: repositoryKeyFromWire(detail.repo),
+        owner: identity.owner,
+        name: identity.name,
+        repoPath: identity.repoPath,
+      },
+      number: identity.number,
+    };
+  }
+
   function runQuickActionInWorkspace(ref: WorkspaceRefLite, action: QuickAction): void {
     const { id: workspaceId, hostKey } = ref;
     if (hostKey !== undefined) {
       const detail = issues.getIssueDetail();
       if (!detail) return;
       const clickedIdentity = $state.snapshot(itemIdentity);
-      const request: ItemWorkspaceRequest = {
-        kind: "issue",
-        repo: {
-          provider: clickedIdentity.provider,
-          platformHost: clickedIdentity.platformHost,
-          repositoryKey: repositoryKeyFromWire(detail.repo),
-          owner: clickedIdentity.owner,
-          name: clickedIdentity.name,
-          repoPath: clickedIdentity.repoPath,
-        },
-        number: clickedIdentity.number,
-      };
       // A view with no pane beside the item opens the workspace the action
       // ran in once it is known: its machine may replace the linked one.
       const openWorkspace = inlineWorkspace
@@ -869,7 +873,7 @@
       runLinkedRemoteItemQuickAction(
         runtime,
         clickedIdentity,
-        request,
+        workspaceRequest(clickedIdentity, detail),
         { ...ref, hostKey },
         "issue",
         action,
@@ -927,16 +931,7 @@
       !identityEquals(requestIdentity, $state.snapshot(itemIdentity));
     const responseIsStale = () => componentDestroyed || identityLeft();
     const request: ItemWorkspaceRequest = {
-      kind: "issue",
-      repo: {
-        provider: requestIdentity.provider,
-        platformHost: requestIdentity.platformHost,
-        repositoryKey: repositoryKeyFromWire(detail.repo),
-        owner: requestIdentity.owner,
-        name: requestIdentity.name,
-        repoPath: requestIdentity.repoPath,
-      },
-      number: requestIdentity.number,
+      ...workspaceRequest(requestIdentity, detail),
       gitHeadRef: options.gitHeadRef,
       reuseExistingBranch: options.reuseExistingBranch,
       reuseExistingDirectory: options.reuseExistingDirectory,
@@ -952,6 +947,24 @@
       Effect.flatMap((data) =>
         Effect.sync(() => {
           if (data?.id && hostKey) {
+            // Another machine can return the item's workspace while it is being
+            // deleted. It never becomes ready and no deletion event for it
+            // reaches this Forge, so it is not linked.
+            if (data.status === "deleting" || data.status === "deletion_failed") {
+              if (quickAction) {
+                runReturnedWorkspaceQuickAction(runtime, { id: data.id, status: data.status }, "issue", quickAction, hostKey);
+              }
+              if (responseIsStale()) return;
+              pendingWorkspaceLaunchTarget = null;
+              pendingWorkspaceQuickAction = null;
+              pendingWorkspaceHostChoice = null;
+              branchConflict = null;
+              if (!quickAction) {
+                const label = (hostChoice ? hostChoice.label : workspaceTarget.hostLabel) ?? hostKeyLabel(hostKey);
+                showFlash(`This issue's workspace on ${label} is being deleted. Try again once it is gone.`, { tone: "warning" });
+              }
+              return;
+            }
             promoteWorkspaceCreateLaunch(requestIdentity, data.id, hostKey, data.reused ? "existing" : "create");
             // The pane beside the item hosts a workspace on any machine, so a
             // remote one opens there like a local one.

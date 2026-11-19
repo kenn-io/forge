@@ -10,10 +10,11 @@ import { repositoryKeyFromWire } from "../api/repository-key.js";
 import type { WorkspaceRuntimeLaunchLeaf } from "../components/terminal/workspace-runtime-workflow.js";
 import type { WorkspaceItemIdentity, WorkspaceRefLite } from "../workspace-inline.js";
 import { showFlash } from "./flash.svelte.js";
-import { notifyWorkspaceDeleted, recordItemWorkspaceCreated } from "./workspace-host.svelte.js";
+import { identityKey, notifyWorkspaceDeleted, recordItemWorkspaceCreated } from "./workspace-host.svelte.js";
 import { listItemLabel, type ListItemTarget } from "./item-actions.js";
 import {
   beginWorkspaceCreate,
+  createdWorkspaceRef,
   endWorkspaceCreate,
   isWorkspaceCreatePending,
   recordWorkspaceCreated,
@@ -22,7 +23,6 @@ import {
 import {
   enqueueLaunch,
   launchWorkspaceQuickAction,
-  quickActionWorkspaceKey,
   reportQuickAction,
   retryWorkspaceQuickAction,
   startReturnedWorkspaceQuickAction,
@@ -80,13 +80,29 @@ function resolveDefaultTarget(defaultTarget: string): Effect.Effect<ResolvedTarg
   );
 }
 
+function itemWorkspaceRequest({ kind, item }: ListItemTarget): ItemWorkspaceRequest {
+  const { repo } = item;
+  return {
+    kind,
+    repo: {
+      provider: repo.provider,
+      platformHost: repo.platform_host,
+      repositoryKey: repositoryKeyFromWire(repo),
+      owner: repo.owner,
+      name: repo.name,
+      repoPath: repo.repo_path,
+    },
+    number: item.Number,
+  };
+}
+
 const failedOutcome = (reason: string): Effect.Effect<QuickActionOutcome> =>
   Effect.succeed({ type: "failed", reason, message: reason });
 
 /**
  * Asks hostKey's machine (this Forge when unset) for the item's workspace,
  * which creates one or returns the one it has, then runs the action there.
- * onWorkspace hears which workspace that is.
+ * onWorkspace hears which workspace that is once the action starts there.
  */
 function createAndRunOnItem(
   identity: WorkspaceItemIdentity,
@@ -115,7 +131,6 @@ function createAndRunOnItem(
         };
         recordWorkspaceCreated(identity, ref);
         recordItemWorkspaceCreated(identity, ref);
-        onWorkspace?.(ref);
       }),
     ),
     Effect.ensuring(Effect.sync(() => endWorkspaceCreate(identity))),
@@ -128,10 +143,12 @@ function createAndRunOnItem(
         ),
       onSuccess: (data) => {
         if (!data?.id) return failedOutcome("failed to create workspace");
+        const ref = { id: data.id, status: data.status ?? "provisioning", ...(hostKey ? { hostKey, hostLabel } : {}) };
         // A remote item's existing workspace can come back failed or being deleted.
-        if (hostKey)
-          return startReturnedWorkspaceQuickAction({ id: data.id, status: data.status }, action, hostKey, leaf);
-        return launchWorkspaceQuickAction(data.id, action, undefined, undefined, leaf);
+        const launch = hostKey
+          ? startReturnedWorkspaceQuickAction({ id: data.id, status: data.status }, action, hostKey, leaf)
+          : launchWorkspaceQuickAction(data.id, action, undefined, undefined, leaf);
+        return launch.pipe(Effect.tap((outcome) => Effect.sync(() => outcome.type !== "failed" && onWorkspace?.(ref))));
       },
     }),
   );
@@ -142,36 +159,41 @@ function createAndRunOnItem(
  * Forge cannot see that workspace's status, so the action launches there
  * directly, as in a local workspace. When the machine reports the workspace
  * gone or its setup failed, it is asked for the item's workspace again, which
- * sets it up again or makes a new one, and the action runs there. Actions
- * linked to one workspace recover one after another, so a second one finds the
- * first one's replacement. onWorkspace hears where the action ran.
+ * sets it up again or makes a new one, and the action runs there. Actions for
+ * one item on one machine run in the order chosen, and each finds the item's
+ * workspace when its turn comes, so an action queued behind a recovery runs in
+ * the replacement. onWorkspace hears where the action started.
  */
 function runOnLinkedRemoteWorkspace(
   identity: WorkspaceItemIdentity,
   request: ItemWorkspaceRequest,
-  ref: WorkspaceRefLite & { readonly hostKey: string },
+  linked: WorkspaceRefLite & { readonly hostKey: string },
   action: QuickAction,
   leaf?: WorkspaceRuntimeLaunchLeaf,
   onWorkspace?: (ref: WorkspaceRefLite) => void,
 ): Effect.Effect<QuickActionOutcome, never, GeneratedApi | FleetSnapshotReads> {
-  const { hostKey } = ref;
+  const { hostKey } = linked;
   return enqueueLaunch(
-    `${quickActionWorkspaceKey(ref.id, hostKey)}\0recover`,
-    launchWorkspaceQuickAction(ref.id, action, hostKey, undefined, leaf).pipe(
-      Effect.flatMap((outcome) => {
-        if (outcome.type !== "failed" || !outcome.workspaceUnusable) {
+    `${hostKey}\0item\0${identityKey(identity)}`,
+    Effect.suspend(() => {
+      const latest = createdWorkspaceRef(identity);
+      const ref = latest?.hostKey === hostKey ? latest : linked;
+      return launchWorkspaceQuickAction(ref.id, action, hostKey, undefined, leaf).pipe(
+        Effect.flatMap((outcome) => {
+          if (outcome.type !== "failed" || !outcome.workspaceUnusable) {
+            return Effect.sync(() => {
+              if (outcome.type !== "failed") onWorkspace?.(ref);
+              return outcome;
+            });
+          }
           return Effect.sync(() => {
-            if (outcome.type !== "failed") onWorkspace?.(ref);
-            return outcome;
-          });
-        }
-        return Effect.sync(() => {
-          if (outcome.workspaceUnusable === "gone") notifyWorkspaceDeleted(ref.id, hostKey);
-        }).pipe(
-          Effect.andThen(createAndRunOnItem(identity, request, hostKey, ref.hostLabel, action, leaf, onWorkspace)),
-        );
-      }),
-    ),
+            if (outcome.workspaceUnusable === "gone") notifyWorkspaceDeleted(ref.id, hostKey);
+          }).pipe(
+            Effect.andThen(createAndRunOnItem(identity, request, hostKey, ref.hostLabel, action, leaf, onWorkspace)),
+          );
+        }),
+      );
+    }),
   );
 }
 
@@ -209,13 +231,24 @@ function runOnItem(
   resolved: ResolvedTarget,
 ): Effect.Effect<QuickActionOutcome, never, GeneratedApi | FleetSnapshotReads> {
   const identity = itemIdentity(target);
-  if (isWorkspaceCreatePending(identity)) return failedOutcome("a workspace is already being created");
-  // The item's existing local workspace takes the action; creating another
-  // would conflict, and the server waits for it to be ready before launching.
-  // A workspace this session just created counts before the list row
-  // catches up, so a repeat run queues there instead of creating another.
+  // The item's existing workspace takes the action; creating another would
+  // conflict, and the server waits for it to be ready before launching. A
+  // workspace this session just created counts before the list row catches
+  // up, so a repeat run queues there instead of creating another.
   const existing = resolveControllerlessWorkspaceRef(identity, target.item.workspace ?? null);
-  if (existing?.id && existing.hostKey === undefined) {
+  // A workspace this session created on another machine takes the action the
+  // way a local one does. Its recovery may be creating a replacement right
+  // now; the action waits for it in the item's queue.
+  if (existing?.id && existing.hostKey !== undefined) {
+    return runOnLinkedRemoteWorkspace(
+      identity,
+      itemWorkspaceRequest(target),
+      { ...existing, hostKey: existing.hostKey },
+      action,
+    );
+  }
+  if (isWorkspaceCreatePending(identity)) return failedOutcome("a workspace is already being created");
+  if (existing?.id) {
     if (existing.status === "deleting" || existing.status === "deletion_failed") {
       return failedOutcome("its workspace is being deleted");
     }
@@ -223,24 +256,6 @@ function runOnItem(
     // it to be ready, so the action is not silently skipped on every run.
     if (existing.status === "error") return retryWorkspaceQuickAction(existing.id, action);
     return launchWorkspaceQuickAction(existing.id, action);
-  }
-  const repo = target.item.repo;
-  const request: ItemWorkspaceRequest = {
-    kind: target.kind,
-    repo: {
-      provider: repo.provider,
-      platformHost: repo.platform_host,
-      repositoryKey: repositoryKeyFromWire(repo),
-      owner: repo.owner,
-      name: repo.name,
-      repoPath: repo.repo_path,
-    },
-    number: target.item.Number,
-  };
-  // A workspace this session created on another machine takes the action
-  // the way a local one does.
-  if (existing?.id && existing.hostKey !== undefined) {
-    return runOnLinkedRemoteWorkspace(identity, request, { ...existing, hostKey: existing.hostKey }, action);
   }
   const hostKey = resolved.hostKey;
   if (resolved.reason) return failedOutcome(resolved.reason);
@@ -251,7 +266,7 @@ function runOnItem(
     });
     if (unsupported) return failedOutcome(unsupported);
   }
-  return createAndRunOnItem(identity, request, hostKey, undefined, action);
+  return createAndRunOnItem(identity, itemWorkspaceRequest(target), hostKey, undefined, action);
 }
 
 function summary(

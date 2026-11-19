@@ -164,7 +164,8 @@ function collapseLedgerKey(surface: InlineWorkspaceSurface): string {
   return `${surface}\u0000${workspaceKeyString(desiredKey())}`;
 }
 
-function identityKey(identity: WorkspaceItemIdentity): string {
+/** One string per item, whatever provider or item-type alias names it. */
+export function identityKey(identity: WorkspaceItemIdentity): string {
   // Route segments may carry provider aliases (gh/gl/fj) and callers carry
   // native item-type vocabularies ("pr"/"pull_request" vs "pull") while
   // store data uses canonical names; the same item must never key two

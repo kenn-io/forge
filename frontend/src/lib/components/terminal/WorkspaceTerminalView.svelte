@@ -4625,9 +4625,11 @@
   });
 
   // A quick action can set this workspace up again on another machine, and no
-  // workspace event reaches this Forge when it does. Read the workspace once
-  // each launch ends, including a launch whose agent started but whose prompt
-  // was not delivered, so a view that last saw the setup fail catches up.
+  // workspace event reaches this Forge when it does. Once each launch ends,
+  // including a launch whose agent started but whose prompt was not delivered,
+  // a view that has not seen the workspace ready reads it again, and keeps
+  // reading while setup runs, as a setup retry from this view does. A launch
+  // that ends before this view's own first read waits for that read.
   let quickActionLaunchPending = false;
   $effect(() => {
     const launch = quickActionLaunches.get(quickActionWorkspaceKey(workspaceId, workspaceHostKey));
@@ -4635,9 +4637,13 @@
       quickActionLaunchPending = true;
       return;
     }
-    if (!quickActionLaunchPending) return;
+    if (!quickActionLaunchPending || !workspaceLive) return;
     quickActionLaunchPending = false;
-    if (workspaceLive && workspace?.status !== "ready") untrack(requestWorkspace);
+    if (workspace?.status === "ready") return;
+    untrack(() => {
+      requestWorkspace();
+      startPolling();
+    });
   });
 
   $effect(() => {

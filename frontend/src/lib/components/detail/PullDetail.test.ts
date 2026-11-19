@@ -15,6 +15,7 @@ import { createSettingsStore } from "../../stores/settings.svelte.js";
 import { createWorkflowActionsStore } from "../../stores/workflow-actions.svelte.js";
 import { dismissFlash, getFlashes, showFlash } from "../../stores/flash.svelte.js";
 import {
+  createdWorkspaceRef,
   discardWorkspaceLaunch,
   nextWorkspaceLifecycleTick,
   pendingWorkspaceLaunch,
@@ -4714,6 +4715,44 @@ describe("PullDetail inline workspace handoff", () => {
       ]),
     );
     expect(getFlashes()).toEqual([]);
+  });
+
+  it("does not link a workspace another machine returns while it is being deleted", async () => {
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),
+      POST: vi.fn().mockResolvedValue({ data: { id: "ws-going", status: "deletion_failed" } }),
+    };
+    const onOpenWorkspace = vi.fn();
+    renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "https://build-b.example.test",
+      onOpenWorkspace,
+    });
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    await fireEvent.click(create);
+    await waitFor(() =>
+      expect(getFlashes()).toEqual([
+        expect.objectContaining({
+          tone: "warning",
+          message: "This pull request's workspace on build-b is being deleted. Try again once it is gone.",
+        }),
+      ]),
+    );
+    expect(onOpenWorkspace).not.toHaveBeenCalled();
+    const detail = pullDetail();
+    expect(
+      createdWorkspaceRef({
+        provider: detail.repo.provider,
+        platformHost: detail.platform_host,
+        owner: detail.repo_owner,
+        name: detail.repo_name,
+        repoPath: detail.repo.repo_path,
+        number: detail.merge_request.Number,
+        itemType: "pull",
+      }),
+    ).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0]).toBeTruthy();
   });
 
   it("enables creation when an unavailable default machine comes back", async () => {

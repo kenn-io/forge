@@ -742,9 +742,13 @@ proxy and use HTTPS origins for federation.
 ### Tailscale Serve access
 
 When Forge is published with Tailscale Serve, allowed Tailscale logins open it
-without a token:
+without a token. API authentication must stay on, or Forge refuses to start;
+other clients still need the token:
 
 ```toml
+[api]
+require_auth = true
+
 [api.tailscale_serve]
 enabled = true
 allowed_users = ["you@example.com"]

@@ -739,6 +739,31 @@ value. Direct browser requests without that forwarded authority are rejected.
 Host validation does not consume a forwarded scheme; configure HTTPS at the
 proxy and use HTTPS origins for federation.
 
+### Tailscale Serve access
+
+When Forge is published with Tailscale Serve, allowed Tailscale logins open it
+without a token. API authentication must stay on, or Forge refuses to start;
+other clients still need the token:
+
+```toml
+[api]
+require_auth = true
+
+[api.tailscale_serve]
+enabled = true
+allowed_users = ["you@example.com"]
+app_capability = "example.com/cap/forge"
+```
+
+Tagged devices, such as CI runners, send no login, so `allowed_users` cannot
+admit them. Set `app_capability` to a capability you grant in your tailnet
+policy instead. Anyone holding it gets full Forge access, the same as an allowed
+login. Enabled mode needs `allowed_users`, `app_capability`, or both. Restart
+Forge after changing either. `kenn-forge fleet setup hub --tailscale` fills in
+the logins and keeps an `app_capability` you added. The
+[fleet guide](federated-fleet.md#set-up-the-hub) covers the tailnet grant and
+the Serve command.
+
 ### MCP companion
 
 The companion is on by default on Forge's own port when `host` is a loopback IP,

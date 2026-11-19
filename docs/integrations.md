@@ -46,6 +46,31 @@ Roborev still owns the jobs and review data. Forge sends these reads and
 actions through its local server so the browser does not connect to the daemon
 directly.
 
+### See a pull request's review history
+
+The **Roborev** chip next to CI on a pull request opens every Roborev review of
+that pull request in one list: reviews from the roborev-ci GitHub App and local
+reviews from this machine's daemon. Each row shows the reviewed commit, verdict,
+and finding count, and marks the review **Current** when it reviewed the head
+commit, **Superseded** when newer commits arrived, or **Addressed** when the
+local review was closed. Select a row to read the review.
+
+Local reviews appear only when the pull request has a ready workspace on this
+machine, because Roborev finds them by the workspace's path. Without one, the
+list shows only roborev-ci reviews.
+
+### Filter by Roborev findings
+
+The Pulls and Activity filter menus have a **Roborev findings** row that reads
+the latest roborev-ci review of each pull request's head commit. Require it to
+find pull requests whose review reported problems. Exclude it to keep only pull
+requests whose review came back clean.
+
+Excluded is not the plain opposite of required. A pull request whose head commit
+has no finished roborev-ci review, because it was never reviewed or its review
+is pending, running, failed, or skipped, matches neither side. Local daemon
+reviews do not count, since they are not tied to a pull request.
+
 ## Keep Git hooks in new workspaces
 
 Forge's new managed clones use the `init.templateDir` from the daemon user's

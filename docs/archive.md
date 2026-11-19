@@ -1,8 +1,8 @@
 # Historical activity archive
 
 Kenn Forge can backfill provider activity into its local SQLite database.
-Archive work uses spare provider capacity, so normal sync stays ahead of
-historical requests.
+Archive work runs beside live sync and spends only spare provider capacity,
+so it keeps a reserve for live work without waiting for sync to go idle.
 
 Reports read only local data. They do not spend provider requests.
 

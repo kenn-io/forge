@@ -81,11 +81,12 @@ The command returns an array with `pid`, `transport: "http"`, `url`,
 including when saved settings require a restart. A stopped daemon or inactive
 companion returns `[]`; the command never starts either. Use `--config` to
 select another configuration and `--timeout` to set the daemon request timeout.
-Token contents never appear in the output. For client setup instructions and
+Token contents never appear in the output. For client configuration and
 restart guidance, use `kenn-forge mcp quickstart`.
 
-Configure your MCP client with the HTTP URL. For clients that accept a JSON
-server catalog, the shape is typically similar to:
+For Claude Code and Codex, use `kenn-forge agent setup` instead of the manual
+steps below. For other MCP clients, configure the HTTP URL by hand. For clients
+that accept a JSON server catalog, the shape is typically similar to:
 
 ```json
 {

@@ -30,7 +30,8 @@ The filters can narrow the queue by:
 - open or closed state
 - human or bot activity
 - the pull request conditions from the Pulls filter menu: draft, approved, merge
-  conflicts, merge queued, CI, has a workspace, and from a fork
+  conflicts, merge queued, CI, has a workspace, from a fork, and
+  [Roborev findings](../integrations.md#filter-by-roborev-findings)
 
 The Activity filter menu uses the same names and order as the Pulls filter menu.
 Each condition cycles through off, required, and excluded. Pull request

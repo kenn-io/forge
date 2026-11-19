@@ -780,6 +780,16 @@ relationships alone, which also remain the fallback when GitHub's stack data
 is unusable. Forge does not create or reorder stacks. Mid-stack merges stay
 blocked by default for stacks Forge infers from branches.
 
+## Usage reporting
+
+Forge can send general, anonymous usage telemetry. Usage telemetry is off
+unless you have opted in or set `TELEMETRY_ENABLED=1`. Development builds never
+send it.
+
+Any of these turns it off, even after you opted in:
+`KENN_FORGE_TELEMETRY_ENABLED=0`, `TELEMETRY_ENABLED=0`, `DO_NOT_TRACK=1`, or
+`CI`. Restart the daemon after you change them.
+
 ## Container startup
 
 Build a local image from the repository root:

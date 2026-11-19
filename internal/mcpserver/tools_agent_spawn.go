@@ -27,7 +27,15 @@ type workspaceSourceInput struct {
 	Type  string                `json:"type" jsonschema:"item, adhoc or kata"`
 	Item  *itemRefInput         `json:"item,omitempty"`
 	AdHoc *adHocWorkspaceSource `json:"adhoc,omitempty"`
-	Kata  *WorkspaceKataTarget  `json:"kata,omitempty"`
+	Kata  *kataWorkspaceSource  `json:"kata,omitempty"`
+}
+
+// kataWorkspaceSource names a Kata task by the IDs workspace creation
+// consumes; the output-only qualified reference is not an input.
+type kataWorkspaceSource struct {
+	DaemonID   string `json:"daemon_id"`
+	ProjectUID string `json:"project_uid"`
+	IssueUID   string `json:"issue_uid"`
 }
 
 type adHocWorkspaceSource struct {
@@ -455,7 +463,9 @@ func (s *Server) resolveOrCreateWorkspace(
 		return s.createAdHocWorkspace(ctx, *source.AdHoc)
 	}
 	if source.Kata != nil {
-		workspace, err := s.backend.CreateKataWorkspace(ctx, *source.Kata)
+		workspace, err := s.backend.CreateKataWorkspace(ctx, WorkspaceKataTarget{
+			DaemonID: source.Kata.DaemonID, ProjectUID: source.Kata.ProjectUID, IssueUID: source.Kata.IssueUID,
+		})
 		if err != nil {
 			return Workspace{}, false, err
 		}

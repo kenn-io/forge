@@ -86,6 +86,17 @@ func (m *Manager) MirrorACP(mirror ACPMirror) *DormantACP {
 	dormant := &DormantACP{saved: view, started: make(chan struct{})}
 	dormant.mirror = &acpMirrorFollower{source: mirror, reader: newACPTranscriptReader(mirror.Agent), path: mirror.TranscriptPath}
 	dormant.start = func() (ACPChat, error) {
+		// Each view of the session has its own chat. The view that hands off
+		// second reuses the agent the first started: saving its own copy of the
+		// transcript would replace the session that agent now records.
+		handoff := m.handoffLock(mirror.Key)
+		handoff.Lock()
+		defer handoff.Unlock()
+		if mirror.Live != nil {
+			if live := mirror.Live(); live != nil {
+				return live, nil
+			}
+		}
 		if err := m.saveMirroredSession(dormant, mirror); err != nil {
 			return nil, err
 		}

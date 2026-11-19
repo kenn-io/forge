@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { Effect } from "effect";
 import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
 import { makeAppRuntime } from "../../app/runtime.js";
+import { createSettingsStore } from "../../stores/settings.svelte.js";
 
 import { STORES_KEY } from "../../context.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
@@ -90,10 +91,10 @@ describe("WorkspaceTerminalView layout flip", () => {
     globalThis.fetch = api.fetch;
     globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
 
-    // TerminalOptionsMenu (always present in the ready-workspace toolbar)
-    // reads settingsStore.getTerminalSettings() at initialization, so the
-    // main subtree cannot mount without a settings store on STORES_KEY.
+    // Include the terminal settings read by the shared base terminal as well
+    // as the toolbar's fixture-specific actions.
     const settingsStore = {
+      ...createSettingsStore(),
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getQuickActions: () => [{ label: "Review", agent: "codex", prompt: "Review this change" }],
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
@@ -107,14 +108,19 @@ describe("WorkspaceTerminalView layout flip", () => {
     });
 
     try {
+      const workspaceTab = screen.getByRole("tab", { name: "Workspace", exact: true });
+      await expect.element(workspaceTab).toBeVisible();
+      const launcher = page.getByRole("dialog", { name: "Launch a session", exact: true });
+      await expect.element(launcher).toBeVisible();
+      await launcher.getByRole("button", { name: "Close", exact: true }).click();
       const info = screen.getByRole("button", { name: "Workspace info", exact: true });
       const launch = screen.getByRole("button", { name: "Launch", exact: true });
       const quickActions = screen.getByRole("button", { name: "Quick actions", exact: true });
       const presets = screen.getByRole("button", { name: "Workflow presets", exact: true });
       await expect.element(info).toBeVisible();
       for (const [control, anchor] of [
-        [launch, info],
-        [quickActions, info],
+        [launch, workspaceTab],
+        [quickActions, workspaceTab],
         [presets, screen.getByRole("button", { name: "Delete", exact: true })],
       ]) {
         const titleRow = anchor!.element().getBoundingClientRect();

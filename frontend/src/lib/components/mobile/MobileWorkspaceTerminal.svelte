@@ -27,6 +27,7 @@
   import {
     workspaceSessionWebSocketPath,
     workspaceTmuxWebSocketPath,
+    workspaceBaseSessionKey,
     type WorkspaceRuntimeState,
   } from "../../api/workspace-runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -183,10 +184,6 @@
     return { workspaceId, ...(hostKey === undefined ? {} : { hostKey }) };
   }
 
-  function baseSessionKey(id: string): string {
-    return `${id}:@workspace`;
-  }
-
   function mobileTerminalSessions(
     runtimeState: WorkspaceRuntimeState | null,
     detail: WorkspaceDetail | null,
@@ -204,7 +201,7 @@
     return [
       ...launched,
       {
-        key: baseSessionKey(detail.id),
+        key: workspaceBaseSessionKey(detail.id),
         label: "Workspace",
         status: "running",
         generation: detail.created_at,
@@ -248,6 +245,7 @@
         kind: session.runtimeSession?.kind,
         label: session.label,
         cursorWheelInput: session.cursorWheelInput,
+        reconnectOnExit: session.runtimeSession === null,
       });
     }
     for (const key of ownedHostKeys) {

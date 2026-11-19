@@ -56,7 +56,8 @@ vi.mock("../../stores/flash.svelte.js", () => ({
   showFlash: mocks.showFlash,
 }));
 
-vi.mock("../../api/workspace-runtime.js", () => ({
+vi.mock("../../api/workspace-runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../api/workspace-runtime.js")>()),
   workspaceSessionWebSocketPath: () => "",
   workspaceTmuxWebSocketPath: () => "",
 }));

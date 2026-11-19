@@ -244,14 +244,14 @@
     bind:this={terminalPane}
     websocketPath={session.websocketPath}
     fleetHostKey={session.fleetHostKey}
-    reconnectOnExit={false}
+    reconnectOnExit={session.reconnectOnExit ?? false}
     disabled={session.disabled ?? false}
     active={active && attached}
     renderingEnabled={!retained}
     autoFocus={false}
     cursorWheelInput={session.cursorWheelInput ?? false}
     initialStatus={stoppedShell ? undefined : session.status}
-    onExit={(code) => onExit(code)}
+    onExit={session.reconnectOnExit ? undefined : onExit}
     onConnectionChange={(connected) => onConnectionChange(connected)}
   />
   {/key}

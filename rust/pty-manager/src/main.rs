@@ -171,7 +171,7 @@ struct Shared {
     title_parser: TitleParserState,
     subscribers: Vec<Subscriber>,
     next_subscriber_id: u64,
-    attached: bool,
+    active_attachments: usize,
     attachment_ended_after_exit: bool,
     child_reaped: bool,
     exited: bool,
@@ -539,22 +539,7 @@ fn handle_attach(
 ) -> Result<()> {
     {
         let mut shared = runtime.shared.lock().expect("shared poisoned");
-        if shared.attached {
-            drop(shared);
-            write_response(
-                &mut stream,
-                Response {
-                    kind: "error",
-                    ok: false,
-                    error: Some("pty owner already has an active attachment".to_string()),
-                    exit_code: None,
-                    output: Vec::new(),
-                    title: None,
-                },
-            )?;
-            return Ok(());
-        }
-        shared.attached = true;
+        shared.active_attachments += 1;
     }
     let mut active_attachment = ActiveAttachment {
         shared: Arc::clone(&runtime.shared),
@@ -951,22 +936,22 @@ fn add_subscriber(shared: &mut Shared, tx: mpsc::SyncSender<Vec<u8>>) -> u64 {
     id
 }
 
-// After the child exits, keep serving so the attached client can drain its
+// After the child exits, keep serving so attached clients can drain their
 // output and exit frame, or a client that reconnects can still collect them.
-// Leave once such an attachment ends, or after a bounded linger, matching the
+// Leave once all such attachments end, or after a bounded linger, matching the
 // Go owner's waitAfterNaturalExit. After a stop, wait (bounded) for the killed
 // child's exit to close the output so the attached client gets its exit frame.
 fn owner_should_exit(shared: &Arc<Mutex<Shared>>, completed_at: &mut Option<Instant>) -> bool {
     let shared = shared.lock().expect("shared poisoned");
     if let Some(stop_requested_at) = shared.stop_requested_at {
-        return (shared.output_closed && !shared.attached)
+        return (shared.output_closed && shared.active_attachments == 0)
             || stop_requested_at.elapsed() >= OWNER_STOP_TIMEOUT;
     }
     if !shared.output_closed {
         return false;
     }
     let completed_at = *completed_at.get_or_insert_with(Instant::now);
-    (!shared.attached && shared.attachment_ended_after_exit)
+    (shared.active_attachments == 0 && shared.attachment_ended_after_exit)
         || completed_at.elapsed() >= OWNER_POST_EXIT_LINGER
 }
 
@@ -1460,7 +1445,7 @@ impl Drop for ActiveAttachment {
                 .subscribers
                 .retain(|subscriber| subscriber.id != subscriber_id);
         }
-        shared.attached = false;
+        shared.active_attachments -= 1;
         if shared.output_closed {
             shared.attachment_ended_after_exit = true;
         }
@@ -2241,6 +2226,33 @@ mod tests {
     }
 
     #[test]
+    fn owner_waits_for_every_attachment_after_output_closes() {
+        for stop_requested_at in [None, Some(Instant::now())] {
+            let shared = Arc::new(Mutex::new(Shared {
+                active_attachments: 2,
+                output_closed: true,
+                stop_requested_at,
+                ..Shared::default()
+            }));
+            let first = ActiveAttachment {
+                shared: Arc::clone(&shared),
+                subscriber_id: None,
+            };
+            let second = ActiveAttachment {
+                shared: Arc::clone(&shared),
+                subscriber_id: None,
+            };
+            let mut completed_at = None;
+
+            drop(first);
+            assert!(!owner_should_exit(&shared, &mut completed_at));
+
+            drop(second);
+            assert!(owner_should_exit(&shared, &mut completed_at));
+        }
+    }
+
+    #[test]
     fn stop_signals_group_until_child_is_reaped() {
         let kill_calls = Arc::new(AtomicUsize::new(0));
         let mut killer: Box<dyn ChildKiller + Send + Sync> = Box::new(RecordingKiller {
@@ -2421,7 +2433,7 @@ mod tests {
     #[test]
     fn owner_waits_after_stop_for_attachment_until_bounded_timeout() {
         let shared = Arc::new(Mutex::new(Shared {
-            attached: true,
+            active_attachments: 1,
             output_closed: true,
             stop_requested_at: Some(Instant::now()),
             ..Shared::default()
@@ -2429,11 +2441,11 @@ mod tests {
         let mut completed_at = None;
         assert!(!owner_should_exit(&shared, &mut completed_at));
 
-        shared.lock().expect("shared poisoned").attached = false;
+        shared.lock().expect("shared poisoned").active_attachments = 0;
         assert!(owner_should_exit(&shared, &mut completed_at));
 
         let unfinished = Arc::new(Mutex::new(Shared {
-            attached: true,
+            active_attachments: 1,
             stop_requested_at: Some(Instant::now() - OWNER_STOP_TIMEOUT),
             ..Shared::default()
         }));

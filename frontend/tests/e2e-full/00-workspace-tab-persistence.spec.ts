@@ -155,14 +155,14 @@ test.describe("workspace tab persistence", () => {
       await page.goto(`${isolatedServer.info.base_url}/terminal/${createdWorkspace.id}`);
 
       const workflow = page.getByRole("region", { name: "Workflow panes" });
-      const panes = workflow.locator(".tabbed-panel-tab-panel");
+      const panes = workflow.locator('[data-pane-key="terminal"]');
       const terminalTab = workflow.getByRole("tab", { name: "Terminal" });
 
       await expect(page.getByRole("region", { name: "Session launcher" })).toBeVisible();
       await openTerminalWorkflowTab(page);
       await expect(panes).toHaveCount(1);
       await expect(terminalTab).toHaveAttribute("aria-selected", "true");
-      const terminalPane = workflow.locator(".tabbed-panel-tab-panel.active");
+      const terminalPane = panes;
       await terminalPane.evaluate((el) => el.setAttribute("data-test-terminal-id", "preserved"));
 
       await page.getByRole("button", { name: "Workspace info", exact: true }).click();
@@ -354,7 +354,8 @@ test.describe("workspace tab persistence", () => {
 
       await expect(page.getByRole("region", { name: "Session launcher" })).toBeVisible();
       await expect(workflow.getByRole("tab", { name: "Diff" })).toHaveCount(0);
-      await expect(panes).toHaveCount(0);
+      await expect(panes).toHaveCount(1);
+      await expect(panes).toHaveAttribute("data-pane-key", "home");
 
       const diffResponse = page.waitForResponse(
         (response) =>
@@ -425,7 +426,8 @@ test.describe("workspace tab persistence", () => {
       await rightDiffHost.press("j");
       await rightDiffHost.press("k");
       await expect(workflow.getByRole("tab", { name: "Diff" })).toHaveCount(0);
-      await expect(panes).toHaveCount(0);
+      await expect(panes).toHaveCount(1);
+      await expect(panes).toHaveAttribute("data-pane-key", "home");
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
       const diffToolbar = page.locator(".right-sidebar .diff-toolbar");
       await expect(diffToolbar.locator(".compact-more-btn")).toBeVisible();
@@ -478,13 +480,14 @@ test.describe("workspace tab persistence", () => {
       await expect(betaDiffFile).toHaveCount(0);
       await page.keyboard.press("Escape");
       await expect(alphaDiffFile).toBeVisible();
-      await expect(panes).toHaveCount(0);
+      await expect(panes).toHaveCount(1);
+      await expect(panes).toHaveAttribute("data-pane-key", "home");
       await expect(page.getByRole("region", { name: "Session launcher" })).toBeVisible();
 
       await openTerminalWorkflowTab(page);
       await expect(workflow.getByRole("tab", { name: "Terminal" })).toHaveAttribute("aria-selected", "true");
       await expect(page.locator(".right-sidebar .workspace-diff")).toBeVisible();
-      await expect(panes).toHaveCount(1);
+      await expect(panes).toHaveCount(2);
 
       await workflow.locator(".tabbed-panel-tab-panel.active .terminal-container").click();
       for (const key of ["j", "k", "[", "]"]) {

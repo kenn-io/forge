@@ -597,15 +597,14 @@ func TestWorkspaceRuntimePlainShellUsesPtyOwnerWhenTmuxUnavailableE2E(t *testing
 	)
 }
 
-func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
+func TestRustPtyManagerSharesConcurrentAttachmentsE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("concurrent attach coverage is exercised by the Rust owner tests on Windows")
+		t.Skip("test fixture uses /bin/sh")
 	}
 	requirePTYAvailable(t)
 	runParallelWorkspacePTYTest(t)
 
 	require := require.New(t)
-	assert := assert.New(t)
 
 	managerPath := buildRustPtyManagerForTest(t)
 	ptyOwnerDir := longRustPtyOwnerDirForTest(t)
@@ -644,35 +643,50 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 		t.Context(), session,
 		ptysize.Geometry{Cols: 100, Rows: 20},
 	)
-	if second != nil {
-		second.Close()
+	require.NoError(err)
+	defer second.Close()
+	require.Contains(
+		readPtyOwnerOutputUntil(t, second.Output, "got:before-second"),
+		"got:before-second",
+	)
+	for _, input := range []*ptyowner.Attachment{first, second} {
+		marker := "from-first"
+		if input == second {
+			marker = "from-second"
+		}
+		require.NoError(input.Write([]byte(marker + "\r")))
+		for _, output := range []*ptyowner.Attachment{first, second} {
+			require.Contains(
+				readPtyOwnerOutputUntil(t, output.Output, "got:"+marker),
+				"got:"+marker,
+			)
+		}
 	}
-	require.Error(err)
-	assert.Contains(err.Error(), "already has an active attachment")
 
 	first.Close()
-	var third *ptyowner.Attachment
-	require.Eventually(func() bool {
-		var attachErr error
-		third, attachErr = client.Attach(
-			t.Context(), session,
-			ptysize.Geometry{Cols: 80, Rows: 24},
-		)
-		return attachErr == nil
-	}, 2*time.Second, 20*time.Millisecond)
-	defer third.Close()
-	require.NoError(third.Write([]byte("after-close\n")))
+	require.NoError(second.Write([]byte("after-close\r")))
 	require.Contains(
-		readPtyOwnerOutputUntil(t, third.Output, "got:after-close"),
+		readPtyOwnerOutputUntil(t, second.Output, "got:after-close"),
 		"got:after-close",
+	)
+	second.Close()
+	third, err := client.Attach(
+		t.Context(), session,
+		ptysize.Geometry{Cols: 80, Rows: 24},
+	)
+	require.NoError(err)
+	defer third.Close()
+	require.NoError(third.Write([]byte("after-reconnect\r")))
+	require.Contains(
+		readPtyOwnerOutputUntil(t, third.Output, "got:after-reconnect"),
+		"got:after-reconnect",
 	)
 }
 
-func TestWorkspacePtyOwnerTerminalRejectsConcurrentAttachmentsE2E(t *testing.T) {
+func TestWorkspacePtyOwnerTerminalSharesConcurrentAttachmentsE2E(t *testing.T) {
 	runParallelWorkspacePTYTest(t)
 
 	require := require.New(t)
-	assert := assert.New(t)
 
 	dir := t.TempDir()
 	ptyOwnerDir := filepath.Join(dir, "pty-owner")
@@ -693,22 +707,37 @@ func TestWorkspacePtyOwnerTerminalRejectsConcurrentAttachmentsE2E(t *testing.T) 
 	ts := httptest.NewServer(fixture.server)
 	t.Cleanup(ts.Close)
 
-	first, _, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.ID, "")
+	first, _, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.ID, "cols=91&rows=27")
 	require.NoError(err)
 	defer first.Close(websocket.StatusNormalClosure, "done")
+	workspaceTerminalConnWriteRead(
+		t, ctx, first, "shared_owner=phone; printf 'owner:%s\\n' \"$shared_owner\"\n", "owner:phone",
+	)
 
-	second, status, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.ID, "")
-	require.Error(err)
-	if second != nil {
-		second.Close(websocket.StatusNormalClosure, "done")
-	}
-	assert.Equal(http.StatusConflict, status)
+	second, _, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.ID, "")
+	require.NoError(err)
+	defer second.Close(websocket.StatusNormalClosure, "done")
+	workspaceTerminalConnWriteRead(
+		t, ctx, second, "printf 'shared:%s\\n' \"$shared_owner\"\n", "shared:phone",
+	)
+
+	workspaceTerminalConnWriteRead(
+		t, ctx, second, "size=$(stty size); printf 'shared-size:%s\\n' \"$size\"\n", "shared-size:27 91",
+	)
+	require.NoError(second.Write(ctx, websocket.MessageText, []byte(`{"type":"claim_resize","cols":100,"rows":32}`)))
+	workspaceTerminalConnWriteRead(
+		t, ctx, second, "size=$(stty size); printf 'visible-size:%s\\n' \"$size\"\n", "visible-size:32 100",
+	)
 
 	require.NoError(first.Close(websocket.StatusNormalClosure, "done"))
+	workspaceTerminalConnWriteRead(
+		t, ctx, second, "printf 'remaining:%s\\n' \"$shared_owner\"\n", "remaining:phone",
+	)
+	require.NoError(second.Close(websocket.StatusNormalClosure, "done"))
 	third := workspaceTerminalDialEventually(t, ctx, ts.URL, ws.ID)
 	defer third.Close(websocket.StatusNormalClosure, "done")
 	workspaceTerminalConnWriteRead(
-		t, ctx, third, "printf 'owner-after-close\n'\n", "owner-after-close",
+		t, ctx, third, "printf 'reopened:%s\\n' \"$shared_owner\"\n", "reopened:phone",
 	)
 }
 

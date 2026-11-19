@@ -30,8 +30,9 @@
   $effect(() => {
     const el = node;
     if (el === null) return;
-    setSessionSlotVisible(hostKey, el, visible);
-    return () => setSessionSlotVisible(hostKey, el, false);
+    const key = hostKey;
+    setSessionSlotVisible(key, el, visible);
+    return () => setSessionSlotVisible(key, el, false);
   });
 </script>
 

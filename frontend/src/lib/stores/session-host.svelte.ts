@@ -54,6 +54,7 @@ export interface MountedSession {
   websocketPath: string;
   status: string;
   cursorWheelInput?: boolean;
+  reconnectOnExit?: boolean;
   disabled?: boolean;
 }
 
@@ -197,6 +198,7 @@ export function noteSessionMounted(session: MountedSession): void {
       existing.status === session.status &&
       existing.kind === session.kind &&
       existing.label === session.label &&
+      (existing.reconnectOnExit ?? false) === (session.reconnectOnExit ?? false) &&
       (existing.cursorWheelInput ?? false) === (session.cursorWheelInput ?? false) &&
       (existing.disabled ?? false) === (session.disabled ?? false)
     ) {

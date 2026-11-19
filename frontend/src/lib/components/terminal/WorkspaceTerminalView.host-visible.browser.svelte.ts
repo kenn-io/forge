@@ -552,6 +552,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     // reads settingsStore.getTerminalSettings() at initialization, so the
     // main subtree cannot mount without a settings store on STORES_KEY.
     const settingsStore = {
+      ...createSettingsStore(),
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getQuickActions: () => [],
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
@@ -626,6 +627,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
 
     const settingsStore = {
+      ...createSettingsStore(),
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getQuickActions: () => [],
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
@@ -724,6 +726,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
 
     const settingsStore = {
+      ...createSettingsStore(),
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getQuickActions: () => [],
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
@@ -795,6 +798,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     // (inside the options popover) with livePreview, which writes settings
     // back through the store — so the stub needs a setter too.
     const settingsStore = {
+      ...createSettingsStore(),
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getQuickActions: () => [],
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
@@ -888,6 +892,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
 
     const settingsStore = {
+      ...createSettingsStore(),
       getTerminalFontSize: () => terminalSettings.font_size,
       getQuickActions: () => [],
       getTerminalSettings: () => terminalSettings,
@@ -956,6 +961,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
 
     const settingsStore = {
+      ...createSettingsStore(),
       getTerminalFontSize: () => terminalSettings.font_size,
       getQuickActions: () => [],
       getTerminalSettings: () => terminalSettings,
@@ -1009,6 +1015,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
     globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
 
     const settingsStore = {
+      ...createSettingsStore(),
       getTerminalFontSize: () => DEFAULT_TERMINAL_SETTINGS.font_size,
       getQuickActions: () => [],
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,

@@ -92,15 +92,22 @@ session. Use the session controls when you intend to stop a process.
 
 ## Show agent state in the sidebar
 
-Install lifecycle hooks for the agents Forge supports:
+Connect Claude Code and Codex to Forge with one command:
 
 ```sh
-kenn-forge agent-hook install
+kenn-forge agent setup
 ```
 
-Use `--agent NAME` to install one agent's hook. The sidebar can then show when
-an agent is working, waiting for approval, waiting for input, or done. Without
-fresh hook reports, Forge falls back to tmux activity.
+Setup installs lifecycle hooks for each client it finds and registers
+[Forge MCP](../kenn-forge-mcp.md) when the daemon is running with MCP on. Run
+`kenn-forge agent setup --check` to see what is connected, and use
+`--agent NAME` to set up one agent. Rerun setup after upgrading Forge so
+existing hooks pick up changes, then review the updated Codex hooks in
+`/hooks`.
+
+The sidebar can then show when an agent is working, waiting for approval,
+waiting for input, or done. Without fresh hook reports, Forge falls back to tmux
+activity. To manage hooks without MCP, use `kenn-forge agent-hook install`.
 
 On Windows, ending a conversation with `/clear` or exit clears its badge even
 if another program, such as a virus scanner, has the activity file open. If

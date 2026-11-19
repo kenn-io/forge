@@ -538,7 +538,7 @@ func TestSpawnWorkspaceWithAgentCreatesKataTaskWorkspace(t *testing.T) {
 	s := newMCPTestServer(t, backend)
 
 	out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
-		Source: &workspaceSourceInput{Type: "kata", Kata: &WorkspaceKataTarget{
+		Source: &workspaceSourceInput{Type: "kata", Kata: &kataWorkspaceSource{
 			DaemonID: " local ", ProjectUID: "project-a", IssueUID: "task-a",
 		}},
 		AgentTarget: "codex", InitialMessage: "start work", Timeout: "2s",
@@ -546,6 +546,33 @@ func TestSpawnWorkspaceWithAgentCreatesKataTaskWorkspace(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ws-kata", out.Workspace.ID)
 	assert.False(t, out.Workspace.Reused)
+}
+
+// The qualified reference is output-only: the tool must refuse it rather than
+// accept and ignore it, so an agent never believes it chose a task by reference.
+func TestSpawnWorkspaceWithAgentRejectsKataReferenceInput(t *testing.T) {
+	backend := successfulSpawnBackend("ws-kata", "runtime-kata", "coding-kata")
+	backend.createKataWorkspaceFn = func(context.Context, WorkspaceKataTarget) (Workspace, error) {
+		assert.Fail(t, "a rejected source must not create a workspace")
+		return Workspace{}, nil
+	}
+	s := newMCPTestServer(t, backend)
+
+	result, err := connectMCPTestSession(t, s).CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "kenn_forge_spawn_workspace_with_agent",
+		Arguments: map[string]any{
+			"source": map[string]any{
+				"type": "kata",
+				"kata": map[string]any{
+					"daemon_id": "local", "project_uid": "project-a", "issue_uid": "task-a",
+					"reference": "Project#task-1",
+				},
+			},
+			"agent_target": "codex", "initial_message": "start", "timeout": "2s",
+		},
+	})
+
+	require.True(t, err != nil || result.IsError, "a source with reference must be rejected")
 }
 
 func TestSpawnWorkspaceWithAgentRejectsIncompleteKataSource(t *testing.T) {
@@ -557,12 +584,12 @@ func TestSpawnWorkspaceWithAgentRejectsIncompleteKataSource(t *testing.T) {
 	}{
 		"missing kata": {&workspaceSourceInput{Type: "kata"}, "exactly one tagged kata task"},
 		"missing issue": {
-			&workspaceSourceInput{Type: "kata", Kata: &WorkspaceKataTarget{DaemonID: "local", ProjectUID: "p"}},
+			&workspaceSourceInput{Type: "kata", Kata: &kataWorkspaceSource{DaemonID: "local", ProjectUID: "p"}},
 			"requires daemon_id, project_uid and issue_uid",
 		},
 		"mixed": {
 			&workspaceSourceInput{
-				Type: "kata", Kata: &WorkspaceKataTarget{DaemonID: "local", ProjectUID: "p", IssueUID: "i"},
+				Type: "kata", Kata: &kataWorkspaceSource{DaemonID: "local", ProjectUID: "p", IssueUID: "i"},
 				AdHoc: &adHocWorkspaceSource{Repo: validRepo},
 			},
 			"exactly one tagged kata task",

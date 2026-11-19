@@ -143,8 +143,11 @@ discovery                           runtime record `mcp_listen_addr`; `/api/ping
 
 ## Agent handoff
 
-- MCP can create or reuse one PR, issue, or ad-hoc workspace and launch one new agent runtime with
-  one initial message; it confirms submission before waiting for the runtime's hook session.
+- MCP can create or reuse one PR, issue, Kata-task, or ad-hoc workspace and launch one new agent
+  runtime with one initial message; it confirms submission before waiting for the runtime's hook session.
+- A Kata-task source takes only the daemon, project, and issue IDs and goes through the UI's Kata
+  workspace creation, which reuses an existing task workspace even while its daemon is stopped
+  (`internal/server/kata/workspace.go::Handler.createKataWorkspace`).
 - Readiness waits and input-not-ready retries use the shared handoff package, the same one the
   workspace agent-handoff endpoint uses (`internal/workspace/agenthandoff/agenthandoff.go::Deliver`).
 - A resume names the existing workspace and runtime, repeats the same target and prompt through the

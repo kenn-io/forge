@@ -8,6 +8,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	katacatalog "go.kenn.io/forge/internal/kata"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestWorkspaceKataTargetAvailability(t *testing.T) {
@@ -56,4 +57,46 @@ func TestWorkspaceKataTargetsReuseTaskLinks(t *testing.T) {
 	listed, err := srv.ListWorkspaceKataTargets(ctx, "ws-targets")
 	require.NoError(t, err)
 	assert.Empty(t, listed)
+}
+
+// MCP creates Kata workspaces through the workspace service; an existing task
+// workspace must be returned while the task's local daemon is stopped.
+func TestCreateKataWorkspaceServiceReusesWorkspaceWhileDaemonStopped(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupWorkspaceTestServerWithConfigContent(t, `
+sync_interval = "5m"
+github_token_env = "KENN_FORGE_GITHUB_TOKEN"
+host = "127.0.0.1"
+port = 8091
+
+[[repos]]
+owner = "acme"
+name = "widget"
+`, &mockGH{})
+	srv.loadCatalog = func() (katacatalog.Catalog, error) {
+		return katacatalog.Catalog{Daemons: []katacatalog.Daemon{{ID: "desktop", Local: true}}}, nil
+	}
+	srv.resolveDaemon = func(d katacatalog.Daemon) (katacatalog.Daemon, error) { return d, nil }
+	srv.discoverLocalDaemonURL = func() string { return "" }
+	require.False(srv.WorkspaceKataTargetsAvailable())
+	srv.workspaceAPI.SetKataTargets(srv.Handler)
+
+	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	metadata := db.WorkspaceKataMetadata{DaemonID: "desktop", ProjectUID: "project-kata", IssueUID: "issue-kata-1"}
+	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID: "ws-kata-existing", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget",
+		ItemType: db.WorkspaceItemTypeKataTask, ItemKey: db.KataWorkspaceItemKey(metadata),
+		GitHeadRef: "kenn-forge/kata/task-1", WorkspaceBranch: "kenn-forge/kata/task-1",
+		WorktreePath: "/tmp/ws-kata-existing", Status: "ready", KataMetadata: &metadata,
+	}))
+
+	result, err := srv.workspaceAPI.CreateKataWorkspaceService(t.Context(), workspaceapi.WorkspaceKataTarget{
+		DaemonID: "desktop", ProjectUID: "project-kata", IssueUID: "issue-kata-1",
+	})
+	require.NoError(err)
+	assert.Equal("ws-kata-existing", result.Workspace.ID)
+	assert.False(result.Workspace.Created)
 }

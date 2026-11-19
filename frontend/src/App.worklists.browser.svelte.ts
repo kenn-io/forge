@@ -302,7 +302,9 @@ it("steps and marks rows in score order when the rail is sorted by score", async
   await expect
     .element(rail.getByRole("button", { name: "Theme toggle does not stick" }), { timeout: WAIT })
     .toBeVisible();
-  await expect.element(page.getByRole("radio", { name: "Score" })).toHaveAttribute("aria-checked", "true");
+  await expect
+    .element(page.getByRole("radiogroup", { name: "Row order" }).getByRole("radio").filter({ hasText: "Score" }))
+    .toHaveAttribute("aria-checked", "true");
 
   // The highest-scored item is last in agent order, so d only moves on in score order.
   pressKey("d");

@@ -143,6 +143,176 @@ describe("workflow actions store", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
+  function routeRuns(respond: (url: URL) => Promise<Response>): void {
+    globalThis.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      return url.pathname.endsWith("/runs") ? respond(url) : api.fetch(input, init);
+    };
+  }
+
+  // Serves `ids()` in 50-run pages and records each page read.
+  function routeRunIds(
+    ids: () => readonly string[],
+    status: (page: number) => string | null = () => "queued",
+  ): string[] {
+    const reads: string[] = [];
+    routeRuns(async (url) => {
+      const page = Number(url.searchParams.get("cursor") ?? "1");
+      reads.push(String(page));
+      const all = ids();
+      const pageStatus = status(page);
+      if (pageStatus === null) return jsonResponse({ status: 500, code: "internalError", title: "Failed" }, 500);
+      return jsonResponse({
+        repo,
+        items: all.slice((page - 1) * 50, page * 50).map((id) => run(id, pageStatus)),
+        exhausted: page * 50 >= all.length,
+        ...(page * 50 < all.length && { next_cursor: String(page + 1) }),
+      });
+    });
+    return reads;
+  }
+
+  async function openDeploy(): Promise<void> {
+    store.loadCatalog(ref);
+    await settle();
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+  }
+
+  it("bounds refresh at 300 runs and continues from the refreshed sequence", async () => {
+    let status = "queued";
+    let fail = false;
+    const ids = Array.from({ length: 1050 }, (_, i) => String(i));
+    const reads = routeRunIds(
+      () => ids,
+      (page) => (fail && page === 2 ? null : status),
+    );
+    await openDeploy();
+    for (let i = 0; i < 19; i++) {
+      store.loadMoreRuns(ref);
+      await settle();
+    }
+    status = "completed";
+    reads.length = 0;
+    store.refreshRuns(ref);
+    await settle();
+    expect(reads).toEqual(["1", "2", "3", "4", "5", "6"]);
+    expect(store.getRuns(ref)).toHaveLength(300);
+    expect(store.getRuns(ref)[299]?.status).toBe("completed");
+    expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ nextCursor: "7", exhausted: false });
+    store.loadMoreRuns(ref);
+    await settle();
+    expect(reads.at(-1)).toBe("7");
+    const beforeFailure = store.getRuns(ref).map((item) => item.id);
+    const cursorBeforeFailure = store.getSnapshot(ref)?.runsPage.nextCursor;
+    fail = true;
+    store.refreshRuns(ref);
+    await settle();
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual(beforeFailure);
+    expect(store.getSnapshot(ref)?.runsPage.nextCursor).toBe(cursorBeforeFailure);
+    expect(store.getSnapshot(ref)?.error).not.toBeNull();
+
+    fail = false;
+    store.selectWorkflow(ref, null);
+    store.selectWorkflow(ref, "deploy.yml");
+    await settle();
+    fixture.dispatchResponse = () =>
+      jsonResponse({ accepted: true, dispatch_id: "dispatch-1", actor: "maintainer", run: run("new", "queued") }, 202);
+    store.dispatch({
+      ref,
+      workflowId: "deploy.yml",
+      expectedDefinitionSha: "definition-1",
+      dispatchRef: "main",
+      inputs: {},
+    });
+    await settle();
+    reads.length = 0;
+    store.refreshRuns(ref);
+    await settle();
+    expect(reads).toEqual(["1", "2"]);
+    expect(store.getRuns(ref)).toHaveLength(101);
+  });
+
+  it("continues after a deletion shifts an unseen run across the old cursor", async () => {
+    let refreshed = false;
+    const old = Array.from({ length: 100 }, (_, i) => `old-${i}`);
+    const current = ["new-1", "new-2", ...old.filter((id) => id !== "old-24")];
+    routeRunIds(() => (refreshed ? current : old));
+    await openDeploy();
+    store.loadMoreRuns(ref);
+    await settle();
+    refreshed = true;
+    store.refreshRuns(ref);
+    await settle();
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual(current.slice(0, 100));
+    expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ exhausted: false, nextCursor: "3" });
+    store.loadMoreRuns(ref);
+    await settle();
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual(current);
+    expect(store.getSnapshot(ref)?.runsPage.exhausted).toBe(true);
+    current.splice(0, current.length, "old-99");
+    store.refreshRuns(ref);
+    await settle();
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual(["old-99"]);
+    expect(store.getSnapshot(ref)?.runsPage.exhausted).toBe(true);
+    current.length = 0;
+    store.refreshRuns(ref);
+    await settle();
+    expect(store.getRuns(ref)).toEqual([]);
+    expect(store.getSnapshot(ref)?.runsPage.exhausted).toBe(true);
+  });
+
+  it("continues from the refreshed sixth page after 300 new runs arrive", async () => {
+    let inserted = false;
+    const old = Array.from({ length: 300 }, (_, i) => `old-${i}`);
+    const added = Array.from({ length: 300 }, (_, i) => `new-${i}`);
+    routeRunIds(() => (inserted ? [...added, ...old] : old));
+    await openDeploy();
+    for (let i = 0; i < 5; i++) {
+      store.loadMoreRuns(ref);
+      await settle();
+    }
+    expect(store.getSnapshot(ref)?.runsPage.exhausted).toBe(true);
+    inserted = true;
+    store.refreshRuns(ref);
+    await settle();
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual(added);
+    expect(store.getSnapshot(ref)?.runsPage).toMatchObject({ nextCursor: "7", exhausted: false });
+    store.loadMoreRuns(ref);
+    await settle();
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual([...added, ...old.slice(0, 50)]);
+  });
+
+  it("keeps runs and exposes an older page failure for retry", async () => {
+    let fail = true;
+    routeRuns(async (url) => {
+      if (url.searchParams.has("cursor") && fail) {
+        return jsonResponse(
+          { status: 500, code: "internalError", title: "Unavailable", detail: "Page unavailable" },
+          500,
+        );
+      }
+      const older = url.searchParams.has("cursor");
+      return jsonResponse({
+        repo,
+        items: [run(older ? "old" : "new", "queued")],
+        exhausted: older,
+        ...(older ? {} : { next_cursor: "older" }),
+      });
+    });
+    await openDeploy();
+    store.loadMoreRuns(ref);
+    await settle();
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual(["new"]);
+    expect(store.getSnapshot(ref)?.runsPage.problem).toMatchObject({ detail: "Page unavailable", retryable: true });
+    expect(store.getSnapshot(ref)?.error).toBeNull();
+    fail = false;
+    store.loadMoreRuns(ref);
+    await settle();
+    expect(store.getRuns(ref).map((item) => item.id)).toEqual(["new", "old"]);
+    expect(store.getSnapshot(ref)?.runsPage.problem).toBeNull();
+  });
+
   it("reads the catalog once per repository and runs only for the selected workflow", async () => {
     store.loadCatalog(ref);
     store.loadCatalog(ref);

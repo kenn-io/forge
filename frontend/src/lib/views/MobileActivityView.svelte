@@ -8,7 +8,7 @@
   } from "../components/activityFilters.js";
   import FilterSectionsPanel from "../components/shared/FilterSectionsPanel.svelte";
   import LabelFilterMenu from "../components/shared/LabelFilterMenu.svelte";
-  import ListLoadMore from "../components/sidebar/ListLoadMore.svelte";
+  import ListEndItem from "../components/sidebar/ListEndItem.svelte";
   import AuthorFilterMenu from "../components/shared/AuthorFilterMenu.svelte";
   import { getGlobalRepo } from "../stores/filter.svelte.js";
   import { rememberedLabelChoices } from "../utils/label-filter.js";
@@ -92,15 +92,25 @@
   // on screen so Back lands on the same cards.
   let pendingScrollTop = $state<number | null>(null);
   let flashedActivityError: string | null = null;
+  let previousScope: string | undefined;
+  $effect(() => {
+    const scope = activity.getActivityScopeKey();
+    if (previousScope !== undefined && scope !== previousScope) {
+      pendingScrollTop = null;
+      const viewport = scrollViewportOf(inboxRoot);
+      if (viewport) viewport.scrollTop = 0;
+    }
+    previousScope = scope;
+  });
   let paginationArmed = true;
   let paginationIntersecting = false;
   let searchExecution: AppExecution<void, never> | null = null;
   let unsubSync: (() => void) | undefined;
 
   onMount(() => {
+    const parked = takeMobileListPosition("activity");
     activity.initializeFromMount();
     searchInput = activity.getActivitySearch() ?? "";
-    const parked = takeMobileListPosition("activity");
     activityPageLimit = parked?.pageLimit ?? 30;
     pendingScrollTop = parked?.scrollTop ?? null;
     activity.setActivityPageLimit(activityPageLimit);
@@ -791,7 +801,7 @@
       </div>
     {:else if activityPageLimit >= 500 && activity.canLoadOlderItems()}
       <div class="mobile-activity-older">
-        <ListLoadMore loading={activity.isLoadingOlderItems()} onclick={activity.loadOlderItems} label="Load older items" size="md" />
+        <ListEndItem rows={activity.getOlderItems()} more={activity.canLoadOlderItems()} idle={!activity.isActivityLoading()} label="older items" onmore={activity.loadOlderItems} />
       </div>
     {/if}
   </div>

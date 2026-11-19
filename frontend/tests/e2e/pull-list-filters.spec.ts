@@ -179,7 +179,7 @@ test("the Roborev row keeps reviewed PRs only, with findings or without", async 
   await expect(rows).toHaveText([/Ready failed workflow/]);
   // Excluding findings keeps the clean review; PRs without a head review match neither side.
   await roborev.click();
-  await expect(roborev).toHaveAccessibleName(/, excluded$/);
+  await expect(roborev).toHaveAccessibleName(/, left out of results$/);
   await expect(rows).toHaveText([/Approved review queue/]);
   await roborev.click();
   await expect(rows).toHaveCount(4);
@@ -236,7 +236,7 @@ test("a condition row cycles through required, excluded, and off", async ({ page
     await expect(rows).toHaveText(condition.required);
 
     await row.click();
-    await expect(row).toHaveAccessibleName(/, excluded$/);
+    await expect(row).toHaveAccessibleName(/, left out of results$/);
     await expect(row.locator("svg.lucide-x")).toBeVisible();
     await expect(row).toHaveAttribute("aria-pressed", "true");
     await expect(rows).toHaveText(condition.excluded);

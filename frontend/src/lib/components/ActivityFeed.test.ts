@@ -31,6 +31,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
   runtimeCapture.current = undefined;
 });
@@ -147,6 +148,10 @@ const canLoadMore = vi.hoisted(() => ({ value: false }));
 const loadingMore = vi.hoisted(() => ({ value: false }));
 const loadMoreActivity = vi.hoisted(() => vi.fn());
 const loadOlderItems = vi.hoisted(() => vi.fn());
+const savedPosition = vi.hoisted(() => ({
+  value: undefined as { scope: string; top: number; mounted: number } | undefined,
+}));
+const setScrollPosition = vi.hoisted(() => vi.fn());
 const involvesMe = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const unassigned = vi.hoisted(() => ({ value: undefined as "require" | "exclude" | undefined }));
 const markNotificationSeen = vi.hoisted(() => vi.fn(async () => undefined));
@@ -213,6 +218,11 @@ vi.mock("../context.js", () => ({
       isActivityLoading: () => false,
       isActivityCapped: () => activityCapped.value,
       isItemActivityCapped: () => itemActivityCapped.value,
+      getActivityScopeKey: () => "scope",
+      getScrollPosition: () => savedPosition.value,
+      setScrollPosition,
+      getOlderItems: () => ({ loading: false, problem: null, retry: (more: () => void) => more() }),
+      getMoreActivity: () => ({ loading: loadingMore.value, problem: null, retry: (more: () => void) => more() }),
       canLoadOlderItems: () => olderItemsAvailable.value,
       isLoadingOlderItems: () => false,
       loadOlderItems,
@@ -297,7 +307,19 @@ vi.mock("../context.js", () => ({
 }));
 
 describe("ActivityFeed compact mode", () => {
+  let observeEnd: IntersectionObserverCallback | undefined;
   beforeEach(() => {
+    observeEnd = undefined;
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          observeEnd = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
     viewMode.value = "flat";
     collapseThreads.value = false;
     rollUpCommits.value = false;
@@ -320,6 +342,8 @@ describe("ActivityFeed compact mode", () => {
     loadingMore.value = false;
     loadMoreActivity.mockClear();
     loadOlderItems.mockClear();
+    savedPosition.value = undefined;
+    setScrollPosition.mockClear();
     selectedAuthor.value = undefined;
     setActivityAuthor.mockClear();
     setActivityFilterTypes.mockClear();
@@ -339,6 +363,18 @@ describe("ActivityFeed compact mode", () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it.each([80, 0])("restores a saved position when the threaded list shrinks to %i entries", async (count) => {
+    viewMode.value = "threaded";
+    savedPosition.value = { scope: "scope", top: 600, mounted: 100 };
+    items.value = Array.from({ length: count }, (_, i) => activityItem(String(i), { item_number: i + 1 }));
+    render(ActivityFeed, { props: { compact: false, onSelectItem: vi.fn() } });
+    const viewport = await screen.findByRole("region", { name: "Threaded activity" });
+    await vi.waitFor(() => expect(viewport.scrollTop).toBe(600));
+    viewport.scrollTop = 300;
+    await fireEvent.scroll(viewport);
+    expect(setScrollPosition).toHaveBeenLastCalledWith(300, count);
   });
 
   it("renders compact rows instead of the wide table", () => {
@@ -365,9 +401,10 @@ describe("ActivityFeed compact mode", () => {
     loadingMore.value = pending;
     const { container } = render(ActivityFeed);
     if (pending) {
-      expect(container.querySelector(".list-pagination button")?.hasAttribute("disabled")).toBe(true);
+      expect(container.textContent).toContain("Loading more events");
     } else {
-      await fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+      expect(container.querySelector(".kit-list-end")).toBeTruthy();
+      observeEnd!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
       expect(loadMoreActivity).toHaveBeenCalledOnce();
     }
     expect(screen.queryByText(/most recent 5,000 events/)).toBeNull();
@@ -378,10 +415,12 @@ describe("ActivityFeed compact mode", () => {
     // Bots: required hides the loaded human-authored rows in the browser.
     onlyBots.value = true;
     canLoadMore.value = true;
-    render(ActivityFeed);
+    const { container } = render(ActivityFeed);
     expect(screen.queryByText("No activity found")).toBeNull();
     expect(screen.getByText("No matches in loaded activity")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
+    expect(container.querySelector(".kit-list-end")).toBeTruthy();
+    observeEnd!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+    expect(loadMoreActivity).toHaveBeenCalledOnce();
   });
 
   it("shows the event ceiling notice after paging ends", () => {
@@ -391,13 +430,14 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.getByText(/most recent 5,000 events/)).toBeTruthy();
   });
 
-  it("shows the older item control in threaded view", async () => {
+  it("loads older items at the end of the threaded view", () => {
     itemActivityCapped.value = true;
     olderItemsAvailable.value = true;
     viewMode.value = "threaded";
-    render(ActivityFeed);
+    const { container } = render(ActivityFeed);
     expect(screen.getByText(/Item totals cover loaded items only/)).toBeTruthy();
-    await fireEvent.click(screen.getByRole("button", { name: "Load older items" }));
+    expect(container.querySelector(".kit-list-end")).toBeTruthy();
+    observeEnd!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
     expect(loadOlderItems).toHaveBeenCalledOnce();
   });
 
@@ -405,9 +445,9 @@ describe("ActivityFeed compact mode", () => {
     itemActivityCapped.value = true;
     olderItemsAvailable.value = true;
     viewMode.value = "flat";
-    render(ActivityFeed);
+    const { container } = render(ActivityFeed);
     expect(screen.queryByText(/Item totals cover loaded items only/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Load older items" })).toBeNull();
+    expect(container.querySelector(".kit-list-end")).toBeNull();
   });
 
   it("offers to retry a failed thread history load", async () => {
@@ -686,7 +726,9 @@ describe("ActivityFeed compact mode", () => {
     const trigger = screen.getByRole("button", { name: /^Filters/ });
     expect(trigger.textContent).toContain("1");
     await fireEvent.click(trigger);
-    expect(screen.getByRole("button", { name: "Unassigned , excluded" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Unassigned , left out of results" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
 
     await fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
     expect(unassigned.value).toBeUndefined();

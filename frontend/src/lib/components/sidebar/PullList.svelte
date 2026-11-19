@@ -9,6 +9,7 @@
   import {
     FilterDropdown,
     ScrollBox,
+    showListTop,
     SidebarToggle,
     StatusDot,
   } from "@kenn-io/kit-ui";
@@ -16,7 +17,7 @@
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import PullRows from "./PullRows.svelte";
   import { pullTableColumns } from "./PullItem.svelte";
-  import ListLoadMore from "./ListLoadMore.svelte";
+  import ListEndItem from "./ListEndItem.svelte";
   import ListCountChip from "./ListCountChip.svelte";
   import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
   import ItemActionsMenu from "./ItemActionsMenu.svelte";
@@ -249,6 +250,7 @@
   // otherwise block the main thread for seconds on every filter change.
   // The budget resets whenever the query or grouping changes.
   const renderViewKey = $derived(JSON.stringify([
+    getGlobalRepo(),
     pulls.getFilterState(),
     pulls.getSearchQuery(),
     pulls.getFilterStarred(),
@@ -260,6 +262,11 @@
     groupingMode,
     pulls.getStackTree(),
   ]));
+  let listViewport = $state<HTMLDivElement>();
+  $effect(() => {
+    void renderViewKey;
+    if (listViewport) showListTop(listViewport);
+  });
   let renderBudget = $derived.by(() => {
     void renderViewKey;
     return INITIAL_RENDER_BUDGET;
@@ -487,6 +494,7 @@
     <p class="state-note">Showing items closed after kenn-forge began tracking them</p>
   {/if}
   <ScrollBox
+    bind:viewport={listViewport}
     dataTest="pr-list"
     label="Pull requests"
     class={[
@@ -553,7 +561,7 @@
       {/if}
     {/if}
     {#if !hasUnmountedRows && pulls.isListCapped()}
-      <ListLoadMore loading={pulls.isLoadingMore()} onclick={pulls.loadMorePulls} />
+      <ListEndItem rows={pulls.getMoreRows()} more={true} idle={!pulls.isLoading()} label="pull requests" onmore={pulls.loadMorePulls} />
     {/if}
   </ScrollBox>
   {#if needsFallbackFileList}

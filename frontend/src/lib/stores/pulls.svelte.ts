@@ -704,9 +704,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
         Effect.sync(() => {
           storeError = readErrorMessage(failure);
           loading = false;
-          if (paging.rollback(query, params)) {
-            showFlash(`Failed to load more pull requests: ${storeError}`, { tone: "danger" });
-          }
+          paging.rollback(query, params, { detail: storeError, retryable: true });
         }),
       ),
     );
@@ -755,6 +753,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     isLoading,
     isListCapped,
     isLoadingMore,
+    getMoreRows: () => paging,
     getError,
     getSelectedPR,
     pullsByRepo,

@@ -44,6 +44,9 @@
   import { repositoryKeyFromWire, type RepositoryKey } from "../api/repository-key.js";
 
   interface Props {
+    viewport?: HTMLDivElement | undefined;
+    mountedCount?: number;
+    totalEntryCount?: number;
     children?: Snippet;
     items: ActivityItem[];
     itemActivity?: ActivitySubject[];
@@ -75,6 +78,9 @@
   };
 
   let {
+    viewport = $bindable(),
+    mountedCount = $bindable(0),
+    totalEntryCount = $bindable(0),
     children,
     items,
     itemActivity = [],
@@ -384,11 +390,12 @@
 
   const progressiveMountBatchSize = 25;
   const mountController = createProgressiveMountController({ batchSize: progressiveMountBatchSize });
-  let mountedEntryCount = $state(0);
   let lastMountProjectionKey = "";
-  const totalEntryCount = $derived(grouped.reduce((count, group) => count + group.items.length, 0));
+  $effect(() => {
+    totalEntryCount = grouped.reduce((count, group) => count + group.items.length, 0);
+  });
   const visibleGrouped = $derived.by(() => {
-    let remaining = mountedEntryCount;
+    let remaining = mountedCount;
     const visible: RepoGroup[] = [];
     for (const group of grouped) {
       if (remaining <= 0) break;
@@ -408,12 +415,12 @@
     untrack(() => {
       lastMountProjectionKey = projectionKey;
       mountController.cancel();
-      mountedEntryCount = Math.min(
-        Math.max(mountedEntryCount, progressiveMountBatchSize),
+      mountedCount = Math.min(
+        Math.max(mountedCount, progressiveMountBatchSize),
         totalEntryCount,
       );
-      mountController.start(mountedEntryCount, totalEntryCount, (count) => {
-        mountedEntryCount = count;
+      mountController.start(mountedCount, totalEntryCount, (count) => {
+        mountedCount = count;
       });
     });
   });
@@ -790,7 +797,7 @@
   }
 </script>
 
-<ScrollBox label="Threaded activity">
+<ScrollBox label="Threaded activity" bind:viewport>
 <div
   class="threaded-view"
   class:threaded-view--compact={compact}
@@ -992,7 +999,7 @@
     <EmptyState title="No activity found" />
   {/if}
 </div>
-{@render children?.()}
+{#if mountedCount >= totalEntryCount}{@render children?.()}{/if}
 </ScrollBox>
 
 <style>

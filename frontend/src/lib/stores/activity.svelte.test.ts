@@ -317,6 +317,26 @@ describe("activity subject paging", () => {
     expect(bulkReads).toBe(1);
   });
 
+  it("loads the subject after the first 5000", async () => {
+    const get = vi.fn(async (path: string, options?: { params?: { query?: { subject_before?: string } } }) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      return options?.params?.query?.subject_before === "older"
+        ? subjectPage([5001], "")
+        : subjectPage(
+            Array.from({ length: 5000 }, (_, i) => i + 1),
+            "older",
+          );
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    store.hydrateDefaults(settings(false));
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(5000));
+    store.loadOlderItems();
+    await vi.waitFor(() => expect(store.getItemActivity()).toHaveLength(5001));
+    expect(store.getItemActivity().at(-1)?.item_number).toBe(5001);
+    expect(store.canLoadOlderItems()).toBe(false);
+  });
+
   it("refreshes cached event labels when an older parent arrives", async () => {
     const label = { name: "bug", color: "d73a4a", is_default: false };
     const event = { ...threadEvent("comment:2", 2), labels: [label] };
@@ -678,11 +698,12 @@ describe("activity subject paging", () => {
     await vi.waitFor(() => expect(store.isLoadingOlderItems()).toBe(true));
     expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1]);
     pendingFailure.resolve({ error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) });
-    await vi.waitFor(() => expect(store.getActivityError()).toBe("unavailable"));
+    await vi.waitFor(() => expect(store.getOlderItems().problem?.detail).toBe("unavailable"));
+    expect(store.getActivityError()).toBeNull();
     expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1]);
     expect(store.isLoadingOlderItems()).toBe(false);
     fail = false;
-    store.loadOlderItems();
+    store.getOlderItems().retry(store.loadOlderItems);
     await vi.waitFor(() => expect(store.getItemActivity().map((subject) => subject.item_number)).toEqual([1, 2]));
   });
   it("keeps a requested older page when reload overlaps it", async () => {
@@ -793,7 +814,7 @@ describe("activity subject paging", () => {
     const refresh = reconcile(store, "refresh");
     await vi.waitFor(() => expect(pageReads).toBe(2));
     failedPage.resolve({ error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) });
-    await vi.waitFor(() => expect(store.getActivityError()).toBe("unavailable"));
+    await vi.waitFor(() => expect(store.getOlderItems().problem?.detail).toBe("unavailable"));
     refreshedPage.resolve({
       data: { items: [], capped: false, item_activity: [{ ...itemActivity(2), repo }] },
       error: null,
@@ -1299,7 +1320,7 @@ describe("flat activity paging", () => {
     if (failed) {
       page.resolve({ error: { detail: "unavailable" }, response: new Response(null, { status: 422 }) });
       await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
-      expect(store.getActivityError()).toBe("unavailable");
+      expect(store.getMoreActivity().problem?.detail).toBe("unavailable");
     }
     reconciliation.resolve(response);
     await reconciled;
@@ -1441,7 +1462,7 @@ describe("flat activity paging", () => {
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
     expect(store.getItemActivity()).toHaveLength(1);
     expect(store.isLoadingMoreActivity()).toBe(false);
-    expect(store.getActivityError()).toBe("unavailable");
+    expect(store.getMoreActivity().problem).toMatchObject({ detail: "unavailable", retryable: true });
     expect(getFlash()).toBeNull();
     const requestsBeforeRetry = get.mock.calls.filter(([path]) => path === "/activity").length;
     fail = false;
@@ -4373,6 +4394,16 @@ describe("activity store author candidates", () => {
 });
 
 describe("activity store projection scope", () => {
+  it("keeps the scroll scope when page depth grows and changes it for filters", () => {
+    const store = createActivityStore({ client: fakeClient });
+    store.setActivityPageLimit(30);
+    const scope = store.getActivityScopeKey();
+    store.setActivityPageLimit(60);
+    expect(store.getActivityScopeKey()).toBe(scope);
+    store.setActivitySearch("review");
+    expect(store.getActivityScopeKey()).not.toBe(scope);
+  });
+
   it("clears a foreground error when same-scope reconciliation succeeds", async () => {
     const pendingReconciliation = Promise.withResolvers<{
       data: { items: ActivityItem[]; capped: boolean };

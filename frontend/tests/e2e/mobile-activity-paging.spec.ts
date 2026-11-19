@@ -1,4 +1,5 @@
 import { devices, expect, test } from "@playwright/test";
+import { activitySubject } from "./support/activityPaging";
 import { mockApi } from "./support/mockApi";
 
 test.use({ ...devices["iPhone 13"], browserName: "chromium" });
@@ -77,11 +78,11 @@ test("keeps a visible preview while loading older items", async ({ page }) => {
         })
         .toBeGreaterThan(previous);
     }
-    const button = page.getByRole("button", { name: "Load older items" });
-    await expect(button).toBeVisible();
     hold = true;
-    await button.click();
-    await expect(page.getByRole("button", { name: "Loading more…" })).toBeDisabled();
+    await viewport.evaluate((node) => {
+      node.scrollTop = node.scrollHeight;
+    });
+    await expect(page.getByRole("status").filter({ hasText: "Loading more older items" })).toBeVisible();
     await expect(preview).toBeVisible();
     await expect.poll(() => Boolean(release)).toBe(true);
     hold = false;
@@ -91,4 +92,33 @@ test("keeps a visible preview while loading older items", async ({ page }) => {
   } finally {
     release?.();
   }
+});
+
+test("returns to a loaded older activity card", async ({ page }) => {
+  await mockApi(page);
+  let limit = 0;
+  await page.route("**/api/v1/activity**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/thread-events")) return route.fulfill({ json: { items: [], capped: false } });
+    if (url.pathname !== "/api/v1/activity") return route.fallback();
+    limit = Number(url.searchParams.get("limit"));
+    const items = Array.from({ length: Math.min(limit, 300) }, (_, i) => activitySubject(i + 1));
+    await route.fulfill({
+      json: { items: [], capped: false, item_activity: items, item_activity_capped: limit < 300 },
+    });
+  });
+  await page.goto("/m?range=30d&view=threaded");
+  const viewport = page.locator(".kit-scrollbox__viewport");
+  await expect(async () => {
+    await viewport.dispatchEvent("wheel");
+    await viewport.evaluate((node) => {
+      node.scrollTop = node.scrollHeight;
+    });
+    expect(limit).toBeGreaterThan(250);
+  }).toPass();
+  const older = page.getByText("Pull request 250", { exact: true });
+  await older.scrollIntoViewIfNeeded();
+  await older.click();
+  await page.goBack();
+  await expect(older).toBeInViewport();
 });

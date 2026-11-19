@@ -8,14 +8,14 @@
     type TypeaheadOption,
   } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
   import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
   import type { ActivityItem } from "../api/types.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getAppRuntime } from "../app/runtime-context.js";
   import { getStores, getNavigate } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
-  import ListLoadMore from "./sidebar/ListLoadMore.svelte";
+  import ListEndItem from "./sidebar/ListEndItem.svelte";
   import {
     activityFilterMenu,
     activityItemVisible,
@@ -26,7 +26,7 @@
   import LabelFilterMenu from "./shared/LabelFilterMenu.svelte";
   import { getGlobalRepo } from "../stores/filter.svelte.js";
   import { rememberedLabelChoices } from "../utils/label-filter.js";
-  import { FilterDropdown, ScrollBox } from "@kenn-io/kit-ui";
+  import { FilterDropdown, ScrollBox, showListTop } from "@kenn-io/kit-ui";
   import {
     isDefaultBranchActivity,
     isDefaultBranchCommitActivity,
@@ -57,6 +57,38 @@
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
 
   const { activity, settings, sync, grouping, issues } = getStores();
+  let flatViewport = $state<HTMLDivElement>();
+  let threadedViewport = $state<HTMLDivElement>();
+  let mountedCount = $state(0);
+  let totalEntryCount = $state(0);
+  let pendingPosition = $state<ReturnType<typeof activity.getScrollPosition>>();
+  $effect(() => {
+    const viewport = activity.getViewMode() === "threaded" ? threadedViewport : flatViewport;
+    if (!viewport) return;
+    const remember = () => {
+      if (!pendingPosition) activity.setScrollPosition(viewport.scrollTop, mountedCount);
+    };
+    viewport.addEventListener("scroll", remember);
+    return () => viewport.removeEventListener("scroll", remember);
+  });
+  $effect(() => {
+    const saved = pendingPosition;
+    if (saved && saved.scope !== activity.getActivityScopeKey()) {
+      pendingPosition = undefined;
+      return;
+    }
+    const viewport = activity.getViewMode() === "threaded" ? threadedViewport : flatViewport;
+    if (!saved || !viewport || activity.isActivityLoading() || (activity.getViewMode() === "threaded" && mountedCount < Math.min(saved.mounted, totalEntryCount))) return;
+    pendingPosition = undefined;
+    void tick().then(() => {
+      viewport.scrollTop = saved.top;
+    });
+  });
+  $effect(() => {
+    void activity.getActivityScopeKey();
+    const viewport = activity.getViewMode() === "threaded" ? threadedViewport : flatViewport;
+    if (viewport) showListTop(viewport);
+  });
   const runtime = getAppRuntime();
   const navigate = getNavigate();
 
@@ -106,6 +138,7 @@
 
   onMount(() => {
     activity.initializeFromMount();
+    pendingPosition = activity.getScrollPosition();
     searchInput = activity.getActivitySearch() ?? "";
     activity.setActivityPageLimit(undefined);
     activity.ensureActivityLoaded();
@@ -508,6 +541,9 @@
       </ScrollBox>
     {:else}
       <ActivityThreaded
+        bind:viewport={threadedViewport}
+        bind:mountedCount
+        bind:totalEntryCount
         items={displayItems}
         itemActivity={visibleItemActivity}
         workspaceActivity={visibleWorkspaceActivity}
@@ -518,12 +554,12 @@
         {selectedBranchCommit}
       >
         {#if activity.canLoadOlderItems()}
-          <ListLoadMore loading={activity.isLoadingOlderItems()} onclick={activity.loadOlderItems} label="Load older items" />
+          <ListEndItem rows={activity.getOlderItems()} more={activity.canLoadOlderItems()} idle={!activity.isActivityLoading()} label="older items" onmore={activity.loadOlderItems} />
         {/if}
       </ActivityThreaded>
     {/if}
   {:else}
-    <ScrollBox label="Activity feed">
+    <ScrollBox label="Activity feed" bind:viewport={flatViewport}>
     <div class="table-container">
       {#if compact}
         <div class="activity-compact-list">
@@ -795,11 +831,11 @@
       {#if flatRows.length === 0 && !activity.isActivityLoading()}
         <EmptyState title={activity.canLoadMoreActivity() ? "No matches in loaded activity" : "No activity found"}>
           {#if activity.canLoadMoreActivity()}
-            <ListLoadMore loading={activity.isLoadingMoreActivity()} onclick={activity.loadMoreActivity} />
+            <ListEndItem rows={activity.getMoreActivity()} more={activity.canLoadMoreActivity()} idle={!activity.isActivityLoading()} label="events" onmore={activity.loadMoreActivity} />
           {/if}
         </EmptyState>
       {:else if activity.canLoadMoreActivity()}
-        <ListLoadMore loading={activity.isLoadingMoreActivity()} onclick={activity.loadMoreActivity} />
+        <ListEndItem rows={activity.getMoreActivity()} more={activity.canLoadMoreActivity()} idle={!activity.isActivityLoading()} label="events" onmore={activity.loadMoreActivity} />
       {/if}
     </div>
     </ScrollBox>
@@ -813,8 +849,7 @@
 
   {#if activity.getViewMode() === "threaded" && activity.isItemActivityCapped()}
     <div class="capped-notice item-activity-capped-notice">
-      Showing the most recently active pull requests and issues. Item totals cover loaded items only; select Load older
-      items to see more.
+      Showing the most recently active pull requests and issues. Item totals cover loaded items only.
     </div>
   {/if}
 

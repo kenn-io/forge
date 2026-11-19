@@ -3,6 +3,7 @@ import type { AppRuntime } from "../app/runtime.js";
 import type { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
 import { retryIdempotentRead } from "../api/retry-policy.js";
+import type { ListProblem } from "@kenn-io/kit-ui";
 import type {
   ActivityItem,
   ActivityAuthorsParams,
@@ -236,6 +237,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let subjectCursor = $state("");
   let requestedSubjectDepth = $state(1);
   let displayedSubjectDepth = $state(1);
+  let olderItemsProblem = $state<ListProblem | null>(null);
   let olderItemsPage: { cursor: string; depth: number } | undefined;
   let subjectPageScope: string | undefined;
   let activityEventCursor = $state("");
@@ -280,6 +282,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let pollCount = 0;
   let pollingStarted = false;
   let retainedFeedStale = false;
+  let scrollPosition: { scope: string; top: number; mounted: number } | undefined;
   let snapshotScope: string | undefined;
   let snapshotFilterScope: string | undefined;
   let displayedRepo: string | undefined;
@@ -364,6 +367,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function loadOlderItems(): void {
     if (!subjectCursor || isLoadingOlderItems()) return;
+    olderItemsProblem = null;
     requestedSubjectDepth += 1;
     const params = buildParams();
     const scope = activityProjectionScope(params);
@@ -734,7 +738,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return { ...params, since: timeRange };
   }
 
-  function buildParams(): ActivityParams {
+  function buildParams(includePaging = true): ActivityParams {
     const since = computeSince();
     const p: ActivityParams = { since };
     p.projection =
@@ -769,7 +773,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (hideBotAuthoredIssues) p.hide_bot_authored_issues = true;
     Object.assign(p, labelFilterParams(labelFilters));
     if (hideDefaultBranchActivity) p.hide_default_branch = true;
-    if (activityPageLimit === undefined && viewMode === "flat") {
+    if (includePaging && activityPageLimit === undefined && viewMode === "flat") {
       return { ...flatPaging.withLimit(activityPageQuery(p)), since };
     }
     return p;
@@ -815,6 +819,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const params = buildParams();
     return JSON.stringify([activityProjectionScope(params), params.projection]);
   }
+
+  const activityScrollScopeKey = $derived.by(() => {
+    const params = buildParams(false);
+    delete params.limit;
+    return JSON.stringify([activityProjectionScope(params), [...enabledEvents], showNotifications]);
+  });
 
   function rememberActivitySnapshot(): void {
     if (snapshotScope === undefined || snapshotFilterScope === undefined) return;
@@ -874,6 +884,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   function invalidatePagedActivityRequests(): void {
+    olderItemsProblem = null;
     pagedActivityGeneration += 1;
     childProjectionInvalidationGeneration += 1;
     const scope = activityProjectionScope({ ...buildParams(), projection: "full" });
@@ -1427,16 +1438,19 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       Effect.flatMap((current) => {
         if (!current) return Effect.void;
         if (!page) loading = true;
-        storeError = null;
+        if (!page) storeError = null;
         return loadActivityProgram(params, "foreground", ownsProjection, page);
       }),
       Effect.tapError((failure) =>
         Effect.sync(() => {
           if (!ownsProjection()) return;
-          storeError = readErrorMessage(failure);
-          if (!page) loading = false;
+          const problem = { detail: readErrorMessage(failure), retryable: true };
+          if (page) olderItemsProblem = problem;
+          else {
+            loading = false;
+            if (!flatPaging.rollback(activityPageQuery(params), undefined, problem)) storeError = problem.detail;
+          }
           if (requestedSubjectDepth === depth) requestedSubjectDepth = displayedSubjectDepth;
-          flatPaging.rollback(activityPageQuery(params));
         }),
       ),
       Effect.ensuring(
@@ -2024,6 +2038,21 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     canLoadOlderItems,
     isLoadingOlderItems,
     loadOlderItems,
+    getOlderItems: () => ({
+      get loading() {
+        return isLoadingOlderItems();
+      },
+      get problem() {
+        return olderItemsProblem;
+      },
+      retry: (more: () => void) => more(),
+    }),
+    getMoreActivity: () => flatPaging,
+    getActivityScopeKey: () => activityScrollScopeKey,
+    getScrollPosition: () => (scrollPosition?.scope === activityScrollScopeKey ? scrollPosition : undefined),
+    setScrollPosition: (top: number, mounted: number) => {
+      scrollPosition = { scope: activityScrollScopeKey, top, mounted };
+    },
     canLoadMoreActivity,
     isLoadingMoreActivity,
     loadMoreActivity,

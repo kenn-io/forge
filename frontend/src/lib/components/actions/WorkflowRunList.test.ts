@@ -7,6 +7,18 @@ import WorkflowRunList from "./WorkflowRunList.svelte";
 type Run = WorkflowRunResponse;
 type Job = WorkflowRunJobResponse;
 
+const props = {
+  jobs: {},
+  jobErrors: {},
+  loadingJobs: [],
+  onexpand: vi.fn(),
+  rows: { loading: false, problem: null, retry: (more: () => void) => more() },
+  more: false,
+  idle: true,
+  onmore: vi.fn(),
+  onsort: vi.fn(),
+};
+
 const runs: Run[] = [
   {
     actor: "octocat",
@@ -41,7 +53,7 @@ const jobs: Record<string, readonly Job[]> = {
 };
 
 it("lays runs out as a table row per run with local time and secure provider links", () => {
-  render(WorkflowRunList, { runs, jobs: {}, jobErrors: {}, loadingJobs: [], onexpand: vi.fn() });
+  render(WorkflowRunList, { ...props, runs });
   const table = screen.getByRole("table", { name: "Workflow runs" });
   expect(
     within(table)
@@ -66,30 +78,18 @@ it.each([
   ["https://gitlab.com/acme/app/-/pipelines/2", "GitLab"],
   ["https://forge.acme.test/acme/app/actions/runs/2", "forge.acme.test"],
 ])("labels provider links for %s", (webURL, providerLabel) => {
-  render(WorkflowRunList, {
-    runs: [{ ...runs[0]!, web_url: webURL }],
-    jobs: {},
-    jobErrors: {},
-    loadingJobs: [],
-    onexpand: vi.fn(),
-  });
+  render(WorkflowRunList, { ...props, runs: [{ ...runs[0]!, web_url: webURL }] });
   expect(screen.getByRole("link", { name: `Open on ${providerLabel}` })).toBeTruthy();
 });
 
 it("omits unsafe provider links", () => {
-  render(WorkflowRunList, {
-    runs: [{ ...runs[0]!, web_url: "javascript:alert(document.domain)" }],
-    jobs: {},
-    jobErrors: {},
-    loadingJobs: [],
-    onexpand: vi.fn(),
-  });
+  render(WorkflowRunList, { ...props, runs: [{ ...runs[0]!, web_url: "javascript:alert(document.domain)" }] });
   expect(screen.queryByRole("link")).toBeNull();
 });
 
 it("requests jobs only when a run expands and preserves provider order", async () => {
   const onexpand = vi.fn();
-  const view = render(WorkflowRunList, { runs, jobs, jobErrors: {}, loadingJobs: [], onexpand });
+  const view = render(WorkflowRunList, { ...props, runs, jobs, onexpand });
   const disclosure = screen.getByRole("button", { name: /Run 42 Deploy/ });
   expect(disclosure.getAttribute("aria-expanded")).toBe("false");
 
@@ -123,7 +123,7 @@ it("requests jobs only when a run expands and preserves provider order", async (
 
 it("sorts runs from the column headers and returns to provider order", async () => {
   const older: Run = { ...runs[0]!, id: "run-1", run_number: 41, name: "Build", actor: "zed", conclusion: "failure" };
-  render(WorkflowRunList, { runs: [runs[0]!, older], jobs: {}, jobErrors: {}, loadingJobs: [], onexpand: vi.fn() });
+  render(WorkflowRunList, { ...props, runs: [runs[0]!, older] });
   const order = () =>
     screen.getAllByRole("button", { name: /^Run \d+/ }).map((button) => button.getAttribute("aria-label"));
   expect(order()).toEqual(["Run 42 Deploy", "Run 41 Build"]);
@@ -141,7 +141,7 @@ it("sorts runs from the column headers and returns to provider order", async () 
 
 it("sorts runs by commit SHA", async () => {
   const older: Run = { ...runs[0]!, id: "run-1", run_number: 41, name: "Build", head_sha: "00aa000000000000" };
-  render(WorkflowRunList, { runs: [runs[0]!, older], jobs: {}, jobErrors: {}, loadingJobs: [], onexpand: vi.fn() });
+  render(WorkflowRunList, { ...props, runs: [runs[0]!, older] });
   const order = () =>
     screen.getAllByRole("button", { name: /^Run \d+/ }).map((button) => button.getAttribute("aria-label"));
 

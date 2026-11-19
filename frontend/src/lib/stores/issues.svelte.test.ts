@@ -1,5 +1,5 @@
-import { makeGeneratedClient } from "../testing/generated-client.js";
 import { GeneratedProblemResponse } from "../api/runtime.js";
+import { makeGeneratedClient } from "../testing/generated-client.js";
 import { startTestTelemetry } from "../testing/telemetry.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -167,22 +167,7 @@ describe("issues store paging", () => {
     expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 200, hide_bots: true }, expect.anything());
   });
 
-  it("sends required and excluded labels to the server and reloads on each change", async () => {
-    const get = vi.fn(async () => [issue(1, "alice")]);
-    const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
-    await loadIssues(store);
-    const lastQuery = () => (get.mock.calls.at(-1) as unknown as [Record<string, unknown>])[0];
-
-    store.cycleLabelFilter("Bug");
-    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
-    expect(lastQuery()).toMatchObject({ labels: ["Bug"] });
-    store.cycleLabelFilter("Bug");
-    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
-    expect(lastQuery()).toMatchObject({ exclude_labels: ["Bug"] });
-    expect(lastQuery()).not.toHaveProperty("labels");
-  });
-
-  it("reports a failed load more through the issues error and flash", async () => {
+  it("retains issues and offers retry after a failed load more", async () => {
     const rows = Array.from({ length: 400 }, (_, index) => issue(index + 1, "alice"));
     const get = vi.fn(async (query?: IssuesParams) => rows.slice(0, query?.limit));
     const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
@@ -196,12 +181,24 @@ describe("issues store paging", () => {
     );
     store.loadMoreIssues();
     await vi.waitFor(() => expect(store.isIssueListLoadingMore()).toBe(false));
-    expect(store.getIssuesError()).not.toBeNull();
-    expect(getFlash()).toMatchObject({
-      message: `Failed to load more issues: ${store.getIssuesError()}`,
-      tone: "danger",
-    });
+    expect(store.getMoreRows().problem).toMatchObject({ retryable: true });
+    expect(getFlash()).toBeNull();
     expect(store.getIssues()).toHaveLength(200);
+  });
+
+  it("sends required and excluded labels to the server and reloads on each change", async () => {
+    const get = vi.fn(async () => [issue(1, "alice")]);
+    const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
+    await loadIssues(store);
+    const lastQuery = () => (get.mock.calls.at(-1) as unknown as [Record<string, unknown>])[0];
+
+    store.cycleLabelFilter("Bug");
+    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
+    expect(lastQuery()).toMatchObject({ labels: ["Bug"] });
+    store.cycleLabelFilter("Bug");
+    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
+    expect(lastQuery()).toMatchObject({ exclude_labels: ["Bug"] });
+    expect(lastQuery()).not.toHaveProperty("labels");
   });
 });
 

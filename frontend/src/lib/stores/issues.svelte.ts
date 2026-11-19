@@ -520,9 +520,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         Effect.sync(() => {
           storeError = readErrorMessage(failure);
           loading = false;
-          if (paging.rollback(query, params)) {
-            showFlash(`Failed to load more issues: ${storeError}`, { tone: "danger" });
-          }
+          paging.rollback(query, params, { detail: storeError, retryable: true });
         }),
       ),
     );
@@ -2184,6 +2182,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     isIssuesLoading,
     isIssueListCapped,
     isIssueListLoadingMore,
+    getMoreRows: () => paging,
     getIssuesError,
     getSelectedIssue,
     getIssueFilterStarred,

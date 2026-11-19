@@ -233,7 +233,19 @@ describe("ActionsPage", () => {
     return workflowActions;
   }
 
+  let observeEnd: IntersectionObserverCallback | undefined;
   beforeEach(() => {
+    observeEnd = undefined;
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          observeEnd = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
     listeners.clear();
     originalFetch = globalThis.fetch;
     api = createMockApiFetch([workflowFixtures()]);
@@ -245,10 +257,46 @@ describe("ActionsPage", () => {
 
   afterEach(async () => {
     cleanup();
+    vi.unstubAllGlobals();
     setGlobalRepo(undefined);
     globalThis.fetch = originalFetch;
     runtimeHolder.value = undefined;
     await Effect.runPromise(runtime.disposeEffect);
+  });
+
+  it("returns runs to the top when sorting or selecting a workflow", async () => {
+    api = createMockApiFetch([
+      (request) =>
+        request.url.pathname === "/api/v1/actions/github/acme/alpha/workflows"
+          ? jsonResponse({
+              repo: repoSummary("alpha").repo,
+              environments: [],
+              workflows: [workflow("alpha"), workflow("alpha", "test")],
+            })
+          : null,
+      workflowFixtures(),
+    ]);
+    globalThis.fetch = api.fetch;
+    renderPage();
+    await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
+    await screen.findByRole("button", { name: /Run 7 alpha deploy/ });
+    const viewport = screen.getByLabelText("Recent workflow runs");
+    viewport.style.overflowY = "auto";
+    Object.defineProperty(viewport, "scrollHeight", { value: 500 });
+    Object.defineProperty(viewport, "clientHeight", { value: 100 });
+    viewport.scrollTop = 250;
+    await fireEvent.click(screen.getByRole("button", { name: "Status" }));
+    expect(viewport.scrollTop).toBe(0);
+    viewport.scrollTop = 250;
+    await fireEvent.click(screen.getByRole("button", { name: /alpha test/ }));
+    await waitFor(() => expect(screen.getByLabelText("Recent workflow runs").scrollTop).toBe(0));
+    const nextViewport = screen.getByLabelText("Recent workflow runs");
+    nextViewport.scrollTop = 250;
+    await fireEvent.click(
+      within(screen.getByRole("navigation", { name: "Actions repositories" })).getByRole("button", { name: /beta/ }),
+    );
+    await fireEvent.click(await screen.findByRole("button", { name: /beta deploy/ }));
+    expect(screen.getByLabelText("Recent workflow runs").scrollTop).toBe(0);
   });
 
   it("refreshes only the visible repository's runs from workflow activity and preserves the form", async () => {
@@ -274,6 +322,11 @@ describe("ActionsPage", () => {
     const store = renderPage();
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
     await screen.findByRole("button", { name: /Run 7 alpha deploy/ });
+    const viewport = screen.getByLabelText("Recent workflow runs");
+    viewport.style.overflowY = "auto";
+    Object.defineProperty(viewport, "scrollHeight", { value: 500 });
+    Object.defineProperty(viewport, "clientHeight", { value: 100 });
+    viewport.scrollTop = 250;
     const refInput = screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement;
     await fireEvent.input(refInput, { target: { value: "feature/draft" } });
     const payload = { provider: "github", platform_host: "github.com", platform_repo_id: 1003 };
@@ -293,6 +346,7 @@ describe("ActionsPage", () => {
     };
     await waitFor(() => expect(store.getRuns(ref)[0]?.status).toBe("completed"));
     expect(reads).toBe(2);
+    expect(viewport.scrollTop).toBe(250);
     expect(refInput.value).toBe("feature/draft");
     cleanup();
     expect(listeners.size).toBe(0);
@@ -443,7 +497,8 @@ describe("ActionsPage", () => {
 
     await fireEvent.click(await screen.findByRole("button", { name: /alpha deploy/ }));
     expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("trunk");
-    await fireEvent.click(await screen.findByRole("button", { name: "Load more runs" }));
+    await waitFor(() => expect(observeEnd).toBeDefined());
+    observeEnd!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
     expect(await screen.findByRole("button", { name: /Run 5 alpha deploy/ })).toBeTruthy();
     expect((screen.getByRole("textbox", { name: "Git ref" }) as HTMLInputElement).value).toBe("trunk");
     const olderRequest = api.requests.find(

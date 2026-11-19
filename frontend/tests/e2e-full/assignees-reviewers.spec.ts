@@ -31,9 +31,10 @@ test.describe("assignee and reviewer editing", () => {
       await page.getByRole("button", { name: "Edit assignees" }).click();
       await expect(page.getByRole("dialog", { name: "Edit assignees" })).toBeVisible();
       await expect(page.getByRole("menuitemcheckbox", { name: /alice/i })).toHaveAttribute("aria-checked", "true");
-      await expect(
-        page.getByRole("menuitemcheckbox", { name: /alice/i }).locator("img.user-picker__avatar"),
-      ).toHaveAttribute("src", "https://github.com/alice.png?size=40");
+      await expect(page.getByRole("menuitemcheckbox", { name: /alice/i }).locator("img")).toHaveAttribute(
+        "src",
+        "https://github.com/alice.png?size=40",
+      );
       await expect(page.getByRole("menuitemcheckbox", { name: /bob/i })).toHaveAttribute("aria-checked", "false");
 
       // The picker is a compact dropdown: start-aligned under its
@@ -80,9 +81,10 @@ test.describe("assignee and reviewer editing", () => {
       await page.getByRole("button", { name: "Edit reviewers" }).click();
       await expect(page.getByRole("dialog", { name: "Edit reviewers" })).toBeVisible();
       await expect(page.getByRole("menuitemcheckbox", { name: /carol/i })).toHaveAttribute("aria-checked", "true");
-      await expect(
-        page.getByRole("menuitemcheckbox", { name: /carol/i }).locator("img.user-picker__avatar"),
-      ).toHaveAttribute("src", "https://github.com/carol.png?size=40");
+      await expect(page.getByRole("menuitemcheckbox", { name: /carol/i }).locator("img")).toHaveAttribute(
+        "src",
+        "https://github.com/carol.png?size=40",
+      );
 
       // Removing the only requested reviewer issues a PUT with an empty set.
       const removeResponse = page.waitForResponse(
@@ -119,9 +121,10 @@ test.describe("assignee and reviewer editing", () => {
       await expect(page.locator(".pull-detail")).toBeVisible();
       await page.getByRole("button", { name: "Edit assignees" }).click();
       await expect(page.getByRole("dialog", { name: "Edit assignees" })).toBeVisible();
-      await expect(
-        page.getByRole("menuitemcheckbox", { name: /alice/i }).locator("img.user-picker__avatar"),
-      ).toHaveAttribute("src", "https://github.com/alice.png?size=40");
+      await expect(page.getByRole("menuitemcheckbox", { name: /alice/i }).locator("img")).toHaveAttribute(
+        "src",
+        "https://github.com/alice.png?size=40",
+      );
 
       // Typing requeries the autocomplete endpoint with the filter so
       // candidates beyond the first page stay reachable.
@@ -314,8 +317,8 @@ test.describe("assignee and reviewer editing", () => {
 
       const ginaRow = page.getByRole("menuitemcheckbox", { name: /gina/i });
       await expect(ginaRow).toHaveAttribute("aria-checked", "false");
-      await expect(ginaRow.locator("img.user-picker__avatar")).toHaveCount(0);
-      await expect(ginaRow.locator(".user-picker__avatar")).toHaveText("G");
+      await expect(ginaRow.locator("img")).toHaveCount(0);
+      await expect(ginaRow.locator(".kit-avatar")).toHaveText("G");
       await expect(page.getByRole("menuitemcheckbox", { name: /alice/i })).toHaveCount(0);
     } finally {
       await isolatedServer?.stop();

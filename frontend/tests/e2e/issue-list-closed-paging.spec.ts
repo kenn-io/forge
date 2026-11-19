@@ -24,27 +24,40 @@ test("Closed issues load bounded pages and reach the end of the history", async 
   await expect(page.locator(".sidebar-group-header__count")).toHaveText("200+");
 
   const viewport = page.locator(".issue-list .kit-scrollbox__viewport");
-  const more = page.getByRole("button", { name: "Load more", exact: true });
-  const scrollToMore = async () => {
+  const scrollUntil = async (text: string) => {
     await expect(async () => {
       await viewport.evaluate((node) => {
         node.scrollTop = node.scrollHeight;
       });
-      await expect(more).toBeVisible();
+      await expect(count).toHaveText(text);
     }).toPass();
   };
-  await scrollToMore();
-  await more.click();
-  await expect(count).toHaveText("400+ issues");
-  await expect(page.locator(".sidebar-group-header__count")).toHaveText("400+");
-  await scrollToMore();
-  await more.click();
-  await expect(count).toHaveText("450 issues");
+  await scrollUntil("400+ issues");
+  const row300 = page.getByText("Closed issue 300", { exact: true });
+  await row300.scrollIntoViewIfNeeded();
+  await row300.click();
+  await page.goBack();
+  await expect(row300).toBeInViewport();
+  await scrollUntil("450 issues");
   await expect(page.locator(".sidebar-group-header__count")).toHaveText("450");
-  await expect(more).toHaveCount(0);
+  const search = page.getByRole("searchbox", { name: "Search issues" });
+  await search.fill("300");
+  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(0);
+  await search.fill("");
+  await expect.poll(() => viewport.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+  await viewport.evaluate((node) => {
+    node.scrollTop = node.scrollHeight / 2;
+  });
+  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Select repository: Global" }).click();
+  await page
+    .getByRole("listbox", { name: "Repositories" })
+    .getByRole("option", { name: "github/github.com/acme/widgets" })
+    .click();
+  await expect.poll(() => viewport.evaluate((node) => node.scrollTop)).toBe(0);
 });
 
-test("Closed issues offer Load more, not an empty state, while Hide bots hides every loaded row", async ({ page }) => {
+test("Closed issues load past hidden bot rows", async ({ page }) => {
   await mockApi(page);
   await page.route("**/api/v1/settings", async (route) => {
     if (route.request().method() !== "GET") {
@@ -63,6 +76,11 @@ test("Closed issues offer Load more, not an empty state, while Hide bots hides e
     Author: index < 200 ? "release-bot" : "human-author",
   }));
   await routeClosedPaging(page, "/api/v1/issues", rows);
+  const { promise: nextPage, resolve: release } = Promise.withResolvers<void>();
+  await page.route("**/api/v1/issues**", async (route) => {
+    if (Number(new URL(route.request().url()).searchParams.get("limit")) > 200) await nextPage;
+    await route.fallback();
+  });
   await page.goto("/issues");
   const trigger = page.locator(".compact-filter-menu .kit-filter-dropdown__btn");
   await trigger.click();
@@ -70,8 +88,7 @@ test("Closed issues offer Load more, not an empty state, while Hide bots hides e
   await trigger.click();
   await expect(page.locator(".list-count-chip")).toHaveText("0+ issues");
   await expect(page.getByText("No issues found.")).toHaveCount(0);
-
-  await page.getByRole("button", { name: "Load more", exact: true }).click();
+  release();
   await expect(page.locator(".list-count-chip")).toHaveText("50 issues");
   await expect(page.getByText("Closed issue 201", { exact: true })).toBeVisible();
 });

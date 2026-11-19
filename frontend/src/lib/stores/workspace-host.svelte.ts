@@ -1,4 +1,5 @@
 import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
+import type { LaunchTarget } from "../api/types.js";
 import type { Snippet } from "svelte";
 import type { Attachment } from "svelte/attachments";
 import type {
@@ -144,6 +145,9 @@ let launcherOpener = $state<(() => void) | null>(null);
 // which owns the runtime launch: a detail header can only reach it through here.
 let sessionLauncher = $state<((targetKey: string) => void) | null>(null);
 let sessionLaunchBusy = $state(false);
+// The hosted workspace's launch targets, published by the live view that loaded
+// them from the workspace's machine.
+let hostedLaunchTargets = $state<{ key: HostedWorkspaceKey; targets: LaunchTarget[] } | null>(null);
 // Claims are released when their view unmounts, but a deletion can arrive
 // later from an unrelated surface (Workspaces tab, terminal tab). Without
 // this map the deletion would find no claim to tombstone, and the stale
@@ -682,6 +686,10 @@ export function setWorkspaceSessionLaunchBusy(busy: boolean): void {
   sessionLaunchBusy = busy;
 }
 
+export function publishHostedLaunchTargets(key: HostedWorkspaceKey | null, targets: LaunchTarget[] = []): void {
+  hostedLaunchTargets = key ? { key, targets } : null;
+}
+
 /**
  * The hosted workspace's launcher, or null when this surface is not hosting one.
  *
@@ -967,6 +975,14 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       sessionLauncher?.(targetKey);
     },
     sessionLaunching: () => desiredSlot() === surface && sessionLaunchBusy,
+    launchTargets: () => {
+      const published = hostedLaunchTargets;
+      if (desiredSlot() !== surface || published === null) return null;
+      const key = desiredKey();
+      return published.key.workspaceId === key.workspaceId && published.key.hostKey === key.hostKey
+        ? published.targets
+        : null;
+    },
     focusTerminal: () => {
       // A modal frame is open: leave the layout alone and don't pull
       // focus out of the dialog.
@@ -1066,6 +1082,7 @@ export function resetWorkspaceHostForTest(): void {
   launcherOpener = null;
   sessionLauncher = null;
   sessionLaunchBusy = false;
+  hostedLaunchTargets = null;
   lastFocusedWorkspacePane = {};
   collapsedPaneKeys.clear();
 }

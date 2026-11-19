@@ -743,6 +743,48 @@ describe("IssueDetail inline workspace handoff", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  it("runs a quick action in a linked remote workspace, asking its machine for the workspace's current state", async () => {
+    // The link still says ready; only the devbox knows its setup failed since.
+    const controller = {
+      ...createTestController("split"),
+      effectiveWorkspaceRef: () => ({ id: "ws-devbox", status: "ready", hostKey: "devbox:compute-a" }),
+    };
+    const posts: string[] = [];
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: [] } }),
+      POST: vi.fn(async (path: string) => {
+        posts.push(path);
+        if (path === "/devboxes/{connection_id}/workspaces") {
+          return { data: { id: "ws-devbox", status: "error", reused: true } };
+        }
+        if (path === "/devboxes/{connection_id}/workspaces/{id}/retry") return { data: { id: "ws-devbox" } };
+        return { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } };
+      }),
+    };
+    const { navigate } = renderIssueDetail(
+      issueDetail(),
+      undefined,
+      {
+        inlineWorkspace: controller,
+        quickActions: [{ label: "Triage", agent: "codex", prompt: "Triage this issue" }],
+      },
+      apiClient,
+    );
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Triage/ }));
+
+    await waitFor(() =>
+      expect(posts).toEqual([
+        "/devboxes/{connection_id}/workspaces",
+        "/devboxes/{connection_id}/workspaces/{id}/retry",
+        "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+      ]),
+    );
+    expect(controller.revealWorkspace).toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it("shows a quiet status hint after directory failure and still creates on the saved devbox", async () => {
     const snapshot = Promise.withResolvers<unknown>();
     const apiClient = {

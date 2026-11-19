@@ -101,7 +101,12 @@ test("a quick action on a remote default machine opens its workspace beside the 
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ launch_targets: [], sessions: [] }),
+        body: JSON.stringify({
+          launch_targets: [
+            { key: "devbox-agent", label: "Devbox Agent", kind: "agent", source: "builtin", available: true },
+          ],
+          sessions: [],
+        }),
       });
     },
   );
@@ -120,4 +125,8 @@ test("a quick action on a remote default machine opens its workspace beside the 
     .poll(() => handoffs)
     .toEqual([expect.objectContaining({ target_key: "codex", message: "Make the failing checks pass." })]);
   await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/42$/);
+
+  // The header launches into the devbox's workspace, so it offers the devbox's agents.
+  await page.getByRole("button", { name: "Launch an agent" }).first().click();
+  await expect(page.getByRole("menuitem", { name: "Devbox Agent" })).toBeVisible();
 });

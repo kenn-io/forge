@@ -6,7 +6,7 @@ import { createMockApiFetch } from "../../test/mockApiFetch.js";
 import { startTestTelemetry } from "../testing/telemetry.js";
 import { getFlashes, dismissFlash } from "./flash.svelte.js";
 import { runQuickActionOnItems } from "./bulk-quick-action.js";
-import { resetWorkspaceCreatePendingForTest } from "./workspace-create-pending.svelte.js";
+import { recordWorkspaceCreated, resetWorkspaceCreatePendingForTest } from "./workspace-create-pending.svelte.js";
 
 afterEach(resetWorkspaceCreatePendingForTest);
 
@@ -315,6 +315,66 @@ it("refuses the existing workspace another machine reports while it is being del
       ]),
     );
     expect(handoffs).toEqual([]);
+  } finally {
+    await Effect.runPromise(runtime.disposeEffect);
+    for (const flash of getFlashes()) dismissFlash(flash.id);
+    vi.unstubAllGlobals();
+  }
+});
+
+it("asks the machine that holds a workspace this session created there, and sets it up again when it failed", async () => {
+  const api = createMockApiFetch();
+  const pulls: PullRequest[] = await (await api.fetch("/api/v1/pulls")).json();
+  const pull = pulls[0]!;
+  const posts: string[] = [];
+  const mixed = createMockApiFetch([
+    ({ method, url }) => {
+      if (method !== "POST") return undefined;
+      posts.push(url.pathname);
+      if (url.pathname === "/api/v1/devboxes/compute-a/workspaces") {
+        return Response.json({ id: "ws-remote", status: "error", reused: true });
+      }
+      if (url.pathname === "/api/v1/devboxes/compute-a/workspaces/ws-remote/retry") {
+        return Response.json({ id: "ws-remote", status: "creating" });
+      }
+      if (url.pathname.endsWith("/runtime/agent-handoffs")) {
+        return Response.json({
+          session: { key: "runtime-1", target_key: "helper" },
+          initial_message: { state: "delivered", target_key: "helper", message_bytes: 18 },
+        });
+      }
+      return undefined;
+    },
+  ]);
+  vi.stubGlobal("fetch", mixed.fetch);
+  const runtime = makeAppRuntime();
+  // The detail's create recorded the workspace with the stale status its
+  // response carried; only the devbox knows its setup failed since.
+  recordWorkspaceCreated(
+    {
+      provider: pull.repo.provider,
+      platformHost: pull.repo.platform_host,
+      owner: pull.repo.owner,
+      name: pull.repo.name,
+      repoPath: pull.repo.repo_path,
+      number: pull.Number,
+      itemType: "pull",
+    },
+    { id: "ws-remote", status: "creating", hostKey: "devbox:compute-a" },
+  );
+  try {
+    runQuickActionOnItems(
+      runtime,
+      [{ kind: "pull", item: { ...pull, workspace: undefined } }],
+      { label: "Review", agent: "helper", prompt: "Review this change" },
+      "",
+    );
+    await vi.waitFor(() => expect(getFlashes()).toEqual([expect.objectContaining({ tone: "success" })]));
+    expect(posts).toEqual([
+      "/api/v1/devboxes/compute-a/workspaces",
+      "/api/v1/devboxes/compute-a/workspaces/ws-remote/retry",
+      "/api/v1/devboxes/compute-a/workspaces/ws-remote/runtime/agent-handoffs",
+    ]);
   } finally {
     await Effect.runPromise(runtime.disposeEffect);
     for (const flash of getFlashes()) dismissFlash(flash.id);

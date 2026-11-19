@@ -82,7 +82,7 @@ function resolveDefaultTarget(defaultTarget: string): Effect.Effect<ResolvedTarg
 function runOnItem(
   target: ListItemTarget,
   action: QuickAction,
-  { hostKey, reason }: ResolvedTarget,
+  resolved: ResolvedTarget,
 ): Effect.Effect<QuickActionOutcome, never, GeneratedApi | FleetSnapshotReads> {
   const identity = itemIdentity(target);
   const failed = (reason: string): Effect.Effect<QuickActionOutcome> =>
@@ -93,7 +93,7 @@ function runOnItem(
   // A workspace this session just created counts before the list row
   // catches up, so a repeat run queues there instead of creating another.
   const existing = resolveControllerlessWorkspaceRef(identity, target.item.workspace ?? null);
-  if (existing?.id) {
+  if (existing?.id && existing.hostKey === undefined) {
     if (existing.status === "deleting" || existing.status === "deletion_failed") {
       return failed("its workspace is being deleted");
     }
@@ -102,7 +102,10 @@ function runOnItem(
     if (existing.status === "error") return retryWorkspaceQuickAction(existing.id, action);
     return launchWorkspaceQuickAction(existing.id, action);
   }
-  if (reason) return failed(reason);
+  // A workspace this session created on another machine is asked for there
+  // again: that machine returns it as it is now, which this Forge cannot see.
+  const hostKey = existing?.hostKey ?? resolved.hostKey;
+  if (!existing && resolved.reason) return failed(resolved.reason);
   if (hostKey?.startsWith("devbox:")) {
     const unsupported = devboxRepositoryUnavailableReason({
       provider: target.item.repo.provider,

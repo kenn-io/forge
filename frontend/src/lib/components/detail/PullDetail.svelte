@@ -167,6 +167,7 @@
   } from "./prTimelineFilter.js";
   import type { PullRequestRouteRef } from "../../routes.js";
   import {
+    hostKeyLabel,
     identityEquals,
     workspaceRoute,
     type InlineWorkspaceController,
@@ -2043,6 +2044,14 @@
   function runQuickActionInWorkspace(ref: WorkspaceRefLite, action: QuickAction): void {
     const { id: workspaceId, hostKey } = ref;
     closeActionMenu();
+    if (hostKey !== undefined) {
+      // This Forge cannot see another machine's workspace status, so ask that
+      // machine again, as a create does: it returns this workspace as it is now,
+      // sets it up again if setup failed, or makes a new one if it was deleted.
+      createWorkspace(undefined, action, { hostKey, label: ref.hostLabel ?? hostKeyLabel(hostKey) });
+      inlineWorkspace?.revealWorkspace();
+      return;
+    }
     runWorkspaceQuickAction(runtime, workspaceId, "pull_request", action, hostKey, undefined, quickActionLeaf());
     if (inlineWorkspace) inlineWorkspace.revealWorkspace();
     else if (onOpenWorkspace) onOpenWorkspace(workspaceId, hostKey);
@@ -3147,7 +3156,9 @@
             <WorkspaceCreateSplitButton
               label="Focus Terminal"
               size="sm"
-              launchTargets={settings.getLaunchTargets()}
+              launchTargets={workspace.hostKey === undefined
+                ? settings.getLaunchTargets()
+                : (inlineWorkspace.launchTargets() ?? [])}
               disabled={stalePR || workspaceDeletionLifecycle}
               launchBusy={inlineWorkspace.sessionLaunching()}
               onCreate={(targetKey) => {

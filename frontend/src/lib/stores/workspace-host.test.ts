@@ -25,6 +25,7 @@ import {
   desiredSlot,
   getInlineWorkspaceController,
   publishHostedSessions,
+  publishHostedLaunchTargets,
   hostedWorkspaceLauncher,
   registerWorkspaceLauncher,
   hostedSessionRegistryKey,
@@ -184,6 +185,27 @@ describe("workspace host store", () => {
     expect(desiredSlot()).toBe("prs");
     expect(desiredKey()).toEqual({ workspaceId: "ws-r", hostKey: "devbox:compute-a" });
     expect(prs.workspacePaneLabel()).toBe("Workspace on compute-a (devbox)");
+  });
+
+  it("names a fleet member without a known name as another machine, not by its node ID", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, { id: "ws-r", status: "ready", hostKey: "b".repeat(32) });
+    expect(prs.workspacePaneLabel()).toBe("Workspace on another machine");
+  });
+
+  it("offers the launch targets the hosted view loaded for the workspace this surface shows", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const remote = { id: "ws-r", status: "ready", hostKey: "devbox:compute-a" };
+    const targets = [{ key: "devbox-agent", label: "Devbox Agent", kind: "agent" as const, available: true }];
+    prs.claim(identityA, remote);
+    expect(prs.launchTargets()).toBeNull();
+    // Another machine's workspace with the same ID is not this one.
+    publishHostedLaunchTargets({ workspaceId: "ws-r", hostKey: "devbox:other" }, targets);
+    expect(prs.launchTargets()).toBeNull();
+    publishHostedLaunchTargets({ workspaceId: "ws-r", hostKey: "devbox:compute-a" }, targets);
+    expect(prs.launchTargets()).toEqual(targets);
+    prs.release();
+    expect(prs.launchTargets()).toBeNull();
   });
 
   it("keeps a remote workspace link when this Forge's detail reports no workspace", () => {

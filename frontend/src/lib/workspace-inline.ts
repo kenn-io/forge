@@ -1,6 +1,7 @@
 import type { Snippet } from "svelte";
 import type { Attachment } from "svelte/attachments";
 import { canonicalProvider, resolvedPlatformHost } from "./api/provider-routes.js";
+import type { LaunchTarget } from "./api/types.js";
 
 /**
  * A workspace linked to an item. hostKey names the fleet member or devbox that
@@ -20,7 +21,8 @@ export type WorkspaceRefLite = {
  */
 export function hostKeyLabel(hostKey: string): string {
   if (hostKey.startsWith("devbox:")) return `${hostKey.slice("devbox:".length)} (devbox)`;
-  return URL.canParse(hostKey) ? new URL(hostKey).host : hostKey;
+  // A fleet member's key is an internal node ID, not a name.
+  return "another machine";
 }
 
 /** The Workspaces-tab route for a linked workspace. */
@@ -126,6 +128,11 @@ export interface InlineWorkspaceController {
   launchSession(targetKey: string): void;
   /** True while a session launch is starting; the workspace view drops a second one. */
   sessionLaunching(): boolean;
+  /**
+   * The agents the hosted workspace's machine offers, or null until this surface's
+   * view has loaded them. A workspace on another machine launches its own agents.
+   */
+  launchTargets(): LaunchTarget[] | null;
   /** Expand the dock and move focus into the terminal host. */
   focusTerminal(): void;
   /** Navigate to the workspace's terminal route (the secondary "Open in Workspaces" action). */

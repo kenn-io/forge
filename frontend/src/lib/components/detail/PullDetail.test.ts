@@ -4550,21 +4550,29 @@ describe("PullDetail inline workspace handoff", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it("runs a quick action in a linked remote workspace even when this machine lacks the agent", async () => {
+  it("runs a quick action in a linked remote workspace, asking its machine for the workspace's current state", async () => {
+    // The link still says ready; only the devbox knows its setup failed since.
     const controller = {
       ...createTestController("split"),
       effectiveWorkspaceRef: () => ({ id: "ws-remote", status: "ready", hostKey: "devbox:compute-a" }),
     };
+    const posts: string[] = [];
     const apiClient = {
       GET: vi.fn().mockResolvedValue({ data: { hosts: [] } }),
-      POST: vi.fn().mockResolvedValue({
-        data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } },
+      POST: vi.fn(async (path: string) => {
+        posts.push(path);
+        if (path === "/devboxes/{connection_id}/workspaces") {
+          return { data: { id: "ws-remote", status: "error", reused: true } };
+        }
+        if (path === "/devboxes/{connection_id}/workspaces/{id}/retry") return { data: { id: "ws-remote" } };
+        return { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } };
       }),
     };
-    const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, {
+    const { settings, navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
       hideWorkspaceAction: false,
       inlineWorkspace: controller,
     });
+    // This machine lacks the agent; the devbox validates its own.
     settings.setLaunchTargets([]);
     settings.setQuickActions([{ label: "Review", agent: "claude", prompt: "Review this change" }]);
 
@@ -4574,11 +4582,32 @@ describe("PullDetail inline workspace handoff", () => {
     await fireEvent.click(review);
 
     await waitFor(() =>
-      expect(apiClient.POST).toHaveBeenCalledWith(
+      expect(posts).toEqual([
+        "/devboxes/{connection_id}/workspaces",
+        "/devboxes/{connection_id}/workspaces/{id}/retry",
         "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
-        expect.objectContaining({ params: { path: { connection_id: "compute-a", id: "ws-remote" } } }),
-      ),
+      ]),
     );
+    expect(controller.revealWorkspace).toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("offers a linked remote workspace's own agents in the header launch menu", async () => {
+    const controller = {
+      ...createTestController("split"),
+      effectiveWorkspaceRef: () => ({ id: "ws-remote", status: "ready", hostKey: "devbox:compute-a" }),
+      launchTargets: () => [{ key: "devbox-agent", label: "Devbox Agent", kind: "agent" as const, available: true }],
+    };
+    const { settings } = renderPullDetail(pullDetail(), undefined, undefined, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+    });
+    settings.setLaunchTargets([{ key: "codex", label: "Codex", kind: "agent", available: true }]);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Launch an agent" }));
+    expect(screen.queryByRole("menuitem", { name: "Codex" })).toBeNull();
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Devbox Agent" }));
+    expect(controller.launchSession).toHaveBeenCalledWith("devbox-agent");
   });
 
   it("names an unavailable default and creates on a machine the user picks instead", async () => {

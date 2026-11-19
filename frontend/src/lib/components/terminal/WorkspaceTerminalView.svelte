@@ -70,6 +70,7 @@
     registerWorkspaceControls,
     registerWorkspaceLauncher,
     registerWorkspaceSessionLauncher,
+    publishHostedLaunchTargets,
     setWorkspaceControlsBusy,
     setWorkspaceSessionLaunchBusy,
   } from "../../stores/workspace-host.svelte.ts";
@@ -1114,6 +1115,15 @@
         registerWorkspaceLauncher(null);
         registerWorkspaceSessionLauncher(null);
       });
+  });
+
+  // The detail header launches into this workspace, so it offers this machine's agents.
+  $effect(() => {
+    if (!embeddedWorkspace) return;
+    const key = { workspaceId, hostKey: workspaceHostKey };
+    const targets = launchTargets;
+    untrack(() => publishHostedLaunchTargets(key, targets));
+    return () => untrack(() => publishHostedLaunchTargets(null));
   });
 
   // handleLaunch ignores a launch while one is starting, and a second queued launch

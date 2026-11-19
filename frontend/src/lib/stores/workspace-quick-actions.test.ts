@@ -13,6 +13,7 @@ import {
   quickActionWorkspaces,
   quickActionWorkspaceKey,
   runQuickActionInSession,
+  runLinkedRemoteWorkspaceQuickAction,
   runReturnedWorkspaceQuickAction,
   runWorkspaceQuickAction,
 } from "./workspace-quick-actions.js";
@@ -154,6 +155,78 @@ describe("quick-action launch serialization", () => {
       tone: "danger",
       message: '"Review" could not start: fleet host connection closed',
     });
+  });
+
+  it("asks another machine again only when it reports the linked workspace gone or its setup failed", async () => {
+    const hostKey = "b".repeat(32);
+    const action = { label: "Review", agent: "chat", prompt: "Review this change" };
+    const problem = (status: number, code: string, detail: string) =>
+      new GeneratedProblemResponse({ code, title: "Failed", status, detail }, new Response(null, { status }));
+    const recover = vi.fn(() => true);
+
+    launchFleetHandoff.mockResolvedValueOnce({ session, initial_message: { state: "delivered" } });
+    runLinkedRemoteWorkspaceQuickAction(
+      runtime,
+      { id: "ws-linked" },
+      "pull_request",
+      action,
+      hostKey,
+      undefined,
+      recover,
+    );
+    await vi.waitFor(() =>
+      expect(quickActionLaunches.get(quickActionWorkspaceKey("ws-linked", hostKey))?.session?.key).toBe(session.key),
+    );
+    expect(recover).not.toHaveBeenCalled();
+
+    for (const [status, code] of [
+      [404, "workspaceNotFound"],
+      [409, "conflict"],
+    ] as const) {
+      recover.mockClear();
+      launchFleetHandoff.mockRejectedValueOnce(problem(status, code, "workspace setup failed: clone failed"));
+      runLinkedRemoteWorkspaceQuickAction(
+        runtime,
+        { id: "ws-linked" },
+        "pull_request",
+        action,
+        hostKey,
+        undefined,
+        recover,
+      );
+      await vi.waitFor(() => expect(recover).toHaveBeenCalledOnce());
+      expect(getFlashes()).toEqual([]);
+    }
+
+    recover.mockClear();
+    launchFleetHandoff.mockRejectedValueOnce(problem(403, "forbidden", "not allowed"));
+    runLinkedRemoteWorkspaceQuickAction(
+      runtime,
+      { id: "ws-linked" },
+      "pull_request",
+      action,
+      hostKey,
+      undefined,
+      recover,
+    );
+    await vi.waitFor(() => expect(getFlashes()).toHaveLength(1));
+    expect(recover).not.toHaveBeenCalled();
+    dismissFlash();
+
+    const declined = vi.fn(() => false);
+    launchFleetHandoff.mockRejectedValueOnce(problem(404, "workspaceNotFound", "workspace not found"));
+    runLinkedRemoteWorkspaceQuickAction(
+      runtime,
+      { id: "ws-linked" },
+      "pull_request",
+      action,
+      hostKey,
+      undefined,
+      declined,
+    );
+    await vi.waitFor(() => expect(getFlashes()).toHaveLength(1));
+    expect(declined).toHaveBeenCalledOnce();
+    expect(getFlashes()[0]).toMatchObject({ tone: "danger", message: '"Review" could not start: workspace not found' });
   });
 
   it("sets up a failed workspace on another machine again before running the action there", async () => {

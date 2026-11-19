@@ -66,7 +66,12 @@ export type QuickActionOutcome =
   | { type: "started" }
   /** The agent may be running, but its prompt was not confirmed. */
   | { type: "unconfirmed"; reason: string; message: string }
-  | { type: "failed"; reason: string; message: string };
+  /**
+   * workspaceUnusable: another machine reported the workspace gone or its
+   * setup failed, so asking that machine for the item's workspace again can
+   * recover where this launch could not.
+   */
+  | { type: "failed"; reason: string; message: string; workspaceUnusable?: true };
 
 // Launches for one workspace run one after another, in the order requested.
 const launchQueues = new Map<string, Deferred.Deferred<void>>();
@@ -236,7 +241,17 @@ function quickActionHandoff(
                 message: `"${action.label}" launched its agent, but prompt delivery is unconfirmed: ${detail}. Check the agent before sending the prompt again.`,
               };
         }
-        return { type: "failed", reason: detail, message: `"${action.label}" could not start: ${detail}` };
+        const problem = failure.problem;
+        const workspaceUnusable =
+          hostKey !== undefined &&
+          ((problem.status === 404 && problem.code === ProblemCodes.workspaceNotFound) ||
+            (problem.status === 409 && problem.code === ProblemCodes.conflict));
+        return {
+          type: "failed",
+          reason: detail,
+          message: `"${action.label}" could not start: ${detail}`,
+          ...(workspaceUnusable ? { workspaceUnusable: true as const } : {}),
+        };
       },
     }),
   );
@@ -380,12 +395,39 @@ export function runReturnedWorkspaceQuickAction(
   );
 }
 
+/**
+ * Runs a quick action in the workspace another machine runs for an item. This
+ * Forge cannot see that workspace's current status, so when its machine reports
+ * it gone or its setup failed, recover() asks that machine for the item's
+ * workspace again. recover() returns false when it cannot, and the failure is
+ * reported as usual.
+ */
+export function runLinkedRemoteWorkspaceQuickAction(
+  runtime: AppRuntime,
+  workspace: { readonly id: string; readonly status?: string | undefined },
+  itemType: WorkspaceDetail["item_type"],
+  action: QuickAction,
+  hostKey: string,
+  leaf: WorkspaceRuntimeLaunchLeaf | undefined,
+  recover: () => boolean,
+): void {
+  reportQuickAction(
+    runtime,
+    workspace.id,
+    itemType,
+    action,
+    startReturnedWorkspaceQuickAction(workspace, action, hostKey, leaf),
+    recover,
+  );
+}
+
 function reportQuickAction(
   runtime: AppRuntime,
   workspaceId: string,
   itemType: WorkspaceDetail["item_type"] | undefined,
   action: QuickAction,
   launch: ReturnType<typeof launchWorkspaceQuickAction>,
+  recover?: () => boolean,
 ): void {
   if (itemType !== undefined) reportWorkspaceOpened(runtime, itemType);
   runtime.runCommand(
@@ -393,6 +435,7 @@ function reportQuickAction(
       Effect.flatMap((outcome) =>
         Effect.sync(() => {
           if (outcome.type === "started") return;
+          if (outcome.type === "failed" && outcome.workspaceUnusable && recover?.()) return;
           if (outcome.type === "failed") {
             showFlash(outcome.message, { tone: "danger" });
             reportWorkspaceOpenError(runtime);

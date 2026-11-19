@@ -9,6 +9,7 @@ import { createItemWorkspace } from "../api/item-workspace.js";
 import { repositoryKeyFromWire } from "../api/repository-key.js";
 import type { WorkspaceItemIdentity } from "../workspace-inline.js";
 import { showFlash } from "./flash.svelte.js";
+import { recordItemWorkspaceCreated } from "./workspace-host.svelte.js";
 import { listItemLabel, type ListItemTarget } from "./item-actions.js";
 import {
   beginWorkspaceCreate,
@@ -131,10 +132,18 @@ function runOnItem(
     ),
     Effect.tap((data) =>
       Effect.sync(() => {
-        // A local creation is published like the detail views do, so an open
-        // detail for the same item shows the workspace without a refetch.
-        if (data?.id && !hostKey) {
-          recordWorkspaceCreated(identity, { id: data.id, status: data.status ?? "provisioning" });
+        // A creation is published like the detail views do, so an open detail
+        // for the same item shows the workspace without a refetch. This Forge
+        // never lists another machine's workspaces, so a remote one, including
+        // a replacement for a deleted one, is known only from this record.
+        if (data?.id) {
+          const ref = {
+            id: data.id,
+            status: data.status ?? "provisioning",
+            ...(hostKey ? { hostKey, hostLabel: existing?.hostLabel } : {}),
+          };
+          recordWorkspaceCreated(identity, ref);
+          recordItemWorkspaceCreated(identity, ref);
         }
       }),
     ),

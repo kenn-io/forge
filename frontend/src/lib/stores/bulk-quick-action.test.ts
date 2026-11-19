@@ -6,9 +6,17 @@ import { createMockApiFetch } from "../../test/mockApiFetch.js";
 import { startTestTelemetry } from "../testing/telemetry.js";
 import { getFlashes, dismissFlash } from "./flash.svelte.js";
 import { runQuickActionOnItems } from "./bulk-quick-action.js";
-import { recordWorkspaceCreated, resetWorkspaceCreatePendingForTest } from "./workspace-create-pending.svelte.js";
+import {
+  createdWorkspaceRef,
+  recordWorkspaceCreated,
+  resetWorkspaceCreatePendingForTest,
+} from "./workspace-create-pending.svelte.js";
+import { getInlineWorkspaceController, resetWorkspaceHostForTest } from "./workspace-host.svelte.js";
 
-afterEach(resetWorkspaceCreatePendingForTest);
+afterEach(() => {
+  resetWorkspaceCreatePendingForTest();
+  resetWorkspaceHostForTest();
+});
 
 it.each(["partial", "all"])("counts one error flash for %s bulk workspace creation failures", async (failure) => {
   const api = createMockApiFetch();
@@ -252,6 +260,9 @@ it("creates on the fleet member the saved default names, or reports it unavailab
       await Effect.runPromise(runtime.disposeEffect);
       for (const flash of getFlashes()) dismissFlash(flash.id);
       vi.unstubAllGlobals();
+      // Each pass starts with no workspace linked to the item.
+      resetWorkspaceCreatePendingForTest();
+      resetWorkspaceHostForTest();
     }
   }
 });
@@ -375,6 +386,62 @@ it("asks the machine that holds a workspace this session created there, and sets
       "/api/v1/devboxes/compute-a/workspaces/ws-remote/retry",
       "/api/v1/devboxes/compute-a/workspaces/ws-remote/runtime/agent-handoffs",
     ]);
+  } finally {
+    await Effect.runPromise(runtime.disposeEffect);
+    for (const flash of getFlashes()) dismissFlash(flash.id);
+    vi.unstubAllGlobals();
+  }
+});
+
+it("links the item to the workspace its machine makes when the old one was deleted there", async () => {
+  const api = createMockApiFetch();
+  const pulls: PullRequest[] = await (await api.fetch("/api/v1/pulls")).json();
+  const pull = pulls[0]!;
+  const mixed = createMockApiFetch([
+    ({ method, url }) => {
+      if (method !== "POST") return undefined;
+      if (url.pathname === "/api/v1/devboxes/compute-a/workspaces") {
+        return Response.json({ id: "ws-replacement", status: "creating", created: true });
+      }
+      if (url.pathname.endsWith("/runtime/agent-handoffs")) {
+        return Response.json({
+          session: { key: "runtime-1", target_key: "helper" },
+          initial_message: { state: "delivered", target_key: "helper", message_bytes: 18 },
+        });
+      }
+      return undefined;
+    },
+  ]);
+  vi.stubGlobal("fetch", mixed.fetch);
+  const runtime = makeAppRuntime();
+  const identity = {
+    provider: pull.repo.provider,
+    platformHost: pull.repo.platform_host,
+    owner: pull.repo.owner,
+    name: pull.repo.name,
+    repoPath: pull.repo.repo_path,
+    number: pull.Number,
+    itemType: "pull",
+  } as const;
+  const deleted = { id: "ws-deleted", status: "ready", hostKey: "devbox:compute-a", hostLabel: "compute-a (devbox)" };
+  recordWorkspaceCreated(identity, deleted);
+  getInlineWorkspaceController("prs").recordCreated(identity, deleted);
+  try {
+    runQuickActionOnItems(
+      runtime,
+      [{ kind: "pull", item: { ...pull, workspace: undefined } }],
+      { label: "Review", agent: "helper", prompt: "Review this change" },
+      "",
+    );
+    await vi.waitFor(() => expect(getFlashes()).toEqual([expect.objectContaining({ tone: "success" })]));
+    const replacement = {
+      id: "ws-replacement",
+      status: "creating",
+      hostKey: "devbox:compute-a",
+      hostLabel: "compute-a (devbox)",
+    };
+    expect(createdWorkspaceRef(identity)).toEqual(replacement);
+    expect(getInlineWorkspaceController("prs").effectiveWorkspaceRef(identity, null)).toEqual(replacement);
   } finally {
     await Effect.runPromise(runtime.disposeEffect);
     for (const flash of getFlashes()) dismissFlash(flash.id);

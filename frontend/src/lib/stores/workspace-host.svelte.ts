@@ -869,6 +869,14 @@ export const tabSlotAttachment: Attachment<HTMLElement> = slotAttachmentFor("tab
 
 const controllers = new Map<InlineWorkspaceSurface, InlineWorkspaceController>();
 
+/**
+ * Links a workspace created for an item outside its detail view, such as by a
+ * bulk quick action, so every pane that hosts the item opens it.
+ */
+export function recordItemWorkspaceCreated(identity: WorkspaceItemIdentity, ref: WorkspaceRefLite): void {
+  for (const surface of INLINE_SURFACES) getInlineWorkspaceController(surface).recordCreated(identity, ref);
+}
+
 export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): InlineWorkspaceController {
   const cached = controllers.get(surface);
   if (cached) return cached;

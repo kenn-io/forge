@@ -37,7 +37,11 @@
     type ConflictReason,
   } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import { runReturnedWorkspaceQuickAction, runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
+  import {
+    runLinkedRemoteWorkspaceQuickAction,
+    runReturnedWorkspaceQuickAction,
+    runWorkspaceQuickAction,
+  } from "../../stores/workspace-quick-actions.js";
   import { detailSessionLaunchLeaf } from "../../stores/paneLayout.svelte.js";
   import type { WorkspaceRuntimeLaunchLeaf } from "../terminal/workspace-runtime-workflow.js";
   import {
@@ -2045,14 +2049,19 @@
     const { id: workspaceId, hostKey } = ref;
     closeActionMenu();
     if (hostKey !== undefined) {
-      // This Forge cannot see another machine's workspace status, so ask that
-      // machine again, as a create does: it returns this workspace as it is now,
-      // sets it up again if setup failed, or makes a new one if it was deleted.
-      createWorkspace(undefined, action, { hostKey, label: ref.hostLabel ?? hostKeyLabel(hostKey) });
-      inlineWorkspace?.revealWorkspace();
-      return;
+      // This Forge cannot see another machine's workspace status. When that
+      // machine reports the workspace gone or its setup failed, ask it for the
+      // item's workspace again, as a create does: it sets the workspace up again
+      // or makes a new one, then runs the action there.
+      const clickedIdentity = $state.snapshot(itemIdentity);
+      runLinkedRemoteWorkspaceQuickAction(runtime, ref, "pull_request", action, hostKey, quickActionLeaf(), () => {
+        if (componentDestroyed || !identityEquals(clickedIdentity, $state.snapshot(itemIdentity))) return false;
+        createWorkspace(undefined, action, { hostKey, label: ref.hostLabel ?? hostKeyLabel(hostKey) });
+        return true;
+      });
+    } else {
+      runWorkspaceQuickAction(runtime, workspaceId, "pull_request", action, hostKey, undefined, quickActionLeaf());
     }
-    runWorkspaceQuickAction(runtime, workspaceId, "pull_request", action, hostKey, undefined, quickActionLeaf());
     if (inlineWorkspace) inlineWorkspace.revealWorkspace();
     else if (onOpenWorkspace) onOpenWorkspace(workspaceId, hostKey);
     else navigate(workspaceRoute(ref));

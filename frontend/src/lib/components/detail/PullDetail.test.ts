@@ -4550,7 +4550,7 @@ describe("PullDetail inline workspace handoff", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it("runs a quick action in a linked remote workspace, asking its machine for the workspace's current state", async () => {
+  it("launches in a linked remote workspace, and asks its machine again when its setup failed since", async () => {
     // The link still says ready; only the devbox knows its setup failed since.
     const controller = {
       ...createTestController("split"),
@@ -4565,6 +4565,13 @@ describe("PullDetail inline workspace handoff", () => {
           return { data: { id: "ws-remote", status: "error", reused: true } };
         }
         if (path === "/devboxes/{connection_id}/workspaces/{id}/retry") return { data: { id: "ws-remote" } };
+        // The first handoff finds the setup failure; the one after the retry runs.
+        if (posts.filter((posted) => posted === path).length === 1) {
+          return {
+            error: { status: 409, code: "conflict", title: "Conflict", detail: "workspace setup failed: clone failed" },
+            response: new Response(null, { status: 409 }),
+          };
+        }
         return { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } };
       }),
     };
@@ -4583,11 +4590,14 @@ describe("PullDetail inline workspace handoff", () => {
 
     await waitFor(() =>
       expect(posts).toEqual([
+        "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
         "/devboxes/{connection_id}/workspaces",
         "/devboxes/{connection_id}/workspaces/{id}/retry",
         "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
       ]),
     );
+    // The recovered action reports no failure.
+    expect(getFlashes()).toEqual([]);
     expect(controller.revealWorkspace).toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
   });

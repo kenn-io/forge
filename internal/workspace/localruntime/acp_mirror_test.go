@@ -436,6 +436,66 @@ func TestMirrorReadsATranscriptReportedAfterItOpened(t *testing.T) {
 	assert.Len(t, dormantState(t, chat).Messages, 5)
 }
 
+// Two views send their first prompt while the agent the first one starts is
+// still launching. The second view uses that agent and leaves the session it
+// records alone.
+func TestMirrorViewsHandingOffTogetherShareOneAgent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	require.NoError(t, os.WriteFile(path, []byte(claudeTranscriptFixture), 0o600))
+	manager := newACPTestManager(t, Options{ACPSessionsDir: t.TempDir()})
+	live := &recordingChat{}
+	const recorded = `{"recorded":"by the started agent"}`
+	var running atomic.Bool
+	var starts atomic.Int32
+	launching, release := make(chan struct{}), make(chan struct{})
+	view := func(checked func()) *DormantACP {
+		return manager.MirrorACP(ACPMirror{
+			Key: "chat", Agent: "claude", SessionID: "session-1", TranscriptPath: path,
+			Status: func() ACPMirrorStatus { return ACPMirrorStatus{} },
+			Start: func() (ACPChat, error) {
+				if starts.Add(1) == 1 {
+					close(launching)
+					<-release
+				}
+				if err := os.WriteFile(manager.acpSessionPath("chat"), []byte(recorded), 0o600); err != nil {
+					return nil, err
+				}
+				running.Store(true)
+				return live, nil
+			},
+			Live: func() ACPChat {
+				if running.Load() {
+					return live
+				}
+				checked()
+				return nil
+			},
+		})
+	}
+	first := view(func() {})
+	var secondChecked sync.Once
+	checked := make(chan struct{})
+	second := view(func() { secondChecked.Do(func() { close(checked) }) })
+
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- first.Command(ACPCommand{Type: "prompt", ID: "p1", Text: "first"}) }()
+	<-launching
+	secondDone := make(chan error, 1)
+	go func() { secondDone <- second.Command(ACPCommand{Type: "prompt", ID: "p2", Text: "second"}) }()
+	<-checked
+	close(release)
+	require.NoError(t, <-firstDone)
+	require.NoError(t, <-secondDone)
+
+	assert.Equal(t, int32(1), starts.Load(), "one agent runs the session")
+	data, err := os.ReadFile(manager.acpSessionPath("chat"))
+	require.NoError(t, err)
+	assert.JSONEq(t, recorded, string(data), "the second view kept the started agent's session")
+	live.mu.Lock()
+	defer live.mu.Unlock()
+	assert.Len(t, live.commands, 2)
+}
+
 // Every open view of a session gets its own chat. Once one view starts the
 // Forge-run agent, the others follow that agent instead of the transcript.
 func TestMirrorFollowsAnAgentAnotherViewStarted(t *testing.T) {

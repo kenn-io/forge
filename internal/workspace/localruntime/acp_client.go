@@ -167,21 +167,20 @@ func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messag
 	// message.
 	continues := last >= 0 && a.state.Messages[last].Role == role && a.state.Messages[last].Content == nil &&
 		a.state.Messages[last].MessageID == messageID && (a.promptIndex == nil || last >= *a.promptIndex) && turn == nil
-	if content != nil && role == "user" && content.Type == "image" {
-		// The chat shows a user's images, like a prompt sent from Forge, with
-		// the prompt's text.
-		a.releaseHeldTextLocked()
-		if continues {
-			a.state.Messages[last].Images = append(a.state.Messages[last].Images, *content)
-			a.publishMessageLocked(last)
-		} else {
-			a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, Turn: turn, MessageID: messageID, Images: []ACPContent{*content}, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
-		}
-		return true
-	}
 	if content != nil {
 		a.releaseHeldTextLocked()
-		a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, Turn: turn, MessageID: messageID, Content: content, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+		message := ACPMessage{Role: role, Turn: turn, MessageID: messageID, Content: content, CreatedAt: time.Now().UTC().Format(time.RFC3339)}
+		if role == "user" && content.Type == "image" {
+			// The chat shows a user's images, like a prompt sent from Forge, with
+			// the prompt's text.
+			if continues {
+				a.state.Messages[last].Images = append(a.state.Messages[last].Images, *content)
+				a.publishMessageLocked(last)
+				return true
+			}
+			message.Content, message.Images = nil, []ACPContent{*content}
+		}
+		a.insertMessageLocked(len(a.state.Messages), message)
 		return true
 	}
 	if continues {

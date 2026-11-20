@@ -6,9 +6,24 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
+
+func TestOTelTraceableReusesInventory(t *testing.T) {
+	otelTraceable("/")
+	cachedAllocs := testing.AllocsPerRun(100, func() {
+		otelTraceable("/")
+	})
+	var err error
+	freshAllocs := testing.AllocsPerRun(10, func() {
+		_, err = NewTransportInventory()
+	})
+	require.NoError(t, err)
+	// A cached call must cost under 0.5% of one fresh build's allocations.
+	assert.Less(t, cachedAllocs, freshAllocs/200)
+}
 
 func TestOTelTraceableFiltersOnlyLongLivedStreams(t *testing.T) {
 	serverfake.RunParallelServerTest(t)

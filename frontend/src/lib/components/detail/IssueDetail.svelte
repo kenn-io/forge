@@ -735,6 +735,16 @@
   });
   const fleetWorkspace = createFleetItemWorkspace(runtime, () => fleetWorkspaceItem, () => issues.getIssueDetailEnvelopeTick());
   const envelopeWorkspace = $derived(issues.getIssueDetail()?.workspace ?? fleetWorkspace.ref(fleetWorkspaceItem));
+
+  // The surface beside the item claims its pane from the controller, which knows
+  // only this Forge's workspaces and the ones recorded on it. Recording the remote
+  // one lets the surface claim it, so Focus Terminal has a pane to open.
+  $effect(() => {
+    const ref = fleetWorkspace.ref(fleetWorkspaceItem);
+    if (!ref || !inlineWorkspace) return;
+    const controller = inlineWorkspace;
+    untrack(() => controller.recordCreated($state.snapshot(itemIdentity), ref));
+  });
   const workspace = $derived(
     staleIssue
       ? null

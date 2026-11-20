@@ -4849,6 +4849,57 @@ describe("PullDetail inline workspace handoff", () => {
     expect(apiClient.POST).not.toHaveBeenCalled();
   });
 
+  it("lets the surface beside the pull request claim the workspace another fleet member runs", async () => {
+    workspaceHost.resetWorkspaceHostForTest();
+    onTestFinished(workspaceHost.resetWorkspaceHostForTest);
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: {
+          hosts: fleetHosts({ available: true }),
+          workspaces: [
+            {
+              id: "ws-remote",
+              status: "ready",
+              fleet_host_key: buildBNode,
+              item_type: "pull_request",
+              item_number: 1,
+              platform_host: "github.com",
+              repo_owner: "acme",
+              repo_name: "widget",
+              repo: {
+                provider: "github",
+                platform_host: "github.com",
+                platform_repo_id: 1001,
+                owner: "acme",
+                name: "widget",
+                repo_path: "acme/widget",
+              },
+            },
+          ],
+        },
+      }),
+      POST: vi.fn(),
+    };
+    const controller = workspaceHost.getInlineWorkspaceController("prs");
+    const identity = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number: 1,
+      itemType: "pull",
+    };
+    // A fresh page: this machine has no workspace for the pull request and
+    // nothing was created in this tab.
+    renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false, inlineWorkspace: controller });
+
+    expect((await screen.findAllByRole("button", { name: "Focus Terminal", exact: true })).length).toBeGreaterThan(0);
+    // The surface claims from the controller with the detail's own workspace,
+    // which names none here.
+    expect(controller.effectiveWorkspaceRef(identity, null)).toMatchObject({ id: "ws-remote", hostKey: buildBNode });
+  });
+
   it("opens the existing workspace on the default fleet member instead of failing a repeat create", async () => {
     const fleetWorkspace = (id: string, number: number) => ({
       id,

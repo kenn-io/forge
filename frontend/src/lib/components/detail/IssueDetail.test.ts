@@ -20,6 +20,7 @@ import {
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
 import { createTestController } from "../workspace/inlineWorkspaceTestController.svelte.js";
+import { getInlineWorkspaceController, resetWorkspaceHostForTest } from "../../stores/workspace-host.svelte.js";
 
 const launchTargets = [
   {
@@ -1416,6 +1417,58 @@ describe("IssueDetail inline workspace handoff", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Open Workspace", exact: true }));
     expect(onOpenWorkspace).toHaveBeenCalledWith("ws-remote", buildBNode);
     expect(apiClient.POST).not.toHaveBeenCalled();
+  });
+
+  it("lets the surface beside the issue claim the workspace another fleet member runs", async () => {
+    resetWorkspaceHostForTest();
+    onTestFinished(resetWorkspaceHostForTest);
+    const buildBNode = "b".repeat(32);
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: {
+          hosts: [],
+          workspaces: [
+            {
+              id: "ws-remote",
+              status: "ready",
+              fleet_host_key: buildBNode,
+              item_type: "issue",
+              item_number: 7,
+              platform_host: "github.com",
+              repo_owner: "acme",
+              repo_name: "widget",
+              repo: {
+                provider: "github",
+                platform_host: "github.com",
+                platform_repo_id: 1001,
+                owner: "acme",
+                name: "widget",
+                repo_path: "acme/widget",
+              },
+            },
+          ],
+        },
+      })),
+      POST: vi.fn(),
+    };
+    const controller = getInlineWorkspaceController("issues");
+    const identity: WorkspaceItemIdentity = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number: 7,
+      itemType: "issue",
+    };
+    // A fresh page: this machine has no workspace for the issue and nothing
+    // was created in this tab.
+    renderIssueDetail(issueDetail(), undefined, { inlineWorkspace: controller }, apiClient);
+
+    await screen.findByRole("button", { name: "Focus Terminal", exact: true });
+    // The surface claims from the controller with the detail's own workspace,
+    // which names none here.
+    expect(controller.effectiveWorkspaceRef(identity, null)).toMatchObject({ id: "ws-remote", hostKey: buildBNode });
   });
 
   it("discards a create failure that lands after the component unmounted (no flash)", async () => {

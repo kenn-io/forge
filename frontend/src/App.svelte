@@ -108,6 +108,7 @@
     buildMobileWorkspaceRoute,
     buildMobileWorkspaceItemRoute,
     type Page,
+    type Route,
     type RoutableItemRef,
   } from "./lib/stores/router.svelte.ts";
   import {
@@ -960,11 +961,13 @@
       });
     }
     const selectedIssue = stores?.issues.getSelectedIssue();
-    let titleRoute = route.page === "issues" && !shouldUseResponsiveFocusPresentation()
+    let titleRoute: Route = route.page === "issues" && !shouldUseResponsiveFocusPresentation()
       ? { page: "issues" as const, ...(selectedIssue ? { selected: selectedIssue } : {}) }
       : route;
     if (route.page === "worklists" && worklistTitle?.id === route.worklistId && worklistTitle.selected === route.selected) {
-      titleRoute = { ...route, selected: worklistTitle.empty ? undefined : worklistTitle.target };
+      titleRoute = { ...route };
+      if (worklistTitle.empty || !worklistTitle.target) delete titleRoute.selected;
+      else titleRoute.selected = worklistTitle.target;
     }
     const workspace = workspaceTabs[route.page];
     return routeTabTitle(titleRoute, {

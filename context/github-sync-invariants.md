@@ -332,10 +332,10 @@ GitHub data sources are layered and may stay GitHub-specific behind the provider
 - Confirmed native stacks claim and order their PRs first; branch inference always runs afterward
   on unclaimed PRs, including when the preview is disabled or failing
   (`internal/stacks/detect.go::RunDetectionWithNativeStacks`).
-- Stack detection runs for each repository as soon as that repository's sync finishes. It reads only
-  what that sync wrote, so it never waits for other repositories or the detail and comment drains;
-  the pass joins it before reporting completion (maintainer decision;
-  `internal/github/sync_run.go::Syncer.startRepoSyncedHook`).
+- Stack detection runs for each repository as soon as that repository's sync finishes, without
+  waiting for other repositories or the detail and comment drains (maintainer decision). The drains
+  can save a retarget or merge afterward, so the end of the pass joins those runs and detects again
+  before reporting completion (`internal/github/sync_run.go::Syncer.startRepoSyncedHook`).
 - Native projections use the bottom PR number as the neutral stack key; GitHub's stack number is
   cache-only.
 - Merging a native member also merges every unmerged member below it, so the merge UI names every

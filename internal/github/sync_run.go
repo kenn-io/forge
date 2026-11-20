@@ -353,10 +353,10 @@ func (s *Syncer) runWorker(
 }
 
 // startRepoSyncedHook hands a finished repository to onRepoSynced without
-// waiting for the rest of the pass. Stack projection reads only what this
+// waiting for the rest of the pass. Stack projection needs only what this
 // repository's sync wrote, so holding it behind every other repository and the
-// detail and comment drains only delayed new stacks by minutes. The hook gets
-// a copy of the result so it never shares a slot with the end-of-pass hook.
+// detail and comment drains delayed new stacks by minutes. The hook gets a copy
+// of the result so it never shares a slot with the end-of-pass hook.
 func (s *Syncer) startRepoSyncedHook(state *runState, index int) {
 	if s.onRepoSynced == nil || state.repoHooks == nil {
 		return
@@ -807,7 +807,14 @@ dispatch:
 	slog.Info("sync complete", "repos", total)
 
 	if s.onSyncCompleted != nil {
-		s.onSyncCompleted(results)
+		// The drains can save a retarget or merge after a repository's early
+		// projection, so the end-of-pass hook reconciles stacks again. Join the
+		// early projections first so none of them lands after it.
+		repoHooks.Wait()
+		s.RunUnderStackProjection(func() {
+			s.dropStaleNativeStackResults(results)
+			s.onSyncCompleted(results)
+		})
 	}
 
 	terminalStatus = &SyncStatus{

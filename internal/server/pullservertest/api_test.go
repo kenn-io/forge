@@ -1061,7 +1061,7 @@ func TestAPIGetRepoCommitDiff(t *testing.T) {
 }
 
 // TestAPIStacks_DetectionViaSyncHook exercises the production wiring:
-// SetOnRepoSynced(stacks.RepoSyncedHook) fires during RunOnce and
+// SetOnRepoSynced(stacks.DetectionHook) fires during RunOnce and
 // populates stacks without calling RunDetection directly. Verifies that
 // GET /stacks and GET /repos/{owner}/{name}/pulls/{number}/stack return
 // data produced entirely by the per-repository sync callback path.
@@ -1119,7 +1119,7 @@ func TestAPIStacks_DetectionViaSyncHook(t *testing.T) {
 	// Wire the production hook and run one sync pass. RunOnce will fetch
 	// from the mock, persist PRs into DB, then invoke OnRepoSynced,
 	// which runs stack detection.
-	syncer.SetOnRepoSynced(stacks.RepoSyncedHook(ctx, database, nil))
+	syncer.SetOnRepoSynced(stacks.DetectionHook(ctx, database, nil))
 	syncer.RunOnce(ctx)
 
 	// Stacks should be populated purely by the hook path.
@@ -1196,7 +1196,7 @@ func TestAPIStacks_DetectionViaSyncHookPrefersGitHubNativeOrder(t *testing.T) {
 	srv, database, syncer := setupTestServerWithMock(t, mock)
 	client := servertest.SetupTestClient(t, srv)
 	syncer.SetPreferGitHubNativeStacks(true)
-	syncer.SetOnRepoSynced(stacks.RepoSyncedHook(ctx, database, nil))
+	syncer.SetOnRepoSynced(stacks.DetectionHook(ctx, database, nil))
 	syncer.RunOnce(ctx)
 
 	stackResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(10)}})
@@ -1279,7 +1279,7 @@ func TestAPIStacks_GitHubNativeStackTopMergesWithDefaultSettings(t *testing.T) {
 		t, mock, serverfake.DefaultTestRepos, &config.Config{}, server.ServerOptions{},
 	)
 	client := servertest.SetupTestClient(t, srv)
-	syncer.SetOnRepoSynced(stacks.RepoSyncedHook(ctx, database, nil))
+	syncer.SetOnRepoSynced(stacks.DetectionHook(ctx, database, nil))
 	syncer.RunOnce(ctx)
 
 	detailResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(11)}})
@@ -1347,7 +1347,7 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresForkHeadBranchCollision(t *testing
 	}})
 	client := servertest.SetupTestClient(t, srv)
 
-	syncer.SetOnRepoSynced(stacks.RepoSyncedHook(ctx, database, nil))
+	syncer.SetOnRepoSynced(stacks.DetectionHook(ctx, database, nil))
 	syncer.RunOnce(ctx)
 
 	ctxResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(101)}})
@@ -1419,7 +1419,7 @@ func TestAPIStacks_DetectionViaSyncHookIgnoresSameRepoSelfEdge(t *testing.T) {
 	}})
 	client := servertest.SetupTestClient(t, srv)
 
-	syncer.SetOnRepoSynced(stacks.RepoSyncedHook(ctx, database, nil))
+	syncer.SetOnRepoSynced(stacks.DetectionHook(ctx, database, nil))
 	syncer.RunOnce(ctx)
 
 	ctxResp, err := client.HTTP.GetPullStackWithResponse(ctx, &generated.GetPullStackRequestOptions{PathParams: &generated.GetPullStackPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(751)}})

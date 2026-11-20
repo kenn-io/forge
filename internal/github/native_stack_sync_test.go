@@ -665,14 +665,18 @@ func TestRunOnceDropsNativeStacksDisabledDuringSync(t *testing.T) {
 	syncer.SetPreferGitHubNativeStacks(true)
 	// Model the user turning the preview off while this sync is still running.
 	client.onPage = func() { syncer.SetPreferGitHubNativeStacks(false) }
-	var results []RepoSyncResult
-	syncer.SetOnRepoSynced(func(got []RepoSyncResult) { results = got })
+	var repoResults, passResults []RepoSyncResult
+	syncer.SetOnRepoSynced(func(got []RepoSyncResult) { repoResults = got })
+	syncer.SetOnSyncCompleted(func(got []RepoSyncResult) { passResults = got })
 
 	syncer.RunOnce(t.Context())
 
-	require.Len(results, 1)
-	assert.Nil(results[0].GitHubNativeStacks,
+	require.Len(repoResults, 1)
+	require.Len(passResults, 1)
+	assert.Nil(repoResults[0].GitHubNativeStacks,
 		"a result captured under the enabled preference must not project after it is disabled")
+	assert.Nil(passResults[0].GitHubNativeStacks,
+		"the end-of-pass reconciliation must drop the superseded result too")
 }
 
 func TestRunOnceKeepsRESTHintsWhenGraphQLRejectsNativeStackFields(t *testing.T) {

@@ -15,8 +15,9 @@ import (
 // TestRunOnceRunsRepoSyncedHookBeforeThePassFinishes pins that a repository's
 // hook does not wait for the rest of the pass. The second repository cannot
 // finish listing until the first repository's hook has run, so a hook held
-// until the end of the pass deadlocks the bubble. RunOnce must still join every
-// hook before it returns.
+// until the end of the pass deadlocks the bubble. Every repository hook must
+// still finish before the end-of-pass hook, which reconciles what the drains
+// saved afterward.
 func TestRunOnceRunsRepoSyncedHookBeforeThePassFinishes(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -57,12 +58,19 @@ func TestRunOnceRunsRepoSyncedHookBeforeThePassFinishes(t *testing.T) {
 			}
 		})
 
+		var hookedBeforePass []string
+		syncer.SetOnSyncCompleted(func([]RepoSyncResult) {
+			mu.Lock()
+			defer mu.Unlock()
+			hookedBeforePass = append([]string(nil), hooked...)
+		})
+
 		syncer.RunOnce(t.Context())
 
 		mu.Lock()
 		defer mu.Unlock()
 		require.ElementsMatch([]string{"first", "second"}, listed)
-		require.ElementsMatch([]string{"first", "second"}, hooked,
-			"RunOnce returns only after every repository's hook has run")
+		require.ElementsMatch([]string{"first", "second"}, hookedBeforePass,
+			"every repository hook finishes before the end-of-pass hook runs")
 	})
 }

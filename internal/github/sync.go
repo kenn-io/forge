@@ -191,9 +191,9 @@ type Syncer struct {
 	// result, or an in-flight run could reinstate native ordering after the
 	// user turned the preview off.
 	nativeStackGeneration atomic.Uint64
-	// stackProjectionMu serializes stack projection between the per-repository
-	// sync hook and preference-change reconciliation so the last write always
-	// reflects the current preference.
+	// stackProjectionMu serializes stack projection between the sync hooks
+	// and preference-change reconciliation so the last write always reflects
+	// the current preference.
 	stackProjectionMu sync.Mutex
 
 	featureCooldowns repositoryFeatureCooldowns

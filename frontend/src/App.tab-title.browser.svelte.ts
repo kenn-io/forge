@@ -86,17 +86,27 @@ describe("tab title navigation", () => {
     const heldList: MockRouteOverride = (req) => {
       if (req.method !== "GET" || req.url.pathname !== "/api/v1/worklists/5") return null;
       requested = true;
-      return new Response(new ReadableStream({
-        async start(controller) {
-          await release.promise;
-          controller.enqueue(new TextEncoder().encode(JSON.stringify(list)));
-          controller.close();
-        },
-      }), { headers: { "Content-Type": "application/json" } });
+      return new Response(
+        new ReadableStream({
+          async start(controller) {
+            await release.promise;
+            controller.enqueue(new TextEncoder().encode(JSON.stringify(list)));
+            controller.close();
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
     };
     const issueDetail: MockRouteOverride = (req) =>
       req.method === "GET" && req.url.pathname === "/api/v1/issues/github/acme/renamed/7"
-        ? jsonResponse({ issue, repo: { ...item.repo }, events: [], repo_owner: "acme", repo_name: "renamed", detail_loaded: true })
+        ? jsonResponse({
+            issue,
+            repo: { ...item.repo },
+            events: [],
+            repo_owner: "acme",
+            repo_name: "renamed",
+            detail_loaded: true,
+          })
         : null;
     mounted = await mountBrowserApp(
       "/worklists/5?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",

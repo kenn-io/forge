@@ -923,7 +923,12 @@ jobs:
               *) group=rest ;;
             esac
             if [[ "$group" == "$RACE_SHARD" ]]; then
-              if (( package_index % 2 == RACE_PART - 1 )); then
+              part=$((package_index % 2 + 1))
+              # Pin slow packages using race timing artifacts; alternate the rest.
+              case "$package" in
+                go.kenn.io/forge/cmd/kenn-forge|go.kenn.io/forge/internal/server|go.kenn.io/forge/internal/server/activityservertest) part=1 ;;
+              esac
+              if (( part == RACE_PART )); then
                 packages+=("$package")
               fi
               package_index=$((package_index + 1))
@@ -1027,7 +1032,7 @@ jobs:
 
       - name: Check race cache time budget
         id: cache-budget
-        if: github.ref == 'refs/heads/main' && matrix.shard == 'core' && matrix.part == 2
+        if: github.ref == 'refs/heads/main' && matrix.shard == 'core' && matrix.part == 1
         env:
           STARTED: ${{ steps.race-start.outputs.epoch }}
         run: |

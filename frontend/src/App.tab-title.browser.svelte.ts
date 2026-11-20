@@ -24,6 +24,7 @@ describe("tab title navigation", () => {
     mounted?.unmount();
     localStorage.clear();
     sessionStorage.clear();
+    await page.viewport(1280, 900);
     await resetKeyboardModuleState();
   });
 
@@ -130,6 +131,30 @@ describe("tab title navigation", () => {
     firePopstate("/?selected=pr%3A42&provider=github&repo_path=acme%2Fwidgets");
     await vi.waitFor(() => expect(document.title).toBe("Pull request (acme/widgets#42) · Forge"), WAIT);
   });
+
+  it.each([true, false])(
+    "keeps the phone Activity title with a selected item (pending: %s)",
+    async (pending) => {
+      await page.viewport(390, 844);
+      mounted = await mountBrowserApp("/?selected=pr%3A42&provider=github&repo_path=acme%2Fwidgets", {
+        overrides: pending ? [unready] : [],
+      });
+      if (!pending) await expect.element(page.getByRole("button", { name: "Menu" }), { timeout: WAIT }).toBeVisible();
+      await vi.waitFor(() => expect(document.title).toBe("Activity · Forge"), WAIT);
+      firePopstate(
+        "/?selected=commit%3Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&provider=github&repo_path=acme%2Fwidgets&branch=main",
+      );
+      await vi.waitFor(() => expect(document.title).toBe("Activity · Forge"), WAIT);
+      if (!pending) {
+        firePopstate("/?desktop=1&selected=pr%3A42&provider=github&repo_path=acme%2Fwidgets");
+        await vi.waitFor(
+          () => expect(document.title).toBe("Add browser regression coverage (acme/widgets#42) · Forge"),
+          WAIT,
+        );
+      }
+    },
+    30_000,
+  );
 
   it("names the design system while startup is pending", async () => {
     await page.viewport(1280, 900);

@@ -951,6 +951,7 @@
   const tabTitle = $derived.by(() => {
     const route = getRoute();
     if (onboardingActive) return "Setup · Forge";
+    if (shouldUseResponsiveMobileActivityPresentation()) return "Activity · Forge";
     if (!appReady) {
       const selection = route.page === "activity" ? parseActivitySelection(window.location.search) : null;
       return routeTabTitle(route, {

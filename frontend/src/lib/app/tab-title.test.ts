@@ -117,10 +117,41 @@ describe("tab titles", () => {
     expect(routeTabTitle(getRoute(), { worklists: [{ id: 3, title: "My work" }] })).toBe("My work · Worklists · Forge");
   });
 
-  it("names an Activity commit", () => {
-    expect(
-      routeTabTitle({ page: "activity" }, { activityCommit: { title: "Fix startup", repoPath: "owner/repo" } }),
-    ).toBe("Fix startup (owner/repo) · Forge");
+  it("distinguishes Activity commits with the same subject", () => {
+    const first = {
+      title: "Fix startup",
+      repoPath: "owner/repo",
+      commitSha: "0123456789abcdef0123456789abcdef01234567",
+    };
+    const second = {
+      title: "Fix startup",
+      repoPath: "owner/repo",
+      commitSha: "abcdef0123456789abcdef0123456789abcdef01",
+    };
+    expect(routeTabTitle({ page: "activity" }, { activityCommit: first })).toBe("0123456789ab (owner/repo) · Forge");
+    expect(routeTabTitle({ page: "activity" }, { activityCommit: second })).toBe("abcdef012345 (owner/repo) · Forge");
+  });
+
+  it("uses the branch or tag name instead of its resolved commit SHA", () => {
+    replaceUrl(
+      "/repo/browser?provider=github&repo_path=owner%2Frepo&ref_type=branch&ref_name=main&ref_sha=0123456789abcdef0123456789abcdef01234567",
+    );
+    expect(routeTabTitle(getRoute())).toBe("main · owner/repo · Repos · Forge");
+    replaceUrl(
+      "/repo/browser?provider=github&repo_path=owner%2Frepo&ref_type=tag&ref_name=v1.2&ref_sha=0123456789abcdef0123456789abcdef01234567",
+    );
+    expect(routeTabTitle(getRoute())).toBe("v1.2 · owner/repo · Repos · Forge");
+  });
+
+  it("uses a short commit SHA when the commit route has both ref fields", () => {
+    replaceUrl(
+      "/repo/browser?provider=github&repo_path=owner%2Frepo&ref_type=commit&ref_name=abcdef0123456789abcdef0123456789abcdef01&ref_sha=0123456789abcdef0123456789abcdef01234567",
+    );
+    expect(routeTabTitle(getRoute())).toBe("0123456789ab · owner/repo · Repos · Forge");
+    replaceUrl(
+      "/repo/browser?provider=github&repo_path=owner%2Frepo&ref_type=commit&ref_name=abcdef0123456789abcdef0123456789abcdef01",
+    );
+    expect(routeTabTitle(getRoute())).toBe("abcdef012345 · owner/repo · Repos · Forge");
   });
 
   it("names a linked workspace item with a matching detail or typed fallback", () => {

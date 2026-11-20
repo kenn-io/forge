@@ -44,7 +44,7 @@ export function routeTabTitle(
     activitySelection?: RoutedItemRef | null;
     workspace?: WorkspaceTab | undefined;
     worklists?: readonly { id: number; title: string }[] | undefined;
-    activityCommit?: { title: string; repoPath: string } | null;
+    activityCommit?: { commitSha: string; repoPath: string } | null;
     worklistSelection?: RoutedItemRef | undefined;
   } = {},
 ): string {
@@ -69,7 +69,7 @@ export function routeTabTitle(
     return `${title} (${selected.repoPath}${selected.itemType === "pr" && canonicalProvider(selected.provider) === "gitlab" ? "!" : "#"}${selected.number}) · Forge`;
   }
   if (route.page === "activity" && options.activityCommit) {
-    return `${options.activityCommit.title} (${options.activityCommit.repoPath}) · Forge`;
+    return `${options.activityCommit.commitSha.slice(0, 12)} (${options.activityCommit.repoPath}) · Forge`;
   }
   if (route.page === "focus") return `${route.itemType === "mrs" ? "Pulls" : "Issues"} · Forge`;
   if (
@@ -83,7 +83,15 @@ export function routeTabTitle(
     return `${name} · Workspaces · Forge`;
   }
   if (route.page === "repo-browser")
-    return [route.path, route.refName, route.refSHA?.slice(0, 12), route.repoPath, "Repos", "Forge"]
+    return [
+      route.path,
+      route.refType === "commit"
+        ? (route.refSHA ?? route.refName)?.slice(0, 12)
+        : (route.refName ?? route.refSHA?.slice(0, 12)),
+      route.repoPath,
+      "Repos",
+      "Forge",
+    ]
       .filter(Boolean)
       .join(" · ");
   if (route.page === "docs") return [route.doc, route.folder, "Docs", "Forge"].filter(Boolean).join(" · ");

@@ -12,6 +12,9 @@ import (
 
 var testDBTemplate = &testDBTemplateState{}
 
+// Add every fresh historical test start version here, in ascending order.
+var historicalTestVersions = []uint{36, 37, 38, 43, 44, 45, 47, 49, 50, 51, 52, 53, 54, 55, 59, 64, 68, 75, 83, 87, 91, 93, 94, 95}
+
 type testDBTemplateState struct {
 	once     sync.Once
 	data     []byte
@@ -37,6 +40,7 @@ func testDBTemplateBytes(t *testing.T) []byte {
 
 	testDBTemplate.once.Do(func() {
 		path := filepath.Join(t.TempDir(), "template.db")
+		copyTestDBTemplate(t, historicalTestDBBytes(t, historicalTestVersions[len(historicalTestVersions)-1]), path)
 		d, err := Open(path)
 		if err != nil {
 			testDBTemplate.initErr = err
@@ -64,9 +68,7 @@ func testDBTemplateBytes(t *testing.T) []byte {
 
 func historicalTestDBBytes(t *testing.T, version uint) []byte {
 	t.Helper()
-	// Add every fresh historical test start version here.
-	versions := []uint{36, 37, 38, 43, 44, 45, 47, 49, 50, 51, 52, 53, 54, 55, 59, 64, 68, 75, 83, 87, 91, 93, 94, 95}
-	require.True(t, slices.Contains(versions, version), "add start version %d to historical test versions", version)
+	require.True(t, slices.Contains(historicalTestVersions, version), "add start version %d to historical test versions", version)
 
 	testDBTemplate.mu.Lock()
 	defer testDBTemplate.mu.Unlock()
@@ -83,16 +85,24 @@ func historicalTestDBBytes(t *testing.T, version uint) []byte {
 	if nearest > 0 {
 		copyTestDBTemplate(t, testDBTemplate.versions[nearest], path)
 	}
-	raw, err := migrateTestDBToVersion(t.Context(), path, version)
-	require.NoError(t, err)
-	require.NoError(t, raw.Close())
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
 	if testDBTemplate.versions == nil {
 		testDBTemplate.versions = make(map[uint][]byte)
 	}
-	testDBTemplate.versions[version] = data
-	return data
+	for _, target := range historicalTestVersions {
+		if target <= nearest {
+			continue
+		}
+		if target > version {
+			break
+		}
+		raw, err := migrateTestDBToVersion(t.Context(), path, target)
+		require.NoError(t, err)
+		require.NoError(t, raw.Close())
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		testDBTemplate.versions[target] = data
+	}
+	return testDBTemplate.versions[version]
 }
 
 func copyTestDBTemplate(t *testing.T, src []byte, dst string) {

@@ -881,8 +881,6 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      # Only main saves the Go caches. Modules stay scoped to dependencies;
-      # the build cache refreshes daily and can reuse entries across changes.
       - name: Restore Go module cache
         id: go-mod-cache
         uses: actions/cache/restore@v6.1.0
@@ -1046,7 +1044,7 @@ jobs:
 
       - name: Download remaining Go modules
         id: go-mod-download
-        if: steps.cache-budget.outputs.ready == 'true' && steps.go-mod-cache.outputs.cache-hit != 'true' && steps.cache-retry-setup.outcome == 'success'
+        if: steps.cache-retry-setup.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 3
         run: kit-retry 3 5 go mod download
@@ -1056,7 +1054,7 @@ jobs:
         run: echo '::warning::Go module cache prefill failed; skipping module cache save.'
 
       - name: Save Go module cache
-        if: steps.cache-budget.outputs.ready == 'true' && steps.go-mod-cache.outputs.cache-hit != 'true' && steps.go-mod-download.outcome == 'success'
+        if: steps.go-mod-download.outcome == 'success'
         uses: actions/cache/save@v6.1.0
         continue-on-error: true
         timeout-minutes: 3

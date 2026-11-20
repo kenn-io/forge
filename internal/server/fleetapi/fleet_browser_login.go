@@ -179,9 +179,10 @@ func (h *Handler) issueSiblingBrowserLoginTicket(
 
 // requestSiblingBrowserLoginTicket asks the hub for a sibling spoke's ticket
 // and returns it with the sibling's enrolled origin. A hub that cannot issue
-// one, including an older hub without the route, leaves the browser to open
-// the sibling's plain address, so those refusals keep the 409 the frontend
-// falls back on.
+// one, including an older hub without the route or a hub that is down,
+// leaves the browser to open the sibling's plain address, so those outcomes
+// keep the 409 the frontend falls back on. A hub that answers with the
+// sibling's own failure still reports it.
 func (h *Handler) requestSiblingBrowserLoginTicket(
 	ctx context.Context, route browserLoginRoute,
 ) (browserLoginTicket, string, error) {
@@ -200,8 +201,7 @@ func (h *Handler) requestSiblingBrowserLoginTicket(
 		ctx, route.target, route.target.clients.rest,
 		fleet.PeerTimeoutOrDefault(), request, &body,
 	); err != nil {
-		if refusal, ok := errors.AsType[*federationPeerStatusError](err); ok &&
-			hubCannotRelayBrowserLogin(refusal) {
+		if hubCannotRelayBrowserLogin(err) {
 			return browserLoginTicket{}, "", noDirectBrowserLoginCredential(route.sibling)
 		}
 		return browserLoginTicket{}, "", err
@@ -217,13 +217,22 @@ func (h *Handler) requestSiblingBrowserLoginTicket(
 	return ticket, baseURL, nil
 }
 
-// hubCannotRelayBrowserLogin reports a hub refusal that means "no ticket for
-// that node": an unknown or inactive sibling, or a hub that predates the
-// route. Hubs from before fleet host routes were peer-callable reject the
-// path in authentication rather than routing.
-func hubCannotRelayBrowserLogin(refusal *federationPeerStatusError) bool {
+// hubCannotRelayBrowserLogin reports a hub outcome that means "no ticket for
+// that node": an unknown or inactive sibling, a hub that predates the route,
+// or a hub that is unreachable, timed out, or unavailable. Hubs from before
+// fleet host routes were peer-callable reject the path in authentication
+// rather than routing. A 502 from the hub carries the sibling's own failure.
+func hubCannotRelayBrowserLogin(err error) bool {
+	if _, ok := errors.AsType[*url.Error](err); ok {
+		return true
+	}
+	refusal, ok := errors.AsType[*federationPeerStatusError](err)
+	if !ok {
+		return false
+	}
 	switch refusal.StatusCode {
-	case http.StatusNotFound, http.StatusConflict:
+	case http.StatusNotFound, http.StatusConflict,
+		http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 		return true
 	case http.StatusForbidden:
 		return refusal.Reason == "federationRouteNotAllowed"

@@ -69,9 +69,9 @@ export function routeTabTitle(
     route.page === "mobile-workspace-terminal" ||
     route.page === "mobile-workspace-item"
   ) {
-    const label = route.page === "mobile-workspace-item" ? "Linked item" : "Workspace";
     const name = options.workspace?.name;
-    return `${name && route.page === "mobile-workspace-item" ? `${label} (${name})` : name || label} · Workspaces · Forge`;
+    if (!name && route.page !== "mobile-workspace-item") return "Workspaces · Forge";
+    return `${route.page === "mobile-workspace-item" ? (name ? `Linked item (${name})` : "Linked item") : name} · Workspaces · Forge`;
   }
   return `${pageLabel[route.page]} · Forge`;
 }

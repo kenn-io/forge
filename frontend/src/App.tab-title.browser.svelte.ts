@@ -9,14 +9,11 @@ import {
   resetKeyboardModuleState,
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
-import { jsonResponse, mockIssueFixture, mockPullFixture, type MockRouteOverride } from "./test/mockApiFetch.js";
+import { jsonResponse, mockIssueFixture, type MockRouteOverride } from "./test/mockApiFetch.js";
 import { worklistResponse, worklistRoutes } from "./test/worklistFixtures.js";
 
 const WAIT = 10_000;
 
-const pull = mockPullFixture(42);
-const routes: MockRouteOverride = (req) =>
-  req.method === "GET" && req.url.pathname === "/api/v1/pulls" ? jsonResponse([pull]) : null;
 const unready: MockRouteOverride = (req) =>
   req.url.pathname === "/healthz" ? jsonResponse({ status: "starting" }, 503) : null;
 
@@ -32,10 +29,9 @@ describe("tab title navigation", () => {
 
   it("updates the title as a pull opens and the user visits issues", async () => {
     await page.viewport(1280, 900);
-    mounted = await mountBrowserApp("/pulls", { overrides: [routes] });
+    mounted = await mountBrowserApp("/pulls");
     await vi.waitFor(() => expect(document.title).toBe("Pulls · Forge"), WAIT);
-    await vi.waitFor(() => expect(document.querySelector(".pull-item")).not.toBeNull(), WAIT);
-    await page.elementLocator(document.querySelector(".pull-item")!).click();
+    await page.getByText("Add browser regression coverage", { exact: true }).click();
     await vi.waitFor(
       () => expect(document.title).toBe("Add browser regression coverage (acme/widgets#42) · Forge"),
       WAIT,

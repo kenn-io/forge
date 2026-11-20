@@ -971,10 +971,10 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		syncer.SetOnWatchedMRSyncCompleted(func() {
 			srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 		})
+		syncer.SetOnRepoSynced(stacks.RepoSyncedHook(ctx, database, nil))
 		syncCompleted := fleetapi.WorktreeLinksSyncHook(
 			ctx, database, syncer,
-			srv.Fleet().NotifyWorktreeLinksChanged,
-			stacks.SyncCompletedHook(ctx, database, nil),
+			srv.Fleet().NotifyWorktreeLinksChanged, nil,
 		)
 		// A sync can fetch the commits of new diffs, so line counting runs
 		// after each one.

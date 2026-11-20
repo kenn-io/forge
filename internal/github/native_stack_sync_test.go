@@ -468,7 +468,7 @@ func TestRunOnceWithdrawsAgedNativeStacksFromProjectionInput(t *testing.T) {
 	syncer.now = func() time.Time { return clock }
 	syncer.SetPreferGitHubNativeStacks(true)
 	var results []RepoSyncResult
-	syncer.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+	syncer.SetOnRepoSynced(func(got []RepoSyncResult) { results = got })
 
 	syncer.RunOnce(t.Context())
 	require.Len(results, 1)
@@ -666,7 +666,7 @@ func TestRunOnceDropsNativeStacksDisabledDuringSync(t *testing.T) {
 	// Model the user turning the preview off while this sync is still running.
 	client.onPage = func() { syncer.SetPreferGitHubNativeStacks(false) }
 	var results []RepoSyncResult
-	syncer.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+	syncer.SetOnRepoSynced(func(got []RepoSyncResult) { results = got })
 
 	syncer.RunOnce(t.Context())
 
@@ -733,7 +733,7 @@ func TestRunOnceKeepsRESTHintsWhenGraphQLRejectsNativeStackFields(t *testing.T) 
 	})
 	syncer.SetPreferGitHubNativeStacks(true)
 	var results []RepoSyncResult
-	syncer.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+	syncer.SetOnRepoSynced(func(got []RepoSyncResult) { results = got })
 
 	syncer.RunOnce(t.Context())
 
@@ -835,7 +835,7 @@ func TestRunOncePublishesConfirmedNativeStackNumbers(t *testing.T) {
 	)
 	syncer.SetPreferGitHubNativeStacks(true)
 	var results []RepoSyncResult
-	syncer.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+	syncer.SetOnRepoSynced(func(got []RepoSyncResult) { results = got })
 
 	syncer.RunOnce(t.Context())
 
@@ -1001,7 +1001,7 @@ func TestRunOncePersistsPullRequestsWhenHintIsUnclaimed(t *testing.T) {
 	syncer.now = func() time.Time { return now }
 	syncer.SetPreferGitHubNativeStacks(true)
 	var results []RepoSyncResult
-	syncer.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+	syncer.SetOnRepoSynced(func(got []RepoSyncResult) { results = got })
 
 	syncer.RunOnce(t.Context())
 

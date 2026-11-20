@@ -12,7 +12,7 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-func TestSyncCompletedHookUsesProviderQualifiedRepoIdentity(t *testing.T) {
+func TestRepoSyncedHookUsesProviderQualifiedRepoIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	d := openTestDB(t)
@@ -57,7 +57,7 @@ func TestSyncCompletedHookUsesProviderQualifiedRepoIdentity(t *testing.T) {
 		require.NoError(err)
 	}
 
-	SyncCompletedHook(ctx, d, nil)([]ghclient.RepoSyncResult{{
+	RepoSyncedHook(ctx, d, nil)([]ghclient.RepoSyncResult{{
 		Platform:     platform.KindGitLab,
 		PlatformHost: "code.example.com",
 		Owner:        "org",
@@ -71,11 +71,11 @@ func TestSyncCompletedHookUsesProviderQualifiedRepoIdentity(t *testing.T) {
 	assert.Len(members[stacks[0].ID], 2)
 }
 
-// TestSyncCompletedHookDistinguishesPartialScopeFailures pins that stack
+// TestRepoSyncedHookDistinguishesPartialScopeFailures pins that stack
 // detection skips a repo only when the failure affects merge-request data:
 // an issue-scope partial failure must not leave stacks stale, while
 // MR-scope partial failures and hard repository failures keep the skip.
-func TestSyncCompletedHookDistinguishesPartialScopeFailures(t *testing.T) {
+func TestRepoSyncedHookDistinguishesPartialScopeFailures(t *testing.T) {
 	cases := []struct {
 		name        string
 		result      ghclient.RepoSyncResult
@@ -146,7 +146,7 @@ func TestSyncCompletedHookDistinguishesPartialScopeFailures(t *testing.T) {
 			result.PlatformHost = "github.com"
 			result.Owner = "org"
 			result.Name = "repo"
-			SyncCompletedHook(ctx, d, nil)([]ghclient.RepoSyncResult{result})
+			RepoSyncedHook(ctx, d, nil)([]ghclient.RepoSyncResult{result})
 
 			stacks, _, err := d.ListStacksWithMembers(ctx, "")
 			require.NoError(err)

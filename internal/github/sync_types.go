@@ -220,7 +220,8 @@ type RepoSyncResult struct {
 	// failures.
 	PartialFailure *PartialSyncError
 	// GitHubNativeStacks is non-nil only when the preview setting participated
-	// in this repository sync. Completion hooks may project only these numbers.
+	// in this repository sync. Only the onRepoSynced hook, which drops results
+	// from a superseded preference, may project these numbers.
 	GitHubNativeStacks *GitHubNativeStackSyncResult
 }
 

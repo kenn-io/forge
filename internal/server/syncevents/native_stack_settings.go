@@ -46,7 +46,7 @@ func (s *Handlers) RestoreBranchDerivedStackProjections() {
 	}
 	ctx := s.BgCtx
 
-	// Serialize with the sync completion hook: an in-flight sync that captured
+	// Serialize with the per-repository sync hook: an in-flight sync that captured
 	// the preview as enabled must not write native ordering after this
 	// reconciliation restores branch inference.
 	reconciled := false

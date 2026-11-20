@@ -8,9 +8,9 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 )
 
-// SyncCompletedHook returns a callback for Syncer.SetOnSyncCompleted
-// that runs stack detection for each synced repo.
-func SyncCompletedHook(ctx context.Context, database *db.DB, next func([]ghclient.RepoSyncResult)) func([]ghclient.RepoSyncResult) {
+// RepoSyncedHook returns a callback for Syncer.SetOnRepoSynced that runs
+// stack detection for each repository as soon as its sync finishes.
+func RepoSyncedHook(ctx context.Context, database *db.DB, next func([]ghclient.RepoSyncResult)) func([]ghclient.RepoSyncResult) {
 	return func(results []ghclient.RepoSyncResult) {
 		defer func() {
 			if next != nil {

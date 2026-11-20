@@ -51,6 +51,8 @@ everyday Go test construction and commands, also read
   targeted diagnostics for the next occurrence.
 - Only `main` saves CI caches, including the daily Go race caches; PR caches
   evict `main`'s from the 10 GB budget (`.github/workflows/ci.yml::lint`).
+- Go race caches prefer the dependency hash, then fall back to the same OS and
+  architecture after dependency changes (`.github/workflows/ci.yml::race`).
 - Bun caches use exact keys; prefix restores poison lockfile-correct installs and
   accumulate every version ever seen (`.github/workflows/ci.yml::build-e2e`).
 - Host jobs install apt packages through `eclipse-score/apt-install`, not `apt-get`

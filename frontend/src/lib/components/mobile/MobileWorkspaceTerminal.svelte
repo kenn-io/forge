@@ -119,7 +119,7 @@
       ? mobileWorkspaceDisplayName(workspace) : null;
     const id = workspaceId;
     const host = hostKey;
-    untrack(() => publishWorkspaceTitle(host, id, name));
+    return untrack(() => publishWorkspaceTitle(host, id, name));
   });
   const usableWorkspace = $derived(
     workspace?.id === workspaceId && workspace.fleet_host_key === hostKey &&

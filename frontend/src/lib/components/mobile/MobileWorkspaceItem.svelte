@@ -54,7 +54,7 @@
       ? mobileWorkspaceDisplayName(workspace) : null;
     const id = workspaceId;
     const host = hostKey;
-    untrack(() => publishWorkspaceTitle(host, id, name));
+    return untrack(() => publishWorkspaceTitle(host, id, name));
   });
   let loadError = $state<string | null>(null);
   const linkedItem = $derived(workspace ? mobileWorkspaceLinkedItem(workspace) : null);

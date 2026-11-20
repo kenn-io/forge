@@ -27,21 +27,26 @@ const pageLabel: Record<Exclude<Page, "focus">, string> = {
   queues: "Queues",
 };
 
-let workspaceTitles = $state<Record<string, string>>({});
+let workspaceTitles = $state.raw<Record<string, Array<{ token: symbol; name: string }>>>({});
 const workspaceKey = (hostKey: string | undefined, id: string) => JSON.stringify([hostKey ?? null, id]);
 
-export function publishWorkspaceTitle(hostKey: string | undefined, id: string, name: string | null): void {
+export function publishWorkspaceTitle(hostKey: string | undefined, id: string, name: string | null): () => void {
+  if (name === null) return () => {};
   const key = workspaceKey(hostKey, id);
-  if (name === null && workspaceTitles[key] !== undefined) {
-    const { [key]: _, ...rest } = workspaceTitles;
-    workspaceTitles = rest;
-  } else if (name !== null && workspaceTitles[key] !== name) {
-    workspaceTitles = { ...workspaceTitles, [key]: name };
-  }
+  const token = Symbol();
+  workspaceTitles = { ...workspaceTitles, [key]: [...(workspaceTitles[key] ?? []), { token, name }] };
+  return () => {
+    const remaining = (workspaceTitles[key] ?? []).filter((entry) => entry.token !== token);
+    if (remaining.length) workspaceTitles = { ...workspaceTitles, [key]: remaining };
+    else {
+      const { [key]: _, ...rest } = workspaceTitles;
+      workspaceTitles = rest;
+    }
+  };
 }
 
 export function workspaceTitle(hostKey: string | undefined, id: string): string | undefined {
-  return workspaceTitles[workspaceKey(hostKey, id)];
+  return workspaceTitles[workspaceKey(hostKey, id)]?.at(-1)?.name;
 }
 
 export function routeTabTitle(
@@ -51,6 +56,8 @@ export function routeTabTitle(
     issue?: IssueDetail | null;
     activitySelection?: RoutedItemRef | null;
     workspaceName?: string | undefined;
+    worklists?: readonly { id: number; title: string }[];
+    activityCommit?: { title: string; repoPath: string } | null;
   } = {},
 ): string {
   let selected: RoutedItemRef | undefined;
@@ -72,14 +79,29 @@ export function routeTabTitle(
           : "Issue";
     return `${title} (${selected.repoPath}#${selected.number}) · Forge`;
   }
+  if (route.page === "activity" && options.activityCommit) {
+    return `${options.activityCommit.title} (${options.activityCommit.repoPath}) · Forge`;
+  }
   if (route.page === "focus") return `${route.itemType === "mrs" ? "Pulls" : "Issues"} · Forge`;
   if (
     route.page === "terminal" ||
     route.page === "mobile-workspace-terminal" ||
     route.page === "mobile-workspace-item"
   ) {
-    return `${options.workspaceName || "Workspace"} · Workspaces · Forge`;
+    const name = options.workspaceName || `Workspace (${route.hostKey ? `${route.hostKey}/` : ""}${route.workspaceId})`;
+    const mode = route.page === "mobile-workspace-item" ? ` · ${route.tab === "files" ? "Files" : "Conversation"}` : "";
+    return `${name}${mode} · Workspaces · Forge`;
   }
-  if (route.page === "repo-browser") return `${route.repoPath} · Repos · Forge`;
+  if (route.page === "repo-browser") {
+    const parts = [route.path, route.refName, route.refSHA, route.repoPath, "Repos", "Forge"].filter(Boolean);
+    return parts.join(" · ");
+  }
+  if (route.page === "docs") return [route.doc, route.folder, "Docs", "Forge"].filter(Boolean).join(" · ");
+  if ((route.page === "worklists" || route.page === "mobile-worklists") && route.worklistId !== null) {
+    const name =
+      options.worklists?.find((worklist) => worklist.id === route.worklistId)?.title ||
+      `Worklist (${route.worklistId})`;
+    return `${name} · Worklists · Forge`;
+  }
   return `${pageLabel[route.page]} · Forge`;
 }

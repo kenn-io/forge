@@ -415,7 +415,7 @@
       ? mobileWorkspaceDisplayName(workspace) : null;
     const id = workspaceId;
     const host = workspaceHostKey;
-    untrack(() => publishWorkspaceTitle(host, id, name));
+    return untrack(() => publishWorkspaceTitle(host, id, name));
   });
   let workspaceReadinessGeneration = 0;
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);

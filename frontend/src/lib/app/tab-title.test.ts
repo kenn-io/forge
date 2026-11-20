@@ -13,19 +13,19 @@ describe("tab titles", () => {
     ["/issues", "Issues"],
     ["/docs", "Docs"],
     ["/workspaces", "Workspaces"],
-    ["/terminal/a", "Workspace · Workspaces"],
+    ["/terminal/a", "Workspace (a) · Workspaces"],
     ["/settings", "Settings"],
     ["/project-intake", "Add project"],
     ["/design-system", "Design system"],
-    ["/worklists/3", "Worklists"],
+    ["/worklists/3", "Worklist (3) · Worklists"],
     ["/queues", "Queues"],
     ["/m/activity", "Activity"],
     ["/m/pulls", "Pulls"],
     ["/m/issues", "Issues"],
     ["/m/workspaces", "Workspaces"],
     ["/m/worklists", "Worklists"],
-    ["/m/workspaces/local/a", "Workspace · Workspaces"],
-    ["/m/workspaces/local/a/item", "Workspace · Workspaces"],
+    ["/m/workspaces/local/a", "Workspace (a) · Workspaces"],
+    ["/m/workspaces/local/a/item", "Workspace (a) · Conversation · Workspaces"],
     ["/focus/mrs", "Pulls"],
     ["/focus/issues", "Issues"],
   ])("names %s", (path, label) => {
@@ -83,15 +83,52 @@ describe("tab titles", () => {
     ).toBe("Issue (owner/repo#2) · Forge");
   });
 
+  it.each([
+    ["/docs?folder=notes&doc=project%2Fplan.md", "project/plan.md · notes · Docs · Forge"],
+    ["/docs?folder=notes", "notes · Docs · Forge"],
+    [
+      "/repo/browser?provider=github&repo_path=owner%2Frepo&ref_name=main&path=src%2Fapp.ts",
+      "src/app.ts · main · owner/repo · Repos · Forge",
+    ],
+    ["/m/workspaces/fleet/host-a/ws/item/files", "Workspace (host-a/ws) · Files · Workspaces · Forge"],
+    ["/repo/browser?provider=github&repo_path=owner%2Frepo&ref_sha=abc123", "abc123 · owner/repo · Repos · Forge"],
+  ])("names the selected screen on %s", (path, title) => {
+    replaceUrl(path);
+    expect(routeTabTitle(getRoute())).toBe(title);
+  });
+
+  it("names only the matching worklist", () => {
+    replaceUrl("/worklists/3");
+    expect(routeTabTitle(getRoute(), { worklists: [{ id: 4, title: "Other" }] })).toBe(
+      "Worklist (3) · Worklists · Forge",
+    );
+    expect(routeTabTitle(getRoute(), { worklists: [{ id: 3, title: "My work" }] })).toBe("My work · Worklists · Forge");
+    replaceUrl("/m/worklists/3");
+    expect(routeTabTitle(getRoute(), { worklists: [{ id: 3, title: "My work" }] })).toBe("My work · Worklists · Forge");
+  });
+
+  it("names an Activity commit", () => {
+    expect(
+      routeTabTitle({ page: "activity" }, { activityCommit: { title: "Fix startup", repoPath: "owner/repo" } }),
+    ).toBe("Fix startup (owner/repo) · Forge");
+  });
+
   it("keeps workspace names keyed by host and ID", () => {
-    publishWorkspaceTitle("remote", "a", "Fix login");
+    const release = publishWorkspaceTitle("remote", "a", "Fix login");
     replaceUrl("/terminal/fleet/remote/a");
     expect(routeTabTitle(getRoute(), { workspaceName: workspaceTitle("remote", "a") })).toBe(
       "Fix login · Workspaces · Forge",
     );
     expect(workspaceTitle(undefined, "a")).toBeUndefined();
     expect(workspaceTitle("remote", "b")).toBeUndefined();
-    publishWorkspaceTitle("remote", "a", null);
+    replaceUrl("/m/workspaces/fleet/remote/a/item/files");
+    expect(routeTabTitle(getRoute(), { workspaceName: workspaceTitle("remote", "a") })).toBe(
+      "Fix login · Files · Workspaces · Forge",
+    );
+    const releaseSecond = publishWorkspaceTitle("remote", "a", "Updated title");
+    release();
+    expect(workspaceTitle("remote", "a")).toBe("Updated title");
+    releaseSecond();
     expect(workspaceTitle("remote", "a")).toBeUndefined();
   });
 });

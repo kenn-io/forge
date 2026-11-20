@@ -947,11 +947,17 @@
   let drawerItem = $state<DrawerItem | null>(null);
   let activitySelectionRevealKey = $state(0);
   const tabTitle = $derived.by(() => {
-    if (!appReady || onboardingActive) return "Forge";
+    if (!appReady) return "Loading · Forge";
+    if (onboardingActive) return "Setup · Forge";
     const route = getRoute();
     const workspaceName = route.page === "terminal" || route.page === "mobile-workspace-terminal" || route.page === "mobile-workspace-item"
       ? workspaceTitle(route.hostKey, route.workspaceId) : undefined;
-    return routeTabTitle(route, { pull: stores?.detail.getDetail(), issue: stores?.issues.getIssueDetail(), activitySelection: drawerItem, workspaceName });
+    const worklistDetail = stores?.worklists.getDetail();
+    return routeTabTitle(route, {
+      pull: stores?.detail.getDetail(), issue: stores?.issues.getIssueDetail(), activitySelection: drawerItem,
+      activityCommit: commitItem, workspaceName,
+      worklists: [...(worklistDetail ? [worklistDetail] : []), ...(stores?.worklists.getSummaries() ?? [])],
+    });
   });
   // Owned here for the same reason drawerItem is: the Activity selection lives
   // in the page's query string, and only this component writes it.

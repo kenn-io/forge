@@ -12,8 +12,7 @@ import (
 
 var testDBTemplate = &testDBTemplateState{}
 
-// Add every fresh historical test start version here, in ascending order.
-var historicalTestVersions = []uint{36, 37, 38, 43, 44, 45, 47, 49, 50, 51, 52, 53, 54, 55, 59, 64, 68, 75, 83, 87, 91, 93, 94, 95}
+var historicalTestVersions = slices.Sorted(slices.Values([]uint{36, 37, 38, 43, 44, 45, 47, 49, 50, 51, 52, 53, 54, 55, 59, 64, 68, 75, 83, 87, 91, 93, 94, 95}))
 
 type testDBTemplateState struct {
 	once     sync.Once
@@ -40,7 +39,15 @@ func testDBTemplateBytes(t *testing.T) []byte {
 
 	testDBTemplate.once.Do(func() {
 		path := filepath.Join(t.TempDir(), "template.db")
-		copyTestDBTemplate(t, historicalTestDBBytes(t, historicalTestVersions[len(historicalTestVersions)-1]), path)
+		data, err := historicalTestDBBytes(t, historicalTestVersions[len(historicalTestVersions)-1])
+		if err != nil {
+			testDBTemplate.initErr = err
+			return
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			testDBTemplate.initErr = err
+			return
+		}
 		d, err := Open(path)
 		if err != nil {
 			testDBTemplate.initErr = err
@@ -55,7 +62,7 @@ func testDBTemplateBytes(t *testing.T) []byte {
 			testDBTemplate.initErr = err
 			return
 		}
-		data, err := os.ReadFile(path)
+		data, err = os.ReadFile(path)
 		if err != nil {
 			testDBTemplate.initErr = err
 			return
@@ -66,14 +73,13 @@ func testDBTemplateBytes(t *testing.T) []byte {
 	return testDBTemplate.data
 }
 
-func historicalTestDBBytes(t *testing.T, version uint) []byte {
+func historicalTestDBBytes(t *testing.T, version uint) ([]byte, error) {
 	t.Helper()
-	require.True(t, slices.Contains(historicalTestVersions, version), "add start version %d to historical test versions", version)
 
 	testDBTemplate.mu.Lock()
 	defer testDBTemplate.mu.Unlock()
 	if data, ok := testDBTemplate.versions[version]; ok {
-		return data
+		return data, nil
 	}
 	path := filepath.Join(t.TempDir(), "historical.db")
 	var nearest uint
@@ -83,12 +89,16 @@ func historicalTestDBBytes(t *testing.T, version uint) []byte {
 		}
 	}
 	if nearest > 0 {
-		copyTestDBTemplate(t, testDBTemplate.versions[nearest], path)
+		if err := os.WriteFile(path, testDBTemplate.versions[nearest], 0o600); err != nil {
+			return nil, err
+		}
 	}
 	if testDBTemplate.versions == nil {
 		testDBTemplate.versions = make(map[uint][]byte)
 	}
-	for _, target := range historicalTestVersions {
+	targets := append(slices.Clone(historicalTestVersions), version)
+	slices.Sort(targets)
+	for _, target := range slices.Compact(targets) {
 		if target <= nearest {
 			continue
 		}
@@ -96,13 +106,19 @@ func historicalTestDBBytes(t *testing.T, version uint) []byte {
 			break
 		}
 		raw, err := migrateTestDBToVersion(t.Context(), path, target)
-		require.NoError(t, err)
-		require.NoError(t, raw.Close())
+		if err != nil {
+			return nil, err
+		}
+		if err := raw.Close(); err != nil {
+			return nil, err
+		}
 		data, err := os.ReadFile(path)
-		require.NoError(t, err)
+		if err != nil {
+			return nil, err
+		}
 		testDBTemplate.versions[target] = data
 	}
-	return testDBTemplate.versions[version]
+	return testDBTemplate.versions[version], nil
 }
 
 func copyTestDBTemplate(t *testing.T, src []byte, dst string) {

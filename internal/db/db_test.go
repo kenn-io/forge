@@ -2587,7 +2587,9 @@ func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*
 	t.Helper()
 	require := require.New(t)
 
-	copyTestDBTemplate(t, historicalTestDBBytes(t, version), dbPath)
+	data, err := historicalTestDBBytes(t, version)
+	require.NoError(err)
+	copyTestDBTemplate(t, data, dbPath)
 
 	raw, _, err := openTestMigrator(dbPath)
 	require.NoError(err)
@@ -2604,11 +2606,24 @@ func migrateToVersionForTest(t *testing.T, dbPath string, version uint) *sql.DB 
 	_, err := os.Stat(dbPath)
 	if err != nil {
 		require.ErrorIs(t, err, os.ErrNotExist)
-		copyTestDBTemplate(t, historicalTestDBBytes(t, version), dbPath)
+		data, err := historicalTestDBBytes(t, version)
+		require.NoError(t, err)
+		copyTestDBTemplate(t, data, dbPath)
 	}
 	raw, err := migrateTestDBToVersion(t.Context(), dbPath, version)
 	require.NoError(t, err)
 	return raw
+}
+
+func TestMigrateFreshDatabaseToVersion92(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "historical.db")
+	raw := migrateToVersionForTest(t, path, 92)
+	t.Cleanup(func() { require.NoError(t, raw.Close()) })
+	var version int
+	var dirty bool
+	require.NoError(t, raw.QueryRowContext(t.Context(), "SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty))
+	require.Equal(t, 92, version)
+	require.False(t, dirty)
 }
 
 func migrateTestDBToVersion(ctx context.Context, dbPath string, version uint) (database *sql.DB, err error) {

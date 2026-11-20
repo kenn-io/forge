@@ -881,19 +881,24 @@ jobs:
       - id: cache-date
         run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
-      # Only main saves the Go caches; a daily key keeps them fresh.
-      # Prefer earlier caches with the same dependencies, then the same OS and arch.
-      - name: Restore Go race caches
-        id: go-cache
+      # Only main saves the Go caches. Modules stay scoped to dependencies;
+      # the build cache refreshes daily and can reuse entries across changes.
+      - name: Restore Go module cache
+        id: go-mod-cache
         uses: actions/cache/restore@v6.1.0
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: go-race-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ steps.cache-date.outputs.date }}
+          path: ~/go/pkg/mod
+          key: go-race-mod-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}
+
+      - name: Restore Go race build cache
+        id: go-build-cache
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: ~/.cache/go-build
+          key: go-race-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ steps.cache-date.outputs.date }}
           restore-keys: |
-            go-race-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
-            go-race-${{ runner.os }}-${{ runner.arch }}-
+            go-race-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-race-build-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Stub frontend embed dir
         run: |
@@ -925,20 +930,25 @@ jobs:
           go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile "gotestsum/race-${RACE_SHARD}-${RACE_PART}.json" --jsonfile-timing-events=tmp/test-race-timing-events.json --rerun-fails=2 --rerun-fails-report "gotestsum/race-${RACE_SHARD}-${RACE_PART}-reruns.txt" --packages "${packages[*]}" -- -race -shuffle=on -parallel=4 -timeout 20m
 
       - uses: kenn-io/kit/.github/actions/kit-retry@v0.49.0
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-cache.outputs.cache-hit != 'true'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-mod-cache.outputs.cache-hit != 'true'
 
       - name: Download remaining Go modules
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-cache.outputs.cache-hit != 'true'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-mod-cache.outputs.cache-hit != 'true'
         run: kit-retry 3 5 go mod download
 
-      - name: Save Go race caches
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-cache.outputs.cache-hit != 'true'
+      - name: Save Go module cache
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-mod-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ steps.go-cache.outputs.cache-primary-key }}
+          path: ~/go/pkg/mod
+          key: ${{ steps.go-mod-cache.outputs.cache-primary-key }}
+
+      - name: Save Go race build cache
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go-build-cache.outputs.cache-primary-key }}
 
       - name: Upload gotestsum results
         if: failure() || github.run_attempt > 1 || hashFiles(format('gotestsum/race-{0}-{1}-reruns.txt', matrix.shard, matrix.part)) != ''

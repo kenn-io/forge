@@ -933,11 +933,17 @@ jobs:
         if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-mod-cache.outputs.cache-hit != 'true'
 
       - name: Download remaining Go modules
+        id: go-mod-download
         if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-mod-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
         run: kit-retry 3 5 go mod download
 
+      - name: Warn if module prefill failed
+        if: steps.go-mod-download.outcome == 'failure'
+        run: echo '::warning::Go module cache prefill failed; skipping module cache save.'
+
       - name: Save Go module cache
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-mod-cache.outputs.cache-hit != 'true'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-mod-cache.outputs.cache-hit != 'true' && steps.go-mod-download.outcome == 'success'
         uses: actions/cache/save@v6.1.0
         with:
           path: ~/go/pkg/mod

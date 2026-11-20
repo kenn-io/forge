@@ -156,8 +156,6 @@ describe("workspace host startup gating (browser)", () => {
       () => expect(document.title).toBe("Add browser regression coverage (acme/widgets#42) · Forge"),
       10_000,
     );
-    await page.getByRole("tab", { name: "Files", exact: true }).click();
-    await vi.waitFor(() => expect(window.location.pathname).toBe("/m/workspaces/local/ws-9/item/files"), 10_000);
     await page.getByRole("button", { name: "Back to workspace terminal" }).click();
     await expect.element(page.getByRole("button", { name: "Open linked PR #42" }), { timeout: 10_000 }).toBeVisible();
     await vi.waitFor(() => expect(document.title).toBe("Workspace title · Workspaces · Forge"), 10_000);

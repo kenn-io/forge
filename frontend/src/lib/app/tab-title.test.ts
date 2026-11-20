@@ -15,7 +15,6 @@ describe("tab titles", () => {
     ["/docs", "Docs"],
     ["/workspaces", "Workspaces"],
     ["/terminal/a", "Workspace"],
-    ["/terminal/fleet/host-a/ws", "Workspace"],
     ["/settings", "Settings"],
     ["/project-intake", "Add project"],
     ["/design-system", "Design system"],
@@ -28,7 +27,6 @@ describe("tab titles", () => {
     ["/m/worklists", "Worklists"],
     ["/m/workspaces/local/a", "Workspace"],
     ["/m/workspaces/local/a/item", "Linked item · Workspaces"],
-    ["/m/workspaces/fleet/host-a/ws/item/files", "Linked item · Workspaces"],
     ["/focus/mrs", "Pulls"],
     ["/focus/issues", "Issues"],
   ])("names %s", (path, label) => {

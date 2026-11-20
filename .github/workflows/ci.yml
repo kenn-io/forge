@@ -869,6 +869,9 @@ jobs:
     needs: detect_changes
     if: github.event_name != 'merge_group' && needs.detect_changes.outputs.backend == 'true'
     steps:
+      - id: race-start
+        run: echo "epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
@@ -1030,12 +1033,9 @@ jobs:
         continue-on-error: true
         timeout-minutes: 1
         env:
-          GH_TOKEN: ${{ github.token }}
-          JOB_NAME: go test -race (${{ matrix.shard }}, ${{ matrix.part }}/2)
+          STARTED: ${{ steps.race-start.outputs.epoch }}
         run: |
-          started=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" --jq '.jobs[] | select(.name == env.JOB_NAME and .status == "in_progress") | .started_at')
-          test -n "$started"
-          remaining=$((1920 - ($(date -u +%s) - $(date -u -d "$started" +%s))))
+          remaining=$((1920 - ($(date -u +%s) - STARTED)))
           if (( remaining >= 720 )); then
             echo 'ready=true' >> "$GITHUB_OUTPUT"
           fi

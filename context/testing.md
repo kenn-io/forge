@@ -50,9 +50,7 @@ everyday Go test construction and commands, also read
 - A successful CI retry proves recovery, not a fix; identify the cause or keep
   targeted diagnostics for the next occurrence.
 - Only `main` saves CI caches, including the daily Go race caches; PR caches
-  evict `main`'s from the 10 GB budget (`.github/workflows/ci.yml::lint`). Go's
-  daily prefix restore stays within the same `go.mod` and `go.sum` hash; Go
-  keys build entries by their inputs and module downloads by version.
+  evict `main`'s from the 10 GB budget (`.github/workflows/ci.yml::lint`).
 - Bun caches use exact keys; prefix restores poison lockfile-correct installs and
   accumulate every version ever seen (`.github/workflows/ci.yml::build-e2e`).
 - Host jobs install apt packages through `eclipse-score/apt-install`, not `apt-get`

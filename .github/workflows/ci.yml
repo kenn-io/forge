@@ -882,7 +882,7 @@ jobs:
         run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       # Only main saves the Go caches; a daily key keeps them fresh.
-      # Earlier caches for the same dependencies remain available as a fallback.
+      # Prefer earlier caches with the same dependencies, then the same OS and arch.
       - name: Restore Go race caches
         id: go-cache
         uses: actions/cache/restore@v6.1.0
@@ -891,7 +891,9 @@ jobs:
             ~/go/pkg/mod
             ~/.cache/go-build
           key: go-race-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ steps.cache-date.outputs.date }}
-          restore-keys: go-race-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+          restore-keys: |
+            go-race-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-race-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Stub frontend embed dir
         run: |

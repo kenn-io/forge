@@ -26,6 +26,7 @@ describe("tab titles", () => {
     ["/m/worklists", "Worklists"],
     ["/m/workspaces/local/a", "Workspace (a) · Workspaces"],
     ["/m/workspaces/local/a/item", "Linked item (a) · Workspaces"],
+    ["/m/workspaces/fleet/host-a/ws/item/files", "Linked item (host-a/ws) · Workspaces"],
     ["/focus/mrs", "Pulls"],
     ["/focus/issues", "Issues"],
   ])("names %s", (path, label) => {
@@ -58,6 +59,7 @@ describe("tab titles", () => {
 
   it.each([
     ["/pulls/github/owner/repo/1", "Pull request (owner/repo#1) · Forge"],
+    ["/pulls/gitlab/group/project/42", "Pull request (group/project!42) · Forge"],
     ["/queues/github/owner/repo/1", "Pull request (owner/repo#1) · Forge"],
     ["/worklists/3?selected=issue%3A2&provider=github&repo_path=owner%2Frepo", "Issue (owner/repo#2) · Forge"],
   ])("names selected items on %s", (path, title) => {
@@ -81,16 +83,6 @@ describe("tab titles", () => {
         },
       ),
     ).toBe("Issue (owner/repo#2) · Forge");
-  });
-
-  it("names a mobile linked item screen", () => {
-    replaceUrl("/m/workspaces/fleet/host-a/ws/item/files");
-    expect(routeTabTitle(getRoute())).toBe("Linked item (host-a/ws) · Workspaces · Forge");
-  });
-
-  it("uses the GitLab merge request number marker", () => {
-    replaceUrl("/pulls/gitlab/group/project/42");
-    expect(routeTabTitle(getRoute())).toBe("Pull request (group/project!42) · Forge");
   });
 
   it("names a linked workspace item with a matching detail or typed fallback", () => {

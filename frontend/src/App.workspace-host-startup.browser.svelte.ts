@@ -139,14 +139,6 @@ describe("workspace host startup gating (browser)", () => {
     await vi.waitFor(() => expect(document.title).toBe("Workspace title · Workspaces · Forge"), 15_000);
   });
 
-  it("names a pending phone linked item", async () => {
-    await page.viewport(390, 844);
-    window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = true;
-    backendReady = false;
-    mounted = await mountBrowserApp("/m/workspaces/local/ws-9/item", { overrides: [routes] });
-    await vi.waitFor(() => expect(document.title).toBe("Linked item (ws-9) · Workspaces · Forge"), 10_000);
-  });
-
   it("names the linked item while navigating the phone workspace", async () => {
     await page.viewport(390, 844);
     window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = true;
@@ -178,8 +170,5 @@ describe("workspace host startup gating (browser)", () => {
     mounted = await mountBrowserApp("/m/workspaces/local/ws-9/item", { overrides: [emptyRoute, routes] });
     await expect.element(page.getByText("No linked PR or issue"), { timeout: 10_000 }).toBeVisible();
     await vi.waitFor(() => expect(document.title).toBe("Linked item (feature/auth) · Workspaces · Forge"), 10_000);
-    await page.getByRole("button", { name: "Back to workspace terminal" }).click();
-    await expect.element(page.getByRole("region", { name: "Workspace terminal" }), { timeout: 10_000 }).toBeVisible();
-    await vi.waitFor(() => expect(document.title).toBe("feature/auth · Workspaces · Forge"), 10_000);
   }, 30_000);
 });

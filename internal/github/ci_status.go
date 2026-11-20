@@ -433,6 +433,23 @@ func ciHasPending(ciChecksJSON string) bool {
 	return false
 }
 
+// ciHasReportedPending is ciHasPending without the entries Forge adds for
+// required checks that have reported nothing: only a check that is queued
+// or running can still finish without the pull request changing.
+func ciHasReportedPending(ciChecksJSON string) bool {
+	if ciChecksJSON == "" {
+		return false
+	}
+	var checks []db.CICheck
+	if err := json.Unmarshal([]byte(ciChecksJSON), &checks); err != nil {
+		return false
+	}
+	return slices.ContainsFunc(checks, func(check db.CICheck) bool {
+		return check.Status != "completed" &&
+			check.Origin != platform.CICheckOriginRequiredRule
+	})
+}
+
 func (s *Syncer) canSpendWorkflowApprovalRefresh(repo RepoRef) bool {
 	budget, ok := s.BudgetForRepo(repo)
 	return !ok || budget == nil || budget.CanSpend(1)

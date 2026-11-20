@@ -100,6 +100,19 @@ describe("tab title navigation", () => {
     await vi.waitFor(() => expect(document.title).toBe("Theme toggle does not stick (acme/renamed#7) · Forge"), WAIT);
   }, 30_000);
 
+  it("shows the worklists title when a saved list fails to load", async () => {
+    const failDetail: MockRouteOverride = (req) =>
+      req.method === "GET" && req.url.pathname === "/api/v1/worklists/5"
+        ? jsonResponse({ title: "Unavailable", status: 503, detail: "Worklist unavailable" }, 503)
+        : null;
+    mounted = await mountBrowserApp(
+      "/worklists/5?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
+      { overrides: [failDetail, worklistRoutes({ lists: [worklistResponse(5, "Review queue")], requests: [] })] },
+    );
+    await expect.element(page.getByRole("button", { name: "Retry" }), { timeout: WAIT }).toBeVisible();
+    expect(document.title).toBe("Worklists · Forge");
+  }, 30_000);
+
   it("uses the worklists title when a saved list no longer exists", async () => {
     mounted = await mountBrowserApp(
       "/worklists/5?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",

@@ -44,7 +44,7 @@
 
   interface Props {
     worklistId: number | null;
-    onTitleChange?: (title: { id: number | null; selected: WorklistItemSelection | undefined; target: WorklistItemSelection | undefined; empty: boolean } | null) => void;
+    onTitleChange?: (title: { id: number | null; selected: WorklistItemSelection | undefined; target: WorklistItemSelection | undefined; hideSelection: boolean } | null) => void;
     selected?: WorklistItemSelection | undefined;
     isSidebarCollapsed?: boolean;
     sidebarWidth?: number;
@@ -107,6 +107,9 @@
       (worklists.getOpenId() === worklistId &&
         (detailError?.kind === "notFound" || (loadedWorklist !== null && worklist === null))),
   );
+  const showDetailError = $derived(!worklist && detailError?.kind === "failed");
+  const showSummariesError = $derived(!worklist && !showDetailError && routedListMissing && worklists.getSummariesError() !== null);
+  const showNoWorklists = $derived(!worklist && !showDetailError && !showSummariesError && routedListMissing && worklists.summariesLoaded() && summaries.length === 0);
   const selectedItem = $derived(worklist?.items.find((item) => worklistItemMatchesSelection(item, selected)) ?? null);
   const selectedKey = $derived(selectedItem ? worklistItemKey(selectedItem) : null);
   const detailTab = $derived<WorklistDetailTab>(selected?.detailTab ?? "conversation");
@@ -423,7 +426,7 @@
       id: worklistId,
       selected,
       target,
-      empty: !worklist && detailError?.kind !== "failed" && routedListMissing && worklists.getSummariesError() === null && worklists.summariesLoaded() && summaries.length === 0,
+      hideSelection: showDetailError || showSummariesError || showNoWorklists,
     });
     return () => onTitleChange?.(null);
   });
@@ -659,7 +662,7 @@
         </section>
       {/if}
     </CollapsibleSidebar>
-  {:else if detailError?.kind === "failed"}
+  {:else if showDetailError && detailError?.kind === "failed"}
     <div class="worklist-status" role="alert">
       <span>{detailError.message}</span>
       <Button
@@ -673,7 +676,7 @@
           })}
       />
     </div>
-  {:else if routedListMissing && worklists.getSummariesError() !== null}
+  {:else if showSummariesError}
     <div class="worklist-status" role="alert">
       <span>{worklists.getSummariesError()}</span>
       <Button
@@ -687,7 +690,7 @@
           })}
       />
     </div>
-  {:else if routedListMissing && worklists.summariesLoaded() && summaries.length === 0}
+  {:else if showNoWorklists}
     <div class="worklist-empty">
       <EmptyState title="No worklists" description="Ask an agent connected to Forge to create one.">
         {#snippet icon()}<ListChecksIcon size={24} aria-hidden="true" />{/snippet}

@@ -949,7 +949,7 @@
   let drawerItem = $state<DrawerItem | null>(null);
   let activitySelectionRevealKey = $state(0);
   let workspaceTabs = $state<Record<string, WorkspaceTab | null>>({});
-  let worklistTitle = $state<{ id: number | null; selected: WorklistItemSelection | undefined; target: WorklistItemSelection | undefined; empty: boolean } | null>(null);
+  let worklistTitle = $state<{ id: number | null; selected: WorklistItemSelection | undefined; target: WorklistItemSelection | undefined; hideSelection: boolean } | null>(null);
   const tabTitle = $derived.by(() => {
     const route = getRoute();
     if (onboardingActive) return "Setup · Forge";
@@ -966,7 +966,7 @@
       : route;
     if (route.page === "worklists" && worklistTitle?.id === route.worklistId && worklistTitle.selected === route.selected) {
       titleRoute = { ...route };
-      if (worklistTitle.empty || !worklistTitle.target) delete titleRoute.selected;
+      if (worklistTitle.hideSelection || !worklistTitle.target) delete titleRoute.selected;
       else titleRoute.selected = worklistTitle.target;
     }
     const workspace = workspaceTabs[route.page];

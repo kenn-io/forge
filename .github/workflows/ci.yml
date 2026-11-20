@@ -906,6 +906,7 @@ jobs:
           echo ok > internal/web/dist/stub.html
 
       - name: Run tests (race detector)
+        id: race-tests
         env:
           RACE_SHARD: ${{ matrix.shard }}
           RACE_PART: ${{ matrix.part }}
@@ -928,33 +929,6 @@ jobs:
             fi
           done <<< "$package_list"
           go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile "gotestsum/race-${RACE_SHARD}-${RACE_PART}.json" --jsonfile-timing-events=tmp/test-race-timing-events.json --rerun-fails=2 --rerun-fails-report "gotestsum/race-${RACE_SHARD}-${RACE_PART}-reruns.txt" --packages "${packages[*]}" -- -race -shuffle=on -parallel=4 -timeout 20m
-
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.49.0
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-mod-cache.outputs.cache-hit != 'true'
-
-      - name: Download remaining Go modules
-        id: go-mod-download
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-mod-cache.outputs.cache-hit != 'true'
-        continue-on-error: true
-        run: kit-retry 3 5 go mod download
-
-      - name: Warn if module prefill failed
-        if: steps.go-mod-download.outcome == 'failure'
-        run: echo '::warning::Go module cache prefill failed; skipping module cache save.'
-
-      - name: Save Go module cache
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-mod-cache.outputs.cache-hit != 'true' && steps.go-mod-download.outcome == 'success'
-        uses: actions/cache/save@v6.1.0
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ steps.go-mod-cache.outputs.cache-primary-key }}
-
-      - name: Save Go race build cache
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-build-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6.1.0
-        with:
-          path: ~/.cache/go-build
-          key: ${{ steps.go-build-cache.outputs.cache-primary-key }}
 
       - name: Upload gotestsum results
         if: failure() || github.run_attempt > 1 || hashFiles(format('gotestsum/race-{0}-{1}-reruns.txt', matrix.shard, matrix.part)) != ''
@@ -1049,6 +1023,57 @@ jobs:
             gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
             tmp/test-race-timing-events.json
           retention-days: 7
+
+      - name: Check race cache time budget
+        id: cache-budget
+        if: steps.race-tests.outcome == 'success' && (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2
+        continue-on-error: true
+        timeout-minutes: 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_NAME: go test -race (${{ matrix.shard }}, ${{ matrix.part }}/2)
+        run: |
+          started=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" --jq '.jobs[] | select(.name == env.JOB_NAME and .status == "in_progress") | .started_at')
+          test -n "$started"
+          remaining=$((1920 - ($(date -u +%s) - $(date -u -d "$started" +%s))))
+          if (( remaining >= 720 )); then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.49.0
+        id: cache-retry-setup
+        continue-on-error: true
+        timeout-minutes: 1
+        if: steps.cache-budget.outputs.ready == 'true' && steps.go-mod-cache.outputs.cache-hit != 'true'
+
+      - name: Download remaining Go modules
+        id: go-mod-download
+        if: steps.cache-budget.outputs.ready == 'true' && steps.go-mod-cache.outputs.cache-hit != 'true' && steps.cache-retry-setup.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 3
+        run: kit-retry 3 5 go mod download
+
+      - name: Warn if module prefill failed
+        if: steps.cache-retry-setup.outcome == 'failure' || steps.go-mod-download.outcome == 'failure'
+        run: echo '::warning::Go module cache prefill failed; skipping module cache save.'
+
+      - name: Save Go module cache
+        if: steps.cache-budget.outputs.ready == 'true' && steps.go-mod-cache.outputs.cache-hit != 'true' && steps.go-mod-download.outcome == 'success'
+        uses: actions/cache/save@v6.1.0
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ steps.go-mod-cache.outputs.cache-primary-key }}
+
+      - name: Save Go race build cache
+        if: steps.cache-budget.outputs.ready == 'true' && steps.go-build-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        continue-on-error: true
+        timeout-minutes: 3
+        with:
+          path: ~/.cache/go-build
+          key: ${{ steps.go-build-cache.outputs.cache-primary-key }}
 
   build-e2e:
     runs-on: ubuntu-latest

@@ -72,8 +72,8 @@
   });
 
   $effect(() => {
-    onWorkspaceTabChange?.(workspace && workspace.id === workspaceId && workspace.fleet_host_key === hostKey
-    ? { page: "mobile-workspace-item", hostKey, id: workspace.id, name: mobileWorkspaceDisplayName(workspace),
+    onWorkspaceTabChange?.(workspace
+    ? { page: "mobile-workspace-item", hostKey: workspace.fleet_host_key, id: workspace.id, name: mobileWorkspaceDisplayName(workspace),
         item: itemRef && linkedItem ? { ...itemRef, itemType: linkedItem.itemType } : undefined } : null);
     return () => onWorkspaceTabChange?.(null);
   });

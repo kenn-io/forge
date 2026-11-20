@@ -44,6 +44,7 @@
 
   interface Props {
     worklistId: number | null;
+    onTitleChange?: (title: { id: number | null; selected: WorklistItemSelection | undefined; target: WorklistItemSelection | undefined; empty: boolean } | null) => void;
     selected?: WorklistItemSelection | undefined;
     isSidebarCollapsed?: boolean;
     sidebarWidth?: number;
@@ -55,6 +56,7 @@
 
   let {
     worklistId,
+    onTitleChange,
     selected = undefined,
     isSidebarCollapsed = false,
     sidebarWidth = 340,
@@ -416,6 +418,15 @@
   // The URL route can be stale after a rename; the matched item carries the
   // repository's current route.
   const target = $derived(selectedItem ? worklistItemSelection(selectedItem) : selected);
+  $effect(() => {
+    onTitleChange?.({
+      id: worklistId,
+      selected,
+      target,
+      empty: !worklist && detailError?.kind !== "failed" && routedListMissing && worklists.getSummariesError() === null && worklists.summariesLoaded() && summaries.length === 0,
+    });
+    return () => onTitleChange?.(null);
+  });
   const prSelection = $derived(
     target?.itemType === "pr"
       ? {

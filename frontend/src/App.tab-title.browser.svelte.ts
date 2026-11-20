@@ -76,6 +76,58 @@ describe("tab title navigation", () => {
     await vi.waitFor(() => expect(document.title).toBe("Theme toggle does not stick (acme/widgets#7) · Forge"), WAIT);
   }, 30_000);
 
+  it("uses the current repository path for a saved worklist item", async () => {
+    const list = worklistResponse(5, "Review queue");
+    const item = list.items[1]!;
+    item.repo = { ...item.repo, owner: "acme", name: "renamed", repo_path: "acme/renamed" };
+    const issue = mockIssueFixture(7);
+    const release = Promise.withResolvers<void>();
+    let requested = false;
+    const heldList: MockRouteOverride = (req) => {
+      if (req.method !== "GET" || req.url.pathname !== "/api/v1/worklists/5") return null;
+      requested = true;
+      return new Response(new ReadableStream({
+        async start(controller) {
+          await release.promise;
+          controller.enqueue(new TextEncoder().encode(JSON.stringify(list)));
+          controller.close();
+        },
+      }), { headers: { "Content-Type": "application/json" } });
+    };
+    const issueDetail: MockRouteOverride = (req) =>
+      req.method === "GET" && req.url.pathname === "/api/v1/issues/github/acme/renamed/7"
+        ? jsonResponse({ issue, repo: { ...item.repo }, events: [], repo_owner: "acme", repo_name: "renamed", detail_loaded: true })
+        : null;
+    mounted = await mountBrowserApp(
+      "/worklists/5?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
+      { overrides: [issueDetail, heldList, worklistRoutes({ lists: [list], requests: [] })] },
+    );
+    try {
+      await vi.waitFor(() => expect(requested).toBe(true), WAIT);
+      expect(document.title).toBe("Issue (acme/widgets#7) · Forge");
+    } finally {
+      release.resolve();
+    }
+    await vi.waitFor(() => expect(document.title).toBe("Theme toggle does not stick (acme/renamed#7) · Forge"), WAIT);
+  }, 30_000);
+
+  it("uses the worklists title when a saved list no longer exists", async () => {
+    mounted = await mountBrowserApp(
+      "/worklists/5?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
+      { overrides: [worklistRoutes({ lists: [], requests: [] })] },
+    );
+    await expect.element(page.getByText("No worklists", { exact: true }), { timeout: WAIT }).toBeVisible();
+    expect(document.title).toBe("Worklists · Forge");
+  }, 30_000);
+
+  it("uses the saved selection while startup is pending", async () => {
+    mounted = await mountBrowserApp(
+      "/worklists/5?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
+      { overrides: [unready] },
+    );
+    await vi.waitFor(() => expect(document.title).toBe("Issue (acme/widgets#7) · Forge"), WAIT);
+  });
+
   it("keeps list titles during startup and navigation", async () => {
     await page.viewport(1280, 900);
     mounted = await mountBrowserApp("/pulls", { overrides: [unready] });

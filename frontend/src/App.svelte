@@ -33,6 +33,7 @@
     type PullRequestRouteRef,
     type RepoBrowserRouteRef,
     type RoutedItemRef,
+    type WorklistItemSelection,
   } from "./lib/routes.js";
   import {
     HOST_STATE_KEY,
@@ -947,6 +948,7 @@
   let drawerItem = $state<DrawerItem | null>(null);
   let activitySelectionRevealKey = $state(0);
   let workspaceTabs = $state<Record<string, WorkspaceTab | null>>({});
+  let worklistTitle = $state<{ id: number | null; selected: WorklistItemSelection | undefined; target: WorklistItemSelection | undefined; empty: boolean } | null>(null);
   const tabTitle = $derived.by(() => {
     const route = getRoute();
     if (onboardingActive) return "Setup · Forge";
@@ -958,9 +960,12 @@
       });
     }
     const selectedIssue = stores?.issues.getSelectedIssue();
-    const titleRoute = route.page === "issues" && !shouldUseResponsiveFocusPresentation()
+    let titleRoute = route.page === "issues" && !shouldUseResponsiveFocusPresentation()
       ? { page: "issues" as const, ...(selectedIssue ? { selected: selectedIssue } : {}) }
       : route;
+    if (route.page === "worklists" && worklistTitle?.id === route.worklistId && worklistTitle.selected === route.selected) {
+      titleRoute = { ...route, selected: worklistTitle.empty ? undefined : worklistTitle.target };
+    }
     const workspace = workspaceTabs[route.page];
     return routeTabTitle(titleRoute, {
       pull: stores?.detail.getDetail(), issue: stores?.issues.getIssueDetail(), activitySelection: drawerItem,
@@ -1551,6 +1556,7 @@
             <WorklistView
               worklistId={route.worklistId}
               selected={route.selected}
+              onTitleChange={(title) => { worklistTitle = title; }}
               isSidebarCollapsed={isSidebarCollapsed()}
               sidebarWidth={getSidebarWidth()}
               sidebarOverlay={isNarrow()}

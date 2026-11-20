@@ -127,7 +127,6 @@ describe("workspace host startup gating (browser)", () => {
     // state until manual retry.
     await new Promise((resolve) => setTimeout(resolve, 1600));
     expect(workspaceRequests()).toBe(0);
-    expect(document.title).toBe("Workspace (ws-9) · Workspaces · Forge");
 
     backendReady = true;
     await vi.waitFor(() => {

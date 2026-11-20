@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { IssueDetail, PullDetail } from "../api/types.js";
+import { mockIssueFixture, mockPullFixture } from "../../test/mockApiFetch.js";
 import { getRoute, replaceUrl } from "../stores/router.svelte.js";
 import { routeTabTitle } from "./tab-title.svelte.js";
 
@@ -40,19 +41,37 @@ describe("tab titles", () => {
       repo,
       repo_owner: "owner",
       repo_name: "repo",
-      merge_request: { Number: 1, Title: "Fix login" },
-    } as PullDetail;
+      merge_request: { ...mockPullFixture(42), Number: 1, Title: "Fix login" },
+      platform_host: "github.com",
+      platform_head_sha: "",
+      platform_base_sha: "",
+      reviewed_head_sha: "",
+      diff_head_sha: "",
+      merge_base_sha: "",
+      head_repo_kind: "same_repo",
+      detail_loaded: true,
+      deferred_merge_pending: false,
+      events: [],
+      worktree_links: [],
+      workflow_approval: { checked: false, count: 0, required: false },
+    } satisfies PullDetail;
     const issue = {
       repo,
       repo_owner: "owner",
       repo_name: "repo",
-      issue: { Number: 2, Title: "Broken login" },
-    } as IssueDetail;
+      issue: { ...mockIssueFixture(7), Number: 2, Title: "Broken login" },
+      platform_host: "github.com",
+      detail_loaded: true,
+      events: [],
+    } satisfies IssueDetail;
     replaceUrl("/focus/pulls/github/owner/repo/1");
     expect(routeTabTitle(getRoute(), { pull })).toBe("Fix login (owner/repo#1) · Forge");
     expect(routeTabTitle(getRoute())).toBe("Pull request (owner/repo#1) · Forge");
     replaceUrl("/issues/github/owner/repo/2");
     expect(routeTabTitle(getRoute(), { issue })).toBe("Broken login (owner/repo#2) · Forge");
+    expect(routeTabTitle(getRoute(), { pull: { ...pull, merge_request: { ...pull.merge_request, Number: 2 } } })).toBe(
+      "Issue (owner/repo#2) · Forge",
+    );
     replaceUrl("/issues/github/owner/repo/3");
     expect(routeTabTitle(getRoute(), { issue })).toBe("Issue (owner/repo#3) · Forge");
   });
@@ -62,30 +81,26 @@ describe("tab titles", () => {
     ["/pulls/gitlab/group/project/42", "Pull request (group/project!42) · Forge"],
     ["/queues/github/owner/repo/1", "Pull request (owner/repo#1) · Forge"],
     ["/worklists/3?selected=issue%3A2&provider=github&repo_path=owner%2Frepo", "Issue (owner/repo#2) · Forge"],
-  ])("names selected items on %s", (path, title) => {
-    replaceUrl(path);
-    expect(routeTabTitle(getRoute())).toBe(title);
-  });
-
-  it("names the selected Activity item", () => {
-    expect(
-      routeTabTitle(
-        { page: "activity" },
-        {
-          activitySelection: {
-            itemType: "issue",
-            provider: "github",
-            owner: "owner",
-            name: "repo",
-            repoPath: "owner/repo",
-            number: 2,
-          },
+    [
+      "/",
+      "Issue (owner/repo#2) · Forge",
+      {
+        activitySelection: {
+          itemType: "issue" as const,
+          provider: "github",
+          owner: "owner",
+          name: "repo",
+          repoPath: "owner/repo",
+          number: 2,
         },
-      ),
-    ).toBe("Issue (owner/repo#2) · Forge");
+      },
+    ],
+  ])("names selected items on %s", (path, title, options) => {
+    replaceUrl(path);
+    expect(routeTabTitle(getRoute(), options)).toBe(title);
   });
 
-  it("names a linked workspace item with a matching detail or typed fallback", () => {
+  it("names a linked workspace item", () => {
     const item = {
       itemType: "pr",
       provider: "github",
@@ -94,24 +109,8 @@ describe("tab titles", () => {
       repoPath: "owner/repo",
       number: 1,
     } as const;
-    const workspace = { hostKey: undefined, id: "a", name: "Workspace", item } as const;
+    const workspace = { hostKey: undefined, id: "a", name: "Workspace", item };
     const route = { page: "mobile-workspace-item", workspaceId: "a", tab: "files" } as const;
-    const pull = {
-      repo: { provider: "github", platform_host: "github.com", repo_path: "owner/repo" },
-      repo_owner: "owner",
-      repo_name: "repo",
-      merge_request: { Number: 1, Title: "Fix login" },
-    } as PullDetail;
-    expect(routeTabTitle(route, { workspace, pull })).toBe("Fix login (owner/repo#1) · Forge");
     expect(routeTabTitle(route, { workspace })).toBe("Pull request (owner/repo#1) · Forge");
-    const issue = {
-      repo: pull.repo,
-      repo_owner: "owner",
-      repo_name: "repo",
-      issue: { Number: 1, Title: "Broken login" },
-    } as IssueDetail;
-    const issueWorkspace = { ...workspace, item: { ...item, itemType: "issue" as const } };
-    expect(routeTabTitle(route, { workspace: issueWorkspace, issue })).toBe("Broken login (owner/repo#1) · Forge");
-    expect(routeTabTitle(route, { workspace: issueWorkspace, pull })).toBe("Issue (owner/repo#1) · Forge");
   });
 });

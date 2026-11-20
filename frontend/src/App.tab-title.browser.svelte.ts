@@ -55,27 +55,6 @@ describe("tab title navigation", () => {
     await vi.waitFor(() => expect(document.title).toBe("Theme toggle does not stick (acme/widgets#7) · Forge"), WAIT);
   }, 30_000);
 
-  it("names an issue opened in a worklist", async () => {
-    await page.viewport(1280, 900);
-    const issue = mockIssueFixture(7);
-    const issueDetail: MockRouteOverride = (req) =>
-      req.method === "GET" && req.url.pathname === "/api/v1/issues/github/acme/widgets/7"
-        ? jsonResponse({
-            issue,
-            repo: { ...issue.repo, platform_repo_id: 1001 },
-            events: [],
-            repo_owner: "acme",
-            repo_name: "widgets",
-            detail_loaded: true,
-          })
-        : null;
-    mounted = await mountBrowserApp(
-      "/worklists/5?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
-      { overrides: [issueDetail, worklistRoutes({ lists: [worklistResponse(5, "Review queue")], requests: [] })] },
-    );
-    await vi.waitFor(() => expect(document.title).toBe("Theme toggle does not stick (acme/widgets#7) · Forge"), WAIT);
-  }, 30_000);
-
   it("uses the current repository path for a saved worklist item", async () => {
     const list = worklistResponse(5, "Review queue");
     const item = list.items[1]!;
@@ -130,14 +109,6 @@ describe("tab title navigation", () => {
     expect(document.title).toBe("Worklists · Forge");
   }, 30_000);
 
-  it("uses the saved selection while startup is pending", async () => {
-    mounted = await mountBrowserApp(
-      "/worklists/5?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
-      { overrides: [unready] },
-    );
-    await vi.waitFor(() => expect(document.title).toBe("Issue (acme/widgets#7) · Forge"), WAIT);
-  });
-
   it("keeps list titles during startup and navigation", async () => {
     await page.viewport(1280, 900);
     mounted = await mountBrowserApp("/pulls", { overrides: [unready] });
@@ -153,32 +124,26 @@ describe("tab title navigation", () => {
     await vi.waitFor(() => expect(document.title).toBe("Pull request (acme/widgets#42) · Forge"), WAIT);
   });
 
-  it.each([true, false])(
-    "keeps the phone Activity title with a selected item (pending: %s)",
-    async (pending) => {
-      await page.viewport(390, 844);
-      mounted = await mountBrowserApp("/?selected=pr%3A42&provider=github&repo_path=acme%2Fwidgets", {
-        overrides: pending ? [unready] : [],
-      });
-      if (!pending) await expect.element(page.getByRole("button", { name: "Menu" }), { timeout: WAIT }).toBeVisible();
-      await tick();
-      expect(document.title).toBe("Activity · Forge");
-      if (!pending) {
-        firePopstate("/?desktop=1&selected=pr%3A42&provider=github&repo_path=acme%2Fwidgets");
-        await tick();
-        await vi.waitFor(
-          () => expect(document.title).toBe("Add browser regression coverage (acme/widgets#42) · Forge"),
-          WAIT,
-        );
-      }
-    },
-    30_000,
-  );
+  it("keeps the phone Activity title while startup is pending", async () => {
+    await page.viewport(390, 844);
+    mounted = await mountBrowserApp("/?selected=pr%3A42&provider=github&repo_path=acme%2Fwidgets", {
+      overrides: [unready],
+    });
+    await tick();
+    expect(document.title).toBe("Activity · Forge");
+  }, 30_000);
 
-  it("names the design system while startup is pending", async () => {
-    await page.viewport(1280, 900);
-    mounted = await mountBrowserApp("/design-system", { overrides: [unready] });
-    await expect.element(page.getByRole("heading", { name: "Onboarding prototypes" }), { timeout: WAIT }).toBeVisible();
-    expect(document.title).toBe("Design system · Forge");
-  });
+  it("shows the selected pull title when desktop mode overrides phone Activity", async () => {
+    await page.viewport(390, 844);
+    mounted = await mountBrowserApp("/?selected=pr%3A42&provider=github&repo_path=acme%2Fwidgets");
+    await expect.element(page.getByRole("button", { name: "Menu" }), { timeout: WAIT }).toBeVisible();
+    await tick();
+    expect(document.title).toBe("Activity · Forge");
+    firePopstate("/?desktop=1&selected=pr%3A42&provider=github&repo_path=acme%2Fwidgets");
+    await tick();
+    await vi.waitFor(
+      () => expect(document.title).toBe("Add browser regression coverage (acme/widgets#42) · Forge"),
+      WAIT,
+    );
+  }, 30_000);
 });

@@ -1,7 +1,9 @@
+import { flushSync } from "svelte";
 import { describe, expect, it } from "vite-plus/test";
 import type { IssueDetail, PullDetail } from "../api/types.js";
 import { getRoute, replaceUrl } from "../stores/router.svelte.js";
-import { publishWorkspaceTitle, routeTabTitle, workspaceTitle } from "./tab-title.svelte.js";
+import { routeTabTitle, workspaceTab } from "./tab-title.svelte.js";
+import { mountWorkspaceTitles } from "./tab-title-test-harness.svelte.js";
 
 describe("tab titles", () => {
   it.each([
@@ -25,7 +27,7 @@ describe("tab titles", () => {
     ["/m/workspaces", "Workspaces"],
     ["/m/worklists", "Worklists"],
     ["/m/workspaces/local/a", "Workspace (a) · Workspaces"],
-    ["/m/workspaces/local/a/item", "Workspace (a) · Conversation · Workspaces"],
+    ["/m/workspaces/local/a/item", "Workspace (a) · Workspaces"],
     ["/focus/mrs", "Pulls"],
     ["/focus/issues", "Issues"],
   ])("names %s", (path, label) => {
@@ -90,7 +92,7 @@ describe("tab titles", () => {
       "/repo/browser?provider=github&repo_path=owner%2Frepo&ref_name=main&path=src%2Fapp.ts",
       "src/app.ts · main · owner/repo · Repos · Forge",
     ],
-    ["/m/workspaces/fleet/host-a/ws/item/files", "Workspace (host-a/ws) · Files · Workspaces · Forge"],
+    ["/m/workspaces/fleet/host-a/ws/item/files", "Workspace (host-a/ws) · Workspaces · Forge"],
     ["/repo/browser?provider=github&repo_path=owner%2Frepo&ref_sha=abc123", "abc123 · owner/repo · Repos · Forge"],
   ])("names the selected screen on %s", (path, title) => {
     replaceUrl(path);
@@ -113,22 +115,54 @@ describe("tab titles", () => {
     ).toBe("Fix startup (owner/repo) · Forge");
   });
 
-  it("keeps workspace names keyed by host and ID", () => {
-    const release = publishWorkspaceTitle("remote", "a", "Fix login");
-    replaceUrl("/terminal/fleet/remote/a");
-    expect(routeTabTitle(getRoute(), { workspaceName: workspaceTitle("remote", "a") })).toBe(
-      "Fix login · Workspaces · Forge",
-    );
-    expect(workspaceTitle(undefined, "a")).toBeUndefined();
-    expect(workspaceTitle("remote", "b")).toBeUndefined();
-    replaceUrl("/m/workspaces/fleet/remote/a/item/files");
-    expect(routeTabTitle(getRoute(), { workspaceName: workspaceTitle("remote", "a") })).toBe(
-      "Fix login · Files · Workspaces · Forge",
-    );
-    const releaseSecond = publishWorkspaceTitle("remote", "a", "Updated title");
-    release();
-    expect(workspaceTitle("remote", "a")).toBe("Updated title");
-    releaseSecond();
-    expect(workspaceTitle("remote", "a")).toBeUndefined();
+  it("selects the active workspace view by page, host, and ID and removes it on cleanup", () => {
+    const views = mountWorkspaceTitles();
+    flushSync();
+    const item = { page: "mobile-workspace-item", hostKey: "remote", workspaceId: "a" } as const;
+    const terminal = { page: "mobile-workspace-terminal", hostKey: "remote", workspaceId: "a" } as const;
+    expect(workspaceTab(item)?.name).toBe("Item");
+    expect(workspaceTab(terminal)?.name).toBe("Terminal");
+    expect(workspaceTab({ ...item, hostKey: undefined })).toBeUndefined();
+    expect(workspaceTab({ ...item, workspaceId: "b" })).toBeUndefined();
+    views.item();
+    expect(workspaceTab(item)).toBeUndefined();
+    expect(workspaceTab(terminal)?.name).toBe("Terminal");
+    views.terminal();
+    expect(workspaceTab(terminal)).toBeUndefined();
+  });
+
+  it("names a linked workspace item with a matching detail or typed fallback", () => {
+    const item = {
+      itemType: "pr",
+      provider: "github",
+      owner: "owner",
+      name: "repo",
+      repoPath: "owner/repo",
+      number: 1,
+    } as const;
+    const workspace = { page: "mobile-workspace-item", hostKey: undefined, id: "a", name: "Workspace", item } as const;
+    const route = { page: "mobile-workspace-item", workspaceId: "a", tab: "files" } as const;
+    const pull = {
+      repo: { provider: "github", platform_host: "github.com", repo_path: "owner/repo" },
+      repo_owner: "owner",
+      repo_name: "repo",
+      merge_request: { Number: 1, Title: "Fix login" },
+    } as PullDetail;
+    expect(routeTabTitle(route, { workspace, pull })).toBe("Fix login (owner/repo#1) · Forge");
+    expect(routeTabTitle(route, { workspace })).toBe("Pull request (owner/repo#1) · Forge");
+    const issue = {
+      repo: pull.repo,
+      repo_owner: "owner",
+      repo_name: "repo",
+      issue: { Number: 1, Title: "Broken login" },
+    } as IssueDetail;
+    const issueWorkspace = { ...workspace, item: { ...item, itemType: "issue" as const } };
+    expect(routeTabTitle(route, { workspace: issueWorkspace, issue })).toBe("Broken login (owner/repo#1) · Forge");
+    expect(routeTabTitle(route, { workspace: issueWorkspace, pull })).toBe("Issue (owner/repo#1) · Forge");
+  });
+
+  it.each(["/worklists/import", "/worklists/import#v9.abc"])("names worklist import %s", (path) => {
+    replaceUrl(path);
+    expect(routeTabTitle(getRoute())).toBe("Import worklist · Worklists · Forge");
   });
 });

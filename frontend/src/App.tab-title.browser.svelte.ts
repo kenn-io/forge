@@ -46,6 +46,7 @@ describe("tab title navigation", () => {
     mounted?.unmount();
     localStorage.clear();
     sessionStorage.clear();
+    window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = false;
     await resetKeyboardModuleState();
   });
 
@@ -88,5 +89,39 @@ describe("tab title navigation", () => {
       "/?selected=commit%3Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&provider=github&repo_path=acme%2Fwidgets&branch=main",
     );
     await vi.waitFor(() => expect(document.title).toBe("aaaaaaaaaaaa (acme/widgets) · Forge"), WAIT);
+  });
+
+  it("names the linked item while navigating the phone workspace", async () => {
+    await page.viewport(390, 844);
+    window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = true;
+    mounted = await mountBrowserApp("/m/workspaces/local/ws-title", { overrides: [routes] });
+    await expect.element(page.getByRole("button", { name: "Open linked PR #42" }), { timeout: WAIT }).toBeVisible();
+    await vi.waitFor(() => expect(document.title).toBe("Workspace title · Workspaces · Forge"), WAIT);
+    await page.getByRole("button", { name: "Open linked PR #42" }).click();
+    await expect.element(page.getByRole("tab", { name: "Conversation", exact: true }), { timeout: WAIT }).toBeVisible();
+    await vi.waitFor(
+      () => expect(document.title).toBe("Add browser regression coverage (acme/widgets#42) · Forge"),
+      WAIT,
+    );
+    await page.getByRole("tab", { name: "Files", exact: true }).click();
+    await vi.waitFor(() => expect(window.location.pathname).toBe("/m/workspaces/local/ws-title/item/files"), WAIT);
+    expect(document.title).toBe("Add browser regression coverage (acme/widgets#42) · Forge");
+    await page.getByRole("button", { name: "Back to workspace terminal" }).click();
+    await expect.element(page.getByRole("button", { name: "Open linked PR #42" }), { timeout: WAIT }).toBeVisible();
+    await vi.waitFor(() => expect(document.title).toBe("Workspace title · Workspaces · Forge"), WAIT);
+  }, 30_000);
+
+  it("keeps the import title after a worklist link fails", async () => {
+    await page.viewport(1280, 900);
+    const failImport: MockRouteOverride = (req) =>
+      req.method === "POST" && req.url.pathname === "/api/v1/worklists/import"
+        ? jsonResponse(
+            { title: "Bad Request", status: 400, detail: "not a worklist link", code: "validationError" },
+            400,
+          )
+        : null;
+    mounted = await mountBrowserApp("/worklists/import#v9.abc", { overrides: [failImport] });
+    await expect.element(page.getByRole("alert").getByText("not a worklist link"), { timeout: WAIT }).toBeVisible();
+    expect(document.title).toBe("Import worklist · Worklists · Forge");
   });
 });

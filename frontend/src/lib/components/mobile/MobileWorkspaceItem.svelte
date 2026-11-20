@@ -1,6 +1,6 @@
 <script lang="ts">
   import { mobileWorkspaceDisplayName } from "./mobile-workspace-list.js";
-  import { publishWorkspaceTitle } from "../../app/tab-title.svelte.js";
+  import { useWorkspaceTab } from "../../app/tab-title.svelte.js";
   import { Spinner, Tabs } from "@kenn-io/kit-ui";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
   import MobileNavMenu from "./MobileNavMenu.svelte";
@@ -49,13 +49,7 @@
   const appRuntime = getAppRuntime();
 
   let workspace = $state.raw<WorkspaceDetail | null>(null);
-  $effect(() => {
-    const name = workspace && workspace.id === workspaceId && workspace.fleet_host_key === hostKey
-      ? mobileWorkspaceDisplayName(workspace) : null;
-    const id = workspaceId;
-    const host = hostKey;
-    return untrack(() => publishWorkspaceTitle(host, id, name));
-  });
+
   let loadError = $state<string | null>(null);
   const linkedItem = $derived(workspace ? mobileWorkspaceLinkedItem(workspace) : null);
   // A linked PR puts its Conversation/Files tabs in the header row, so the
@@ -74,6 +68,10 @@
       number: linkedItem.number,
     };
   });
+
+  useWorkspaceTab(() => workspace && workspace.id === workspaceId && workspace.fleet_host_key === hostKey
+    ? { page: "mobile-workspace-item", hostKey, id: workspace.id, name: mobileWorkspaceDisplayName(workspace),
+        item: itemRef && linkedItem ? { ...itemRef, itemType: linkedItem.itemType } : undefined } : null);
 
   function failureMessage(failure: unknown): string {
     if (failure instanceof ApiProblemError) {

@@ -1,3 +1,4 @@
+import { SvelteMap } from "svelte/reactivity";
 import type { IssueDetail, PullDetail } from "../api/types.js";
 import { issueDetailMatchesRef, pullDetailMatchesRef } from "../components/detail/detail-match.js";
 import type { RoutedItemRef } from "../routes.js";
@@ -27,26 +28,34 @@ const pageLabel: Record<Exclude<Page, "focus">, string> = {
   queues: "Queues",
 };
 
-let workspaceTitles = $state.raw<Record<string, Array<{ token: symbol; name: string }>>>({});
-const workspaceKey = (hostKey: string | undefined, id: string) => JSON.stringify([hostKey ?? null, id]);
+type WorkspacePage = "terminal" | "mobile-workspace-terminal" | "mobile-workspace-item";
+type WorkspaceTab = {
+  page: WorkspacePage;
+  hostKey: string | undefined;
+  id: string;
+  name: string;
+  item?: RoutedItemRef | undefined;
+};
+const workspaces = new SvelteMap<symbol, WorkspaceTab>();
 
-export function publishWorkspaceTitle(hostKey: string | undefined, id: string, name: string | null): () => void {
-  if (name === null) return () => {};
-  const key = workspaceKey(hostKey, id);
-  const token = Symbol();
-  workspaceTitles = { ...workspaceTitles, [key]: [...(workspaceTitles[key] ?? []), { token, name }] };
-  return () => {
-    const remaining = (workspaceTitles[key] ?? []).filter((entry) => entry.token !== token);
-    if (remaining.length) workspaceTitles = { ...workspaceTitles, [key]: remaining };
-    else {
-      const { [key]: _, ...rest } = workspaceTitles;
-      workspaceTitles = rest;
-    }
-  };
+export function useWorkspaceTab(read: () => WorkspaceTab | null): void {
+  const key = Symbol();
+  $effect(() => {
+    const workspace = read();
+    if (workspace) workspaces.set(key, workspace);
+    return () => {
+      workspaces.delete(key);
+    };
+  });
 }
 
-export function workspaceTitle(hostKey: string | undefined, id: string): string | undefined {
-  return workspaceTitles[workspaceKey(hostKey, id)]?.at(-1)?.name;
+export function workspaceTab(route: Route): WorkspaceTab | undefined {
+  if (route.page !== "terminal" && route.page !== "mobile-workspace-terminal" && route.page !== "mobile-workspace-item")
+    return undefined;
+  return [...workspaces.values()].find(
+    (workspace) =>
+      workspace.page === route.page && workspace.hostKey === route.hostKey && workspace.id === route.workspaceId,
+  );
 }
 
 export function routeTabTitle(
@@ -55,7 +64,7 @@ export function routeTabTitle(
     pull?: PullDetail | null;
     issue?: IssueDetail | null;
     activitySelection?: RoutedItemRef | null;
-    workspaceName?: string | undefined;
+    workspace?: WorkspaceTab | undefined;
     worklists?: readonly { id: number; title: string }[];
     activityCommit?: { title: string; repoPath: string } | null;
   } = {},
@@ -67,6 +76,7 @@ export function routeTabTitle(
   else if (route.page === "issues" && route.selected) selected = { ...route.selected, itemType: "issue" };
   else if (route.page === "worklists") selected = route.selected;
   else if (route.page === "activity") selected = options.activitySelection ?? undefined;
+  else if (route.page === "mobile-workspace-item") selected = options.workspace?.item;
 
   if (selected) {
     const title =
@@ -88,15 +98,16 @@ export function routeTabTitle(
     route.page === "mobile-workspace-terminal" ||
     route.page === "mobile-workspace-item"
   ) {
-    const name = options.workspaceName || `Workspace (${route.hostKey ? `${route.hostKey}/` : ""}${route.workspaceId})`;
-    const mode = route.page === "mobile-workspace-item" ? ` · ${route.tab === "files" ? "Files" : "Conversation"}` : "";
-    return `${name}${mode} · Workspaces · Forge`;
+    const name =
+      options.workspace?.name || `Workspace (${route.hostKey ? `${route.hostKey}/` : ""}${route.workspaceId})`;
+    return `${name} · Workspaces · Forge`;
   }
   if (route.page === "repo-browser") {
     const parts = [route.path, route.refName, route.refSHA, route.repoPath, "Repos", "Forge"].filter(Boolean);
     return parts.join(" · ");
   }
   if (route.page === "docs") return [route.doc, route.folder, "Docs", "Forge"].filter(Boolean).join(" · ");
+  if (route.page === "worklists" && route.importFragment !== undefined) return "Import worklist · Worklists · Forge";
   if ((route.page === "worklists" || route.page === "mobile-worklists") && route.worklistId !== null) {
     const name =
       options.worklists?.find((worklist) => worklist.id === route.worklistId)?.title ||

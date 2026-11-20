@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { publishWorkspaceTitle } from "../../app/tab-title.svelte.js";
+  import { useWorkspaceTab } from "../../app/tab-title.svelte.js";
   import ErrorShown from "../shared/ErrorShown.svelte";
   import { reportWorkspaceOpenError, reportWorkspaceOpened } from "../../app/telemetry.js";
   import { documentVisible } from "../../browser/document-visible.svelte.js";
@@ -114,13 +114,8 @@
   let queuedLaunchRead: symbol | undefined;
 
   let workspace = $state.raw<WorkspaceDetail | null>(null);
-  $effect(() => {
-    const name = workspace && workspace.id === workspaceId && workspace.fleet_host_key === hostKey
-      ? mobileWorkspaceDisplayName(workspace) : null;
-    const id = workspaceId;
-    const host = hostKey;
-    return untrack(() => publishWorkspaceTitle(host, id, name));
-  });
+  useWorkspaceTab(() => workspace && workspace.id === workspaceId && workspace.fleet_host_key === hostKey
+    ? { page: "mobile-workspace-terminal", hostKey: hostKey, id: workspace.id, name: mobileWorkspaceDisplayName(workspace) } : null);
   const usableWorkspace = $derived(
     workspace?.id === workspaceId && workspace.fleet_host_key === hostKey &&
     workspace.status !== "deleting" && workspace.status !== "deletion_failed" &&

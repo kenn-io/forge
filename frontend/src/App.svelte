@@ -148,7 +148,7 @@
   import { registerPRDetailActions } from "./lib/stores/keyboard/pr-detail-actions.js";
   import type { PRDetailActionInput } from "./lib/components/detail/keyboard-actions.js";
   import type { Context } from "./lib/stores/keyboard/types.js";
-  import { routeTabTitle, workspaceTitle } from "./lib/app/tab-title.svelte.js";
+  import { routeTabTitle, workspaceTab } from "./lib/app/tab-title.svelte.js";
   import { repositoryKeyFromWire } from "./lib/api/repository-key.js";
 
   type DocsRouteState = {
@@ -950,12 +950,10 @@
     if (!appReady) return "Loading · Forge";
     if (onboardingActive) return "Setup · Forge";
     const route = getRoute();
-    const workspaceName = route.page === "terminal" || route.page === "mobile-workspace-terminal" || route.page === "mobile-workspace-item"
-      ? workspaceTitle(route.hostKey, route.workspaceId) : undefined;
     const worklistDetail = stores?.worklists.getDetail();
     return routeTabTitle(route, {
       pull: stores?.detail.getDetail(), issue: stores?.issues.getIssueDetail(), activitySelection: drawerItem,
-      activityCommit: commitItem, workspaceName,
+      activityCommit: commitItem, workspace: workspaceTab(route),
       worklists: [...(worklistDetail ? [worklistDetail] : []), ...(stores?.worklists.getSummaries() ?? [])],
     });
   });

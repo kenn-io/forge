@@ -1,6 +1,7 @@
 package db
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -81,11 +82,16 @@ func testDBTemplateBytes(t *testing.T) []byte {
 
 func copyHistoricalDBForTest(t *testing.T, dbPath string, version uint) {
 	t.Helper()
+	_, err := os.Stat(dbPath)
+	if err == nil {
+		return
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		require.NoError(t, err)
+	}
 	testDBTemplateBytes(t)
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		if data, ok := testDBTemplate.versions[version]; ok {
-			copyTestDBTemplate(t, data, dbPath)
-		}
+	if data, ok := testDBTemplate.versions[version]; ok {
+		copyTestDBTemplate(t, data, dbPath)
 	}
 }
 

@@ -64,16 +64,20 @@ or `NOT` before a search word to hide matching workspaces. Each row shows the
 repository, branch, linked item, changed-line counts, and current agent state
 when lifecycle hooks report one.
 
-When you select a workspace, the main area holds the base shell as a tab
-labeled **Workspace**, next to a tab for each launched agent or shell session.
+When you select a local workspace, the main area shows the base shell in a tab
+labeled **Workspace** next to a tab for each launched agent or shell session. A
+remote fleet workspace has no **Workspace** tab and shows only tabs for its
+launched agent or shell sessions.
 The right-hand panel has buttons for:
 
-- **Diff.** The workspace's changes, compared with **HEAD**, the pushed
-  **Branch**, or the merge **Target**.
+- **Diff.** The workspace's changes compared with **HEAD** or the pushed
+  **Branch**. Both are always available. The merge **Target** appears only when
+  the workspace has a linked pull request.
 - **PR** or **Issue.** The linked pull request or issue.
 - **Kata.** The linked Kata task (local workspaces only, not remote fleet
   workspaces).
-- **Reviews.** Roborev jobs (pull request workspaces only).
+- **Reviews.** Roborev jobs for local pull request workspaces only. In a remote
+  fleet workspace, the panel states that local reviews are unavailable.
 
 You can launch another shell or agent from the workspace header. Sessions keep
 running under tmux when you leave the page, reload the browser, or attach from

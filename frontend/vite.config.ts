@@ -35,6 +35,22 @@ const devServerAllowedHosts = resolveViteAllowedHosts();
 const devServerHmr = resolveViteHmr();
 const workspaceRoot = searchForWorkspaceRoot(process.cwd());
 
+const INDEX_CHARSET = '<meta charset="UTF-8" />';
+
+function holdFirstPaint(): Plugin {
+  const script = readFileSync(new URL("../website/hold-first-paint.js", import.meta.url), "utf8");
+  return {
+    name: "kenn-forge-hold-first-paint",
+    apply: "build",
+    transformIndexHtml(html) {
+      if (!html.includes(INDEX_CHARSET)) {
+        throw new Error(`index.html has no ${INDEX_CHARSET} to place the first-paint hold script after`);
+      }
+      return html.replace(INDEX_CHARSET, `${INDEX_CHARSET}\n    <script>\n${script}    </script>`);
+    },
+  };
+}
+
 function precompressAssets(): Plugin {
   return {
     name: "kenn-forge-precompress-assets",
@@ -293,6 +309,7 @@ const config = {
   },
   plugins: [
     frontendApiClient(),
+    holdFirstPaint(),
     precompressAssets(),
     healthcheckPlugin(),
     devApiUrlPlugin(apiUrl),
@@ -608,6 +625,9 @@ const config = {
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // Inline bundled woff2 fonts into the stylesheet so they work under any
+    // base_path and decode before first paint with holdFirstPaint().
+    assetsInlineLimit: (file) => (file.endsWith(".woff2") ? true : undefined),
     chunkSizeWarningLimit: 1500,
   },
 } satisfies UserConfig & { test: InlineConfig };

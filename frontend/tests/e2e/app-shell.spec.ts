@@ -56,3 +56,29 @@ test("header theme toggle flips dark mode in the live shell", async ({ page }) =
   await button.click();
   await expect(root).not.toHaveClass(/dark/);
 });
+
+test("loads bundled Inter and JetBrains Mono fonts across themes", async ({ page }) => {
+  await page.goto("/pulls");
+  await expect(page.getByText("Add browser regression coverage")).toBeVisible();
+
+  const fontState = await page.evaluate(async () => {
+    await document.fonts.ready;
+    const bodyFont = getComputedStyle(document.body).fontFamily;
+    const monoToken = getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim();
+    const loadedFamilies = [...document.fonts]
+      .filter((face) => face.status === "loaded")
+      .map((face) => face.family.replace(/^["']|["']$/g, ""));
+    return {
+      theme: document.documentElement.dataset.kitTheme ?? "",
+      bodyFont,
+      monoToken,
+      loadedFamilies: [...new Set(loadedFamilies)],
+    };
+  });
+
+  expect(fontState.theme).toBe("quiet");
+  expect(fontState.bodyFont).toMatch(/^"?Inter"?\b/);
+  expect(fontState.monoToken).toMatch(/^"?JetBrains Mono"?\b/);
+  expect(fontState.loadedFamilies).toContain("Inter");
+  expect(fontState.loadedFamilies).toContain("JetBrains Mono");
+});

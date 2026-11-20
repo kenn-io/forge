@@ -107,6 +107,18 @@ test("create step renders the flow and hands the manifest to GitHub", async ({ p
     await expect(page.getByText("Disabled — kenn-forge polls")).toBeVisible();
     await expect(page.getByText("pull requests")).toBeVisible();
 
+    const fontState = await page.evaluate(async () => {
+      await document.fonts.ready;
+      const bodyFont = getComputedStyle(document.body).fontFamily;
+      const loadedFamilies = [...document.fonts]
+        .filter((face) => face.status === "loaded")
+        .map((face) => face.family.replace(/^["']|["']$/g, ""));
+      return { bodyFont, loadedFamilies: [...new Set(loadedFamilies)] };
+    });
+    expect(fontState.bodyFont).toMatch(/^"?Inter"?\b/);
+    expect(fontState.loadedFamilies).toContain("Inter");
+    expect(fontState.loadedFamilies).toContain("JetBrains Mono");
+
     // The page auto-continues, but clicking must work too; either way
     // the manifest form POST goes to GitHub and the redirect chain
     // lands on the done view.

@@ -44,6 +44,7 @@
 
   interface Props {
     worklistId: number | null;
+    onTitleChange?: (title: { id: number | null; selected: WorklistItemSelection | undefined; target: WorklistItemSelection | undefined; hideSelection: boolean } | null) => void;
     selected?: WorklistItemSelection | undefined;
     isSidebarCollapsed?: boolean;
     sidebarWidth?: number;
@@ -55,6 +56,7 @@
 
   let {
     worklistId,
+    onTitleChange,
     selected = undefined,
     isSidebarCollapsed = false,
     sidebarWidth = 340,
@@ -105,6 +107,9 @@
       (worklists.getOpenId() === worklistId &&
         (detailError?.kind === "notFound" || (loadedWorklist !== null && worklist === null))),
   );
+  const showDetailError = $derived(!worklist && detailError?.kind === "failed");
+  const showSummariesError = $derived(!worklist && !showDetailError && routedListMissing && worklists.getSummariesError() !== null);
+  const showNoWorklists = $derived(!worklist && !showDetailError && !showSummariesError && routedListMissing && worklists.summariesLoaded() && summaries.length === 0);
   const selectedItem = $derived(worklist?.items.find((item) => worklistItemMatchesSelection(item, selected)) ?? null);
   const selectedKey = $derived(selectedItem ? worklistItemKey(selectedItem) : null);
   const detailTab = $derived<WorklistDetailTab>(selected?.detailTab ?? "conversation");
@@ -416,6 +421,15 @@
   // The URL route can be stale after a rename; the matched item carries the
   // repository's current route.
   const target = $derived(selectedItem ? worklistItemSelection(selectedItem) : selected);
+  $effect(() => {
+    onTitleChange?.({
+      id: worklistId,
+      selected,
+      target,
+      hideSelection: showDetailError || showSummariesError || showNoWorklists,
+    });
+    return () => onTitleChange?.(null);
+  });
   const prSelection = $derived(
     target?.itemType === "pr"
       ? {
@@ -662,7 +676,7 @@
           })}
       />
     </div>
-  {:else if routedListMissing && worklists.getSummariesError() !== null}
+  {:else if showSummariesError}
     <div class="worklist-status" role="alert">
       <span>{worklists.getSummariesError()}</span>
       <Button
@@ -676,7 +690,7 @@
           })}
       />
     </div>
-  {:else if routedListMissing && worklists.summariesLoaded() && summaries.length === 0}
+  {:else if showNoWorklists}
     <div class="worklist-empty">
       <EmptyState title="No worklists" description="Ask an agent connected to Forge to create one.">
         {#snippet icon()}<ListChecksIcon size={24} aria-hidden="true" />{/snippet}

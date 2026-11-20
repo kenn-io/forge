@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { mobileWorkspaceDisplayName } from "../mobile/mobile-workspace-list.js";
+  import type { WorkspaceTab } from "../../app/tab-title.svelte.js";
   import ErrorShown from "../shared/ErrorShown.svelte";
   import { reportWorkspaceOpenError, reportWorkspaceOpened } from "../../app/telemetry.js";
   import { documentVisible } from "../../browser/document-visible.svelte.js";
@@ -212,6 +214,7 @@
   // Internal pane hosts can supply their own list and detail sidebar.
   // Standalone workspace and terminal routes show both by default.
   interface Props {
+    onWorkspaceTabChange?: ((workspace: WorkspaceTab | null) => void) | undefined;
     workspaceId: string;
     workspaceHostKey?: string | undefined;
     selectedRepos?: string | undefined;
@@ -263,6 +266,7 @@
     inlineDock = null,
     paneSurface = undefined,
     terminalSettingsReady = true,
+    onWorkspaceTabChange,
   }: Props = $props();
 
   const basePath = (
@@ -408,6 +412,11 @@
   );
 
   let workspace = $state<Workspace | null>(null);
+  $effect(() => {
+    onWorkspaceTabChange?.(workspace
+    ? { hostKey: workspace.fleet_host_key, id: workspace.id, name: mobileWorkspaceDisplayName(workspace) } : null);
+    return () => onWorkspaceTabChange?.(null);
+  });
   let workspaceReadinessGeneration = 0;
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
   let appliedRuntimeState:

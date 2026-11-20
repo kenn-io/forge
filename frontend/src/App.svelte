@@ -33,6 +33,7 @@
     type PullRequestRouteRef,
     type RepoBrowserRouteRef,
     type RoutedItemRef,
+    type WorklistItemSelection,
   } from "./lib/routes.js";
   import {
     HOST_STATE_KEY,
@@ -107,6 +108,7 @@
     buildMobileWorkspaceRoute,
     buildMobileWorkspaceItemRoute,
     type Page,
+    type Route,
     type RoutableItemRef,
   } from "./lib/stores/router.svelte.ts";
   import {
@@ -148,6 +150,7 @@
   import { registerPRDetailActions } from "./lib/stores/keyboard/pr-detail-actions.js";
   import type { PRDetailActionInput } from "./lib/components/detail/keyboard-actions.js";
   import type { Context } from "./lib/stores/keyboard/types.js";
+  import { routeTabTitle, type WorkspaceTab } from "./lib/app/tab-title.svelte.js";
   import { repositoryKeyFromWire } from "./lib/api/repository-key.js";
 
   type DocsRouteState = {
@@ -945,6 +948,33 @@
 
   let drawerItem = $state<DrawerItem | null>(null);
   let activitySelectionRevealKey = $state(0);
+  let workspaceTabs = $state<Record<string, WorkspaceTab | null>>({});
+  let worklistTitle = $state<{ id: number | null; selected: WorklistItemSelection | undefined; target: WorklistItemSelection | undefined; hideSelection: boolean } | null>(null);
+  const tabTitle = $derived.by(() => {
+    const route = getRoute();
+    if (onboardingActive) return "Setup · Forge";
+    if (shouldUseResponsiveMobileActivityPresentation()) return "Activity · Forge";
+    if (!appReady) {
+      const selection = route.page === "activity" ? parseActivitySelection(window.location.search) : null;
+      return routeTabTitle(route, {
+        activitySelection: selection && selection.itemType !== "commit" ? selection : null,
+      });
+    }
+    const selectedIssue = stores?.issues.getSelectedIssue();
+    let titleRoute: Route = route.page === "issues" && !shouldUseResponsiveFocusPresentation()
+      ? { page: "issues" as const, ...(selectedIssue ? { selected: selectedIssue } : {}) }
+      : route;
+    if (route.page === "worklists" && worklistTitle?.id === route.worklistId && worklistTitle.selected === route.selected) {
+      titleRoute = { ...route };
+      if (worklistTitle.hideSelection || !worklistTitle.target) delete titleRoute.selected;
+      else titleRoute.selected = worklistTitle.target;
+    }
+    const workspace = workspaceTabs[route.page];
+    return routeTabTitle(titleRoute, {
+      pull: stores?.detail.getDetail(), issue: stores?.issues.getIssueDetail(), activitySelection: drawerItem,
+      workspace: workspace && "workspaceId" in route && workspace.id === route.workspaceId && workspace.hostKey === route.hostKey ? workspace : undefined,
+    });
+  });
   // Owned here for the same reason drawerItem is: the Activity selection lives
   // in the page's query string, and only this component writes it.
   let commitItem = $state<ActivityCommitSelection | null>(null);
@@ -1225,6 +1255,8 @@
   });
 </script>
 
+<svelte:head><title>{tabTitle}</title></svelte:head>
+
 <svelte:window onresize={updateViewportState} />
 
   {#snippet focusPresentation(phone: boolean)}
@@ -1388,6 +1420,7 @@
               {#if route.page === "mobile-workspace-terminal" || mobileWorkspaceHistory()?.origin === "terminal"}
                 <div class="mobile-workspace-route__terminal" hidden={route.page === "mobile-workspace-item"}>
                   <MobileWorkspaceTerminal
+                    onWorkspaceTabChange={(workspace) => { workspaceTabs["mobile-workspace-terminal"] = workspace; }}
                     workspaceId={route.workspaceId}
                     hostKey={route.hostKey}
                     visible={route.page === "mobile-workspace-terminal"}
@@ -1399,6 +1432,7 @@
               {/if}
               {#if route.page === "mobile-workspace-item"}
                 <MobileWorkspaceItem
+                  onWorkspaceTabChange={(workspace) => { workspaceTabs["mobile-workspace-item"] = workspace; }}
                   workspaceId={route.workspaceId}
                   hostKey={route.hostKey}
                   tab={route.tab}
@@ -1525,6 +1559,7 @@
             <WorklistView
               worklistId={route.worklistId}
               selected={route.selected}
+              onTitleChange={(title) => { worklistTitle = title; }}
               isSidebarCollapsed={isSidebarCollapsed()}
               sidebarWidth={getSidebarWidth()}
               sidebarOverlay={isNarrow()}
@@ -1678,6 +1713,7 @@
            still never remounts across page switches. -->
       {#if appReady}
         <WorkspaceHost
+          onWorkspaceTabChange={(workspace) => { workspaceTabs.terminal = workspace; }}
           isSidebarCollapsed={isSidebarCollapsed()}
           sidebarWidth={getSidebarWidth()}
           onSidebarResize={handleSidebarResize}

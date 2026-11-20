@@ -25,22 +25,36 @@ const workspace = {
   status: "ready",
   enrichment_status: "fresh",
   created_at: "2026-04-10T12:00:00Z",
+  mr_title: "Workspace title",
 };
 
 let mounted: MountedBrowserApp | null = null;
+let backendReady = true;
+const routes: MockRouteOverride = (req) => {
+  if (req.url.pathname === "/healthz") return backendReady ? null : jsonResponse({ status: "starting" }, 503);
+  if (req.method === "GET" && req.url.pathname === "/api/v1/workspaces/ws-9") return jsonResponse(workspace);
+  if (req.method === "GET" && req.url.pathname === "/api/v1/workspaces/ws-9/runtime")
+    return jsonResponse({ launch_targets: [], sessions: [] });
+  if (req.method === "GET" && req.url.pathname === "/api/v1/workspaces")
+    return jsonResponse({ workspaces: [workspace] });
+  return null;
+};
 
 describe("workspace host startup gating (browser)", () => {
   vi.setConfig({ testTimeout: 20_000 });
 
   beforeEach(async () => {
     mounted = null;
+    backendReady = true;
     await page.viewport(1280, 900);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     mounted?.unmount();
     mounted = null;
     localStorage.clear();
+    window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = false;
+    await page.viewport(1280, 900);
   });
 
   it.each([
@@ -101,22 +115,7 @@ describe("workspace host startup gating (browser)", () => {
   );
 
   it("defers workspace requests on a direct terminal load until the backend is ready", async () => {
-    let backendReady = false;
-    const routes: MockRouteOverride = (req) => {
-      if (req.url.pathname === "/healthz") {
-        return backendReady ? null : jsonResponse({ status: "starting" }, 503);
-      }
-      if (req.method === "GET" && req.url.pathname === "/api/v1/workspaces/ws-9") {
-        return jsonResponse(workspace);
-      }
-      if (req.method === "GET" && req.url.pathname === "/api/v1/workspaces/ws-9/runtime") {
-        return jsonResponse({ launch_targets: [], sessions: [] });
-      }
-      if (req.method === "GET" && req.url.pathname === "/api/v1/workspaces") {
-        return jsonResponse({ workspaces: [workspace] });
-      }
-      return null;
-    };
+    backendReady = false;
     mounted = await mountBrowserApp("/terminal/ws-9", { overrides: [routes] });
 
     const workspaceRequests = () =>
@@ -137,4 +136,39 @@ describe("workspace host startup gating (browser)", () => {
       expect(document.querySelector(".terminal-view")).not.toBeNull();
     }, 15_000);
   });
+
+  it("names the desktop workspace terminal", async () => {
+    mounted = await mountBrowserApp("/terminal/ws-9", { overrides: [routes] });
+    await vi.waitFor(() => expect(document.title).toBe("Workspace title · Workspaces · Forge"), 15_000);
+  });
+
+  it("names the linked item while navigating the phone workspace", async () => {
+    await page.viewport(390, 844);
+    window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = true;
+    mounted = await mountBrowserApp("/m/workspaces/local/ws-9", { overrides: [routes] });
+    await expect.element(page.getByRole("button", { name: "Open linked PR #42" }), { timeout: 10_000 }).toBeVisible();
+    await vi.waitFor(() => expect(document.title).toBe("Workspace title · Workspaces · Forge"), 10_000);
+    await page.getByRole("button", { name: "Open linked PR #42" }).click();
+    await expect
+      .element(page.getByRole("tab", { name: "Conversation", exact: true }), { timeout: 10_000 })
+      .toBeVisible();
+    await vi.waitFor(
+      () => expect(document.title).toBe("Add browser regression coverage (acme/widgets#42) · Forge"),
+      10_000,
+    );
+    await page.getByRole("button", { name: "Back to workspace terminal" }).click();
+    await expect.element(page.getByRole("button", { name: "Open linked PR #42" }), { timeout: 10_000 }).toBeVisible();
+    await vi.waitFor(() => expect(document.title).toBe("Workspace title · Workspaces · Forge"), 10_000);
+  }, 30_000);
+
+  it("distinguishes an empty linked-item screen from its terminal", async () => {
+    await page.viewport(390, 844);
+    window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = true;
+    const empty = { ...workspace, item_type: "adhoc", item_number: 0, source_item_visible: false, mr_title: null };
+    const emptyRoute: MockRouteOverride = (req) =>
+      req.method === "GET" && req.url.pathname === "/api/v1/workspaces/ws-9" ? jsonResponse(empty) : null;
+    mounted = await mountBrowserApp("/m/workspaces/local/ws-9/item", { overrides: [emptyRoute, routes] });
+    await expect.element(page.getByText("No linked PR or issue"), { timeout: 10_000 }).toBeVisible();
+    await vi.waitFor(() => expect(document.title).toBe("Linked item (feature/auth) · Workspaces · Forge"), 10_000);
+  }, 30_000);
 });

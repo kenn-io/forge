@@ -49,7 +49,7 @@ everyday Go test construction and commands, also read
   run publishes it (`.github/workflows/ci.yml:76`).
 - A successful CI retry proves recovery, not a fix; identify the cause or keep
   targeted diagnostics for the next occurrence.
-- Only `main` saves CI caches; PR caches evict `main`'s from the 10 GB budget
+- Only `main` saves CI caches, including the daily Go race build cache; PR caches evict `main`'s from the 10 GB budget
   (`.github/workflows/ci.yml::lint`).
 - Bun caches use exact keys; prefix restores poison lockfile-correct installs and
   accumulate every version ever seen (`.github/workflows/ci.yml::build-e2e`).

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { mobileWorkspaceDisplayName } from "./mobile-workspace-list.js";
-  import { useWorkspaceTab } from "../../app/tab-title.svelte.js";
+  import type { WorkspaceTab } from "../../app/tab-title.svelte.js";
   import { Spinner, Tabs } from "@kenn-io/kit-ui";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
   import MobileNavMenu from "./MobileNavMenu.svelte";
@@ -19,6 +19,7 @@
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
 
   interface Props {
+    onWorkspaceTabChange?: (workspace: WorkspaceTab | null) => void;
     workspaceId: string;
     hostKey?: string | undefined;
     tab?: "files" | undefined;
@@ -40,6 +41,7 @@
     onTabChange,
     onOpenWorkspace,
     onViewWorkspaces,
+    onWorkspaceTabChange,
   }: Props = $props();
 
   const itemTabs = [
@@ -69,9 +71,12 @@
     };
   });
 
-  useWorkspaceTab(() => workspace && workspace.id === workspaceId && workspace.fleet_host_key === hostKey
+  $effect(() => {
+    onWorkspaceTabChange?.(workspace && workspace.id === workspaceId && workspace.fleet_host_key === hostKey
     ? { page: "mobile-workspace-item", hostKey, id: workspace.id, name: mobileWorkspaceDisplayName(workspace),
         item: itemRef && linkedItem ? { ...itemRef, itemType: linkedItem.itemType } : undefined } : null);
+    return () => onWorkspaceTabChange?.(null);
+  });
 
   function failureMessage(failure: unknown): string {
     if (failure instanceof ApiProblemError) {

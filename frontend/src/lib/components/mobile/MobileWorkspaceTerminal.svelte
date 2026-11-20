@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useWorkspaceTab } from "../../app/tab-title.svelte.js";
+  import type { WorkspaceTab } from "../../app/tab-title.svelte.js";
   import ErrorShown from "../shared/ErrorShown.svelte";
   import { reportWorkspaceOpenError, reportWorkspaceOpened } from "../../app/telemetry.js";
   import { documentVisible } from "../../browser/document-visible.svelte.js";
@@ -88,6 +88,7 @@
   } from "./mobile-workspace-session.js";
 
   interface Props {
+    onWorkspaceTabChange?: (workspace: WorkspaceTab | null) => void;
     workspaceId: string;
     hostKey?: string | undefined;
     visible?: boolean;
@@ -106,7 +107,7 @@
     runtimeSession: RuntimeSession | null;
   }
 
-  let { workspaceId, hostKey = undefined, visible = true, onBack, onMissing, onOpenItem }: Props = $props();
+  let { workspaceId, hostKey = undefined, visible = true, onBack, onMissing, onOpenItem, onWorkspaceTabChange }: Props = $props();
   const appRuntime = getAppRuntime();
   const { events: eventsStore, settings: settingsStore } = getStores();
   const runtimeOwner = makeWorkspaceRuntimeOwner("mobile-workspace");
@@ -114,8 +115,11 @@
   let queuedLaunchRead: symbol | undefined;
 
   let workspace = $state.raw<WorkspaceDetail | null>(null);
-  useWorkspaceTab(() => workspace && workspace.id === workspaceId && workspace.fleet_host_key === hostKey
+  $effect(() => {
+    onWorkspaceTabChange?.(workspace && workspace.id === workspaceId && workspace.fleet_host_key === hostKey
     ? { page: "mobile-workspace-terminal", hostKey: hostKey, id: workspace.id, name: mobileWorkspaceDisplayName(workspace) } : null);
+    return () => onWorkspaceTabChange?.(null);
+  });
   const usableWorkspace = $derived(
     workspace?.id === workspaceId && workspace.fleet_host_key === hostKey &&
     workspace.status !== "deleting" && workspace.status !== "deletion_failed" &&

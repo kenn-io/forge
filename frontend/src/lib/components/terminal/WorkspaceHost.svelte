@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { WorkspaceTab } from "../../app/tab-title.svelte.js";
   import { Effect } from "effect";
   import { flushSync, tick, untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -20,6 +21,7 @@
   } from "../../stores/workspace-host.svelte.ts";
 
   interface Props {
+    onWorkspaceTabChange?: (workspace: WorkspaceTab | null) => void;
     isSidebarCollapsed?: boolean;
     sidebarWidth?: number;
     onSidebarResize?: (width: number) => void;
@@ -33,6 +35,7 @@
     onSidebarResize = undefined,
     isSidebarToggleEnabled = false,
     onToggleSidebar = undefined,
+    onWorkspaceTabChange,
   }: Props = $props();
   const appRuntime = getAppRuntime();
 
@@ -172,6 +175,7 @@
        them. The terminal main subtree this wrapper hosts is unaffected by
        those toggles, so the workspace's own sockets stay warm. -->
   <WorkspaceTerminalView
+    {onWorkspaceTabChange}
     workspaceId={key.workspaceId}
     workspaceHostKey={key.hostKey}
     selectedRepos={getGlobalRepo()}

@@ -148,7 +148,7 @@
   import { registerPRDetailActions } from "./lib/stores/keyboard/pr-detail-actions.js";
   import type { PRDetailActionInput } from "./lib/components/detail/keyboard-actions.js";
   import type { Context } from "./lib/stores/keyboard/types.js";
-  import { routeTabTitle, workspaceTab } from "./lib/app/tab-title.svelte.js";
+  import { routeTabTitle, type WorkspaceTab } from "./lib/app/tab-title.svelte.js";
   import { worklistItemMatchesSelection, worklistItemSelection } from "./lib/components/worklists/worklist-items.js";
   import { repositoryKeyFromWire } from "./lib/api/repository-key.js";
 
@@ -947,6 +947,7 @@
 
   let drawerItem = $state<DrawerItem | null>(null);
   let activitySelectionRevealKey = $state(0);
+  let workspaceTabs = $state<Record<string, WorkspaceTab | null>>({});
   const tabTitle = $derived.by(() => {
     const route = getRoute();
     if (onboardingActive) return "Setup · Forge";
@@ -963,7 +964,7 @@
       ? worklistDetail.items.find((item) => worklistItemMatchesSelection(item, route.selected)) : undefined;
     return routeTabTitle(route, {
       pull: stores?.detail.getDetail(), issue: stores?.issues.getIssueDetail(), activitySelection: drawerItem,
-      activityCommit: commitItem, workspace: workspaceTab(route),
+      activityCommit: commitItem, workspace: Object.values(workspaceTabs).find((workspace) => workspace && workspace.page === route.page && "workspaceId" in route && workspace.id === route.workspaceId && workspace.hostKey === route.hostKey) ?? undefined,
       worklistSelection: selectedItem ? worklistItemSelection(selectedItem) : undefined,
       worklists: isWorklist ? [...(worklistDetail ? [worklistDetail] : []), ...(stores?.worklists.getSummaries() ?? [])] : undefined,
     });
@@ -1413,6 +1414,7 @@
               {#if route.page === "mobile-workspace-terminal" || mobileWorkspaceHistory()?.origin === "terminal"}
                 <div class="mobile-workspace-route__terminal" hidden={route.page === "mobile-workspace-item"}>
                   <MobileWorkspaceTerminal
+                    onWorkspaceTabChange={(workspace) => { workspaceTabs["mobile-workspace-terminal"] = workspace; }}
                     workspaceId={route.workspaceId}
                     hostKey={route.hostKey}
                     visible={route.page === "mobile-workspace-terminal"}
@@ -1424,6 +1426,7 @@
               {/if}
               {#if route.page === "mobile-workspace-item"}
                 <MobileWorkspaceItem
+                  onWorkspaceTabChange={(workspace) => { workspaceTabs["mobile-workspace-item"] = workspace; }}
                   workspaceId={route.workspaceId}
                   hostKey={route.hostKey}
                   tab={route.tab}
@@ -1703,6 +1706,7 @@
            still never remounts across page switches. -->
       {#if appReady}
         <WorkspaceHost
+          onWorkspaceTabChange={(workspace) => { workspaceTabs.terminal = workspace; }}
           isSidebarCollapsed={isSidebarCollapsed()}
           sidebarWidth={getSidebarWidth()}
           onSidebarResize={handleSidebarResize}

@@ -1,9 +1,7 @@
-import { flushSync } from "svelte";
 import { describe, expect, it } from "vite-plus/test";
 import type { IssueDetail, PullDetail } from "../api/types.js";
 import { getRoute, replaceUrl } from "../stores/router.svelte.js";
-import { routeTabTitle, workspaceTab } from "./tab-title.svelte.js";
-import { mountWorkspaceTitles } from "./tab-title-test-harness.svelte.js";
+import { routeTabTitle } from "./tab-title.svelte.js";
 
 describe("tab titles", () => {
   it.each([
@@ -99,6 +97,16 @@ describe("tab titles", () => {
     expect(routeTabTitle(getRoute())).toBe(title);
   });
 
+  it("shortens a repository commit SHA", () => {
+    replaceUrl("/repo/browser?provider=github&repo_path=owner%2Frepo&ref_sha=0123456789abcdef0123456789abcdef01234567");
+    expect(routeTabTitle(getRoute())).toBe("0123456789ab · owner/repo · Repos · Forge");
+  });
+
+  it("uses the GitLab merge request number marker", () => {
+    replaceUrl("/pulls/gitlab/group/project/42");
+    expect(routeTabTitle(getRoute())).toBe("Pull request (group/project!42) · Forge");
+  });
+
   it("names only the matching worklist", () => {
     replaceUrl("/worklists/3");
     expect(routeTabTitle(getRoute(), { worklists: [{ id: 4, title: "Other" }] })).toBe(
@@ -113,22 +121,6 @@ describe("tab titles", () => {
     expect(
       routeTabTitle({ page: "activity" }, { activityCommit: { title: "Fix startup", repoPath: "owner/repo" } }),
     ).toBe("Fix startup (owner/repo) · Forge");
-  });
-
-  it("selects the active workspace view by page, host, and ID and removes it on cleanup", () => {
-    const views = mountWorkspaceTitles();
-    flushSync();
-    const item = { page: "mobile-workspace-item", hostKey: "remote", workspaceId: "a" } as const;
-    const terminal = { page: "mobile-workspace-terminal", hostKey: "remote", workspaceId: "a" } as const;
-    expect(workspaceTab(item)?.name).toBe("Item");
-    expect(workspaceTab(terminal)?.name).toBe("Terminal");
-    expect(workspaceTab({ ...item, hostKey: undefined })).toBeUndefined();
-    expect(workspaceTab({ ...item, workspaceId: "b" })).toBeUndefined();
-    views.item();
-    expect(workspaceTab(item)).toBeUndefined();
-    expect(workspaceTab(terminal)?.name).toBe("Terminal");
-    views.terminal();
-    expect(workspaceTab(terminal)).toBeUndefined();
   });
 
   it("names a linked workspace item with a matching detail or typed fallback", () => {

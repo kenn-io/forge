@@ -26,7 +26,7 @@ kenn-forge serve --config /path/to/config.toml
 
 ## Config edits are not showing up
 
-Forge watches `config.toml` and applies changes to repository, activity, terminal, agent, and docs settings while it runs. Startup settings, such as the listen address and port, base path, sync interval, data directory, and provider hosts and credential sources, take effect only after you restart the daemon:
+Forge watches `config.toml` and applies changes to repository, activity, terminal, agent, and docs settings while it runs. Startup settings, such as the listen address and port, base path, sync interval, data directory, and provider hosts, take effect only after you restart the daemon. Changing scoped GitHub credential routes, such as `[[github_owner_tokens]]`, or adding or removing a GitHub App also requires a restart:
 
 ```sh
 kenn-forge daemon restart

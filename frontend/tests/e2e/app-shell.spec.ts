@@ -84,13 +84,14 @@ test("loads bundled Inter and JetBrains Mono fonts across themes", async ({ page
 });
 
 test("holds first paint until bundled fonts decode", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-11-20T12:00:00Z") });
   await page.addInitScript(() => {
     const pending: string[] = [];
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const originalLoad = FontFace.prototype.load;
+    const originalLoad = Object.getOwnPropertyDescriptor(FontFace.prototype, "load")?.value as FontFace["load"];
     FontFace.prototype.load = function (this: FontFace) {
       const family = this.family.replace(/^["']|["']$/g, "");
       if (family === "Inter" || family === "JetBrains Mono") {
@@ -112,14 +113,18 @@ test("holds first paint until bundled fonts decode", async ({ page }) => {
       page.evaluate(() => [...new Set((window as unknown as { __pendingFontLoads: string[] }).__pendingFontLoads)]),
     )
     .toEqual(expect.arrayContaining(["Inter", "JetBrains Mono"]));
+  // Advance part of the hold window while staying short of the 3000ms fallback
+  // timer; the page must remain hidden until both bundled fonts finish loading.
+  await page.clock.runFor(1_000);
   expect(await page.evaluate(() => getComputedStyle(document.documentElement).opacity)).toBe("0");
 
   await page.evaluate(() => {
     (window as unknown as { __releaseFontLoads: () => void }).__releaseFontLoads();
   });
 
+  // Virtual time is still frozen at 1000ms (< 3000ms), so revealing here proves
+  // font decoding—not the fallback timer—made the page visible.
   await expect.poll(async () => page.evaluate(() => getComputedStyle(document.documentElement).opacity)).toBe("1");
-  await expect(page.getByText("Add browser regression coverage")).toBeVisible();
   const loadedFamilies = await page.evaluate(async () => {
     await document.fonts.ready;
     return [
@@ -131,4 +136,7 @@ test("holds first paint until bundled fonts decode", async ({ page }) => {
     ];
   });
   expect(loadedFamilies).toEqual(expect.arrayContaining(["Inter", "JetBrains Mono"]));
+
+  await page.clock.resume();
+  await expect(page.getByText("Add browser regression coverage")).toBeVisible();
 });

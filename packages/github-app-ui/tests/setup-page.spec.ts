@@ -148,12 +148,13 @@ test("create step auto-continues without a click", async ({ page }) => {
 });
 
 test("delays auto-continue until the first-paint hold reveals the page", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-11-20T12:00:00Z") });
   await page.addInitScript(() => {
-    const originalLoad = FontFace.prototype.load;
+    const originalLoad = Object.getOwnPropertyDescriptor(FontFace.prototype, "load")?.value as FontFace["load"];
     FontFace.prototype.load = function (this: FontFace) {
       const family = this.family.replace(/^["']|["']$/g, "");
-      if (family === "Inter" || family === "JetBrains Mono") {
-        // Hold fonts past the 2.5s countdown so hold-first-paint.js reveals via its 3s fallback.
+      if (!window.location.search.includes("step=done") && (family === "Inter" || family === "JetBrains Mono")) {
+        // Hold fonts so hold-first-paint.js reveals only when its 3000ms fallback timer fires.
         return new Promise<FontFace>(() => {});
       }
       return originalLoad.call(this);
@@ -162,17 +163,29 @@ test("delays auto-continue until the first-paint hold reveals the page", async (
   const fake = await startFakeFlowServer({});
   try {
     await page.goto(fake.base, { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(2_600);
+
+    // Wait for the setup preview to finish loading while the page is still hidden.
+    await expect(page.getByRole("button", { name: "Continue to GitHub" })).toBeAttached();
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).opacity)).toBe("0");
+
+    // Advance past a full 2.5s countdown while staying short of the 3s fallback reveal.
+    await page.clock.runFor(2_600);
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).opacity)).toBe("0");
     expect(fake.manifestPosts).toHaveLength(0);
 
-    await expect
-      .poll(async () => page.evaluate(() => getComputedStyle(document.documentElement).opacity), { timeout: 3_000 })
-      .toBe("1");
+    // Reach the 3000ms fallback reveal and verify the preview becomes visible without submitting.
+    await page.clock.runFor(400);
+    await expect.poll(async () => page.evaluate(() => getComputedStyle(document.documentElement).opacity)).toBe("1");
     await expect(page.getByRole("button", { name: "Continue to GitHub" })).toBeVisible();
     expect(fake.manifestPosts).toHaveLength(0);
 
-    await expect(page).toHaveURL(/step=done/, { timeout: 10_000 });
+    // Advance most of the newly started 2.5s countdown; nothing should submit before it expires.
+    await page.clock.runFor(2_250);
+    expect(fake.manifestPosts).toHaveLength(0);
+
+    // Let the countdown expire and submit once, redirecting to the done step.
+    await page.clock.runFor(500);
+    await expect(page).toHaveURL(/step=done/);
     expect(fake.manifestPosts).toHaveLength(1);
   } finally {
     fake.server.close();

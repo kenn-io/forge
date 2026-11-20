@@ -868,7 +868,7 @@ func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
 
 func setupServerRepoBrowserGitRepo(t *testing.T, initArgs ...string) (remote string, work string) {
 	t.Helper()
-	dir := t.TempDir()
+	dir := gitfixture.ScratchDir(t)
 	remote = filepath.Join(dir, "remote.git")
 	initCmd := append([]string{"init", "--bare", "--initial-branch=main"}, initArgs...)
 	serverRepoBrowserGit(t, dir, append(initCmd, remote)...)

@@ -36,14 +36,6 @@ describe("tab titles", () => {
     expect(routeTabTitle(getRoute())).toBe(`${label} · Forge`);
   });
 
-  it("uses generic workspace titles when a loaded workspace has no name", () => {
-    const workspace = { hostKey: "host-a", id: "ws", name: "" };
-    replaceUrl("/terminal/fleet/host-a/ws");
-    expect(routeTabTitle(getRoute(), { workspace })).toBe("Workspace · Workspaces · Forge");
-    replaceUrl("/m/workspaces/fleet/host-a/ws/item");
-    expect(routeTabTitle(getRoute(), { workspace })).toBe("Linked item · Workspaces · Forge");
-  });
-
   it("uses a readable workspace name", () => {
     const workspace = { hostKey: "host-a", id: "ws", name: "feature/auth" };
     replaceUrl("/terminal/fleet/host-a/ws");

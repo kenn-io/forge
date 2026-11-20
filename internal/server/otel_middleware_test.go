@@ -20,7 +20,8 @@ func TestOTelTraceableReusesInventory(t *testing.T) {
 		_, err = NewTransportInventory()
 	})
 	assert.NoError(t, err)
-	assert.Less(t, cachedAllocs, freshAllocs)
+	// Leave a margin for noise in the fresh build's allocation count.
+	assert.Less(t, cachedAllocs, freshAllocs/2)
 }
 
 func TestOTelTraceableFiltersOnlyLongLivedStreams(t *testing.T) {

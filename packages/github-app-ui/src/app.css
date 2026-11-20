@@ -1,3 +1,19 @@
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("@kenn-io/kit-ui/fonts/inter-var.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("@kenn-io/kit-ui/fonts/jetbrains-mono-var.woff2") format("woff2");
+}
+
 /* Reset */
 *,
 *::before,

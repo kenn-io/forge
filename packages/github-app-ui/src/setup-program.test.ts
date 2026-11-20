@@ -1,5 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import { Effect, Fiber, Ref } from "effect";
+import { Deferred, Effect, Fiber, Ref } from "effect";
 import { TestClock } from "effect/testing";
 import { makeSetupController, SetupEnvironmentLive } from "./setup-program.js";
 import { SetupBrowserInvalidTest, SetupBrowserTest, SetupProbe } from "./setup-program.test-layer.js";
@@ -22,6 +22,62 @@ it.layer(SetupBrowserTest)("automatic setup submission", (it) => {
       yield* Fiber.interrupt(fiber);
       yield* TestClock.adjust("10 seconds");
       assert.strictEqual(yield* Ref.get(probe.submits), 1);
+    }),
+  );
+});
+
+it.layer(SetupBrowserTest)("countdown waits for first-paint reveal", (it) => {
+  it.effect("starts the countdown only once the page becomes visible", () =>
+    Effect.gen(function* () {
+      const probe = yield* SetupProbe;
+      const revealed = yield* Deferred.make<void>();
+      const controller = makeSetupController({
+        onSecondsLeft: probe.recordSeconds,
+        waitUntilVisible: Deferred.await(revealed),
+      });
+      const fiber = yield* Effect.forkChild(Effect.scoped(controller.program));
+      yield* Effect.yieldNow;
+
+      yield* TestClock.adjust("3000 millis");
+      yield* Effect.yieldNow;
+      assert.strictEqual(yield* Ref.get(probe.submits), 0);
+
+      yield* Deferred.succeed(revealed, undefined);
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("2000 millis");
+      yield* Effect.yieldNow;
+      assert.strictEqual(yield* Ref.get(probe.submits), 0);
+
+      yield* TestClock.adjust("500 millis");
+      yield* Effect.yieldNow;
+      assert.strictEqual(yield* Ref.get(probe.submits), 1);
+      yield* Fiber.interrupt(fiber);
+    }),
+  );
+});
+
+it.layer(SetupBrowserTest)("manual continue during first-paint hold", (it) => {
+  it.effect("allows manual submission and prevents a duplicate submit after reveal", () =>
+    Effect.gen(function* () {
+      const probe = yield* SetupProbe;
+      const revealed = yield* Deferred.make<void>();
+      const controller = makeSetupController({
+        onSecondsLeft: probe.recordSeconds,
+        waitUntilVisible: Deferred.await(revealed),
+      });
+      const fiber = yield* Effect.forkChild(Effect.scoped(controller.program));
+      yield* Effect.yieldNow;
+
+      controller.continue();
+      yield* Effect.yieldNow;
+      assert.strictEqual(yield* Ref.get(probe.submits), 1);
+
+      yield* Deferred.succeed(revealed, undefined);
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("2500 millis");
+      yield* Effect.yieldNow;
+      assert.strictEqual(yield* Ref.get(probe.submits), 1);
+      yield* Fiber.interrupt(fiber);
     }),
   );
 });

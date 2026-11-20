@@ -254,14 +254,25 @@ describe("stack status panel", () => {
 
     const label = document.querySelector<HTMLElement>(".stack-chip-label");
     const failureCount = document.querySelector<HTMLElement>(".stack-chip-failure-count");
+    const ciFailureCount = document.querySelector<HTMLElement>("[data-testid='ci-token-failed'] > .ct");
     const stackFailureIcon = document.querySelector<SVGElement>(".stack-chip-failure > svg");
     const ciFailureIcon = document.querySelector<SVGElement>("[data-testid='ci-token-failed'] > svg");
     expect(label).not.toBeNull();
     expect(failureCount).not.toBeNull();
+    expect(ciFailureCount).not.toBeNull();
     expect(stackFailureIcon).not.toBeNull();
     expect(ciFailureIcon).not.toBeNull();
 
-    expect(Math.abs(textRect(label!).bottom - textRect(failureCount!).bottom)).toBeLessThanOrEqual(0.5);
+    const labelRect = textRect(label!);
+    const failureCountRect = textRect(failureCount!);
+    const ciFailureCountRect = textRect(ciFailureCount!);
+    // failureCount is 0.9em next to the 1em label: Blink's integer font descent
+    // steps by 1px between 11px and 9.9px Inter even on a shared baseline.
+    expect(Math.abs(labelRect.bottom - failureCountRect.bottom)).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(labelRect.top + labelRect.height / 2 - (failureCountRect.top + failureCountRect.height / 2)),
+    ).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(failureCountRect.bottom - ciFailureCountRect.bottom)).toBeLessThanOrEqual(0.5);
     const stackIconRect = stackFailureIcon!.getBoundingClientRect();
     const ciIconRect = ciFailureIcon!.getBoundingClientRect();
     expect(stackIconRect.height).toBe(ciIconRect.height);

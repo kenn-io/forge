@@ -198,7 +198,7 @@
   }
 
   .sidebar-title-popover__branch {
-    font-family: "SFMono-Regular", "Consolas", "Liberation Mono", "Menlo", monospace;
+    font-family: var(--font-mono);
   }
 
   /* Beside the row there is no arrow to clip, so a card taller than the

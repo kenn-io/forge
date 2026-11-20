@@ -1,14 +1,40 @@
 /* Shared design tokens come from kit-ui; Forge adds app-specific tokens
    and increases the quiet dark palette's surface contrast below. */
 @import "@kenn-io/kit-ui/theme.css";
-/* The quiet identity (system type, AA muted text, sentence-case labels);
-   index.html and initTheme select it with data-kit-theme="quiet". */
+/* The quiet identity (AA muted text, sentence-case labels); index.html and
+   initTheme select it with data-kit-theme="quiet". Forge overrides quiet's
+   OS system font stacks below with the bundled Inter and JetBrains Mono
+   faces so typography stays consistent across Windows, Linux, and macOS. */
 @import "@kenn-io/kit-ui/themes.css";
 /* Mermaid viewer chrome plus the --mermaid- tokens (opt-in kit module). */
 @import "@kenn-io/kit-ui/mermaid.css";
 /* Expand buttons on markdown images; the expanded view is kit MediaViewer. */
 @import "@kenn-io/kit-ui/markdown-images.css";
 @import "./e-reader.css";
+
+/* Bundle only the two brand faces Forge uses (not kit-ui's full theme-pack
+   fonts.css). Vite inlines .woff2 files as data URLs in production builds,
+   and hold-first-paint.js waits for them to decode before first paint. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("@kenn-io/kit-ui/fonts/inter-var.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("@kenn-io/kit-ui/fonts/jetbrains-mono-var.woff2") format("woff2");
+}
+
+:root[data-kit-theme="quiet"] {
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
 
 /* kit's themes.css tints scrollbars under every named theme; Forge's scroll
    panes keep browser-native scrollbars (tests/e2e/viewport-fit.spec.ts). */

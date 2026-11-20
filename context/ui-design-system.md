@@ -116,6 +116,11 @@ to the application.
 - Theme tokens come from kit `theme.css` plus the kit `quiet` identity. Quiet is the
   default; preserve an explicit e-reader choice through startup and first paint
   (`frontend/src/lib/stores/theme.svelte.ts`).
+- UI (`--font-sans`) and monospace (`--font-mono`) text use bundled Inter and
+  JetBrains Mono variable fonts from `@kenn-io/kit-ui/fonts/*` (inlined in built
+  stylesheets with `hold-first-paint.js`), overriding `quiet`'s OS system stacks so
+  typography renders consistently across Windows, Linux, and macOS
+  (`frontend/src/app.css`, `frontend/vite.config.ts`).
 - Kit's theme store owns dark/light/system resolution and persistence.
 - E-reader modes are always light: pure white surfaces, pure black text, strong
   edges. Plain e-reader forces black ink with pale fills; color e-reader keeps inline

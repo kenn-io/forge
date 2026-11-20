@@ -927,6 +927,7 @@ jobs:
               # Pin slow packages using race timing artifacts; alternate the rest.
               case "$package" in
                 go.kenn.io/forge/cmd/kenn-forge|go.kenn.io/forge/internal/server|go.kenn.io/forge/internal/server/activityservertest) part=1 ;;
+                go.kenn.io/forge/internal/db) part=2 ;;
               esac
               if (( part == RACE_PART )); then
                 packages+=("$package")

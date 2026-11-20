@@ -84,7 +84,9 @@ test("loads bundled Inter and JetBrains Mono fonts across themes", async ({ page
 });
 
 test("holds first paint until bundled fonts decode", async ({ page }) => {
-  await page.clock.install({ time: new Date("2026-11-20T12:00:00Z") });
+  const startTime = new Date("2026-11-20T12:00:00Z");
+  await page.clock.install({ time: startTime });
+  await page.clock.pauseAt(startTime);
   await page.addInitScript(() => {
     const pending: string[] = [];
     let release!: () => void;
@@ -122,9 +124,10 @@ test("holds first paint until bundled fonts decode", async ({ page }) => {
     (window as unknown as { __releaseFontLoads: () => void }).__releaseFontLoads();
   });
 
-  // Virtual time is still frozen at 1000ms (< 3000ms), so revealing here proves
-  // font decoding—not the fallback timer—made the page visible.
+  // Virtual time stays paused at 1000ms (< 3000ms), so revealing here proves
+  // font decoding, not the fallback timer, made the page visible.
   await expect.poll(async () => page.evaluate(() => getComputedStyle(document.documentElement).opacity)).toBe("1");
+  expect(await page.evaluate(() => Date.now())).toBe(startTime.getTime() + 1_000);
   const loadedFamilies = await page.evaluate(async () => {
     await document.fonts.ready;
     return [

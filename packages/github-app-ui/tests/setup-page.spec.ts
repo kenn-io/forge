@@ -148,7 +148,9 @@ test("create step auto-continues without a click", async ({ page }) => {
 });
 
 test("delays auto-continue until the first-paint hold reveals the page", async ({ page }) => {
-  await page.clock.install({ time: new Date("2026-11-20T12:00:00Z") });
+  const startTime = new Date("2026-11-20T12:00:00Z");
+  await page.clock.install({ time: startTime });
+  await page.clock.pauseAt(startTime);
   await page.addInitScript(() => {
     const originalLoad = Object.getOwnPropertyDescriptor(FontFace.prototype, "load")?.value as FontFace["load"];
     FontFace.prototype.load = function (this: FontFace) {

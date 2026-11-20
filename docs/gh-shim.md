@@ -1,23 +1,25 @@
 # GitHub CLI shim
 
 Coding agents often run the same `gh pr list` and `gh pr view` commands many
-times per session. Each call costs a GitHub API request and adds network
+times in a session, and each call costs a GitHub API request and adds network
 latency. The `kenn-forge` binary can stand in for `gh`. It answers supported
-pull request queries from data Kenn Forge has already synced and passes every
-other command to the real `gh` unchanged. No separate binary is needed: a `gh`
-link to `kenn-forge` is the whole shim.
+pull request queries from data Kenn Forge has already synced, and passes every
+other command to the real `gh` unchanged. You do not need a separate binary; a
+`gh` link to `kenn-forge` is the whole shim.
 
-You choose which tools use it. Tools that do not have the shim on their `PATH`
-keep calling `gh` directly.
+You decide which tools use the shim. Any tool without the shim on its `PATH`
+keeps calling `gh` directly.
 
 ## Before you start
 
-- The Forge daemon is running on the same machine, as a standalone daemon, a
-  fleet hub, or a spoke.
-- The repositories you want served are configured in Forge and have finished
-  at least one sync.
-- The real [GitHub CLI](https://cli.github.com/) is installed and logged in.
-  The shim never reads or forwards `gh` credentials. Commands it cannot answer
+Make sure you have:
+
+- The Forge daemon running on the same machine, as a standalone daemon, a fleet
+  hub, or a spoke.
+- The repositories you want served configured in Forge, with at least one
+  completed sync.
+- The real [GitHub CLI](https://cli.github.com/) installed and logged in. The
+  shim never reads or forwards `gh` credentials, and commands it cannot answer
   run through `gh` with your normal login.
 
 The shim serves GitHub repositories only. Calls for GitLab, Forgejo, and Gitea
@@ -25,8 +27,8 @@ hosts go straight to `gh`.
 
 ## Let an agent set it up
 
-The quickest setup is to give this prompt to a coding agent running on the
-same machine. It follows the manual steps on this page and checks the result.
+For the quickest setup, give this prompt to a coding agent running on the same
+machine. It follows the manual steps on this page and checks the result.
 
 ```text
 Set up the Kenn Forge GitHub CLI shim on this machine.
@@ -52,8 +54,8 @@ Follow https://forge.kenn.io/docs/gh-shim.md exactly.
 ## Install
 
 Create a directory that holds only a `gh` link to `kenn-forge`. When
-`kenn-forge` runs under the name `gh`, it acts as the shim. Do not put this
-directory on your login shell's `PATH`. Add it only for the tools that should
+`kenn-forge` runs under the name `gh`, it acts as the shim. Do not add this
+directory to your login shell's `PATH`; add it only for the tools that should
 use Forge:
 
 ```sh
@@ -64,26 +66,27 @@ ln -sf "$(command -v kenn-forge)" ~/.kenn/forge/gh-shim/gh
 On Windows, create a hard link or copy of `kenn-forge.exe` named `gh.exe` in
 that directory.
 
-A `gh` script that runs `kenn-forge gh "$@"` works too. The shim notices when
-the real `gh` it picked turns out to be that script, and skips it.
+A `gh` script that runs `kenn-forge gh "$@"` works too. When the shim picks up
+that script while searching for the real `gh`, it notices and skips it.
 
 You can also run the shim directly as `kenn-forge gh <gh arguments>`, for
 example `kenn-forge gh pr list --json number | cat`.
 
 ## Opt a tool in
 
-Put the shim directory first on the tool's `PATH`. The real `gh` must stay
-later on the same `PATH`:
+Put the shim directory first on the tool's `PATH`, keeping the real `gh` later
+on the same `PATH`:
 
 ```sh
 PATH="$HOME/.kenn/forge/gh-shim:$PATH" claude
 ```
 
-Any process started this way, including its subprocesses, gets the shim when it
-runs `gh`. To stop using it, start the tool without the extra `PATH` entry.
+Any process started this way, including its subprocesses, uses the shim when it
+runs `gh`. To stop using the shim, start the tool without the extra `PATH`
+entry.
 
 The shim finds the real `gh` by searching `PATH` and skipping itself. If `gh`
-is somewhere else, point to it directly:
+lives somewhere else, point to it directly:
 
 ```sh
 export FORGE_GH_REAL=/opt/gh/bin/gh
@@ -91,21 +94,22 @@ export FORGE_GH_REAL=/opt/gh/bin/gh
 
 ## Check that it works
 
-From a checkout of a configured repository, pipe a supported query with debug
-logging on:
+From a checkout of a configured repository, run a supported query with piped
+output and debug logging enabled:
 
 ```sh
 KENN_FORGE_LOG_LEVEL=debug gh pr list --json number,title --limit 5 | cat
 ```
 
 The shim logs one `gh shim call` line to stderr. `reason=served` means Forge
-answered the query. Any other reason means the call went to `gh`. See [Why a call was not served](#why-a-call-was-not-served).
+answered the query, and any other reason means the call went to `gh`. For what
+each reason means, see [Why a call was not served](#why-a-call-was-not-served).
 
 ## What Forge answers
 
 Forge answers a call only when every part of it is supported. If any flag,
-field, or argument is unsupported, the whole command goes to `gh`. Forge never
-returns partial results.
+field, or argument is unsupported, the whole command goes to `gh`, and Forge
+never returns partial results.
 
 | Command                           | Supported flags                                                     |
 | --------------------------------- | ------------------------------------------------------------------- |
@@ -122,8 +126,8 @@ returns partial results.
 - `--jq`, `--template`, `--web`, branch names or URLs in `gh pr view`,
   `gh pr checks`, and every other command go to `gh`.
 
-The JSON matches `gh` byte for byte: sorted keys, `null` for unset dates, and a
-trailing newline.
+The JSON matches `gh` byte for byte, with sorted keys, `null` for unset dates,
+and a trailing newline.
 
 ## Repository detection
 
@@ -134,19 +138,21 @@ The shim identifies the repository from:
 3. The checkout's Git remote, when it has exactly one.
 
 With several remotes, `gh` applies its own rules to choose one, so the shim
-passes the call through. Set `--repo` or `GH_REPO` in those checkouts. The host defaults to
-`GH_HOST`, then the only host in your `gh` login config, then `github.com`.
+passes the call through. In those checkouts, set `--repo` or `GH_REPO`. The
+host defaults to `GH_HOST`, then the only host in your `gh` login config, then
+`github.com`.
 
 ## Freshness
 
-The shim returns what Forge already has. It does not fetch from GitHub or
-keep its own cache. Results are as current as Forge's normal sync.
+The shim returns what Forge already has. It does not fetch from GitHub or keep
+its own cache. Results are as current as Forge's normal sync.
 
-- Open pull request lists need a completed repository sync with no sync error.
-- `--state closed`, `merged`, or `all` also need a finished full archive for
-  the repository, so the list includes every historical pull request. Start
-  one with `kenn-forge archive start --repo 'github|github.com/owner/repo'`.
-  See [Archive](archive.md).
+- Open pull request lists require a completed repository sync with no sync
+  error.
+- `--state closed`, `merged`, or `all` also require a finished full archive for
+  the repository, so the list includes every historical pull request. Start one
+  with `kenn-forge archive start --repo 'github|github.com/owner/repo'`. See
+  [Archive](archive.md).
 - `gh pr view <number>` works for any pull request Forge has stored. On a spoke,
   a number the spoke has not stored is read from the hub.
 
@@ -157,7 +163,7 @@ call goes to `gh`.
 
 With `KENN_FORGE_LOG_LEVEL=debug`, the shim logs each call to stderr with its
 full argument list and a reason. At the default level it logs nothing, so `gh`
-output is unchanged:
+output stays unchanged:
 
 | Reason                  | Meaning                                                               |
 | ----------------------- | --------------------------------------------------------------------- |
@@ -169,10 +175,10 @@ output is unchanged:
 | `provider_unavailable`  | Forge could not load its configured repository list                   |
 | `data_unavailable`      | Sync, the full archive, or a requested field is not complete yet      |
 
-Set `KENN_FORGE_LOG_FILE` to keep these lines in a file across sessions. The
-log redacts known token formats, but other flag values, such as
+To keep these lines in a file across sessions, set `KENN_FORGE_LOG_FILE`. The
+log redacts known token formats, while other flag values, such as
 `gh secret set NAME --body <value>`, appear as written. Leave debug logging off
 for tools that pass secrets to `gh` as flags.
 
-The shim reads the default Forge config to find the daemon. Set
-`FORGE_GH_CONFIG` to use a different config file.
+The shim reads the default Forge config to find the daemon. To use a different
+config file, set `FORGE_GH_CONFIG`.

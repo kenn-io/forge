@@ -881,13 +881,15 @@ jobs:
       - id: cache-date
         run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
-      # Only main saves the build cache; a daily key keeps it fresh.
+      # Only main saves the Go caches; a daily key keeps them fresh.
       # Earlier caches for the same dependencies remain available as a fallback.
-      - name: Restore Go race build cache
+      - name: Restore Go race caches
         id: go-cache
         uses: actions/cache/restore@v6.1.0
         with:
-          path: ~/.cache/go-build
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
           key: go-race-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ steps.cache-date.outputs.date }}
           restore-keys: go-race-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
 
@@ -924,7 +926,9 @@ jobs:
         if: github.ref == 'refs/heads/main' && matrix.shard == 'core' && matrix.part == 2 && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
-          path: ~/.cache/go-build
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
           key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
       - name: Upload gotestsum results

@@ -662,7 +662,7 @@
         </section>
       {/if}
     </CollapsibleSidebar>
-  {:else if showDetailError && detailError?.kind === "failed"}
+  {:else if detailError?.kind === "failed"}
     <div class="worklist-status" role="alert">
       <span>{detailError.message}</span>
       <Button

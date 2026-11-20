@@ -5,8 +5,9 @@ both configuration and app data to another directory, set `KENN_FORGE_HOME`.
 Most setups need only repositories, credentials, and any optional modes you
 want enabled.
 
-For routine changes, use Settings in the app. Edit TOML directly for provider
-hosts and advanced options. After you change startup settings, restart Forge.
+For routine changes, use Settings in the app. For provider hosts and advanced
+options, edit the TOML file directly. If you change startup settings, restart
+Forge.
 
 To configure private PR cards and action buttons, add TOML-only
 [`external_context` sources](external-pr-context.md).
@@ -114,21 +115,20 @@ name = "private-service"
 token_file = "~/.kenn/forge/tokens/private-service"
 ```
 
-An exact repository `token_file` or `token_env` takes priority over broader
-credentials. Forge skips empty files and variables. Because Forge reads
-token files on each request, replacing a file atomically rotates that
-credential.
+Setting `token_file` or `token_env` on an exact repository overrides broader
+credentials. Forge skips any empty file or variable. Because Forge reads token
+files on each request, replacing a file atomically rotates that credential.
 
-When you do not declare a token source for a host, Forge reuses the credential
-that provider's CLI stores for that host:
+If you do not set a token source for a host, Forge reuses the credential the
+provider's CLI stores for that host:
 
 - **GitHub.** `gh auth token --hostname HOST`. The unscoped fallback applies
   only to `github.com`.
 - **GitLab.** The token `glab` holds for the host, from its config file or the
   operating-system keyring. Forge does not read `GITLAB_TOKEN` or similar
   variables here; declare `token_env` to use one.
-- **Forgejo and Gitea.** The token that `fj`
-  ([forgejo-cli](https://codeberg.org/forgejo-contrib/forgejo-cli)) stores for
+- **Forgejo and Gitea.** The token that the `fj` CLI
+  ([forgejo-cli](https://codeberg.org/forgejo-contrib/forgejo-cli)) saves for
   the host in its keys file. Forge skips expired OAuth logins; run any `fj`
   command against the host to refresh them.
 
@@ -170,8 +170,8 @@ can use `token_file` instead of `token_env`. Grant read access to repositories
 and pull requests for monitoring, and add write access for actions such as
 commenting, reviewing, and merging. To pick reviewers by name, grant
 `read:workspace:bitbucket` as well. Forge lists workspace members and submits
-their account IDs. You can still remove existing reviewers who are outside the
-workspace.
+their account IDs. You can still remove existing reviewers who are not
+workspace members.
 
 Merging in Forge requires an account API token whose repository write permission
 Forge can check. OAuth and repository access tokens can read data, but Forge
@@ -242,11 +242,12 @@ token_file = "~/.kenn/forge/tokens/org-b"
 
 Configure owner mappings in TOML only.
 
-GitHub selects credentials by host and owner. A GitHub App installation that
-covers the repository handles reads, even when the repository also sets its own
-`token_file` or `token_env`. Among PATs, exact repository credentials win, then
-owner PATs, which handle uncovered reads and user-attributed writes. Host
-credentials and the GitHub CLI follow.
+For GitHub, Forge selects credentials by host and owner. If a GitHub App
+installation covers a repository, that installation handles reads even when the
+repository also sets its own `token_file` or `token_env`. Among PATs, exact
+repository credentials come first, ahead of owner PATs. Owner PATs handle
+uncovered reads and user-attributed writes. Host credentials come next in the
+order, and the GitHub CLI comes last.
 
 PATs for the same GitHub user share one rate limit and sync budget, while
 different users and App installations have separate budgets. After routing an
@@ -310,14 +311,14 @@ the normal App and PAT routes. The two Apps must be distinct GitHub Apps. You
 can see the role in `kenn-forge github-app list` and set it explicitly as
 `role = "archive"` in `[[github_apps]]`.
 
-The `github-app` commands write `[[github_apps]]` entries. Mutations still use
-a user PAT. After changing selected repository access on GitHub, run
-`kenn-forge github-app install` again and restart Forge.
+The `github-app` commands save `[[github_apps]]` entries to your configuration.
+Forge still uses a user PAT for mutations. After changing selected repository
+access on GitHub, run `kenn-forge github-app install` again and restart Forge.
 
-Selected repository access is a startup routing snapshot. New grants use the
-PAT route until refresh. Revoked App access can return 404, and Forge does
-not retry that response with a PAT because 404 can also mean a missing or
-private repository.
+Selected repository access is a startup routing snapshot. Newly granted
+repositories keep using the PAT route until that snapshot is refreshed. Revoked
+App access can return 404, and Forge does not retry that response with a PAT
+because 404 can also mean a missing or private repository.
 
 ## Airplane mode
 
@@ -327,9 +328,10 @@ To pause automatic background sync after any running update finishes, turn on
 is on, the status bar shows **airplane mode**; click it to jump back to the
 setting.
 
-Airplane mode is off by default and stays enabled across restarts until you
-turn it off. It applies only to the Forge instance you configure. On a fleet
-spoke, it pauses local background refresh while the hub keeps its own setting.
+Airplane mode defaults to off. Once you turn it on, it stays enabled across
+restarts until you turn it off. It applies only to the Forge instance you
+configure. On a fleet spoke, it pauses local background refresh while the hub
+keeps its own setting.
 
 To configure it in TOML, add this top-level option before any `[section]`
 header:
@@ -454,12 +456,12 @@ endpoint = "http://127.0.0.1:7373"
 init_managed_clones = true
 ```
 
-The endpoint controls the Reviews connection, and changing it requires a
-restart. `init_managed_clones` is optional and
-defaults to `false`, and you can also change it under **Settings → Workspaces**
-without restarting. When `init_managed_clones` is enabled, `endpoint` must use
-loopback HTTP (`127.0.0.1`, `localhost`, or `[::1]`) because Forge passes it to
-the Roborev CLI during workspace setup.
+The endpoint controls the Reviews connection. If you change it, restart Forge.
+`init_managed_clones` is optional and defaults to `false`, and you can also
+change it under **Settings → Workspaces** without restarting. When
+`init_managed_clones` is enabled, `endpoint` must use loopback HTTP
+(`127.0.0.1`, `localhost`, or `[::1]`) because Forge passes it to the Roborev
+CLI during workspace setup.
 
 For the Reviews panel workflow, see
 [Integrations](integrations.md#review-roborev-jobs).
@@ -472,11 +474,11 @@ a worklist about "flaky CI" or looking for duplicates of a bug. Code and diffs
 are never embedded.
 
 To enable local search, run `kenn-forge embeddings local`. Forge prefers a
-running Ollama with Nomic, then the shared built-in server. Setup downloads
-missing shared assets with your consent. Run setup again if you want to
-switch from automatic discovery or a configured endpoint to the built-in
-server; a configured endpoint takes precedence over
-`local_embeddings = "builtin"`. Restart Forge after setup.
+running Ollama with Nomic, then the shared built-in server. With your consent,
+setup downloads missing shared assets. Run setup again if you want to switch
+from automatic discovery or a configured endpoint to the built-in server; a
+configured endpoint takes precedence over `local_embeddings = "builtin"`.
+Restart Forge after setup.
 
 Turning on the built-in server records a shared choice. When another Kenn app
 records that choice, the Forge that syncs providers enables the built-in server
@@ -496,12 +498,12 @@ document_prefix = "search_document: "
 query_prefix = "search_query: "
 ```
 
-`base_url`, `model`, and `dims` are required together. For a hosted provider, set
-`api_key` to the key itself, `{ env = "NAME" }`, or `{ file = "PATH" }`. Forge
-accepts plaintext HTTP only for loopback unless `trust_private_network = true`.
-Optional `batch_size`, `timeout_seconds`, `request_dimensions`,
-`input_type_mode`, `model_context_tokens`, and `max_batch_tokens` tune requests
-for endpoints that need it.
+You must set `base_url`, `model`, and `dims` together. For a hosted provider,
+set `api_key` to the key itself, `{ env = "NAME" }`, or `{ file = "PATH" }`.
+Forge accepts plaintext HTTP only for loopback unless
+`trust_private_network = true`. Optional `batch_size`, `timeout_seconds`,
+`request_dimensions`, `input_type_mode`, `model_context_tokens`, and
+`max_batch_tokens` tune requests for endpoints that need it.
 
 The discovered built-in server defaults to eight inputs per request, a
 five-minute request timeout, and one request at a time, and explicit
@@ -510,11 +512,11 @@ endpoints and discovered Ollama default to 32 inputs and a 30-second timeout.
 
 The Forge that syncs providers builds the index in `semantic.db` under
 `data_dir` after each sync and serves searches for its whole fleet. Changing
-`[embeddings]` or `local_embeddings` requires a restart. Switching a compatible
-Nomic recipe to the built-in server keeps the existing index. Changing the
-model, width, fingerprint salt, or prefix rebuilds it, and searches return
-partial results until the backfill finishes. The index is derived data. Deleting
-`semantic.db` only costs a rebuild.
+`[embeddings]` or `local_embeddings` requires a restart. If you switch a
+compatible Nomic recipe to the built-in server, Forge keeps the existing index.
+Changing the model, width, fingerprint salt, or prefix rebuilds the index, and
+searches return partial results while the backfill runs. The index is derived
+data. Deleting `semantic.db` only costs a rebuild.
 
 ## Workspace agents
 
@@ -529,9 +531,9 @@ command = ["review-agent", "--fast"]
 env = { REVIEW_MODE = "strict" }
 ```
 
-`env` sets environment variables for that agent only, layered over the
-variables Forge removes from agent sessions, such as tokens. Each value is one
-line. For a Codex ACP agent,
+Use `env` to set environment variables for that agent only. Forge applies them
+over the variables it removes from agent sessions, such as tokens. Each value
+is a single line. For a Codex ACP agent,
 `env = { INITIAL_AGENT_MODE = "agent-full-access" }` starts every chat in that
 mode without Forge first asking Codex which mode its settings allow.
 
@@ -616,9 +618,9 @@ tmux -L kenn-forge ls
 tmux -L kenn-forge attach-session -E -t <session>
 ```
 
-`-E` keeps variables from your shell out of the session environment, which
-processes inside the workspace can read. That includes any exported provider
-tokens, if you widened tmux's `update-environment`.
+Processes inside the workspace can read the session environment. Passing `-E`
+keeps your shell's variables out of that environment, and if you widened tmux's
+`update-environment`, it keeps out any exported provider tokens too.
 
 To pick a different socket or wrap the launch, set `[tmux] command`. Forge uses
 the configured command line verbatim:
@@ -833,14 +835,14 @@ By default, Forge reads GitHub's own stack membership, so a stack created with
 and that single action lands every unmerged pull request below it. To detect
 stacks from branch relationships alone, set
 `prefer_github_native_stacks = false`; Forge also falls back to branch
-relationships when GitHub's stack data is unusable. Forge does not create or
-reorder stacks. Mid-stack merges stay blocked by default for stacks Forge
-infers from branches.
+relationships when GitHub's stack data is unusable. Forge never creates or
+reorders stacks. For stacks Forge infers from branches, it blocks mid-stack
+merges by default.
 
 ## Usage reporting
 
-Forge can send general, anonymous usage telemetry. It stays off unless you opt
-in or set `TELEMETRY_ENABLED=1`. Development builds never send telemetry.
+Forge can send general, anonymous usage telemetry. Unless you opt in or set
+`TELEMETRY_ENABLED=1`, telemetry is off. Development builds never send it.
 
 Even after you opt in, any of `KENN_FORGE_TELEMETRY_ENABLED=0`,
 `TELEMETRY_ENABLED=0`, `DO_NOT_TRACK=1`, or `CI` turns it off. Restart the

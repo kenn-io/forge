@@ -36,9 +36,9 @@ To pause automatic background sync after any running update finishes, turn on
 still work while it is on. To jump back to the setting later, click
 **airplane mode** in the status bar.
 
-Airplane mode is off by default and stays saved across restarts. It applies
-to the Forge instance you are viewing. On a fleet spoke, it pauses local
-background refresh, and the hub keeps its own setting. For the
+Airplane mode defaults to off, and Forge remembers your setting across
+restarts. It applies to the Forge instance you are viewing. On a fleet spoke,
+it pauses local background refresh, and the hub keeps its own setting. For the
 configuration-file option, see [Airplane mode](configuration.md#airplane-mode).
 
 ## ACP fonts

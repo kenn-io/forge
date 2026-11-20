@@ -30,9 +30,9 @@ kenn-forge daemon stop
 ```
 
 Both `daemon start` and `daemon stop` are idempotent. `daemon start` returns
-once the daemon publishes its ready identity, and it safely reuses a compatible
-process that is already running. After you change startup configuration or replace
-the binary, run `daemon restart`.
+after the daemon publishes its ready identity. If a compatible process is
+already running, `daemon start` safely reuses it. After you change startup
+configuration or replace the binary, run `daemon restart`.
 
 On Unix, `daemon stop` sends SIGTERM once. If the daemon does not exit within
 2 minutes 16 seconds, which the CLI prints as `2m16s`, the command leaves it
@@ -50,7 +50,7 @@ Foreground starts reject a second process using the same data directory.
 
 ## Check build information
 
-Print the binary's version and build metadata:
+Print the version and build metadata for the binary:
 
 ```sh
 kenn-forge version
@@ -168,9 +168,8 @@ enrollment and verification workflow, including
 
 If your service uses a custom config file, pass the same
 `--config /path/to/config.toml` flag to every fleet command. Joining and
-preparing use the existing local daemon instead of reinstalling its service,
-and you don't need `fleet setup` to move an already configured spoke
-to a new hub.
+preparing use the existing local daemon without reinstalling its service. To
+move an already configured spoke to a new hub, you do not need `fleet setup`.
 
 ## Manage Docs folders
 
@@ -196,10 +195,11 @@ kenn-forge agent-hook uninstall --agent codex
 ```
 
 When you omit `--agent`, `install` and `uninstall` act on every supported
-integration. Installed hooks send lifecycle activity to the running daemon.
-Codex asks you to review the installed commands once through `/hooks`. On
-Windows, Claude hooks need Claude Code 2.1.139 or later. After upgrading Forge,
-rerun `kenn-forge agent-hook install` so it rewrites existing Claude hooks.
+integration. The installed hooks report lifecycle activity to the running
+daemon. Codex prompts you once through `/hooks` to review the installed
+commands. On Windows, Claude hooks need Claude Code 2.1.139 or later. After
+upgrading Forge, rerun `kenn-forge agent-hook install` so it rewrites existing
+Claude hooks.
 
 ## Stand in for the GitHub CLI
 

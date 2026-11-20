@@ -28,9 +28,7 @@ const pageLabel: Record<Exclude<Page, "focus">, string> = {
   queues: "Queues",
 };
 
-type WorkspacePage = "terminal" | "mobile-workspace-terminal" | "mobile-workspace-item";
 export type WorkspaceTab = {
-  page: WorkspacePage;
   hostKey: string | undefined;
   id: string;
   name: string;

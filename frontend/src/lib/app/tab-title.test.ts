@@ -102,7 +102,7 @@ describe("tab titles", () => {
       repoPath: "owner/repo",
       number: 1,
     } as const;
-    const workspace = { page: "mobile-workspace-item", hostKey: undefined, id: "a", name: "Workspace", item } as const;
+    const workspace = { hostKey: undefined, id: "a", name: "Workspace", item } as const;
     const route = { page: "mobile-workspace-item", workspaceId: "a", tab: "files" } as const;
     const pull = {
       repo: { provider: "github", platform_host: "github.com", repo_path: "owner/repo" },

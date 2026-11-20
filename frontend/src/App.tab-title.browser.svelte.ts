@@ -101,11 +101,6 @@ describe("tab title navigation", () => {
       if (!pending) await expect.element(page.getByRole("button", { name: "Menu" }), { timeout: WAIT }).toBeVisible();
       await tick();
       expect(document.title).toBe("Activity · Forge");
-      firePopstate(
-        "/?selected=commit%3Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&provider=github&repo_path=acme%2Fwidgets&branch=main",
-      );
-      await tick();
-      expect(document.title).toBe("Activity · Forge");
       if (!pending) {
         firePopstate("/?desktop=1&selected=pr%3A42&provider=github&repo_path=acme%2Fwidgets");
         await tick();

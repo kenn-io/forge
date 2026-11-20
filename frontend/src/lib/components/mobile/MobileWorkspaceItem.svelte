@@ -51,7 +51,6 @@
   const appRuntime = getAppRuntime();
 
   let workspace = $state.raw<WorkspaceDetail | null>(null);
-
   let loadError = $state<string | null>(null);
   const linkedItem = $derived(workspace ? mobileWorkspaceLinkedItem(workspace) : null);
   // A linked PR puts its Conversation/Files tabs in the header row, so the
@@ -73,7 +72,7 @@
 
   $effect(() => {
     onWorkspaceTabChange?.(workspace
-    ? { page: "mobile-workspace-item", hostKey: workspace.fleet_host_key, id: workspace.id, name: mobileWorkspaceDisplayName(workspace),
+    ? { hostKey: workspace.fleet_host_key, id: workspace.id, name: mobileWorkspaceDisplayName(workspace),
         item: itemRef && linkedItem ? { ...itemRef, itemType: linkedItem.itemType } : undefined } : null);
     return () => onWorkspaceTabChange?.(null);
   });

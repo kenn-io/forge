@@ -117,7 +117,7 @@
   let workspace = $state.raw<WorkspaceDetail | null>(null);
   $effect(() => {
     onWorkspaceTabChange?.(workspace
-    ? { page: "mobile-workspace-terminal", hostKey: workspace.fleet_host_key, id: workspace.id, name: mobileWorkspaceDisplayName(workspace) } : null);
+    ? { hostKey: workspace.fleet_host_key, id: workspace.id, name: mobileWorkspaceDisplayName(workspace) } : null);
     return () => onWorkspaceTabChange?.(null);
   });
   const usableWorkspace = $derived(

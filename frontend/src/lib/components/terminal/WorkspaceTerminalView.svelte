@@ -414,7 +414,7 @@
   let workspace = $state<Workspace | null>(null);
   $effect(() => {
     onWorkspaceTabChange?.(workspace
-    ? { page: "terminal", hostKey: workspace.fleet_host_key, id: workspace.id, name: mobileWorkspaceDisplayName(workspace) } : null);
+    ? { hostKey: workspace.fleet_host_key, id: workspace.id, name: mobileWorkspaceDisplayName(workspace) } : null);
     return () => onWorkspaceTabChange?.(null);
   });
   let workspaceReadinessGeneration = 0;

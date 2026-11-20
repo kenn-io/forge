@@ -2588,9 +2588,9 @@ func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*
 	require := require.New(t)
 
 	testDBTemplateBytes(t)
-	if data, ok := testDBTemplate.versions[version]; ok {
-		copyTestDBTemplate(t, data, dbPath)
-	}
+	data, ok := testDBTemplate.versions[version]
+	require.True(ok, "add start version %d to testDBTemplate.versions", version)
+	copyTestDBTemplate(t, data, dbPath)
 
 	raw, m, err := openTestMigrator(dbPath)
 	require.NoError(err)
@@ -2608,14 +2608,13 @@ func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*
 // catalog migration with foreign keys disabled.
 func migrateToVersionForTest(t *testing.T, dbPath string, version uint) *sql.DB {
 	t.Helper()
-	if testDBTemplate.ready.Load() {
-		_, err := os.Stat(dbPath)
-		if err != nil {
-			require.ErrorIs(t, err, os.ErrNotExist)
-			if data, ok := testDBTemplate.versions[version]; ok {
-				copyTestDBTemplate(t, data, dbPath)
-			}
-		}
+	_, err := os.Stat(dbPath)
+	if err != nil {
+		require.ErrorIs(t, err, os.ErrNotExist)
+		testDBTemplateBytes(t)
+		data, ok := testDBTemplate.versions[version]
+		require.True(t, ok, "add start version %d to testDBTemplate.versions", version)
+		copyTestDBTemplate(t, data, dbPath)
 	}
 	raw, err := migrateTestDBToVersion(t.Context(), dbPath, version)
 	require.NoError(t, err)

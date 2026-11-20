@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -14,7 +13,6 @@ var testDBTemplate = &testDBTemplateState{}
 
 type testDBTemplateState struct {
 	once     sync.Once
-	ready    atomic.Bool
 	data     []byte
 	versions map[uint][]byte
 	initErr  error
@@ -38,7 +36,7 @@ func testDBTemplateBytes(t *testing.T) []byte {
 	testDBTemplate.once.Do(func() {
 		path := filepath.Join(t.TempDir(), "template.db")
 		testDBTemplate.versions = make(map[uint][]byte)
-		// Add new test start versions here; unlisted versions replay from zero.
+		// Add every fresh historical test start version here.
 		for _, version := range []uint{36, 37, 38, 43, 44, 45, 47, 49, 50, 51, 52, 53, 54, 55, 59, 64, 68, 75, 83, 87, 91, 93, 94, 95} {
 			raw, err := migrateTestDBToVersion(t.Context(), path, version)
 			if err != nil {
@@ -76,7 +74,6 @@ func testDBTemplateBytes(t *testing.T) []byte {
 			return
 		}
 		testDBTemplate.data = data
-		testDBTemplate.ready.Store(true)
 	})
 	require.NoError(t, testDBTemplate.initErr)
 	return testDBTemplate.data

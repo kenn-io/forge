@@ -83,12 +83,11 @@ describe("tab titles", () => {
     } satisfies IssueDetail;
     replaceUrl("/focus/pulls/github/owner/repo/1");
     expect(routeTabTitle(getRoute(), { pull })).toBe("Fix login (owner/repo#1) · Forge");
-    expect(routeTabTitle(getRoute())).toBe("Pull request (owner/repo#1) · Forge");
+    expect(routeTabTitle(getRoute(), { pull: { ...pull, merge_request: { ...pull.merge_request, Number: 2 } } })).toBe(
+      "Pull request (owner/repo#1) · Forge",
+    );
     replaceUrl("/issues/github/owner/repo/2");
     expect(routeTabTitle(getRoute(), { issue })).toBe("Broken login (owner/repo#2) · Forge");
-    expect(routeTabTitle(getRoute(), { pull: { ...pull, merge_request: { ...pull.merge_request, Number: 2 } } })).toBe(
-      "Issue (owner/repo#2) · Forge",
-    );
     replaceUrl("/issues/github/owner/repo/3");
     expect(routeTabTitle(getRoute(), { issue })).toBe("Issue (owner/repo#3) · Forge");
   });

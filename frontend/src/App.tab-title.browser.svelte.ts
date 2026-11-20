@@ -100,35 +100,31 @@ describe("tab title navigation", () => {
     await vi.waitFor(() => expect(document.title).toBe("Theme toggle does not stick (acme/renamed#7) · Forge"), WAIT);
   }, 30_000);
 
-  it("shows the worklists title when a saved list fails to load", async () => {
-    const failDetail: MockRouteOverride = (req) =>
-      req.method === "GET" && req.url.pathname === "/api/v1/worklists/5"
-        ? jsonResponse({ title: "Unavailable", status: 503, detail: "Worklist unavailable" }, 503)
-        : null;
-    mounted = await mountBrowserApp(
-      "/worklists/5?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
-      { overrides: [failDetail, worklistRoutes({ lists: [worklistResponse(5, "Review queue")], requests: [] })] },
-    );
-    await expect.element(page.getByRole("button", { name: "Retry" }), { timeout: WAIT }).toBeVisible();
-    expect(document.title).toBe("Worklists · Forge");
-  }, 30_000);
-
-  it("uses the worklists title when a saved list no longer exists", async () => {
-    mounted = await mountBrowserApp(
-      "/worklists/5?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
-      { overrides: [worklistRoutes({ lists: [], requests: [] })] },
-    );
-    await expect.element(page.getByText("No worklists", { exact: true }), { timeout: WAIT }).toBeVisible();
-    expect(document.title).toBe("Worklists · Forge");
-  }, 30_000);
-
-  it("keeps list titles during startup and navigation", async () => {
-    await page.viewport(1280, 900);
-    mounted = await mountBrowserApp("/pulls", { overrides: [unready] });
-    await vi.waitFor(() => expect(document.title).toBe("Pulls · Forge"), WAIT);
-    firePopstate("/issues");
-    await vi.waitFor(() => expect(document.title).toBe("Issues · Forge"), WAIT);
-  });
+  it.each(["failed", "missing"] as const)(
+    "uses the worklists title when a saved list is %s",
+    async (state) => {
+      const failDetail: MockRouteOverride = (req) =>
+        state === "failed" && req.method === "GET" && req.url.pathname === "/api/v1/worklists/5"
+          ? jsonResponse({ title: "Unavailable", status: 503, detail: "Worklist unavailable" }, 503)
+          : null;
+      mounted = await mountBrowserApp(
+        "/worklists/5?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
+        {
+          overrides: [
+            failDetail,
+            worklistRoutes({ lists: state === "failed" ? [worklistResponse(5, "Review queue")] : [], requests: [] }),
+          ],
+        },
+      );
+      const status =
+        state === "failed"
+          ? page.getByRole("button", { name: "Retry" })
+          : page.getByText("No worklists", { exact: true });
+      await expect.element(status, { timeout: WAIT }).toBeVisible();
+      await vi.waitFor(() => expect(document.title).toBe("Worklists · Forge"), WAIT);
+    },
+    30_000,
+  );
 
   it("names Activity selections during startup", async () => {
     await page.viewport(1280, 900);

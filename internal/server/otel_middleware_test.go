@@ -21,7 +21,7 @@ func TestOTelTraceableReusesInventory(t *testing.T) {
 		_, err = NewTransportInventory()
 	})
 	require.NoError(t, err)
-	// Across 100 calls, allow less than half the allocations of one fresh build.
+	// A cached call must cost under 0.5% of one fresh build's allocations.
 	assert.Less(t, cachedAllocs, freshAllocs/200)
 }
 

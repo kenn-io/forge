@@ -692,7 +692,7 @@ func (m *Manager) RepoBrowserCommitDetail(
 	if err != nil {
 		return RepoBrowserCommit{}, err
 	}
-	if !isFullHexSHA(sha) {
+	if !IsFullHexSHA(sha) {
 		return RepoBrowserCommit{}, fmt.Errorf("%w: %s", ErrNotFound, sha)
 	}
 	dir, rootSHA, _, err := m.resolveRepoBrowserRef(ctx, repo, root)
@@ -871,7 +871,7 @@ func (m *Manager) resolveRepoBrowserRef(
 		}
 		sha, err = m.resolveExactRefInDir(ctx, dir, "refs/tags/"+ref.Name)
 	case RepoBrowserRefCommit:
-		if !isFullHexSHA(ref.SHA) {
+		if !IsFullHexSHA(ref.SHA) {
 			return "", "", false, fmt.Errorf("%w: %s", ErrNotFound, ref.SHA)
 		}
 		sha, err = m.resolveRefInDir(ctx, dir, ref.SHA)
@@ -1399,8 +1399,10 @@ func repoBrowserAssetMediaTypeAllowed(mediaType string) bool {
 	}
 }
 
-func isFullHexSHA(sha string) bool {
-	if len(sha) != 40 {
+// IsFullHexSHA reports whether sha is a full object ID: 40 hex characters
+// for SHA-1 repositories or 64 for SHA-256 repositories.
+func IsFullHexSHA(sha string) bool {
+	if len(sha) != 40 && len(sha) != 64 {
 		return false
 	}
 	for _, r := range sha {

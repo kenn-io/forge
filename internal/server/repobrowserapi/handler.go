@@ -365,22 +365,7 @@ func (h *Handler) getRepoBrowserAssetFor(
 }
 
 func repoBrowserAssetRefIsImmutable(ref gitclone.RepoBrowserRef) bool {
-	return ref.Type == gitclone.RepoBrowserRefCommit && isRepoBrowserFullHexSHA(ref.SHA)
-}
-
-func isRepoBrowserFullHexSHA(value string) bool {
-	if len(value) != 40 {
-		return false
-	}
-	for _, ch := range value {
-		if (ch >= '0' && ch <= '9') ||
-			(ch >= 'a' && ch <= 'f') ||
-			(ch >= 'A' && ch <= 'F') {
-			continue
-		}
-		return false
-	}
-	return true
+	return ref.Type == gitclone.RepoBrowserRefCommit && gitclone.IsFullHexSHA(ref.SHA)
 }
 
 func (h *Handler) getRepoBrowserLastChanged(

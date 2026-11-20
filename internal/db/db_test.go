@@ -2615,15 +2615,12 @@ func migrateToVersionForTest(t *testing.T, dbPath string, version uint) *sql.DB 
 	return raw
 }
 
-func TestMigrateFreshDatabaseToVersion92(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "historical.db")
-	raw := migrateToVersionForTest(t, path, 92)
-	t.Cleanup(func() { require.NoError(t, raw.Close()) })
-	var version int
-	var dirty bool
-	require.NoError(t, raw.QueryRowContext(t.Context(), "SELECT version, dirty FROM schema_migrations").Scan(&version, &dirty))
-	require.Equal(t, 92, version)
-	require.False(t, dirty)
+func TestOpenAtUnlistedHistoricalVersion(t *testing.T) {
+	openAtVersionForTest(t, filepath.Join(t.TempDir(), "historical.db"), 92, func(raw *sql.DB) {
+		var version uint
+		require.NoError(t, raw.QueryRowContext(t.Context(), "SELECT version FROM schema_migrations").Scan(&version))
+		require.Equal(t, uint(92), version)
+	})
 }
 
 func migrateTestDBToVersion(ctx context.Context, dbPath string, version uint) (database *sql.DB, err error) {

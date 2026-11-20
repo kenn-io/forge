@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var testDBTemplate = &testDBTemplateState{}
+var testDBTemplate = &testDBTemplateState{versions: make(map[uint][]byte)}
 
 var historicalTestVersions = slices.Sorted(slices.Values([]uint{36, 37, 38, 43, 44, 45, 47, 49, 50, 51, 52, 53, 54, 55, 59, 64, 68, 75, 83, 87, 91, 93, 94, 95}))
 
@@ -92,9 +92,6 @@ func historicalTestDBBytes(t *testing.T, version uint) ([]byte, error) {
 		if err := os.WriteFile(path, testDBTemplate.versions[nearest], 0o600); err != nil {
 			return nil, err
 		}
-	}
-	if testDBTemplate.versions == nil {
-		testDBTemplate.versions = make(map[uint][]byte)
 	}
 	targets := append(slices.Clone(historicalTestVersions), version)
 	slices.Sort(targets)

@@ -99,8 +99,9 @@ export function routeTabTitle(
     route.page === "mobile-workspace-terminal" ||
     route.page === "mobile-workspace-item"
   ) {
+    const label = route.page === "mobile-workspace-item" && !options.workspace ? "Linked item" : "Workspace";
     const name =
-      options.workspace?.name || `Workspace (${route.hostKey ? `${route.hostKey}/` : ""}${route.workspaceId})`;
+      options.workspace?.name || `${label} (${route.hostKey ? `${route.hostKey}/` : ""}${route.workspaceId})`;
     return `${name} · Workspaces · Forge`;
   }
   if (route.page === "repo-browser") {

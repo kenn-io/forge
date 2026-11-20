@@ -27,7 +27,7 @@ describe("tab titles", () => {
     ["/m/workspaces", "Workspaces"],
     ["/m/worklists", "Worklists"],
     ["/m/workspaces/local/a", "Workspace (a) · Workspaces"],
-    ["/m/workspaces/local/a/item", "Workspace (a) · Workspaces"],
+    ["/m/workspaces/local/a/item", "Linked item (a) · Workspaces"],
     ["/focus/mrs", "Pulls"],
     ["/focus/issues", "Issues"],
   ])("names %s", (path, label) => {
@@ -92,7 +92,7 @@ describe("tab titles", () => {
       "/repo/browser?provider=github&repo_path=owner%2Frepo&ref_name=main&path=src%2Fapp.ts",
       "src/app.ts · main · owner/repo · Repos · Forge",
     ],
-    ["/m/workspaces/fleet/host-a/ws/item/files", "Workspace (host-a/ws) · Workspaces · Forge"],
+    ["/m/workspaces/fleet/host-a/ws/item/files", "Linked item (host-a/ws) · Workspaces · Forge"],
     ["/repo/browser?provider=github&repo_path=owner%2Frepo&ref_sha=abc123", "abc123 · owner/repo · Repos · Forge"],
   ])("names the selected screen on %s", (path, title) => {
     replaceUrl(path);

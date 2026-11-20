@@ -950,8 +950,13 @@
   const tabTitle = $derived.by(() => {
     const route = getRoute();
     if (onboardingActive) return "Setup · Forge";
-    if (route.page === "design-system") return routeTabTitle(route);
-    if (!appReady) return "Loading · Forge";
+    if (!appReady) {
+      const selection = route.page === "activity" ? parseActivitySelection(window.location.search) : null;
+      return routeTabTitle(route, {
+        activityCommit: selection?.itemType === "commit" ? selection : null,
+        activitySelection: selection && selection.itemType !== "commit" ? selection : null,
+      });
+    }
     const isWorklist = route.page === "worklists" || route.page === "mobile-worklists";
     const worklistDetail = isWorklist ? stores?.worklists.getDetail() : null;
     const selectedItem = route.page === "worklists" && worklistDetail?.id === route.worklistId

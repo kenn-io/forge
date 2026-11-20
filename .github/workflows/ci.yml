@@ -923,7 +923,7 @@ jobs:
           go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile "gotestsum/race-${RACE_SHARD}-${RACE_PART}.json" --jsonfile-timing-events=tmp/test-race-timing-events.json --rerun-fails=2 --rerun-fails-report "gotestsum/race-${RACE_SHARD}-${RACE_PART}-reruns.txt" --packages "${packages[*]}" -- -race -shuffle=on -parallel=4 -timeout 20m
 
       - name: Save Go race caches
-        if: github.ref == 'refs/heads/main' && matrix.shard == 'core' && matrix.part == 2 && steps.go-cache.outputs.cache-hit != 'true'
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2 && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
           path: |

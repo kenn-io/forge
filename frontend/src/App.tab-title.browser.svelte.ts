@@ -9,7 +9,8 @@ import {
   resetKeyboardModuleState,
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
-import { jsonResponse, mockPullFixture, type MockRouteOverride } from "./test/mockApiFetch.js";
+import { jsonResponse, mockIssueFixture, mockPullFixture, type MockRouteOverride } from "./test/mockApiFetch.js";
+import { worklistResponse, worklistRoutes } from "./test/worklistFixtures.js";
 
 const WAIT = 10_000;
 
@@ -51,6 +52,27 @@ describe("tab title navigation", () => {
     mounted = await mountBrowserApp("/issues");
     await vi.waitFor(() => expect(document.body.textContent).toContain("Theme toggle does not stick"), WAIT);
     pressKey("j");
+    await vi.waitFor(() => expect(document.title).toBe("Theme toggle does not stick (acme/widgets#7) · Forge"), WAIT);
+  }, 30_000);
+
+  it("names an issue opened in a worklist", async () => {
+    await page.viewport(1280, 900);
+    const issue = mockIssueFixture(7);
+    const issueDetail: MockRouteOverride = (req) =>
+      req.method === "GET" && req.url.pathname === "/api/v1/issues/github/acme/widgets/7"
+        ? jsonResponse({
+            issue,
+            repo: { ...issue.repo, platform_repo_id: 1001 },
+            events: [],
+            repo_owner: "acme",
+            repo_name: "widgets",
+            detail_loaded: true,
+          })
+        : null;
+    mounted = await mountBrowserApp(
+      "/worklists/5?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
+      { overrides: [issueDetail, worklistRoutes({ lists: [worklistResponse(5, "Review queue")], requests: [] })] },
+    );
     await vi.waitFor(() => expect(document.title).toBe("Theme toggle does not stick (acme/widgets#7) · Forge"), WAIT);
   }, 30_000);
 

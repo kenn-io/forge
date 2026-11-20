@@ -961,9 +961,10 @@
     const titleRoute = route.page === "issues" && !shouldUseResponsiveFocusPresentation()
       ? { page: "issues" as const, ...(selectedIssue ? { selected: selectedIssue } : {}) }
       : route;
+    const workspace = workspaceTabs[route.page];
     return routeTabTitle(titleRoute, {
       pull: stores?.detail.getDetail(), issue: stores?.issues.getIssueDetail(), activitySelection: drawerItem,
-      workspace: Object.values(workspaceTabs).find((workspace) => workspace && workspace.page === route.page && "workspaceId" in route && workspace.id === route.workspaceId && workspace.hostKey === route.hostKey) ?? undefined,
+      workspace: workspace && "workspaceId" in route && workspace.id === route.workspaceId && workspace.hostKey === route.hostKey ? workspace : undefined,
     });
   });
   // Owned here for the same reason drawerItem is: the Activity selection lives

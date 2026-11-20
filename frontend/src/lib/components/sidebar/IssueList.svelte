@@ -50,9 +50,9 @@
 
   const { sidebarWidth = 340 }: Props = $props();
 
-  // Playwright-measured with a buffered "9999 issues" count label and the
-  // icon-only visibility control: the full issue filter row first fits at 402px.
-  const COMPACT_FILTER_MAX_WIDTH = 401;
+  // Playwright-measured in Inter with a buffered "9999 issues" count label and
+  // the icon-only visibility control: the full issue filter row first fits at 442px.
+  const COMPACT_FILTER_MAX_WIDTH = 441;
 
   let searchInput = $state(issues.getIssueSearchQuery() ?? "");
   let searchExecution: AppExecution<void, never> | null = null;

@@ -82,3 +82,53 @@ test("loads bundled Inter and JetBrains Mono fonts across themes", async ({ page
   expect(fontState.loadedFamilies).toContain("Inter");
   expect(fontState.loadedFamilies).toContain("JetBrains Mono");
 });
+
+test("holds first paint until bundled fonts decode", async ({ page }) => {
+  await page.addInitScript(() => {
+    const pending: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originalLoad = FontFace.prototype.load;
+    FontFace.prototype.load = function (this: FontFace) {
+      const family = this.family.replace(/^["']|["']$/g, "");
+      if (family === "Inter" || family === "JetBrains Mono") {
+        pending.push(family);
+        return gate.then(() => originalLoad.call(this));
+      }
+      return originalLoad.call(this);
+    };
+    Object.assign(window, {
+      __pendingFontLoads: pending,
+      __releaseFontLoads: release,
+    });
+  });
+
+  await page.goto("/pulls", { waitUntil: "domcontentloaded" });
+
+  await expect
+    .poll(async () =>
+      page.evaluate(() => [...new Set((window as unknown as { __pendingFontLoads: string[] }).__pendingFontLoads)]),
+    )
+    .toEqual(expect.arrayContaining(["Inter", "JetBrains Mono"]));
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).opacity)).toBe("0");
+
+  await page.evaluate(() => {
+    (window as unknown as { __releaseFontLoads: () => void }).__releaseFontLoads();
+  });
+
+  await expect.poll(async () => page.evaluate(() => getComputedStyle(document.documentElement).opacity)).toBe("1");
+  await expect(page.getByText("Add browser regression coverage")).toBeVisible();
+  const loadedFamilies = await page.evaluate(async () => {
+    await document.fonts.ready;
+    return [
+      ...new Set(
+        [...document.fonts]
+          .filter((face) => face.status === "loaded")
+          .map((face) => face.family.replace(/^["']|["']$/g, "")),
+      ),
+    ];
+  });
+  expect(loadedFamilies).toEqual(expect.arrayContaining(["Inter", "JetBrains Mono"]));
+});

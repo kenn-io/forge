@@ -147,6 +147,38 @@ test("create step auto-continues without a click", async ({ page }) => {
   }
 });
 
+test("delays auto-continue until the first-paint hold reveals the page", async ({ page }) => {
+  await page.addInitScript(() => {
+    const originalLoad = FontFace.prototype.load;
+    FontFace.prototype.load = function (this: FontFace) {
+      const family = this.family.replace(/^["']|["']$/g, "");
+      if (family === "Inter" || family === "JetBrains Mono") {
+        // Hold fonts past the 2.5s countdown so hold-first-paint.js reveals via its 3s fallback.
+        return new Promise<FontFace>(() => {});
+      }
+      return originalLoad.call(this);
+    };
+  });
+  const fake = await startFakeFlowServer({});
+  try {
+    await page.goto(fake.base, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(2_600);
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).opacity)).toBe("0");
+    expect(fake.manifestPosts).toHaveLength(0);
+
+    await expect
+      .poll(async () => page.evaluate(() => getComputedStyle(document.documentElement).opacity), { timeout: 3_000 })
+      .toBe("1");
+    await expect(page.getByRole("button", { name: "Continue to GitHub" })).toBeVisible();
+    expect(fake.manifestPosts).toHaveLength(0);
+
+    await expect(page).toHaveURL(/step=done/, { timeout: 10_000 });
+    expect(fake.manifestPosts).toHaveLength(1);
+  } finally {
+    fake.server.close();
+  }
+});
+
 test("stale setup link explains the flow is gone", async ({ page }) => {
   const fake = await startFakeFlowServer({ flowGone: true });
   try {

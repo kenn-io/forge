@@ -282,13 +282,13 @@ test.describe("collapsible sidebar", () => {
     await expectPullLocalFilterLabeled(await setPersistedSidebarWidth(page, "/pulls", 521, waitForPRList));
   });
 
-  test("issue filters switch at the buffered 402px fit point", async ({ page }) => {
-    await expectCompactFilterBar(await setPersistedSidebarWidth(page, "/issues", 401, waitForIssueList));
-    await expectExpandedFilterBar(await setPersistedSidebarWidth(page, "/issues", 402, waitForIssueList));
+  test("issue filters switch at the buffered 442px fit point", async ({ page }) => {
+    await expectCompactFilterBar(await setPersistedSidebarWidth(page, "/issues", 441, waitForIssueList));
+    await expectExpandedFilterBar(await setPersistedSidebarWidth(page, "/issues", 442, waitForIssueList));
   });
 
   test("issue org-name visibility remains accessible in the expanded filter bar", async ({ page }) => {
-    const filterBar = await setPersistedSidebarWidth(page, "/issues", 402, waitForIssueList);
+    const filterBar = await setPersistedSidebarWidth(page, "/issues", 442, waitForIssueList);
 
     const visibilityButton = filterBar.getByRole("button", { name: "Visibility" });
     await expect(visibilityButton).toBeVisible();
@@ -305,7 +305,7 @@ test.describe("collapsible sidebar", () => {
     await page.addInitScript(() => {
       localStorage.setItem("kenn-forge:filters:issues:unassigned", "1");
     });
-    const filterBar = await setPersistedSidebarWidth(page, "/issues", 402, waitForIssueList);
+    const filterBar = await setPersistedSidebarWidth(page, "/issues", 442, waitForIssueList);
 
     await expect(filterBar.getByRole("button", { name: "Visibility" })).toHaveClass(/kit-filter-dropdown__btn--active/);
   });

@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     makeSetupController,
+    waitForFirstPaintReveal,
     type SetupController,
     type SetupFlowError,
     type SetupFlowView,
@@ -26,6 +27,7 @@
   let secondsLeft = $state(3);
 
   const controller = makeSetupController({
+    waitUntilVisible: waitForFirstPaintReveal(),
     onFlow: (loaded) => {
       failure = null;
       flow = loaded;

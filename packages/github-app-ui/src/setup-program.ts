@@ -113,6 +113,36 @@ export interface SetupControllerOptions {
   readonly onSecondsLeft?: (seconds: number) => void;
   readonly onFailure?: (failure: SetupFlowError) => void;
   readonly onSubmit?: () => void;
+  readonly waitUntilVisible?: Effect.Effect<void>;
+}
+
+/**
+ * Waits until index.html's hold-first-paint script clears the root element's
+ * inline `opacity: 0` hide (either once bundled fonts decode or when its
+ * fallback timer expires) so the auto-submit countdown never finishes before
+ * the user sees the preview.
+ */
+export function waitForFirstPaintReveal(): Effect.Effect<void> {
+  return Effect.callback<void>((resume) => {
+    if (typeof document === "undefined") {
+      resume(Effect.void);
+      return;
+    }
+    const root = document.documentElement;
+    const isHidden = () => root.style.getPropertyValue("opacity") === "0";
+    if (!isHidden() || typeof MutationObserver === "undefined") {
+      resume(Effect.void);
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      if (!isHidden()) {
+        observer.disconnect();
+        resume(Effect.void);
+      }
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["style"] });
+    return Effect.sync(() => observer.disconnect());
+  });
 }
 
 export interface SetupController {
@@ -205,8 +235,11 @@ export function makeSetupController(options: SetupControllerOptions = {}): Setup
       ),
     );
     const countdown = Effect.gen(function* () {
-      const startedAt = yield* Clock.currentTimeMillis;
       yield* notify(options.onSecondsLeft, Math.ceil(autoContinueMilliseconds / 1_000));
+      if (options.waitUntilVisible) {
+        yield* options.waitUntilVisible;
+      }
+      const startedAt = yield* Clock.currentTimeMillis;
       yield* Stream.fromSchedule(Schedule.spaced(countdownInterval)).pipe(
         Stream.runForEachWhile(() =>
           Effect.gen(function* () {

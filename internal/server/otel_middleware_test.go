@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
@@ -19,7 +20,7 @@ func TestOTelTraceableReusesInventory(t *testing.T) {
 	freshAllocs := testing.AllocsPerRun(10, func() {
 		_, err = NewTransportInventory()
 	})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	// Leave a margin for noise in the fresh build's allocation count.
 	assert.Less(t, cachedAllocs, freshAllocs/2)
 }

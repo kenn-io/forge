@@ -1,8 +1,8 @@
 # Work in local sessions
 
-A workspace ties a tracked repository and Git worktree to the shell and agent
-sessions doing the work. Create one from a pull request, provider issue, linked
-Kata issue, or the **New workspace** button.
+A Kenn Forge workspace ties a tracked repository and Git worktree to the shell
+and agent sessions doing the work. Create one from a pull request, provider
+issue, linked Kata issue, or **New workspace**.
 
 <figure class="workflow-shot">
   <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/workspace-codex-session-light.svg" alt="Forge Workspaces with a pull request worktree and running Codex session in light mode">
@@ -11,84 +11,88 @@ Kata issue, or the **New workspace** button.
 </figure>
 
 For remote compute, connect a [devbox](../devboxes.md) and select it as your
-workspace machine. Agents, worktrees and tools then run in your account on that
-host while you supervise them from your usual Forge.
+workspace machine. Agents, worktrees, and tools then run in your account on
+that host while you supervise them from your usual Forge.
 
 ## Create the right workspace
 
-From a pull request, Kenn Forge checks out the pull request branch. From an
-issue, it starts from the repository's default branch and creates an issue
-branch. An ad-hoc workspace starts from any tracked repository and uses the
-branch name you choose.
+From a pull request, Forge checks out the pull request branch. From an issue,
+it starts from the repository's default branch and creates an issue branch. An
+ad-hoc workspace starts from any tracked repository and uses the branch name
+you choose.
 
 The **New workspace** dialog also searches a selected Kata daemon. A Kata task
 needs a repository mapping before Forge can create its worktree.
 
-Choose an agent from the create menu when you want to create the workspace and
-launch that agent in one step. Creating the same item or ad-hoc branch again
-reopens the existing workspace instead of making a duplicate.
+To create a workspace and launch an agent in one step, pick the agent from the
+create menu. Creating the same item or ad-hoc branch again reopens the existing
+workspace instead of making a duplicate.
 
 The lightning icon beside the create menu lists your configured quick actions.
 A quick action creates the workspace, launches its agent, and sends a preset
 prompt once the agent is ready, so a routine task such as "rebase this pull
-request" is one click. Configure quick actions under **Settings → Quick
+request" takes one click. Configure quick actions under **Settings → Quick
 actions** (see [Configuration](../configuration.md#quick-actions)).
 
-Inside a workspace, the same lightning icon sits in each pane's tab strip. When
-the pane is showing a running agent or chat, point at a quick action and click
+Inside a workspace, the same lightning icon appears in each pane's tab strip.
+When a pane shows a running agent or chat, point at a quick action and click
 the send icon at the end of its row to send the prompt to that agent instead of
-launching a new one. A chat receives it as a message and a terminal agent has it
-typed and submitted, whichever agent the quick action names. Shells have no send
-icon.
+launching a new one. A chat receives the prompt as a message, and a terminal
+agent has it typed and submitted, regardless of which agent the quick action
+names. Shells have no send icon.
 
 ### Choose a machine in a fleet
 
-On a fleet hub, **New workspace** includes a **Run on** selector. Choose the hub
-or any spoke that currently allows workspace writes. An unavailable machine
-stays in the list with the reason it cannot be selected. The chosen machine
-owns the worktree, Git commands, agent processes, and tmux sessions.
+On a fleet hub, **New workspace** includes a **Run on** selector where you can
+pick the hub or any spoke that currently allows workspace writes. Unavailable
+machines stay in the list with the reason they cannot be selected. The machine
+you choose owns the worktree, Git commands, agent processes, and tmux sessions.
 
-The hub workspace list adds a node badge to every row, so local and remote
-workspaces are easy to tell apart. A spoke shows only its local workspaces and
-creates new workspaces on itself.
+The hub workspace list adds a node badge to every row so you can tell local and
+remote workspaces apart. A spoke shows only its local workspaces and creates
+new workspaces on itself.
 
 The workspace buttons on pull requests and issues create work on the Forge UI
-you opened. Use the hub's **New workspace** dialog when you need to choose a
-different execution machine. See [Federated fleet](../federated-fleet.md) for
-the complete ownership model and setup workflow.
+you opened. When you want a different execution machine, use the hub's **New
+workspace** dialog. See [Federated fleet](../federated-fleet.md) for the full
+ownership model and setup workflow.
 
 ## Use the workspace view
 
-The workspace sidebar can search, sort, and group workspaces. Prefix a search
-word with `!` or `NOT` to hide matching workspaces. Rows show the
+In the workspace sidebar, you can search, sort, and group workspaces. Put `!`
+or `NOT` before a search word to hide matching workspaces. Each row shows the
 repository, branch, linked item, changed-line counts, and current agent state
 when lifecycle hooks report one.
 
-The selected workspace includes:
+When you select a workspace, the main area holds the base shell as a tab
+labeled **Workspace**, next to a tab for each launched agent or shell session.
+The right-hand panel has buttons for:
 
-- **Workflow** for the base shell and launched agent or shell sessions
-- **Details** for the linked pull request, issue, or Kata task
-- **Files** for the worktree file list and file preview
-- **Diff** for uncommitted and branch changes
+- **Diff.** The workspace's changes, compared with **HEAD**, the pushed
+  **Branch**, or the merge **Target**.
+- **PR** or **Issue.** The linked pull request or issue.
+- **Kata.** The linked Kata task (local workspaces only, not remote fleet
+  workspaces).
+- **Reviews.** Roborev jobs (pull request workspaces only).
 
-Launch another shell or agent from the workspace header. Sessions continue
-under tmux when you leave the page, reload the browser, or attach from another
-terminal.
+You can launch another shell or agent from the workspace header. Sessions keep
+running under tmux when you leave the page, reload the browser, or attach from
+another terminal.
 
-Forge enables application clipboard copying on its dedicated tmux server;
-no system-wide tmux change is needed. If you configure a custom shared tmux
-server, enable `set-clipboard on` there to forward agent OSC 52 copies to
-the browser. Copy from the active terminal with a mouse or keyboard gesture.
+Forge enables application clipboard copying on its dedicated tmux server, with
+no system-wide tmux change required. If you configure a custom shared tmux
+server, enable `set-clipboard on` there to forward agent OSC 52 copies to the
+browser. Copy from the active terminal with a mouse or keyboard gesture.
 
 ## Put sessions beside the work
 
-Pull request, issue, and Activity detail can host the same live workspace. Move
-a session into its own pane when you want the terminal beside the conversation
-or diff. You can reorder tabs, drag a tab to split the layout, resize panes,
-hide a pane, or maximize the one that needs the screen.
+Pull request, issue, and Activity detail views can host the same live
+workspace. Move a session into its own pane when you want the terminal beside
+the conversation or diff. You can reorder tabs, drag a tab to split the layout,
+resize panes, hide a pane, or maximize the one that needs the screen.
 
-Closing a pane changes the layout. It does not stop the underlying tmux
-session. Use the session controls when you intend to stop a process.
+Closing a pane changes the layout and does not stop the underlying tmux
+session. To stop a process, use the session controls.
 
 ## Show agent state in the sidebar
 
@@ -98,16 +102,17 @@ Connect Claude Code and Codex to Forge with one command:
 kenn-forge agent setup
 ```
 
-Setup installs lifecycle hooks for each client it finds and registers
+This command installs lifecycle hooks for each client it finds and registers
 [Forge MCP](../kenn-forge-mcp.md) when the daemon is running with MCP on. Run
-`kenn-forge agent setup --check` to see what is connected, and use
-`--agent NAME` to set up one agent. Rerun setup after upgrading Forge so
+`kenn-forge agent setup --check` to see what is connected, and add
+`--agent NAME` to set up a single agent. After upgrading Forge, rerun setup so
 existing hooks pick up changes, then review the updated Codex hooks in
 `/hooks`.
 
-The sidebar can then show when an agent is working, waiting for approval,
-waiting for input, or done. Without fresh hook reports, Forge falls back to tmux
-activity. To manage hooks without MCP, use `kenn-forge agent-hook install`.
+With hooks installed, the sidebar can show when an agent is working, waiting
+for approval, waiting for input, or done. Without fresh hook reports, Forge falls
+back to tmux activity. To manage hooks without MCP, run
+`kenn-forge agent-hook install`.
 
 On Windows, ending a conversation with `/clear` or exit clears its badge even
 if another program, such as a virus scanner, has the activity file open. If
@@ -115,32 +120,32 @@ Forge can't clear it, the SessionEnd hook fails and names the file.
 
 ## Attach outside the browser
 
-Workspace and session controls expose tmux attach commands. This is useful for
-a full local terminal or for a remote workspace reached through Fleet. The
-browser and terminal attach to the same durable session.
+Workspace and session controls expose tmux attach commands for a full local
+terminal or a remote workspace reached through Fleet. Your browser and terminal
+attach to the same durable session.
 
 ## Delete or recover a workspace
 
-Delete removes the kenn-forge-managed worktree and its workspace record. A
-dirty worktree blocks normal deletion so uncommitted work is not discarded.
-Review the files first. Force deletion is available only after that warning.
+Deleting a workspace removes the Forge-managed worktree and its workspace
+record. A dirty worktree blocks normal deletion so uncommitted work is not
+discarded. Review the files first; force deletion becomes available only after
+that warning.
 
-To delete several workspaces, Shift- or Cmd/Ctrl-click them in the list,
-right-click, and choose **Delete N workspaces...**. The dialog closes when you
-confirm, and each row shows **Deleting workspace** until its delete finishes.
-Bulk deletion never forces, so workspaces with uncommitted changes stay.
-When it finishes, Forge names each workspace it could not delete and why.
+To delete several workspaces at once, Shift- or Cmd/Ctrl-click them in the
+list, right-click, and choose **Delete N workspaces...**. The dialog closes
+when you confirm, and each row shows **Deleting workspace** until its delete
+finishes. Bulk deletion never forces, so workspaces with uncommitted changes
+stay. When it finishes, Forge names each workspace it could not delete and why.
 
-If issue workspace creation finds the expected directory already present,
-Forge can recover it after verifying that it belongs to the managed
-repository. A mismatched repository or branch stays untouched and needs manual
-attention.
+If issue workspace creation finds the expected directory already present, Forge
+can recover it after verifying that it belongs to the managed repository. A
+mismatched repository or branch stays untouched and needs manual attention.
 
 ## Use workspaces on a phone
 
-Open `/m/workspaces` for the phone layout. It uses workspace cards and shows one
-terminal at a time. The session picker moves between the base shell and running
-agents without stopping the sessions in the background.
+Open `/m/workspaces` for the phone layout, which uses workspace cards and shows
+one terminal at a time. The session picker switches between the base shell and
+running agents without stopping background sessions.
 
 <figure class="workflow-shot workflow-shot--phone">
   <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/mobile-workspace-session-light.svg" alt="Forge phone workspace with a Codex terminal and the input composer open in light mode">
@@ -149,5 +154,5 @@ agents without stopping the sessions in the background.
 </figure>
 
 The phone composer helps with software keyboards, while direct terminal input
-still works with a hardware keyboard. Pull request and issue links return to the
-same mobile workspace and selected session.
+still works with a hardware keyboard. Pull request and issue links return to
+the same mobile workspace and selected session.

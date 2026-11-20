@@ -149,6 +149,7 @@
   import type { PRDetailActionInput } from "./lib/components/detail/keyboard-actions.js";
   import type { Context } from "./lib/stores/keyboard/types.js";
   import { routeTabTitle, workspaceTab } from "./lib/app/tab-title.svelte.js";
+  import { worklistItemMatchesSelection, worklistItemSelection } from "./lib/components/worklists/worklist-items.js";
   import { repositoryKeyFromWire } from "./lib/api/repository-key.js";
 
   type DocsRouteState = {
@@ -947,14 +948,19 @@
   let drawerItem = $state<DrawerItem | null>(null);
   let activitySelectionRevealKey = $state(0);
   const tabTitle = $derived.by(() => {
-    if (!appReady) return "Loading · Forge";
-    if (onboardingActive) return "Setup · Forge";
     const route = getRoute();
-    const worklistDetail = stores?.worklists.getDetail();
+    if (onboardingActive) return "Setup · Forge";
+    if (route.page === "design-system") return routeTabTitle(route);
+    if (!appReady) return "Loading · Forge";
+    const isWorklist = route.page === "worklists" || route.page === "mobile-worklists";
+    const worklistDetail = isWorklist ? stores?.worklists.getDetail() : null;
+    const selectedItem = route.page === "worklists" && worklistDetail?.id === route.worklistId
+      ? worklistDetail.items.find((item) => worklistItemMatchesSelection(item, route.selected)) : undefined;
     return routeTabTitle(route, {
       pull: stores?.detail.getDetail(), issue: stores?.issues.getIssueDetail(), activitySelection: drawerItem,
       activityCommit: commitItem, workspace: workspaceTab(route),
-      worklists: [...(worklistDetail ? [worklistDetail] : []), ...(stores?.worklists.getSummaries() ?? [])],
+      worklistSelection: selectedItem ? worklistItemSelection(selectedItem) : undefined,
+      worklists: isWorklist ? [...(worklistDetail ? [worklistDetail] : []), ...(stores?.worklists.getSummaries() ?? [])] : undefined,
     });
   });
   // Owned here for the same reason drawerItem is: the Activity selection lives

@@ -65,8 +65,9 @@ export function routeTabTitle(
     issue?: IssueDetail | null;
     activitySelection?: RoutedItemRef | null;
     workspace?: WorkspaceTab | undefined;
-    worklists?: readonly { id: number; title: string }[];
+    worklists?: readonly { id: number; title: string }[] | undefined;
     activityCommit?: { title: string; repoPath: string } | null;
+    worklistSelection?: RoutedItemRef | undefined;
   } = {},
 ): string {
   let selected: RoutedItemRef | undefined;
@@ -74,7 +75,7 @@ export function routeTabTitle(
   else if ((route.page === "pulls" || route.page === "queues") && route.selected)
     selected = { ...route.selected, itemType: "pr" };
   else if (route.page === "issues" && route.selected) selected = { ...route.selected, itemType: "issue" };
-  else if (route.page === "worklists") selected = route.selected;
+  else if (route.page === "worklists") selected = options.worklistSelection ?? route.selected;
   else if (route.page === "activity") selected = options.activitySelection ?? undefined;
   else if (route.page === "mobile-workspace-item") selected = options.workspace?.item;
 

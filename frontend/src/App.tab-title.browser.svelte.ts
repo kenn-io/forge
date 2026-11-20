@@ -124,4 +124,49 @@ describe("tab title navigation", () => {
     await expect.element(page.getByRole("alert").getByText("not a worklist link"), { timeout: WAIT }).toBeVisible();
     expect(document.title).toBe("Import worklist · Worklists · Forge");
   });
+
+  it("names the current repository for a saved pull selection", async () => {
+    await page.viewport(1280, 900);
+    const list = worklistResponse(5, "Review queue");
+    mounted = await mountBrowserApp(
+      "/worklists/5?selected=pr%3A42&provider=github&platform_host=github.com&repo_path=old%2Fwidgets&platform_repo_id=1001",
+      {
+        overrides: [worklistRoutes({ lists: [list], requests: [] })],
+      },
+    );
+    await vi.waitFor(
+      () => expect(document.querySelector(".pull-detail")?.textContent).toContain("Add browser regression coverage"),
+      WAIT,
+    );
+    await vi.waitFor(
+      () => expect(document.title).toBe("Add browser regression coverage (acme/widgets#42) · Forge"),
+      WAIT,
+    );
+  }, 30_000);
+
+  it("names the current repository for a saved issue selection", async () => {
+    await page.viewport(1280, 900);
+    const list = worklistResponse(5, "Review queue");
+    const missingIssue: MockRouteOverride = (req) =>
+      req.method === "GET" && req.url.pathname === "/api/v1/issues/github/acme/widgets/7"
+        ? jsonResponse({ title: "Not Found", status: 404, detail: "Issue unavailable", code: "notFound" }, 404)
+        : null;
+    mounted = await mountBrowserApp(
+      "/worklists/5?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=old%2Fwidgets&platform_repo_id=1001",
+      {
+        overrides: [missingIssue, worklistRoutes({ lists: [list], requests: [] })],
+      },
+    );
+    await expect.element(page.getByRole("region", { name: "Worklist item context" }), { timeout: WAIT }).toBeVisible();
+    await vi.waitFor(() => expect(document.title).toBe("Issue (acme/widgets#7) · Forge"), WAIT);
+  }, 30_000);
+
+  it("names the design system while startup is pending", async () => {
+    await page.viewport(1280, 900);
+    const unready: MockRouteOverride = (req) =>
+      req.url.pathname === "/healthz" ? jsonResponse({ status: "starting" }, 503) : null;
+    mounted = await mountBrowserApp("/design-system", { overrides: [unready] });
+    await expect.element(page.getByRole("heading", { name: "Onboarding prototypes" }), { timeout: WAIT }).toBeVisible();
+    expect(document.title).toBe("Design system · Forge");
+  });
 });

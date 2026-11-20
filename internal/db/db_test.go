@@ -410,9 +410,11 @@ func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
 func TestMigration54DownDropsOnlyPreparationTables(t *testing.T) {
 	t.Parallel()
 	latest := testDBTemplateBytes(t)
+	v54, err := historicalTestDBBytes(t, 54)
+	require.NoError(t, err)
 	for name, data := range map[string][]byte{
 		"latest": latest,
-		"v54":    testDBTemplate.versions[54],
+		"v54":    v54,
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -2618,7 +2620,7 @@ func migrateToVersionForTest(t *testing.T, dbPath string, version uint) *sql.DB 
 func TestOpenAtUnlistedHistoricalVersion(t *testing.T) {
 	openAtVersionForTest(t, filepath.Join(t.TempDir(), "historical.db"), 92, func(raw *sql.DB) {
 		var version uint
-		require.NoError(t, raw.QueryRowContext(t.Context(), "SELECT version FROM schema_migrations").Scan(&version))
+		require.NoError(t, raw.QueryRowContext(t.Context(), "SELECT version FROM "+migrationTableName).Scan(&version))
 		require.Equal(t, uint(92), version)
 	})
 }

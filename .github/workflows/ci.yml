@@ -972,6 +972,25 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Publish race test report
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
+        uses: dorny/test-reporter@v3.2.0
+        with:
+          name: Go race tests (${{ matrix.shard }}, ${{ matrix.part }}/2)
+          path: gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
+          reporter: golang-json
+          fail-on-error: false
+
+      - name: Upload race timing artifacts
+        if: ${{ !cancelled() && hashFiles('gotestsum/race-*.json') != '' }}
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: go-race-timing-${{ matrix.shard }}-${{ matrix.part }}
+          path: |
+            gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
+            tmp/test-race-timing-events.json
+          retention-days: 7
+
       - name: Warn about newly slow race tests
         if: ${{ !cancelled() && github.event_name == 'pull_request' && hashFiles('tmp/test-race-timing-events.json') != '' }}
         continue-on-error: true
@@ -1004,25 +1023,6 @@ jobs:
             | map(select(.Elapsed > 60 and (.previous == null or .previous <= 60)))[]
             | "::warning title=Slow race test::\(.Package) \(.Test): \(.Elapsed)s; main max: \(if .previous == null then "absent" else "\(.previous)s" end)"
           ' tmp/test-race-timing-events.json
-
-      - name: Publish race test report
-        if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
-        uses: dorny/test-reporter@v3.2.0
-        with:
-          name: Go race tests (${{ matrix.shard }}, ${{ matrix.part }}/2)
-          path: gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
-          reporter: golang-json
-          fail-on-error: false
-
-      - name: Upload race timing artifacts
-        if: ${{ !cancelled() && hashFiles('gotestsum/race-*.json') != '' }}
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: go-race-timing-${{ matrix.shard }}-${{ matrix.part }}
-          path: |
-            gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
-            tmp/test-race-timing-events.json
-          retention-days: 7
 
       - name: Check race cache time budget
         id: cache-budget

@@ -444,6 +444,53 @@ func TestRepoBrowserTreeAssetLastChangedAndHistory(t *testing.T) {
 	assert.Contains(missingHistory.Body.String(), "not_found")
 }
 
+func TestRepoBrowserReadsSHA256Repository(t *testing.T) {
+	acquireRepoBrowserTestSlot(t)
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, work, _ := setupRepoBrowserServerWithClones(
+		t, "github", "github.com", "acme/widgets", "--object-format=sha256",
+	)
+	image := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
+	require.NoError(os.WriteFile(filepath.Join(work, "image.png"), image, 0o644))
+	serverRepoBrowserGit(t, work, "add", ".")
+	serverRepoBrowserGit(t, work, "commit", "-m", "add image")
+	serverRepoBrowserGit(t, work, "push", "origin", "main")
+	mainSHA := testGitSHA(t, work, "main")
+	require.Len(mainSHA, 64)
+
+	tree := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/tree?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&ref_sha="+url.QueryEscape(mainSHA),
+	)
+	require.Equal(http.StatusOK, tree.Code, tree.Body.String())
+	var treeBody repobrowserapi.RepoBrowserTreeResponse
+	require.NoError(json.Unmarshal(tree.Body.Bytes(), &treeBody))
+	assert.Equal(mainSHA, treeBody.Ref.SHA)
+	assert.ElementsMatch([]string{"README.md", "image.png"}, repoBrowserEntryPaths(treeBody.Entries))
+
+	blob := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/blob?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha="+url.QueryEscape(mainSHA)+"&path=README.md",
+	)
+	require.Equal(http.StatusOK, blob.Code, blob.Body.String())
+	var blobBody repobrowserapi.RepoBrowserBlobResponse
+	require.NoError(json.Unmarshal(blob.Body.Bytes(), &blobBody))
+	assert.Equal("# Test\n", blobBody.Blob.Content)
+
+	asset := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/asset?repo_path=acme%2Fwidgets&ref_type=commit&ref_sha="+url.QueryEscape(mainSHA)+"&path=image.png",
+	)
+	require.Equal(http.StatusOK, asset.Code, asset.Body.String())
+	assert.Equal(image, asset.Body.Bytes())
+
+	commitDetail := repoBrowserRequest(t, srv, http.MethodGet,
+		"/api/v1/repo/github/acme/widgets/browser/commit?repo_path=acme%2Fwidgets&ref_type=branch&ref_name=main&path=image.png&sha="+url.QueryEscape(mainSHA),
+	)
+	require.Equal(http.StatusOK, commitDetail.Code, commitDetail.Body.String())
+	var commitBody repobrowserapi.RepoBrowserCommitResponse
+	require.NoError(json.Unmarshal(commitDetail.Body.Bytes(), &commitBody))
+	assert.Equal(mainSHA, commitBody.Commit.SHA)
+}
+
 func TestRepoBrowserLastChangedFallsBackPastBatchLogLimit(t *testing.T) {
 	acquireRepoBrowserTestSlot(t)
 	require := require.New(t)
@@ -778,10 +825,11 @@ func setupRepoBrowserServer(t *testing.T, provider, host, repoPath string) (*ser
 func setupRepoBrowserServerWithClones(
 	t *testing.T,
 	provider, host, repoPath string,
+	initArgs ...string,
 ) (*server.Server, string, *gitclone.Manager) {
 	t.Helper()
 	database := dbtest.Open(t)
-	remote, work := setupServerRepoBrowserGitRepo(t)
+	remote, work := setupServerRepoBrowserGitRepo(t, initArgs...)
 	owner, name := splitServerRepoPathForTest(repoPath)
 	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
 		Platform:     provider,
@@ -818,11 +866,12 @@ func verifiedGitHubRepoIdentity(host, owner, name string) db.RepoIdentity {
 	return identity
 }
 
-func setupServerRepoBrowserGitRepo(t *testing.T) (remote string, work string) {
+func setupServerRepoBrowserGitRepo(t *testing.T, initArgs ...string) (remote string, work string) {
 	t.Helper()
-	dir := t.TempDir()
+	dir := gitfixture.ScratchDir(t)
 	remote = filepath.Join(dir, "remote.git")
-	serverRepoBrowserGit(t, dir, "init", "--bare", "--initial-branch=main", remote)
+	initCmd := append([]string{"init", "--bare", "--initial-branch=main"}, initArgs...)
+	serverRepoBrowserGit(t, dir, append(initCmd, remote)...)
 	work = filepath.Join(dir, "work")
 	serverRepoBrowserGit(t, dir, "clone", remote, work)
 	serverRepoBrowserGit(t, work, "config", "user.email", "alice@example.com")

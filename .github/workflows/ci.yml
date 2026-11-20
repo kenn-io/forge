@@ -869,9 +869,6 @@ jobs:
     needs: detect_changes
     if: github.event_name != 'merge_group' && needs.detect_changes.outputs.backend == 'true'
     steps:
-      - id: race-start
-        run: echo "epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
@@ -881,27 +878,14 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - id: cache-date
-        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
-
-      # Only main saves the Go caches. Modules stay scoped to dependencies;
-      # the build cache refreshes daily and can reuse entries across changes.
-      - name: Restore Go module cache
-        id: go-mod-cache
+      - name: Restore Go caches
+        id: go-cache
         uses: actions/cache/restore@v6.1.0
         with:
-          path: ~/go/pkg/mod
-          key: go-race-mod-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}
-
-      - name: Restore Go race build cache
-        id: go-build-cache
-        uses: actions/cache/restore@v6.1.0
-        with:
-          path: ~/.cache/go-build
-          key: go-race-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ steps.cache-date.outputs.date }}
-          restore-keys: |
-            go-race-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
-            go-race-build-${{ runner.os }}-${{ runner.arch }}-
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-race-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}
 
       - name: Stub frontend embed dir
         run: |
@@ -909,7 +893,6 @@ jobs:
           echo ok > internal/web/dist/stub.html
 
       - name: Run tests (race detector)
-        id: race-tests
         env:
           RACE_SHARD: ${{ matrix.shard }}
           RACE_PART: ${{ matrix.part }}
@@ -975,25 +958,6 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Publish race test report
-        if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
-        uses: dorny/test-reporter@v3.2.0
-        with:
-          name: Go race tests (${{ matrix.shard }}, ${{ matrix.part }}/2)
-          path: gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
-          reporter: golang-json
-          fail-on-error: false
-
-      - name: Upload race timing artifacts
-        if: ${{ !cancelled() && hashFiles('gotestsum/race-*.json') != '' }}
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: go-race-timing-${{ matrix.shard }}-${{ matrix.part }}
-          path: |
-            gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
-            tmp/test-race-timing-events.json
-          retention-days: 7
-
       - name: Warn about newly slow race tests
         if: ${{ !cancelled() && github.event_name == 'pull_request' && hashFiles('tmp/test-race-timing-events.json') != '' }}
         continue-on-error: true
@@ -1027,53 +991,36 @@ jobs:
             | "::warning title=Slow race test::\(.Package) \(.Test): \(.Elapsed)s; main max: \(if .previous == null then "absent" else "\(.previous)s" end)"
           ' tmp/test-race-timing-events.json
 
-      - name: Check race cache time budget
-        id: cache-budget
-        if: steps.race-tests.outcome == 'success' && github.ref == 'refs/heads/main' && matrix.shard == 'core' && matrix.part == 2
-        continue-on-error: true
-        timeout-minutes: 1
-        env:
-          STARTED: ${{ steps.race-start.outputs.epoch }}
-        run: |
-          remaining=$((1920 - ($(date -u +%s) - STARTED)))
-          if (( remaining >= 720 )); then
-            echo 'ready=true' >> "$GITHUB_OUTPUT"
-          fi
+      - name: Publish race test report
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
+        uses: dorny/test-reporter@v3.2.0
+        with:
+          name: Go race tests (${{ matrix.shard }}, ${{ matrix.part }}/2)
+          path: gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
+          reporter: golang-json
+          fail-on-error: false
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.49.0
-        id: cache-retry-setup
-        continue-on-error: true
-        timeout-minutes: 1
-        if: steps.cache-budget.outputs.ready == 'true' && steps.go-mod-cache.outputs.cache-hit != 'true'
+      - name: Upload race timing artifacts
+        if: ${{ !cancelled() && hashFiles('gotestsum/race-*.json') != '' }}
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: go-race-timing-${{ matrix.shard }}-${{ matrix.part }}
+          path: |
+            gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
+            tmp/test-race-timing-events.json
+          retention-days: 7
 
-      - name: Download remaining Go modules
-        id: go-mod-download
-        if: steps.cache-budget.outputs.ready == 'true' && steps.go-mod-cache.outputs.cache-hit != 'true' && steps.cache-retry-setup.outcome == 'success'
-        continue-on-error: true
-        timeout-minutes: 3
-        run: kit-retry 3 5 go mod download
-
-      - name: Warn if module prefill failed
-        if: steps.cache-retry-setup.outcome == 'failure' || steps.go-mod-download.outcome == 'failure'
-        run: echo '::warning::Go module cache prefill failed; skipping module cache save.'
-
-      - name: Save Go module cache
-        if: steps.cache-budget.outputs.ready == 'true' && steps.go-mod-cache.outputs.cache-hit != 'true' && steps.go-mod-download.outcome == 'success'
+      # Only main's core 2/2 saves; PR caches evict main's from the 10 GB budget.
+      - name: Save Go caches
+        if: github.ref == 'refs/heads/main' && matrix.shard == 'core' && matrix.part == 2 && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         continue-on-error: true
         timeout-minutes: 3
         with:
-          path: ~/go/pkg/mod
-          key: ${{ steps.go-mod-cache.outputs.cache-primary-key }}
-
-      - name: Save Go race build cache
-        if: steps.cache-budget.outputs.ready == 'true' && steps.go-build-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6.1.0
-        continue-on-error: true
-        timeout-minutes: 3
-        with:
-          path: ~/.cache/go-build
-          key: ${{ steps.go-build-cache.outputs.cache-primary-key }}
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
   build-e2e:
     runs-on: ubuntu-latest

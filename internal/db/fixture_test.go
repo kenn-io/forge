@@ -36,7 +36,8 @@ func testDBTemplateBytes(t *testing.T) []byte {
 	testDBTemplate.once.Do(func() {
 		path := filepath.Join(t.TempDir(), "template.db")
 		testDBTemplate.versions = make(map[uint][]byte)
-		for _, version := range []uint{43, 47, 54, 55} {
+		// Add new test start versions here; unlisted versions replay from zero.
+		for _, version := range []uint{36, 37, 38, 43, 44, 45, 47, 49, 50, 51, 52, 53, 54, 55, 59, 64, 68, 75, 83, 87, 91, 93, 94, 95} {
 			raw, err := migrateTestDBToVersion(t.Context(), path, version)
 			if err != nil {
 				testDBTemplate.initErr = err
@@ -76,6 +77,16 @@ func testDBTemplateBytes(t *testing.T) []byte {
 	})
 	require.NoError(t, testDBTemplate.initErr)
 	return testDBTemplate.data
+}
+
+func copyHistoricalDBForTest(t *testing.T, dbPath string, version uint) {
+	t.Helper()
+	testDBTemplateBytes(t)
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		if data, ok := testDBTemplate.versions[version]; ok {
+			copyTestDBTemplate(t, data, dbPath)
+		}
+	}
 }
 
 func copyTestDBTemplate(t *testing.T, src []byte, dst string) {

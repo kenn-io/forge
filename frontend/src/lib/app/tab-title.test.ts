@@ -14,7 +14,8 @@ describe("tab titles", () => {
     ["/issues", "Issues"],
     ["/docs", "Docs"],
     ["/workspaces", "Workspaces"],
-    ["/terminal/a", "Workspace (a) · Workspaces"],
+    ["/terminal/a", "Workspace · Workspaces"],
+    ["/terminal/fleet/host-a/ws", "Workspace · Workspaces"],
     ["/settings", "Settings"],
     ["/project-intake", "Add project"],
     ["/design-system", "Design system"],
@@ -25,14 +26,30 @@ describe("tab titles", () => {
     ["/m/issues", "Issues"],
     ["/m/workspaces", "Workspaces"],
     ["/m/worklists", "Worklists"],
-    ["/m/workspaces/local/a", "Workspace (a) · Workspaces"],
-    ["/m/workspaces/local/a/item", "Linked item (a) · Workspaces"],
-    ["/m/workspaces/fleet/host-a/ws/item/files", "Linked item (host-a/ws) · Workspaces"],
+    ["/m/workspaces/local/a", "Workspace · Workspaces"],
+    ["/m/workspaces/local/a/item", "Linked item · Workspaces"],
+    ["/m/workspaces/fleet/host-a/ws/item/files", "Linked item · Workspaces"],
     ["/focus/mrs", "Pulls"],
     ["/focus/issues", "Issues"],
   ])("names %s", (path, label) => {
     replaceUrl(path);
     expect(routeTabTitle(getRoute())).toBe(`${label} · Forge`);
+  });
+
+  it("uses generic workspace titles when a loaded workspace has no name", () => {
+    const workspace = { hostKey: "host-a", id: "ws", name: "" };
+    replaceUrl("/terminal/fleet/host-a/ws");
+    expect(routeTabTitle(getRoute(), { workspace })).toBe("Workspace · Workspaces · Forge");
+    replaceUrl("/m/workspaces/fleet/host-a/ws/item");
+    expect(routeTabTitle(getRoute(), { workspace })).toBe("Linked item · Workspaces · Forge");
+  });
+
+  it("uses a readable workspace name", () => {
+    const workspace = { hostKey: "host-a", id: "ws", name: "feature/auth" };
+    replaceUrl("/terminal/fleet/host-a/ws");
+    expect(routeTabTitle(getRoute(), { workspace })).toBe("feature/auth · Workspaces · Forge");
+    replaceUrl("/m/workspaces/fleet/host-a/ws/item");
+    expect(routeTabTitle(getRoute(), { workspace })).toBe("Linked item (feature/auth) · Workspaces · Forge");
   });
 
   it("uses matching details and labels loading or mismatched items", () => {

@@ -70,9 +70,8 @@ export function routeTabTitle(
     route.page === "mobile-workspace-item"
   ) {
     const label = route.page === "mobile-workspace-item" ? "Linked item" : "Workspace";
-    const id = options.workspace?.name || `${route.hostKey ? `${route.hostKey}/` : ""}${route.workspaceId}`;
-    const name = route.page === "mobile-workspace-item" || !options.workspace ? `${label} (${id})` : id;
-    return `${name} · Workspaces · Forge`;
+    const name = options.workspace?.name;
+    return `${name && route.page === "mobile-workspace-item" ? `${label} (${name})` : name || label} · Workspaces · Forge`;
   }
   return `${pageLabel[route.page]} · Forge`;
 }

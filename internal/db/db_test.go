@@ -2589,12 +2589,8 @@ func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*
 
 	copyTestDBTemplate(t, historicalTestDBBytes(t, version), dbPath)
 
-	raw, m, err := openTestMigrator(dbPath)
+	raw, _, err := openTestMigrator(dbPath)
 	require.NoError(err)
-	err = m.Migrate(version)
-	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		require.NoError(err)
-	}
 	seed(raw)
 	require.NoError(raw.Close())
 }

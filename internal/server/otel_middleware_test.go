@@ -12,10 +12,15 @@ import (
 
 func TestOTelTraceableReusesInventory(t *testing.T) {
 	otelTraceable("/")
-	allocs := testing.AllocsPerRun(100, func() {
+	cachedAllocs := testing.AllocsPerRun(100, func() {
 		otelTraceable("/")
 	})
-	assert.Less(t, allocs, float64(100))
+	freshAllocs := testing.AllocsPerRun(10, func() {
+		if _, err := NewTransportInventory(); err != nil {
+			t.Fatal(err)
+		}
+	})
+	assert.Less(t, cachedAllocs, freshAllocs/2)
 }
 
 func TestOTelTraceableFiltersOnlyLongLivedStreams(t *testing.T) {

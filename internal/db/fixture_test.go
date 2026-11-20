@@ -1,10 +1,10 @@
 package db
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -14,6 +14,7 @@ var testDBTemplate = &testDBTemplateState{}
 
 type testDBTemplateState struct {
 	once     sync.Once
+	ready    atomic.Bool
 	data     []byte
 	versions map[uint][]byte
 	initErr  error
@@ -75,24 +76,10 @@ func testDBTemplateBytes(t *testing.T) []byte {
 			return
 		}
 		testDBTemplate.data = data
+		testDBTemplate.ready.Store(true)
 	})
 	require.NoError(t, testDBTemplate.initErr)
 	return testDBTemplate.data
-}
-
-func copyHistoricalDBForTest(t *testing.T, dbPath string, version uint) {
-	t.Helper()
-	_, err := os.Stat(dbPath)
-	if err == nil {
-		return
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		require.NoError(t, err)
-	}
-	testDBTemplateBytes(t)
-	if data, ok := testDBTemplate.versions[version]; ok {
-		copyTestDBTemplate(t, data, dbPath)
-	}
 }
 
 func copyTestDBTemplate(t *testing.T, src []byte, dst string) {

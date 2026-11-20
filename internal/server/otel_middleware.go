@@ -3,16 +3,20 @@ package server
 import (
 	"net/http"
 	"strings"
+	"sync"
 )
+
+var tracingTransportInventory = sync.OnceValues(NewTransportInventory)
 
 // otelTraceable reports whether a request should get an otelhttp
 // server span. WebSocket upgrades and known SSE/NDJSON modes live for
 // the connection lifetime and would produce hours-long spans;
 // terminal attach gets its own bounded span instead (internal/tracing).
 // Browser trace exports are skipped too: each would add a span per export.
+// The transport inventory is built once per process.
 func otelTraceable(basePath string) func(*http.Request) bool {
 	prefix := strings.TrimSuffix(basePath, "/")
-	inventory, err := NewTransportInventory()
+	inventory, err := tracingTransportInventory()
 	if err != nil {
 		panic("build transport inventory: " + err.Error())
 	}

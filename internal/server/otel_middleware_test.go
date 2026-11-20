@@ -10,6 +10,14 @@ import (
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
+func TestOTelTraceableReusesInventory(t *testing.T) {
+	otelTraceable("/")
+	allocs := testing.AllocsPerRun(100, func() {
+		otelTraceable("/")
+	})
+	assert.Less(t, allocs, float64(100))
+}
+
 func TestOTelTraceableFiltersOnlyLongLivedStreams(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	tests := []struct {

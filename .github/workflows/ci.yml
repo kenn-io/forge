@@ -870,7 +870,7 @@ jobs:
     if: github.event_name != 'merge_group' && needs.detect_changes.outputs.backend == 'true'
     steps:
       - id: race-start
-        run: echo "epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+        run: date -u +'epoch=%s%ndate=%Y-%m-%d' >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v7.0.1
         with:
@@ -880,9 +880,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-
-      - id: cache-date
-        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       # Only main saves the Go caches. Modules stay scoped to dependencies;
       # the build cache refreshes daily and can reuse entries across changes.
@@ -898,7 +895,7 @@ jobs:
         uses: actions/cache/restore@v6.1.0
         with:
           path: ~/.cache/go-build
-          key: go-race-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ steps.cache-date.outputs.date }}
+          key: go-race-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ steps.race-start.outputs.date }}
           restore-keys: |
             go-race-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod', 'go.sum') }}-
             go-race-build-${{ runner.os }}-${{ runner.arch }}-
@@ -909,7 +906,6 @@ jobs:
           echo ok > internal/web/dist/stub.html
 
       - name: Run tests (race detector)
-        id: race-tests
         env:
           RACE_SHARD: ${{ matrix.shard }}
           RACE_PART: ${{ matrix.part }}
@@ -975,25 +971,6 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Publish race test report
-        if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
-        uses: dorny/test-reporter@v3.2.0
-        with:
-          name: Go race tests (${{ matrix.shard }}, ${{ matrix.part }}/2)
-          path: gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
-          reporter: golang-json
-          fail-on-error: false
-
-      - name: Upload race timing artifacts
-        if: ${{ !cancelled() && hashFiles('gotestsum/race-*.json') != '' }}
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: go-race-timing-${{ matrix.shard }}-${{ matrix.part }}
-          path: |
-            gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
-            tmp/test-race-timing-events.json
-          retention-days: 7
-
       - name: Warn about newly slow race tests
         if: ${{ !cancelled() && github.event_name == 'pull_request' && hashFiles('tmp/test-race-timing-events.json') != '' }}
         continue-on-error: true
@@ -1027,11 +1004,28 @@ jobs:
             | "::warning title=Slow race test::\(.Package) \(.Test): \(.Elapsed)s; main max: \(if .previous == null then "absent" else "\(.previous)s" end)"
           ' tmp/test-race-timing-events.json
 
+      - name: Publish race test report
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
+        uses: dorny/test-reporter@v3.2.0
+        with:
+          name: Go race tests (${{ matrix.shard }}, ${{ matrix.part }}/2)
+          path: gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
+          reporter: golang-json
+          fail-on-error: false
+
+      - name: Upload race timing artifacts
+        if: ${{ !cancelled() && hashFiles('gotestsum/race-*.json') != '' }}
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: go-race-timing-${{ matrix.shard }}-${{ matrix.part }}
+          path: |
+            gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
+            tmp/test-race-timing-events.json
+          retention-days: 7
+
       - name: Check race cache time budget
         id: cache-budget
-        if: steps.race-tests.outcome == 'success' && github.ref == 'refs/heads/main' && matrix.shard == 'core' && matrix.part == 2
-        continue-on-error: true
-        timeout-minutes: 1
+        if: github.ref == 'refs/heads/main' && matrix.shard == 'core' && matrix.part == 2
         env:
           STARTED: ${{ steps.race-start.outputs.epoch }}
         run: |

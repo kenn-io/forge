@@ -8,7 +8,7 @@ describe("tab titles", () => {
     ["/", "Activity"],
     ["/actions", "Actions"],
     ["/repos", "Repos"],
-    ["/repo/browser?provider=github&repo_path=owner/repo", "owner/repo · Repos"],
+    ["/repo/browser?provider=github&repo_path=owner/repo", "Repos"],
     ["/pulls", "Pulls"],
     ["/issues", "Issues"],
     ["/docs", "Docs"],
@@ -17,7 +17,7 @@ describe("tab titles", () => {
     ["/settings", "Settings"],
     ["/project-intake", "Add project"],
     ["/design-system", "Design system"],
-    ["/worklists/3", "Worklist (3) · Worklists"],
+    ["/worklists/3", "Worklists"],
     ["/queues", "Queues"],
     ["/m/activity", "Activity"],
     ["/m/pulls", "Pulls"],
@@ -83,75 +83,14 @@ describe("tab titles", () => {
     ).toBe("Issue (owner/repo#2) · Forge");
   });
 
-  it.each([
-    ["/docs?folder=notes&doc=project%2Fplan.md", "project/plan.md · notes · Docs · Forge"],
-    ["/docs?folder=notes", "notes · Docs · Forge"],
-    [
-      "/repo/browser?provider=github&repo_path=owner%2Frepo&ref_name=main&path=src%2Fapp.ts",
-      "src/app.ts · main · owner/repo · Repos · Forge",
-    ],
-    ["/m/workspaces/fleet/host-a/ws/item/files", "Linked item (host-a/ws) · Workspaces · Forge"],
-    ["/repo/browser?provider=github&repo_path=owner%2Frepo&ref_sha=abc123", "abc123 · owner/repo · Repos · Forge"],
-  ])("names the selected screen on %s", (path, title) => {
-    replaceUrl(path);
-    expect(routeTabTitle(getRoute())).toBe(title);
-  });
-
-  it("shortens a repository commit SHA", () => {
-    replaceUrl("/repo/browser?provider=github&repo_path=owner%2Frepo&ref_sha=0123456789abcdef0123456789abcdef01234567");
-    expect(routeTabTitle(getRoute())).toBe("0123456789ab · owner/repo · Repos · Forge");
+  it("names a mobile linked item screen", () => {
+    replaceUrl("/m/workspaces/fleet/host-a/ws/item/files");
+    expect(routeTabTitle(getRoute())).toBe("Linked item (host-a/ws) · Workspaces · Forge");
   });
 
   it("uses the GitLab merge request number marker", () => {
     replaceUrl("/pulls/gitlab/group/project/42");
     expect(routeTabTitle(getRoute())).toBe("Pull request (group/project!42) · Forge");
-  });
-
-  it("names only the matching worklist", () => {
-    replaceUrl("/worklists/3");
-    expect(routeTabTitle(getRoute(), { worklists: [{ id: 4, title: "Other" }] })).toBe(
-      "Worklist (3) · Worklists · Forge",
-    );
-    expect(routeTabTitle(getRoute(), { worklists: [{ id: 3, title: "My work" }] })).toBe("My work · Worklists · Forge");
-    replaceUrl("/m/worklists/3");
-    expect(routeTabTitle(getRoute(), { worklists: [{ id: 3, title: "My work" }] })).toBe("My work · Worklists · Forge");
-  });
-
-  it("distinguishes Activity commits with the same subject", () => {
-    const first = {
-      title: "Fix startup",
-      repoPath: "owner/repo",
-      commitSha: "0123456789abcdef0123456789abcdef01234567",
-    };
-    const second = {
-      title: "Fix startup",
-      repoPath: "owner/repo",
-      commitSha: "abcdef0123456789abcdef0123456789abcdef01",
-    };
-    expect(routeTabTitle({ page: "activity" }, { activityCommit: first })).toBe("0123456789ab (owner/repo) · Forge");
-    expect(routeTabTitle({ page: "activity" }, { activityCommit: second })).toBe("abcdef012345 (owner/repo) · Forge");
-  });
-
-  it("uses the branch or tag name instead of its resolved commit SHA", () => {
-    replaceUrl(
-      "/repo/browser?provider=github&repo_path=owner%2Frepo&ref_type=branch&ref_name=main&ref_sha=0123456789abcdef0123456789abcdef01234567",
-    );
-    expect(routeTabTitle(getRoute())).toBe("main · owner/repo · Repos · Forge");
-    replaceUrl(
-      "/repo/browser?provider=github&repo_path=owner%2Frepo&ref_type=tag&ref_name=v1.2&ref_sha=0123456789abcdef0123456789abcdef01234567",
-    );
-    expect(routeTabTitle(getRoute())).toBe("v1.2 · owner/repo · Repos · Forge");
-  });
-
-  it("uses a short commit SHA when the commit route has both ref fields", () => {
-    replaceUrl(
-      "/repo/browser?provider=github&repo_path=owner%2Frepo&ref_type=commit&ref_name=abcdef0123456789abcdef0123456789abcdef01&ref_sha=0123456789abcdef0123456789abcdef01234567",
-    );
-    expect(routeTabTitle(getRoute())).toBe("0123456789ab · owner/repo · Repos · Forge");
-    replaceUrl(
-      "/repo/browser?provider=github&repo_path=owner%2Frepo&ref_type=commit&ref_name=abcdef0123456789abcdef0123456789abcdef01",
-    );
-    expect(routeTabTitle(getRoute())).toBe("abcdef012345 · owner/repo · Repos · Forge");
   });
 
   it("names a linked workspace item with a matching detail or typed fallback", () => {
@@ -182,10 +121,5 @@ describe("tab titles", () => {
     const issueWorkspace = { ...workspace, item: { ...item, itemType: "issue" as const } };
     expect(routeTabTitle(route, { workspace: issueWorkspace, issue })).toBe("Broken login (owner/repo#1) · Forge");
     expect(routeTabTitle(route, { workspace: issueWorkspace, pull })).toBe("Issue (owner/repo#1) · Forge");
-  });
-
-  it.each(["/worklists/import", "/worklists/import#v9.abc"])("names worklist import %s", (path) => {
-    replaceUrl(path);
-    expect(routeTabTitle(getRoute())).toBe("Import worklist · Worklists · Forge");
   });
 });

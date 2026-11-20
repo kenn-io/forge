@@ -43,9 +43,6 @@ export function routeTabTitle(
     issue?: IssueDetail | null;
     activitySelection?: RoutedItemRef | null;
     workspace?: WorkspaceTab | undefined;
-    worklists?: readonly { id: number; title: string }[] | undefined;
-    activityCommit?: { commitSha: string; repoPath: string } | null;
-    worklistSelection?: RoutedItemRef | undefined;
   } = {},
 ): string {
   let selected: RoutedItemRef | undefined;
@@ -53,7 +50,7 @@ export function routeTabTitle(
   else if ((route.page === "pulls" || route.page === "queues") && route.selected)
     selected = { ...route.selected, itemType: "pr" };
   else if (route.page === "issues" && route.selected) selected = { ...route.selected, itemType: "issue" };
-  else if (route.page === "worklists") selected = options.worklistSelection ?? route.selected;
+  else if (route.page === "worklists") selected = route.selected;
   else if (route.page === "activity") selected = options.activitySelection ?? undefined;
   else if (route.page === "mobile-workspace-item") selected = options.workspace?.item;
 
@@ -68,9 +65,6 @@ export function routeTabTitle(
           : "Issue";
     return `${title} (${selected.repoPath}${selected.itemType === "pr" && canonicalProvider(selected.provider) === "gitlab" ? "!" : "#"}${selected.number}) · Forge`;
   }
-  if (route.page === "activity" && options.activityCommit) {
-    return `${options.activityCommit.commitSha.slice(0, 12)} (${options.activityCommit.repoPath}) · Forge`;
-  }
   if (route.page === "focus") return `${route.itemType === "mrs" ? "Pulls" : "Issues"} · Forge`;
   if (
     route.page === "terminal" ||
@@ -81,26 +75,6 @@ export function routeTabTitle(
     const id = options.workspace?.name || `${route.hostKey ? `${route.hostKey}/` : ""}${route.workspaceId}`;
     const name = route.page === "mobile-workspace-item" || !options.workspace ? `${label} (${id})` : id;
     return `${name} · Workspaces · Forge`;
-  }
-  if (route.page === "repo-browser")
-    return [
-      route.path,
-      route.refType === "commit"
-        ? (route.refSHA ?? route.refName)?.slice(0, 12)
-        : (route.refName ?? route.refSHA?.slice(0, 12)),
-      route.repoPath,
-      "Repos",
-      "Forge",
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  if (route.page === "docs") return [route.doc, route.folder, "Docs", "Forge"].filter(Boolean).join(" · ");
-  if (route.page === "worklists" && route.importFragment !== undefined) return "Import worklist · Worklists · Forge";
-  if ((route.page === "worklists" || route.page === "mobile-worklists") && route.worklistId !== null) {
-    const name =
-      options.worklists?.find((worklist) => worklist.id === route.worklistId)?.title ||
-      `Worklist (${route.worklistId})`;
-    return `${name} · Worklists · Forge`;
   }
   return `${pageLabel[route.page]} · Forge`;
 }

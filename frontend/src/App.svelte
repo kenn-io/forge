@@ -149,7 +149,6 @@
   import type { PRDetailActionInput } from "./lib/components/detail/keyboard-actions.js";
   import type { Context } from "./lib/stores/keyboard/types.js";
   import { routeTabTitle, type WorkspaceTab } from "./lib/app/tab-title.svelte.js";
-  import { worklistItemMatchesSelection, worklistItemSelection } from "./lib/components/worklists/worklist-items.js";
   import { repositoryKeyFromWire } from "./lib/api/repository-key.js";
 
   type DocsRouteState = {
@@ -955,19 +954,16 @@
     if (!appReady) {
       const selection = route.page === "activity" ? parseActivitySelection(window.location.search) : null;
       return routeTabTitle(route, {
-        activityCommit: selection?.itemType === "commit" ? selection : null,
         activitySelection: selection && selection.itemType !== "commit" ? selection : null,
       });
     }
-    const isWorklist = route.page === "worklists" || route.page === "mobile-worklists";
-    const worklistDetail = isWorklist ? stores?.worklists.getDetail() : null;
-    const selectedItem = route.page === "worklists" && worklistDetail?.id === route.worklistId
-      ? worklistDetail.items.find((item) => worklistItemMatchesSelection(item, route.selected)) : undefined;
-    return routeTabTitle(route, {
+    const selectedIssue = stores?.issues.getSelectedIssue();
+    const titleRoute = route.page === "issues" && !shouldUseResponsiveFocusPresentation()
+      ? { page: "issues" as const, ...(selectedIssue ? { selected: selectedIssue } : {}) }
+      : route;
+    return routeTabTitle(titleRoute, {
       pull: stores?.detail.getDetail(), issue: stores?.issues.getIssueDetail(), activitySelection: drawerItem,
-      activityCommit: commitItem, workspace: Object.values(workspaceTabs).find((workspace) => workspace && workspace.page === route.page && "workspaceId" in route && workspace.id === route.workspaceId && workspace.hostKey === route.hostKey) ?? undefined,
-      worklistSelection: selectedItem ? worklistItemSelection(selectedItem) : undefined,
-      worklists: isWorklist ? [...(worklistDetail ? [worklistDetail] : []), ...(stores?.worklists.getSummaries() ?? [])] : undefined,
+      workspace: Object.values(workspaceTabs).find((workspace) => workspace && workspace.page === route.page && "workspaceId" in route && workspace.id === route.workspaceId && workspace.hostKey === route.hostKey) ?? undefined,
     });
   });
   // Owned here for the same reason drawerItem is: the Activity selection lives

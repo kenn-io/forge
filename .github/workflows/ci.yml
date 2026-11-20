@@ -1029,7 +1029,7 @@ jobs:
 
       - name: Check race cache time budget
         id: cache-budget
-        if: steps.race-tests.outcome == 'success' && (github.ref == 'refs/heads/main' || github.ref == 'refs/pull/2057/merge') && matrix.shard == 'core' && matrix.part == 2
+        if: steps.race-tests.outcome == 'success' && github.ref == 'refs/heads/main' && matrix.shard == 'core' && matrix.part == 2
         continue-on-error: true
         timeout-minutes: 1
         env:

@@ -2587,10 +2587,7 @@ func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*
 	t.Helper()
 	require := require.New(t)
 
-	testDBTemplateBytes(t)
-	data, ok := testDBTemplate.versions[version]
-	require.True(ok, "add start version %d to testDBTemplate.versions", version)
-	copyTestDBTemplate(t, data, dbPath)
+	copyTestDBTemplate(t, historicalTestDBBytes(t, version), dbPath)
 
 	raw, m, err := openTestMigrator(dbPath)
 	require.NoError(err)
@@ -2611,10 +2608,7 @@ func migrateToVersionForTest(t *testing.T, dbPath string, version uint) *sql.DB 
 	_, err := os.Stat(dbPath)
 	if err != nil {
 		require.ErrorIs(t, err, os.ErrNotExist)
-		testDBTemplateBytes(t)
-		data, ok := testDBTemplate.versions[version]
-		require.True(t, ok, "add start version %d to testDBTemplate.versions", version)
-		copyTestDBTemplate(t, data, dbPath)
+		copyTestDBTemplate(t, historicalTestDBBytes(t, version), dbPath)
 	}
 	raw, err := migrateTestDBToVersion(t.Context(), dbPath, version)
 	require.NoError(t, err)

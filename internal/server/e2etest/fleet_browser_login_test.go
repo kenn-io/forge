@@ -263,6 +263,21 @@ func TestFleetBrowserLoginSpokeToSiblingE2E(t *testing.T) {
 		"the session belongs to the sibling only")
 }
 
+// TestFleetBrowserLoginReportsSiblingFailure keeps a sibling outage visible:
+// the hub was reached and reported the sibling's own failure, so the spoke
+// reports it as well.
+func TestFleetBrowserLoginReportsSiblingFailure(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	fixture := newFederatedForgesFixture(t)
+	answerHubSiblingTickets(http.StatusBadGateway, "")(fixture)
+	response, body := fixture.requestBrowserLogin(t, fixture.NodeA,
+		fixture.NodeB.NodeID, `{"path":"/"}`, localBearer(fixture.NodeA))
+	require.Equal(t, http.StatusBadGateway, response.StatusCode, string(body))
+	problem := decodeFleetProblem(t, string(body))
+	assert.Equal(t, string(httpapi.CodeUpstreamError), problem.Code)
+	assert.Equal(t, fixture.NodeB.NodeID, problem.Details["hostKey"])
+}
+
 func (f *federatedForgesFixture) requestSiblingTicket(
 	t *testing.T, target *federatedDaemonFixture, nodeID string, credential func(*http.Request),
 ) (http.Response, []byte) {
@@ -309,37 +324,48 @@ func TestFleetSiblingBrowserLoginTicketRefusals(t *testing.T) {
 	}
 }
 
+// answerHubSiblingTickets makes the hub answer every sibling ticket request
+// with one problem status, such as an older hub or a failed sibling.
+func answerHubSiblingTickets(status int, reason string) func(*federatedForgesFixture) {
+	return func(fixture *federatedForgesFixture) {
+		current := fixture.Hub.Server
+		fixture.Hub.Switch.Set(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !strings.HasSuffix(r.URL.Path, "/federation/browser-login-tickets") ||
+				!strings.HasPrefix(r.URL.Path, "/api/v1/fleet/hosts/") {
+				current.ServeHTTP(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(status)
+			problem := map[string]any{"status": status, "detail": "not served"}
+			if reason != "" {
+				problem["details"] = map[string]any{"reason": reason}
+			}
+			if err := json.NewEncoder(w).Encode(problem); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+		}))
+	}
+}
+
 // TestFleetBrowserLoginSiblingFallsBackWithoutHubRelay keeps the plain-link
 // fallback working when the hub cannot relay a sibling's ticket.
 func TestFleetBrowserLoginSiblingFallsBackWithoutHubRelay(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
-	olderHub := func(status int, reason string) func(*federatedForgesFixture) {
-		return func(fixture *federatedForgesFixture) {
-			current := fixture.Hub.Server
-			fixture.Hub.Switch.Set(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if !strings.HasSuffix(r.URL.Path, "/federation/browser-login-tickets") ||
-					!strings.HasPrefix(r.URL.Path, "/api/v1/fleet/hosts/") {
-					current.ServeHTTP(w, r)
-					return
-				}
-				w.Header().Set("Content-Type", "application/problem+json")
-				w.WriteHeader(status)
-				problem := map[string]any{"status": status, "detail": "not served"}
-				if reason != "" {
-					problem["details"] = map[string]any{"reason": reason}
-				}
-				if err := json.NewEncoder(w).Encode(problem); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-				}
-			}))
-		}
-	}
 	for _, test := range []struct {
 		name  string
 		setup func(*federatedForgesFixture)
 	}{
-		{name: "hub without the route", setup: olderHub(http.StatusNotFound, "")},
-		{name: "hub that denies fleet host peer routes", setup: olderHub(http.StatusForbidden, "federationRouteNotAllowed")},
+		{name: "hub without the route", setup: answerHubSiblingTickets(http.StatusNotFound, "")},
+		{name: "hub that denies fleet host peer routes", setup: answerHubSiblingTickets(http.StatusForbidden, "federationRouteNotAllowed")},
+		{name: "unavailable hub", setup: func(fixture *federatedForgesFixture) {
+			fixture.Hub.Switch.offline.Store(true)
+		}},
+		{name: "unreachable hub", setup: func(fixture *federatedForgesFixture) {
+			fixture.Hub.Switch.Set(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				panic(http.ErrAbortHandler)
+			}))
+		}},
 		{name: "inactive hub federation", setup: func(fixture *federatedForgesFixture) {
 			nodeA := fixture.NodeA
 			nodeA.Server = newFederatedDaemonServer(

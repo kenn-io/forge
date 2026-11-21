@@ -1256,9 +1256,6 @@ const acpStartTimeoutDivisor = 4
 func scaleACPStartTimeouts() {
 	acpHandshakeTimeout /= acpStartTimeoutDivisor
 	acpSettingsRestoreTimeout /= acpStartTimeoutDivisor
-	// Scale the entire budget, including its fixed allowances, so the slow
-	// start test still needs both handshake and settings restore time.
-	acpAttachTimeout /= acpStartTimeoutDivisor
 }
 
 func shortenACPStartTimeouts(t *testing.T) {
@@ -1268,6 +1265,8 @@ func shortenACPStartTimeouts(t *testing.T) {
 		acpHandshakeTimeout, acpSettingsRestoreTimeout, acpAttachTimeout = handshake, restore, attach
 	})
 	scaleACPStartTimeouts()
+	// Scale the entire budget, including its fixed allowances.
+	acpAttachTimeout /= acpStartTimeoutDivisor
 	t.Setenv("KENN_FORGE_ACP_START_DIVISOR", strconv.Itoa(acpStartTimeoutDivisor))
 }
 

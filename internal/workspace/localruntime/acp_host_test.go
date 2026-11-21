@@ -759,13 +759,23 @@ func TestACPAgentEnvReachesTheAgentAndKeepsHostsApart(t *testing.T) {
 }
 
 // A shared agent that stops answering cannot fail new chats: the chat that
-// finds it stuck starts an agent of its own once the host's time runs out, and
-// the next chat starts on a new host.
+// finds it stuck starts an agent of its own, even when that agent and its
+// settings restore are slow. The next chat starts on a new host.
 func TestACPChatStartsAloneWhenItsSharedAgentStopsAnswering(t *testing.T) {
+	attach := acpAttachTimeout
+	t.Cleanup(func() { acpAttachTimeout = attach })
+	// Scale the entire budget, including its fixed allowances.
+	acpAttachTimeout /= acpStartTimeoutDivisor
+	t.Setenv("KENN_FORGE_ACP_SHORT_START_TIMEOUTS", "1")
 	t.Setenv("KENN_FORGE_ACP_SHARED_STALL", filepath.Join(t.TempDir(), "stall"))
+	t.Setenv("KENN_FORGE_ACP_SHARED_SLOW", "5s")
 	manager, dir, _, _ := sharedACPChats(t, "alpha")
+	preferences := filepath.Join(t.TempDir(), "preferences.json")
+	require.NoError(t, os.WriteFile(preferences, []byte(`{"chat":{"model":"deep"}}`), 0o600))
+	manager.acpPreferencesPath = preferences
 	bravo := launchSharedACPChat(t, manager, dir, "bravo")
 	assert.Equal(t, "cwd="+filepath.Join(dir, "bravo"), askACPChat(t, manager, bravo))
+	t.Setenv("KENN_FORGE_ACP_SHARED_SLOW", "")
 	charlie := launchSharedACPChat(t, manager, dir, "charlie")
 	assert.Equal(t, "cwd="+filepath.Join(dir, "charlie"), askACPChat(t, manager, charlie))
 
@@ -779,23 +789,5 @@ func TestACPChatStartsAloneWhenItsSharedAgentStopsAnswering(t *testing.T) {
 	}
 	assert.Equal(t, starts[1], sessions["bravo"], "bravo runs on an agent of its own")
 	assert.Equal(t, starts[2], sessions["charlie"], "charlie runs on a new host")
-}
-
-// A chat whose shared agent is stuck still starts when its own agent then
-// takes most of a start's time and its settings take most of a restore's: the
-// daemon waits for the whole start instead of failing a chat that is nearly
-// ready.
-func TestACPChatStartsAfterAStuckHostAndASlowStartOfItsOwn(t *testing.T) {
-	t.Setenv("KENN_FORGE_ACP_SHARED_STALL", filepath.Join(t.TempDir(), "stall"))
-	t.Setenv("KENN_FORGE_ACP_SHARED_SLOW", "22s")
-	manager, dir, _, _ := sharedACPChats(t, "alpha")
-	preferences := filepath.Join(t.TempDir(), "preferences.json")
-	require.NoError(t, os.WriteFile(preferences, []byte(`{"chat":{"model":"deep"}}`), 0o600))
-	// Owners started from here on restore the saved model.
-	manager.acpPreferencesPath = preferences
-
-	bravo := launchSharedACPChat(t, manager, dir, "bravo")
-
-	assert.Equal(t, "cwd="+filepath.Join(dir, "bravo"), askACPChat(t, manager, bravo))
-	assert.Equal(t, []string{"set model=deep"}, agentLogLines(t, dir, "set "), "bravo's own agent restored the saved model")
+	assert.Equal(t, []string{"set model=deep"}, agentLogLines(t, dir, "set "), "bravo's agent restored the saved model")
 }

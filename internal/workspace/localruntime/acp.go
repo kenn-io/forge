@@ -623,7 +623,7 @@ func (s ACPState) prompted() bool {
 
 // acpHandshakeTimeout bounds each start: initialization and the session it
 // creates or loads.
-const acpHandshakeTimeout = 30 * time.Second
+var acpHandshakeTimeout = 30 * time.Second
 
 // acpStderrTailBytes bounds the agent diagnostics a start failure reports.
 const acpStderrTailBytes = 2048

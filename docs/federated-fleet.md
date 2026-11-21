@@ -1,33 +1,33 @@
 # Federated Forge
 
-A Kenn Forge fleet gives several development machines one shared control point
-without moving their repositories, worktrees, or agent sessions to a central
-server.
+With a Kenn Forge fleet, you can manage several development machines from one
+shared interface while leaving every repository, worktree, and agent session on
+the machine where it runs.
 
 ## Why use a fleet
 
-Use a fleet when one machine is not the right place for every task. For example,
-you may keep routine work on a laptop, run large builds on a workstation, and
-use a machine with a special operating system or GPU when a task needs it.
+Use a fleet when no single machine fits every task. You might handle routine
+work on a laptop, run large builds on a workstation, and reach for a machine
+with a specific operating system or GPU when a task needs one.
 
-- Open any machine's Forge to see workspaces from every machine and the node
-  that owns each one.
-- Create a workspace on any writable machine from any machine's Forge, and
-  choose which machine new workspaces use by default.
+- Open Forge on any machine to see workspaces from every machine, each labeled
+  with the node that owns it.
+- Create a workspace on any writable machine from any Forge UI, and pick which
+  machine new workspaces use by default.
 - Sync pull requests, issues, and activity once instead of spending provider
   API budget on every machine.
-- Keep each repository, worktree, process, and tmux session on its execution
-  machine.
+- Keep each repository, worktree, process, and tmux session on the machine that
+  runs it.
 
-If one machine already handles all your work, keep Forge standalone. A fleet
-adds value when the execution location matters.
+If one machine already handles all your work, keep Forge standalone. A fleet is
+worth setting up when it matters which machine runs each task.
 
 ## The mental model
 
-One **hub** owns provider synchronization, provider changes, and the fleet-wide
-view. Each **spoke** owns its local repositories, workspaces, Git commands,
-processes, and tmux sessions. The hub can also own local workspaces, so it is an
-execution machine as well as the coordinator.
+One **hub** owns provider sync, provider changes, and the fleet-wide view, while
+each **spoke** owns its local repositories, workspaces, Git commands, processes,
+and tmux sessions. The hub can also own local workspaces, so it can run work as
+well as coordinate the fleet.
 
 <figure class="fleet-diagram">
   <svg viewBox="0 0 960 560" role="img" aria-labelledby="fleet-topology-title fleet-topology-description">
@@ -77,10 +77,10 @@ execution machine as well as the coordinator.
   <figcaption>The hub coordinates the fleet. It does not become the filesystem or process owner for a spoke.</figcaption>
 </figure>
 
-Every machine runs the same `kenn-forge` binary and keeps its own directly
-accessible UI. Forge-to-Forge requests and terminal WebSockets use authenticated
-HTTPS. The hub does not use SSH to start a spoke or attach to its tmux server;
-start and supervise each daemon on its own machine.
+Every machine runs the same `kenn-forge` binary and keeps its own UI that you
+can open directly. Forge-to-Forge requests and terminal WebSockets use
+authenticated HTTPS. The hub does not use SSH to start a spoke or attach to its
+tmux server. Start and supervise each daemon on its own machine.
 
 ### Fleet rules at a glance
 
@@ -92,11 +92,11 @@ start and supervise each daemon on its own machine.
 | Who runs Git and agent processes? | The machine that owns the workspace | The machine that owns the workspace |
 | Who syncs provider data and applies provider changes? | The hub | The spoke asks the hub |
 
-Each Forge has its own default machine. Without one, new workspaces run on the
-Forge whose UI you opened.
+Each Forge has its own default machine. If you do not set one, new workspaces
+run on whichever Forge UI you opened.
 
-This guide uses the following example topology. Each name is a private HTTPS
-origin reachable from every fleet machine:
+This guide uses the following example topology, where each name is a private
+HTTPS origin reachable from every fleet machine:
 
 ```text
 https://forge-hub.example.test  hub and local execution
@@ -104,75 +104,75 @@ https://build-a.example.test            spoke and local execution
 https://build-b.example.test            spoke and local execution
 ```
 
-Tailscale Serve is a first-class way to provide those origins, but it is not a
-fleet requirement. A private LAN, UniFi network, VPN, or custom reverse proxy
-works through the same federation protocol.
+Tailscale Serve is a first-class way to provide these origins, though you do
+not need it for a fleet. A private LAN, UniFi network, VPN, or custom reverse
+proxy works with the same federation protocol.
 
 ## Understand the trust boundary
 
-Use federation only inside one operator-controlled private network. Keep every
-Forge listener behind that private ingress.
+Run federation only inside one operator-controlled private network, and keep
+every Forge listener behind that private ingress.
 
-Private network access is necessary, but it is not sufficient. Forge also
-requires HTTPS, local browser authentication, and separate credentials created
-during enrollment. An activated hub and its spokes form one
-administrative trust domain. Someone who controls an active peer should be
-treated as controlling fleet workspace and terminal operations.
+Private network access is necessary, but not enough on its own. Forge also requires
+HTTPS, local browser authentication, and separate credentials created during
+enrollment. An activated hub and its spokes share one administrative trust
+domain. Treat anyone who controls an active peer as having control over fleet
+workspace and terminal operations.
 
 An active spoke can create, inspect, remove, and attach to workspaces on every
-other member. It sends those requests to the hub, which forwards them with its
+other member. It sends those requests to the hub, which forwards them using its
 own credential for the owning member. Spokes never hold credentials for each
 other.
 
 Pending spokes have narrower access. They can resolve only the provider facts
-needed for preparation, hand state to the hub, and use enrollment
-routes. They cannot browse general provider data or perform provider writes.
-Those preparation routes are limited by operation, not by repository. Creating
-and transferring the one-time token approves that machine to become a full
-fleet member, so give a token only to a machine you trust with the fleet's
-provider data.
+needed for preparation, hand state to the hub, and use enrollment routes, and
+they cannot browse general provider data or perform provider writes. Those
+preparation routes are limited by operation, not by repository. Creating and
+transferring the one-time token approves that machine to become a full fleet
+member, so give a token only to a machine you trust with the fleet's provider
+data.
 
 ## Before you start
 
-On every machine:
+Complete these steps on every machine:
 
-1. Install the same `kenn-forge` build on every machine.
-2. Install Git, tmux, your agent CLIs, and the language tools used by local
-   workspaces. Authenticate the agents as the user that will run Forge.
-3. Log in to the Git host used for local clone, fetch, and push operations. For
-   GitHub, `gh auth login` is the normal route.
-4. Choose one stable private HTTPS origin for that machine.
+1. Install the same `kenn-forge` build.
+2. Install Git, tmux, your agent CLIs, and the language tools your local
+   workspaces use, and authenticate the agents as the user that runs Forge.
+3. Log in to the Git host you use for local clone, fetch, and push operations.
+   For GitHub, `gh auth login` is the normal route.
+4. Pick one stable private HTTPS origin for the machine.
 5. Confirm every spoke can reach the hub. The hub reaches a spoke through a
    connection the spoke opens, so the hub does not need its own route to the
    spoke. See [Spokes the hub cannot reach](#spokes-the-hub-cannot-reach).
 
 `fleet setup` configures Forge and its service. It does not provision the
 operating system, install development tools, clone your repositories, or
-authenticate agents. SSH access is useful for provisioning and upgrades;
+authenticate agents. SSH access helps with provisioning and upgrades, while
 federation itself uses HTTPS and does not require reciprocal SSH keys.
 
 The examples below use the default config location. If your service uses a
 custom config, pass that same `--config /path/to/config.toml` to **every** fleet
 command, including setup, token creation, join, preparation, and revocation.
-These commands contact the local daemon selected by that config; the hub URL
-does not select your local instance.
+Those commands contact the local daemon selected by that config, not by the hub
+URL.
 
-Do not copy a Forge data directory between machines. Each directory receives a
-stable random node ID on first start.
+Do not copy a Forge data directory between machines. Forge generates a stable
+random node ID for each directory on first start.
 
-A federation origin contains only a scheme and authority, such as
+A federation origin includes only a scheme and authority, such as
 `https://build-a.example.test`. Forge rejects cleartext HTTP origins, URL
-paths, query strings, fragments, and embedded credentials. Explicit ports are
-allowed; default `:443` is normalized away.
+paths, query strings, fragments, and embedded credentials. You can include an
+explicit port, and Forge strips the default `:443`.
 
 Federation also requires Forge to use the root base path (`base_path = "/"`).
 Non-root UI prefixes are not part of the federation protocol.
 
 ## Setup at a glance
 
-Set up the hub and spoke services first. Then enroll one spoke at a time. A
-spoke stays standalone until preparation has safely moved provider ownership to
-the hub and a service restart activates the enrollment.
+Set up the hub and spoke services first, then enroll one spoke at a time. A
+spoke stays standalone until preparation safely moves provider ownership to the hub
+and a service restart activates the enrollment.
 
 <figure class="fleet-diagram fleet-diagram--flow">
   <svg viewBox="0 0 960 260" role="img" aria-labelledby="fleet-enrollment-title fleet-enrollment-description">
@@ -221,39 +221,39 @@ the hub and a service restart activates the enrollment.
 
 ## Set up the hub
 
-Run setup as the operating-system user that will run Forge. The normal
-Tailscale path discovers the machine's certificate name and current Tailscale
-login, publishes Forge with Tailscale Serve, installs a per-user service, and
-checks the protected HTTPS API.
+Run setup as the operating-system user that runs Forge. With Tailscale, setup
+discovers the machine's certificate name and current Tailscale login, publishes
+Forge with Tailscale Serve, installs a per-user service, and checks the
+protected HTTPS API.
 
-For the Tailscale path, first join the machine to your tailnet and enable
-[HTTPS certificates](https://tailscale.com/docs/features/tailscale-serve).
-On Linux, an administrator can let the Forge user manage Tailscale without
-running Forge as root:
+To use Tailscale, join the machine to your tailnet and enable
+[HTTPS certificates](https://tailscale.com/docs/features/tailscale-serve)
+first. On Linux, an administrator can let the Forge user manage Tailscale
+without running Forge as root:
 
 ```sh
 sudo tailscale set --operator="$USER"
 ```
 
-This grants the current user control of the local Tailscale daemon; see the
+That grants the current user control of the local Tailscale daemon. See the
 [Tailscale CLI reference](https://tailscale.com/docs/reference/tailscale-cli#set).
-Then run Forge setup as that user:
+Next, run Forge setup as that user:
 
 ```sh
 kenn-forge fleet setup hub --tailscale
 ```
 
-On macOS, setup also finds the command-line client inside the standard
-Tailscale app when `tailscale` is not on `PATH`.
+On macOS, setup also finds the CLI inside the standard Tailscale app when
+`tailscale` is not on `PATH`.
 
-Review the displayed plan and confirm it. For unattended setup, inspect the
-same plan with `--dry-run`, then repeat with `--yes`.
+Review the plan Forge displays and confirm it. For unattended setup, inspect
+the plan with `--dry-run`, then run the same command with `--yes`.
 
-With `--tailscale`, anyone whose Tailscale login is on the allowlist opens the
-UI without a token. Setup allowlists this device's login and keeps any logins
-you allowed before. If your phone or another machine signs in to Tailscale with
-a different login, for example because the device is shared from another
-tailnet, add it:
+With `--tailscale`, anyone whose Tailscale login is on the allowlist can open
+the UI without a token. Setup adds this device's login to the allowlist and
+keeps any logins you allowed before. If your phone or another machine signs in
+to Tailscale with a different login, for example when a device is shared from
+another tailnet, add it:
 
 ```sh
 kenn-forge fleet setup hub --tailscale \
@@ -262,14 +262,14 @@ kenn-forge fleet setup hub --tailscale \
 ```
 
 Passing `--tailscale-login` replaces the device's own login in the new
-allowlist, so list every login you use. To remove a login, delete it from
-`[api.tailscale_serve] allowed_users` in the config and restart Forge.
+allowlist, so list every login you use. To remove a login later, delete it from
+`[api.tailscale_serve] allowed_users` in your config and restart Forge.
 
-Tailscale sends no login for [tagged devices](https://tailscale.com/docs/features/tags),
-such as CI runners and servers, so the allowlist cannot admit them. To let
-them in, grant an [app capability](https://tailscale.com/docs/features/access-control/grants/grants-app-capabilities)
+Tailscale sends no login for [tagged devices](https://tailscale.com/docs/features/tags)
+such as CI runners and servers, so the allowlist cannot admit them. To let them
+in, grant an [app capability](https://tailscale.com/docs/features/access-control/grants/grants-app-capabilities)
 in your tailnet policy and name it in Forge. Replace the example tags with
-yours, and pick a capability name under a domain you control:
+yours and pick a capability name under a domain you control:
 
 ```json
 "grants": [
@@ -289,35 +289,34 @@ allowed_users = ["you@example.com"]
 app_capability = "example.com/cap/forge"
 ```
 
-Allowed logins keep working; the capability is a second way in, and
-`allowed_users` may be empty. Serve forwards a capability only when its mapping
-names it, which needs Tailscale 1.92 or later. Publish Forge with the
-capability, using your own HTTPS and Forge ports, then restart Forge:
+Allowed logins keep working alongside the capability, and `allowed_users` may
+be empty. Serve forwards a capability only when its mapping names it, which
+requires Tailscale 1.92 or later. Publish Forge with the capability using your
+own HTTPS and Forge ports, then restart Forge:
 
 ```sh
 tailscale serve --bg --https=443 --accept-app-caps=example.com/cap/forge http://127.0.0.1:8091
 ```
 
-Setup keeps `app_capability` when you run it again, and passes it to Serve
-when it creates the mapping. It leaves an existing mapping as it is.
+If you run setup again, it keeps `app_capability` and passes it to Serve when
+creating a new mapping. It leaves an existing mapping unchanged.
 
-Every user or device granted the capability gets full access to Forge, the
-same as an allowed login, including agents and terminals on this machine.
-Anyone who can edit the tailnet policy therefore controls who gets that
-access.
+Every user or device granted the capability gets full access to Forge, including
+agents and terminals on this machine, the same as an allowed login. Anyone who
+can edit the tailnet policy therefore controls who gets that access.
 
 Serve publishes on HTTPS port 443 by default. To use another port, such as
 `https://build-a.example.ts.net:8091`, pass `--tailscale-https-port 8091`.
-Running setup again keeps the port of the existing origin.
+Running setup again preserves the port of the existing origin.
 
-MCP access through Serve requires explicit `[mcp].enabled = true`. The same
-logins and capability holders can then reach it at the Serve origin without a
-token, for example
-`https://build-a.example.ts.net/mcp`. The omitted default enables only the
-direct loopback companion.
+When MCP is enabled, the same logins and capability holders can reach it at the
+Serve origin without a token, for example
+`https://build-a.example.ts.net/mcp`. With no `[mcp]` setting, MCP is enabled
+by default on a loopback Forge with no separate MCP port, which is how setup
+configures Forge. Set `[mcp] enabled = false` to turn it off.
 
 If your LAN, UniFi network, VPN, or reverse proxy already provides private
-HTTPS, give Forge its canonical origin instead:
+HTTPS, pass Forge its canonical origin instead:
 
 ```sh
 kenn-forge fleet setup hub \
@@ -325,17 +324,17 @@ kenn-forge fleet setup hub \
 ```
 
 The `--origin` path never calls Tailscale. It configures and supervises the
-same loopback Forge service, while your ingress owns DNS and TLS. It retains
-Forge's normal bearer and browser-cookie authentication.
+same loopback Forge service while your ingress handles DNS and TLS, and it
+keeps Forge's normal bearer and browser-cookie authentication.
 
-Setup requires exactly one of `--tailscale` and `--origin`. It does not expose
-the Forge listener directly, weaken API authentication, or make the service
-depend on a particular network product.
+Setup requires either `--tailscale` or `--origin`, not both. It never exposes
+the Forge listener directly, weakens API authentication, or ties the service to
+a particular network product.
 
 The hub also needs its own provider credentials. Open **Settings → Repositories**
-on the hub and add the repositories it should synchronize. Cloning a repository
-on disk does not add it to this list. On a fresh hub, allow the initial sync to
-populate provider data before moving existing spokes.
+on the hub and add the repositories you want it to sync. Cloning a repository
+on disk does not add it to this list. On a fresh hub, wait for the initial sync
+to populate provider data before moving existing spokes.
 
 ## Set up each spoke
 
@@ -349,70 +348,72 @@ kenn-forge fleet setup spoke --tailscale
 kenn-forge fleet setup spoke --origin https://build-a.example.test
 ```
 
-Spoke setup deliberately leaves the daemon in standalone mode. Do not set
+Spoke setup leaves the daemon in standalone mode by design. Do not set
 `fleet.role = "spoke"` by hand for a spoke you enroll with `fleet join`.
-Enrollment preparation persists that role only after provider writes drain and
-state handoff completes. A spoke whose membership you
-[declare in config](#declare-membership-in-config) sets the role in config
-instead, and Forge runs the same preparation when it starts.
+Enrollment preparation writes that role only after provider writes drain and
+state handoff finishes. If you
+[declare spoke membership in config](#declare-membership-in-config), you set the
+role in config instead, and Forge runs the same preparation on startup.
 
 On Linux, setup installs a systemd user service and enables lingering so Forge
 survives logout. On macOS, it installs a LaunchAgent under the selected user.
-Both service definitions execute the installed binary directly and preserve
-the setup user's `HOME` and `PATH`. They do not start an interactive shell or
-copy arbitrary exported credentials. Configure any additional credential
+Both service definitions run the installed binary directly and preserve the
+setup user's `HOME` and `PATH`, without starting an interactive shell or
+copying arbitrary exported credentials. Configure any additional credential
 environment through your service manager.
 
 Run setup with a stable `PATH` that includes your agent CLIs and tool-manager
 shims. A minimal SSH command environment can omit tools that work in your
-interactive terminal. Verify by launching an agent from a Forge workspace
-after the service restarts.
+interactive terminal. After the service restarts, verify your setup by
+launching an agent from a Forge workspace.
 
-Tailscale identity mode treats local processes on the Forge host as trusted,
-because Tailscale Serve forwards identity headers over loopback. Use it on a
-single-user or otherwise trusted machine. On a multi-user host, use an external
-origin and Forge's bearer/cookie authentication instead.
+Tailscale identity mode trusts local processes on the Forge host because
+Tailscale Serve forwards identity headers over loopback. Use it on a
+single-user or otherwise trusted machine. On a multi-user host, use an external origin
+and Forge's bearer and cookie authentication instead.
 
 ### Adopt an existing service
 
-If Forge already runs under a service you maintain, inspect `fleet setup ...
---dry-run` first. Setup refuses to overwrite a service definition it does not
-own. For an existing federation-ready daemon with working private HTTPS, keep
-its service and continue at [Enroll one spoke at a time](#enroll-one-spoke-at-a-time).
-Re-enrollment does not require reinstalling the service or moving its data.
+If Forge already runs under a service you maintain, inspect
+`fleet setup ... --dry-run` first. Setup refuses to overwrite a service
+definition it does not own. If you have a federation-ready daemon with working
+private HTTPS, keep its service and continue at
+[Enroll one spoke at a time](#enroll-one-spoke-at-a-time). Re-enrollment does
+not require reinstalling the service or moving its data.
 
 If you want setup to own the service instead, back up the current definition
-and configuration, stop it, and explicitly move the old definition aside before
-running setup. Keep its data directory and installed binary path consistent
-with the displayed plan.
+and configuration, stop it, and explicitly move the old definition aside before running
+setup. Keep its data directory and installed binary path consistent with the
+displayed plan.
 
 ## Spokes the hub cannot reach
 
-Every active spoke keeps one tunnel open to its hub. The spoke opens it over
-the hub's HTTPS origin, next to its provider event stream. While the tunnel
-is connected, the hub sends all of its requests to that spoke through it:
-workspace snapshots, remote workspace operations, terminals, browser login,
-and revocation. A spoke that can reach the hub, but that the hub cannot
-reach, therefore appears in the hub's workspace view like any other spoke.
+Every active spoke keeps one tunnel open to its hub over the hub's HTTPS
+origin, next to its provider event stream. While the tunnel is connected, the
+hub sends all of its requests to that spoke through it: workspace snapshots,
+remote workspace operations, terminals, browser login, and revocation. A spoke
+that can reach the hub, even if the hub cannot reach it, therefore appears in
+the hub's workspace view like any other spoke.
 
 When the tunnel is down, the hub dials the spoke's enrolled origin directly.
 If the hub can never reach that origin, add `outbound_disabled = true` to the
-spoke's existing `[[fleet.members]]` entry in the **hub's** config. Identify
+spoke's existing `[[fleet.members]]` entry in the **hub's** config, matching
 the entry by its `node_id`. The change reloads without a restart.
 
-An outbound-disabled spoke is reached only through its tunnel. While the
-tunnel is down, the hub skips its snapshot requests, excludes it from the
-workspace host selector, and refuses remote operations targeting it, without
-waiting for a direct request to time out. It remains listed in Fleet settings
-and does not produce an unreachable-host warning in the workspace view.
+The hub reaches an outbound-disabled spoke only through its tunnel. While the
+tunnel is down, the hub skips snapshot requests for it, leaves it out of the
+workspace host selector, and refuses remote operations targeting it without
+waiting for a direct request to time out. The spoke stays listed in
+**Settings → Fleet federation** and does not produce an unreachable-host
+warning in the workspace view.
 
-Revoking an outbound-disabled spoke whose tunnel is down does not call the
-spoke; it observes the revocation when it next checks its activation with the
-hub.
+If you revoke an outbound-disabled spoke while its tunnel is down, the hub does
+not call the spoke. The spoke observes the revocation the next time it checks
+its activation with the hub.
 
 ## Keep credentials separate
 
-Four credential types serve different purposes:
+Forge uses four separate credential types:
 
 | Credential              | Stored on              | Purpose                                                          |
 | ----------------------- | ---------------------- | ---------------------------------------------------------------- |
@@ -422,32 +423,32 @@ Four credential types serve different purposes:
 | Git credential          | Each execution machine | Clones, fetches, pulls, and pushes directly against the Git host |
 
 Do not copy browser cookies or API tokens between machines. Enrollment creates
-a different machine credential in each direction. Forge stores inbound
-credentials as digests and keeps credential files private to the daemon
+a separate machine credential in each direction, and Forge stores inbound
+credentials as digests while keeping credential files private to the daemon
 account.
 
-A spoke needs its own Git credential even though it does not synchronize
-provider data. Preparation verifies the exact Git credential route before it
-stores a workspace launch specification.
+A spoke needs its own Git credential even though it does not sync provider
+data. Preparation checks the exact Git credential route before storing a
+workspace launch specification.
 
-The hub may have more than one credential source. User-attributed
-provider mutations use a user credential. Forge-managed Git follows normal
+The hub may have more than one credential source. User-attributed provider
+mutations use a user credential, while Forge-managed Git follows normal
 credential priority and can use an App credential for repositories covered by
 that App. Verify the route that matters to your deployment instead of assuming
 all hub Git traffic uses one credential.
 
-The hub strips browser authorization, cookies, origin, and forwarding
-headers before it calls a spoke. It adds only the federation credential enrolled
-for that exact HTTPS origin and does not follow redirects.
+Before calling a spoke, the hub strips browser authorization, cookies, origin,
+and forwarding headers. It attaches only the federation credential enrolled for
+that exact HTTPS origin and does not follow redirects.
 
 ## Enroll one spoke at a time
 
-Finish and verify one spoke before enrolling another. This keeps state handoff
-and rollback bounded to one machine.
+Finish and verify one spoke before enrolling the next. That keeps state handoff
+and rollback scoped to a single machine.
 
 ### 1. Create a one-time token
 
-On the hub:
+On the hub, run:
 
 ```sh
 umask 077
@@ -457,16 +458,16 @@ kenn-forge fleet enrollment-token \
   --ttl 10m > ./forge-enrollment-token
 ```
 
-The token is printed once, expires, and can create one enrollment. Creating and
-transferring it approves that spoke to finish preparation and activate. Treat it
-as a membership credential.
+Forge prints the token once. It expires and can create one enrollment. Creating
+and transferring it approves that spoke to finish preparation and activate.
+Treat it as a membership credential.
 
-Transfer the file through an approved secret-sharing channel. Do not put the
+Transfer the file through an approved secret-sharing channel. Never put the
 token in a command-line argument or config file.
 
 ### 2. Join from the spoke
 
-On `build-a`:
+On `build-a`, run:
 
 ```sh
 kenn-forge fleet join https://forge-hub.example.test \
@@ -476,8 +477,8 @@ kenn-forge fleet join https://forge-hub.example.test \
 rm ./forge-enrollment-token
 ```
 
-For automation, pass the token on standard input instead of creating a spoke-side
-file:
+For automation, pass the token on standard input instead of writing a file on
+the spoke:
 
 ```sh
 secret-command | kenn-forge fleet join \
@@ -486,17 +487,17 @@ secret-command | kenn-forge fleet join \
   --name "Build spoke A"
 ```
 
-Interactive terminals use a hidden token prompt when neither input method is
-provided.
+If you provide neither a file nor standard input in an interactive terminal,
+Forge prompts for the token with hidden input.
 
-Joining records a pending enrollment. It does not change the spoke role or
-restart the daemon. Record the printed enrollment ID with the host and origin
-in your private operations inventory; revocation uses that ID. Remove any
-remaining token copies after a successful join.
+Joining records a pending enrollment without changing the spoke role or
+restarting the daemon. Save the printed enrollment ID alongside the host and
+origin in your private operations inventory. Revocation uses that ID. Remove
+any remaining copies of the token after a successful join.
 
 ### 3. Prepare the spoke
 
-Run on the spoke:
+On the spoke, run:
 
 ```sh
 kenn-forge fleet prepare-spoke
@@ -504,21 +505,22 @@ kenn-forge fleet prepare-spoke
 
 Preparation stops new provider writes, waits for admitted writes and deferred
 merges, drains notification acknowledgements, refreshes workspace launch
-information, hands review drafts and user-authored workflows to the hub, and
-seals local provider writes. If it reports concrete remaining work, resolve
-that work and run the command again.
+information, hands review drafts to the hub, and seals local provider writes.
+If it reports concrete remaining work, resolve that work and run the command again.
 
 This handoff does not copy the entire provider database or move repositories,
-worktrees, or agent sessions. The hub must already track the repositories needed
-by existing workspaces, and the spoke must be able to use their Git credentials.
+worktrees, or agent sessions. The hub must already track the repositories your
+existing workspaces need, and the spoke must be able to use their Git
+credentials.
 
-The token's original deadline no longer applies after preparation starts.
+After preparation starts, the token's original deadline no longer applies.
 
 ### 4. Restart and verify activation
 
 When preparation reports completion, restart Forge through the spoke's service
-manager. Activation happens during startup. Verify the spoke is active in the
-hub's Fleet settings and in the spoke's direct UI.
+manager. Activation happens during startup. Check that the spoke shows as
+active in the hub's **Settings → Fleet federation** and in the spoke's direct
+UI.
 
 For services installed by `fleet setup`, run the command for your platform as
 the service user:
@@ -532,22 +534,22 @@ systemctl --user status kenn-forge.service --no-pager
 launchctl kickstart -k "gui/$(id -u)/io.kenn.forge"
 ```
 
-For an existing custom service, use its actual unit or LaunchAgent label.
-A running process alone does not prove enrollment activated.
+For an existing custom service, use its actual unit or LaunchAgent label. A
+running process alone does not prove enrollment activated.
 
-Do not enroll the next spoke yet. Complete the checks in [Verify the
-fleet](#verify-the-fleet) for this spoke first.
+Complete the checks in [Verify the fleet](#verify-the-fleet) for this spoke
+before enrolling the next one.
 
 ## Declare membership in config
 
 Instead of running the four enrollment steps, you can declare the hub and its
-spokes in each daemon's config. This suits fleets deployed from a configuration
-management tool. A declared spoke joins, prepares, and activates on its first
-start, with no CLI step and no second restart.
+spokes in each daemon's config. This works well for fleets deployed with a
+configuration management tool. A declared spoke joins, prepares, and activates
+on its first start, with no CLI step and no second restart.
 
-Each spoke gets its own enrollment secret: at least 32 characters with no
-whitespace, such as the output of `openssl rand -hex 32`. Put the same secret
-in a file on the hub and on that spoke, readable only by the Forge service
+Give each spoke its own enrollment secret of at least 32 characters with no
+whitespace, such as the output of `openssl rand -hex 32`. Place the same secret
+in a file on both the hub and that spoke, readable only by the Forge service
 user. Secret managers that publish files as symlinks work. Never put the secret
 itself in `config.toml`.
 
@@ -577,88 +579,92 @@ base_url = "https://forge-hub.example.test"
 enrollment_secret_file = "/run/secrets/forge-fleet-build-a"
 ```
 
-Declared membership and a default machine combine. A spoke declared this way
-can also set `workspaces.default_execution_target` to another member's origin,
-which configuration management knows before any machine starts; see
+Declared membership also works with a default machine. On a declared spoke, you
+can set `workspaces.default_execution_target` to another member's origin, which
+configuration management knows before any machine starts. See
 [Choose where new workspaces run](#choose-where-new-workspaces-run).
 
-Forge records what it learns in `config.toml`: the hub's node ID in
-`fleet.hub.node_id` on the spoke and each active spoke in `fleet.members` on
+Forge writes what it learns back to `config.toml`: the hub's node ID in
+`fleet.hub.node_id` on the spoke, and each active spoke in `fleet.members` on
 the hub. The Forge service user must be able to write the file. If your
-configuration tool rewrites it without these entries, Forge restores them at
-the next start or config reload.
+configuration tool rewrites `config.toml` without those entries, Forge restores
+them on the next start or config reload.
 
-Deploy the hub first, then start the spoke. On startup the spoke:
+Deploy the hub first, then start the spoke. On startup, the spoke:
 
 1. Joins the hub with the secret. The hub admits the join only from the origin
    it declares for that secret.
-2. Runs the same preparation as `fleet prepare-spoke`: it drains provider
-   writes and hands review drafts and user-authored workflows to the hub.
-3. Activates, as a restart after manual preparation would.
+2. Runs the same preparation as `fleet prepare-spoke`, draining provider writes
+   and handing review drafts to the hub.
+3. Activates, like a restart after manual preparation.
 
-Until the spoke has activated for the first time, Forge exits with an error
-when it cannot read its secret file, write its config, or reach the hub. Its
-service manager restarts it until all three work. After that, the spoke behaves like
-any enrolled spoke: restarts keep the same enrollment, and a hub outage pauses
-only provider work. If the hub rejects the join or preparation finds work it
-cannot finish, the spoke starts with local execution only and logs the reason
-with the next step. Fix the cause and restart the spoke.
+Until the spoke activates for the first time, Forge exits with an error if it
+cannot read its secret file, write its config, or reach the hub, and its
+service manager restarts it until all three succeed. After activation, the
+spoke behaves like any enrolled spoke: restarts keep the same enrollment, and a
+hub outage pauses only provider work. If the hub rejects the join or
+preparation finds work it cannot finish, the spoke starts with local execution
+only and logs the reason along with the next step. Fix the cause and restart
+the spoke.
 
 If the hub stays unreachable for more than 24 hours after the spoke joins and
 before preparation starts, the hub drops the pending enrollment. Write a new
-secret on both machines; the spoke joins again when it next starts.
+secret on both machines, and the spoke joins again on its next start.
 
-A spoke cannot send notification read marks to the provider, so a standalone
-daemon with read marks still waiting to be sent cannot finish preparation
-after you declare it a spoke. Convert such a daemon with `fleet join` and
-`fleet prepare-spoke` while it runs standalone, then add the declared config.
+Because a spoke cannot send notification read marks to the provider, a
+standalone daemon with unsent read marks cannot finish preparation after you
+declare it a spoke. Convert that daemon with `fleet join` and
+`fleet prepare-spoke` while it still runs standalone, then add the declared
+config.
 
-Each secret starts one enrollment, like a one-time token. A spoke that restarts
-with a joined enrollment does not use its secret again. Rotate the secret on
-both machines when you:
+Each secret starts one enrollment, like a one-time token, and a spoke that
+restarts with a joined enrollment does not use its secret again. Rotate the
+secret on both machines when either of these happens:
 
-- reinstall a spoke with a new data directory. The hub revokes the enrollment
-  of the machine previously at that origin and enrolls the new one.
-- see a join rejected because the secret was consumed. This happens when the
-  hub accepted a join but the spoke never saw the reply.
+- You reinstall a spoke with a new data directory. The hub revokes the
+  enrollment of the machine previously at that origin and enrolls the new one.
+- You see a join rejected because the secret was already consumed. This happens
+  when the hub accepted a join but the spoke never received the reply.
 
 Removing a spoke from `fleet.declared_spokes` revokes its enrollment when the
-hub reloads its config or restarts. The hub tells the spoke if it can reach it.
-If the spoke is offline, it learns of the removal the next time it renews its
-activation lease, within 6 hours of coming back, or the next time it starts. The
-hub logs `revoke fleet spoke removed from fleet.declared_spokes` when it removes
-the spoke. Once the spoke has learned, it starts with local execution only and a
-reason saying the hub revoked its enrollment, and `kenn-forge fleet leave`
-accepts it. A
-removed spoke starts with local execution only
-until you return it to standalone operation with [Return a spoke to standalone
-operation](#return-a-spoke-to-standalone-operation), or write a new secret on
-the hub and the spoke and declare it again. It does so after you delete its
-secret file too. If the hub refuses a new secret, the spoke keeps its revoked
-enrollment, and `fleet leave` still accepts it.
+hub reloads its config or restarts, and the hub logs
+`revoke fleet spoke removed from fleet.declared_spokes`. If the hub can reach
+the spoke, it notifies the spoke. If the spoke is offline, it learns
+of the removal the next time it renews its activation lease, within 6 hours of
+coming back, or the next time it starts.
 
-Declared and CLI-enrolled spokes can share a hub. When a spoke enrolled with
+Once the spoke learns of the removal, it starts with local execution only, its
+local-only reason says the hub revoked its enrollment, and
+`kenn-forge fleet leave` accepts that spoke. It
+keeps starting with local execution only, even after you delete its secret
+file, until you either follow
+[Return a spoke to standalone operation](#return-a-spoke-to-standalone-operation)
+or write a new secret on both machines and declare it again. If the hub refuses
+a new secret, the spoke keeps its revoked enrollment and `fleet leave` still
+accepts it.
+
+Declared and CLI-enrolled spokes can share a hub. If a spoke enrolled with
 `fleet join` sits at an origin you later declare, the hub adopts it as declared
-membership, so an existing fleet can move to declared config without
+membership, so you can move an existing fleet to declared config without
 re-enrolling. Removing declarations never revokes spokes you enrolled with the
 CLI and did not declare.
 
 ## Abort or revoke an enrollment
 
-Before activation, restore standalone operation from the spoke:
+To restore standalone operation from the spoke before activation, run:
 
 ```sh
 kenn-forge fleet abort-preparation
 ```
 
-This revokes the pending enrollment and reopens the durable provider-write
-gate. On a standalone process, provider writes resume immediately. If the
-daemon already restarted in spoke mode, the command reports that another
-restart is required.
+This command revokes the pending enrollment and reopens the durable
+provider-write gate. On a standalone process, provider writes resume right
+away. If the daemon already restarted in spoke mode, the command tells you that
+another restart is required.
 
-If the hub is unavailable, `--force` performs local recovery and
-prints the enrollment ID that must be revoked later. The spoke retains only a
-narrow revocation credential so that later hub cleanup can still complete.
+If the hub is unavailable, pass `--force` to recover locally and print the
+enrollment ID you need to revoke later. The spoke keeps only a narrow
+revocation credential so hub cleanup can still finish later.
 
 To remove a pending or active enrollment, run on the hub:
 
@@ -666,17 +672,17 @@ To remove a pending or active enrollment, run on the hub:
 kenn-forge fleet revoke ENROLLMENT_ID
 ```
 
-The first attempt requires the spoke to be reachable so it can invalidate its
-local side of the relationship. Once the spoke acknowledges revocation, retries
-can finish hub cleanup without contacting it again. Revoke before removing a
-spoke from configuration. After activation, restoring a former standalone
-spoke requires its complete pre-enrollment unit: config, database, federation
-store, credential store, and binary. Do not restore only one file from that set.
+The spoke must be reachable on the first attempt so it can invalidate its local
+side of the relationship. Once the spoke acknowledges revocation, retries can
+finish hub cleanup without contacting it again. Revoke before removing a spoke
+from configuration. After activation, restoring a former standalone spoke
+requires its complete pre-enrollment set: config, database, federation store,
+credential store, and binary. Do not restore only one file from that set.
 
 ## Verify the fleet
 
-Configuration checks are not enough. Exercise the protected paths and the
-behavior an operator depends on.
+Configuration checks are not enough on their own. Exercise the protected paths
+and day-to-day behavior before relying on the fleet.
 
 ### Transport and identity
 
@@ -701,31 +707,29 @@ behavior an operator depends on.
 
 ### Provider and Git ownership
 
-- Observe provider synchronization on the hub.
-- Confirm spokes run no provider synchronization worker.
-- Start one safe provider mutation from a spoke UI and observe it complete
+- Watch provider sync run on the hub.
+- Confirm spokes run no provider sync worker.
+- Trigger one safe provider mutation from a spoke UI and confirm it completes
   through the hub.
-- Clone or fetch a private repository on every spoke and confirm that machine's
-  Git credential route is used.
-- Confirm provider API request budget is not independently consumed by every
-  spoke.
+- Clone or fetch a private repository on every spoke and confirm Forge uses
+  that machine's Git credential route.
+- Confirm every spoke does not independently spend provider API request budget.
 
 ### Failure behavior
 
-- Stop one spoke. Healthy machines and their workspaces should remain visible;
-  only the stopped spoke should become unavailable.
-- Stop the hub. Each spoke should retain local workspace authority, lose
-  access to other members' workspaces,
-  keep provider data already loaded in that browser tab visible behind a
-  stale-data banner, disable Sync and pull-request Refresh, and mark aggregate
-  data incomplete.
-- Reload a spoke UI while the hub remains stopped. The new page has no
-  persistent provider cache, so provider pages cannot repopulate; local
-  workspaces must remain usable.
-- Restart the hub. Spokes should reconnect, replay events, reconcile
-  provider state, and restore the fleet view without a browser reload.
+- Stop one spoke. Healthy machines and their workspaces stay visible, and only
+  the stopped spoke becomes unavailable.
+- Stop the hub. Each spoke keeps authority over its local workspaces, loses
+  access to other members' workspaces, keeps provider data already loaded in
+  that browser tab visible behind a stale-data banner, disables **Sync** and
+  pull-request **Refresh detail**, and marks aggregate data incomplete.
+- Reload a spoke UI while the hub is still stopped. The new page has no
+  persistent provider cache, so provider pages cannot repopulate, while local
+  workspaces stay usable.
+- Restart the hub. Spokes reconnect, replay events, reconcile provider state,
+  and restore the fleet view without a browser reload.
 - Restart each spoke. Its direct UI, local workspaces, enrollment, and remote
-  terminal attachment should recover.
+  terminal attachment recover.
 
 ## Use the fleet
 
@@ -735,11 +739,11 @@ Forge automatically and opens the same page there. From a spoke, other spokes
 open as ordinary links and use their own sign-in, such as Tailscale Serve.
 Browser modifiers open the plain link in another tab or window. Each origin
 keeps its own browser state, filters, searches, terminal connections, and event
-cursors; changing one Forge tab does not retarget another.
+cursors, and changing one Forge tab does not retarget another.
 
-Every member's UI shows the fleet-wide workspace view, and each workspace row
-shows its execution-node badge. Supported actions call the owning machine's
-HTTPS API, directly from the hub and through the hub from a spoke:
+Every member's UI shows the fleet-wide workspace view, with an execution-node
+badge on each workspace row. Supported actions call the owning machine's HTTPS
+API, directly from the hub and through the hub from a spoke:
 
 - create a repository, pull-request, or issue workspace on any writable member;
 - inspect, refresh, or remove a workspace on its owning machine;
@@ -747,91 +751,93 @@ HTTPS API, directly from the hub and through the hub from a spoke:
 - inspect local Git state;
 - open a terminal through the WebSocket bridge.
 
-The **Run on** selector in **New workspace** starts on this Forge's default
-machine and keeps unavailable machines visible with their reason.
+In **New workspace**, the **Run on** selector starts on this Forge's default
+machine and keeps unavailable machines visible along with the reason each one
+is unavailable.
 
 No Forge creates a local proxy process for a remote terminal. Input, output,
 resize messages, and close events pass between WebSocket connections: one hop
 from the hub, two from a spoke.
 
-If the hub is down, a spoke remains useful for its own workspaces but cannot
-reach other members' workspaces or provide current hub-owned provider data.
+If the hub goes down, a spoke still works for its own workspaces, though it
+cannot reach other members' workspaces or show current hub-owned provider data.
 
 ### Choose where new workspaces run
 
-Set `workspaces.default_execution_target` in a Forge's `config.toml` to the
-fleet member where new workspaces from that Forge's UI should run. Name the
-member by its HTTPS origin or its node ID:
+To set the fleet member where new workspaces from a Forge UI run by default,
+set `workspaces.default_execution_target` in that Forge's `config.toml` to the
+member's HTTPS origin or node ID:
 
 ```toml
 [workspaces]
 default_execution_target = "https://build-b.example.test"
 ```
 
-For example, set this on the `build-a` spoke to drive from its UI while every
+For example, set this on the `build-a` spoke to work from its UI while every
 new workspace runs on `build-b`. The hub keeps syncing the provider and
-applying provider changes as before. The value also accepts `devbox:<id>` for
+applying provider changes as before. The setting also accepts `devbox:<id>` for
 a [devbox](devboxes.md) on a hub or standalone Forge. Leave it empty, or name
 this Forge itself, to create workspaces locally, so configuration management
 can write the same value on every machine.
 
 **Settings → Workspaces** lists the fleet members as well and saves the same
-key. The default applies to the pull-request and issue workspace buttons, quick
-actions, onboarding, and the **Run on** selector's starting choice.
+key. This default applies to the pull-request and issue workspace buttons,
+quick actions, onboarding, and the **Run on** selector's starting choice.
 
-When the default machine is offline, Forge does not fall back to this Forge.
-The workspace button is disabled, the page names the unavailable machine and
-why, and it offers a **Create on** button for each machine that can take the
-workspace now. A quick action run on selected items reports the unavailable
-machine for each item and creates nothing.
+When the default machine is offline, Forge does not fall back to the local
+Forge. It disables the workspace button, names the unavailable machine and why
+it is unavailable, and offers a **Create on** button for each machine that can
+take the workspace now. Running a quick action on selected items reports the
+unavailable machine for each item and creates nothing.
 
-A spoke reaches other members only through an active hub. After upgrading,
-upgrade the hub first, then restart each spoke; the hub grants the spoke this
+A spoke reaches other members only through an active hub. When upgrading,
+upgrade the hub first, then restart each spoke. The hub grants the spoke this
 access when the spoke next activates.
 
 ## Understand Sync, Refresh, and hub outages
 
-Provider controls keep the same owner regardless of which Forge UI you opened:
+Provider controls keep the same owner regardless of which Forge UI you open:
 
-| Action in a spoke UI      | What Forge does                                                                                                                                                                      |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Top-bar **Sync**         | Asks the hub to sync its configured repositories. The spoke does not run a second provider sync.                                                                              |
-| **Sync current repo**    | Asks the hub to sync only the repository selected by the route or repository filter. Use this when one repository needs attention without spending a full-fleet sync budget. |
-| Pull-request **Refresh** | Asks the hub to fetch that pull request, then returns the refreshed detail to the spoke.                                                                                      |
-| Start a shell or agent   | Starts the session on the spoke from the existing local workspace. It does not contact the hub.                                                                               |
-| Provider mutation        | Sends the mutation to the hub, which applies it with the hub's provider credential.                                                                                  |
+| Action in a spoke UI             | What Forge does                                                                                                                                                               |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Top-bar **Sync**                 | Asks the hub to sync its configured repositories. The spoke does not run a second provider sync.                                                                              |
+| **Sync current repo**            | Asks the hub to sync only the repository selected by the route or repository filter. Use this when one repository needs attention without spending a full-fleet sync budget.  |
+| Pull-request **Refresh detail**  | Asks the hub to fetch that pull request, then returns the refreshed detail to the spoke.                                                                                      |
+| Start a shell or agent           | Starts the session on the spoke from the existing local workspace. It does not contact the hub.                                                                               |
+| Provider mutation                | Sends the mutation to the hub, which applies it with the hub's provider credential.                                                                                           |
 
-Opening a pull request normally reads the hub's stored detail first. If
-the repository is tracked but that pull request is missing from the stored
-projection, Forge performs one targeted pull-request sync automatically. This
-repairs a cold or partially completed repository sync without starting another
-full sync. If the repository itself is not configured, Forge directs you to
-**Settings → Repositories**; add it there, then use **Sync current repo** or
+Opening a pull request normally reads the hub's stored detail first. If the
+repository is tracked but that pull request is missing from the stored
+projection, Forge automatically runs one targeted pull-request sync, repairing
+a cold or partially completed repository sync without starting another full
+sync. If the repository itself is not configured, Forge points you to
+**Settings → Repositories**. Add it there, then use **Sync current repo** or
 reopen the pull request.
 
-When a spoke loses its hub connection, it keeps provider data already
-loaded in that browser tab visible and labels it as stale. Sync and pull-request
-Refresh are disabled, provider changes are unavailable, and local workspace and
-terminal operations continue. New shell and agent sessions in an existing
-workspace also remain local; generated agent context uses the last validated
-workspace facts. A fresh browser load has no durable provider cache, so it
-cannot reconstruct provider pages until the hub returns.
+When a spoke loses its connection to the hub, it keeps provider data already
+loaded in that browser tab visible and labels it as stale. Forge disables
+**Sync** and pull-request **Refresh detail**, makes provider changes
+unavailable, and keeps local workspace and terminal operations working. New
+shell and agent sessions in an existing workspace stay local as well, and
+generated agent context uses the last validated workspace facts. A fresh
+browser load has no durable provider cache, so it cannot rebuild provider pages
+until the hub returns.
 
-Reconnection is automatic. The spoke replays hub events and reconciles
-the visible provider projection before removing the stale-data banner. Do not
-reload merely to recover a connection.
+Reconnection happens automatically. Before clearing the stale-data banner, the
+spoke replays hub events and reconciles the visible provider projection. Do not
+reload the page only to recover a connection.
 
-Installing a provider API credential on a spoke does not create automatic
-failover. In spoke role, Forge uses local credentials for Git clone, fetch, pull,
-and push, but it does not construct an independent provider syncer. Automatic
-multi-writer provider failover is not currently supported.
+Installing a provider API credential on a spoke does not set up automatic
+failover. In spoke role, Forge uses local credentials for Git clone, fetch,
+pull, and push, and does not construct an independent provider syncer.
+Automatic multi-writer provider failover is not currently supported.
 
 ## Advanced: publish with your own reverse proxy
 
 The setup command always binds Forge to loopback and validates the public
-authority with `trust_reverse_proxy = false`. Your proxy must preserve the
-incoming `Host` header and forward to the configured loopback port. It must not
-rewrite `Host` to the upstream address.
+authority with `trust_reverse_proxy = false`. Configure your proxy to preserve
+the incoming `Host` header and forward traffic to the configured loopback port,
+without rewriting `Host` to the upstream address.
 
 For example:
 
@@ -842,23 +848,22 @@ https://build-a.example.test {
 }
 ```
 
-Use your real private address and a certificate trusted by every fleet
-machine. Verify the HTTPS URL with the normal operating-system trust store. Do
-not use `curl -k`; it hides certificate and hostname mistakes that also break
+Use your real private address and a certificate trusted by every fleet machine.
+Verify the HTTPS URL with the normal operating-system trust store. Do not use
+`curl -k`. It hides certificate and hostname mistakes that also break
 federation.
 
 `--origin` does not manage this proxy, its certificate, DNS, or browser login.
-That separation is intentional: the federation contract is canonical HTTPS,
-not Tailscale or Caddy.
+That separation is intentional because the federation contract is canonical
+HTTPS, not Tailscale or Caddy.
 
 ## Replace the hub
 
-Do not replace the hub by changing DNS or copying one credential. An
-enrollment is bound to the hub's stable node ID and canonical origin.
-The hub also stores provider state alongside its own local execution
-state.
+Do not replace a hub by changing DNS or copying one credential. Every
+enrollment is bound to the hub's stable node ID and canonical origin, and the
+hub also stores provider state alongside its own local execution state.
 
-Choose the recovery you need before changing enrollment:
+Pick the recovery path that matches your goal before changing enrollment:
 
 | Goal | Approach |
 | --- | --- |
@@ -868,95 +873,96 @@ Choose the recovery you need before changing enrollment:
 
 ### Move to a fresh hub
 
-This procedure rebuilds provider data through synchronization. It preserves
-each retained machine's local identity and workspaces; it does not promise to
-reproduce the old hub's full archive. Preparation transfers review drafts and
-user-authored workflows when each machine joins.
+This procedure rebuilds provider data through sync. It keeps each retained
+machine's local identity and workspaces, though it does not reproduce the old
+hub's full archive. Preparation transfers review drafts when each machine
+joins.
 
-The old hub and spokes must remain reachable for revocation. If the old hub was
-lost in a reinstall, restore it from its matching backup first. A replacement
-at the same hostname with an empty data directory is still a different hub.
+The old hub and spokes must stay reachable for revocation. If you lost the old
+hub in a reinstall, restore it from its matching backup first. A replacement at
+the same hostname with an empty data directory is still a different hub.
 
 1. **Record and back up the old fleet.** Record each machine's node ID, origin,
    enrollment ID, config and data paths, service definition, binary version,
-   and local workspace list. Pause fleet changes. Stop the Forge services while
-   taking a consistent backup of their databases and state, including any
-   SQLite WAL files, enrollment and credential stores, configuration, binaries,
-   and service definitions. Keep these as matching rollback sets, with access
-   restricted to the operator. Back up local repositories and worktrees
-   separately if they are outside those paths. Restart the old fleet and verify
-   it before proceeding.
-2. **Prepare the new hub.** Use a new data directory and its own private HTTPS
-   origin. Follow [Set up the hub](#set-up-the-hub), authenticate its provider
-   and Git access, and configure its repository list. Check actual repository
-   and pull-request reads, plus any local agent tools the hub will run.
+   and local workspace list. Pause fleet changes and stop the Forge services
+   while you take a consistent backup of their databases and state, including
+   any SQLite WAL files, enrollment and credential stores, configuration,
+   binaries, and service definitions. Keep these as matching rollback sets
+   restricted to the operator, and back up local repositories and worktrees
+   separately if they live outside those paths. Restart the old fleet and
+   verify it before continuing.
+2. **Prepare the new hub.** Give the new hub a fresh data directory and its own
+   private HTTPS origin. Follow [Set up the hub](#set-up-the-hub), authenticate
+   its provider and Git access, and configure its repository list. Test actual
+   repository and pull-request reads, plus any local agent tools the hub runs.
 3. **Move one spoke.** On the old hub, run
-   `kenn-forge fleet revoke ENROLLMENT_ID` using that spoke's old enrollment ID. Then create a new token
-   on the new hub and follow [join, prepare, restart, and
-   verify](#enroll-one-spoke-at-a-time) on the spoke. Use the new hub origin and
-   retain the spoke's existing origin, config, and data directory. Expect
-   provider access to pause between revocation and activation. Confirm the
-   spoke's node ID and local workspace list are unchanged, and that the new hub
-   can reach its workspaces and terminals, before moving the next spoke.
-4. **Move the old hub last, if it will become a spoke.** Revoke all its old
-   members first; a hub with members cannot join another hub. Keep its existing
-   service, origin, and data directory, then run the same join, prepare, and
-   restart sequence against the new hub. Its local workspaces remain on that
-   machine. Do not set its role by hand or run spoke setup merely to change the
-   role. If retiring the old hub instead, stop its service after the cutover.
+   `kenn-forge fleet revoke ENROLLMENT_ID` with that spoke's old enrollment ID.
+   Then create a new token on the new hub and follow
+   [join, prepare, restart, and verify](#enroll-one-spoke-at-a-time) on the
+   spoke, using the new hub origin while keeping the spoke's existing origin,
+   config, and data directory. Expect provider access to pause between
+   revocation and activation. Before moving the next spoke, confirm the spoke's
+   node ID and local workspace list are unchanged and that the new hub can
+   reach its workspaces and terminals.
+4. **Move the old hub last, if you want it to become a spoke.** Revoke all of
+   its old members first. A hub with members cannot join another hub. Keep
+   its existing service, origin, and data directory, then run the same join,
+   prepare, and restart sequence against the new hub. Its local workspaces stay
+   on that machine. Do not set its role by hand or run spoke setup only to
+   change the role. If you are retiring the old hub instead, stop its service
+   after the cutover.
 5. **Verify and record the final fleet.** Check every direct HTTPS UI and the
-   new hub's aggregate workspace view. Exercise a local agent and a terminal
+   new hub's aggregate workspace view, and run a local agent and a terminal
    through the hub on each execution machine. Record the new enrollment IDs,
    service restart commands, and verification results. Keep the pre-cutover
-   backups until the replacement has passed your recovery checks.
+   backups until the replacement passes your recovery checks.
 
 ### Roll back a cutover
 
-Rollback restores a coordinated fleet state, not just the old hub's database.
-Stop the new hub and affected Forge services first. Preserve current state and
-any work created since the cutover, then restore the old hub and affected
-members from their matching pre-cutover sets. Restore the service definitions
-and original ingress bindings along with state. Start the old hub, then its
+Rolling back restores a coordinated fleet state, not only the old hub's
+database. Stop the new hub and affected Forge services first, preserve current
+state and any work created since the cutover, and then restore the old hub and
+affected members from their matching pre-cutover sets along with their service
+definitions and original ingress bindings. Start the old hub, then start its
 spokes, and verify their original identities, enrollment, and workspace access.
-Keep the replacement hub stopped while this restored fleet is authoritative.
+Keep the replacement hub stopped while the restored fleet is authoritative.
 
 Database rollback can discard changes made after the backup. Do not overwrite
-new worktree contents as part of restoring Forge state. Revoking a new
-enrollment alone does not restore the old enrollment or provider ownership.
+new worktree contents when restoring Forge state. Revoking a new enrollment
+alone does not restore the old enrollment or provider ownership.
 
 ## Return a spoke to standalone operation
 
-Keep the spoke running and connected until revocation finishes. An
-outbound-disabled spoke whose tunnel is down is revoked on the hub without a
-callback.
-On the hub, run:
+Keep the spoke running and connected until revocation finishes. If an
+outbound-disabled spoke has its tunnel down, the hub revokes it without a
+callback. On the hub, run:
 
 ```sh
 kenn-forge fleet revoke ENROLLMENT_ID --config /path/to/hub/config.toml
 ```
 
-Stop the spoke's Forge service, leaving its worktrees and tmux sessions in place.
-Retain a matching backup of its current data directory, configuration, binary,
-and service definition, as described in [Move to a fresh hub](#move-to-a-fresh-hub).
-Then, on the stopped spoke, run:
+Stop the spoke's Forge service while leaving its worktrees and tmux sessions in
+place. Keep a matching backup of its current data directory, configuration,
+binary, and service definition, as described in
+[Move to a fresh hub](#move-to-a-fresh-hub). Then, on the stopped spoke, run:
 
 ```sh
 kenn-forge fleet leave --config /path/to/spoke/config.toml
 ```
 
-This disables federation and removes the old hub's credentials. It preserves
-the current node identity, local database, workspaces, and session records;
-repeating it after an interruption is supported. It does not restore an old
+This command disables federation and removes the old hub's credentials while
+keeping the current node identity, local database, workspaces, and session
+records. You can repeat it after an interruption. It does not restore an old
 database or copy the hub's provider archive, review drafts, or credentials.
 
 Configure this machine's own provider access and repository list before
-starting Forge. Sync its repositories, then check its local workspaces and
-terminals. Provider state created on the hub stays there. Pending enrollments
-use `fleet abort-preparation`, not `fleet leave`.
+starting Forge, sync its repositories, and then check its local workspaces and
+terminals. Provider state created on the hub stays there. For pending
+enrollments, use `fleet abort-preparation` instead of `fleet leave`.
 
-After `abort-preparation --force`, finish pending revocation on the hub before
-disabling federation. `leave` must not remove the credential needed for that
-cleanup; an already-disabled standalone instance is left unchanged.
+After running `abort-preparation --force`, finish pending revocation on the hub
+before disabling federation. `leave` must not remove the credential needed for
+that cleanup, and an already-disabled standalone instance stays unchanged.
 
 ## Upgrade federation protocol 3 to 4
 
@@ -964,7 +970,7 @@ A protocol-3 fleet needs a one-time data migration before protocol-4 binaries
 can use its enrollment. Keep a matching rollback backup of every host's
 database, enrollment and credential stores, configuration, and binary.
 
-1. Stop the Forge service on every fleet member. Keep its worktrees and tmux
+1. Stop the Forge service on every fleet member, leaving its worktrees and tmux
    sessions in place.
 2. On each host, run the new binary against that host's existing configuration:
 
@@ -972,93 +978,93 @@ database, enrollment and credential stores, configuration, and binary.
    /path/to/new/kenn-forge fleet migrate-protocol --config ~/.kenn/forge/config.toml
    ```
 
-3. Install the new binary, start the hub, then start its spokes. Verify the
+3. Install the new binary, start the hub, and then start its spokes. Verify the
    fleet workspace list and terminal access on each member.
 
-The migration retains node identities, enrollment, credentials, preparation
-seals, local workspaces, and provider data. It does not enable communication
-between protocol-3 and protocol-4 peers. Repeating the command after an
-interruption resumes the migration; already migrated and unenrolled hosts need
-no changes. To roll back, stop the affected services and restore every host's
-matching pre-migration state and binary together.
+The migration keeps node identities, enrollment, credentials, preparation
+seals, local workspaces, and provider data, though it does not allow
+protocol-3 and protocol-4 peers to talk to each other. Repeating the command
+after an interruption resumes the migration, and already migrated or unenrolled
+hosts need no changes. To roll back, stop the affected services and restore
+every host's matching pre-migration state and binary together.
 
 ## Replace an older fleet
 
-Older key-based and shell-relay entries are not accepted. Before starting the
-new binary:
+Forge does not accept older key-based or shell-relay entries. Before starting
+the new binary:
 
 1. Remove the old fleet entries from every config file.
-2. Enable API authentication and select the hub.
+2. Enable API authentication and pick the hub.
 3. Start each daemon with a reachable HTTPS origin.
 4. Enroll every spoke again with a new one-time token.
 
 Do not copy old tokens, node IDs, relay sockets, or daemon data directories.
 There is no automatic translation because the older entries did not establish
-the identity and credential pair required by federation.
+the identity and credential pair federation requires.
 
 ## Troubleshooting
 
 ### Setup fails its HTTPS check
 
-Read the setup error and any rollback errors before retrying. Setup attempts to
-restore its previous config, service, and managed publication when a later step
-fails. Confirm what is actually running; do not assume a failed setup left a
-usable service behind.
+Read the setup error and any rollback errors before retrying. When a later step
+fails, setup tries to restore its previous config, service, and managed
+publication. Check what is actually running instead of assuming a failed setup
+left a usable service behind.
 
-For Tailscale, check that the device is logged in, the Forge user can manage
+For Tailscale, confirm the device is logged in, the Forge user can manage
 Serve, and HTTPS certificates are enabled. First-time certificate issuance can
 outlast Forge's readiness check. Inspect Tailscale's certificate and Serve
-status, resolve the reported problem, then rerun the setup plan. For external
+status, fix the reported problem, and rerun the setup plan. For external
 ingress, check the proxy route, preserved `Host` header, and certificate trust.
 
 ### Agents work in SSH but not in Forge
 
-Check the service's `PATH` and the service user's agent authentication. Shell
-startup files are not loaded by the generated service. For a service owned by
-setup, rerun the appropriate setup command with the intended stable tool paths;
-for a custom service, update its environment through your service manager.
-Restart and launch an agent from a workspace to verify the result.
+Check the service's `PATH` and the service user's agent authentication. The
+generated service does not load shell startup files. For a service owned by
+setup, rerun the setup command with the stable tool paths you want. For a
+custom service, update its environment through your service manager. Restart
+Forge and launch an agent from a workspace to verify.
 
 ### A fresh hub is missing repositories or pull requests
 
 Check **Settings → Repositories** on the new hub first. Enrollment does not
-import the old hub's repository selection. Then inspect sync status: a large
-first sync can consume the available request budget before all repositories
-finish. Let the budget recover and use **Sync current repo** for the repository
-you need, rather than repeatedly starting a full sync. Verify a real repository
-or pull-request read separately from fleet reachability.
+import the old hub's repository list. Next, inspect sync status: a large first
+sync can exhaust the available request budget before all repositories finish.
+Let the budget recover and use **Sync current repo** for the repository you
+need instead of repeatedly starting a full sync. Verify a real repository or
+pull-request read separately from fleet reachability.
 
 ### A spoke is unreachable
 
 A running spoke that can reach its hub keeps a tunnel open, and the hub uses
-it. First confirm that the spoke daemon is running and can reach the hub.
+it. Start by confirming that the spoke daemon is running and can reach the hub.
 
-Without a tunnel, the hub dials the spoke directly. From the hub machine,
-verify the spoke's HTTPS origin and certificate. Confirm the URL exactly
-matches the enrolled origin. A changed hostname, port,
-or certificate route requires deliberate re-enrollment rather than a redirect.
+Without a tunnel, the hub dials the spoke directly. From the hub machine, check
+the spoke's HTTPS origin and certificate, and confirm the URL exactly matches the
+enrolled origin. A changed hostname, port, or certificate route requires deliberate
+re-enrollment rather than a redirect.
 
-If the daemon is down, restart it through its local service manager. The
-hub does not log in to start it.
+If the daemon is down, restart it through its local service manager. The hub
+does not log in to start it.
 
 ### A request is forbidden
 
 Read the full degraded-host message in the hub. Forge preserves the peer's
-authorization reason instead of reducing it to an HTTP status.
+authorization reason instead of collapsing it to an HTTP status.
 
-If the message says fleet authorization is inactive, inspect the spoke service's
+If the message says fleet authorization is inactive, check the spoke service's
 startup log and confirm it can resolve and reach the hub. An active spoke
 revalidates its sealed enrollment with the hub at startup and every six hours.
 If the hub is temporarily unavailable, the spoke can use its last confirmed
-activation lease for up to 24 hours. Once that lease expires, hub requests are
-rejected until the spoke reaches the hub and renews it.
+activation lease for up to 24 hours. Once that lease expires, the spoke rejects
+hub requests until it reaches the hub and renews the lease.
 
 The lease handshake is versioned separately from fleet snapshots. During a
 rolling upgrade, upgrade the hub first, then each spoke. A lease-unaware spoke
-is isolated from fleet reads and writes until it is upgraded and restarted;
-its existing enrollment is reused, so you do not need to re-enroll it. If a
-spoke was upgraded before its hub, upgrade the hub and restart that spoke so it
-can complete the lease handshake.
+stays isolated from fleet reads and writes until you upgrade and restart it.
+Its existing enrollment carries over, so you do not need to re-enroll it. If
+you upgraded a spoke before its hub, upgrade the hub and restart that spoke so
+it can complete the lease handshake.
 
 If the peer rejects the hub identity, check that the enrollment is active and
 has not been revoked. Re-enroll instead of widening or copying a token by hand.
@@ -1067,13 +1073,12 @@ requested operation.
 
 ### A terminal does not open
 
-Confirm the spoke is reachable and the local session still exists. The
-hub attaches to the spoke's terminal WebSocket; it does not attach to
-the spoke's tmux server directly.
+Confirm the spoke is reachable and the local session still exists. The hub
+attaches to the spoke's terminal WebSocket, not directly to its tmux server.
 
 ### A config no longer loads
 
 Remove old fleet keys and relay entries, then use the enrollment workflow or
-[declare membership in config](#declare-membership-in-config).
-Forge fails closed instead of guessing how an old host label maps to a stable
-spoke identity.
+[declare membership in config](#declare-membership-in-config). Forge fails
+closed instead of guessing how an old host label maps to a stable spoke
+identity.

@@ -18,6 +18,7 @@ if [ "${#packages[@]}" -eq 0 ]; then
 fi
 
 mkdir -p tmp
+# Without custom GOFLAGS, these timings include checks that the CI race job skips for modernc.
 go test -race -shuffle=on -json "${packages[@]}" \
   | tee tmp/race-package-times.json \
   | jq -r '

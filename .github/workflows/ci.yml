@@ -865,6 +865,7 @@ jobs:
     # Bound package/test fan-out for race-detector memory usage. Leave
     # GOMAXPROCS unset so tests and launched servers use available CPUs.
     # Skip pointer checks in modernc.org and race checks in its translated SQLite library; Forge keeps both.
+    # SQLite library races and checkptr errors in modernc's Go glue are missed.
     env:
       GOFLAGS: "-p=2 -trimpath -gcflags=modernc.org/...=-d=checkptr=0 '-gcflags=modernc.org/sqlite/lib=-d=checkptr=0 -race=false'"
     needs: detect_changes

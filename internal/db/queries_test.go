@@ -2914,7 +2914,9 @@ func TestReplaceCommentEventsCountsPersistedUniqueRows(t *testing.T) {
 }
 
 func TestReplaceCommentEventsBeyondSQLiteVariableLimit(t *testing.T) {
+	t.Parallel()
 	t.Run("merge request", func(t *testing.T) {
+		t.Parallel()
 		require := require.New(t)
 		d := openTestDB(t)
 		repoID := insertTestRepo(t, d, "o", "r")
@@ -2936,6 +2938,7 @@ func TestReplaceCommentEventsBeyondSQLiteVariableLimit(t *testing.T) {
 		require.Equal([4]int64{0, 1, 40000, retainedID}, [4]int64{stale, reviews, comments, keptID})
 	})
 	t.Run("issue", func(t *testing.T) {
+		t.Parallel()
 		require := require.New(t)
 		d := openTestDB(t)
 		repoID := insertTestRepo(t, d, "o", "r")

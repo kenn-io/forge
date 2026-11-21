@@ -57,7 +57,7 @@ function renderItem(pr: PullRequest, useWorkspaceActivityForRecency = false, tab
       [
         STORES_KEY,
         {
-          pulls: { togglePRStar: vi.fn() },
+          pulls: { togglePRStar: vi.fn(), isTablePartShown: () => true },
           settings: { getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }) },
           activity: { getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency },
         },
@@ -265,7 +265,7 @@ describe("PullItem repository label", () => {
         [
           STORES_KEY,
           {
-            pulls: { togglePRStar: vi.fn() },
+            pulls: { togglePRStar: vi.fn(), isTablePartShown: () => true },
             settings: { getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }) },
             activity: { getUseWorkspaceActivityForRecency: () => false },
           },
@@ -299,7 +299,7 @@ describe("PullItem repository label", () => {
         [
           STORES_KEY,
           {
-            pulls: { togglePRStar: vi.fn() },
+            pulls: { togglePRStar: vi.fn(), isTablePartShown: () => true },
             settings: { getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }) },
             activity: { getUseWorkspaceActivityForRecency: () => false },
           },
@@ -496,18 +496,18 @@ describe("PullItem table row", () => {
 
   it("identifies an open draft", () => {
     renderItem(mkPR({ IsDraft: true }), false, true);
-    expect(screen.getByRole("img", { name: "Draft pull request" })).toBeTruthy();
+    expect(screen.getByText("Draft")).toBeTruthy();
   });
 
   it("does not mark a ready PR as a draft", () => {
     renderItem(mkPR({ IsDraft: false }), false, true);
-    expect(screen.queryByRole("img", { name: "Draft pull request" })).toBeNull();
+    expect(screen.queryByText("Draft")).toBeNull();
   });
 
   it.each(["merged", "closed"])("preserves the %s state when the draft flag is set", (state) => {
     renderItem(mkPR({ State: state, IsDraft: true }), false, true);
     expect(screen.getByText(state === "merged" ? "Merged" : "Closed")).toBeTruthy();
-    expect(screen.queryByRole("img", { name: "Draft pull request" })).toBeNull();
+    expect(screen.queryByText("Draft")).toBeNull();
   });
 
   it("shows a merge that is still pending", () => {

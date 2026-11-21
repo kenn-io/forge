@@ -246,6 +246,8 @@ test("runs a quick action on a shift-selected range of pull requests", async ({ 
     "Pin parser version",
     "Rename config loader",
   ]);
+  // A screen reader hears the selection the highlight shows.
+  await expect(page.getByRole("button", { pressed: true }).and(rows)).toHaveCount(3);
   // Selecting never opens a PR or selects the row text.
   await expect(page).toHaveURL(/\/pulls$/);
   expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");

@@ -5,6 +5,7 @@
   import { onMount } from "svelte";
   import { SearchInput, SelectDropdown, SettingsLayout, SettingsSection, Toggle, type SettingsCategory } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
+  import { PULL_TABLE_PARTS, type PullTablePart } from "../../stores/pulls.svelte.js";
   import type { Settings } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { StartupWorkflow, startupErrorMessage } from "../../app/startup-workflow.js";
@@ -49,6 +50,17 @@
   let searchQuery = $state("");
   const runtime = getAppRuntime();
   const { settings: settingsStore, pulls } = getStores();
+
+  const pullTablePartLabels: Record<PullTablePart, string> = {
+    repo: "Repository",
+    author: "Author",
+    labels: "Labels",
+    ci: "CI",
+    review: "Review",
+    stack: "Stack",
+    star: "Star",
+    when: "When",
+  };
   let settings = $state.raw<Settings | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -306,10 +318,20 @@
                 value={pulls.getListLayout()}
                 options={[
                   { value: "rows", label: "Two-line rows" },
-                  { value: "table", label: "Table" },
+                  { value: "table", label: "Table in a wide sidebar" },
                 ]}
                 onchange={(value) => pulls.setListLayout(value === "table" ? "table" : "rows")}
               />
+              <fieldset class="table-parts">
+                <legend>Shown in the PR table</legend>
+                {#each PULL_TABLE_PARTS as part (part)}
+                  <Toggle
+                    label={pullTablePartLabels[part]}
+                    checked={pulls.isTablePartShown(part)}
+                    onchange={(shown) => pulls.setTablePartShown(part, shown)}
+                  />
+                {/each}
+              </fieldset>
             </div>
           {:else if meta.id === "settings-detail"}
             <DetailSettings
@@ -412,6 +434,22 @@
   .appearance-group {
     display: grid;
     gap: 0.75rem;
+  }
+
+  .table-parts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+    gap: var(--space-4) var(--space-6);
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .table-parts legend {
+    padding: 0;
+    margin-bottom: var(--space-4);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
   }
 
   .workspace-settings-group + .workspace-settings-group {

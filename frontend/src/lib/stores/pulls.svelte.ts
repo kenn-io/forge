@@ -84,6 +84,10 @@ function readErrorMessage(error: ApiProblemError | TransientTransportError): str
 /** How the PR list shows each pull request: two-line rows, or one-line table rows like Activity's. */
 export type PullListLayout = "rows" | "table";
 
+/** The parts of a PR table row a person can hide. The title, number, and merge state always show. */
+export const PULL_TABLE_PARTS = ["repo", "author", "labels", "ci", "review", "stack", "star", "when"] as const;
+export type PullTablePart = (typeof PULL_TABLE_PARTS)[number];
+
 export function createPullsStore(opts: PullsStoreOptions) {
   const runtime = opts.runtime;
   const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
@@ -135,6 +139,34 @@ export function createPullsStore(opts: PullsStoreOptions) {
     listLayout = value;
     try {
       localStorage.setItem(LIST_LAYOUT_KEY, value);
+    } catch {
+      // Keep the view usable when browser storage is unavailable.
+    }
+  }
+
+  // The hidden parts are stored, so a part added later shows until someone hides it.
+  const TABLE_HIDDEN_PARTS_KEY = "kenn-forge:pullTableHiddenParts";
+  let tableHiddenParts = $state<PullTablePart[]>(readTableHiddenParts());
+
+  function readTableHiddenParts(): PullTablePart[] {
+    try {
+      const stored: unknown = JSON.parse(localStorage.getItem(TABLE_HIDDEN_PARTS_KEY) ?? "[]");
+      return Array.isArray(stored) ? PULL_TABLE_PARTS.filter((part) => stored.includes(part)) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function isTablePartShown(part: PullTablePart): boolean {
+    return !tableHiddenParts.includes(part);
+  }
+
+  function setTablePartShown(part: PullTablePart, shown: boolean): void {
+    tableHiddenParts = PULL_TABLE_PARTS.filter((candidate) =>
+      candidate === part ? !shown : tableHiddenParts.includes(candidate),
+    );
+    try {
+      localStorage.setItem(TABLE_HIDDEN_PARTS_KEY, JSON.stringify(tableHiddenParts));
     } catch {
       // Keep the view usable when browser storage is unavailable.
     }
@@ -773,6 +805,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
     setStackTree,
     getListLayout,
     setListLayout,
+    isTablePartShown,
+    setTablePartShown,
     toggleStack,
     selectNextPR,
     selectPrevPR,

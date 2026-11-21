@@ -28,16 +28,12 @@
     createRepoLabelFormatter,
     type RepoLabelIdentity,
   } from "../utils/repo-label.js";
-  import { Chip } from "@kenn-io/kit-ui";
   import ItemKindChip from "./shared/ItemKindChip.svelte";
-  import ItemStateChip from "./shared/ItemStateChip.svelte";
-  import WorkspaceIndicator from "./shared/WorkspaceIndicator.svelte";
-  import AgentStatusIndicator from "./shared/AgentStatusIndicator.svelte";
+  import ItemTableCells from "./shared/ItemTableCells.svelte";
+  import ItemTableHeaders, { ITEM_TABLE_MIN_WIDTH, itemTableColumns } from "./shared/ItemTableHeaders.svelte";
   import { createProgressiveMountController } from "../utils/progressive-mount.js";
 
   const { grouping, activity } = getStores();
-  import { hashColor } from "@kenn-io/kit-ui";
-  import ArrowUpRightIcon from "@lucide/svelte/icons/arrow-up-right";
   import CheckIcon from "@lucide/svelte/icons/check";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
@@ -91,6 +87,11 @@
     selectedItem = null,
     selectedBranchCommit = null,
   }: Props = $props();
+
+  // A narrow view, such as the rail beside an open item, gives each title its own line.
+  // Until the view is measured, the rail is assumed narrow so it does not flash a table.
+  let viewWidth = $state(0);
+  const stacked = $derived(viewWidth > 0 ? viewWidth < ITEM_TABLE_MIN_WIDTH : compact);
 
   interface ItemGroup {
     kind: "item";
@@ -791,10 +792,6 @@
     return item.activity_url || item.item_url;
   }
 
-  function handleLinkClick(e: Event, url: string): void {
-    e.stopPropagation();
-    if (url) window.open(url, "_blank", "noopener");
-  }
 </script>
 
 <ScrollBox label="Threaded activity" bind:viewport>
@@ -802,19 +799,20 @@
   class="threaded-view"
   class:threaded-view--compact={compact}
   class:threaded-view--grouped={grouping.getGroupByRepo()}
+  class:item-table--stacked={stacked}
+  bind:clientWidth={viewWidth}
+  style:grid-template-columns={itemTableColumns({
+    leading: ["var(--threaded-col-caret)", "fit-content(120px)"],
+    repo: !grouping.getGroupByRepo(),
+    stacked,
+  })}
   aria-label="Activity items"
 >
-  <div class="activity-column-headers">
-    <span class="cell cell--caret" aria-hidden="true"></span>
-    <span class="cell cell--type">Type</span>
-    {#if !grouping.getGroupByRepo()}
-      <span class="cell cell--repo">Repo</span>
-    {/if}
-    <span class="cell cell--author">Author</span>
-    <span class="cell cell--title">Item</span>
-    <span class="cell cell--time">When</span>
-    <span class="cell cell--link" aria-hidden="true"></span>
-  </div>
+  <ItemTableHeaders
+    class="activity-column-headers"
+    leading={[{ label: "", class: "cell--caret" }, { label: "Type", class: "cell--type" }]}
+    repo={!grouping.getGroupByRepo()}
+  />
 
   {#each visibleGrouped as repoGroup (repoGroup.key)}
     <div class="repo-section">
@@ -841,38 +839,20 @@
             <span class="branch-event-type cell cell--type {eventClass(item.activity_type)}">
               {isDefaultBranchCommitActivity(item) ? "Commit" : eventLabel(item.activity_type)}
             </span>
-            {#if !grouping.getGroupByRepo()}
-              <span class="cell cell--repo">
-                <Chip
-                  size="sm"
-                  uppercase={false}
-                  class="repo-chip repo-tag"
-                  style="color: {hashColor(`${entry.repoOwner}/${entry.repoName}`)}; background: color-mix(in srgb, {hashColor(`${entry.repoOwner}/${entry.repoName}`)} 15%, transparent);"
-                >
-                  <span class="repo-chip__label">{repoLabel(entryRepoIdentity(entry))}</span>
-                </Chip>
-                <RepoPrivateIcon isPrivate={entryRepoPrivate(entry)} />
-              </span>
-            {/if}
-            <span class="cell cell--author">{branchRowAuthor(row)}</span>
-            <span class="cell cell--title">
-              <span class="item-ref">{branchName(item)}</span>
-              <span class="item-title">{branchRowTitle(row)}</span>
-            </span>
-            <span class="cell cell--time">{relativeTime(entry.latestTime)}</span>
-            <span class="cell cell--link">
-              {#if rowLinkUrl(item)}
-                <button
-                  class="link-btn"
-                  type="button"
-                  aria-label="Open activity in provider"
-                  title="Open activity"
-                  onclick={(e) => handleLinkClick(e, rowLinkUrl(item))}
-                >
-                  <ArrowUpRightIcon size="14" strokeWidth="2" aria-hidden="true" />
-                </button>
-              {/if}
-            </span>
+            <ItemTableCells
+              repo={grouping.getGroupByRepo() ? undefined : {
+                label: repoLabel(entryRepoIdentity(entry)),
+                colorKey: `${entry.repoOwner}/${entry.repoName}`,
+                isPrivate: entryRepoPrivate(entry),
+              }}
+              author={branchRowAuthor(row)}
+              reference={branchName(item)}
+              title={branchRowTitle(row)}
+              time={relativeTime(entry.latestTime)}
+              linkUrl={rowLinkUrl(item)}
+              linkLabel="Open activity in provider"
+              linkTitle="Open activity"
+            />
           </div>
         {:else}
           {@const itemGroup = entry.group}
@@ -911,50 +891,24 @@
               kind={itemGroup.itemType === "pr" ? "pr" : "issue"}
             />
           </span>
-          {#if !grouping.getGroupByRepo()}
-            <span class="cell cell--repo">
-              <Chip
-                size="sm"
-                uppercase={false}
-                class="repo-chip repo-tag"
-                style="color: {hashColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)}; background: color-mix(in srgb, {hashColor(`${itemGroup.repoOwner}/${itemGroup.repoName}`)} 15%, transparent);"
-              >
-                <span class="repo-chip__label">{repoLabel(entryRepoIdentity(entry))}</span>
-              </Chip>
-              <RepoPrivateIcon isPrivate={entryRepoPrivate(entry)} />
-            </span>
-          {/if}
-          <span class="cell cell--author">{itemGroup.itemAuthor}</span>
-          <span class="cell cell--title">
-            {#if itemGroup.itemState === "merged"}
-              <ItemStateChip state="merged" />
-            {:else if itemGroup.itemState === "closed"}
-              <ItemStateChip state="closed" />
-            {/if}
-            <span class="item-ref">#{itemGroup.itemNumber}</span>
-            {#if itemGroup.workspace}
-              <WorkspaceIndicator status={itemGroup.workspace.status} size={12} />
-            {/if}
-            <span class="item-title">{itemGroup.itemTitle}</span>
-            <AgentStatusIndicator state={itemGroup.workspace?.agent_state} />
-          </span>
-          <span
-            class="cell cell--time"
-            title={itemGroup.workspaceActivityAt === itemGroup.latestTime ? "Recent workspace activity" : undefined}
-          >{relativeTime(itemGroup.latestTime)}</span>
-          <span class="cell cell--link">
-            {#if itemGroup.itemUrl}
-              <button
-                class="link-btn"
-                type="button"
-                aria-label="Open item in provider"
-                title="Open item"
-                onclick={(e) => handleLinkClick(e, itemGroup.itemUrl)}
-              >
-                <ArrowUpRightIcon size="14" strokeWidth="2" aria-hidden="true" />
-              </button>
-            {/if}
-          </span>
+          <ItemTableCells
+            repo={grouping.getGroupByRepo() ? undefined : {
+              label: repoLabel(entryRepoIdentity(entry)),
+              colorKey: `${itemGroup.repoOwner}/${itemGroup.repoName}`,
+              isPrivate: entryRepoPrivate(entry),
+            }}
+            author={itemGroup.itemAuthor}
+            state={itemGroup.itemState === "merged" || itemGroup.itemState === "closed" ? itemGroup.itemState : undefined}
+            reference={`#${itemGroup.itemNumber}`}
+            workspaceStatus={itemGroup.workspace ? itemGroup.workspace.status : undefined}
+            title={itemGroup.itemTitle}
+            agentState={itemGroup.workspace?.agent_state}
+            time={relativeTime(itemGroup.latestTime)}
+            timeTitle={itemGroup.workspaceActivityAt === itemGroup.latestTime ? "Recent workspace activity" : undefined}
+            linkUrl={itemGroup.itemUrl}
+            linkLabel="Open item in provider"
+            linkTitle="Open item"
+          />
         </div>
 
         {#if itemGroup.events.length > 0 && activity.isThreadItemExpanded(key)}
@@ -1007,24 +961,12 @@
    * rows, and event rows alike — shares the same column widths. Each
    * .repo-section is a subgrid that spans 1 / -1 (see its rule below),
    * so its rows inherit the view's tracks while the section's box
-   * still bounds its sticky repo header. fit-content keeps each
-   * non-fixed column sized to its widest cell content, capped to a
-   * sensible maximum; the cap means hiding the org name automatically
-   * shrinks the repo column because cell content is shorter. */
+   * still bounds its sticky repo header. The tracks come from
+   * itemTableColumns, the grid the pull request table shares. */
   .threaded-view {
     padding: 0 16px;
-    --threaded-col-repo-max: 220px;
-    --threaded-col-author-max: 140px;
     --threaded-col-caret: 18px;
     display: grid;
-    grid-template-columns:
-      var(--threaded-col-caret)
-      fit-content(120px)
-      fit-content(var(--threaded-col-repo-max))
-      fit-content(var(--threaded-col-author-max))
-      minmax(0, 1fr)
-      auto
-      24px;
     column-gap: 6px;
     align-content: start;
   }
@@ -1035,20 +977,10 @@
     grid-column: 1 / -1;
   }
 
-  .threaded-view--grouped {
-    grid-template-columns:
-      var(--threaded-col-caret)
-      fit-content(120px)
-      fit-content(var(--threaded-col-author-max))
-      minmax(0, 1fr)
-      auto
-      24px;
-  }
-
   .threaded-view--compact {
     --threaded-col-caret: 30px;
-    --threaded-col-repo-max: 140px;
-    --threaded-col-author-max: 96px;
+    --item-table-repo-max: 140px;
+    --item-table-author-max: 96px;
   }
 
   /* Sections are subgrids of the view so all sections share one column
@@ -1096,24 +1028,6 @@
     cursor: pointer;
     border-bottom: 1px solid var(--border-muted);
     transition: background 0.1s;
-  }
-
-  .activity-column-headers {
-    display: grid;
-    grid-template-columns: subgrid;
-    grid-column: 1 / -1;
-    align-items: center;
-    padding: 6px 0 4px;
-    font-size: var(--font-size-2xs);
-    font-weight: 500;
-    text-transform: var(--label-transform, uppercase);
-    letter-spacing: var(--letter-spacing-label, 0.5px);
-    color: var(--text-muted);
-    border-bottom: 1px solid var(--border-default);
-    position: sticky;
-    top: 0;
-    background: var(--bg-primary);
-    z-index: 2;
   }
 
   .item-row:hover {
@@ -1171,75 +1085,6 @@
     align-items: center;
     gap: 4px;
     overflow: visible;
-  }
-
-  .cell--repo {
-    display: inline-flex;
-    align-items: center;
-    min-width: 0;
-  }
-
-  .cell--author {
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-  }
-
-  .cell--title {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
-
-  .item-ref {
-    font-size: var(--font-size-sm);
-    color: var(--text-muted);
-    flex-shrink: 0;
-  }
-
-  .item-title {
-    font-size: var(--font-size-sm);
-    color: var(--text-primary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-  }
-
-  .cell--time {
-    font-size: var(--font-size-xs);
-    color: var(--text-muted);
-    text-align: right;
-  }
-
-  .cell--link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    overflow: visible;
-  }
-
-  .link-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-    background: none;
-    border: 0;
-    padding: 2px;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: color 0.1s, background 0.1s;
-  }
-
-  .link-btn:hover {
-    color: var(--accent-blue);
-    background: var(--bg-surface-hover);
-  }
-
-  .link-btn:focus-visible {
-    outline: 2px solid var(--accent-blue);
-    outline-offset: 1px;
   }
 
   .event-row {
@@ -1328,19 +1173,6 @@
   }
 
 
-  .cell--repo :global(.repo-chip) {
-    min-width: 0;
-    max-width: 100%;
-  }
-
-  .cell--repo :global(.repo-chip .repo-chip__label) {
-    display: block;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .threaded-view--compact {
     padding: 0;
   }
@@ -1356,5 +1188,25 @@
   .threaded-view--compact .event-row {
     margin-left: 10px;
     padding-left: 18px;
+  }
+
+  /* Stacked: the caret and type stay on the item's line, and the other cells sit under it. */
+  .item-table--stacked .item-row {
+    row-gap: var(--space-1);
+  }
+
+  .item-table--stacked .cell--caret {
+    grid-row: 1;
+    grid-column: 1;
+  }
+
+  .item-table--stacked .cell--type {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  /* No column headers above it to clear. */
+  .item-table--stacked .repo-header {
+    top: 0;
   }
 </style>

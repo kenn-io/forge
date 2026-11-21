@@ -2,7 +2,7 @@
   import { getCommentNavigation } from "../stores/router.svelte.js";
   import type { Snippet } from "svelte";
   import { getSidebar, getStores } from "../context.js";
-  import { CollapsibleSidebar } from "@kenn-io/kit-ui";
+  import SidebarLayout from "../components/shared/SidebarLayout.svelte";
   import IssueList
     from "../components/sidebar/IssueList.svelte";
   import IssueDetail
@@ -145,7 +145,7 @@
   ]);
 </script>
 
-<CollapsibleSidebar
+<SidebarLayout
   isCollapsed={isSidebarCollapsed}
   {hideSidebar}
   {sidebarWidth}
@@ -155,8 +155,8 @@
   onExpand={toggleSidebar}
   mainEmpty={selectedIssue === null}
 >
-  {#snippet sidebar()}
-    <IssueList {sidebarWidth} />
+  {#snippet sidebar(width: number)}
+    <IssueList sidebarWidth={width} />
   {/snippet}
 
   {#if selectedIssue !== null}
@@ -247,7 +247,7 @@
       <p class="placeholder-hint">j/k to navigate</p>
     </div>
   {/if}
-</CollapsibleSidebar>
+</SidebarLayout>
 
 <!-- Only the leaf actually holding the workspace or one of its promoted sessions:
      the controls act on that workspace, so offering them from a leaf of unrelated

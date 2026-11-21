@@ -45,4 +45,11 @@ describe("standalone mode", () => {
     expect(getSidebarWidth()).toBe(420);
     expect(localStorage.getItem("kenn-forge-sidebar-width")).toBe("420");
   });
+
+  it("keeps a width wider than the old 600px ceiling across a reload", () => {
+    initSidebar();
+    setSidebarWidth(1100);
+    initSidebar();
+    expect(getSidebarWidth()).toBe(1100);
+  });
 });

@@ -1,25 +1,6 @@
-<script module lang="ts">
-  /**
-   * Column tracks for table rows and the list's column headers, so both line up. Repo and
-   * Author give up width before the title does in a narrow sidebar.
-   */
-  export function pullTableColumns(showRepo: boolean, compact = false): string {
-    return [
-      showRepo ? `minmax(0, min(${compact ? 60 : 96}px, 18%))` : "",
-      compact ? "" : "minmax(0, min(64px, 12%))",
-      "minmax(0, 1fr)",
-      // Fixed so every row's times share one right edge.
-      compact ? "" : "3.5rem",
-      "20px",
-    ].filter(Boolean).join(" ");
-  }
-</script>
-
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import ArrowUpRightIcon from "@lucide/svelte/icons/arrow-up-right";
-  import { Chip } from "@kenn-io/kit-ui";
-  import ItemStateChip from "../shared/ItemStateChip.svelte";
+  import ItemTableCells from "../shared/ItemTableCells.svelte";
   import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import { preventShiftTextSelection } from "../../utils/range-selection.svelte.js";
   import type { PullRequest } from "../../api/types.js";
@@ -43,9 +24,8 @@
     repoLabel: string;
     /** Part of a shift/Cmd-click multi-row selection. */
     multiSelected?: boolean;
-    /** One-line row in the list's table columns instead of the two-line row. */
+    /** One line in the columns of the enclosing item table instead of the two-line row. */
     table?: boolean;
-    compact?: boolean;
     stackControl?: Snippet | undefined;
     onclick: (event: MouseEvent) => void;
     oncontextmenu?: (event: MouseEvent) => void;
@@ -58,7 +38,6 @@
     repoLabel,
     multiSelected = false,
     table = false,
-    compact = false,
     stackControl,
     onclick,
     oncontextmenu,
@@ -77,11 +56,6 @@
       pr.Number,
       pr.Starred,
     );
-  }
-
-  function handleLinkClick(e: Event): void {
-    e.stopPropagation();
-    window.open(pr.URL, "_blank", "noopener");
   }
 
   let el = $state<HTMLButtonElement>();
@@ -155,11 +129,24 @@
   </span>
 {/snippet}
 
+{#snippet labelChips()}
+  <LabelRow {labels} compact />
+{/snippet}
+
+<!-- The status every PR row shows: a pending merge, the merge queue, CI, review, and workspace. -->
+{#snippet statusCell()}
+  <PullStatusIcons
+    {pr}
+    {stackControl}
+    showCI={pulls.isTablePartShown("ci")}
+    showReview={pulls.isTablePartShown("review")}
+    showStack={pulls.isTablePartShown("stack")}
+  />{#if pulls.isTablePartShown("star")}{@render starControl()}{/if}
+{/snippet}
+
 <button
   class="pull-item pr-list-row"
   class:pull-item--table={table}
-  class:pull-item--compact-table={table && compact}
-  style:grid-template-columns={table ? pullTableColumns(showRepo, compact) : undefined}
   class:selected
   class:active-worktree={isActiveWorktree}
   class:multi-selected={multiSelected}
@@ -170,55 +157,28 @@
   {oncontextmenu}
 >
   {#if table}
-    {#if showRepo}
-      <span class="cell cell--repo">
-        <Chip
-          size="sm"
-          uppercase={false}
-          class="repo-chip"
-          style={`color: ${hashColor(repoColorKey)}; background: color-mix(in srgb, ${hashColor(repoColorKey)} 15%, transparent);`}
-        >
-          <span class="repo-chip__label" title={`${pr.repo.platform_host}/${pr.repo.repo_path || `${pr.repo.owner}/${pr.repo.name}`}`}>{pr.repo.name}</span>
-        </Chip>
-        <RepoPrivateIcon isPrivate={pr.repo.private} />
-      </span>
-    {/if}
-    <span class="cell cell--author">{pr.Author}</span>
-    <span class="cell cell--title">
-      {#if prState === "draft"}
-        <span class="state-dot" style:background={stateColors.draft} role="img" aria-label="Draft pull request" title="Draft pull request"></span>
-      {:else if prState === "merged" || prState === "closed"}
-        <ItemStateChip state={prState} />
-      {/if}
-      <span class="item-ref">#{pr.Number}</span>
-      <span class="table-title" class:table-title--labeled={labels.length > 0}>
-        <span class="title-text">{pr.Title}</span>
-        <LabelRow {labels} compact />
-      </span>
-      <AgentStatusIndicator state={pr.workspace?.agent_state} />
-      <!-- The status every PR row shows: a pending merge, the merge queue, CI, review, and workspace. -->
-      <span class="row-status"><PullStatusIcons {pr} {stackControl} />{@render starControl()}</span>
-    </span>
-    <span
-      class="cell cell--time"
-      title={activityTime.fromWorkspace ? "Recent workspace activity" : undefined}
-      aria-label={activityTime.fromWorkspace ? `Recent workspace activity, ${ago}` : undefined}
-    >{ago}</span>
-    <span class="cell cell--link">
-      {#if pr.URL}
-        <span
-          class="link-btn"
-          role="button"
-          tabindex="-1"
-          aria-label="Open pull request in provider"
-          title="Open pull request"
-          onclick={handleLinkClick}
-          onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleLinkClick(e); } }}
-        >
-          <ArrowUpRightIcon size="14" strokeWidth="2" aria-hidden="true" />
-        </span>
-      {/if}
-    </span>
+    <ItemTableCells
+      repo={showRepo && pulls.isTablePartShown("repo") ? {
+        label: pr.repo.name,
+        colorKey: repoColorKey,
+        isPrivate: pr.repo.private,
+        title: `${pr.repo.platform_host}/${pr.repo.repo_path || `${pr.repo.owner}/${pr.repo.name}`}`,
+      } : undefined}
+      author={pulls.isTablePartShown("author") ? pr.Author : undefined}
+      state={prState === "open" ? undefined : prState}
+      reference={`#${pr.Number}`}
+      title={pr.Title}
+      agentState={pr.workspace?.agent_state}
+      afterTitle={labels.length > 0 && pulls.isTablePartShown("labels") ? labelChips : undefined}
+      status={statusCell}
+      time={pulls.isTablePartShown("when") ? ago : undefined}
+      timeTitle={activityTime.fromWorkspace ? "Recent workspace activity" : undefined}
+      timeLabel={activityTime.fromWorkspace ? `Recent workspace activity, ${ago}` : undefined}
+      linkUrl={pr.URL}
+      linkLabel="Open pull request in provider"
+      linkTitle="Open pull request"
+      insideButton
+    />
   {:else}
     <p class="title">
       <span class="state-dot" style="background: {stateColors[prState]}"></span>
@@ -250,7 +210,7 @@
     </div>
   {/if}
 </button>
-<SidebarTitlePopover target={el} title={pr.Title} repository={repoLabel} branch={pr.HeadBranch} truncationSelector=".title-text" />
+<SidebarTitlePopover target={el} title={pr.Title} repository={repoLabel} branch={pr.HeadBranch} truncationSelector={table ? ".item-title" : ".title-text"} />
 
 <style>
   .pull-item {
@@ -298,134 +258,13 @@
     border-left-color: var(--accent-blue);
   }
 
+  /* A row of the enclosing item table: its cells take the table's column tracks. */
   .pull-item--table {
     display: grid;
-    column-gap: 6px;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
     align-items: center;
     padding-block: 5px;
-  }
-
-  .cell {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .cell--repo {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .cell--repo :global(.repo-chip) {
-    min-width: 0;
-    max-width: 100%;
-  }
-
-  .repo-chip__label {
-    display: block;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .cell--author {
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-  }
-
-  .cell--title {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    row-gap: var(--space-1);
-    font-size: var(--font-size-sm);
-    color: var(--text-primary);
-  }
-
-  .item-ref {
-    margin-inline-start: var(--pull-table-indent, 0px);
-    font-size: var(--font-size-sm);
-    color: var(--text-muted);
-    flex-shrink: 0;
-  }
-
-  .cell--title .title-text {
-    flex: 1 0 2.5rem;
-  }
-
-  .table-title {
-    display: inline-flex;
-    align-items: center;
-    gap: inherit;
-    flex: 1 1 2.5rem;
-    min-width: 2.5rem;
-    max-width: 100%;
-  }
-
-  .table-title--labeled {
-    /* Keep a readable title and label overflow together; other metadata can wrap. */
-    flex-basis: 6rem;
-    min-width: min(100%, 6rem);
-  }
-
-  .row-status {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    flex-shrink: 0;
-    margin-left: auto;
-    max-width: 100%;
-  }
-
-  .pull-item--compact-table {
-    column-gap: var(--space-2);
-  }
-
-  .pull-item--compact-table .cell--author,
-  .pull-item--compact-table .cell--time {
-    display: none;
-  }
-
-  .pull-item--compact-table .cell--title {
-    gap: var(--space-1);
-  }
-
-  .pull-item--compact-table .row-status {
-    gap: var(--space-1);
-  }
-
-  .cell--time {
-    font-size: var(--font-size-xs);
-    color: var(--text-muted);
-    text-align: right;
-  }
-
-  .cell--link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    overflow: visible;
-  }
-
-  .link-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-    padding: 2px;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: color 0.1s, background 0.1s;
-  }
-
-  .link-btn:hover {
-    color: var(--accent-blue);
-    background: var(--bg-surface-hover);
   }
 
   .title {

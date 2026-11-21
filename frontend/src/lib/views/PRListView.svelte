@@ -7,8 +7,8 @@
   import type { Snippet } from "svelte";
   import { untrack } from "svelte";
   import { getNavigate, getSidebar, getStores } from "../context.js";
-  import { CollapsibleSidebar } from "@kenn-io/kit-ui";
   import PullList from "../components/sidebar/PullList.svelte";
+  import SidebarLayout from "../components/shared/SidebarLayout.svelte";
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
   import KataLinksPanel from "../components/kata/KataLinksPanel.svelte";
   import { repoIdentityMatches, pullDetailMatchesRef } from "../components/detail/detail-match.js";
@@ -268,7 +268,7 @@
 
 </script>
 
-<CollapsibleSidebar
+<SidebarLayout
   isCollapsed={isSidebarCollapsed}
   {hideSidebar}
   {sidebarWidth}
@@ -278,11 +278,11 @@
   onExpand={toggleSidebar}
   mainEmpty={selectedPR === null}
 >
-  {#snippet sidebar()}
+  {#snippet sidebar(width: number)}
     {#if sidebarList}
       {@render sidebarList()}
     {:else}
-      <PullList getDetailTab={() => detailTab} showSelectedDiffSidebar={false} {sidebarWidth} />
+      <PullList getDetailTab={() => detailTab} showSelectedDiffSidebar={false} sidebarWidth={width} />
     {/if}
   {/snippet}
 
@@ -381,7 +381,7 @@
       <p class="placeholder-hint">{placeholderHint}</p>
     </div>
   {/if}
-</CollapsibleSidebar>
+</SidebarLayout>
 
 <!-- Only the leaf actually holding the workspace or one of its promoted sessions:
      the controls act on that workspace, so offering them from a leaf of unrelated

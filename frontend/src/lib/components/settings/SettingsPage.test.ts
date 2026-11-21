@@ -45,7 +45,12 @@ vi.mock("../../context.js", async (importOriginal) => ({
       setLaunchTargets,
       setQuickActions,
     },
-    pulls: { getListLayout: () => "rows", setListLayout: vi.fn() },
+    pulls: {
+      getListLayout: () => "rows",
+      setListLayout: vi.fn(),
+      isTablePartShown: () => true,
+      setTablePartShown: vi.fn(),
+    },
   }),
 }));
 

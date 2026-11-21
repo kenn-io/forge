@@ -45,13 +45,13 @@
     createRepoLabelFormatter,
     type RepoLabelIdentity,
   } from "../utils/repo-label.js";
-  import { hashColor } from "@kenn-io/kit-ui";
   import { Chip, type ChipTone } from "@kenn-io/kit-ui";
   import ItemKindChip from "./shared/ItemKindChip.svelte";
   import ItemStateChip from "./shared/ItemStateChip.svelte";
   import WorkspaceIndicator from "./shared/WorkspaceIndicator.svelte";
   import AgentStatusIndicator from "./shared/AgentStatusIndicator.svelte";
-  import ArrowUpRightIcon from "@lucide/svelte/icons/arrow-up-right";
+  import ItemTableCells from "./shared/ItemTableCells.svelte";
+  import ItemTableHeaders, { itemTableColumns } from "./shared/ItemTableHeaders.svelte";
   import CheckIcon from "@lucide/svelte/icons/check";
   import ChevronsDownUpIcon from "@lucide/svelte/icons/chevrons-down-up";
   import ChevronsUpDownIcon from "@lucide/svelte/icons/chevrons-up-down";
@@ -245,11 +245,6 @@
 
   function activityLink(item: ActivityItem): string {
     return item.activity_url || item.item_url;
-  }
-
-  function handleLinkClick(e: Event, url: string): void {
-    e.stopPropagation();
-    if (url) window.open(url, "_blank", "noopener");
   }
 
   const displayItems = $derived(activity.getActivityItems().filter((item) => activityItemVisible(activity, item)));
@@ -669,37 +664,36 @@
           {/each}
         </div>
       {:else}
-        <div class="activity-table" aria-label="Activity events">
-          <div class="activity-column-headers">
-            <span class="cell cell--caret-spacer" aria-hidden="true"></span>
-            <span class="cell cell--type">Type</span>
-            <span class="cell cell--repo col-repo">Repo</span>
-            <span class="cell cell--author col-author">Author</span>
-            <span class="cell cell--title">Item</span>
-            <span class="cell cell--time col-when">When</span>
-            <span class="cell cell--link" aria-hidden="true"></span>
-          </div>
+        <div
+          class="activity-table"
+          style:grid-template-columns={itemTableColumns({ leading: ["18px", "fit-content(140px)"] })}
+          aria-label="Activity events"
+        >
+          <ItemTableHeaders
+            class="activity-column-headers"
+            leading={[{ label: "", class: "cell--caret-spacer" }, { label: "Type", class: "cell--type" }]}
+          />
           {#each flatRows as row (row.id)}
             {@const rep = isCollapsedActivityRow(row) ? row.representative : row}
-            {@const repoStyle =
-              `color: ${hashColor(`${rep.repo_owner}/${rep.repo_name}`)}; `
-              + `background: color-mix(in srgb, `
-              + `${hashColor(`${rep.repo_owner}/${rep.repo_name}`)} 15%, transparent);`}
+            {@const repo = {
+              label: repoLabel(rep),
+              colorKey: `${rep.repo_owner}/${rep.repo_name}`,
+              isPrivate: rep.repo.private,
+            }}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
               class="activity-row"
               class:collapsed-row={isCollapsedActivityRow(row)}
-              onclick={() =>
-                handleRowClick(isCollapsedActivityRow(row) ? row.representative : row)}
+              onclick={() => handleRowClick(rep)}
             >
               <span class="cell cell--caret-spacer"></span>
               {#if isCollapsedActivityRow(row)}
                 <span class="cell cell--type">
-                  {#if isDefaultBranchActivity(row.representative)}
+                  {#if isDefaultBranchActivity(rep)}
                     <Chip size="sm" tone="muted" uppercase={false} class="branch-chip">Branch</Chip>
                   {:else}
-                    <ItemKindChip kind={row.representative.item_type} />
+                    <ItemKindChip kind={rep.item_type} />
                   {/if}
                   <Chip
                     size="sm"
@@ -707,50 +701,31 @@
                     tone="workspace" class="evt-label evt-commit"
                   >{row.count} commits</Chip>
                 </span>
-                <span class="cell cell--repo col-repo">
-                  <Chip
-                    size="sm"
-                    uppercase={false}
-                    class="repo-chip repo-tag"
-                    style={repoStyle}
-                  >
-                    <span class="repo-chip__label"
-                      >{repoLabel(row.representative)}</span>
-                  </Chip>
-                  <RepoPrivateIcon isPrivate={row.representative.repo.private} />
-                </span>
-                <span class="cell cell--author col-author">{row.author}</span>
-                <span class="cell cell--title">
-                  {#if isDefaultBranchActivity(row.representative)}
-                    <span class="item-ref">{branchName(row.representative)}</span>
-                    <span class="item-title">{row.count} commits</span>
-                  {:else}
-                    <span class="item-ref">#{row.representative.item_number}</span>
-                    {#if row.representative.workspace}
-                      <WorkspaceIndicator
-                        status={row.representative.workspace.status}
-                        size={12}
-                      />
-                    {/if}
-                    <span class="item-title">{row.representative.item_title}</span>
-                    <AgentStatusIndicator state={row.representative.workspace?.agent_state} />
-                  {/if}
-                </span>
-                <span class="cell cell--time col-when"
-                  >{relativeTime(row.earliest)} – {relativeTime(row.latest)}</span>
-                <span class="cell cell--link">
-                  {#if activityLink(row.representative)}
-                    <button
-                      class="link-btn"
-                      type="button"
-                      aria-label="Open activity in provider"
-                      title="Open activity"
-                      onclick={(e) => handleLinkClick(e, activityLink(row.representative))}
-                    >
-                      <ArrowUpRightIcon size="14" strokeWidth="2" aria-hidden="true" />
-                    </button>
-                  {/if}
-                </span>
+                {#if isDefaultBranchActivity(rep)}
+                  <ItemTableCells
+                    {repo}
+                    author={row.author}
+                    reference={branchName(rep)}
+                    title={`${row.count} commits`}
+                    time={`${relativeTime(row.earliest)} – ${relativeTime(row.latest)}`}
+                    linkUrl={activityLink(rep)}
+                    linkLabel="Open activity in provider"
+                    linkTitle="Open activity"
+                  />
+                {:else}
+                  <ItemTableCells
+                    {repo}
+                    author={row.author}
+                    reference={`#${rep.item_number}`}
+                    workspaceStatus={rep.workspace ? rep.workspace.status : undefined}
+                    title={rep.item_title}
+                    agentState={rep.workspace?.agent_state}
+                    time={`${relativeTime(row.earliest)} – ${relativeTime(row.latest)}`}
+                    linkUrl={activityLink(rep)}
+                    linkLabel="Open activity in provider"
+                    linkTitle="Open activity"
+                  />
+                {/if}
               {:else}
                 <span class="cell cell--type">
                   {#if isDefaultBranchActivity(row)}
@@ -765,63 +740,49 @@
                     class={eventChipClass(row.activity_type)}
                   >{eventLabel(row)}</Chip>
                 </span>
-                <span class="cell cell--repo col-repo">
-                  <Chip
-                    size="sm"
-                    uppercase={false}
-                    class="repo-chip repo-tag"
-                    style={repoStyle}
+                {#if isDefaultBranchActivity(row)}
+                  <ItemTableCells
+                    {repo}
+                    author={activityAuthor(row)}
+                    reference={branchName(row)}
+                    beforeTitle={branchActivityDetail(row) ? branchSha : undefined}
+                    title={branchActivityTitle(row)}
+                    time={relativeTime(row.created_at)}
+                    linkUrl={activityLink(row)}
+                    linkLabel="Open activity in provider"
+                    linkTitle="Open activity"
+                    actions={isUnreadNotification(row) ? markSeen : undefined}
+                  />
+                {:else}
+                  <ItemTableCells
+                    {repo}
+                    author={activityAuthor(row)}
+                    state={hasStateChip(row) ? row.item_state : undefined}
+                    reference={`#${row.item_number}`}
+                    workspaceStatus={row.workspace ? row.workspace.status : undefined}
+                    title={row.item_title}
+                    agentState={row.workspace?.agent_state}
+                    time={relativeTime(row.created_at)}
+                    linkUrl={activityLink(row)}
+                    linkLabel="Open activity in provider"
+                    linkTitle="Open activity"
+                    actions={isUnreadNotification(row) ? markSeen : undefined}
+                  />
+                {/if}
+                {#snippet branchSha()}
+                  <span class="sha">{branchActivityDetail(rep)}</span>
+                {/snippet}
+                {#snippet markSeen()}
+                  <button
+                    class="link-btn mark-seen-btn"
+                    type="button"
+                    aria-label="Mark notification seen"
+                    title="Mark seen"
+                    onclick={(e) => handleMarkSeen(e, rep)}
                   >
-                    <span class="repo-chip__label"
-                      >{repoLabel(row)}</span>
-                  </Chip>
-                  <RepoPrivateIcon isPrivate={row.repo.private} />
-                </span>
-                <span class="cell cell--author col-author">{activityAuthor(row)}</span>
-                <span class="cell cell--title">
-                  {#if isDefaultBranchActivity(row)}
-                    <span class="item-ref">{branchName(row)}</span>
-                    {#if branchActivityDetail(row)}
-                      <span class="sha">{branchActivityDetail(row)}</span>
-                    {/if}
-                    <span class="item-title">{branchActivityTitle(row)}</span>
-                  {:else}
-                    {#if hasStateChip(row)}
-                      <ItemStateChip state={row.item_state} />
-                    {/if}
-                    <span class="item-ref">#{row.item_number}</span>
-                    {#if row.workspace}
-                      <WorkspaceIndicator status={row.workspace.status} size={12} />
-                    {/if}
-                    <span class="item-title">{row.item_title}</span>
-                    <AgentStatusIndicator state={row.workspace?.agent_state} />
-                  {/if}
-                </span>
-                <span class="cell cell--time col-when">{relativeTime(row.created_at)}</span>
-                <span class="cell cell--link">
-                  {#if isUnreadNotification(row)}
-                    <button
-                      class="link-btn mark-seen-btn"
-                      type="button"
-                      aria-label="Mark notification seen"
-                      title="Mark seen"
-                      onclick={(e) => handleMarkSeen(e, row)}
-                    >
-                      <CheckIcon size="14" strokeWidth="2" aria-hidden="true" />
-                    </button>
-                  {/if}
-                  {#if activityLink(row)}
-                    <button
-                      class="link-btn"
-                      type="button"
-                      aria-label="Open activity in provider"
-                      title="Open activity"
-                      onclick={(e) => handleLinkClick(e, activityLink(row))}
-                    >
-                      <ArrowUpRightIcon size="14" strokeWidth="2" aria-hidden="true" />
-                    </button>
-                  {/if}
-                </span>
+                    <CheckIcon size="14" strokeWidth="2" aria-hidden="true" />
+                  </button>
+                {/snippet}
               {/if}
             </div>
           {/each}
@@ -1082,41 +1043,15 @@
   /* The flat view shares the threaded view's grid layout so toggling between
    * modes doesn't shift the columns. The first column is an 18px spacer that
    * lines up with the threaded view's chevron caret so the type chip starts
-   * at the same x-coordinate in both layouts. Widths come from the same CSS
-   * custom properties so the column caps stay in lockstep. */
+   * at the same x-coordinate in both layouts. The tracks come from
+   * itemTableColumns. */
   .activity-table {
     display: grid;
-    grid-template-columns:
-      18px
-      fit-content(140px)
-      fit-content(var(--threaded-col-repo-max, 220px))
-      fit-content(var(--threaded-col-author-max, 140px))
-      minmax(0, 1fr)
-      auto
-      24px;
     column-gap: 6px;
   }
 
   .cell--caret-spacer {
     width: 18px;
-  }
-
-  .activity-column-headers {
-    display: grid;
-    grid-template-columns: subgrid;
-    grid-column: 1 / -1;
-    align-items: center;
-    padding: 6px 0 4px;
-    font-size: var(--font-size-2xs);
-    font-weight: 500;
-    text-transform: var(--label-transform, uppercase);
-    letter-spacing: var(--letter-spacing-label, 0.5px);
-    color: var(--text-muted);
-    border-bottom: 1px solid var(--border-default);
-    position: sticky;
-    top: 0;
-    background: var(--bg-primary);
-    z-index: 1;
   }
 
   .activity-row {
@@ -1149,66 +1084,6 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    overflow: visible;
-  }
-
-  .cell--repo {
-    display: inline-flex;
-    align-items: center;
-    min-width: 0;
-    font-size: var(--font-size-sm);
-  }
-
-  .cell--repo :global(.repo-chip) {
-    min-width: 0;
-    max-width: 100%;
-  }
-
-  .cell--repo :global(.repo-chip .repo-chip__label) {
-    display: block;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .cell--author {
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-  }
-
-  .cell--title {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
-
-  .item-ref {
-    font-size: var(--font-size-sm);
-    color: var(--text-muted);
-    flex-shrink: 0;
-  }
-
-  .item-title {
-    font-size: var(--font-size-sm);
-    color: var(--text-primary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-  }
-
-  .cell--time {
-    font-size: var(--font-size-xs);
-    color: var(--text-muted);
-    text-align: right;
-  }
-
-  .cell--link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     overflow: visible;
   }
 

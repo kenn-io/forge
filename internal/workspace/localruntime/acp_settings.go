@@ -113,7 +113,7 @@ func (a *ACP) setConfig(ctx context.Context, id, value string) error {
 
 // acpSettingsRestoreTimeout bounds restoring a chat's settings once its agent
 // has started.
-const acpSettingsRestoreTimeout = 30 * time.Second
+var acpSettingsRestoreTimeout = 30 * time.Second
 
 // startACP restores the remembered options, then the launch's own options,
 // which apply to this chat only and are never remembered.

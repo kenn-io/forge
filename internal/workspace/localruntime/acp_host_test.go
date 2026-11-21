@@ -786,8 +786,9 @@ func TestACPChatStartsAloneWhenItsSharedAgentStopsAnswering(t *testing.T) {
 // daemon waits for the whole start instead of failing a chat that is nearly
 // ready.
 func TestACPChatStartsAfterAStuckHostAndASlowStartOfItsOwn(t *testing.T) {
+	shortenACPStartTimeouts(t)
 	t.Setenv("KENN_FORGE_ACP_SHARED_STALL", filepath.Join(t.TempDir(), "stall"))
-	t.Setenv("KENN_FORGE_ACP_SHARED_SLOW", "22s")
+	t.Setenv("KENN_FORGE_ACP_SHARED_SLOW", "4400ms")
 	manager, dir, _, _ := sharedACPChats(t, "alpha")
 	preferences := filepath.Join(t.TempDir(), "preferences.json")
 	require.NoError(t, os.WriteFile(preferences, []byte(`{"chat":{"model":"deep"}}`), 0o600))

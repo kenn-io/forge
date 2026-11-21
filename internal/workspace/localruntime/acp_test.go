@@ -1251,9 +1251,28 @@ func acpOptionValue(t *testing.T, agent interface{ Snapshot() ([]byte, error) },
 	return ""
 }
 
+func scaleACPStartTimeouts(divisor time.Duration) {
+	acpHandshakeTimeout /= divisor
+	acpSettingsRestoreTimeout /= divisor
+	acpAttachTimeout /= divisor
+}
+
+func shortenACPStartTimeouts(t *testing.T) {
+	t.Helper()
+	handshake, restore, attach := acpHandshakeTimeout, acpSettingsRestoreTimeout, acpAttachTimeout
+	t.Cleanup(func() {
+		acpHandshakeTimeout, acpSettingsRestoreTimeout, acpAttachTimeout = handshake, restore, attach
+	})
+	scaleACPStartTimeouts(5)
+	t.Setenv("KENN_FORGE_ACP_START_DIVISOR", "5")
+}
+
 func TestACPOwnerHelper(t *testing.T) {
 	if os.Getenv("KENN_FORGE_ACP_OWNER_FIXTURE") != "1" {
 		return
+	}
+	if os.Getenv("KENN_FORGE_ACP_START_DIVISOR") == "5" {
+		scaleACPStartTimeouts(5)
 	}
 	if fixtureDir := os.Getenv("KENN_FORGE_ACP_CONTINUE_DIR"); fixtureDir != "" {
 		_ = os.WriteFile(filepath.Join(fixtureDir, "owner-pid"), []byte(strconv.Itoa(os.Getpid())), 0o600)

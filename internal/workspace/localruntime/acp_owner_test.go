@@ -959,6 +959,7 @@ const lateACPOwnerDelay = 300 * time.Millisecond
 // timeout, since a real start has no caller deadline, and no second agent
 // starts beside the owner.
 func TestACPRestoreReportsAnOwnerThatListensButNeverAnswers(t *testing.T) {
+	shortenACPStartTimeouts(t)
 	manager, late, dir, _ := parkedACPChat(t, false)
 	listening, err := manager.Launch(t.Context(), "workspace", dir, "chat")
 	require.NoError(t, err)

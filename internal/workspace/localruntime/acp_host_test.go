@@ -762,7 +762,14 @@ func TestACPAgentEnvReachesTheAgentAndKeepsHostsApart(t *testing.T) {
 // finds it stuck starts an agent of its own once the host's time runs out, and
 // the next chat starts on a new host.
 func TestACPChatStartsAloneWhenItsSharedAgentStopsAnswering(t *testing.T) {
-	shortenACPStartTimeouts(t)
+	handshake, restore, attach := acpHandshakeTimeout, acpSettingsRestoreTimeout, acpAttachTimeout
+	t.Cleanup(func() {
+		acpHandshakeTimeout, acpSettingsRestoreTimeout, acpAttachTimeout = handshake, restore, attach
+	})
+	scaleACPStartTimeouts()
+	// Scale the entire budget, including its fixed allowances.
+	acpAttachTimeout /= acpStartTimeoutDivisor
+	t.Setenv("KENN_FORGE_ACP_START_DIVISOR", strconv.Itoa(acpStartTimeoutDivisor))
 	t.Setenv("KENN_FORGE_ACP_SHARED_STALL", filepath.Join(t.TempDir(), "stall"))
 	t.Setenv("KENN_FORGE_ACP_SHARED_SLOW", "5500ms")
 	manager, dir, _, _ := sharedACPChats(t, "alpha")

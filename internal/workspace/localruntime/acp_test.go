@@ -1258,18 +1258,6 @@ func scaleACPStartTimeouts() {
 	acpSettingsRestoreTimeout /= acpStartTimeoutDivisor
 }
 
-func shortenACPStartTimeouts(t *testing.T) {
-	t.Helper()
-	handshake, restore, attach := acpHandshakeTimeout, acpSettingsRestoreTimeout, acpAttachTimeout
-	t.Cleanup(func() {
-		acpHandshakeTimeout, acpSettingsRestoreTimeout, acpAttachTimeout = handshake, restore, attach
-	})
-	scaleACPStartTimeouts()
-	// Scale the entire budget, including its fixed allowances.
-	acpAttachTimeout /= acpStartTimeoutDivisor
-	t.Setenv("KENN_FORGE_ACP_START_DIVISOR", strconv.Itoa(acpStartTimeoutDivisor))
-}
-
 func TestACPOwnerHelper(t *testing.T) {
 	if os.Getenv("KENN_FORGE_ACP_OWNER_FIXTURE") != "1" {
 		return

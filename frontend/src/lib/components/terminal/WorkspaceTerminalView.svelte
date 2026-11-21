@@ -74,6 +74,7 @@
     registerWorkspaceControls,
     registerWorkspaceLauncher,
     registerWorkspaceSessionLauncher,
+    publishHostedLaunchTargets,
     setWorkspaceControlsBusy,
     setWorkspaceSessionLaunchBusy,
   } from "../../stores/workspace-host.svelte.ts";
@@ -1144,6 +1145,15 @@
         registerWorkspaceLauncher(null);
         registerWorkspaceSessionLauncher(null);
       });
+  });
+
+  // The detail header launches into this workspace, so it offers this machine's agents.
+  $effect(() => {
+    if (!embeddedWorkspace) return;
+    const key = { workspaceId, hostKey: workspaceHostKey };
+    const targets = launchTargets;
+    untrack(() => publishHostedLaunchTargets(key, targets));
+    return () => untrack(() => publishHostedLaunchTargets(null));
   });
 
   // handleLaunch ignores a launch while one is starting, and a second queued launch
@@ -4663,6 +4673,28 @@
       return;
     }
     void loadEmptyLaunchTargets();
+  });
+
+  // A quick action can set this workspace up again on another machine, and no
+  // workspace event reaches this Forge when it does. Once each launch ends,
+  // including a launch whose agent started but whose prompt was not delivered,
+  // a view that has not seen the workspace ready reads it again, and keeps
+  // reading while setup runs, as a setup retry from this view does. A launch
+  // that ends before this view's own first read waits for that read.
+  let quickActionLaunchPending = false;
+  $effect(() => {
+    const launch = quickActionLaunches.get(quickActionWorkspaceKey(workspaceId, workspaceHostKey));
+    if (launch && !launch.session) {
+      quickActionLaunchPending = true;
+      return;
+    }
+    if (!quickActionLaunchPending || !workspaceLive) return;
+    quickActionLaunchPending = false;
+    if (workspace?.status === "ready") return;
+    untrack(() => {
+      requestWorkspace();
+      startPolling();
+    });
   });
 
   $effect(() => {

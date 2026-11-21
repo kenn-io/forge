@@ -688,6 +688,113 @@ describe("IssueDetail inline workspace handoff", () => {
     snapshot.resolve({ data: { hosts: [] } });
   });
 
+  it("opens a quick action's workspace on the saved devbox beside the issue", async () => {
+    const controller = createTestController("split");
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: {
+          hosts: [
+            {
+              configKey: "devbox:compute-a",
+              kind: "devbox",
+              name: "compute-a",
+              operationAvailability: { workspaceWrite: { available: true } },
+            },
+          ],
+        },
+      }),
+      POST: vi.fn(async (path: string) =>
+        path === "/devboxes/{connection_id}/workspaces"
+          ? { data: { id: "ws-devbox", status: "provisioning" } }
+          : { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } },
+      ),
+    };
+    const { navigate } = renderIssueDetail(
+      issueDetail(),
+      undefined,
+      {
+        defaultExecutionTarget: "devbox:compute-a",
+        inlineWorkspace: controller,
+        quickActions: [{ label: "Triage", agent: "codex", prompt: "Triage this issue" }],
+      },
+      apiClient,
+    );
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Triage/ }));
+
+    await waitFor(() =>
+      expect(apiClient.POST).toHaveBeenCalledWith(
+        "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+        expect.objectContaining({
+          params: { path: { connection_id: "compute-a", id: "ws-devbox" } },
+          body: expect.objectContaining({ target_key: "codex", message: "Triage this issue" }),
+        }),
+      ),
+    );
+    expect(controller.recordCreated).toHaveBeenCalledWith(identity, {
+      id: "ws-devbox",
+      status: "provisioning",
+      hostKey: "devbox:compute-a",
+      hostLabel: "compute-a (devbox)",
+    });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("launches in a linked remote workspace, and asks its machine again when its setup failed since", async () => {
+    // The link still says ready; only the devbox knows its setup failed since.
+    const controller = {
+      ...createTestController("split"),
+      effectiveWorkspaceRef: () => ({ id: "ws-devbox", status: "ready", hostKey: "devbox:compute-a" }),
+    };
+    const posts: string[] = [];
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: [] } }),
+      POST: vi.fn(async (path: string) => {
+        posts.push(path);
+        if (path === "/devboxes/{connection_id}/workspaces") {
+          return { data: { id: "ws-devbox", status: "error", reused: true } };
+        }
+        if (path === "/devboxes/{connection_id}/workspaces/{id}/retry") return { data: { id: "ws-devbox" } };
+        // The first handoff finds the setup failure; the one after the retry runs.
+        if (posts.filter((posted) => posted === path).length === 1) {
+          return {
+            error: { status: 409, code: "conflict", title: "Conflict", detail: "workspace setup failed: clone failed" },
+            response: new Response(null, { status: 409 }),
+          };
+        }
+        return { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } };
+      }),
+    };
+    const { navigate } = renderIssueDetail(
+      issueDetail(),
+      undefined,
+      {
+        inlineWorkspace: controller,
+        quickActions: [{ label: "Triage", agent: "codex", prompt: "Triage this issue" }],
+      },
+      apiClient,
+    );
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Triage/ }));
+
+    await waitFor(() =>
+      expect(posts).toEqual([
+        "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+        "/devboxes/{connection_id}/workspaces",
+        "/devboxes/{connection_id}/workspaces/{id}/retry",
+        "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+      ]),
+    );
+    // The recovered action reports no failure.
+    expect(getFlashes()).toEqual([]);
+    expect(controller.revealWorkspace).toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it("shows a quiet status hint after directory failure and still creates on the saved devbox", async () => {
     const snapshot = Promise.withResolvers<unknown>();
     const apiClient = {
@@ -1074,6 +1181,8 @@ describe("IssueDetail inline workspace handoff", () => {
       body: { target_key: "codex", message: "/triage-pr\nquestion all assumptions" },
     });
     await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
+    // The retry succeeded, so the conflict dialog no longer covers the pane.
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Use Existing Branch" })).toBeNull());
     await waitFor(() =>
       expect(telemetry).toHaveBeenCalledExactlyOnceWith({
         event: "workspace_opened",

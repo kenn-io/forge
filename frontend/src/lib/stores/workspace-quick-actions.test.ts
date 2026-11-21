@@ -174,6 +174,27 @@ describe("quick-action launch serialization", () => {
     expect(retryFleetWorkspace).toHaveBeenCalledOnce();
   });
 
+  it("opens a returned workspace's session where the item's placement asks, including after setup is retried", async () => {
+    const hostKey = "b".repeat(32);
+    const leaf = { surface: "detail" as const, id: "leaf-conversation", edge: "right" as const };
+    retryFleetWorkspace.mockResolvedValue({ id: "ws-failed", status: "provisioning" });
+    launchFleetHandoff.mockResolvedValue({ session, initial_message: { state: "delivered" } });
+    const action = { label: "Review", agent: "chat", prompt: "Review this change" };
+
+    for (const workspace of [
+      { id: "ws-ready", status: "ready" },
+      { id: "ws-failed", status: "error" },
+    ]) {
+      runReturnedWorkspaceQuickAction(runtime, workspace, "pull_request", action, hostKey, leaf);
+      await vi.waitFor(() =>
+        expect(quickActionLaunches.get(quickActionWorkspaceKey(workspace.id, hostKey))).toMatchObject({
+          targetKey: "chat",
+          leaf,
+        }),
+      );
+    }
+  });
+
   it("refuses a workspace on another machine that is being deleted without asking it to launch", async () => {
     const hostKey = "b".repeat(32);
     const action = { label: "Review", agent: "chat", prompt: "Review this change" };

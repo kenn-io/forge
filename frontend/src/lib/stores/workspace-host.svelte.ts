@@ -1,4 +1,5 @@
 import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
+import type { LaunchTarget } from "../api/types.js";
 import type { Snippet } from "svelte";
 import type { Attachment } from "svelte/attachments";
 import type {
@@ -9,7 +10,7 @@ import type {
   WorkspaceItemIdentity,
   WorkspaceRefLite,
 } from "../workspace-inline.js";
-import { canonicalItemType } from "../workspace-inline.js";
+import { canonicalItemType, hostKeyLabel, workspaceRoute } from "../workspace-inline.js";
 import { parseSessionPaneKey, sessionPaneKeyMatchesWorkspace } from "./session-pane-key.js";
 import { canonicalProvider, resolvedPlatformHost } from "../api/provider-routes.js";
 import {
@@ -144,6 +145,9 @@ let launcherOpener = $state<(() => void) | null>(null);
 // which owns the runtime launch: a detail header can only reach it through here.
 let sessionLauncher = $state<((targetKey: string) => void) | null>(null);
 let sessionLaunchBusy = $state(false);
+// The hosted workspace's launch targets, published by the live view that loaded
+// them from the workspace's machine.
+let hostedLaunchTargets = $state<{ key: HostedWorkspaceKey; targets: LaunchTarget[] } | null>(null);
 // Claims are released when their view unmounts, but a deletion can arrive
 // later from an unrelated surface (Workspaces tab, terminal tab). Without
 // this map the deletion would find no claim to tombstone, and the stale
@@ -160,7 +164,8 @@ function collapseLedgerKey(surface: InlineWorkspaceSurface): string {
   return `${surface}\u0000${workspaceKeyString(desiredKey())}`;
 }
 
-function identityKey(identity: WorkspaceItemIdentity): string {
+/** One string per item, whatever provider or item-type alias names it. */
+export function identityKey(identity: WorkspaceItemIdentity): string {
   // Route segments may carry provider aliases (gh/gl/fj) and callers carry
   // native item-type vocabularies ("pr"/"pull_request" vs "pull") while
   // store data uses canonical names; the same item must never key two
@@ -183,7 +188,7 @@ function sameIdentity(a: WorkspaceItemIdentity, b: WorkspaceItemIdentity): boole
 }
 
 function sameRef(a: WorkspaceRefLite | null, b: WorkspaceRefLite | null): boolean {
-  return a?.id === b?.id && a?.status === b?.status;
+  return a?.id === b?.id && a?.status === b?.status && a?.hostKey === b?.hostKey && a?.hostLabel === b?.hostLabel;
 }
 
 export function desiredSlot(): HostSlot | null {
@@ -210,7 +215,7 @@ export function desiredKey(): HostedWorkspaceKey {
   // socket alive across page detours.
   const surface = PAGE_SURFACE[route.page];
   const claim = surface ? claims[surface] : undefined;
-  if (claim) return { workspaceId: claim.ref.id, hostKey: undefined };
+  if (claim) return { workspaceId: claim.ref.id, hostKey: claim.ref.hostKey };
   return lastInlineKey;
 }
 
@@ -418,8 +423,10 @@ function setClaim(surface: InlineWorkspaceSurface, identity: WorkspaceItemIdenti
     clearSessionFocusRequest();
   }
   claims = { ...claims, [surface]: { identity, ref } };
-  workspaceIdentityById.set(ref.id, identity);
-  lastInlineKey = { workspaceId: ref.id, hostKey: undefined };
+  // Workspace IDs are unique only per machine, and deletion bookkeeping by ID
+  // covers this Forge's workspaces.
+  if (ref.hostKey === undefined) workspaceIdentityById.set(ref.id, identity);
+  lastInlineKey = { workspaceId: ref.id, hostKey: ref.hostKey };
 }
 
 function clearClaim(surface: InlineWorkspaceSurface): void {
@@ -454,9 +461,23 @@ export function rememberTerminalRouteKey(key: HostedWorkspaceKey): void {
 
 export function notifyWorkspaceDeleted(workspaceId: string, hostKey?: string, identity?: WorkspaceItemIdentity): void {
   discardSessionsWithPrefix(sessionHostPrefix(workspaceId, hostKey));
-  // Inline claims only ever hold local workspaces (hostKey undefined);
-  // fleet deletions can't match one.
-  if (hostKey === undefined) {
+  if (hostKey !== undefined) {
+    // Another machine's workspace: drop the claims and links that name it,
+    // including links for items whose pane is not showing right now.
+    for (const surface of Object.keys(claims) as InlineWorkspaceSurface[]) {
+      const claim = claims[surface];
+      if (claim?.ref.id !== workspaceId || claim.ref.hostKey !== hostKey) continue;
+      clearClaim(surface);
+      overrides = { ...overrides, [identityKey(claim.identity)]: { deletedId: workspaceId } };
+      for (const listener of invalidationListeners) listener(claim.identity);
+    }
+    for (const [key, override] of Object.entries(overrides)) {
+      if (isTombstone(override) || override.ref.id !== workspaceId || override.ref.hostKey !== hostKey) continue;
+      overrides = { ...overrides, [key]: { deletedId: workspaceId } };
+    }
+    dropWorkspaceSessionPanes(workspaceId, hostKey);
+    clearCreatedWorkspaceById(workspaceId, hostKey);
+  } else {
     // Tombstone by remembered identity too, not just active claims: the
     // claim may already be released (its view unmounted) when the deletion
     // arrives from the Workspaces or terminal tab. The caller-supplied
@@ -666,6 +687,10 @@ export function setWorkspaceSessionLaunchBusy(busy: boolean): void {
   sessionLaunchBusy = busy;
 }
 
+export function publishHostedLaunchTargets(key: HostedWorkspaceKey | null, targets: LaunchTarget[] = []): void {
+  hostedLaunchTargets = key ? { key, targets } : null;
+}
+
 /**
  * The hosted workspace's launcher, or null when this surface is not hosting one.
  *
@@ -798,11 +823,17 @@ function workspacePaneRowOnlyFor(surface: InlineWorkspaceSurface): boolean {
  * the neutral name too.
  */
 function workspacePaneLabelFor(surface: InlineWorkspaceSurface): string {
+  // A workspace on another machine says where it runs; otherwise it looks
+  // and behaves like a local one.
+  const ref = claims[surface]?.ref;
+  const where = ref?.hostKey ? ` on ${ref.hostLabel ?? hostKeyLabel(ref.hostKey)}` : "";
   const sessions = promotableSessionsFor(surface);
-  if (sessions.length !== 1) return "Workspace";
-  if (getPaneLayoutStore(surface).paneRender()?.flattened === true) return "Workspace";
-  const session = sessions[0]!;
-  return workspacePaneKeysFor(surface).includes(session.paneKey) ? "Workspace" : session.label;
+  const session = sessions.length === 1 ? sessions[0]! : undefined;
+  const promoted =
+    session !== undefined &&
+    getPaneLayoutStore(surface).paneRender()?.flattened !== true &&
+    !workspacePaneKeysFor(surface).includes(session.paneKey);
+  return `${promoted ? session.label : "Workspace"}${where}`;
 }
 
 /**
@@ -839,6 +870,14 @@ export const tabSlotAttachment: Attachment<HTMLElement> = slotAttachmentFor("tab
 
 const controllers = new Map<InlineWorkspaceSurface, InlineWorkspaceController>();
 
+/**
+ * Links a workspace created for an item outside its detail view, such as by a
+ * bulk quick action, so every pane that hosts the item opens it.
+ */
+export function recordItemWorkspaceCreated(identity: WorkspaceItemIdentity, ref: WorkspaceRefLite): void {
+  for (const surface of INLINE_SURFACES) getInlineWorkspaceController(surface).recordCreated(identity, ref);
+}
+
 export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): InlineWorkspaceController {
   const cached = controllers.get(surface);
   if (cached) return cached;
@@ -857,9 +896,9 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       // there before this response landed). Recording it would overwrite
       // the deletion tombstone and resurrect a dead ref. A recreation
       // always carries a fresh ID and supersedes the tombstone below.
-      if (isWorkspaceIdDeleted(ref.id)) return;
+      if (ref.hostKey === undefined && isWorkspaceIdDeleted(ref.id)) return;
       overrides = { ...overrides, [identityKey(identity)]: { ref, tick: nextWorkspaceLifecycleTick() } };
-      workspaceIdentityById.set(ref.id, identity);
+      if (ref.hostKey === undefined) workspaceIdentityById.set(ref.id, identity);
       const claim = claims[surface];
       // Refresh a matching live claim's ref, but never claim an unclaimed
       // surface from here: a create response can land after its component
@@ -887,10 +926,14 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       // else — absence (deleted by another client) or a replacement
       // workspace under a different ID (deleted and recreated). Stale
       // pre-create envelopes, null or different-ID, must not clear it.
+      // This Forge's envelope never carries another machine's workspace, so
+      // its absence there says nothing; only a local workspace replaces it.
       const agrees = isTombstone(override)
         ? envelopeRef == null || envelopeRef.id !== override.deletedId
-        : (envelopeRef != null && envelopeRef.id === override.ref.id) ||
-          (envelopeTick != null && envelopeTick > override.tick);
+        : override.ref.hostKey !== undefined
+          ? envelopeRef != null && !isWorkspaceIdDeleted(envelopeRef.id)
+          : (envelopeRef != null && envelopeRef.id === override.ref.id) ||
+            (envelopeTick != null && envelopeTick > override.tick);
       if (!agrees) return;
       const next = { ...overrides };
       delete next[key];
@@ -941,6 +984,14 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       sessionLauncher?.(targetKey);
     },
     sessionLaunching: () => desiredSlot() === surface && sessionLaunchBusy,
+    launchTargets: () => {
+      const published = hostedLaunchTargets;
+      if (desiredSlot() !== surface || published === null) return null;
+      const key = desiredKey();
+      return published.key.workspaceId === key.workspaceId && published.key.hostKey === key.hostKey
+        ? published.targets
+        : null;
+    },
     focusTerminal: () => {
       // A modal frame is open: leave the layout alone and don't pull
       // focus out of the dialog.
@@ -997,7 +1048,7 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
         requestHostFocus();
       }
     },
-    openInWorkspaces: (ref) => navigate(`/terminal/${ref.id}`),
+    openInWorkspaces: (ref) => navigate(workspaceRoute(ref)),
     onIdentityInvalidated: (cb) => {
       const wrapped = (identity: WorkspaceItemIdentity) => cb(identity);
       invalidationListeners.add(wrapped);
@@ -1040,6 +1091,7 @@ export function resetWorkspaceHostForTest(): void {
   launcherOpener = null;
   sessionLauncher = null;
   sessionLaunchBusy = false;
+  hostedLaunchTargets = null;
   lastFocusedWorkspacePane = {};
   collapsedPaneKeys.clear();
 }

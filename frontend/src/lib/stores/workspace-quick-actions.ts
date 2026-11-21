@@ -5,7 +5,12 @@ import type { AppRuntime } from "../app/runtime.js";
 import { reportWorkspaceOpened, reportWorkspaceOpenError } from "../app/telemetry.js";
 import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
 import type { WorkspaceRuntimeLaunchLeaf } from "../components/terminal/workspace-runtime-workflow.js";
-import { executeGeneratedApiRequest, executeOpaqueGeneratedApiRequest } from "../api/generated-api.js";
+import type { FleetSnapshotReads } from "../api/fleet-snapshot.js";
+import {
+  executeGeneratedApiRequest,
+  executeOpaqueGeneratedApiRequest,
+  type GeneratedApi,
+} from "../api/generated-api.js";
 import { ProblemCodes } from "../api/problems.js";
 import { showFlash } from "./flash.svelte.js";
 
@@ -66,12 +71,20 @@ export type QuickActionOutcome =
   | { type: "started" }
   /** The agent may be running, but its prompt was not confirmed. */
   | { type: "unconfirmed"; reason: string; message: string }
-  | { type: "failed"; reason: string; message: string };
+  /**
+   * workspaceUnusable: another machine reported the workspace gone or its
+   * setup failed, so asking that machine for the item's workspace again can
+   * recover where this launch could not.
+   */
+  | { type: "failed"; reason: string; message: string; workspaceUnusable?: "gone" | "setupFailed" };
 
 // Launches for one workspace run one after another, in the order requested.
 const launchQueues = new Map<string, Deferred.Deferred<void>>();
 
-function enqueueLaunch<A, R>(workspaceKey: string, launch: Effect.Effect<A, never, R>): Effect.Effect<A, never, R> {
+export function enqueueLaunch<A, R>(
+  workspaceKey: string,
+  launch: Effect.Effect<A, never, R>,
+): Effect.Effect<A, never, R> {
   return Effect.gen(function* () {
     const previous = launchQueues.get(workspaceKey);
     const done = yield* Deferred.make<void>();
@@ -111,8 +124,13 @@ export function launchWorkspaceQuickAction(
  * then launches the quick action there. The retry takes the workspace's place
  * in the launch queue, so launches still run in the order requested.
  */
-export function retryWorkspaceQuickAction(workspaceId: string, action: QuickAction, hostKey?: string) {
-  const { workspaceKey, handoff } = quickActionHandoff(workspaceId, action, hostKey);
+export function retryWorkspaceQuickAction(
+  workspaceId: string,
+  action: QuickAction,
+  hostKey?: string,
+  leaf?: WorkspaceRuntimeLaunchLeaf,
+) {
+  const { workspaceKey, handoff } = quickActionHandoff(workspaceId, action, hostKey, undefined, leaf);
   const retry = (
     hostKey
       ? executeOpaqueGeneratedApiRequest<unknown>("POST retry workspace", (client, signal) =>
@@ -231,7 +249,21 @@ function quickActionHandoff(
                 message: `"${action.label}" launched its agent, but prompt delivery is unconfirmed: ${detail}. Check the agent before sending the prompt again.`,
               };
         }
-        return { type: "failed", reason: detail, message: `"${action.label}" could not start: ${detail}` };
+        const problem = failure.problem;
+        const workspaceUnusable =
+          hostKey === undefined
+            ? undefined
+            : problem.status === 404 && problem.code === ProblemCodes.workspaceNotFound
+              ? ("gone" as const)
+              : problem.status === 409 && problem.code === ProblemCodes.conflict
+                ? ("setupFailed" as const)
+                : undefined;
+        return {
+          type: "failed",
+          reason: detail,
+          message: `"${action.label}" could not start: ${detail}`,
+          ...(workspaceUnusable ? { workspaceUnusable } : {}),
+        };
       },
     }),
   );
@@ -347,13 +379,14 @@ export function startReturnedWorkspaceQuickAction(
   workspace: { readonly id: string; readonly status?: string | undefined },
   action: QuickAction,
   hostKey: string,
+  leaf?: WorkspaceRuntimeLaunchLeaf,
 ): ReturnType<typeof launchWorkspaceQuickAction> {
   if (workspace.status === "deleting" || workspace.status === "deletion_failed") {
     const reason = "its workspace is being deleted";
     return Effect.succeed({ type: "failed", reason, message: `"${action.label}" could not start: ${reason}` });
   }
-  if (workspace.status === "error") return retryWorkspaceQuickAction(workspace.id, action, hostKey);
-  return launchWorkspaceQuickAction(workspace.id, action, hostKey);
+  if (workspace.status === "error") return retryWorkspaceQuickAction(workspace.id, action, hostKey, leaf);
+  return launchWorkspaceQuickAction(workspace.id, action, hostKey, undefined, leaf);
 }
 
 /** Runs a quick action in a workspace another machine returned for an item. */
@@ -363,22 +396,24 @@ export function runReturnedWorkspaceQuickAction(
   itemType: WorkspaceDetail["item_type"],
   action: QuickAction,
   hostKey: string,
+  leaf?: WorkspaceRuntimeLaunchLeaf,
 ): void {
   reportQuickAction(
     runtime,
     workspace.id,
     itemType,
     action,
-    startReturnedWorkspaceQuickAction(workspace, action, hostKey),
+    startReturnedWorkspaceQuickAction(workspace, action, hostKey, leaf),
   );
 }
 
-function reportQuickAction(
+/** Runs a quick action's launch in the background and reports anything but a clean start. */
+export function reportQuickAction(
   runtime: AppRuntime,
   workspaceId: string,
   itemType: WorkspaceDetail["item_type"] | undefined,
   action: QuickAction,
-  launch: ReturnType<typeof launchWorkspaceQuickAction>,
+  launch: Effect.Effect<QuickActionOutcome, never, GeneratedApi | FleetSnapshotReads>,
 ): void {
   if (itemType !== undefined) reportWorkspaceOpened(runtime, itemType);
   runtime.runCommand(

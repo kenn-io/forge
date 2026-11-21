@@ -64,6 +64,7 @@ export function createClaimTestController(
     revealWorkspace: vi.fn(),
     launchSession: vi.fn(),
     sessionLaunching: () => false,
+    launchTargets: () => null,
     focusTerminal: vi.fn(),
     openInWorkspaces: vi.fn(),
     onIdentityInvalidated: vi.fn((cb: (identity: WorkspaceItemIdentity) => void) => {

@@ -308,7 +308,7 @@ export function promoteWorkspaceCreateLaunch(
 export function recordWorkspaceCreated(identity: WorkspaceItemIdentity, ref: WorkspaceRefLite): void {
   // A create response that lost the race with its own deletion must not
   // republish the dead workspace.
-  if (deletedIds.has(ref.id)) return;
+  if (ref.hostKey === undefined && deletedIds.has(ref.id)) return;
   created = [
     ...created.filter((entry) => !identityEquals(entry.identity, identity)),
     { identity, ref, tick: nextWorkspaceLifecycleTick() },
@@ -332,8 +332,12 @@ export function reconcileWorkspaceCreated(
   // or a replacement ID means the workspace was deleted (and possibly
   // recreated) elsewhere. A stale pre-create envelope, null or carrying a
   // different (e.g. previously deleted) ID, must not erase the record.
+  // This Forge's envelope never carries another machine's workspace, so only
+  // a local workspace there replaces a remote record.
   const agrees =
-    (envelopeRef != null && envelopeRef.id === entry.ref.id) || (envelopeTick != null && envelopeTick > entry.tick);
+    entry.ref.hostKey !== undefined
+      ? envelopeRef != null && !deletedIds.has(envelopeRef.id)
+      : (envelopeRef != null && envelopeRef.id === entry.ref.id) || (envelopeTick != null && envelopeTick > entry.tick);
   if (!agrees) return;
   created = created.filter((e) => !identityEquals(e.identity, identity));
 }
@@ -353,17 +357,18 @@ export function resolveControllerlessWorkspaceRef(
   const created = createdWorkspaceRef(identity);
   // A same-ID envelope is the server refreshing the workspace this record
   // confirmed — its status is fresher than the confirmation snapshot.
-  if (created && envelopeRef?.id === created.id) return envelopeRef;
+  if (created && created.hostKey === undefined && envelopeRef?.id === created.id) return envelopeRef;
   if (created) return created;
   if (envelopeRef && !deletedIds.has(envelopeRef.id)) return envelopeRef;
   return null;
 }
 
-// Deletions arrive by workspace ID (Workspaces tab, terminal toolbar),
-// possibly with no detail instance mounted for the item at all.
-export function clearCreatedWorkspaceById(workspaceId: string): void {
-  if (!created.some((entry) => entry.ref.id === workspaceId)) return;
-  created = created.filter((entry) => entry.ref.id !== workspaceId);
+// Deletions arrive by workspace ID and machine (Workspaces tab, terminal
+// toolbar), possibly with no detail instance mounted for the item at all.
+export function clearCreatedWorkspaceById(workspaceId: string, hostKey?: string): void {
+  const matches = (entry: CreatedEntry) => entry.ref.id === workspaceId && entry.ref.hostKey === hostKey;
+  if (!created.some(matches)) return;
+  created = created.filter((entry) => !matches(entry));
 }
 
 export function resetWorkspaceCreatePendingForTest(): void {

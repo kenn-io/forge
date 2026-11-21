@@ -15,6 +15,7 @@ import { createSettingsStore } from "../../stores/settings.svelte.js";
 import { createWorkflowActionsStore } from "../../stores/workflow-actions.svelte.js";
 import { dismissFlash, getFlashes, showFlash } from "../../stores/flash.svelte.js";
 import {
+  createdWorkspaceRef,
   discardWorkspaceLaunch,
   nextWorkspaceLifecycleTick,
   pendingWorkspaceLaunch,
@@ -4510,6 +4511,116 @@ describe("PullDetail inline workspace handoff", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith(`/terminal/fleet/${buildBNode}/ws-remote`));
   });
 
+  it("opens a quick action's workspace on the default fleet member beside the pull request", async () => {
+    const controller = createTestController("split");
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),
+      POST: vi.fn(async (path: string) =>
+        path === "/fleet/hosts/{host_key}/workspaces"
+          ? { data: { id: "ws-remote", status: "provisioning" } }
+          : { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } },
+      ),
+    };
+    const { navigate, settings } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+      defaultExecutionTarget: "https://build-b.example.test",
+    });
+    settings.setQuickActions([{ label: "Review", agent: "claude", prompt: "Review this change" }]);
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Review/ }));
+
+    await waitFor(() =>
+      expect(apiClient.POST).toHaveBeenCalledWith(
+        "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs",
+        expect.objectContaining({
+          params: { path: { host_key: buildBNode, id: "ws-remote" } },
+          body: expect.objectContaining({ target_key: "claude", message: "Review this change" }),
+        }),
+      ),
+    );
+    expect(controller.recordCreated).toHaveBeenCalledWith(identity, {
+      id: "ws-remote",
+      status: "provisioning",
+      hostKey: buildBNode,
+      hostLabel: "build-b",
+    });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("launches in a linked remote workspace, and asks its machine again when its setup failed since", async () => {
+    // The link still says ready; only the devbox knows its setup failed since.
+    const controller = {
+      ...createTestController("split"),
+      effectiveWorkspaceRef: () => ({ id: "ws-remote", status: "ready", hostKey: "devbox:compute-a" }),
+    };
+    const posts: string[] = [];
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: [] } }),
+      POST: vi.fn(async (path: string) => {
+        posts.push(path);
+        if (path === "/devboxes/{connection_id}/workspaces") {
+          return { data: { id: "ws-remote", status: "error", reused: true } };
+        }
+        if (path === "/devboxes/{connection_id}/workspaces/{id}/retry") return { data: { id: "ws-remote" } };
+        // The first handoff finds the setup failure; the one after the retry runs.
+        if (posts.filter((posted) => posted === path).length === 1) {
+          return {
+            error: { status: 409, code: "conflict", title: "Conflict", detail: "workspace setup failed: clone failed" },
+            response: new Response(null, { status: 409 }),
+          };
+        }
+        return { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } };
+      }),
+    };
+    const { settings, navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+    });
+    // This machine lacks the agent; the devbox validates its own.
+    settings.setLaunchTargets([]);
+    settings.setQuickActions([{ label: "Review", agent: "claude", prompt: "Review this change" }]);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
+    const review = screen.getByRole("menuitem", { name: /Review/ });
+    expect(review.hasAttribute("disabled")).toBe(false);
+    await fireEvent.click(review);
+
+    await waitFor(() =>
+      expect(posts).toEqual([
+        "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+        "/devboxes/{connection_id}/workspaces",
+        "/devboxes/{connection_id}/workspaces/{id}/retry",
+        "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+      ]),
+    );
+    // The recovered action reports no failure.
+    expect(getFlashes()).toEqual([]);
+    expect(controller.revealWorkspace).toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("offers a linked remote workspace's own agents in the header launch menu", async () => {
+    const controller = {
+      ...createTestController("split"),
+      effectiveWorkspaceRef: () => ({ id: "ws-remote", status: "ready", hostKey: "devbox:compute-a" }),
+      launchTargets: () => [{ key: "devbox-agent", label: "Devbox Agent", kind: "agent" as const, available: true }],
+    };
+    const { settings } = renderPullDetail(pullDetail(), undefined, undefined, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+    });
+    settings.setLaunchTargets([{ key: "codex", label: "Codex", kind: "agent", available: true }]);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Launch an agent" }));
+    expect(screen.queryByRole("menuitem", { name: "Codex" })).toBeNull();
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Devbox Agent" }));
+    expect(controller.launchSession).toHaveBeenCalledWith("devbox-agent");
+  });
+
   it("names an unavailable default and creates on a machine the user picks instead", async () => {
     const apiClient = {
       GET: vi.fn().mockResolvedValue({
@@ -4557,6 +4668,91 @@ describe("PullDetail inline workspace handoff", () => {
     await fireEvent.click(create);
     await waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledWith("ws-remote", buildBNode));
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("opens the replacement once a remote workspace's machine reports it gone, with no pane beside the item", async () => {
+    const posts: string[] = [];
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),
+      POST: vi.fn(async (path: string, init: { params?: { path?: { id?: string } } }) => {
+        const id = init.params?.path?.id;
+        posts.push(id ? `${path} ${id}` : path);
+        if (path === "/fleet/hosts/{host_key}/workspaces") {
+          return { data: { id: posts.length === 1 ? "ws-remote" : "ws-new", status: "ready" } };
+        }
+        if (id === "ws-remote") {
+          return {
+            error: { status: 404, code: "workspaceNotFound", title: "Not Found", detail: "workspace not found" },
+            response: new Response(null, { status: 404 }),
+          };
+        }
+        return { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } };
+      }),
+    };
+    const onOpenWorkspace = vi.fn();
+    const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "https://build-b.example.test",
+      onOpenWorkspace,
+    });
+    settings.setQuickActions([{ label: "Review", agent: "claude", prompt: "Review this change" }]);
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    await fireEvent.click(create);
+    await waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledWith("ws-remote", buildBNode));
+    onOpenWorkspace.mockClear();
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Review/ }));
+
+    await waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledExactlyOnceWith("ws-new", buildBNode));
+    await waitFor(() =>
+      expect(posts).toEqual([
+        "/fleet/hosts/{host_key}/workspaces",
+        "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs ws-remote",
+        "/fleet/hosts/{host_key}/workspaces",
+        "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs ws-new",
+      ]),
+    );
+    expect(getFlashes()).toEqual([]);
+  });
+
+  it("does not link a workspace another machine returns while it is being deleted", async () => {
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),
+      POST: vi.fn().mockResolvedValue({ data: { id: "ws-going", status: "deletion_failed" } }),
+    };
+    const onOpenWorkspace = vi.fn();
+    renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "https://build-b.example.test",
+      onOpenWorkspace,
+    });
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    await fireEvent.click(create);
+    await waitFor(() =>
+      expect(getFlashes()).toEqual([
+        expect.objectContaining({
+          tone: "warning",
+          message: "This pull request's workspace on build-b is being deleted. Try again once it is gone.",
+        }),
+      ]),
+    );
+    expect(onOpenWorkspace).not.toHaveBeenCalled();
+    const detail = pullDetail();
+    expect(
+      createdWorkspaceRef({
+        provider: detail.repo.provider,
+        platformHost: detail.platform_host,
+        owner: detail.repo_owner,
+        name: detail.repo_name,
+        repoPath: detail.repo.repo_path,
+        number: detail.merge_request.Number,
+        itemType: "pull",
+      }),
+    ).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0]).toBeTruthy();
   });
 
   it("enables creation when an unavailable default machine comes back", async () => {

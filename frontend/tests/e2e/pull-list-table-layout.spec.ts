@@ -280,6 +280,7 @@ for (const width of [340, 400]) {
 }
 
 for (const [width, grouping] of [
+  [600, "flat"],
   [720, "flat"],
   [1000, "flat"],
   [1080, "flat"],
@@ -354,17 +355,13 @@ for (const [width, grouping] of [
       expect(Math.abs(busy.x - header.x), column).toBeLessThan(1);
     }
 
-    // Item is the widest column and keeps its floor even in the narrowest table, where this
-    // busy row would otherwise cost it; the author shortens first. With room, the author is
-    // not cut to fit a fixed column. Labels take only the room the title leaves.
+    // As in Activity, Repo, Author, and When keep their whole text at every width, and the
+    // title takes what is left. Labels take only the room the title leaves. Grouped by
+    // repository, this long author is the first column and reaches the author cap.
     const overflows = (selector: string) => row.locator(selector).evaluate((el) => el.scrollWidth > el.clientWidth);
-    for (const column of [".cell--author", ".cell--status", ".cell--time"]) {
-      expect((await row.locator(column).boundingBox())!.width, column).toBeLessThan(titleCell.width);
-    }
-    const rem = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
-    expect(titleCell.width).toBeGreaterThanOrEqual(18 * rem - 1);
-    if (width >= 1000) {
-      expect(await overflows(".cell--author")).toBe(false);
+    const kept = grouping === "flat" ? [".repo-chip__label", ".cell--author", ".cell--time"] : [".cell--time"];
+    for (const cell of kept) {
+      expect(await overflows(cell), cell).toBe(false);
     }
     // This busy row needs more than 1000px for the full title plus a label.
     if (width >= 1080) {

@@ -14,9 +14,6 @@
    * Column tracks for an item table: the grid that Activity and the pull request list share.
    * Rows are subgrids of the element that takes these tracks, so Repo and Author size to their
    * widest cell up to a cap, Status and When to their content, and Item takes what is left.
-   * Item keeps a floor, so a busy row shortens Repo and Author before it costs the title.
-   * The floor is capped at a share of the table, so a narrow pane or a large text size
-   * never makes the table wider than the pane. A table can lower it with --item-table-item-min.
    */
   export function itemTableColumns({
     leading = [],
@@ -29,7 +26,7 @@
       ...leading,
       repo ? "fit-content(var(--item-table-repo-max, 220px))" : "",
       author ? "fit-content(var(--item-table-author-max, 140px))" : "",
-      "minmax(var(--item-table-item-min, min(18rem, 45%)), 1fr)",
+      "minmax(0, 1fr)",
       status ? "auto" : "",
       when ? "auto" : "",
       "24px",

@@ -189,7 +189,7 @@
     max-width: max-content;
   }
 
-  /* Never squeezed: Repo and Author give way first, and they can ellipsize. */
+  /* Never squeezed: the title gives way instead. */
   .cell--status {
     display: inline-flex;
     align-items: center;

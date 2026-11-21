@@ -612,12 +612,6 @@
     --item-table-header-position: static;
   }
 
-  /* A narrow table drops the title's minimum width, so a busy Status cell and the
-     provider link stay inside the sidebar and the title gives way instead. */
-  .pull-table--narrow {
-    --item-table-item-min: 0px;
-  }
-
   /* A narrow table has no Author or When tracks, so their cells leave the grid. */
   .pull-table--narrow :global(.col-author),
   .pull-table--narrow :global(.col-when) {

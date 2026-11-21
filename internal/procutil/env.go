@@ -1,9 +1,24 @@
 package procutil
 
 import (
+	"runtime"
 	"slices"
 	"strings"
 )
+
+// RemoveEnvironmentVariable deletes a name from a caller-owned environment.
+func RemoveEnvironmentVariable(env []string, name string) []string {
+	return slices.DeleteFunc(env, func(entry string) bool {
+		key, _, found := strings.Cut(entry, "=")
+		if !found {
+			return false
+		}
+		if runtime.GOOS == "windows" {
+			return strings.EqualFold(key, name)
+		}
+		return key == name
+	})
+}
 
 // MergeEnvironment sets extra's variables over env, in name order after the
 // rest. It reuses env's backing array, so callers pass an environment they own.

@@ -3,6 +3,7 @@ package workspace
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -10,6 +11,21 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 )
+
+func TestWorkspaceGitEnvironmentOmitsForgeRoborevKey(t *testing.T) {
+	keyName := "KENN_FORGE_ROBOREV_AUTH_KEY"
+	if runtime.GOOS == "windows" {
+		keyName = strings.ToLower(keyName)
+	}
+	t.Setenv(keyName, "forge-secret")
+	roborevDataDir := t.TempDir()
+	t.Setenv("ROBOREV_DATA_DIR", roborevDataDir)
+
+	// The hook installer uses the same environment for the Roborev CLI.
+	env := workspaceGitCommand(t.Context(), t.TempDir(), "status").Env
+	assert.NotContains(t, strings.Join(env, "\n"), "forge-secret")
+	assert.Contains(t, env, "ROBOREV_DATA_DIR="+roborevDataDir)
+}
 
 func TestRoborevManagedCloneServerAddress(t *testing.T) {
 	tests := []struct {

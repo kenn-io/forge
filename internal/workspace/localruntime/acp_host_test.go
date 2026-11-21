@@ -766,7 +766,7 @@ func TestACPChatStartsAloneWhenItsSharedAgentStopsAnswering(t *testing.T) {
 	t.Cleanup(func() { acpAttachTimeout = attach })
 	// Scale the entire budget, including its fixed allowances.
 	acpAttachTimeout /= acpStartTimeoutDivisor
-	t.Setenv("KENN_FORGE_ACP_START_DIVISOR", strconv.Itoa(acpStartTimeoutDivisor))
+	t.Setenv("KENN_FORGE_ACP_SHORT_START_TIMEOUTS", "1")
 	t.Setenv("KENN_FORGE_ACP_SHARED_STALL", filepath.Join(t.TempDir(), "stall"))
 	t.Setenv("KENN_FORGE_ACP_SHARED_SLOW", "5s")
 	manager, dir, _, _ := sharedACPChats(t, "alpha")

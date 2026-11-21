@@ -1228,6 +1228,7 @@ jobs:
 
       - name: Run mock E2E tests
         env:
+          KENN_FORGE_CI_WORKERS: "4"
           KENN_FORGE_PLAYWRIGHT_SUITE: e2e-mock-${{ matrix.browser }}
         run: cd frontend && ../node_modules/.bin/vp exec -- playwright test --config=playwright.config.ts --project=${{ matrix.browser }}
 

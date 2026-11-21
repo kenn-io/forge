@@ -759,8 +759,8 @@ func TestACPAgentEnvReachesTheAgentAndKeepsHostsApart(t *testing.T) {
 }
 
 // A shared agent that stops answering cannot fail new chats: the chat that
-// finds it stuck starts an agent of its own once the host's time runs out, and
-// the next chat starts on a new host.
+// finds it stuck starts an agent of its own, even when that agent and its
+// settings restore are slow. The next chat starts on a new host.
 func TestACPChatStartsAloneWhenItsSharedAgentStopsAnswering(t *testing.T) {
 	attach := acpAttachTimeout
 	t.Cleanup(func() { acpAttachTimeout = attach })
@@ -768,7 +768,7 @@ func TestACPChatStartsAloneWhenItsSharedAgentStopsAnswering(t *testing.T) {
 	acpAttachTimeout /= acpStartTimeoutDivisor
 	t.Setenv("KENN_FORGE_ACP_START_DIVISOR", strconv.Itoa(acpStartTimeoutDivisor))
 	t.Setenv("KENN_FORGE_ACP_SHARED_STALL", filepath.Join(t.TempDir(), "stall"))
-	t.Setenv("KENN_FORGE_ACP_SHARED_SLOW", "5500ms")
+	t.Setenv("KENN_FORGE_ACP_SHARED_SLOW", "5s")
 	manager, dir, _, _ := sharedACPChats(t, "alpha")
 	preferences := filepath.Join(t.TempDir(), "preferences.json")
 	require.NoError(t, os.WriteFile(preferences, []byte(`{"chat":{"model":"deep"}}`), 0o600))

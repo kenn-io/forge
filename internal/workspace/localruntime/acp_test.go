@@ -1256,7 +1256,9 @@ const acpStartTimeoutDivisor = 4
 func scaleACPStartTimeouts() {
 	acpHandshakeTimeout /= acpStartTimeoutDivisor
 	acpSettingsRestoreTimeout /= acpStartTimeoutDivisor
-	acpAttachTimeout = acpStartAttachTimeout()
+	// Scale the entire budget, including its fixed allowances, so the slow
+	// start test still needs both handshake and settings restore time.
+	acpAttachTimeout /= acpStartTimeoutDivisor
 }
 
 func shortenACPStartTimeouts(t *testing.T) {

@@ -195,11 +195,7 @@ const acpStartErrorFile = "start-error"
 // It covers an owner that tries a shared host and then a start of its own,
 // each within acpHandshakeTimeout (see Manager.startACPAgent), then restores
 // the chat's settings before it listens (see Manager.startACP).
-var acpAttachTimeout = acpStartAttachTimeout()
-
-func acpStartAttachTimeout() time.Duration {
-	return 2*acpHandshakeTimeout + codexACPInitialModeTimeout + acpSettingsRestoreTimeout + 5*time.Second
-}
+var acpAttachTimeout = 2*acpHandshakeTimeout + codexACPInitialModeTimeout + acpSettingsRestoreTimeout + 5*time.Second
 
 func recordACPStartError(dir string, err error) error {
 	record := ACPErrorCode(err) + "\n" + err.Error()

@@ -190,6 +190,7 @@ for (const width of [200, 719]) {
 for (const [width, grouping] of [
   [720, "flat"],
   [1000, "flat"],
+  [1080, "flat"],
   [720, "byRepo"],
 ] as const) {
   test(`table gives the title its own column at ${width}px, ${grouping}`, async ({ page }, testInfo) => {
@@ -272,6 +273,9 @@ for (const [width, grouping] of [
     expect(titleCell.width).toBeGreaterThanOrEqual(18 * rem - 1);
     if (width >= 1000) {
       expect(await overflows(".cell--author")).toBe(false);
+    }
+    // This busy row needs more than 1000px for the full title plus a label.
+    if (width >= 1080) {
       expect(await overflows(".item-title")).toBe(false);
       await expect(row.locator(".label-row").getByText("bug", { exact: true })).toBeVisible();
     } else {

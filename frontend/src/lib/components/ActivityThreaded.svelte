@@ -30,7 +30,7 @@
   } from "../utils/repo-label.js";
   import ItemKindChip from "./shared/ItemKindChip.svelte";
   import ItemTableCells from "./shared/ItemTableCells.svelte";
-  import ItemTableHeaders, { ITEM_TABLE_MIN_WIDTH, itemTableColumns } from "./shared/ItemTableHeaders.svelte";
+  import ItemTableHeaders, { itemTableColumns } from "./shared/ItemTableHeaders.svelte";
   import { createProgressiveMountController } from "../utils/progressive-mount.js";
 
   const { grouping, activity } = getStores();
@@ -87,11 +87,6 @@
     selectedItem = null,
     selectedBranchCommit = null,
   }: Props = $props();
-
-  // A narrow view, such as the rail beside an open item, gives each title its own line.
-  // Until the view is measured, the rail is assumed narrow so it does not flash a table.
-  let viewWidth = $state(0);
-  const stacked = $derived(viewWidth > 0 ? viewWidth < ITEM_TABLE_MIN_WIDTH : compact);
 
   interface ItemGroup {
     kind: "item";
@@ -799,12 +794,9 @@
   class="threaded-view"
   class:threaded-view--compact={compact}
   class:threaded-view--grouped={grouping.getGroupByRepo()}
-  class:item-table--stacked={stacked}
-  bind:clientWidth={viewWidth}
   style:grid-template-columns={itemTableColumns({
     leading: ["var(--threaded-col-caret)", "fit-content(120px)"],
     repo: !grouping.getGroupByRepo(),
-    stacked,
   })}
   aria-label="Activity items"
 >
@@ -966,6 +958,8 @@
   .threaded-view {
     padding: 0 16px;
     --threaded-col-caret: 18px;
+    /* Repo and Author keep their full width; the title takes what is left. */
+    --item-table-item-min: 0px;
     display: grid;
     column-gap: 6px;
     align-content: start;
@@ -1188,25 +1182,5 @@
   .threaded-view--compact .event-row {
     margin-left: 10px;
     padding-left: 18px;
-  }
-
-  /* Stacked: the caret and type stay on the item's line, and the other cells sit under it. */
-  .item-table--stacked .item-row {
-    row-gap: var(--space-1);
-  }
-
-  .item-table--stacked .cell--caret {
-    grid-row: 1;
-    grid-column: 1;
-  }
-
-  .item-table--stacked .cell--type {
-    grid-row: 1;
-    grid-column: 2;
-  }
-
-  /* No column headers above it to clear. */
-  .item-table--stacked .repo-header {
-    top: 0;
   }
 </style>

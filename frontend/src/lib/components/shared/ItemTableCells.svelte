@@ -212,37 +212,6 @@
     overflow: visible;
   }
 
-  /* Stacked: the item takes the first line, and the other cells sit under it. */
-  :global(.item-table--stacked) .cell--title {
-    grid-row: 1;
-    grid-column: title-start / link-start;
-  }
-
-  :global(.item-table--stacked) .cell--repo {
-    grid-row: 2;
-    grid-column: repo-start;
-  }
-
-  :global(.item-table--stacked) .cell--author {
-    grid-row: 2;
-    grid-column: author-start;
-  }
-
-  :global(.item-table--stacked) .cell--status {
-    grid-row: 2;
-    grid-column: status-start;
-  }
-
-  :global(.item-table--stacked) .cell--time {
-    grid-row: 2;
-    grid-column: when-start;
-  }
-
-  :global(.item-table--stacked) .cell--link {
-    grid-row: 1 / span 2;
-    grid-column: link-start;
-  }
-
   .link-btn {
     display: inline-flex;
     align-items: center;

@@ -206,8 +206,11 @@ to the application.
   (`frontend/src/lib/components/shared/ItemTableHeaders.svelte::itemTableColumns`).
 - In an item table the title outranks the rest of its row: status has its own column,
   and label chips take only the room the title leaves.
-- An item table narrower than `ITEM_TABLE_MIN_WIDTH` gives each title its own line:
-  threaded Activity stacks its rows, and the PR list shows its two-line rows.
+- Activity is the reference layout for the PR table, not the other way around. Item
+  table rows stay on one line: Activity at every width, with titles taking only what Repo
+  and Author leave (`--item-table-item-min: 0px`), and the PR table down to a 340px
+  sidebar, dropping Author and When at 560px and below. Only a PR sidebar under 340px
+  uses two-line rows (`frontend/src/lib/components/sidebar/PullList.svelte`).
 - Compact label chips outrank the title on two-line list rows: the title yields to a small floor,
   below which it shrinks only to keep the status, number, and badge in view, and a chip
   that cannot fit whole moves into the `+N` badge; chip and badge text is never cut

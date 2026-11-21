@@ -16,7 +16,7 @@
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import PullRows from "./PullRows.svelte";
-  import ItemTableHeaders, { ITEM_TABLE_MIN_WIDTH, itemTableColumns } from "../shared/ItemTableHeaders.svelte";
+  import ItemTableHeaders, { itemTableColumns } from "../shared/ItemTableHeaders.svelte";
   import ListEndItem from "./ListEndItem.svelte";
   import ListCountChip from "./ListCountChip.svelte";
   import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
@@ -62,6 +62,10 @@
   // Keep the full filter groups visible at medium widths, but collapse the
   // local PR filter trigger label before it crowds the sidebar toggle.
   const LOCAL_FILTER_ICON_ONLY_MAX_WIDTH = 520;
+  // Table rows stay on one line down to this width; narrower sidebars use two-line rows.
+  const TABLE_MIN_WIDTH = 340;
+  // At or below this width the table drops Author and When to leave room for titles.
+  const NARROW_TABLE_MAX_WIDTH = 560;
 
   interface Props {
     getDetailTab?: () => string;
@@ -77,7 +81,8 @@
   let searchInput = $state(pulls.getSearchQuery() ?? "");
   let searchExecution: AppExecution<void, never> | null = null;
   const visiblePulls = $derived(pulls.getFilteredPulls());
-  const tableLayout = $derived(pulls.getListLayout() === "table" && sidebarWidth >= ITEM_TABLE_MIN_WIDTH);
+  const tableLayout = $derived(pulls.getListLayout() === "table" && sidebarWidth >= TABLE_MIN_WIDTH);
+  const narrowTable = $derived(sidebarWidth <= NARROW_TABLE_MAX_WIDTH);
   const repoLabelFormatter = $derived(
     createRepoLabelFormatter(
       visiblePulls.map((pr) => ({
@@ -299,8 +304,8 @@
   // Grouping by repository names the repo in the group heading, so its column goes.
   const tableColumns = $derived({
     repo: renderedGroups === null && pulls.isTablePartShown("repo"),
-    author: pulls.isTablePartShown("author"),
-    when: pulls.isTablePartShown("when"),
+    author: !narrowTable && pulls.isTablePartShown("author"),
+    when: !narrowTable && pulls.isTablePartShown("when"),
   });
   const renderedFlatRows = $derived(flatRows.slice(0, mountBudget));
   const hasUnmountedRows = $derived(
@@ -545,7 +550,11 @@
       <!-- One wrapper for both layouts: crossing the table width restyles the rows in place,
            so a focused row keeps focus and the list keeps its scroll position. -->
       <div
-        class={[tableLayout && "pull-table", tableLayout && renderedGroups !== null && "pull-table--grouped"]}
+        class={[
+          tableLayout && "pull-table",
+          tableLayout && renderedGroups !== null && "pull-table--grouped",
+          tableLayout && narrowTable && "pull-table--narrow",
+        ]}
         style:grid-template-columns={tableLayout ? itemTableColumns({ ...tableColumns, status: true }) : undefined}
       >
         {#if tableLayout}
@@ -601,6 +610,12 @@
   /* Repository headings stick instead, so the column headers scroll away. */
   .pull-table--grouped {
     --item-table-header-position: static;
+  }
+
+  /* A narrow table has no Author or When tracks, so their cells leave the grid. */
+  .pull-table--narrow :global(.col-author),
+  .pull-table--narrow :global(.col-when) {
+    display: none;
   }
 
   /* Sections pass the table's tracks through to their rows. */

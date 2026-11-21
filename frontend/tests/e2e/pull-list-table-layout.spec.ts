@@ -121,7 +121,7 @@ test("a default-width sidebar keeps its width in a window too narrow to reserve 
   await expect.poll(async () => Math.round((await sidebar.boundingBox())!.width)).toBe(340);
 });
 
-for (const width of [200, 719]) {
+for (const width of [200, 339]) {
   test(`Table uses readable two-line rows at ${width}px and returns when widened`, async ({ page }, testInfo) => {
     await mockTableApi(page);
     const pull = {
@@ -173,7 +173,7 @@ for (const width of [200, 719]) {
     let box = (await handle.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + 40);
     await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 + 720 - width, box.y + 40);
+    await page.mouse.move(box.x + box.width / 2 + 340 - width, box.y + 40);
     await page.mouse.up();
     await expect(row).toHaveClass(/pull-item--table/);
     await expect(page.locator(".item-table-headers")).toBeVisible();
@@ -184,6 +184,50 @@ for (const width of [200, 719]) {
     await page.mouse.up();
     await expect(page.locator(".pull-item--table")).toHaveCount(0);
     expect(await page.evaluate(() => localStorage.getItem("kenn-forge:pullListLayout"))).toBe("table");
+  });
+}
+
+for (const [width, headers] of [
+  [340, /^\s*Repo\s+Item\s+Status\s*$/],
+  [560, /^\s*Repo\s+Item\s+Status\s*$/],
+  [561, /^\s*Repo\s+Author\s+Item\s+Status\s+When\s*$/],
+  [719, /^\s*Repo\s+Author\s+Item\s+Status\s+When\s*$/],
+] as const) {
+  test(`Table keeps each pull request on one row at ${width}px`, async ({ page }, testInfo) => {
+    await mockTableApi(page);
+    const pull = {
+      ...mockPullFixture(42),
+      Number: 1234,
+      Title: "Improve cache refresh across repositories and background tasks",
+      Author: "user-a",
+      labels,
+      ReviewDecision: "APPROVED",
+      stack: { position: 2, size: 3 },
+      CIChecksJSON: JSON.stringify([{ name: "test", status: "completed", conclusion: "failure" }]),
+    };
+    await page.route("**/api/v1/pulls**", async (route) => {
+      if (new URL(route.request().url()).pathname !== "/api/v1/pulls") return route.fallback();
+      await route.fulfill({ json: [pull] });
+    });
+    await page.addInitScript((width) => {
+      localStorage.setItem("kenn-forge:pullListLayout", "table");
+      localStorage.setItem("kenn-forge:groupingMode", "flat");
+      localStorage.setItem("kenn-forge-sidebar-width", String(width));
+    }, width);
+    await page.goto("/pulls");
+    const row = page.locator(".pull-item").filter({ hasText: pull.Title });
+    await expect(row).toHaveClass(/pull-item--table/);
+    await expect(page.locator(".item-table-headers")).toHaveText(headers);
+    const title = (await row.locator(".cell--title").boundingBox())!;
+    const middle = title.y + title.height / 2;
+    for (const cell of [".cell--repo", ".cell--status", ".cell--link"]) {
+      const box = (await row.locator(cell).boundingBox())!;
+      expect(box.y, cell).toBeLessThan(middle);
+      expect(box.y + box.height, cell).toBeGreaterThan(middle);
+    }
+    const table = page.locator(".pull-table");
+    expect(await table.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath("one-row.png"), clip: { x: 0, y: 0, width, height: 240 } });
   });
 }
 
@@ -289,7 +333,7 @@ for (const [width, grouping] of [
   });
 }
 
-test("a focused row keeps focus when a narrower window turns the table into rows", async ({ page }) => {
+test("a focused row keeps focus when a narrower sidebar turns the table into rows", async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 900 });
   await mockTableApi(page);
   await page.addInitScript(() => {
@@ -303,11 +347,19 @@ test("a focused row keeps focus when a narrower window turns the table into rows
   await row.focus();
   await expect(row).toBeFocused();
 
-  // 1050px leaves the sidebar 690px, under the table's minimum.
-  await page.setViewportSize({ width: 1050, height: 900 });
+  const handle = page.getByRole("separator", { name: "Resize sidebar" });
+  const dragBy = async (delta: number) => {
+    const box = (await handle.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + 40);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + delta, box.y + 40, { steps: 4 });
+    await page.mouse.up();
+  };
+  // 330px is under the table's minimum.
+  await dragBy(-470);
   await expect(page.locator(".pull-item--table")).toHaveCount(0);
   await expect(row).toBeFocused();
-  await page.setViewportSize({ width: 1200, height: 900 });
+  await dragBy(470);
   await expect(row).toHaveClass(/pull-item--table/);
   await expect(row).toBeFocused();
 });
@@ -353,13 +405,13 @@ test("a focused stack control keeps focus when dragging the sidebar changes the 
   await toggle.focus();
   await expect(toggle).toBeFocused();
 
-  await dragBy(-200);
+  await dragBy(-470);
   await expect(page.locator(".pull-item--table")).toHaveCount(0);
   await expect(toggle).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
 
-  await dragBy(200);
+  await dragBy(470);
   await expect(page.locator(".pull-item--table").first()).toBeVisible();
   await expect(toggle).toBeFocused();
 });

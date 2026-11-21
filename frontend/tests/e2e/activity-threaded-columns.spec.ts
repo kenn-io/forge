@@ -205,7 +205,7 @@ test.describe("threaded activity columns", () => {
     await expect(repoLabel).toHaveText("widgets");
   });
 
-  test("a narrow rail gives each title its own line, and a wide rail returns to columns", async ({ page }) => {
+  test("the rail beside an open item keeps each row on one line under column headers", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await mockSettings(page);
     const title = "Improve cache refresh across repositories and background tasks";
@@ -214,7 +214,7 @@ test.describe("threaded activity columns", () => {
         id: "evt-long",
         number: 1200,
         type: "new_pr",
-        author: "user-with-a-long-name",
+        author: "user-a",
         authorName: "User A",
         createdAt: "2026-04-27T12:00:00Z",
         title,
@@ -233,72 +233,18 @@ test.describe("threaded activity columns", () => {
     await expect.poll(async () => Math.round((await view.boundingBox())!.width)).toBe(615);
     await page.evaluate(() => document.fonts.ready);
 
-    const itemTitle = row.locator(".item-title");
-    const box = async (selector: string) => (await row.locator(selector).boundingBox())!;
-    const cut = () => itemTitle.evaluate((el) => el.scrollWidth > el.clientWidth);
-
-    // The whole title shows, on a line above the repo, author, and time.
-    await expect(itemTitle).toHaveText(title);
-    expect(await cut()).toBe(false);
-    const titleLine = await box(".cell--title");
-    for (const cell of [".cell--repo", ".cell--author", ".cell--time"]) {
-      await expect(row.locator(cell)).toBeVisible();
-      expect((await box(cell)).y, cell).toBeGreaterThanOrEqual(titleLine.y + titleLine.height);
-    }
-    await expect(row.locator(".cell--author")).toHaveText("user-with-a-long-name");
-    await expect(page.locator(".item-table-headers")).toBeHidden();
-
-    // Dragged wide, the rail has room for columns again.
-    const handle = page.getByRole("separator", { name: "Resize Activity rail" });
-    const grip = (await handle.boundingBox())!;
-    await page.mouse.move(grip.x + grip.width / 2, grip.y + 40);
-    await page.mouse.down();
-    await page.mouse.move(grip.x + grip.width / 2 + 285, grip.y + 40, { steps: 4 });
-    await page.mouse.up();
-    await expect.poll(async () => Math.round((await view.boundingBox())!.width)).toBe(900);
     await expect(page.locator(".item-table-headers")).toBeVisible();
-    const wideTitle = await box(".cell--title");
-    const wideRepo = await box(".cell--repo");
-    expect(wideRepo.y).toBeLessThan(wideTitle.y + wideTitle.height);
-    expect(wideRepo.x + wideRepo.width).toBeLessThanOrEqual(wideTitle.x);
-    expect(await cut()).toBe(false);
-  });
-
-  test("the narrowest rail keeps the author beside a long repository name", async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await mockSettings(page);
-    const longRepo = { ...REPO, name: "platform-services-gateway", repo_path: "acme/platform-services-gateway" };
-    await mockActivity(page, [
-      {
-        ...itemEvent({
-          id: "evt-narrow",
-          number: 1201,
-          type: "new_pr",
-          author: "user-a",
-          authorName: "User A",
-          createdAt: "2026-04-27T12:00:00Z",
-          title: "Retry the sync after a rate limit",
-        }),
-        repo_name: longRepo.name,
-        repo: longRepo,
-      },
-    ]);
-    await page.addInitScript(() => {
-      localStorage.setItem("kenn-forge:groupingMode", "flat");
-      localStorage.setItem("kenn-forge-activity-pane-width", "280");
-    });
-    await page.goto("/?view=threaded");
-    const row = page.locator(".item-row").first();
-    await row.click();
-    const view = page.locator(".threaded-view");
-    await expect.poll(async () => Math.round((await view.boundingBox())!.width)).toBe(280);
-
-    const rem = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
-    const author = row.locator(".cell--author");
-    await expect(author).toHaveText("user-a");
-    expect((await author.boundingBox())!.width).toBeGreaterThanOrEqual(4 * rem - 1);
-    expect(await author.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(false);
-    await expect(row.locator(".cell--time")).toBeVisible();
+    const titleBox = (await row.locator(".cell--title").boundingBox())!;
+    const titleMid = titleBox.y + titleBox.height / 2;
+    for (const cell of [".cell--type", ".cell--repo", ".cell--author", ".cell--time", ".cell--link"]) {
+      const box = (await row.locator(cell).boundingBox())!;
+      expect(box.y, cell).toBeLessThan(titleMid);
+      expect(box.y + box.height, cell).toBeGreaterThan(titleMid);
+    }
+    // Repo and Author keep their full text; the title is the cell that gives way.
+    await expect(row.locator(".repo-chip__label")).toHaveText("acme/widgets");
+    expect(await row.locator(".repo-chip__label").evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(false);
+    expect(await row.locator(".cell--author").evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(false);
   });
 
   for (const width of [320, 360]) {

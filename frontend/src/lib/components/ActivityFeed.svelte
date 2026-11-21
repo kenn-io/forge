@@ -1046,6 +1046,8 @@
    * at the same x-coordinate in both layouts. The tracks come from
    * itemTableColumns. */
   .activity-table {
+    /* Repo and Author keep their full width; the title takes what is left. */
+    --item-table-item-min: 0px;
     display: grid;
     column-gap: 6px;
   }

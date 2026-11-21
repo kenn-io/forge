@@ -48,10 +48,12 @@ const selectedPR: PullRequestRouteRef = {
 class ResizeObserverMock {
   constructor(private callback: ResizeObserverCallback) {}
 
-  observe(): void {
+  observe(target: Element): void {
     this.callback(
       [
         {
+          // Real entries always name their element; the sidebar layout's width binding reads it.
+          target,
           contentRect: { width: observedWidth.value },
         } as ResizeObserverEntry,
       ],

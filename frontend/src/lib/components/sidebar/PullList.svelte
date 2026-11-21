@@ -16,7 +16,7 @@
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import PullRows from "./PullRows.svelte";
-  import { pullTableColumns } from "./PullItem.svelte";
+  import ItemTableHeaders, { ITEM_TABLE_MIN_WIDTH, itemTableColumns } from "../shared/ItemTableHeaders.svelte";
   import ListEndItem from "./ListEndItem.svelte";
   import ListCountChip from "./ListCountChip.svelte";
   import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
@@ -59,10 +59,6 @@
   // Playwright-measured with the local PR filter icon and sidebar toggle:
   // the full PR filter row needs 423px, so collapse with a small buffer.
   const COMPACT_FILTER_MAX_WIDTH = 430;
-  // Busy table rows need more room than the filter controls.
-  const COMPACT_TABLE_MAX_WIDTH = 560;
-  // Below this width, the existing two-line rows leave room for titles and status.
-  const TABLE_MIN_WIDTH = 340;
   // Keep the full filter groups visible at medium widths, but collapse the
   // local PR filter trigger label before it crowds the sidebar toggle.
   const LOCAL_FILTER_ICON_ONLY_MAX_WIDTH = 520;
@@ -81,8 +77,7 @@
   let searchInput = $state(pulls.getSearchQuery() ?? "");
   let searchExecution: AppExecution<void, never> | null = null;
   const visiblePulls = $derived(pulls.getFilteredPulls());
-  const tableLayout = $derived(pulls.getListLayout() === "table" && sidebarWidth >= TABLE_MIN_WIDTH);
-  const useCompactTable = $derived(sidebarWidth <= COMPACT_TABLE_MAX_WIDTH);
+  const tableLayout = $derived(pulls.getListLayout() === "table" && sidebarWidth >= ITEM_TABLE_MIN_WIDTH);
   const repoLabelFormatter = $derived(
     createRepoLabelFormatter(
       visiblePulls.map((pr) => ({
@@ -301,6 +296,12 @@
   const renderedGroups = $derived(
     displayGroups === null ? null : applyGroupRenderBudget(displayGroups, mountBudget),
   );
+  // Grouping by repository names the repo in the group heading, so its column goes.
+  const tableColumns = $derived({
+    repo: renderedGroups === null && pulls.isTablePartShown("repo"),
+    author: pulls.isTablePartShown("author"),
+    when: pulls.isTablePartShown("when"),
+  });
   const renderedFlatRows = $derived(flatRows.slice(0, mountBudget));
   const hasUnmountedRows = $derived(
     renderedGroups === null ? flatRows.length > mountBudget : renderedGroups.truncated,
@@ -397,12 +398,29 @@
   {/if}
 {/snippet}
 
+{#snippet listRows()}
+  {#if renderedGroups !== null}
+    {#each renderedGroups.groups as group (group.key)}
+      <GroupedSidebarSection
+        label={group.label}
+        isPrivate={group.isPrivate}
+        count={pulls.isListCapped() ? `${group.count}+` : group.count}
+        collapsed={group.collapsed}
+        onclick={() => collapsedRepos.toggle("pulls", group.collapseKey)}
+      >
+        {@render pullRows(group.items, false)}
+      </GroupedSidebarSection>
+    {/each}
+  {:else}
+    {@render pullRows(renderedFlatRows, true)}
+  {/if}
+{/snippet}
+
 {#snippet pullRows(rows: PullSidebarRow[], showRepo: boolean)}
   <PullRows
     {rows}
     {showRepo}
     table={tableLayout}
-    compact={useCompactTable}
     repoLabel={(pr) => repoItemLabel(pr, repoLabelFormatter)}
     isSelected={(pr) => isSelected(routeRefForPull(pr))}
     isMultiSelected={(pr) => pullSelection.has(pr)}
@@ -524,36 +542,17 @@
     {:else if visiblePulls.length === 0}
       <p class="state-message">No pull requests found.</p>
     {:else}
-      {#if tableLayout}
-        <div
-          class="table-headers"
-          class:table-headers--sticky={renderedGroups === null}
-          class:table-headers--compact={useCompactTable}
-          style:grid-template-columns={pullTableColumns(renderedGroups === null, useCompactTable)}
-          aria-hidden="true"
-        >
-          {#if renderedGroups === null}<span>Repo</span>{/if}
-          <span class="table-header--author">Author</span>
-          <span>Item</span>
-          <span class="table-header--time">When</span>
-          <span></span>
-        </div>
-      {/if}
-      {#if renderedGroups !== null}
-        {#each renderedGroups.groups as group (group.key)}
-          <GroupedSidebarSection
-            label={group.label}
-            isPrivate={group.isPrivate}
-            count={pulls.isListCapped() ? `${group.count}+` : group.count}
-            collapsed={group.collapsed}
-            onclick={() => collapsedRepos.toggle("pulls", group.collapseKey)}
-          >
-            {@render pullRows(group.items, false)}
-          </GroupedSidebarSection>
-        {/each}
-      {:else}
-        {@render pullRows(renderedFlatRows, true)}
-      {/if}
+      <!-- One wrapper for both layouts: crossing the table width restyles the rows in place,
+           so a focused row keeps focus and the list keeps its scroll position. -->
+      <div
+        class={[tableLayout && "pull-table", tableLayout && renderedGroups !== null && "pull-table--grouped"]}
+        style:grid-template-columns={tableLayout ? itemTableColumns({ ...tableColumns, status: true }) : undefined}
+      >
+        {#if tableLayout}
+          <ItemTableHeaders {...tableColumns} status />
+        {/if}
+        {@render listRows()}
+      </div>
       {#if hasUnmountedRows}
         {#key mountBudget}
           <div class="render-sentinel" aria-hidden="true" {@attach revealWhenNear(revealMoreRows)}></div>
@@ -589,38 +588,30 @@
 />
 
 <style>
-  /* Matches a table row's 3px selection border and side padding so the columns line up. */
-  .table-headers {
+  /* The grid every table row shares. The header padding matches a row's 3px
+     selection border and side padding so the headers sit over the columns. */
+  .pull-table {
     display: grid;
     column-gap: 6px;
-    align-items: center;
-    padding: 6px 10px 4px 13px;
-    font-size: var(--font-size-2xs);
-    font-weight: 500;
-    text-transform: var(--label-transform, uppercase);
-    letter-spacing: var(--letter-spacing-label, 0.5px);
-    color: var(--text-muted);
-    border-bottom: 1px solid var(--border-default);
-    background: var(--sidebar-row-bg, var(--bg-surface));
+    align-content: start;
+    --item-table-header-padding: 6px 10px 4px 13px;
+    --item-table-header-bg: var(--bg-surface);
   }
 
-  .table-headers--sticky {
-    position: sticky;
-    top: 0;
-    z-index: 1;
+  /* Repository headings stick instead, so the column headers scroll away. */
+  .pull-table--grouped {
+    --item-table-header-position: static;
   }
 
-  .table-header--time {
-    text-align: right;
+  /* Sections pass the table's tracks through to their rows. */
+  .pull-table :global(.sidebar-list-group) {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
   }
 
-  .table-headers--compact {
-    column-gap: var(--space-2);
-  }
-
-  .table-headers--compact .table-header--author,
-  .table-headers--compact .table-header--time {
-    display: none;
+  .pull-table :global(.sidebar-group-heading) {
+    grid-column: 1 / -1;
   }
 
   .pull-list {
@@ -904,6 +895,7 @@
   }
 
   .diff-files-wrap {
+    grid-column: 1 / -1;
     max-height: 40vh;
     overflow-y: auto;
   }

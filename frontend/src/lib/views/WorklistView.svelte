@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack, type Snippet } from "svelte";
   import { Effect } from "effect";
-  import { Button, CollapsibleSidebar, copyToClipboard, EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
+  import { Button, copyToClipboard, EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
   import ListChecksIcon from "@lucide/svelte/icons/list-checks";
   import XIcon from "@lucide/svelte/icons/x";
   import { ApiProblemError } from "../api/effect-errors.js";
@@ -10,6 +10,7 @@
   import { kennLinksEnabled } from "../browser/kenn-links.js";
   import IssueDetail from "../components/detail/IssueDetail.svelte";
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
+  import SidebarLayout from "../components/shared/SidebarLayout.svelte";
   import { issueDetailMatchesRef, pullDetailMatchesRef } from "../components/detail/detail-match.js";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
   import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
@@ -565,7 +566,7 @@
   {/if}
 
   {#if worklist}
-    <CollapsibleSidebar
+    <SidebarLayout
       isCollapsed={isSidebarCollapsed}
       {sidebarWidth}
       {onSidebarResize}
@@ -661,7 +662,7 @@
           {@render inlineWorkspace?.dockRow()?.()}
         </section>
       {/if}
-    </CollapsibleSidebar>
+    </SidebarLayout>
   {:else if detailError?.kind === "failed"}
     <div class="worklist-status" role="alert">
       <span>{detailError.message}</span>

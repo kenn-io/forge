@@ -23,7 +23,7 @@ a category.
 | Workspace agents | Enable agents and edit the command and arguments used to launch each one. |
 | Fleet federation | Connect remote Forge hosts and control which sessions they share. |
 | Visible modes | Choose which pages appear in the app header. |
-| Appearance | Choose the color theme and contrast, and show the desktop PR sidebar as two-line rows or a compact table like Activity. Busy table cells wrap to keep titles, labels, and status readable. Sidebars below 340px, focus lists, and phone lists use two-line rows. These choices apply only to the browser you set them in. |
+| Appearance | Choose the color theme and contrast, and show the desktop PR sidebar as two-line rows or as the table Activity uses, with Repo, Author, Item, Status, and When columns. The table appears once the sidebar is 720px or wider; drag the sidebar edge to widen it. Narrower sidebars, focus lists, and phone lists use two-line rows. Switches under **Shown in the PR table** hide the repository, author, labels, CI counts, review state, stack position, star, or time from the table. These choices apply only to the browser you set them in. |
 
 Forms save from the panel where you make the change. You can move between
 categories without discarding an unfinished form. Repository actions such as

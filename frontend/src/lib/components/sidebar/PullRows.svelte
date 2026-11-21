@@ -11,8 +11,8 @@
   interface Props {
     rows: PullSidebarRow[];
     showRepo: boolean;
+    /** Rows are lines of the enclosing item table. */
     table?: boolean;
-    compact?: boolean;
     repoLabel: (pr: PullRequest) => string;
     isSelected: (pr: PullRequest) => boolean;
     isMultiSelected: (pr: PullRequest) => boolean;
@@ -22,8 +22,28 @@
     below?: Snippet<[PullRequest, boolean]>;
   }
 
-  const { rows, showRepo, table = false, compact = false, repoLabel, isSelected, isMultiSelected, onclick, oncontextmenu, below }: Props = $props();
+  const { rows, showRepo, table = false, repoLabel, isSelected, isMultiSelected, onclick, oncontextmenu, below }: Props = $props();
   const { pulls } = getStores();
+  // A table with Stack switched off keeps only the control that expands a stack.
+  const showStackDetails = $derived(!table || pulls.isTablePartShown("stack"));
+
+  // The stack control is a target inside the row in a table and its own button in two-line
+  // rows, so crossing the table width replaces it. Focus follows it to the replacement.
+  let focusedStackKey: string | null = null;
+  $effect.pre(() => {
+    void table;
+    const focused = document.activeElement;
+    focusedStackKey = focused instanceof HTMLElement && focused.matches(".stack-toggle")
+      ? (focused.dataset.stackKey ?? null)
+      : null;
+  });
+  $effect(() => {
+    void table;
+    const key = focusedStackKey;
+    focusedStackKey = null;
+    if (key === null) return;
+    document.querySelector<HTMLElement>(`.stack-toggle[data-stack-key="${CSS.escape(key)}"]`)?.focus();
+  });
 </script>
 
 {#each rows as row (row.pr.ID)}
@@ -36,7 +56,7 @@
     class:stack-row--root={row.memberCount > 0}
   >
     <div class="stack-row-content">
-      {#if row.memberCount > 0 && pr.stack && (pr.stack.position > 1 || row.memberCount < pr.stack.size)}
+      {#if showStackDetails && row.memberCount > 0 && pr.stack && (pr.stack.position > 1 || row.memberCount < pr.stack.size)}
         <span class="stack-context">{row.memberCount} of {pr.stack.size} PRs in this view{pr.stack.position > 1 ? ` · starts at ${pr.stack.position}/${pr.stack.size}` : ""}</span>
       {/if}
       <PullItem
@@ -44,7 +64,6 @@
         repoLabel={repoLabel(pr)}
         {showRepo}
         {table}
-        {compact}
         stackControl={table && row.memberCount > 0 ? stackControl : undefined}
         selected={prSelected}
         multiSelected={isMultiSelected(pr)}
@@ -71,6 +90,7 @@
         tabindex={table ? 0 : undefined}
         class="stack-toggle"
         class:stack-toggle--table={table}
+        data-stack-key={row.stackKey}
         aria-expanded={row.expanded}
         aria-label={`${row.expanded ? "Collapse" : "Expand"} stack at #${pr.Number}: ${countLabel}`}
         title={countLabel}
@@ -86,10 +106,10 @@
           }
         }}
       >
-        <span>{row.memberCount}</span>
+        {#if showStackDetails}<span>{row.memberCount}</span>{/if}
         <ChevronDownIcon size={12} class={row.expanded ? "" : "stack-chevron--collapsed"} aria-hidden="true" />
       </svelte:element>
-    {:else}
+    {:else if showStackDetails}
       <span class="stack-partial" title={countLabel} aria-label={countLabel}>1/{pr.stack?.size}</span>
     {/if}
   {/snippet}
@@ -121,9 +141,17 @@
     padding-left: var(--space-4);
   }
 
+  /* In a table the wrappers pass the table's column tracks through to the row. */
+  .stack-row--table,
+  .stack-row--table > .stack-row-content {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+  }
+
   .stack-row--table.stack-row--member {
     padding-left: 0;
-    --pull-table-indent: var(--space-4);
+    --item-table-indent: var(--space-4);
   }
 
   .stack-control {
@@ -176,6 +204,7 @@
 
   .stack-context {
     display: block;
+    grid-column: 1 / -1;
     padding: 6px 12px 0;
     color: var(--text-muted);
     font-size: var(--font-size-2xs);

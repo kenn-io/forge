@@ -16,9 +16,13 @@
   // and the PullStatusTokens for a synced pull request. Rendered without a
   // wrapper so the host row's flex gap spaces the icons. The merge queue page
   // turns off the merge queue icon, since its rows are grouped by queue already.
-  const { pr, showMergeQueue = true, stackControl }: {
+  // The PR table turns off the parts a person has hidden; a stack's expand control stays.
+  const { pr, showMergeQueue = true, showCI = true, showReview = true, showStack = true, stackControl }: {
     pr: PullRequest;
     showMergeQueue?: boolean;
+    showCI?: boolean;
+    showReview?: boolean;
+    showStack?: boolean;
     stackControl?: Snippet | undefined;
   } = $props();
 
@@ -33,6 +37,7 @@
 
   const parsed = $derived(parseCIChecks(pr.CIChecksJSON));
   const bucketed = $derived(bucketCIChecks(parsed.checks));
+  const noChecks = bucketCIChecks([]);
 
   $effect(() => {
     if (parsed.error !== null) {
@@ -57,13 +62,13 @@
   <WorkspaceIndicator status={pr.workspace.status} />
 {/if}
 <PullStatusTokens
-  reviewDecision={pr.ReviewDecision}
+  reviewDecision={showReview ? pr.ReviewDecision : ""}
   {merging}
   mergeQueueLabel={showMergeQueue ? mergeQueueLabel : undefined}
   mergeQueueRemoved={!pr.merge_queue}
-  stack={pr.stack}
+  stack={showStack ? pr.stack : undefined}
   {stackControl}
-  {bucketed}
-  ciError={parsed.error === null ? null : safeDiagnosticText(parsed.error)}
+  bucketed={showCI ? bucketed : noChecks}
+  ciError={!showCI || parsed.error === null ? null : safeDiagnosticText(parsed.error)}
   conflict={pr.MergeableState === "dirty"}
 />

@@ -27,22 +27,22 @@ test.beforeEach(async ({ page }) => {
     if (sessionStorage.getItem("kenn-forge:test:pr-table:init") === "1") return;
     localStorage.removeItem("kenn-forge:pullListLayout");
     localStorage.removeItem("kenn-forge:groupingMode");
-    localStorage.setItem("kenn-forge-sidebar-width", "600");
+    localStorage.setItem("kenn-forge-sidebar-width", "900");
     sessionStorage.setItem("kenn-forge:test:pr-table:init", "1");
   });
 });
 
-test("the PR list layout chosen in Settings shows compact table rows and survives a reload", async ({ page }) => {
+test("the PR list layout chosen in Settings shows table rows and survives a reload", async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto("/settings?section=settings-appearance");
   await page.getByRole("combobox", { name: "PR list layout: Two-line rows" }).click();
-  await page.getByRole("option", { name: "Table", exact: true }).click();
+  await page.getByRole("option", { name: "Table in a wide sidebar", exact: true }).click();
 
   await page.goto("/pulls");
   await expect(page.locator(".pull-item--table").first()).toBeVisible();
   await selectFlatList(page);
-  const headers = page.locator(".table-headers");
-  await expect(headers).toHaveText(/Repo\s*Author\s*Item\s*When/);
+  const headers = page.locator(".item-table-headers");
+  await expect(headers).toHaveText(/Repo\s*Author\s*Item\s*Status\s*When/);
 
   const row = page
     .locator(".pull-item--table")
@@ -65,12 +65,43 @@ test("the PR list layout chosen in Settings shows compact table rows and survive
   await page.screenshot({ path: "test-results/pull-list-table-layout.png" });
 
   await page.goto("/settings?section=settings-appearance");
-  await page.getByRole("combobox", { name: "PR list layout: Table", exact: true }).click();
+  await page.getByRole("combobox", { name: "PR list layout: Table in a wide sidebar", exact: true }).click();
   await page.getByRole("option", { name: "Two-line rows" }).click();
   await page.goto("/pulls");
   await expect(page.locator(".pull-item").first()).toBeVisible();
   await expect(page.locator(".pull-item--table")).toHaveCount(0);
-  await expect(page.locator(".table-headers")).toHaveCount(0);
+  await expect(page.locator(".item-table-headers")).toHaveCount(0);
+});
+
+test("a part switched off in Settings leaves the PR table and stays off after a reload", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.addInitScript(() => {
+    localStorage.setItem("kenn-forge:pullListLayout", "table");
+    localStorage.setItem("kenn-forge:groupingMode", "flat");
+  });
+  await page.goto("/settings?section=settings-appearance");
+  const parts = page.getByRole("group", { name: "Shown in the PR table" });
+  const author = parts.getByRole("switch", { name: "Author", exact: true });
+  await expect(author).toBeChecked();
+  await author.click();
+  await expect(author).not.toBeChecked();
+  await expect(parts.getByRole("switch", { name: "Repository", exact: true })).toBeChecked();
+
+  await page.goto("/pulls");
+  const headers = page.locator(".item-table-headers");
+  await expect(headers).toHaveText(/^\s*Repo\s*Item\s*Status\s*When\s*$/);
+  await expect(page.locator(".pull-item--table").first()).toBeVisible();
+  await expect(page.locator(".pull-item--table .cell--author")).toHaveCount(0);
+
+  await page.reload();
+  await expect(headers).toHaveText(/^\s*Repo\s*Item\s*Status\s*When\s*$/);
+
+  await page.goto("/settings?section=settings-appearance");
+  await expect(author).not.toBeChecked();
+  await author.click();
+  await page.goto("/pulls");
+  await expect(headers).toHaveText(/Repo\s*Author\s*Item\s*Status\s*When/);
+  await expect(page.locator(".pull-item--table .cell--author").first()).toBeVisible();
 });
 
 test("grouped by repo, the table drops the Repo column", async ({ page }) => {
@@ -79,8 +110,8 @@ test("grouped by repo, the table drops the Repo column", async ({ page }) => {
     localStorage.setItem("kenn-forge:groupingMode", "byRepo");
   });
   await page.goto("/pulls");
-  const headers = page.locator(".table-headers");
-  await expect(headers).toHaveText(/^\s*Author\s*Item\s*When\s*$/);
+  const headers = page.locator(".item-table-headers");
+  await expect(headers).toHaveText(/^\s*Author\s*Item\s*Status\s*When\s*$/);
   const row = page.locator(".pull-item--table").first();
   await expect(row).toBeVisible();
   await expect(row.locator(".cell--repo")).toHaveCount(0);

@@ -2,7 +2,6 @@ const STORAGE_KEY = "kenn-forge-sidebar";
 const WIDTH_STORAGE_KEY = "kenn-forge-sidebar-width";
 const DEFAULT_WIDTH = 340;
 const MIN_WIDTH = 200;
-const MAX_WIDTH = 600;
 
 let collapsed = $state(false);
 let width = $state(DEFAULT_WIDTH);
@@ -12,8 +11,9 @@ let width = $state(DEFAULT_WIDTH);
 let narrowCollapsed = $state(false);
 let narrowOpened = $state(false);
 
+// No ceiling here: the layout bounds the sidebar by the room it has on screen.
 function clampWidth(value: number): number {
-  return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(value)));
+  return Math.max(MIN_WIDTH, Math.round(value));
 }
 
 function loadPersisted(): boolean {

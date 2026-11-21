@@ -53,7 +53,9 @@ to the application.
 - Host names must not displace repository names in PR table cells; dense lists
   prioritize scanning repositories, with full identities available in tooltips.
 - Table is a desktop PR sidebar preference; focus and phone lists retain their
-  dedicated row layouts.
+  dedicated row layouts, and so does a sidebar too narrow for the table's columns.
+- List sidebars have no fixed maximum width; they stop only where the detail pane
+  would lose the room it needs (`frontend/src/lib/components/shared/SidebarLayout.svelte`).
 - Repositories the provider reported private show `RepoPrivateIcon` beside their name; public
   and unknown repositories show nothing, and there is no public icon. In a repo chip the lock
   sits outside the chip, because the chip label's ellipsis would wrap it to a second line.
@@ -199,9 +201,14 @@ to the application.
   header; the SHA is metadata, not card action content.
 - The two-line `PullItem`/`IssueItem` layouts keep uniform heights; icons must fit
   the row's line-height (`frontend/src/lib/components/shared/CITokenCluster.svelte`).
-- Desktop PR tables prioritize readable titles and complete metadata over forcing
-  one line; busy Item cells may wrap while column boundaries remain aligned.
-- Compact label chips outrank the title on list rows: the title yields to a small floor,
+- Activity and the PR table are one item table: shared column tracks, headers, and
+  cells. Neither gets its own cell markup or column sizing
+  (`frontend/src/lib/components/shared/ItemTableHeaders.svelte::itemTableColumns`).
+- In an item table the title outranks the rest of its row: status has its own column,
+  and label chips take only the room the title leaves.
+- An item table narrower than `ITEM_TABLE_MIN_WIDTH` gives each title its own line:
+  threaded Activity stacks its rows, and the PR list shows its two-line rows.
+- Compact label chips outrank the title on two-line list rows: the title yields to a small floor,
   below which it shrinks only to keep the status, number, and badge in view, and a chip
   that cannot fit whole moves into the `+N` badge; chip and badge text is never cut
   (`frontend/src/lib/components/shared/LabelRow.svelte::fitChips`).

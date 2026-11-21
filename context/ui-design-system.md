@@ -209,8 +209,10 @@ to the application.
 - Activity is the reference layout for the PR table, not the other way around. Item
   table rows stay on one line: Activity at every width, with titles taking only what Repo
   and Author leave (`--item-table-item-min: 0px`), and the PR table down to a 340px
-  sidebar, dropping Author and When at 560px and below. Only a PR sidebar under 340px
-  uses two-line rows (`frontend/src/lib/components/sidebar/PullList.svelte`).
+  sidebar. At 560px and below the PR table drops Author and When and the title's
+  minimum width, so a busy Status cell and the provider link stay inside the sidebar.
+  Only a PR sidebar under 340px uses two-line rows
+  (`frontend/src/lib/components/sidebar/PullList.svelte`).
 - Compact label chips outrank the title on two-line list rows: the title yields to a small floor,
   below which it shrinks only to keep the status, number, and badge in view, and a chip
   that cannot fit whole moves into the `+N` badge; chip and badge text is never cut

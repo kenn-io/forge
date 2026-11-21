@@ -231,6 +231,54 @@ for (const [width, headers] of [
   });
 }
 
+for (const width of [340, 400]) {
+  test(`a busy pull request keeps its status and link inside a ${width}px table`, async ({ page }) => {
+    await mockTableApi(page);
+    const pull = {
+      ...mockPullFixture(42),
+      Number: 1234,
+      Title: "Improve cache refresh",
+      Author: "user-a",
+      IsDraft: true,
+      labels,
+      workspace: { id: "workspace-a", status: "ready", agent_state: "approval" },
+      ReviewDecision: "APPROVED",
+      MergeableState: "dirty",
+      stack: { position: 2, size: 3 },
+      CIChecksJSON: JSON.stringify([
+        { name: "build", status: "completed", conclusion: "success" },
+        { name: "test", status: "completed", conclusion: "failure" },
+        { name: "lint", status: "in_progress", conclusion: "" },
+      ]),
+    };
+    await page.route("**/api/v1/pulls**", async (route) => {
+      if (new URL(route.request().url()).pathname !== "/api/v1/pulls") return route.fallback();
+      await route.fulfill({ json: [pull] });
+    });
+    await page.addInitScript((width) => {
+      localStorage.setItem("kenn-forge:pullListLayout", "table");
+      localStorage.setItem("kenn-forge:groupingMode", "flat");
+      localStorage.setItem("kenn-forge-sidebar-width", String(width));
+    }, width);
+    await page.goto("/pulls");
+    const row = page.locator(".pull-item--table").filter({ hasText: "#1234" });
+    await expect(row).toBeVisible();
+    const table = page.locator(".pull-table");
+    const tableBox = (await table.boundingBox())!;
+    for (const selector of [
+      ".review-indicator",
+      ".stack-indicator",
+      '[data-testid="ci-token-failed"]',
+      ".conflict-icon",
+      ".cell--link",
+    ]) {
+      const box = (await row.locator(selector).boundingBox())!;
+      expect(box.x + box.width, selector).toBeLessThanOrEqual(tableBox.x + tableBox.width);
+    }
+    expect(await table.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  });
+}
+
 for (const [width, grouping] of [
   [720, "flat"],
   [1000, "flat"],

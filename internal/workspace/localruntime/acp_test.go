@@ -1251,10 +1251,12 @@ func acpOptionValue(t *testing.T, agent interface{ Snapshot() ([]byte, error) },
 	return ""
 }
 
-func scaleACPStartTimeouts(divisor time.Duration) {
-	acpHandshakeTimeout /= divisor
-	acpSettingsRestoreTimeout /= divisor
-	acpAttachTimeout /= divisor
+const acpStartTimeoutDivisor = 4
+
+func scaleACPStartTimeouts() {
+	acpHandshakeTimeout /= acpStartTimeoutDivisor
+	acpSettingsRestoreTimeout /= acpStartTimeoutDivisor
+	acpAttachTimeout = acpStartAttachTimeout()
 }
 
 func shortenACPStartTimeouts(t *testing.T) {
@@ -1263,16 +1265,16 @@ func shortenACPStartTimeouts(t *testing.T) {
 	t.Cleanup(func() {
 		acpHandshakeTimeout, acpSettingsRestoreTimeout, acpAttachTimeout = handshake, restore, attach
 	})
-	scaleACPStartTimeouts(5)
-	t.Setenv("KENN_FORGE_ACP_START_DIVISOR", "5")
+	scaleACPStartTimeouts()
+	t.Setenv("KENN_FORGE_ACP_START_DIVISOR", strconv.Itoa(acpStartTimeoutDivisor))
 }
 
 func TestACPOwnerHelper(t *testing.T) {
 	if os.Getenv("KENN_FORGE_ACP_OWNER_FIXTURE") != "1" {
 		return
 	}
-	if os.Getenv("KENN_FORGE_ACP_START_DIVISOR") == "5" {
-		scaleACPStartTimeouts(5)
+	if os.Getenv("KENN_FORGE_ACP_START_DIVISOR") == strconv.Itoa(acpStartTimeoutDivisor) {
+		scaleACPStartTimeouts()
 	}
 	if fixtureDir := os.Getenv("KENN_FORGE_ACP_CONTINUE_DIR"); fixtureDir != "" {
 		_ = os.WriteFile(filepath.Join(fixtureDir, "owner-pid"), []byte(strconv.Itoa(os.Getpid())), 0o600)

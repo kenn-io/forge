@@ -131,6 +131,17 @@ func (s *Syncer) SetOnSyncCompleted(
 	s.onSyncCompleted = fn
 }
 
+// SetOnRepoSynced registers a callback invoked as soon as each repository
+// in a RunOnce pass finishes syncing, with a one-element slice holding that
+// repository's result. It runs on its own goroutine under the stack projection
+// lock, so invocations are serialized with each other and with preference
+// reconciliation, and it does not wait for the pass's detail and comment
+// drains. The pass joins every invocation before it publishes its terminal
+// status. Call SetOnRepoSynced before Start/RunOnce.
+func (s *Syncer) SetOnRepoSynced(fn func(results []RepoSyncResult)) {
+	s.onRepoSynced = fn
+}
+
 // SetOnWatchedMRSyncCompleted registers a callback invoked once after a
 // watched-MR fast-sync pass refreshes at least one MR.
 func (s *Syncer) SetOnWatchedMRSyncCompleted(fn func()) {

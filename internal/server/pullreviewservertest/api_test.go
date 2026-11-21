@@ -1922,7 +1922,7 @@ func TestMergeBlocksPredecessorRestoredWhenNativeStackAgesOut(t *testing.T) {
 	clock := observed.Add(11 * time.Hour)
 	syncer.SetClock(func() time.Time { return clock })
 	syncer.SetPreferGitHubNativeStacks(true)
-	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	syncer.SetOnRepoSynced(stacks.DetectionHook(ctx, database, nil))
 	client := servertest.SetupTestClient(t, srv)
 
 	syncer.RunOnce(ctx)
@@ -2039,7 +2039,7 @@ func TestMergeBlocksPredecessorWhenNativeStackRefreshIsPartial(t *testing.T) {
 		},
 	}))
 	syncer.SetPreferGitHubNativeStacks(true)
-	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	syncer.SetOnRepoSynced(stacks.DetectionHook(ctx, database, nil))
 	client := servertest.SetupTestClient(t, srv)
 
 	syncer.RunOnce(ctx)

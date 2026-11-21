@@ -120,6 +120,7 @@ type Syncer struct {
 	onMRSynced       func(owner, name string, mr *db.MergeRequest)
 	onRelayRefresh   func(context.Context, int64, string, int)
 	onSyncCompleted  func(results []RepoSyncResult)
+	onRepoSynced     func(results []RepoSyncResult)
 	onSyncFailed     func(source, reason string)
 	syncFailures     map[syncFailureKey]bool // guarded by the run slot
 	// onWatchedMRSyncCompleted fires once after a watched-MR fast-sync
@@ -190,9 +191,9 @@ type Syncer struct {
 	// result, or an in-flight run could reinstate native ordering after the
 	// user turned the preview off.
 	nativeStackGeneration atomic.Uint64
-	// stackProjectionMu serializes stack projection between the sync
-	// completion hook and preference-change reconciliation so the last write
-	// always reflects the current preference.
+	// stackProjectionMu serializes stack projection between the sync hooks
+	// and preference-change reconciliation so the last write always reflects
+	// the current preference.
 	stackProjectionMu sync.Mutex
 
 	featureCooldowns repositoryFeatureCooldowns

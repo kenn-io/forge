@@ -3586,7 +3586,7 @@ func TestAPIStacks_GitLabUnknownForkHeadSyncsButSkipsStackEdges(t *testing.T) {
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	client := servertest.SetupTestClient(t, srv)
 
-	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	syncer.SetOnRepoSynced(stacks.DetectionHook(ctx, database, nil))
 	syncer.RunOnce(ctx)
 
 	pullsResp, err := client.HTTP.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{}})

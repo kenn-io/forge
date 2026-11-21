@@ -175,6 +175,9 @@ type runState struct {
 	// regardless of worker completion order. Each index is written
 	// by exactly one worker, so no mutex is needed.
 	results []RepoSyncResult
+	// repoHooks tracks onRepoSynced invocations the workers started. The pass
+	// joins it before publishing its terminal status.
+	repoHooks *sync.WaitGroup
 	// exhausted collects buckets that crossed their reserve while the pass
 	// was running. Eligibility is computed once before dispatch, so without
 	// this the detail and comment drains would keep spending a credential the
@@ -343,9 +346,28 @@ func (s *Syncer) runWorker(
 		if err == nil {
 			s.saveListETags(ctx, resolved, observed)
 		}
+		s.startRepoSyncedHook(state, item.index)
 		done := state.completed.Add(1)
 		s.publishMonotonicProgress(state, done)
 	}
+}
+
+// startRepoSyncedHook hands a finished repository to onRepoSynced without
+// waiting for the rest of the pass. Stack projection needs only what this
+// repository's sync wrote, so holding it behind every other repository and the
+// detail and comment drains delayed new stacks by minutes. The hook gets a copy
+// of the result so it never shares a slot with the end-of-pass hook.
+func (s *Syncer) startRepoSyncedHook(state *runState, index int) {
+	if s.onRepoSynced == nil || state.repoHooks == nil {
+		return
+	}
+	result := []RepoSyncResult{state.results[index]}
+	state.repoHooks.Go(func() {
+		s.RunUnderStackProjection(func() {
+			s.dropStaleNativeStackResults(result)
+			s.onRepoSynced(result)
+		})
+	})
 }
 
 func syncErrorCodeFor(err error) SyncErrorCode {
@@ -644,7 +666,12 @@ func (s *Syncer) runOnceWithSlot(
 		lastErrorCeilingResetAt string
 		canceled                atomic.Bool
 		wg                      sync.WaitGroup
+		repoHooks               sync.WaitGroup
 	)
+	// Registered after the terminal-status defer so it runs first: the pass
+	// reports completion, and the UI refetches, only after every per-repository
+	// hook has written its result.
+	defer repoHooks.Wait()
 
 	state := &runState{
 		completed:               &completed,
@@ -657,6 +684,7 @@ func (s *Syncer) runOnceWithSlot(
 		canceled:                &canceled,
 		total:                   total,
 		results:                 results,
+		repoHooks:               &repoHooks,
 		exhausted:               &sync.Map{},
 	}
 	for range workers {
@@ -779,6 +807,10 @@ dispatch:
 	slog.Info("sync complete", "repos", total)
 
 	if s.onSyncCompleted != nil {
+		// The drains can save a retarget or merge after a repository's early
+		// projection, so the end-of-pass hook reconciles stacks again. Join the
+		// early projections first so none of them lands after it.
+		repoHooks.Wait()
 		s.RunUnderStackProjection(func() {
 			s.dropStaleNativeStackResults(results)
 			s.onSyncCompleted(results)

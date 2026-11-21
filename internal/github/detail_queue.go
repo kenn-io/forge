@@ -351,6 +351,13 @@ func (s *Syncer) buildDetailQueueItems(
 		// changes neither the parent nor the pending state.
 		ciHadPending := pr.CIHadPending || ciHasPending(pr.CIChecksJSON) ||
 			ciHasWorkflowRunEntry(pr.CIChecksJSON)
+		if repo.Platform == "github" && pr.MergeableState == "dirty" {
+			// GitHub runs no pull request workflows while a pull request has
+			// merge conflicts, so a required check that never reported stays
+			// expected until the author pushes, which changes updated_at.
+			// Counting it re-read every conflicted pull request on every pass.
+			ciHadPending = ciHasReportedPending(pr.CIChecksJSON)
+		}
 		mergeabilityPending := repo.Platform == "github" &&
 			(pr.MergeableState == "" || pr.MergeableState == "unknown")
 		items = append(items, QueueItem{

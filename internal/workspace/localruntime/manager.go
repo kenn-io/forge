@@ -239,6 +239,7 @@ type Manager struct {
 	knownSessionKeys  func(context.Context, string) ([]string, error)
 	detachForRestart  bool
 	startLocks        map[string]*sync.Mutex
+	handoffLocks      map[string]*sync.Mutex
 	stoppingWS        map[string]int
 	inflightWS        map[string]int
 	inflightCh        map[string]chan struct{}
@@ -403,6 +404,7 @@ func NewManager(options Options) *Manager {
 		knownSessionKeys:  options.KnownPtyOwnerSessionKeys,
 		detachForRestart:  options.DetachSessionsForServerRestart,
 		startLocks:        make(map[string]*sync.Mutex),
+		handoffLocks:      make(map[string]*sync.Mutex),
 		stoppingWS:        make(map[string]int),
 		inflightWS:        make(map[string]int),
 		inflightCh:        make(map[string]chan struct{}),
@@ -2012,16 +2014,22 @@ func (m *Manager) ensureOpen() error {
 	return nil
 }
 
-func (m *Manager) startLock(key string) *sync.Mutex {
+func (m *Manager) startLock(key string) *sync.Mutex { return m.keyedLock(m.startLocks, key) }
+
+// handoffLock serializes every view's handoff of a mirrored chat. It is
+// separate from startLock, which the start the handoff runs takes itself.
+func (m *Manager) handoffLock(key string) *sync.Mutex { return m.keyedLock(m.handoffLocks, key) }
+
+func (m *Manager) keyedLock(locks map[string]*sync.Mutex, key string) *sync.Mutex {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	startMu := m.startLocks[key]
-	if startMu == nil {
-		startMu = &sync.Mutex{}
-		m.startLocks[key] = startMu
+	mu := locks[key]
+	if mu == nil {
+		mu = &sync.Mutex{}
+		locks[key] = mu
 	}
-	return startMu
+	return mu
 }
 
 // CommandSessionStartLockHeldForTest reports whether the keyed command-session

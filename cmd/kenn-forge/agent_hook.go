@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"go.kenn.io/forge/internal/daemonclient"
 
 	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/agentprocess"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/kit/agenthook"
 )
@@ -155,6 +157,7 @@ func (h agentHookRelay) relay(ctx context.Context, input agenthook.CommonInput) 
 		"X-Kenn-Forge-Runtime-Session-Key",
 		os.Getenv(agentactivity.RuntimeSessionKeyEnv),
 	)
+	setExternalAgentHeaders(req.Header)
 	resp, err := daemon.Client.Do(req)
 	if err != nil {
 		return "", nil
@@ -188,6 +191,23 @@ func (h agentHookRelay) relay(ctx context.Context, input agenthook.CommonInput) 
 		return "", nil
 	}
 	return output.HookOutput.HookSpecificOutput.AdditionalContext, nil
+}
+
+// setExternalAgentHeaders tells the daemon what only this process can see about
+// an agent Forge did not start: which process it is, and the Herdr pane it runs
+// in. An agent Forge launched has a runtime key and needs neither.
+func setExternalAgentHeaders(header http.Header) {
+	if os.Getenv(agentactivity.RuntimeSessionKeyEnv) != "" {
+		return
+	}
+	if agent := agentprocess.Current(); agent.PID != 0 {
+		header.Set("X-Kenn-Forge-Agent-Pid", strconv.Itoa(agent.PID))
+		header.Set("X-Kenn-Forge-Agent-Start", agent.Start)
+	}
+	if pane := os.Getenv("HERDR_PANE_ID"); pane != "" {
+		header.Set("X-Kenn-Forge-Herdr-Pane", pane)
+		header.Set("X-Kenn-Forge-Herdr-Socket", os.Getenv("HERDR_SOCKET_PATH"))
+	}
 }
 
 func runAgentHookInstall(action string, args []string, stdout io.Writer) error {

@@ -190,7 +190,11 @@ peer bearers and route scopes       internal/federationauth
 - A peer-issued `forge_session` equals the local browser cookie only while the issuing peer's
   enrollment stays active, rechecked per request (`internal/server/api_auth.go::Server.hasValidBrowserSession`).
 - Browser-login links are minted only with local or session credentials, never peer bearers; `409`
-  means no direct credential and the selector falls back to a plain link (`internal/server/fleetapi/fleet_browser_login.go::Handler.resolveBrowserLoginTarget`).
+  means no credential path and the selector falls back to a plain link (`internal/server/fleetapi/fleet_browser_login.go::Handler.resolveBrowserLoginTarget`).
+- A spoke signs in to a sibling spoke through its hub: the hub serves only active spokes, asks the
+  sibling for the ticket with its own credential, and returns the sibling's enrolled origin. A hub
+  that refuses or predates the route keeps the spoke's `409`, so mixed-version fleets fall back
+  without a protocol bump (`internal/server/fleetapi/fleet_browser_login.go::Handler.issueSiblingBrowserLoginTicket`).
 - Peer credentials require the current enrollment and configured binding; activation upgrades both
   directions (`internal/server/api_auth.go::Server.federationPrincipalEnrollmentState`).
 - Active peer bearers work only after the activation-lease handshake and while both copies of the

@@ -1,117 +1,120 @@
 # Devboxes
 
-Kenn Forge can run agent workspaces in your account on a shared Linux machine.
-Your usual Forge remains the controller: you choose work, supervise agents,
-review diffs and push branches there. The devbox owns the worktrees, tools,
-agent processes and tmux sessions. Closing the browser does not stop them.
+You can run Kenn Forge agent workspaces in your account on a shared Linux
+machine while keeping your usual Forge instance as the controller. From your
+controller, you pick work, supervise agents, review diffs, and push branches.
+The devbox holds the worktrees, tools, agent processes, and tmux sessions, and
+closing your browser does not stop them.
 
-This is an initial operator-managed deployment for trusted teams on Tailscale.
-It is not a container sandbox. Each developer gets a separate non-root Linux
-account. Administrators can read account data and installed agent credentials;
-personal GitHub credentials stay on the controller.
+This initial deployment is operator-managed for trusted teams on Tailscale, and
+it is not a container sandbox. Each developer gets a separate non-root Linux
+account. Administrators can read account data and installed agent credentials,
+while your personal GitHub credentials stay on the controller.
 
 ## Daily workflow
 
-1. Open **Settings → Workspaces** on your usual Forge hub or
-   standalone Forge. **Workspace machines** lists this Forge machine and every
-   devbox assigned to you, each once, with its current state: **Not
-   connected**, **Online**, **Offline**, or **Maintenance**. The registry that
-   supplied the list is shown beneath it. If no registry is configured yet,
-   enter the address from your operator and select **Find devboxes**; you never
-   enter ports or tokens. Select **Connect** beside a machine; Forge checks its
-   account identity and updates that row. **Refresh** checks for new
-   assignments without removing saved connections.
-2. Select the radio button beside a connected machine to run new workspaces
-   there. Existing workspaces remain where they were created. You can choose
-   another connected machine in the new-workspace dialog. An unavailable
-   default does not silently move work to your local machine; the settings row
-   shows **Offline** with a **Reconnect** action instead.
-3. Create a workspace from a repository, pull request or issue. Remote pull
+1. Open **Settings → Workspaces** on your usual Forge hub or standalone Forge.
+   Under **Workspace machines**, you see this Forge machine and every devbox
+   assigned to you, listed once with its current state: **Not connected**,
+   **Online**, **Offline**, or **Maintenance**. The registry that supplied the
+   list appears below it. If you have not configured a registry yet, enter the
+   address from your operator and select **Find devboxes**. You never enter
+   ports or tokens. Select **Connect** beside a machine, and Forge checks its
+   account identity and updates that row. To check for new assignments without
+   removing saved connections, select **Refresh**.
+2. To run new workspaces on a connected machine, select the radio button beside
+   it. Existing workspaces stay where you created them, and you can still pick
+   another connected machine in the new-workspace dialog. If your default
+   machine is unavailable, Forge does not silently move work to your local
+   machine. Instead, the settings row shows **Offline** with a **Reconnect**
+   action.
+3. Create a workspace from a repository, pull request, or issue. Remote pull
    request and issue actions open the workspace in **Workspaces**. The first
-   clone of each repository in your account can take longer. No second local
-   checkout is needed.
-4. Start an agent, give it the task and inspect its output and diff. Files and
-   tests stay on the devbox. The agent uses the tools and subscription installed
-   in your account. Manual editing is optional; the normal workflow is to ask
-   the agent to make the change.
-5. Push the branch. Commits use your configured name and GitHub noreply email;
-   the GitHub App authenticates the push. Forge checks GitHub's resolved author
-   and committer IDs after pushing and displays a warning if attribution cannot
-   be verified. A verification failure does not retry the push.
-6. Review and merge through your usual trusted Forge or GitHub session. Delete
-   the remote workspace explicitly when finished. Automatic cleanup after a
-   merge is not part of this initial deployment.
+   clone of each repository in your account can take longer, and you do not need
+   a second local checkout.
+4. Start an agent, give it the task, and inspect its output and diff. Files and
+   tests stay on the devbox, and the agent uses the tools and subscription
+   installed in your account. You can edit files manually if you want, though
+   the normal workflow is to ask the agent to make the change.
+5. Push the branch. Commits use your configured name and GitHub noreply email,
+   while the GitHub App authenticates the push. After you push, Forge checks
+   GitHub's resolved author and committer IDs and displays a warning if it
+   cannot verify attribution. A verification failure does not retry the push.
+6. Review and merge the pull request in your usual trusted Forge or GitHub
+   session, then delete the remote workspace explicitly when you finish. This
+   initial deployment does not clean up workspaces automatically after a merge.
 
-Reconnect after sleep to see progress. There are no new worker-generated
-notifications while the controller is disconnected. Existing terminals and
-Git work survive an expired source-context lease; starting another agent for a
-pull request or issue needs fresh context from the controller. If a worker
-credential changes, use **Reconnect** in settings. Removing a connection leaves
-its remote work intact.
+After your computer wakes from sleep, reconnect to see progress. You receive no
+new notifications from worker activity while the controller is disconnected.
+Existing terminals and Git work survive an expired source-context lease, though
+starting another agent for a pull request or issue needs fresh context from the
+controller. If a worker credential changes, select **Reconnect** in settings.
+Removing a connection leaves its remote work intact.
 
-Preview-port discovery and forwarding are not included. For a browser preview,
-read the port from agent output and use your terminal client's explicit port
-forwarding. Do not expose application listeners publicly to obtain a preview.
+This deployment does not include preview-port discovery or forwarding. To
+preview an app in your browser, read the port from the agent output and use your
+terminal client's explicit port forwarding. Do not expose application listeners
+publicly to get a preview.
 
 ## Repository access and commit identity
 
-Each developer uses a separate Linux account on the devbox. The operator links
-that account's numeric Linux user ID to the developer's GitHub user ID and
-configures their commit name and email. Forge uses that link to check repository
-access; Git uses the name and email to identify new commits.
+You work in your own Linux account on the devbox. Your operator links that
+account's numeric Linux user ID to your GitHub user ID and configures your
+commit name and email. Forge uses that link to check repository access, and Git
+uses the name and email to identify new commits.
 
 ### How the credential broker works
 
-The credential broker is a small service on each devbox that supplies temporary
-GitHub credentials to Git. It runs under its own service account, which holds
-the GitHub App's private key. Development accounts receive short-lived tokens;
-the deployment keeps the App key readable only by the broker service account.
-Your personal GitHub credentials stay on the controller.
+Each devbox runs a small credential broker service that supplies temporary
+GitHub credentials to Git. The broker runs under its own service account, which
+holds the GitHub App's private key. Development accounts receive short-lived
+tokens, and the deployment keeps the App key readable only by the broker service
+account. Your personal GitHub credentials stay on the controller.
 
 Repository access follows these steps:
 
-1. **The operator enables the repository.** They install the organization's
-   GitHub App on the repositories developers need and add the
-   developer accounts to the broker configuration. Connecting a devbox in Forge
-   does not itself grant GitHub access.
-2. **Git asks for a credential.** When Forge clones a repository, or Git needs
-   to fetch or push from a managed worktree, it asks the broker for access to
-   that specific repository. An agent or SSH shell uses the same Git helper.
-   For forks the App can read, `git` requests use the fork's immediate
-   organization parent's App token, including terminal pushes such as
+1. **The operator enables the repository.** Your operator installs the
+   organization's GitHub App on the repositories you need and adds developer
+   accounts to the broker configuration. Connecting a devbox in Forge does not
+   itself grant GitHub access.
+2. **Git asks for a credential.** When Forge clones a repository, or when Git
+   fetches or pushes from a managed worktree, Git asks the broker for access to
+   that specific repository. Agents and SSH shells use the same Git helper. For
+   forks the App can read, `git` requests use the App token of the fork's
+   immediate organization parent, including terminal pushes such as
    `git push https://github.com/contributor-a/project.git HEAD:feature-branch`.
-   GitHub limits these pushes to open pull request heads with maintainer edits
+   GitHub limits those pushes to open pull request heads with maintainer edits
    allowed.
-3. **The broker identifies the caller and checks access.** The request travels
-   over a local Unix socket. Linux supplies the caller's user ID, which the
-   broker looks up in its configured account list. The broker checks the linked
-   GitHub user's current organization membership and repository permissions,
-   as well as the configured App installation and repository identity.
+3. **The broker identifies the caller and checks access.** The request goes over
+   a local Unix socket, where Linux supplies the caller's user ID. The broker
+   looks up that ID in its configured account list and checks the linked GitHub
+   user's current organization membership, repository permissions, configured
+   App installation, and repository identity.
 4. **Git receives a temporary token.** The broker requests a GitHub App
-   installation token restricted to that one repository. A developer with read
-   access can clone and fetch; write access also permits pushes, subject to
-   GitHub's branch rules. The helper passes the token to Git without saving it
-   as a stored credential.
+   installation token scoped to that single repository. Read access lets you
+   clone and fetch, and write access also permits pushes, subject to GitHub's
+   branch rules. The helper passes the token to Git without saving it as a
+   stored credential.
 5. **Later requests repeat the access checks.** The broker can reuse a token
-   cached in memory, but still checks the caller's access before returning it.
-   It replaces tokens near expiry. Already issued tokens remain usable until
+   cached in memory, and it still checks your access before returning it. It
+   replaces tokens near expiry, while tokens already issued stay usable until
    they expire or are revoked.
 
-This initial devbox integration supports repositories on `github.com`. It does
-not require a personal access token or `gh auth login` in the developer's
-devbox account. See [GitHub App and branch rules](#github-app-and-branch-rules)
-for the operator setup.
+This initial devbox integration supports repositories on `github.com`, and you
+do not need a personal access token or `gh auth login` in your devbox account.
+For the operator setup, see
+[GitHub App and branch rules](#github-app-and-branch-rules).
 
 ### How commits are linked to you
 
 Forge sets `user.name` and `user.email` in each managed worktree from your
-configured developer identity. Use the GitHub-provided noreply address shown
-in your GitHub email settings. GitHub uses the email in a commit to
+configured developer identity. Use the GitHub-provided noreply address shown in
+your GitHub email settings. GitHub uses the email in a commit to
 [associate it with your account](https://docs.github.com/en/account-and-profile/how-tos/email-preferences/setting-your-commit-email-address).
-New commits made by an agent in your account therefore use your configured
-identity, just as commits made from your SSH shell do.
+New commits an agent creates in your account therefore use your configured
+identity, the same way commits from your SSH shell do.
 
-The identities have different jobs:
+Each identity has a distinct job:
 
 | Identity | What it means |
 | --- | --- |
@@ -119,37 +122,38 @@ The identities have different jobs:
 | Commit author | The person credited with the original change, recorded in the commit. |
 | Committer | The person who created this version of the commit, also recorded in the commit. |
 
-For a new commit, author and committer normally both identify you. A cherry-pick
-or rebase can preserve someone else's author identity while recording you as
-the committer. The App can push either kind of commit without becoming its
-author.
+For a new commit, both the author and committer normally identify you. During a
+cherry-pick or rebase, Git can preserve someone else's author identity while
+recording you as the committer. The App can push either kind of commit without
+becoming its author.
 
-Forge validates the worktree's configured identity before starting an agent or
-pushing through Forge. After a push, the controller asks GitHub which accounts
-it resolved for the branch's latest commit and compares their numeric user IDs
-with your enrolled GitHub ID. Forge reports a match, a preserved original
-author, a mismatch, or an unverified result. If the email is wrong or GitHub
-cannot be reached, a successful push is not repeated. Commit attribution does
-not provide a cryptographic signature or prove who typed the change.
+Before starting an agent or pushing through Forge, Forge validates the
+worktree's configured identity. After a push, the controller asks GitHub which
+accounts it resolved for the branch's latest commit and compares their numeric
+user IDs with your enrolled GitHub ID. Forge then reports a match, a preserved
+original author, a mismatch, or an unverified result. If the email is wrong or
+Forge cannot reach GitHub, Forge does not repeat a successful push. Commit
+attribution does not provide a cryptographic signature or prove who typed the
+change.
 
 ## Using an SSH terminal client
 
-An SSH terminal client connects to the same Unix account with the
-operator-approved development key and agent forwarding disabled. With the
-worker configured to use that account's default tmux server, clients can
-list and attach to its existing sessions. Configure `window-size latest` in
-system tmux settings so two attached clients do not constrain each other to
-the smaller terminal. Forge still owns its worktrees and workspace lifecycle.
+You can connect with an SSH terminal client to the same Unix account using your
+operator-approved development key with agent forwarding disabled. When the
+worker uses that account's default tmux server, you can list and attach to its
+existing sessions. Configure `window-size latest` in system tmux settings so two
+attached clients do not constrain each other to the smaller terminal. Forge
+still owns its worktrees and workspace lifecycle.
 
-For repository-only work started from the remote terminal, the existing API
-CLI can create a workspace without a second Forge daemon:
+To start repository-only work from the remote terminal without running a second
+Forge daemon, create a workspace with the API CLI:
 
 ```sh
 kenn-forge api --config /etc/forge-worker/user-a.toml \
   POST /api/v1/worker/workspaces --data '{"repository":{"provider":"github","platform_host":"github.com","owner":"example-org","name":"project-a"},"branch":"work/task-a"}'
 ```
 
-The response includes the workspace ID and setup state. Use the same CLI with
+The response returns the workspace ID and setup state. Use the same CLI with
 `GET /api/v1/workspaces/ID` to wait for `ready`, then start a configured agent:
 
 ```sh
@@ -157,10 +161,11 @@ kenn-forge api --config /etc/forge-worker/user-a.toml \
   POST /api/v1/workspaces/ID/runtime/sessions --data '{"target_key":"codex"}'
 ```
 
-Create pull request and issue workspaces through the controller. The worker
-cannot obtain or validate that source context itself. Git in managed worktrees
-uses the same broker helper from Forge, an agent or an SSH shell. Do not run
-`gh auth login` on the devbox. Supported pull request commands use:
+For pull request and issue workspaces, create them through the controller. The
+worker cannot obtain or validate that source context itself. Git in managed
+worktrees uses the same broker helper from Forge, an agent, and an SSH shell. Do
+not run `gh auth login` on the devbox. To run supported pull request commands,
+use the devbox GitHub wrapper:
 
 ```sh
 kenn-forge devbox github --socket /run/forge-broker/broker.sock \
@@ -168,19 +173,20 @@ kenn-forge devbox github --socket /run/forge-broker/broker.sock \
 ```
 
 The wrapper supports `pr create`, `edit`, `comment`, `view`, `list`, `checks`,
-`close`, `reopen`, and `ready`.
-The wrapper refuses `close`, `reopen`, and `ready` on pull requests
-authored by anyone other than the App.
-Its token goes only to that child process. Git and the wrapper explain broker
-failures, such as a repository not being admitted or missing write permission.
+`close`, `reopen`, and `ready`, and it refuses `close`, `reopen`, and `ready` on
+pull requests authored by anyone other than the App. Its token goes only to that
+child process. When the broker rejects a request, such as when a repository is
+not admitted or you lack write permission for it, Git and the wrapper explain
+the failure.
 
 ## Operator setup
 
-Forge supplies generic worker, registry and credential-broker commands. Your
-provisioning repository owns users, SSH admission, packages, service units,
-roster assignments, agent credentials and network policy. The examples here
-use ordinary Linux accounts, systemd and Caddy; no private deployment tooling
-is required. Keep your chosen versions and configuration in your own automation.
+Forge provides generic worker, registry, and credential-broker commands, while
+your provisioning repository owns users, SSH admission, packages, service units,
+roster assignments, agent credentials, and network policy. The examples below
+use ordinary Linux accounts, systemd, and Caddy, and require no private
+deployment tooling. Keep your chosen versions and configuration in your own
+automation.
 
 ### What runs where
 
@@ -190,35 +196,37 @@ is required. Keep your chosen versions and configuration in your own automation.
 | Each devbox | One credential broker and one worker per developer account. Worktrees, tools, agent credentials and tmux sessions live here. |
 | Registry host | One registry process, a roster and copies of worker connection tokens, behind an HTTPS proxy. It needs no worktrees, agents or GitHub App key. |
 
-The registry handles discovery and connection setup. Workspace requests and
-terminal traffic go directly from the controller to the worker. An existing
-connection does not depend on the registry staying online. A registry host can
-also run other trusted services; give the registry its own service user,
-configuration directory and Unix socket.
+The registry handles discovery and connection setup, while workspace requests
+and terminal traffic go directly from the controller to the worker. An existing
+connection does not depend on the registry staying online. You can also run
+other trusted services on the registry host, as long as you give the registry
+its own service user, configuration directory, and Unix socket.
 
 ### Prepare the hosts
 
-1. Install the same reviewed Forge revision on the controller, devboxes and
-   registry. Use the [Quick Start](quickstart.md) build instructions when building
-   from source, and record the full commit and toolchain version. Confirm that
-   `kenn-forge devbox --help` lists `worker`, `broker` and `registry`.
+1. Install the same reviewed Forge revision on the controller, devboxes, and
+   registry. If you build from source, follow the [Quick Start](quickstart.md)
+   build instructions and record the full commit and toolchain version. Confirm
+   that `kenn-forge devbox --help` lists `worker`, `broker`, and `registry`.
 2. Enroll all hosts in Tailscale. The **controller daemon's host**, which may
-   differ from the browser's laptop, needs access to the registry and workers.
-3. On each Linux devbox, install Git, tmux, GitHub CLI and your agent tools.
-   Create each developer's account with a private home and no sudo or privileged
-   supplementary groups. Enroll dedicated SSH public keys for terminal clients;
-   retain a separate administrator login and recovery access.
-   For Codex, install the distribution's `bubblewrap` package and follow its
-   [Linux sandbox prerequisites](https://learn.chatgpt.com/docs/sandboxing).
-   Run `codex sandbox -- /usr/bin/true` as the developer to check the sandbox
-   before launching an agent; a successful login check does not exercise it.
-4. On the registry host, install Caddy and prepare a stable hostname, such as
-   `devboxes.example.org`, pointing to its Tailscale address. Obtain a certificate
-   trusted by the controller and arrange automatic renewal. For a private
+   differ from the browser's laptop, needs access to both the registry and the
+   workers.
+3. On each Linux devbox, install Git, tmux, GitHub CLI, and your agent tools.
+   Create each developer's account with a private home directory and no sudo or
+   privileged supplementary groups. Enroll dedicated SSH public keys for
+   terminal clients, and keep a separate administrator login and recovery
+   access. If you use Codex, install your distribution's `bubblewrap` package
+   and follow its
+   [Linux sandbox prerequisites](https://learn.chatgpt.com/docs/sandboxing). Run
+   `codex sandbox -- /usr/bin/true` as the developer to check the sandbox before
+   launching an agent. A successful login check does not exercise it.
+4. On the registry host, install Caddy and point a stable hostname, such as
+   `devboxes.example.org`, to its Tailscale address. Obtain a certificate
+   trusted by the controller and set up automatic renewal. For a private
    listener, DNS validation avoids exposing an HTTP challenge endpoint. Verify
    certificate issuance before publishing the registry site.
 
-Use your existing tailnet policy with these connections:
+Allow these connections in your tailnet policy:
 
 | Source | Destination |
 | --- | --- |
@@ -227,34 +235,35 @@ Use your existing tailnet policy with these connections:
 | Devboxes | GitHub and the agent providers over outbound HTTPS. |
 | Registry | Local Tailscale identity service; outbound access needed by your certificate renewal setup. |
 
-The registry does not need SSH access to devboxes during normal operation.
-Deployment automation needs administrator access when it copies worker
-identities into the registry. Keep certificate credentials, App keys and worker
-tokens outside source control and deployment logs.
+During normal operation, the registry does not need SSH access to devboxes. Your
+deployment automation needs administrator access when it copies worker
+identities into the registry. Keep certificate credentials, App keys, and worker
+tokens out of source control and deployment logs.
 
 ### GitHub App and branch rules
 
-Create this App once for your organization using GitHub's browser UI. It is
-separate from any App used by your controller to sync GitHub data. The same
-installation can serve multiple devboxes; you do not create an App per host
-or developer. The examples below use `example-org`, `project-a` and `user-a`;
-replace them with your organization, pilot repository and developer login.
+Create this GitHub App once for your organization in GitHub's browser UI. It is
+separate from any App your controller uses to sync GitHub data. The same
+installation can serve multiple devboxes, and you do not create an App per host
+or developer. The examples below use `example-org`, `project-a`, and `user-a`.
+Replace them with your organization, pilot repository, and developer login.
 
 #### Register and install the App
 
-Sign in to GitHub as an organization owner or authorized App manager. Start
-with a disposable repository in that organization for the push and branch-rule
-checks below.
+Before you start, sign in to GitHub as an organization owner or authorized App
+manager, and prepare a disposable repository in that organization for the push
+and branch-rule checks below.
 
 1. Open your **organization's Settings → Developer settings → GitHub Apps →
-   New GitHub App**. Do not create it under your personal account.
-2. Choose a globally unique name, such as `example-org-devboxes`. For
-   **Homepage URL**, use your organization's website or GitHub page. A running
-   Forge server or public callback endpoint is not needed to register the App.
+   New GitHub App**. Do not create the App under your personal account.
+2. Enter a globally unique name, such as `example-org-devboxes`. For
+   **Homepage URL**, enter your organization's website or GitHub page. You do
+   not need a running Forge server or a public callback endpoint to register the
+   App.
 3. Leave **Callback URL** and **Setup URL** blank. Leave **Request user
    authorization (OAuth) during installation** and **Enable Device Flow**
-   unchecked. Under **Webhook**, uncheck **Active**.
-4. Set the permissions in this table. Leave all others at **No access**.
+   unchecked, and uncheck **Active** under **Webhook**.
+4. Set the permissions in this table, and leave all others at **No access**.
 
    | Scope | Permission | Access |
    | --- | --- | --- |
@@ -266,32 +275,34 @@ checks below.
    | Repository | Metadata | Read-only (automatic) |
    | Organization | Members | Read-only |
 
-   Workflows lets writable accounts push changes to workflow files. The broker
-   requests it only when the installation has granted **Workflows: write**.
-   On an existing App, add the permission, then have an organization owner
-   accept the updated permissions on the installation.
+   The Workflows permission lets writable accounts push changes to workflow
+   files, and the broker requests it only when the installation has granted
+   **Workflows: write**. If you are updating an existing App, add the permission
+   and have an organization owner accept the updated permissions on the
+   installation.
 
-5. For **Where can this GitHub App be installed?**, choose **Only on this
+5. For **Where can this GitHub App be installed?**, select **Only on this
    account**, then click **Create GitHub App**.
-6. On its **General** page, record the numeric **App ID**, not the Client ID.
-   Under **Private keys**, click **Generate a private key**. Keep the downloaded
-   PEM on your trusted operator workstation, outside Git, with mode `0600`.
-   No client secret is needed.
-7. Open **Install App** and choose your organization. Choose **All repositories**
+6. On the App's **General** page, record the numeric **App ID**, not the Client
+   ID. Under **Private keys**, click **Generate a private key**. Store the
+   downloaded PEM file on your trusted operator workstation, outside Git, with
+   mode `0600`. You do not need a client secret.
+7. Open **Install App** and select your organization. Choose **All repositories**
    for organization-wide devbox access, or **Only select repositories** for a
    limited rollout, then click **Install**. Complete the branch-rule checks
-   below before granting production repository access.
+   below before granting access to production repositories.
 
-These are GitHub's standard [registration](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app),
-[key generation](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/managing-private-keys-for-github-apps)
+These follow GitHub's standard
+[registration](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app),
+[key generation](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/managing-private-keys-for-github-apps),
 and [installation](https://docs.github.com/en/apps/using-github-apps/installing-your-own-github-app)
-steps. Forge does not automate App registration or require a user OAuth flow
-for devbox Git access.
+steps. Forge does not automate App registration or require a user OAuth flow for
+devbox Git access.
 
 #### Record the broker's IDs
 
-Use an existing GitHub CLI login on your trusted workstation for these read-only
-lookups. Do not sign in with a personal GitHub credential on the devbox.
+Run these read-only lookups with an existing GitHub CLI login on your trusted
+workstation. Do not sign in with a personal GitHub credential on the devbox.
 
 ```sh
 gh api --paginate /orgs/example-org/installations \
@@ -300,42 +311,44 @@ gh api /orgs/example-org --jq .id
 gh api /users/user-a --jq '{id, login}'
 ```
 
-Choose the installation whose `app_slug` matches the App you just created.
-Use its `app_id` and `installation_id` and the organization's `id` in the
-broker TOML below. Use the user's `id` for `github_user_id`; `uid` is
-that developer's Linux account ID. These IDs are not secrets.
+Find the installation whose `app_slug` matches the App you created, and copy its
+`app_id`, its `installation_id`, and the organization's `id` into the broker
+TOML below. Use the user's `id` for `github_user_id`, and use that developer's
+Linux account ID for `uid`. None of these IDs are secrets.
 
-Your deployment tooling installs the PEM at `private_key_file`, readable only
-by the broker service account, never by development accounts. Host administrators
-remain trusted with this organization-scoped App authority. Keep the PEM out of
-source control and logs. The App authenticates pushes; each developer's commit
-name and GitHub noreply email determine commit attribution.
+Have your deployment tooling install the PEM at `private_key_file`, readable
+only by the broker service account and never by development accounts. Host
+administrators remain trusted with this organization-scoped App authority. Keep
+the PEM out of source control and logs. The App authenticates pushes, while each
+developer's commit name and GitHub noreply email determine commit attribution.
 
-The broker verifies each Unix UID's rostered GitHub ID, current organization
-membership, repository identity and repository permission before issuing a
-short-lived installation token for one repository. Read-only collaborators get
-read-only Git access. Token caching does not skip those admission checks.
-The App installation controls which repositories are available to developers;
-the broker has no separate repository list for them. Adding a repository to the
-installation needs no broker configuration change or restart.
+Before issuing a short-lived installation token for one repository, the broker
+checks the GitHub ID rostered for the calling Unix UID, that GitHub user's
+current organization membership, the repository identity, and the repository
+permission. Read-only collaborators get read-only Git access, and token caching
+does not skip those admission checks. The App installation controls which
+repositories are available to developers, and the broker has no separate
+repository list for them. When you add a repository to the installation, you do
+not need to change the broker configuration or restart the broker.
 [Service accounts](#service-accounts) instead list their repositories.
 
 #### Protect the default branch
 
-**App permissions cannot express “push branches, but never merge or push main.”**
-Use an enforced **Restrict updates** ruleset on default/protected branches,
-with bypass assigned only to the intended human maintainers and never this App.
-Keep the required-review and checks rules in a separate ruleset so bypassing the
-update restriction does not waive those requirements.
-Test an actual rejected default-branch push and merge attempt before admitting
-production repositories. [Contents write can authorize the merge endpoint](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request);
-omitting Pull requests write does not solve this. Preserve protection against
-force pushes and deletion. Do the initial allow/deny exercises in a disposable
+**App permissions cannot express "push branches, but never merge or push main."**
+Configure an enforced **Restrict updates** ruleset on default and protected
+branches, and grant bypass only to the intended human maintainers, never to this
+App. Keep required-review and checks rules in a separate ruleset so bypassing
+the update restriction does not waive those requirements. Test an actual
+rejected default-branch push and merge attempt before admitting production
+repositories. Run your initial allow and deny exercises in a disposable
 repository governed by the same rules.
-Workflows write lets the App change CI workflow files on any branch it can push;
-add a file path rule for `.github/workflows/**` if those branches must not change them.
+[Contents write can authorize the merge endpoint](https://docs.github.com/en/rest/pulls/pulls#merge-a-pull-request),
+and omitting Pull requests write does not prevent that. Preserve protection
+against force pushes and deletion. Workflows write lets the App change CI
+workflow files on any branch it can push. If those branches must not change
+them, add a file path rule for `.github/workflows/**`.
 
-The broker configuration is TOML:
+The broker configuration uses TOML:
 
 ```toml
 socket = "/run/forge-broker/broker.sock"
@@ -353,20 +366,21 @@ commit_name = "Developer A"
 commit_email = "1234+user-a@users.noreply.github.com"
 ```
 
-Start `kenn-forge devbox broker --config /etc/forge-broker/broker.toml` as a
-separate service user. On Linux, the broker authenticates the connecting UID
-with `SO_PEERCRED`. Its socket permits local connections; an unlisted UID is
-rejected regardless of request fields. It does not listen on the network.
+Run `kenn-forge devbox broker --config /etc/forge-broker/broker.toml` under a
+separate service user. On Linux, the broker authenticates each connecting UID
+with `SO_PEERCRED`. Any local account can connect to its socket, and the broker
+rejects any unlisted UID regardless of request fields. It does not listen on the
+network.
 
-When upgrading a broker configured with `[[repositories]]`, remove those
-sections together with the binary update. The new broker rejects the old
-settings; repository access now follows the App installation.
+If you are upgrading a broker that uses `[[repositories]]`, remove those
+sections when you update the binary. The new broker rejects the old settings,
+and repository access now follows the App installation.
 
 For systemd, create a system user named `forge-broker` with no login shell or
-home. Install the configuration and PEM under `/etc/forge-broker`, readable
-only by that user (directory `0700`, files `0600`). Install the binary at
-`/usr/local/bin/kenn-forge`, owned by root. Save this unit as
-`/etc/systemd/system/forge-broker.service`:
+home directory. Install the configuration and PEM under `/etc/forge-broker`,
+readable only by `forge-broker`, with mode `0700` on the directory and `0600` on
+the files. Install the binary at `/usr/local/bin/kenn-forge`, owned by root, and
+save this unit as `/etc/systemd/system/forge-broker.service`:
 
 ```ini
 [Unit]
@@ -389,18 +403,19 @@ WantedBy=multi-user.target
 ```
 
 Run `sudo systemctl daemon-reload` and
-`sudo systemctl enable --now forge-broker`. The runtime directory allows
-developers to reach the socket; admission is checked using their kernel-supplied
-Unix UID on every request.
+`sudo systemctl enable --now forge-broker`. The runtime directory lets
+developers reach the socket, and the broker checks admission on every request
+using their kernel-supplied Unix UID.
 
 #### Service accounts
 
-A service account is a non-SSH Linux account for an unattended coordinator
-rather than a developer. Set `service = true` and use the App's bot user ID as
-`github_user_id`; find it with `gh api /users/example-app%5Bbot%5D --jq .id`.
+A service account is a non-SSH Linux account for an unattended coordinator rather
+than a developer. To configure one, set `service = true` and use the App's bot
+user ID for `github_user_id`. You can look up that ID with
+`gh api /users/example-app%5Bbot%5D --jq .id`.
 
-List the repositories it may use by GitHub repository ID, found with
-`gh api /repos/example-org/project-a --jq .id`:
+List the repositories the account can use by GitHub repository ID, which you can
+look up with `gh api /repos/example-org/project-a --jq .id`:
 
 ```toml
 [[accounts]]
@@ -412,35 +427,37 @@ write_repository_ids = [42]
 read_repository_ids = [43]
 ```
 
-The broker still verifies the installation, organization and repository
-identity, but skips the user, organization membership and repository permission
-checks that apply to developers. Instead, it admits only the listed
-repositories and their contributor forks, using the upstream's grant:
+For service accounts, the broker still verifies the installation, organization,
+and repository identity, and skips the user, organization membership, and
+repository permission checks that apply to developers. Instead, it admits only
+the listed repositories and their contributor forks, using the upstream's grant:
 
-- A repository in `write_repository_ids` gets the `git`, `push` and `pr`
+- A repository in `write_repository_ids` gets the `git`, `push`, and `pr`
   profiles with the same permissions as a writable developer.
 - A repository in `read_repository_ids` gets read-only `git` access, for
-  example to fetch a private dependency. `push` and `pr` are refused.
-- Every other repository is refused, even when the App installation can reach
-  it.
+  example to fetch a private dependency. The broker refuses `push` and `pr`.
+- The broker refuses every other repository, even when the App installation can
+  reach it.
 
-Forks serve `git` for the credential helper, Forge clone/fetch, and worker
-admission under their own ID; `push`/`pr` are refused. GitHub controls branch pushes.
+Forks serve `git` for the credential helper, Forge clone and fetch, and worker
+admission under their own ID, and the broker refuses `push` and `pr`. GitHub
+controls branch pushes.
 
-A service account needs at least one repository in either list; the broker
-refuses to start when both are empty. Omit `write_repository_ids` for an account
-that only needs to fetch repositories. IDs survive repository renames, and a
-reused name does not inherit another repository's access. The broker does not
-keep a service account away from protected branches of its writable repositories; the rulesets
-in [Protect the default branch](#protect-the-default-branch) do.
+Each service account must list at least one repository in either list, and the
+broker refuses to start if both lists are empty. If an account only needs to
+fetch repositories, omit `write_repository_ids`. Repository IDs survive renames,
+and a reused name does not inherit another repository's access. The broker does
+not restrict a service account from protected branches of its writable
+repositories. The rulesets in
+[Protect the default branch](#protect-the-default-branch) do.
 
 ### Per-account worker
 
-Create a private data directory owned by the developer, for example
-`/home/user-a/.local/share/forge-worker` with mode `0700`. Save this worker
-configuration as `/etc/forge-worker/user-a.toml`, owned by root and readable by
-the account. Obtain the actual Linux UID with `id -u user-a` and use it in
-both worker and broker configuration.
+Create a private data directory owned by the developer with mode `0700`, for
+example `/home/user-a/.local/share/forge-worker`. Save the worker configuration
+below as `/etc/forge-worker/user-a.toml`, owned by root and readable by that
+account. Look up the actual Linux UID with `id -u user-a` and use it in both the
+worker and broker configurations.
 
 ```toml
 host = "127.0.0.1"
@@ -466,20 +483,22 @@ worktree_dir = "/home/user-a/workspaces"
 command = ["tmux"]
 ```
 
-`worktree_dir` places new GitHub.com worktrees at `<worktree_dir>/<owner>/<repo>/<workspace>`.
-Forge keeps its database, credentials and managed clones in `data_dir`. Changing
-this setting does not move existing workspaces or interrupt their agents. When
-omitted, worktrees remain under `data_dir/worktrees`.
+Setting `worktree_dir` places new GitHub.com worktrees at
+`<worktree_dir>/<owner>/<repo>/<workspace>`, while Forge keeps its database,
+credentials, and managed clones in `data_dir`. Changing `worktree_dir` does not
+move existing workspaces or interrupt their agents. If you omit `worktree_dir`,
+worktrees stay under `data_dir/worktrees`.
 
-Run `kenn-forge devbox worker --config /etc/forge-worker/user-a.toml` as that
-account. Provide its tool PATH, agent installation and credentials. Use
-`KillMode=process` so restarting the worker does not kill tmux sessions. Apply
-CPU and memory limits to the user's slice if SSH and worker processes should
-share one budget. Run the broker before the workers.
+Start the broker before the workers, then run
+`kenn-forge devbox worker --config /etc/forge-worker/user-a.toml` as the
+developer account with its tool `PATH`, agent installation, and credentials. Set
+`KillMode=process` so restarting the worker does not kill tmux sessions. If SSH
+and worker processes should share one resource budget, apply CPU and memory
+limits to the user's slice.
 
-Save this unit in the developer's home at
-`.config/systemd/user/forge-worker.service`. Adapt `PATH` to include the actual
-agent and tool installation directories; a systemd service does not source the
+Save this unit in the developer's home directory at
+`.config/systemd/user/forge-worker.service`. Update `PATH` to include the actual
+agent and tool installation directories. A systemd service does not source the
 developer's interactive shell configuration.
 
 ```ini
@@ -501,8 +520,8 @@ TimeoutStopSec=30
 WantedBy=default.target
 ```
 
-An administrator runs `sudo loginctl enable-linger user-a`. Then, in an SSH
-session as `user-a`, run:
+Have an administrator run `sudo loginctl enable-linger user-a`. Then, in an SSH
+session as `user-a`, enable the service and check the worker:
 
 ```sh
 systemctl --user daemon-reload
@@ -510,48 +529,52 @@ systemctl --user enable --now forge-worker
 kenn-forge api --config /etc/forge-worker/user-a.toml GET /api/v1/worker
 ```
 
-Check the returned account identity before publication. On first startup Forge
-creates `auth_token` and `node_id` in the data directory. Keep those files and
-the rest of the data directory across upgrades; deployment must not generate
-replacement identities. Both identity files belong to the developer and use
-mode `0600`. Back up this directory as application data, including the workspace
-repositories; reinstalling services does not recover lost work.
+Verify the returned account identity before publishing the worker. On first
+startup, Forge creates `auth_token` and `node_id` in the data directory. Both
+identity files belong to the developer with mode `0600`. Preserve those files
+and the rest of the data directory across upgrades. Your deployment must not
+generate replacement identities. Back up this directory as application data,
+including the workspace repositories. Reinstalling services does not recover
+lost work.
 
-Publish just that listener with [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve):
+Publish only that listener with
+[Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve):
 
 ```sh
 tailscale serve --bg --http=9100 http://127.0.0.1:9100
 ```
 
-Use a distinct fixed port for each account, then one tailnet policy grant from
-approved developers/controllers to the worker port range. The account boundary
-is the bearer token. Keep `api.tailscale_serve` disabled: another local account
-can send forged identity headers to a loopback listener. Worker bearers are
-unscoped; the restricted worker route set is the authorization boundary. It
-excludes settings, provider mutations, fleet enrollment and the browser UI.
+Assign a distinct fixed port to each account, then add one tailnet policy grant
+from approved developers and controllers to the worker port range. The bearer
+token is the account boundary. Keep `api.tailscale_serve` disabled. Another
+local account can send forged identity headers to a loopback listener. Worker
+bearers are unscoped, and the restricted worker route set is the authorization
+boundary. It excludes settings, provider mutations, fleet enrollment, and the
+browser UI.
 
 ### Discovery registry
 
-The registry is a read-only roster served by
-`kenn-forge devbox registry --config /etc/forge-registry/registry.toml`.
-Use a stable HTTPS hostname resolving to the registry host's tailnet address.
-Terminate TLS with a reverse proxy and forward over a Unix socket whose parent
-is accessible only to the registry user and proxy group. Do not replace this
+The registry serves a read-only roster with
+`kenn-forge devbox registry --config /etc/forge-registry/registry.toml`. Point a
+stable HTTPS hostname at the registry host's tailnet address. Terminate TLS with
+a reverse proxy and forward traffic over a Unix socket whose parent directory is
+accessible only to the registry user and proxy group. Do not replace this setup
 with unrestricted loopback TCP and trusted identity headers.
 
-Create a system user named `forge-registry` with no login shell or home.
-Create `/etc/forge-registry` and its `tokens` subdirectory owned by that user
-with mode `0700`. Through your provisioning tool's private file-transfer
-mechanism, copy each running worker's `auth_token` into the corresponding
-registry token file, owned by `forge-registry` with mode `0600`. Read the
-worker's `node_id` into its assignment below. Preserve the worker's originals.
-Do not paste tokens into a terminal or print them in automation output.
+Create a system user named `forge-registry` with no login shell or home
+directory, then create `/etc/forge-registry` and `/etc/forge-registry/tokens`
+owned by `forge-registry` with mode `0700`. Using your provisioning tool's
+private file-transfer mechanism, copy each running worker's `auth_token` into
+its registry token file, owned by `forge-registry` with mode `0600`. Copy each
+worker's `node_id` into its assignment below, and leave the worker's original
+files intact. Never paste tokens into a terminal or print them in automation
+output.
 
-Use `tailscale whois --json CONTROLLER_TAILSCALE_IP` on the registry host to
-obtain `UserProfile.ID` for `tailscale_user_id` and, when explicitly pinning a
-controller, `Node.StableID`. Obtain SSH host fingerprints from an independently
+On the registry host, run `tailscale whois --json CONTROLLER_TAILSCALE_IP` to
+get `UserProfile.ID` for `tailscale_user_id` and, if you are explicitly pinning
+a controller, `Node.StableID`. Get SSH host fingerprints from an independently
 trusted source, such as the host console. Save the roster below as
-`/etc/forge-registry/registry.toml`, owned by `forge-registry`, mode `0600`.
+`/etc/forge-registry/registry.toml`, owned by `forge-registry` with mode `0600`.
 
 ```toml
 socket = "/run/forge-registry/registry.sock"
@@ -581,23 +604,23 @@ maintenance = false
 token_file = "/etc/forge-registry/tokens/host-a-user-a"
 ```
 
-The assignment's `github_user_id` names the developer who can discover and
-connect to the account. Personal workers use that same GitHub identity. For a
-service account, set `worker_github_user_id` to the App's bot ID; the controller
-verifies that execution identity without changing the human owner.
-To grant several developers access to one service worker, add an assignment for
-each developer. Use the same worker details and `worker_github_user_id` in each
-assignment. The developer's `github_user_id`, `enabled` flag, and display name
-may differ. Personal worker NodeIDs remain unique.
+Each assignment's `github_user_id` names the developer who can discover and
+connect to that account, and personal workers use that same GitHub identity. For
+a service account, set `worker_github_user_id` to the App's bot ID. The
+controller verifies that execution identity without changing the human owner.
+To give several developers access to one service worker, add an assignment for
+each developer with the same worker details and `worker_github_user_id`. Each
+developer's `github_user_id`, `enabled` flag, and display name can differ, while
+personal worker NodeIDs stay unique.
 
-Upgrade each supervisor's controller to Forge v0.6.0 or later before adding
-`worker_github_user_id` to service assignments. Upgrade the registry to a
-version that supports shared service workers before adding duplicate assignments.
-Older controllers still handle personal accounts but cannot connect to service
-workers. Remove duplicate assignments before rolling the registry back to a
-version without shared-worker support. For a version without service-worker
-support, also remove `worker_github_user_id`. Keep personal assignments and
-existing worker data intact.
+Before you add `worker_github_user_id` to service assignments, upgrade each
+supervisor's controller to Forge v0.6.0 or later. Before you add duplicate
+assignments, upgrade the registry to a version that supports shared service
+workers. Older controllers still work with personal accounts, though they cannot
+connect to service workers. Before rolling the registry back to a version
+without shared-worker support, remove duplicate assignments. If the rollback
+target also lacks service-worker support, remove `worker_github_user_id` as well.
+Keep personal assignments and existing worker data intact.
 
 Save `/etc/systemd/system/forge-registry.service`:
 
@@ -622,19 +645,19 @@ WantedBy=multi-user.target
 ```
 
 Run `sudo systemctl daemon-reload` and
-`sudo systemctl enable --now forge-registry`. Check the local service:
+`sudo systemctl enable --now forge-registry`, then check the local service:
 
 ```sh
 sudo curl --fail --unix-socket /run/forge-registry/registry.sock http://localhost/healthz
 ```
 
-The response should contain `"status":"ok"`. This checks process health,
-not Tailscale admission. The socket is accessible to the service and Caddy
-group, and the registry uses no shared database or job queue.
+The response should include `"status":"ok"`. This verifies process health, not
+Tailscale admission. Both the service and the Caddy group can access the socket,
+and the registry uses no shared database or job queue.
 
-Add a site to your existing Caddy configuration, replacing the hostname,
-Tailscale IP and certificate paths. The PEM pair must be readable by Caddy.
-The proxy overwrites the peer headers with the actual TCP peer:
+Add a site block to your existing Caddy configuration with your hostname,
+Tailscale IP, and certificate paths. Caddy must be able to read the PEM pair,
+and the proxy overwrites the peer headers with the actual TCP peer:
 
 ```caddyfile
 https://devboxes.example.org {
@@ -647,31 +670,34 @@ https://devboxes.example.org {
 }
 ```
 
-Validate the complete configuration with
-`sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile` before
-reloading Caddy. Retain the previous site and certificate until validation and
-reload succeed. Your certificate renewal process must reload Caddy after
-publishing a renewed pair. See Caddy's
+Before reloading Caddy, validate the full configuration with
+`sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`. Keep
+the previous site and certificate until validation and reload succeed. Your
+certificate renewal process must reload Caddy after publishing a renewed pair.
+For details, see Caddy's
 [Unix-socket proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
 and [certificate configuration](https://caddyserver.com/docs/caddyfile/directives/tls).
 
-The service calls `tailscale whois --json IP:PORT`. Verify that it succeeds as
-its service user before publication. Ordinary untagged nodes map by Tailscale
-user ID. Tagged or shared controllers require an explicit stable node ID in
-`controller_node_ids`. This trusts every process on that node as the assigned
-developer; do not pin a shared multi-user devbox as one person's controller.
+The registry calls `tailscale whois --json IP:PORT`. Verify that this command
+succeeds as its service user before publishing the site. Ordinary untagged nodes
+map by Tailscale user ID, while tagged or shared controllers require an explicit
+stable node ID in `controller_node_ids`. Pinning a node trusts every process on
+that node as the assigned developer. Do not pin a shared multi-user devbox as
+one person's controller.
 
-Discovery lists only the caller's assignments. The native controller obtains
-the worker token and verifies node ID, Unix UID, GitHub ID, role and protocol.
-The browser never receives worker tokens. Connections survive registry outages;
-new connections and token refresh require the registry. Relocation preserves
-`registry_id`, host IDs, assignments and tokens and changes DNS behind the
-stable hostname. Restart the registry after changing its prepared roster.
+Discovery returns only the caller's assignments. The native controller fetches
+the worker token and verifies the node ID, Unix UID, GitHub ID, role, and
+protocol. The browser never receives worker tokens. Existing connections survive
+registry outages, while new connections and token refresh require the registry.
+To relocate the registry, keep `registry_id`, host IDs, assignments, and tokens
+the same and update DNS behind the stable hostname. Restart the registry
+whenever you change its prepared roster.
 
-From the actual controller host, check
+From the actual controller host, verify
 `curl --fail https://devboxes.example.org/api/v1/devboxes`, then connect through
 **Settings → Workspaces**. That discovery response contains assignments, not
-tokens. A successful local health check alone does not prove this network path.
+tokens, and a successful local health check alone does not prove this network
+path.
 
 ### Maintenance and recovery
 
@@ -685,32 +711,36 @@ tokens. A successful local health check alone does not prove this network path.
 | GitHub or the broker unavailable | Inspect the broker journal and helper's error. Local work can continue, but GitHub operations need restored service. |
 | Agent subscription exhausted | Stop affected agent sessions, install the replacement credentials in that account and start new sessions. GitHub App credentials are independent. |
 
-Use `journalctl --user -u forge-worker` as the developer and
-`sudo journalctl -u forge-broker -u forge-registry` on the hosts that run those
-services. Ordinary deployment should not reset worktrees, worker identities or
-agent credentials. For a personal account, offboarding also requires disabling
-account access, stopping the worker, and removing its broker admission.
+To inspect logs, run `journalctl --user -u forge-worker` as the developer, and
+run `sudo journalctl -u forge-broker -u forge-registry` on the hosts running
+those services. Ordinary deployments should not reset worktrees, worker
+identities, or agent credentials. When you offboard a personal account, also disable
+account access, stop the worker, and remove its broker admission.
 
-Supervisors of a shared service worker save the same bearer. To remove one
-supervisor, remove or disable that registry assignment. After active fixes
-finish, stop the worker, replace its `auth_token`, and restart it with the same
-`node_id` and workspace data. Copy the new token to the registry and restart
-the registry. Refresh any other services that hold a copy of the token, and
-have remaining supervisors use **Reconnect**. Removing the grant alone does
-not revoke a saved bearer.
+Supervisors of a shared service worker hold the same bearer token, and removing
+a registry grant alone does not revoke a saved bearer. To remove one supervisor:
+
+1. Remove or disable that supervisor's registry assignment.
+2. After active fixes finish, stop the worker, replace its `auth_token`, and
+   restart it with the same `node_id` and workspace data.
+3. Copy the new token to the registry and restart the registry.
+4. Refresh any other services that hold a copy of the token, and have the
+   remaining supervisors select **Reconnect**.
 
 ### Commit identity and acceptance
 
-Managed worktrees reset inherited credential helpers and set `user.useConfigOnly`,
-name and email. Forge validates identity before agent start and push. Git
-preserves another person's author on cherry-pick and rebase while changing the
-committer; Forge reports that preserved author separately. Commit metadata is
-an attribution convention, not a cryptographic proof of who typed a change.
-The App remains the push actor and PR-edit actor.
+Managed worktrees reset inherited credential helpers and set
+`user.useConfigOnly`, name, and email. Forge validates identity before starting
+an agent and before pushing. On a cherry-pick or rebase, Git preserves the
+original author while updating the committer, and Forge reports that preserved
+author separately. Commit metadata is an attribution convention, not
+cryptographic proof of who typed a change. The App remains the push actor and
+PR-edit actor.
 
-Before calling a deployment ready, exercise the actual controller, registry,
-worker, agent and GitHub repository: create, attach, commit, push, inspect both
-resolved GitHub identities, disconnect, restart, reattach and delete. Test a
-second account's denied access with the wrong bearer and forged Serve headers,
-plus allowed concurrent work using its own credentials. A local fixture test
-cannot prove the deployment's Tailscale grants, App installation or rulesets.
+Before you call a deployment ready, exercise the actual controller, registry,
+worker, agent, and GitHub repository end to end. Create a workspace, attach to
+it, commit, push, inspect both resolved GitHub identities, disconnect, restart,
+reattach, and delete it. Test a second account to confirm that the wrong bearer
+and forged Serve headers are denied, and that concurrent work with its own
+credentials succeeds. A local fixture test cannot prove your deployment's
+Tailscale grants, App installation, or rulesets.

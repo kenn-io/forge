@@ -219,9 +219,10 @@ that observes the behavior's real owner.
 - Seeded provider fakes return every child family present in seed data; complete
   mirroring deletes DB-only synthetic children (`internal/testutil/fixtures.go::SeedFixtures`).
 - e2e-server fixture Git uses `gitsafe.PrepareProcess` and `gitsafe.Runner` with
-  scratch `HOME`, `XDG_CONFIG_HOME`, and `SharedConfig`, ignoring developer hooks,
-  signing, identity, ignores, and attributes. The readiness timeout is 60 s; build
-  bulk commits with `git fast-import`.
+  `SharedConfig` and empty scratch ignore and attributes files, ignoring developer
+  hooks, signing, identity, ignores, and attributes. `HOME` and `XDG_CONFIG_HOME`
+  stay unchanged because the server expands `~` paths. The readiness timeout is
+  60 s; build bulk commits with `git fast-import`.
 - Markdown video specs use a committed synthetic VP9 WebM clip on a dedicated e2e
   server, since its seeded items change other specs' pages (`cmd/e2e-server/markdown_video.go`).
 - Browser-tier specs that need a load to hold use `/__browser-test/never-responds`

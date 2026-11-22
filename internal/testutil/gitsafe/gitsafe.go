@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -25,6 +26,9 @@ import (
 const SharedConfig = "[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n"
 
 // PrepareProcess isolates Git commands and their children for the process lifetime.
+// It keeps HOME and XDG_CONFIG_HOME because the e2e server expands
+// user-supplied ~ paths through them. Empty scratch ignore and attributes
+// files replace the ones Git would otherwise find under XDG_CONFIG_HOME.
 // Call it before starting concurrent work that reads or changes the environment.
 // Cleanup removes the scratch directory; it does not restore the environment.
 func PrepareProcess() (cleanup func() error, err error) {
@@ -33,10 +37,23 @@ func PrepareProcess() (cleanup func() error, err error) {
 		return nil, fmt.Errorf("create isolated Git directory: %w", err)
 	}
 	unsetInheritedGitEnv()
-	if err := configureGit(root); err != nil {
+	if err := configureProcessGit(root); err != nil {
 		return nil, errors.Join(err, os.RemoveAll(root))
 	}
 	return func() error { return os.RemoveAll(root) }, nil
+}
+
+func configureProcessGit(root string) error {
+	excludesFile := filepath.Join(root, "excludes")
+	attributesFile := filepath.Join(root, "attributes")
+	for _, path := range []string{excludesFile, attributesFile} {
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			return fmt.Errorf("create global %s file: %w", filepath.Base(path), err)
+		}
+	}
+	return configureGit(root, SharedConfig+"[core]\n"+
+		"\texcludesFile = "+strconv.Quote(excludesFile)+"\n"+
+		"\tattributesFile = "+strconv.Quote(attributesFile)+"\n")
 }
 
 // RunIsolatedMain runs a package's tests with one portable Git config that
@@ -64,27 +81,35 @@ func configureGitForTests(root string) error {
 		return err
 	}
 
-	return configureGit(root)
-}
-
-func configureGit(root string) error {
-	// Git for Windows cannot reliably use NUL as GIT_CONFIG_GLOBAL; a regular
-	// file works on every platform.
-	globalConfig := filepath.Join(root, "global.gitconfig")
-	if err := os.WriteFile(globalConfig, []byte(SharedConfig), 0o600); err != nil {
-		return fmt.Errorf("create global config: %w", err)
-	}
 	xdgConfigHome := filepath.Join(root, "xdg")
 	if err := os.MkdirAll(xdgConfigHome, 0o755); err != nil {
 		return fmt.Errorf("create XDG config directory: %w", err)
 	}
-	for key, value := range map[string]string{
+	if err := setEnv(map[string]string{
+		"HOME":            root,
+		"XDG_CONFIG_HOME": xdgConfigHome,
+	}); err != nil {
+		return err
+	}
+	return configureGit(root, SharedConfig)
+}
+
+func configureGit(root, config string) error {
+	// Git for Windows cannot reliably use NUL as GIT_CONFIG_GLOBAL; a regular
+	// file works on every platform.
+	globalConfig := filepath.Join(root, "global.gitconfig")
+	if err := os.WriteFile(globalConfig, []byte(config), 0o600); err != nil {
+		return fmt.Errorf("create global config: %w", err)
+	}
+	return setEnv(map[string]string{
 		"GIT_CONFIG_GLOBAL":   globalConfig,
 		"GIT_CONFIG_NOSYSTEM": "1",
 		"GIT_TERMINAL_PROMPT": "0",
-		"HOME":                root,
-		"XDG_CONFIG_HOME":     xdgConfigHome,
-	} {
+	})
+}
+
+func setEnv(values map[string]string) error {
+	for key, value := range values {
 		if err := os.Setenv(key, value); err != nil {
 			return fmt.Errorf("set %s: %w", key, err)
 		}

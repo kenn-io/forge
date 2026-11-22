@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect, Layer } from "effect";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { DEFAULT_TERMINAL_SETTINGS, type ConfigRepo } from "../../api/types.js";
 import * as flash from "../../stores/flash.svelte.js";
 import { makeStartupSnapshot } from "../../../test/startupSnapshot.js";
@@ -8,6 +8,7 @@ import { makeStartupSnapshot } from "../../../test/startupSnapshot.js";
 const {
   mockAddRepo,
   mockBulkAddRepos,
+  mockListUntrackedOpens,
   mockPreviewRepos,
   mockPromoteRepo,
   mockRefreshRepo,
@@ -17,6 +18,7 @@ const {
 } = vi.hoisted(() => ({
   mockAddRepo: vi.fn(),
   mockBulkAddRepos: vi.fn(),
+  mockListUntrackedOpens: vi.fn(),
   mockPreviewRepos: vi.fn(),
   mockPromoteRepo: vi.fn(),
   mockRefreshRepo: vi.fn(),
@@ -33,6 +35,18 @@ vi.mock("../../context.js", async (importOriginal) => ({
     },
   }),
 }));
+
+vi.mock("../../app/runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../app/runtime.js")>();
+  const { makeGeneratedClient } = await import("../../testing/generated-client.js");
+  return {
+    ...actual,
+    makeAppRuntime: () =>
+      actual.makeAppRuntime(
+        makeGeneratedClient({ RepositoriesService: { listUntrackedRepoOpens: mockListUntrackedOpens } }),
+      ),
+  };
+});
 
 vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../stores/settings-workflow.js")>();
@@ -85,15 +99,36 @@ function renderRepoSettings(props: {
   repos: ConfigRepo[];
   onUpdate: (repos: ConfigRepo[]) => void;
   owner?: "hub" | "local";
-}): void {
-  render(SettingsRuntimeHarness, {
+}) {
+  return render(SettingsRuntimeHarness, {
     props: { component: RepoSettings, componentProps: props },
   });
 }
 
+function untrackedOpen(owner: string, name: string, count: number) {
+  return { provider: "github", host: "github.com", owner, name, count, last_opened_at: new Date().toISOString() };
+}
+
+function exactRepo(owner: string, name: string): ConfigRepo {
+  return {
+    provider: "github",
+    platform_host: "github.com",
+    owner,
+    name,
+    repo_path: `${owner}/${name}`,
+    is_glob: false,
+    matched_repo_count: 1,
+  };
+}
+
 describe("RepoSettings", () => {
+  beforeEach(() => {
+    mockListUntrackedOpens.mockResolvedValue([]);
+  });
+
   afterEach(() => {
     cleanup();
+    mockListUntrackedOpens.mockReset();
     mockRefreshSyncStatus.mockReset();
     mockAddRepo.mockReset();
     mockRefreshRepo.mockReset();
@@ -653,5 +688,91 @@ describe("RepoSettings", () => {
 
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith(importedRepos));
     expect(mockRefreshSyncStatus).toHaveBeenCalled();
+  });
+
+  it("renders no suggestions block when nothing was opened or the list fails to load", async () => {
+    renderRepoSettings({ repos: [], onUpdate: vi.fn() });
+    await waitFor(() => expect(mockListUntrackedOpens).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Suggested from links you opened")).toBeNull();
+
+    cleanup();
+    mockListUntrackedOpens.mockRejectedValue(new Error("offline"));
+    renderRepoSettings({ repos: [], onUpdate: vi.fn() });
+    await waitFor(() => expect(mockListUntrackedOpens).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("Suggested from links you opened")).toBeNull();
+  });
+
+  it("lists every opened repository with its count", async () => {
+    const rows = Array.from({ length: 12 }, (_, index) => untrackedOpen("acme", `repo-${index}`, 12 - index));
+    rows[11] = untrackedOpen("acme", "widgets", 1);
+    mockListUntrackedOpens.mockResolvedValue(rows);
+    renderRepoSettings({ repos: [], onUpdate: vi.fn() });
+
+    await screen.findByText("Suggested from links you opened");
+    expect(screen.getAllByRole("button", { name: /^Add acme\// })).toHaveLength(12);
+    expect(screen.getByText("Opened 12 times · last just now")).toBeTruthy();
+    expect(screen.getByText("Opened once · last just now")).toBeTruthy();
+  });
+
+  it("adds a suggestion as an exact repository and keeps the other rows", async () => {
+    mockListUntrackedOpens.mockResolvedValue([untrackedOpen("acme", "widgets", 4), untrackedOpen("acme", "tools", 2)]);
+    let resolveAdd: (value: unknown) => void = () => {};
+    mockAddRepo.mockReturnValue(
+      new Promise((resolve) => {
+        resolveAdd = resolve;
+      }),
+    );
+    const onUpdate = vi.fn();
+    renderRepoSettings({ repos: [], onUpdate });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Add acme/widgets" }));
+    const pending = screen.getByRole("button", { name: "Add acme/widgets" });
+    expect(pending.textContent?.trim()).toBe("Adding…");
+    expect((pending as HTMLButtonElement).disabled).toBe(true);
+    expect(mockAddRepo).toHaveBeenCalledWith("acme", "widgets", { provider: "github", host: "github.com" });
+
+    resolveAdd(settingsResponse([exactRepo("acme", "widgets")]));
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledWith([exactRepo("acme", "widgets")]));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Add acme/widgets" })).toBeNull());
+    expect(screen.getByRole("button", { name: "Add acme/tools" })).toBeTruthy();
+    expect(mockRefreshSyncStatus).toHaveBeenCalled();
+  });
+
+  it("keeps every suggestion when adding one fails", async () => {
+    mockListUntrackedOpens.mockResolvedValue([untrackedOpen("acme", "widgets", 4), untrackedOpen("acme", "tools", 2)]);
+    mockAddRepo.mockRejectedValue(new Error("repository not found"));
+    const onUpdate = vi.fn();
+    renderRepoSettings({ repos: [], onUpdate });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Add acme/widgets" }));
+
+    await waitFor(() => expect(flash.getFlash()).toMatchObject({ message: "repository not found", tone: "danger" }));
+    const button = screen.getByRole("button", { name: "Add acme/widgets" });
+    expect(button.textContent?.trim()).toBe("Add");
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole("button", { name: "Add acme/tools" })).toBeTruthy();
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it("refetches suggestions when another control changes the tracked list", async () => {
+    mockListUntrackedOpens.mockResolvedValueOnce([
+      untrackedOpen("acme", "widgets", 4),
+      untrackedOpen("acme", "tools", 2),
+    ]);
+    const view = renderRepoSettings({ repos: [], onUpdate: vi.fn() });
+    await screen.findByRole("button", { name: "Add acme/widgets" });
+
+    mockListUntrackedOpens.mockResolvedValueOnce([untrackedOpen("acme", "tools", 2)]);
+    await view.rerender({
+      component: RepoSettings,
+      componentProps: {
+        repos: [{ ...exactRepo("acme", "*"), is_glob: true, repo_path: "acme/w*" }],
+        onUpdate: vi.fn(),
+      },
+    });
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Add acme/widgets" })).toBeNull());
+    expect(mockListUntrackedOpens).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Add acme/tools" })).toBeTruthy();
   });
 });

@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/server/repoapi"
+	"go.kenn.io/forge/internal/server/httpapi"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
@@ -23,7 +23,7 @@ func TestNormalizeImportPlatformRejectsUnsafeHosts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := repoapi.NormalizeImportPlatform("gitlab", tt.host)
+			_, _, err := httpapi.NormalizeImportPlatform("gitlab", tt.host)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "platform_host")
 		})

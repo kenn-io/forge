@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -10,12 +11,23 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-func NormalizeUntrackedRepo(provider, host, owner, name string) (db.UntrackedRepoOpen, error) {
+func NormalizeImportPlatform(provider, host string) (platform.Kind, string, error) {
+	if strings.TrimSpace(provider) == "" {
+		return "", "", fmt.Errorf("provider is required")
+	}
 	kind, err := platform.NormalizeKind(provider)
 	if err != nil {
-		return db.UntrackedRepoOpen{}, err
+		return "", "", err
 	}
-	host, err = config.NormalizePlatformHost(string(kind), host)
+	normalizedHost, err := config.NormalizePlatformHost(string(kind), host)
+	if err != nil {
+		return "", "", err
+	}
+	return kind, normalizedHost, nil
+}
+
+func NormalizeUntrackedRepo(provider, host, owner, name string) (db.UntrackedRepoOpen, error) {
+	kind, host, err := NormalizeImportPlatform(provider, host)
 	if err != nil {
 		return db.UntrackedRepoOpen{}, err
 	}

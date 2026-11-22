@@ -601,6 +601,9 @@ func (s *Handler) getPullRouteCore(ctx context.Context, input *repoNumberInput) 
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if err != nil {
+		if errors.Is(err, httpapi.ErrRepoNotFound) {
+			httpapi.RecordUntrackedRepoOpen(ctx, s.db, input.Provider, input.PlatformHost, input.Owner, input.Name, "pr", input.Number)
+		}
 		return nil, providerRouteLookupError(err)
 	}
 	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)

@@ -203,3 +203,45 @@ func TestUntrackedOpenLogsWhenCounterWriteFails(t *testing.T) { //nolint:paralle
 	require.Equal(t, "issue", entry["item_type"])
 	require.EqualValues(t, 42, entry["number"])
 }
+
+func TestDirectDetailLinksRecordUntrackedRepos(t *testing.T) {
+	srv, database, _ := setupTestServer(t)
+	for _, name := range []string{"one", "two", "three"} {
+		require.NoError(t, database.RecordUntrackedRepoOpen(t.Context(), db.UntrackedRepoOpen{Provider: "github", Host: "github.com", Owner: "other", Name: name}))
+	}
+	for _, tc := range []struct {
+		path  string
+		count int
+	}{
+		{"/api/v1/pulls/gh/missing/repo/4", 1},
+		{"/api/v1/issues/gh/missing/repo/5", 2},
+		{"/api/v1/host/github.com/pulls/gh/missing/repo/4", 3},
+		{"/api/v1/host/github.com/issues/gh/missing/repo/5", 4},
+	} {
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, tc.path, nil))
+		require.Equal(t, http.StatusNotFound, rr.Code, rr.Body.String())
+		require.Contains(t, rr.Body.String(), `"code":"repoNotFound"`)
+		rows, err := database.ListUntrackedRepoOpens(t.Context())
+		require.NoError(t, err)
+		require.Len(t, rows, 4)
+		counts := map[string]int{}
+		for _, row := range rows {
+			counts[row.Owner+"/"+row.Name] = row.Count
+		}
+		require.Equal(t, map[string]int{"other/one": 1, "other/two": 1, "other/three": 1, "missing/repo": tc.count}, counts)
+	}
+	for _, tc := range []struct{ path, code string }{
+		{"/api/v1/pulls/gh/acme/widget/99999", "pullNotFound"},
+		{"/api/v1/issues/gh/acme/widget/99999", "issueNotFound"},
+	} {
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, tc.path, nil))
+		require.Equal(t, http.StatusNotFound, rr.Code, rr.Body.String())
+		require.Contains(t, rr.Body.String(), `"code":"`+tc.code+`"`)
+	}
+	rows, err := database.ListUntrackedRepoOpens(t.Context())
+	require.NoError(t, err)
+	require.Len(t, rows, 4)
+	require.Equal(t, 4, rows[0].Count)
+}

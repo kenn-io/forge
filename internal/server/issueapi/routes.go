@@ -2,6 +2,7 @@ package issueapi
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -208,6 +209,9 @@ func (s *Handler) getIssue(ctx context.Context, input *issueRepoNumberInput) (*g
 func (s *Handler) getIssueRouteCore(ctx context.Context, input *issueRepoNumberInput) (*getIssueOutput, error) {
 	repo, err := s.resolver.LookupRoute(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name)
 	if err != nil {
+		if errors.Is(err, httpapi.ErrRepoNotFound) {
+			httpapi.RecordUntrackedRepoOpen(ctx, s.db, input.Provider, input.PlatformHost, input.Owner, input.Name, "issue", input.Number)
+		}
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}
 	issue, err := s.db.GetVisibleIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)

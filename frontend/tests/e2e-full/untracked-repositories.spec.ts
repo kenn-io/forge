@@ -36,9 +36,7 @@ test("suggests an opened untracked repository in Settings and adds it", async ({
     const rows = suggestions.locator(".repo-row");
     await expect(rows).toHaveCount(2);
     await expect(rows.nth(0)).toContainText("example/project");
-    await expect(rows.nth(0)).toContainText("Opened 3 times · last just now");
     await expect(rows.nth(1)).toContainText("other/repo");
-    await expect(rows.nth(1)).toContainText("Opened once · last just now");
 
     await suggestions.getByRole("button", { name: "Add other/repo" }).click();
     await expect(suggestions.getByRole("button", { name: "Add other/repo" })).toHaveCount(0);

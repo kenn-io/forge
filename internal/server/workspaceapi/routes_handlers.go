@@ -1326,7 +1326,7 @@ func (s *Handler) refreshWorkspaceRepoIndex(
 		if prNumber > 0 {
 			itemType = "pr"
 		}
-		httpapi.RecordUntrackedRepoOpen(ctx, s.db, string(kind), host, owner, name, itemType, prNumber)
+		_ = httpapi.RecordUntrackedRepoOpen(ctx, s.db, string(kind), host, owner, name, itemType, prNumber)
 		return httpapi.Forbidden(err.Error(), nil)
 	}
 	return httpapi.ProviderCallProblemWithDetail(
@@ -1355,7 +1355,7 @@ func (s *Handler) refreshWorkspaceIssue(
 		return nil
 	}
 	if errors.Is(err, ghclient.ErrRepoNotTracked) {
-		httpapi.RecordUntrackedRepoOpen(ctx, s.db, string(kind), host, owner, name, "issue", number)
+		_ = httpapi.RecordUntrackedRepoOpen(ctx, s.db, string(kind), host, owner, name, "issue", number)
 		return httpapi.Forbidden(err.Error(), nil)
 	}
 	return httpapi.ProviderCallProblemWithDetail(
@@ -1383,7 +1383,7 @@ func (s *Handler) refreshWorkspacePullRequest(
 	diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err)
 	if err != nil && !isDiffErr {
 		if errors.Is(err, ghclient.ErrRepoNotTracked) {
-			httpapi.RecordUntrackedRepoOpen(ctx, s.db, string(kind), host, owner, name, "pr", number)
+			_ = httpapi.RecordUntrackedRepoOpen(ctx, s.db, string(kind), host, owner, name, "pr", number)
 			return httpapi.Forbidden(err.Error(), nil)
 		}
 		return httpapi.ProviderCallProblemWithDetail(

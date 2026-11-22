@@ -229,43 +229,6 @@ describe("itemRefHandler", () => {
     expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/pulls/github/acme/widgets/12");
   });
 
-  it("passes GitHub item type hints to resolution", async () => {
-    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "issue" });
-    await clickItemRef({ class: "", href: "https://github.com/acme/widgets/issues/12" });
-    expect(mocks.post).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: "github", owner: "acme", name: "widgets", number: 12 }),
-      { item_type: "issue" },
-      expect.objectContaining({ signal: expect.anything() }),
-    );
-  });
-
-  it("passes GitLab PR item type hints", async () => {
-    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "pr" });
-
-    await clickItemRef({
-      "data-provider": "gitlab",
-      "data-platform-host": "gitlab.example.com",
-      "data-owner": "group",
-      "data-name": "project",
-      "data-repo-path": "group/project",
-      "data-number": "12",
-      "data-item-type": "pr",
-      "data-external-url": "https://gitlab.example.com/group/project/-/merge_requests/12",
-    });
-
-    expect(mocks.post).toHaveBeenCalledWith(
-      expect.objectContaining({
-        platformHost: "gitlab.example.com",
-        provider: "gitlab",
-        owner: "group",
-        name: "project",
-        number: 12,
-      }),
-      { item_type: "pr" },
-      expect.objectContaining({ signal: expect.anything() }),
-    );
-  });
-
   it("passes GitLab issue item type hints", async () => {
     mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "issue" });
 

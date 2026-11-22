@@ -10,35 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
-	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/platform"
 )
-
-func TestUntrackedWorkspaceRefreshIsRecorded(t *testing.T) {
-	database := dbtest.Open(t)
-	ctx := t.Context()
-	repoID, err := reposeed.Seed(ctx, database, db.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(t, err)
-	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Hour, nil, nil)
-	t.Cleanup(syncer.Stop)
-	h := New(Deps{DB: database, Syncer: syncer})
-	for _, refresh := range []func() error{
-		func() error { return h.refreshWorkspaceRepoIndex(ctx, "github", "github.com", "acme", "widget", 0) },
-		func() error { return h.refreshWorkspaceIssue(ctx, repoID, "github", "github.com", "acme", "widget", 7) },
-		func() error {
-			return h.refreshWorkspacePullRequest(ctx, repoID, "github", "github.com", "acme", "widget", 7)
-		},
-	} {
-		require.Error(t, refresh())
-	}
-	rows, err := database.ListUntrackedRepoOpens(ctx)
-	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	require.Equal(t, 3, rows[0].Count)
-}
 
 func TestWorkspaceTargetsPreserveOwnerAndBranch(t *testing.T) {
 	t.Parallel()

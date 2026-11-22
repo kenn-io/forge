@@ -661,7 +661,7 @@ func (s *Handlers) SyncIssue(ctx context.Context, input *itemapi.SyncIssueInput)
 					return nil, httpapi.Internal("get issue failed")
 				}
 				if issue == nil {
-					httpapi.RecordUntrackedRepoOpen(ctx, s.Db, input.Provider, input.PlatformHost, input.Owner, input.Name, "issue", input.Number)
+					_ = httpapi.RecordUntrackedRepoOpen(ctx, s.Db, input.Provider, input.PlatformHost, input.Owner, input.Name, "issue", input.Number)
 				}
 			}
 			return nil, httpapi.Forbidden(err.Error(), nil)

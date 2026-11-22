@@ -602,7 +602,7 @@ func (s *Handler) getPullRouteCore(ctx context.Context, input *repoNumberInput) 
 	)
 	if err != nil {
 		if errors.Is(err, httpapi.ErrRepoNotFound) {
-			httpapi.RecordUntrackedRepoOpen(ctx, s.db, input.Provider, input.PlatformHost, input.Owner, input.Name, "pr", input.Number)
+			_ = httpapi.RecordUntrackedRepoOpen(ctx, s.db, input.Provider, input.PlatformHost, input.Owner, input.Name, "pr", input.Number)
 		}
 		return nil, providerRouteLookupError(err)
 	}

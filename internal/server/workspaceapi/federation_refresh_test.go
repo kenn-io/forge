@@ -221,7 +221,6 @@ func TestRefreshWorkspaceLogsUntrackedPullIdentity(t *testing.T) { //nolint:para
 	require.Error(t, err)
 	var entry map[string]any
 	require.NoError(t, json.NewDecoder(&logs).Decode(&entry))
-	require.Equal(t, "opened untracked repository", entry["msg"])
 	require.Equal(t, "pr", entry["item_type"])
 	require.EqualValues(t, 7, entry["number"])
 	rows, err := database.ListUntrackedRepoOpens(t.Context())

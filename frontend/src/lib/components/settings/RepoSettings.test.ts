@@ -690,16 +690,13 @@ describe("RepoSettings", () => {
     expect(mockRefreshSyncStatus).toHaveBeenCalled();
   });
 
-  it("renders no suggestions block when nothing was opened or the list fails to load", async () => {
-    renderRepoSettings({ repos: [], onUpdate: vi.fn() });
-    await waitFor(() => expect(mockListUntrackedOpens).toHaveBeenCalledTimes(1));
-    expect(screen.queryByText("Suggested from links you opened")).toBeNull();
-
-    cleanup();
-    mockListUntrackedOpens.mockRejectedValue(new Error("offline"));
-    renderRepoSettings({ repos: [], onUpdate: vi.fn() });
-    await waitFor(() => expect(mockListUntrackedOpens).toHaveBeenCalledTimes(2));
-    expect(screen.queryByText("Suggested from links you opened")).toBeNull();
+  it("clears suggestions when a refetch fails", async () => {
+    mockListUntrackedOpens.mockResolvedValueOnce([untrackedOpen("acme", "widgets", 1)]);
+    const view = renderRepoSettings({ repos: [], onUpdate: vi.fn() });
+    await screen.findByRole("button", { name: "Add acme/widgets" });
+    mockListUntrackedOpens.mockRejectedValueOnce(new Error("offline"));
+    await view.rerender({ component: RepoSettings, componentProps: { repos: [exactRepo("acme", "other")], onUpdate: vi.fn() } });
+    await waitFor(() => expect(screen.queryByText("Suggested from links you opened")).toBeNull());
   });
 
   it("lists every opened repository with its count", async () => {
@@ -730,30 +727,16 @@ describe("RepoSettings", () => {
     expect(pending.textContent?.trim()).toBe("Adding…");
     expect((pending as HTMLButtonElement).disabled).toBe(true);
     expect(mockAddRepo).toHaveBeenCalledWith("acme", "widgets", { provider: "github", host: "github.com" });
+    const second = screen.getByRole("button", { name: "Add acme/tools" });
+    expect((second as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(second);
+    expect(mockAddRepo).toHaveBeenCalledTimes(1);
 
     resolveAdd(settingsResponse([exactRepo("acme", "widgets")]));
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith([exactRepo("acme", "widgets")]));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Add acme/widgets" })).toBeNull());
     expect(screen.getByRole("button", { name: "Add acme/tools" })).toBeTruthy();
     expect(mockRefreshSyncStatus).toHaveBeenCalled();
-  });
-
-  it.each(["success", "failure"])("waits for an add to finish before starting another on %s", async (outcome) => {
-    mockListUntrackedOpens.mockResolvedValue([untrackedOpen("acme", "widgets", 4), untrackedOpen("acme", "tools", 2)]);
-    const pending = Promise.withResolvers<ReturnType<typeof settingsResponse>>();
-    mockAddRepo.mockReturnValue(pending.promise);
-    renderRepoSettings({ repos: [], onUpdate: vi.fn() });
-    const first = await screen.findByRole("button", { name: "Add acme/widgets" });
-    const second = screen.getByRole("button", { name: "Add acme/tools" });
-    await fireEvent.click(first);
-    expect((first as HTMLButtonElement).disabled).toBe(true);
-    expect((second as HTMLButtonElement).disabled).toBe(true);
-    await fireEvent.click(second);
-    expect(mockAddRepo).toHaveBeenCalledTimes(1);
-    if (outcome === "success") pending.resolve(settingsResponse([exactRepo("acme", "widgets")]));
-    else pending.reject(new Error("repository not found"));
-    await waitFor(() => expect((second as HTMLButtonElement).disabled).toBe(false));
-    if (outcome === "failure") expect((first as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("names the host for suggestions that share a path across GitLab hosts", async () => {
@@ -773,11 +756,16 @@ describe("RepoSettings", () => {
 
   it("keeps every suggestion when adding one fails", async () => {
     mockListUntrackedOpens.mockResolvedValue([untrackedOpen("acme", "widgets", 4), untrackedOpen("acme", "tools", 2)]);
-    mockAddRepo.mockRejectedValue(new Error("repository not found"));
+    const pending = Promise.withResolvers<ReturnType<typeof settingsResponse>>();
+    mockAddRepo.mockReturnValue(pending.promise);
     const onUpdate = vi.fn();
     renderRepoSettings({ repos: [], onUpdate });
 
     await fireEvent.click(await screen.findByRole("button", { name: "Add acme/widgets" }));
+    const other = screen.getByRole("button", { name: "Add acme/tools" });
+    expect((other as HTMLButtonElement).disabled).toBe(true);
+    pending.reject(new Error("repository not found"));
+    await waitFor(() => expect((other as HTMLButtonElement).disabled).toBe(false));
 
     await waitFor(() => expect(flash.getFlash()).toMatchObject({ message: "repository not found", tone: "danger" }));
     const button = screen.getByRole("button", { name: "Add acme/widgets" });

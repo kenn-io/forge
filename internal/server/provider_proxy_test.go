@@ -1627,14 +1627,15 @@ func TestSpokeForwardsListFiltersToHub(t *testing.T) {
 
 func TestSpokeForwardsUntrackedOpenToHub(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
-	var received atomic.Int64
+	type receivedRequest struct {
+		method, path string
+		body         []byte
+		err          error
+	}
+	received := make(chan receivedRequest, 1)
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodPost, r.Method)
-		require.Equal(t, "/api/v1/repos/untracked-opens", r.URL.Path)
 		body, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"provider":"github","host":"github.com","owner":"other","name":"repo"}`, string(body))
-		received.Add(1)
+		received <- receivedRequest{r.Method, r.URL.Path, body, err}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	t.Cleanup(hub.Close)
@@ -1646,5 +1647,9 @@ func TestSpokeForwardsUntrackedOpenToHub(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
-	require.EqualValues(t, 1, received.Load())
+	got := <-received
+	require.NoError(t, got.err)
+	require.Equal(t, http.MethodPost, got.method)
+	require.Equal(t, "/api/v1/repos/untracked-opens", got.path)
+	require.JSONEq(t, `{"provider":"github","host":"github.com","owner":"other","name":"repo"}`, string(got.body))
 }

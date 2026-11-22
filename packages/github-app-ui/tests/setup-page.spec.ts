@@ -117,7 +117,7 @@ test("create step renders the flow and hands the manifest to GitHub", async ({ p
     });
     expect(fontState.bodyFont).toMatch(/^"?Inter"?\b/);
     expect(fontState.loadedFamilies).toContain("Inter");
-    expect(fontState.loadedFamilies).toContain("JetBrains Mono");
+    expect(fontState.loadedFamilies).toContain("MesloLGS NF");
 
     // The page auto-continues, but clicking must work too; either way
     // the manifest form POST goes to GitHub and the redirect chain
@@ -155,7 +155,7 @@ test("delays auto-continue until the first-paint hold reveals the page", async (
     const originalLoad = Object.getOwnPropertyDescriptor(FontFace.prototype, "load")?.value as FontFace["load"];
     FontFace.prototype.load = function (this: FontFace) {
       const family = this.family.replace(/^["']|["']$/g, "");
-      if (!window.location.search.includes("step=done") && (family === "Inter" || family === "JetBrains Mono")) {
+      if (!window.location.search.includes("step=done") && (family === "Inter" || family === "MesloLGS NF")) {
         // Hold fonts so hold-first-paint.js reveals only when its 3000ms fallback timer fires.
         return new Promise<FontFace>(() => {});
       }

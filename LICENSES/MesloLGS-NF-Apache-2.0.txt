@@ -13,10 +13,10 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-Kenn Forge converts the upstream TrueType files to WOFF2. It also drops the
-PostScript glyph names (post table format 3) and the FontForge metadata
-tables (FFTM, PfEd). Glyph outlines, metrics, and character mappings are
-unchanged.
+Kenn Forge converts the upstream TrueType files to WOFF2 and splits each face
+into two files by Unicode range. It also drops the PostScript glyph names and
+the FontForge metadata tables (FFTM, PfEd). Glyph outlines and metrics are
+unchanged. scripts/build-meslo-fonts.py records the exact steps.
 
 
                                  Apache License

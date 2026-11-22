@@ -877,7 +877,8 @@ describe("TerminalPane", () => {
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
     await waitFor(() => expect(load).toHaveBeenCalled());
 
-    expect(load).toHaveBeenCalledWith('14px "MesloLGS NF"', "0MWim@#");
+    expect(load).toHaveBeenCalledWith('14px "MesloLGS NF"', "0MWim@#\ue0b0");
+    expect(load).toHaveBeenCalledWith('bold 14px "MesloLGS NF"', "0MWim@#\ue0b0");
     expect(xtermTerminalCtor).not.toHaveBeenCalled();
 
     fontLoad.resolve([]);

@@ -57,7 +57,7 @@ test("header theme toggle flips dark mode in the live shell", async ({ page }) =
   await expect(root).not.toHaveClass(/dark/);
 });
 
-test("loads bundled Inter and JetBrains Mono fonts across themes", async ({ page }) => {
+test("loads bundled Inter and MesloLGS NF fonts across themes", async ({ page }) => {
   await page.goto("/pulls");
   await expect(page.getByText("Add browser regression coverage")).toBeVisible();
 
@@ -78,9 +78,9 @@ test("loads bundled Inter and JetBrains Mono fonts across themes", async ({ page
 
   expect(fontState.theme).toBe("quiet");
   expect(fontState.bodyFont).toMatch(/^"?Inter"?\b/);
-  expect(fontState.monoToken).toMatch(/^"?JetBrains Mono"?\b/);
+  expect(fontState.monoToken).toMatch(/^"?MesloLGS NF"?\b/);
   expect(fontState.loadedFamilies).toContain("Inter");
-  expect(fontState.loadedFamilies).toContain("JetBrains Mono");
+  expect(fontState.loadedFamilies).toContain("MesloLGS NF");
 });
 
 test("holds first paint until bundled fonts decode", async ({ page }) => {
@@ -96,7 +96,7 @@ test("holds first paint until bundled fonts decode", async ({ page }) => {
     const originalLoad = Object.getOwnPropertyDescriptor(FontFace.prototype, "load")?.value as FontFace["load"];
     FontFace.prototype.load = function (this: FontFace) {
       const family = this.family.replace(/^["']|["']$/g, "");
-      if (family === "Inter" || family === "JetBrains Mono") {
+      if (family === "Inter" || family === "MesloLGS NF") {
         pending.push(family);
         return gate.then(() => originalLoad.call(this));
       }
@@ -114,7 +114,7 @@ test("holds first paint until bundled fonts decode", async ({ page }) => {
     .poll(async () =>
       page.evaluate(() => [...new Set((window as unknown as { __pendingFontLoads: string[] }).__pendingFontLoads)]),
     )
-    .toEqual(expect.arrayContaining(["Inter", "JetBrains Mono"]));
+    .toEqual(expect.arrayContaining(["Inter", "MesloLGS NF"]));
   // Advance part of the hold window while staying short of the 3000ms fallback
   // timer; the page must remain hidden until both bundled fonts finish loading.
   await page.clock.runFor(1_000);
@@ -138,7 +138,7 @@ test("holds first paint until bundled fonts decode", async ({ page }) => {
       ),
     ];
   });
-  expect(loadedFamilies).toEqual(expect.arrayContaining(["Inter", "JetBrains Mono"]));
+  expect(loadedFamilies).toEqual(expect.arrayContaining(["Inter", "MesloLGS NF"]));
 
   await page.clock.resume();
   await expect(page.getByText("Add browser regression coverage")).toBeVisible();

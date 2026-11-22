@@ -7,11 +7,47 @@
 }
 
 @font-face {
-  font-family: "JetBrains Mono";
+  font-family: "MesloLGS NF";
   font-style: normal;
-  font-weight: 100 800;
+  font-weight: 400;
   font-display: swap;
-  src: url("@kenn-io/kit-ui/fonts/jetbrains-mono-var.woff2") format("woff2");
+  src: url("../../../frontend/src/fonts/meslo/MesloLGS-NF-Regular.woff2") format("woff2");
+  unicode-range:
+    U+0000-017F, U+0192, U+02C6-02DD, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-22FF, U+2318, U+2325, U+2387,
+    U+238B, U+23CE-23CF, U+2500-25FF, U+2713-2718, U+FFFD;
+}
+
+@font-face {
+  font-family: "MesloLGS NF";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../../../frontend/src/fonts/meslo/MesloLGS-NF-Bold.woff2") format("woff2");
+  unicode-range:
+    U+0000-017F, U+0192, U+02C6-02DD, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-22FF, U+2318, U+2325, U+2387,
+    U+238B, U+23CE-23CF, U+2500-25FF, U+2713-2718, U+FFFD;
+}
+
+@font-face {
+  font-family: "MesloLGS NF";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../../frontend/src/fonts/meslo/MesloLGS-NF-Italic.woff2") format("woff2");
+  unicode-range:
+    U+0000-017F, U+0192, U+02C6-02DD, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-22FF, U+2318, U+2325, U+2387,
+    U+238B, U+23CE-23CF, U+2500-25FF, U+2713-2718, U+FFFD;
+}
+
+@font-face {
+  font-family: "MesloLGS NF";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../../../frontend/src/fonts/meslo/MesloLGS-NF-Bold-Italic.woff2") format("woff2");
+  unicode-range:
+    U+0000-017F, U+0192, U+02C6-02DD, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-22FF, U+2318, U+2325, U+2387,
+    U+238B, U+23CE-23CF, U+2500-25FF, U+2713-2718, U+FFFD;
 }
 
 /* Reset */
@@ -42,7 +78,7 @@
   --radius-md: 6px;
   --radius-lg: 8px;
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --font-mono: "MesloLGS NF", "SF Mono", Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {

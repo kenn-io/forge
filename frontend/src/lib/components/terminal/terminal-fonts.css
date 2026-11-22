@@ -1,15 +1,19 @@
-/* MesloLGS NF (Apache-2.0, LICENSES/MesloLGS-NF-Apache-2.0.txt) is the
-   default terminal face: it carries the Powerline and Nerd Font glyphs that
-   shell prompts draw. Only the lazily loaded xterm pane imports this file, so
-   the faces stay out of the app stylesheet and the first-paint hold. Vite
-   emits them as separate files (vite.config.ts), and the browser fetches only
-   the faces a terminal draws. */
+/* The extended MesloLGS NF faces: every glyph outside the core text ranges
+   that app.css declares, mostly the Powerline and Nerd Font icons shell
+   prompts draw (scripts/build-meslo-fonts.py; Apache-2.0,
+   LICENSES/MesloLGS-NF-Apache-2.0.txt). They are about 1 MB each, so only the
+   lazily loaded xterm pane imports this file, keeping them out of the app
+   stylesheet and the first-paint hold. Vite emits them as separate files
+   (vite.config.ts). */
 @font-face {
   font-family: "MesloLGS NF";
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url("./fonts/MesloLGS-NF-Regular.woff2") format("woff2");
+  src: url("../../../fonts/meslo/MesloLGS-NF-Regular-Extended.woff2") format("woff2");
+  unicode-range:
+    U+0180-0191, U+0193-02C5, U+02DE-1FFF, U+2070-209F, U+20D0-20FF, U+2150-218F, U+2300-2317, U+2319-2324, U+2326-2386,
+    U+2388-238A, U+238C-23CD, U+23D0-24FF, U+2600-2712, U+2719-FFFC, U+FFFE-10FFFF;
 }
 
 @font-face {
@@ -17,7 +21,10 @@
   font-style: normal;
   font-weight: 700;
   font-display: swap;
-  src: url("./fonts/MesloLGS-NF-Bold.woff2") format("woff2");
+  src: url("../../../fonts/meslo/MesloLGS-NF-Bold-Extended.woff2") format("woff2");
+  unicode-range:
+    U+0180-0191, U+0193-02C5, U+02DE-1FFF, U+2070-209F, U+20D0-20FF, U+2150-218F, U+2300-2317, U+2319-2324, U+2326-2386,
+    U+2388-238A, U+238C-23CD, U+23D0-24FF, U+2600-2712, U+2719-FFFC, U+FFFE-10FFFF;
 }
 
 @font-face {
@@ -25,7 +32,10 @@
   font-style: italic;
   font-weight: 400;
   font-display: swap;
-  src: url("./fonts/MesloLGS-NF-Italic.woff2") format("woff2");
+  src: url("../../../fonts/meslo/MesloLGS-NF-Italic-Extended.woff2") format("woff2");
+  unicode-range:
+    U+0180-0191, U+0193-02C5, U+02DE-1FFF, U+2070-209F, U+20D0-20FF, U+2150-218F, U+2300-2317, U+2319-2324, U+2326-2386,
+    U+2388-238A, U+238C-23CD, U+23D0-24FF, U+2600-2712, U+2719-FFFC, U+FFFE-10FFFF;
 }
 
 @font-face {
@@ -33,9 +43,8 @@
   font-style: italic;
   font-weight: 700;
   font-display: swap;
-  src: url("./fonts/MesloLGS-NF-Bold-Italic.woff2") format("woff2");
-}
-
-:root {
-  --font-terminal: "MesloLGS NF", var(--font-mono);
+  src: url("../../../fonts/meslo/MesloLGS-NF-Bold-Italic-Extended.woff2") format("woff2");
+  unicode-range:
+    U+0180-0191, U+0193-02C5, U+02DE-1FFF, U+2070-209F, U+20D0-20FF, U+2150-218F, U+2300-2317, U+2319-2324, U+2326-2386,
+    U+2388-238A, U+238C-23CD, U+23D0-24FF, U+2600-2712, U+2719-FFFC, U+FFFE-10FFFF;
 }

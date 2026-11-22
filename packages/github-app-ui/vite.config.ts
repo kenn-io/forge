@@ -6,13 +6,10 @@ import { defineConfig, searchForWorkspaceRoot } from "vite";
 
 const frontendRequire = createRequire(new URL("../../frontend/package.json", import.meta.url));
 const interFont = frontendRequire.resolve("@kenn-io/kit-ui/fonts/inter-var.woff2");
-const jetbrainsMonoFont = frontendRequire.resolve("@kenn-io/kit-ui/fonts/jetbrains-mono-var.woff2");
 const workspaceRoot = searchForWorkspaceRoot(process.cwd());
 // Bun links @kenn-io/kit-ui from its global store outside the checkout, so the
-// dev server must allow serving both resolved font paths alongside the workspace.
-const devAllowedDirs = [
-  ...new Set([workspaceRoot, path.dirname(realpathSync(interFont)), path.dirname(realpathSync(jetbrainsMonoFont))]),
-];
+// dev server must allow serving the resolved font path alongside the workspace.
+const devAllowedDirs = [...new Set([workspaceRoot, path.dirname(realpathSync(interFont))])];
 
 // The build output is copied into internal/githubapp/ui/dist and
 // embedded in the kenn-forge binary, which serves it from
@@ -21,10 +18,7 @@ export default defineConfig({
   plugins: [svelte()],
   base: "./",
   resolve: {
-    alias: [
-      { find: "@kenn-io/kit-ui/fonts/inter-var.woff2", replacement: interFont },
-      { find: "@kenn-io/kit-ui/fonts/jetbrains-mono-var.woff2", replacement: jetbrainsMonoFont },
-    ],
+    alias: [{ find: "@kenn-io/kit-ui/fonts/inter-var.woff2", replacement: interFont }],
   },
   server: {
     fs: { allow: devAllowedDirs },

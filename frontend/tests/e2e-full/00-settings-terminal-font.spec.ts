@@ -234,15 +234,26 @@ test.describe("terminal options popover", () => {
       const terminal = page.getByRole("region", { name: "Terminal panel" }).locator(".terminal-container");
       await expect(terminal.locator(".xterm-screen")).toBeVisible();
       await expect.poll(() => terminalScreenSizeKey(terminal)).not.toBe("0pxx0px");
-      // With no font configured, the terminal loads the bundled MesloLGS NF
-      // regular and bold faces from the built assets.
+      // With no font configured, the terminal loads the regular and bold
+      // MesloLGS NF faces that hold the prompt icons (the Powerline arrow,
+      // U+E0B0). The app stylesheet's core faces do not cover it.
       await expect
         .poll(() =>
-          page.evaluate(() =>
-            [...document.fonts]
-              .filter((face) => face.family.replace(/^["']|["']$/g, "") === "MesloLGS NF" && face.status === "loaded")
-              .map((face) => `${face.style} ${face.weight}`),
-          ),
+          page.evaluate(() => {
+            const covers = (range: string, codePoint: number) =>
+              range.split(",").some((part) => {
+                const [lo, hi = lo] = part.trim().replace(/^U\+/i, "").split("-");
+                return parseInt(lo!, 16) <= codePoint && codePoint <= parseInt(hi!, 16);
+              });
+            return [...document.fonts]
+              .filter(
+                (face) =>
+                  face.family.replace(/^["']|["']$/g, "") === "MesloLGS NF" &&
+                  face.status === "loaded" &&
+                  covers(face.unicodeRange, 0xe0b0),
+              )
+              .map((face) => `${face.style} ${face.weight}`);
+          }),
         )
         .toEqual(expect.arrayContaining(["normal 400", "normal 700"]));
       const initialScreenSize = await terminalScreenSizeKey(terminal);

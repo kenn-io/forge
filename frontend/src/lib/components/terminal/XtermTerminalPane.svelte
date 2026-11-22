@@ -238,7 +238,9 @@
 
   const TERMINAL_SMOOTH_SCROLL_DURATION = 0;
   const TERMINAL_FONT_WAIT_MS = 300;
-  const TERMINAL_FONT_LOAD_GLYPHS = "0MWim@#";
+  // The Powerline arrow (U+E0B0) also loads MesloLGS NF's extended face,
+  // which holds the prompt icons.
+  const TERMINAL_FONT_LOAD_GLYPHS = "0MWim@#\ue0b0";
   const TERMINAL_SEQUENCE_CANCEL = new Uint8Array([0x18]);
   const POINTER_SELECTION_INTENT_MIN_PX = 4;
 
@@ -671,7 +673,7 @@
     const rootFontFamily = getComputedStyle(
       document.documentElement,
     )
-      .getPropertyValue("--font-terminal")
+      .getPropertyValue("--font-mono")
       .trim();
     return rootFontFamily || "monospace";
   }

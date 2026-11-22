@@ -201,7 +201,13 @@ describe("itemRefHandler", () => {
       "data-item-type": itemType,
     });
     expect(mocks.post).toHaveBeenCalledWith(
-      expect.objectContaining({ provider, owner, name, number: 12, ...(provider === "gitlab" ? { platformHost: host } : {}) }),
+      expect.objectContaining({
+        provider,
+        owner,
+        name,
+        number: 12,
+        ...(provider === "gitlab" ? { platformHost: host } : {}),
+      }),
       { item_type: itemType },
       { signal: expect.any(AbortSignal) },
     );

@@ -702,7 +702,10 @@ describe("RepoSettings", () => {
   });
 
   it("adds a suggestion as an exact repository and keeps the other rows", async () => {
-    mockListUntrackedOpens.mockResolvedValue([{ ...untrackedOpen("acme", "widgets", 4), provider: "gitlab", host: "gitlab.example.com" }, untrackedOpen("acme", "tools", 2)]);
+    mockListUntrackedOpens.mockResolvedValue([
+      { ...untrackedOpen("acme", "widgets", 4), provider: "gitlab", host: "gitlab.example.com" },
+      untrackedOpen("acme", "tools", 2),
+    ]);
     let resolveAdd: (value: unknown) => void = () => {};
     mockAddRepo.mockReturnValue(
       new Promise((resolve) => {
@@ -757,7 +760,10 @@ describe("RepoSettings", () => {
     expect(mockListUntrackedOpens).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("button", { name: "Add acme/tools" })).toBeTruthy();
     mockListUntrackedOpens.mockRejectedValueOnce(new Error("offline"));
-    await view.rerender({ component: RepoSettings, componentProps: { repos: [exactRepo("acme", "other")], onUpdate: vi.fn() } });
+    await view.rerender({
+      component: RepoSettings,
+      componentProps: { repos: [exactRepo("acme", "other")], onUpdate: vi.fn() },
+    });
     await waitFor(() => expect(screen.queryByText("Suggested from links you opened")).toBeNull());
   });
 });

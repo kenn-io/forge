@@ -220,7 +220,7 @@ function conflictProblem(reason: string): ProblemBody {
 }
 
 function mockClient(overrides: Partial<GeneratedClient> = {}): GeneratedClient {
-  return {
+  const client = {
     GET: vi.fn(),
     POST: vi.fn(),
     PUT: vi.fn(),
@@ -230,6 +230,12 @@ function mockClient(overrides: Partial<GeneratedClient> = {}): GeneratedClient {
     HEAD: vi.fn(),
     TRACE: vi.fn(),
     ...overrides,
+  };
+  const post = client.POST as (path: string, options?: Record<string, unknown>) => Promise<unknown>;
+  return {
+    ...client,
+    POST: (path: string, options?: Record<string, unknown>) =>
+      path === "/repos/untracked-opens" ? Promise.resolve(undefined) : post(path, options),
   } as unknown as GeneratedClient;
 }
 

@@ -1235,8 +1235,9 @@ func (s *Handler) refreshWorkspace(
 		return nil, httpapi.Internal("workspace has unsupported item type")
 	}
 
+	prNumber, _ := workspaceAssociatedPRNumber(summary)
 	if err := s.refreshWorkspaceRepoIndex(
-		ctx, kind, host, repo.Owner, repo.Name,
+		ctx, kind, host, repo.Owner, repo.Name, prNumber,
 	); err != nil {
 		return nil, err
 	}
@@ -1303,6 +1304,7 @@ func (s *Handler) refreshWorkspaceRepoIndex(
 	ctx context.Context,
 	kind platform.Kind,
 	host, owner, name string,
+	prNumber int,
 ) error {
 	err := s.syncer.SyncRepoOnProvider(ctx, kind, host, owner, name)
 	if err == nil {
@@ -1320,7 +1322,11 @@ func (s *Handler) refreshWorkspaceRepoIndex(
 		return nil
 	}
 	if errors.Is(err, ghclient.ErrRepoNotTracked) {
-		httpapi.RecordUntrackedRepoOpen(ctx, s.db, string(kind), host, owner, name, "", 0)
+		itemType := ""
+		if prNumber > 0 {
+			itemType = "pr"
+		}
+		httpapi.RecordUntrackedRepoOpen(ctx, s.db, string(kind), host, owner, name, itemType, prNumber)
 		return httpapi.Forbidden(err.Error(), nil)
 	}
 	return httpapi.ProviderCallProblemWithDetail(

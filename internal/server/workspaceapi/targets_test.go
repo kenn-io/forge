@@ -26,7 +26,7 @@ func TestUntrackedWorkspaceRefreshIsRecorded(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	h := New(Deps{DB: database, Syncer: syncer})
 	for _, refresh := range []func() error{
-		func() error { return h.refreshWorkspaceRepoIndex(ctx, "github", "github.com", "acme", "widget") },
+		func() error { return h.refreshWorkspaceRepoIndex(ctx, "github", "github.com", "acme", "widget", 0) },
 		func() error { return h.refreshWorkspaceIssue(ctx, repoID, "github", "github.com", "acme", "widget", 7) },
 		func() error {
 			return h.refreshWorkspacePullRequest(ctx, repoID, "github", "github.com", "acme", "widget", 7)

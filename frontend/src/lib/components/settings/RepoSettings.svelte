@@ -93,6 +93,7 @@
   }
 
   function handleAddSuggestion(repo: UntrackedRepoOpen): void {
+    if (addingSuggestion !== null) return;
     const key = suggestionKey(repo);
     addingSuggestion = key;
     runtime.runCommand(
@@ -363,7 +364,7 @@
               tone="info"
               surface="soft"
               ariaLabel={`Add ${label}`}
-              disabled={addingSuggestion === key}
+              disabled={addingSuggestion !== null}
               onclick={() => handleAddSuggestion(suggestion)}
             >{addingSuggestion === key ? "Adding…" : "Add"}</Button>
           </div>

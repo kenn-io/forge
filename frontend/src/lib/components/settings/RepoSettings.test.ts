@@ -738,6 +738,24 @@ describe("RepoSettings", () => {
     expect(mockRefreshSyncStatus).toHaveBeenCalled();
   });
 
+  it.each(["success", "failure"])("waits for an add to finish before starting another on %s", async (outcome) => {
+    mockListUntrackedOpens.mockResolvedValue([untrackedOpen("acme", "widgets", 4), untrackedOpen("acme", "tools", 2)]);
+    const pending = Promise.withResolvers<ReturnType<typeof settingsResponse>>();
+    mockAddRepo.mockReturnValue(pending.promise);
+    renderRepoSettings({ repos: [], onUpdate: vi.fn() });
+    const first = await screen.findByRole("button", { name: "Add acme/widgets" });
+    const second = screen.getByRole("button", { name: "Add acme/tools" });
+    await fireEvent.click(first);
+    expect((first as HTMLButtonElement).disabled).toBe(true);
+    expect((second as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(second);
+    expect(mockAddRepo).toHaveBeenCalledTimes(1);
+    if (outcome === "success") pending.resolve(settingsResponse([exactRepo("acme", "widgets")]));
+    else pending.reject(new Error("repository not found"));
+    await waitFor(() => expect((second as HTMLButtonElement).disabled).toBe(false));
+    if (outcome === "failure") expect((first as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("names the host for suggestions that share a path across GitLab hosts", async () => {
     mockListUntrackedOpens.mockResolvedValue([
       { ...untrackedOpen("acme", "widgets", 4), provider: "gitlab", host: "gitlab.com" },

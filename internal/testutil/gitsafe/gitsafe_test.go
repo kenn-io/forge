@@ -153,3 +153,38 @@ func replaceEnv(base []string, replacements map[string]string) []string {
 	}
 	return out
 }
+
+func TestPrepareProcessPassesMaintenanceConfigToReceivePack(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("hook requires a POSIX shell")
+	}
+	for _, key := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TERMINAL_PROMPT"} {
+		t.Setenv(key, os.Getenv(key))
+	}
+	cleanup, err := PrepareProcess()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, cleanup()) })
+
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	local := filepath.Join(root, "local")
+	runner := Runner()
+	_, err = runner.Output(t.Context(), root, "rev-parse", "--absolute-git-dir")
+	require.Error(t, err, "fixture must be outside any repository or worktree")
+	_, stderr, err := runner.Run(t.Context(), root, nil, "init", "--bare", remote)
+	require.NoError(t, err, string(stderr))
+	_, stderr, err = runner.Run(t.Context(), root, nil, "init", local)
+	require.NoError(t, err, string(stderr))
+	hook := `#!/bin/sh
+git config --get maintenance.auto > "$(dirname "$0")/config"
+git config --get gc.auto >> "$(dirname "$0")/config"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(remote, "hooks", "pre-receive"), []byte(hook), 0o755))
+	_, stderr, err = runner.Run(t.Context(), local, nil, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "fixture")
+	require.NoError(t, err, string(stderr))
+	_, stderr, err = runner.Run(t.Context(), local, nil, "push", remote, "HEAD:refs/heads/main")
+	require.NoError(t, err, string(stderr))
+	config, err := os.ReadFile(filepath.Join(remote, "hooks", "config"))
+	require.NoError(t, err)
+	assert.Equal(t, "false\n0\n", string(config))
+}

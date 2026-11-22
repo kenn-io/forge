@@ -1,0 +1,41 @@
+/* MesloLGS NF (Apache-2.0, LICENSES/MesloLGS-NF-Apache-2.0.txt) is the
+   default terminal face: it carries the Powerline and Nerd Font glyphs that
+   shell prompts draw. Only the lazily loaded xterm pane imports this file, so
+   the faces stay out of the app stylesheet and the first-paint hold. Vite
+   emits them as separate files (vite.config.ts), and the browser fetches only
+   the faces a terminal draws. */
+@font-face {
+  font-family: "MesloLGS NF";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/MesloLGS-NF-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "MesloLGS NF";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/MesloLGS-NF-Bold.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "MesloLGS NF";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/MesloLGS-NF-Italic.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "MesloLGS NF";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/MesloLGS-NF-Bold-Italic.woff2") format("woff2");
+}
+
+:root {
+  --font-terminal: "MesloLGS NF", var(--font-mono);
+}

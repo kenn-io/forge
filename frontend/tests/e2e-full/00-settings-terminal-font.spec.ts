@@ -234,6 +234,17 @@ test.describe("terminal options popover", () => {
       const terminal = page.getByRole("region", { name: "Terminal panel" }).locator(".terminal-container");
       await expect(terminal.locator(".xterm-screen")).toBeVisible();
       await expect.poll(() => terminalScreenSizeKey(terminal)).not.toBe("0pxx0px");
+      // With no font configured, the terminal loads the bundled MesloLGS NF
+      // regular and bold faces from the built assets.
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            [...document.fonts]
+              .filter((face) => face.family.replace(/^["']|["']$/g, "") === "MesloLGS NF" && face.status === "loaded")
+              .map((face) => `${face.style} ${face.weight}`),
+          ),
+        )
+        .toEqual(expect.arrayContaining(["normal 400", "normal 700"]));
       const initialScreenSize = await terminalScreenSizeKey(terminal);
 
       await page.getByRole("button", { name: "Terminal options" }).click();

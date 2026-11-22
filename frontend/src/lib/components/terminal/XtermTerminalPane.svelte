@@ -16,6 +16,7 @@
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import { WebglAddon } from "@xterm/addon-webgl";
   import "@xterm/xterm/css/xterm.css";
+  import "./terminal-fonts.css";
   import { workspaceTmuxWebSocketPath } from "../../api/workspace-runtime.js";
   import { createWorkspaceSwitchPaneTimer } from "../../instrumentation/workspaceSwitchTiming.js";
   import { traceHeadersForRequest } from "../../instrumentation/traceContext.js";
@@ -670,7 +671,7 @@
     const rootFontFamily = getComputedStyle(
       document.documentElement,
     )
-      .getPropertyValue("--font-mono")
+      .getPropertyValue("--font-terminal")
       .trim();
     return rootFontFamily || "monospace";
   }
@@ -1426,11 +1427,18 @@
       // for unrelated page fonts. The bound keeps terminal construction
       // moving when the face is slow or unavailable; a late completion
       // then repairs the fallback metrics once, provided the pane lives.
+      // The bold face loads too: a family with separate weight files
+      // (the bundled MesloLGS NF) would otherwise cache fallback bold
+      // glyphs in the renderer's texture atlas.
       const fontDescriptor = `${terminalFontSize}px ${primaryTerminalFontFamily(terminalFontFamily)}`;
       const fontCompletion = yield* Deferred.make<"loaded" | "failed">();
       yield* Effect.forkScoped(
         Effect.tryPromise({
-          try: () => fontSet.load(fontDescriptor, TERMINAL_FONT_LOAD_GLYPHS),
+          try: () =>
+            Promise.all([
+              fontSet.load(fontDescriptor, TERMINAL_FONT_LOAD_GLYPHS),
+              fontSet.load(`bold ${fontDescriptor}`, TERMINAL_FONT_LOAD_GLYPHS),
+            ]),
           catch: (cause) => cause,
         }).pipe(
           Effect.match({

@@ -123,6 +123,10 @@ to the application.
   stylesheets with `hold-first-paint.js`), overriding `quiet`'s OS system stacks so
   typography renders consistently across Windows, Linux, and macOS
   (`frontend/src/app.css`, `frontend/vite.config.ts`).
+- Terminals default to the bundled MesloLGS NF (`--font-terminal`, ahead of
+  `--font-mono`) for prompt glyphs. Only the lazy xterm pane imports its faces, which
+  stay separate hashed files rather than inlined, keeping about 4 MB out of the app
+  stylesheet and the first-paint hold (`frontend/src/lib/components/terminal/terminal-fonts.css`).
 - Kit's theme store owns dark/light/system resolution and persistence.
 - E-reader modes are always light: pure white surfaces, pure black text, strong
   edges. Plain e-reader forces black ink with pale fills; color e-reader keeps inline

@@ -302,9 +302,11 @@ const config = {
   // relative makes them resolve against the entry chunk's own already-prefixed
   // location instead. HTML keeps default absolute URLs so the server-side
   // index.html rewrite still applies. Guarded by scripts/check-asset-base-paths.mjs.
+  // CSS-referenced assets (the terminal's MesloLGS NF faces) are relative to
+  // their stylesheet for the same reason.
   experimental: {
     renderBuiltUrl(_filename, { hostType }) {
-      return hostType === "js" ? { relative: true } : undefined;
+      return hostType === "js" || hostType === "css" ? { relative: true } : undefined;
     },
   },
   plugins: [
@@ -626,8 +628,13 @@ const config = {
     outDir: "dist",
     emptyOutDir: true,
     // Inline bundled woff2 fonts into the stylesheet so they work under any
-    // base_path and decode before first paint with holdFirstPaint().
-    assetsInlineLimit: (file) => (file.endsWith(".woff2") ? true : undefined),
+    // base_path and decode before first paint with holdFirstPaint(). The
+    // terminal's MesloLGS NF faces (about 1 MB each) stay separate files so
+    // the browser fetches only the faces a terminal draws.
+    assetsInlineLimit: (file) => {
+      if (!file.endsWith(".woff2")) return undefined;
+      return !path.basename(file).startsWith("MesloLGS-NF-");
+    },
     chunkSizeWarningLimit: 1500,
   },
 } satisfies UserConfig & { test: InlineConfig };

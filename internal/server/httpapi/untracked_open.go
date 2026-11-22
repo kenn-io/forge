@@ -32,10 +32,14 @@ func RecordUntrackedRepoOpen(ctx context.Context, database *db.DB, provider, hos
 		slog.Warn("record untracked repository open", "error", err)
 		return err
 	}
+	return RecordNormalizedUntrackedRepoOpen(ctx, database, repo, itemType, number)
+}
+
+func RecordNormalizedUntrackedRepoOpen(ctx context.Context, database *db.DB, repo db.UntrackedRepoOpen, itemType string, number int) error {
+	slog.Info("opened untracked repository", "provider", repo.Provider, "host", repo.Host, "owner", repo.Owner, "name", repo.Name, "item_type", itemType, "number", number)
 	if err := database.RecordUntrackedRepoOpen(ctx, repo); err != nil {
 		slog.Warn("record untracked repository open", "error", err)
 		return err
 	}
-	slog.Info("opened untracked repository", "provider", repo.Provider, "host", repo.Host, "owner", repo.Owner, "name", repo.Name, "item_type", itemType, "number", number)
 	return nil
 }

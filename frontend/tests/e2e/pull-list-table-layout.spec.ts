@@ -188,10 +188,10 @@ for (const width of [200, 339]) {
 }
 
 for (const [width, headers] of [
-  [340, /^\s*Repo\s+Item\s+Status\s*$/],
-  [560, /^\s*Repo\s+Item\s+Status\s*$/],
-  [561, /^\s*Repo\s+Author\s+Item\s+Status\s+When\s*$/],
-  [719, /^\s*Repo\s+Author\s+Item\s+Status\s+When\s*$/],
+  [340, /^\s*Repo\s+Author\s+Item\s*$/],
+  [560, /^\s*Repo\s+Author\s+Item\s*$/],
+  [561, /^\s*Repo\s+Author\s+Item\s+When\s*$/],
+  [719, /^\s*Repo\s+Author\s+Item\s+When\s*$/],
 ] as const) {
   test(`Table keeps each pull request on one row at ${width}px`, async ({ page }, testInfo) => {
     await mockTableApi(page);
@@ -201,8 +201,6 @@ for (const [width, headers] of [
       Title: "Improve cache refresh across repositories and background tasks",
       Author: "user-a",
       labels,
-      ReviewDecision: "APPROVED",
-      stack: { position: 2, size: 3 },
       CIChecksJSON: JSON.stringify([{ name: "test", status: "completed", conclusion: "failure" }]),
     };
     await page.route("**/api/v1/pulls**", async (route) => {
@@ -220,7 +218,7 @@ for (const [width, headers] of [
     await expect(page.locator(".item-table-headers")).toHaveText(headers);
     const title = (await row.locator(".cell--title").boundingBox())!;
     const middle = title.y + title.height / 2;
-    for (const cell of [".cell--repo", ".cell--status", ".cell--link"]) {
+    for (const cell of [".cell--repo", ".cell--author", ".item-ref", ".item-status", ".cell--link"]) {
       const box = (await row.locator(cell).boundingBox())!;
       expect(box.y, cell).toBeLessThan(middle);
       expect(box.y + box.height, cell).toBeGreaterThan(middle);
@@ -265,16 +263,22 @@ for (const width of [340, 400]) {
     await expect(row).toBeVisible();
     const table = page.locator(".pull-table");
     const tableBox = (await table.boundingBox())!;
+    // The item cell clips what overflows it, so each status icon must end inside it. A
+    // status too wide for the row moves under the title instead of being cut.
+    const cellBox = (await row.locator(".cell--title").boundingBox())!;
     for (const selector of [
       ".review-indicator",
       ".stack-indicator",
       '[data-testid="ci-token-failed"]',
       ".conflict-icon",
-      ".cell--link",
     ]) {
       const box = (await row.locator(selector).boundingBox())!;
-      expect(box.x + box.width, selector).toBeLessThanOrEqual(tableBox.x + tableBox.width);
+      expect(box.x + box.width, selector).toBeLessThanOrEqual(cellBox.x + cellBox.width + 0.5);
+      expect(box.y + box.height, selector).toBeLessThanOrEqual(cellBox.y + cellBox.height + 0.5);
     }
+    const link = (await row.locator(".cell--link").boundingBox())!;
+    expect(link.x + link.width).toBeLessThanOrEqual(tableBox.x + tableBox.width);
+    await expect(row.locator(".cell--author")).toHaveText("user-a");
     expect(await table.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   });
 }
@@ -329,7 +333,7 @@ for (const [width, grouping] of [
       await expect(row.locator(".repo-chip__label")).toHaveAttribute("title", "github.com/acme/widgets");
     }
     // Everything a two-line row reports is still on the one line.
-    const status = row.locator(".cell--status");
+    const status = row.locator(".item-status");
     await expect(status.locator(".review-indicator")).toBeVisible();
     await expect(status.locator(".stack-indicator")).toBeVisible();
     await expect(status.locator('[data-testid="ci-token-failed"]')).toBeVisible();
@@ -340,13 +344,17 @@ for (const [width, grouping] of [
     await expect(row.locator(".cell--author")).toHaveText("user-with-a-long-name");
     await expect(row.locator(".cell--time")).toBeVisible();
 
-    // Status has its own column, so no row's status takes room from a title.
+    // Each row's status ends its item cell, so statuses share a right edge, and a busy
+    // status costs only its own row's title: the calm row's title keeps that room.
     const headers = page.locator(".item-table-headers");
     const ordinary = page.locator(".pull-item--table").filter({ hasNotText: pull.Title });
     const titleCell = (await row.locator(".cell--title").boundingBox())!;
-    const statusCell = (await status.boundingBox())!;
-    expect(statusCell.x).toBeGreaterThanOrEqual(titleCell.x + titleCell.width);
-    for (const column of [".cell--author", ".cell--title", ".cell--status", ".cell--time"]) {
+    const busyStatus = (await status.boundingBox())!;
+    const calmStatus = (await ordinary.locator(".item-status").boundingBox())!;
+    expect(Math.abs(busyStatus.x + busyStatus.width - (calmStatus.x + calmStatus.width))).toBeLessThan(1);
+    expect(busyStatus.x + busyStatus.width).toBeLessThanOrEqual(titleCell.x + titleCell.width + 0.5);
+    expect(calmStatus.width).toBeLessThan(busyStatus.width);
+    for (const column of [".cell--author", ".cell--title", ".cell--time"]) {
       const busy = (await row.locator(column).boundingBox())!;
       const calm = (await ordinary.locator(column).boundingBox())!;
       const header = (await headers.locator(column).boundingBox())!;
@@ -563,7 +571,7 @@ for (const [name, hidden] of [
     const row = page.locator(".pull-item--table").filter({ hasText: pull.Title });
     const headers = page.locator(".item-table-headers");
     const titleWidth = async () => (await row.locator(".cell--title").boundingBox())!.width;
-    await expect(headers).toHaveText(/Repo\s*Author\s*Item\s*Status\s*When/);
+    await expect(headers).toHaveText(/Repo\s*Author\s*Item\s*When/);
     const fullWidth = await titleWidth();
 
     await page.evaluate((hidden) => {
@@ -585,20 +593,16 @@ for (const [name, hidden] of [
     for (const [part, locator] of Object.entries(parts)) {
       await expect(locator, part).toHaveCount((hidden as readonly string[]).includes(part) ? 0 : 1);
     }
-    await expect(headers).toHaveText(
-      hidden.length === 1 ? /^\s*Repo\s*Item\s*Status\s*When\s*$/ : /^\s*Item\s*Status\s*$/,
-    );
+    await expect(headers).toHaveText(hidden.length === 1 ? /^\s*Repo\s*Item\s*When\s*$/ : /^\s*Item\s*$/);
     // What a hidden part never covered still shows.
     await expect(row.locator(".cell--title").getByText("Draft", { exact: true })).toBeVisible();
     await expect(row.locator(".conflict-icon")).toBeVisible();
     await expect(row.getByText(`#${pull.Number}`, { exact: true })).toBeVisible();
 
     // The remaining cells stay under their headers, and the title takes the freed room.
-    for (const column of [".cell--title", ".cell--status"]) {
-      const cell = (await row.locator(column).boundingBox())!;
-      const header = (await headers.locator(column).boundingBox())!;
-      expect(Math.abs(cell.x - header.x), column).toBeLessThan(1);
-    }
+    const cell = (await row.locator(".cell--title").boundingBox())!;
+    const header = (await headers.locator(".cell--title").boundingBox())!;
+    expect(Math.abs(cell.x - header.x)).toBeLessThan(1);
     expect(await titleWidth()).toBeGreaterThan(fullWidth + 60);
   });
 }
@@ -661,7 +665,7 @@ for (const width of [720, 1000]) {
       for (const title of ["Stack root", "Stack child", "Ordinary pull"]) {
         const row = page.locator(".pull-item--table").filter({ hasText: title });
         // A stack member indents inside its Item cell; the columns themselves stay put.
-        for (const column of [".cell--author", ".cell--title", ".cell--status", ".cell--time"]) {
+        for (const column of [".cell--author", ".cell--title", ".cell--time"]) {
           const cell = (await row.locator(column).boundingBox())!;
           const heading = (await headers.locator(column).boundingBox())!;
           expect(Math.abs(cell.x - heading.x), `${title} ${column}`).toBeLessThan(1);

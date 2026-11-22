@@ -5,29 +5,28 @@
     /** Grouping by repository drops the Repo column. */
     repo?: boolean;
     author?: boolean;
-    /** Pull request tables add a Status column between Item and When. */
-    status?: boolean;
     when?: boolean;
+    /** The title's minimum width. Repo and Author shrink to keep it, and only when the table is too narrow for them. */
+    titleMin?: string | undefined;
   }
 
   /**
    * Column tracks for an item table: the grid that Activity and the pull request list share.
    * Rows are subgrids of the element that takes these tracks, so Repo and Author size to their
-   * widest cell up to a cap, Status and When to their content, and Item takes what is left.
+   * widest cell up to a cap, When to its content, and Item takes what is left.
    */
   export function itemTableColumns({
     leading = [],
     repo = true,
     author = true,
-    status = false,
     when = true,
+    titleMin = "0px",
   }: ItemTableColumns = {}): string {
     return [
       ...leading,
       repo ? "fit-content(var(--item-table-repo-max, 220px))" : "",
       author ? "fit-content(var(--item-table-author-max, 140px))" : "",
-      "minmax(0, 1fr)",
-      status ? "auto" : "",
+      `minmax(${titleMin}, 1fr)`,
       when ? "auto" : "",
       "24px",
     ].filter(Boolean).join(" ");
@@ -43,11 +42,10 @@
     leading?: { label: string; class?: string }[];
     repo?: boolean;
     author?: boolean;
-    status?: boolean;
     when?: boolean;
   }
 
-  const { class: className, leading = [], repo = true, author = true, status = false, when = true }: Props = $props();
+  const { class: className, leading = [], repo = true, author = true, when = true }: Props = $props();
 </script>
 
 <div class={["item-table-headers", className]}>
@@ -61,9 +59,6 @@
     <span class="cell cell--author col-author">Author</span>
   {/if}
   <span class="cell cell--title">Item</span>
-  {#if status}
-    <span class="cell cell--status">Status</span>
-  {/if}
   {#if when}
     <span class="cell cell--time col-when">When</span>
   {/if}
@@ -97,7 +92,6 @@
     white-space: nowrap;
   }
 
-  .cell--status,
   .cell--time {
     text-align: right;
   }

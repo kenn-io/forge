@@ -25,7 +25,7 @@
     beforeTitle?: Snippet | undefined;
     /** After the title, such as labels, in the room the title leaves. */
     afterTitle?: Snippet | undefined;
-    /** Fills the Status column; the table must declare one. */
+    /** Ends the item cell, such as CI and review state. Each row takes only the room its own status needs. */
     status?: Snippet | undefined;
     /** Omitted, with its title and label, when the table has no When column. */
     time?: string | undefined;
@@ -99,13 +99,15 @@
   {#if workspaceStatus !== undefined}
     <WorkspaceIndicator status={workspaceStatus} size={12} />
   {/if}
-  <span class={["item-title", afterTitle && "item-title--reserved"]}>{title}</span>
-  {@render afterTitle?.()}
+  <span class="item-main">
+    <span class={["item-title", afterTitle && "item-title--reserved"]}>{title}</span>
+    {@render afterTitle?.()}
+  </span>
   <AgentStatusIndicator state={agentState} />
+  {#if status}
+    <span class="item-status">{@render status()}</span>
+  {/if}
 </span>
-{#if status}
-  <span class="cell cell--status">{@render status()}</span>
-{/if}
 {#if time !== undefined}
   <span class="cell cell--time col-when" title={timeTitle} aria-label={timeLabel}>{time}</span>
 {/if}
@@ -159,11 +161,14 @@
     color: var(--text-secondary);
   }
 
-  /* A stack member indents its item, leaving the other columns in line. */
+  /* A stack member indents its item, leaving the other columns in line. A status too wide
+     for the row moves under the title rather than being cut. */
   .cell--title {
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
+    row-gap: var(--space-1);
     padding-inline-start: var(--item-table-indent, 0px);
   }
 
@@ -171,6 +176,17 @@
     font-size: var(--font-size-sm);
     color: var(--text-muted);
     flex-shrink: 0;
+  }
+
+  /* The title and its labels share whatever the row's other parts leave. With no basis of
+     its own, it never pushes the status onto a second line; only the status's own width can. */
+  .item-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .item-title {
@@ -189,14 +205,14 @@
     max-width: max-content;
   }
 
-  /* Never squeezed: the title gives way instead. */
-  .cell--status {
+  /* Never squeezed: the title gives way instead. Pushed to the end of the item cell,
+     so every row's status ends at the same edge. */
+  .item-status {
     display: inline-flex;
     align-items: center;
-    justify-content: flex-end;
     gap: 6px;
-    min-width: auto;
-    overflow: visible;
+    flex-shrink: 0;
+    margin-inline-start: auto;
   }
 
   .cell--time {

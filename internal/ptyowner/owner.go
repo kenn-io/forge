@@ -661,6 +661,7 @@ func defaultShellCommand() []string {
 // sync so tmux-less and Windows hosts strip the same credentials from
 // panes as tmux-backed ones.
 var sessionVarPrefixes = []string{
+	"KENN_FORGE_ROBOREV_AUTH_KEY",
 	"KENN_FORGE_GITHUB_TOKEN",
 	"KENN_FORGE_GITLAB_TOKEN",
 	"KENN_FORGE_FORGEJO_TOKEN",

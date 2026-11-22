@@ -23,6 +23,15 @@ requires Roborev v0.65.0 or newer and a loopback HTTP endpoint; remote Roborev
 endpoints still work for the Reviews panel when managed-clone initialization is
 off.
 
+For an authenticated daemon, supply `KENN_FORGE_ROBOREV_AUTH_KEY` in Forge's
+service environment and configure the endpoint explicitly. Use HTTPS remotely;
+see [configuration](configuration.md#roborev) for key format and restart/rotation.
+The daemon must see the repository paths used by Forge. Authentication does not
+make remote or cross-container managed-clone initialization work automatically.
+That initialization still requires an origin-only loopback HTTP endpoint and the
+native Roborev CLI's own credentials in its global configuration. Forge's HTTP
+key does not configure the CLI or installed hooks.
+
 Initialization applies only to Forge's managed clones. A repository configured
 with `worktree_base_path`, a source-browser clone, or another user-owned
 checkout keeps its existing user-managed hooks. Forge keeps each worktree's

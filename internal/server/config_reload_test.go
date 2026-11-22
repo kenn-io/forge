@@ -2404,17 +2404,27 @@ func TestConfigReload_RestartRequiredOnFleetSessionsChange(t *testing.T) {
 }
 
 func TestConfigReload_SettingsSavePreservesRestartRequiredFields(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
+	key := strings.Repeat("ab", 32)
+	t.Setenv("KENN_FORGE_ROBOREV_AUTH_KEY", key)
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/status" || r.Header.Get("Authorization") != "Bearer "+key {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"version":"startup-daemon"}`))
+	}))
+	t.Cleanup(daemon.Close)
 	srv, _, cfgPath, _ := setupTestServerWithConfigContent(
-		t, validReloadConfig, &serverfake.MockGH{},
+		t, validReloadConfig+fmt.Sprintf("\n[roborev]\nendpoint=%q\n", daemon.URL), &serverfake.MockGH{},
 	)
 	waitForConfigWatcher(t, srv, 2*time.Second)
 	stream := streamConfigEvents(t, srv)
 	defer stream.Close()
 
+	t.Setenv("KENN_FORGE_ROBOREV_AUTH_KEY", strings.Repeat("cd", 32))
 	writeConfigToml(t, cfgPath, validReloadConfigRestartRequiredFields)
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
@@ -2452,6 +2462,10 @@ func TestConfigReload_SettingsSavePreservesRestartRequiredFields(t *testing.T) {
 	)
 	assert.Equal("flat", reloaded.Activity.ViewMode)
 	assert.Equal("30d", reloaded.Activity.TimeRange)
+
+	status := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/roborev/status", nil)
+	require.Equal(http.StatusOK, status.Code, status.Body.String())
+	assert.Contains(status.Body.String(), `"version":"startup-daemon"`)
 }
 
 // A rejected reload must still accumulate the candidate's token env

@@ -18,7 +18,7 @@ func RoborevProxyAPIConfig() huma.Config {
 }
 
 func (s *Handlers) RegisterRoborevProxyAPI(api huma.API) {
-	proxy := roborevProxy((*s.Cfg).RoborevEndpoint())
+	proxy := roborevProxy(s.Endpoint, s.Client.Transport)
 	for _, method := range []string{
 		http.MethodGet,
 		http.MethodPost,

@@ -3165,6 +3165,7 @@ func resolveTmuxCommand(command []string) ([]string, error) {
 // or API keys that an agent process running inside an untrusted
 // workspace must not be able to read.
 var sessionVarPrefixes = []string{
+	"KENN_FORGE_ROBOREV_AUTH_KEY",
 	"KENN_FORGE_GITHUB_TOKEN",
 	"KENN_FORGE_GITLAB_TOKEN",
 	"KENN_FORGE_FORGEJO_TOKEN",

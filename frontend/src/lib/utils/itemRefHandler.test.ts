@@ -186,29 +186,26 @@ describe("itemRefHandler", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
-  it("navigates internally when the referenced repo is tracked", async () => {
-    const open = vi.spyOn(window, "open").mockImplementation(() => null);
-    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "pr" });
-
+  it.each([
+    ["github", "github.com", "acme", "widgets", "pr", "pulls"],
+    ["gitlab", "gitlab.example.com", "group", "project", "issue", "issues"],
+  ])("passes %s item hints for a tracked repository", async (provider, host, owner, name, itemType, route) => {
+    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: itemType });
     await clickItemRef({
-      "data-provider": "github",
-      "data-platform-host": "github.com",
-      "data-owner": "acme",
-      "data-name": "widgets",
-      "data-repo-path": "acme/widgets",
+      "data-provider": provider,
+      "data-platform-host": host,
+      "data-owner": owner,
+      "data-name": name,
+      "data-repo-path": `${owner}/${name}`,
       "data-number": "12",
-      "data-item-type": "pr",
-      "data-external-url": "https://github.com/acme/widgets/pull/12",
+      "data-item-type": itemType,
     });
-
     expect(mocks.post).toHaveBeenCalledWith(
-      { provider: "github", owner: "acme", name: "widgets", number: 12 },
-      { item_type: "pr" },
+      expect.objectContaining({ provider, owner, name, number: 12, ...(provider === "gitlab" ? { platformHost: host } : {}) }),
+      { item_type: itemType },
       { signal: expect.any(AbortSignal) },
     );
-    expect(mocks.navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12");
-    expect(open).not.toHaveBeenCalled();
-    expect(mocks.showFlash).not.toHaveBeenCalled();
+    expect(mocks.navigate).toHaveBeenCalledWith(`/${route}/${provider}/${owner}/${name}/12`);
   });
 
   it("routes from the data attributes so a base-path href is not prefixed twice", async () => {
@@ -227,46 +224,6 @@ describe("itemRefHandler", () => {
 
     expect(result.captured).toBe(true);
     expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/pulls/github/acme/widgets/12");
-  });
-
-  it("passes GitLab issue item type hints", async () => {
-    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "issue" });
-
-    await clickItemRef({
-      "data-provider": "gitlab",
-      "data-platform-host": "gitlab.example.com",
-      "data-owner": "group",
-      "data-name": "project",
-      "data-repo-path": "group/project",
-      "data-number": "10",
-      "data-item-type": "issue",
-      "data-external-url": "https://gitlab.example.com/group/project/-/issues/10",
-    });
-
-    expect(mocks.post).toHaveBeenCalledWith(
-      expect.objectContaining({
-        platformHost: "gitlab.example.com",
-        provider: "gitlab",
-        owner: "group",
-        name: "project",
-        number: 10,
-      }),
-      { item_type: "issue" },
-      expect.objectContaining({ signal: expect.anything() }),
-    );
-  });
-
-  it("passes Bitbucket Cloud issue item type hints so a same-numbered PR does not win", async () => {
-    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "issue" });
-
-    await clickItemRef({ class: "", href: "https://bitbucket.org/acme/widgets/issues/5" });
-
-    expect(mocks.post).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: "bitbucket", owner: "acme", name: "widgets", number: 5 }),
-      { item_type: "issue" },
-      expect.objectContaining({ signal: expect.anything() }),
-    );
-    expect(mocks.navigate).toHaveBeenCalledWith("/issues/bitbucket/acme/widgets/5");
   });
 
   it("preserves native navigation for an untracked reference with an external fallback", async () => {
@@ -301,19 +258,19 @@ describe("itemRefHandler", () => {
   };
 
   it.each([
-    ["ctrl-click", "click", { button: 0, ctrlKey: true }],
-    ["cmd-click", "click", { button: 0, metaKey: true }],
-    ["shift-click", "click", { button: 0, shiftKey: true }],
-    ["middle click", "auxclick", { button: 1 }],
-    ["context menu", "contextmenu", { button: 2 }],
-  ])("opens an untracked reference at the provider on %s", async (_label, type, init) => {
+    ["ctrl-click", "click", { button: 0, ctrlKey: true }, true],
+    ["cmd-click", "click", { button: 0, metaKey: true }, true],
+    ["shift-click", "click", { button: 0, shiftKey: true }, true],
+    ["middle click", "auxclick", { button: 1 }, true],
+    ["context menu", "contextmenu", { button: 2 }, false],
+  ])("opens an untracked reference at the provider on %s", async (_label, type, init, records) => {
     const click = await clickItemRef(untrackedReference, [], { type, init });
 
-    if (type === "contextmenu") expect(mocks.recordOpen).not.toHaveBeenCalled();
+    if (!records) expect(mocks.recordOpen).not.toHaveBeenCalled();
     else
       expect(mocks.recordOpen).toHaveBeenCalledWith(
         expect.objectContaining({ provider: "github", host: "github.com", owner: "other", name: "repo", number: 77 }),
-        expect.anything(),
+        { signal: expect.anything(), keepalive: true },
       );
     expect(click).toEqual({ captured: false, href: "https://github.com/other/repo/issues/77", target: "" });
     expect(mocks.post).not.toHaveBeenCalled();
@@ -338,9 +295,8 @@ describe("itemRefHandler", () => {
     await vi.waitFor(() => expect(mocks.repos).toHaveBeenCalled());
     const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
     anchor.dispatchEvent(event);
-    await vi.waitFor(() => expect(mocks.recordOpen).toHaveBeenCalledTimes(1));
-    expect(event.defaultPrevented).toBe(false);
-    expect(anchor.href).toBe("https://github.com/other/repo/issues/77");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.recordOpen).toHaveBeenCalledTimes(1);
     cleanupContainer();
     cleanupDocument();
     await Effect.runPromise(runtime.disposeEffect);

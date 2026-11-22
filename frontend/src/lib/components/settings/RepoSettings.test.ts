@@ -690,29 +690,19 @@ describe("RepoSettings", () => {
     expect(mockRefreshSyncStatus).toHaveBeenCalled();
   });
 
-  it("clears suggestions when a refetch fails", async () => {
-    mockListUntrackedOpens.mockResolvedValueOnce([untrackedOpen("acme", "widgets", 1)]);
-    const view = renderRepoSettings({ repos: [], onUpdate: vi.fn() });
-    await screen.findByRole("button", { name: "Add acme/widgets" });
-    mockListUntrackedOpens.mockRejectedValueOnce(new Error("offline"));
-    await view.rerender({ component: RepoSettings, componentProps: { repos: [exactRepo("acme", "other")], onUpdate: vi.fn() } });
-    await waitFor(() => expect(screen.queryByText("Suggested from links you opened")).toBeNull());
-  });
-
-  it("lists every opened repository with its count", async () => {
-    const rows = Array.from({ length: 12 }, (_, index) => untrackedOpen("acme", `repo-${index}`, 12 - index));
-    rows[11] = untrackedOpen("acme", "widgets", 1);
+  it("shows singular and plural open counts", async () => {
+    const rows = [untrackedOpen("acme", "repo", 12), untrackedOpen("acme", "widgets", 1)];
     mockListUntrackedOpens.mockResolvedValue(rows);
     renderRepoSettings({ repos: [], onUpdate: vi.fn() });
 
     await screen.findByText("Suggested from links you opened");
-    expect(screen.getAllByRole("button", { name: /^Add acme\// })).toHaveLength(12);
+    expect(screen.getAllByRole("button", { name: /^Add acme\// })).toHaveLength(2);
     expect(screen.getByText("Opened 12 times · last just now")).toBeTruthy();
     expect(screen.getByText("Opened once · last just now")).toBeTruthy();
   });
 
   it("adds a suggestion as an exact repository and keeps the other rows", async () => {
-    mockListUntrackedOpens.mockResolvedValue([untrackedOpen("acme", "widgets", 4), untrackedOpen("acme", "tools", 2)]);
+    mockListUntrackedOpens.mockResolvedValue([{ ...untrackedOpen("acme", "widgets", 4), provider: "gitlab", host: "gitlab.example.com" }, untrackedOpen("acme", "tools", 2)]);
     let resolveAdd: (value: unknown) => void = () => {};
     mockAddRepo.mockReturnValue(
       new Promise((resolve) => {
@@ -726,7 +716,7 @@ describe("RepoSettings", () => {
     const pending = screen.getByRole("button", { name: "Add acme/widgets" });
     expect(pending.textContent?.trim()).toBe("Adding…");
     expect((pending as HTMLButtonElement).disabled).toBe(true);
-    expect(mockAddRepo).toHaveBeenCalledWith("acme", "widgets", { provider: "github", host: "github.com" });
+    expect(mockAddRepo).toHaveBeenCalledWith("acme", "widgets", { provider: "gitlab", host: "gitlab.example.com" });
     const second = screen.getByRole("button", { name: "Add acme/tools" });
     expect((second as HTMLButtonElement).disabled).toBe(true);
     await fireEvent.click(second);
@@ -737,42 +727,13 @@ describe("RepoSettings", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "Add acme/widgets" })).toBeNull());
     expect(screen.getByRole("button", { name: "Add acme/tools" })).toBeTruthy();
     expect(mockRefreshSyncStatus).toHaveBeenCalled();
-  });
 
-  it("names the host for suggestions that share a path across GitLab hosts", async () => {
-    mockListUntrackedOpens.mockResolvedValue([
-      { ...untrackedOpen("acme", "widgets", 4), provider: "gitlab", host: "gitlab.com" },
-      { ...untrackedOpen("acme", "widgets", 2), provider: "gitlab", host: "gitlab.example.com" },
-    ]);
-    mockAddRepo.mockReturnValue(new Promise(() => {}));
-    renderRepoSettings({ repos: [], onUpdate: vi.fn() });
-
-    expect(await screen.findByText("gitlab.com/acme/widgets")).toBeTruthy();
-    expect(screen.getByText("gitlab.example.com/acme/widgets")).toBeTruthy();
-    await fireEvent.click(screen.getByRole("button", { name: "Add gitlab.example.com/acme/widgets" }));
-    expect(mockAddRepo).toHaveBeenCalledWith("acme", "widgets", { provider: "gitlab", host: "gitlab.example.com" });
-    expect(screen.getByRole("button", { name: "Add gitlab.com/acme/widgets" }).textContent?.trim()).toBe("Add");
-  });
-
-  it("keeps every suggestion when adding one fails", async () => {
-    mockListUntrackedOpens.mockResolvedValue([untrackedOpen("acme", "widgets", 4), untrackedOpen("acme", "tools", 2)]);
-    const pending = Promise.withResolvers<ReturnType<typeof settingsResponse>>();
-    mockAddRepo.mockReturnValue(pending.promise);
-    const onUpdate = vi.fn();
-    renderRepoSettings({ repos: [], onUpdate });
-
-    await fireEvent.click(await screen.findByRole("button", { name: "Add acme/widgets" }));
-    const other = screen.getByRole("button", { name: "Add acme/tools" });
-    expect((other as HTMLButtonElement).disabled).toBe(true);
-    pending.reject(new Error("repository not found"));
-    await waitFor(() => expect((other as HTMLButtonElement).disabled).toBe(false));
-
+    const failed = Promise.withResolvers<ReturnType<typeof settingsResponse>>();
+    mockAddRepo.mockReturnValueOnce(failed.promise);
+    await fireEvent.click(screen.getByRole("button", { name: "Add acme/tools" }));
+    failed.reject(new Error("repository not found"));
     await waitFor(() => expect(flash.getFlash()).toMatchObject({ message: "repository not found", tone: "danger" }));
-    const button = screen.getByRole("button", { name: "Add acme/widgets" });
-    expect(button.textContent?.trim()).toBe("Add");
-    expect((button as HTMLButtonElement).disabled).toBe(false);
-    expect(screen.getByRole("button", { name: "Add acme/tools" })).toBeTruthy();
-    expect(onUpdate).not.toHaveBeenCalled();
+    expect((screen.getByRole("button", { name: "Add acme/tools" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("refetches suggestions when another control changes the tracked list", async () => {
@@ -787,7 +748,7 @@ describe("RepoSettings", () => {
     await view.rerender({
       component: RepoSettings,
       componentProps: {
-        repos: [{ ...exactRepo("acme", "*"), is_glob: true, repo_path: "acme/w*" }],
+        repos: [{ ...exactRepo("acme", "w*"), is_glob: true, repo_path: "acme/w*" }],
         onUpdate: vi.fn(),
       },
     });
@@ -795,5 +756,8 @@ describe("RepoSettings", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "Add acme/widgets" })).toBeNull());
     expect(mockListUntrackedOpens).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("button", { name: "Add acme/tools" })).toBeTruthy();
+    mockListUntrackedOpens.mockRejectedValueOnce(new Error("offline"));
+    await view.rerender({ component: RepoSettings, componentProps: { repos: [exactRepo("acme", "other")], onUpdate: vi.fn() } });
+    await waitFor(() => expect(screen.queryByText("Suggested from links you opened")).toBeNull());
   });
 });

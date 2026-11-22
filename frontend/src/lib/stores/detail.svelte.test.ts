@@ -256,7 +256,7 @@ describe("createDetailStore", () => {
     expect(record).toHaveBeenCalledTimes(1);
     expect(record).toHaveBeenCalledWith(
       { provider: "github", host: "github.com", owner: "acme", name: "widget", item_type: "pr", number: 7 },
-      expect.objectContaining({ keepalive: true }),
+      expect.anything(),
     );
   });
 

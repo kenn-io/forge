@@ -204,7 +204,13 @@ func (c *Client) GetLandingChange(ctx context.Context, ref platform.RepoRef, cha
 		return platform.LandingChange{}, platform.ErrLandingIdentityMismatch
 	}
 	d := platform.LandingChange{Ref: change, TargetID: pr.GetBase().GetRepo().GetID(), TargetBranch: pr.GetBase().GetRef(), Merged: pr.Merged, MergeSHA: pr.MergeCommitSHA}
-	d.Title = pr.Title
+	d.Title, d.Description = pr.Title, pr.Body
+	if pr.Labels != nil {
+		d.Labels = make([]string, 0, len(pr.Labels))
+		for _, label := range pr.Labels {
+			d.Labels = append(d.Labels, label.GetName())
+		}
+	}
 	d.Author, d.Merger = landingAccount(pr.User), landingAccount(pr.MergedBy)
 	d.OpenedAt, d.MergedAt = landingTime(pr.CreatedAt), landingTime(pr.MergedAt)
 	if pr.Head != nil {

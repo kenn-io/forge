@@ -174,6 +174,30 @@ func TestLandingTitle(t *testing.T) {
 	}
 }
 
+func TestLandingDescriptionAndLabels(t *testing.T) {
+	for _, tc := range []struct {
+		name, body  string
+		description *string
+		labels      []string
+	}{
+		{"reported", `{"id":7,"number":3,"body":"Synthetic description","labels":[{"name":"bug"},{"name":"docs"}]}`, new("Synthetic description"), []string{"bug", "docs"}},
+		{"no labels", `{"id":7,"number":3,"body":"","labels":[]}`, new(""), []string{}},
+		{"absent", `{"id":7,"number":3}`, nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hc := &http.Client{Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(tc.body)), Request: req}, nil
+			})}
+			c, err := github.NewClient(github.ClientConfig{Read: hc, Write: hc, Notifications: hc, Clock: time.Now})
+			require.NoError(t, err)
+			d, err := c.GetLandingChange(t.Context(), platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "example", Name: "project"}, platform.LandingChangeRef{ID: 7, Number: 3})
+			require.NoError(t, err)
+			assert.Equal(t, tc.description, d.Description)
+			assert.Equal(t, tc.labels, d.Labels)
+		})
+	}
+}
+
 func TestLandingSourceRangeRequiresObjectIDs(t *testing.T) {
 	calls := 0
 	hc := &http.Client{Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {

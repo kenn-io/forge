@@ -79,11 +79,12 @@ func resultBytes(r Result) int64 {
 	for _, o := range r.Observations {
 		d := o.Change
 		n += stringsBytes(d.TargetBranch, d.Terminal, d.TerminalEvidence, o.Reason, o.FailureStage, o.NextPage) + stringsBytes(o.Source...)
-		for _, s := range []*string{d.Title, d.MergeSHA, d.SquashSHA, d.SourceHead, d.SourceBase} {
+		for _, s := range []*string{d.Title, d.Description, d.MergeSHA, d.SquashSHA, d.SourceHead, d.SourceBase} {
 			if s != nil {
 				n += int64(len(*s))
 			}
 		}
+		n += stringsBytes(d.Labels...)
 		for _, a := range []*platform.Account{d.Author, d.Merger} {
 			if a != nil {
 				n += int64(len(a.Type))

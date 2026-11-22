@@ -72,9 +72,13 @@ type LandingChange struct {
 	SourceBase                      *string
 	SourceCount                     *int64
 	Terminal, TerminalEvidence      string
-	// Title, roles and UTC lifecycle times are observations, not landing proof.
-	// Nil means unreported; complete landing coverage does not certify these fields.
+	// Title, description, labels, roles and UTC lifecycle times are
+	// observations, not landing proof. Nil means unreported; complete landing
+	// coverage does not certify these fields. Labels are names; an empty,
+	// non-nil slice means the change has none.
 	Title              *string
+	Description        *string
+	Labels             []string
 	Author, Merger     *Account
 	OpenedAt, MergedAt *time.Time
 }

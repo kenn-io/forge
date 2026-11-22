@@ -3,7 +3,6 @@ package gitclone
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -70,16 +69,10 @@ func isolatedCommitFixtureDir(t testing.TB) string {
 	require := require.New(t)
 	require.Empty(os.Getenv("GIT_DIR"), "package TestMain must remove inherited repository bindings")
 	require.Equal("1", os.Getenv("GIT_CONFIG_NOSYSTEM"))
-	globalConfig := os.Getenv("GIT_CONFIG_GLOBAL")
-	require.FileExists(globalConfig, "package TestMain must install a scratch global config")
-	excludes := filepath.Join(filepath.Dir(globalConfig), "global-excludes")
-	config, err := gitsafe.Runner().Output(t.Context(), "", "config", "--global", "--list")
-	require.NoError(err)
-	require.ElementsMatch([]string{"maintenance.auto=false", "gc.auto=0", "core.excludesfile=" + excludes}, strings.Split(strings.TrimSpace(string(config)), "\n"),
+	config, err := os.ReadFile(os.Getenv("GIT_CONFIG_GLOBAL"))
+	require.NoError(err, "package TestMain must install a scratch global config")
+	require.Equal(gitsafe.SharedConfig, string(config),
 		"shared global config must hold only the package defaults")
-	contents, err := os.ReadFile(excludes)
-	require.NoError(err)
-	require.Empty(contents, "scratch global ignore file must be empty")
 	dir := t.TempDir()
 	_, err = gitsafe.Runner().Output(t.Context(), dir, "rev-parse", "--absolute-git-dir")
 	require.Error(err, "commit fixture must be outside all repositories and worktrees")

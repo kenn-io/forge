@@ -5,6 +5,7 @@ import { makeGeneratedClient } from "../testing/generated-client.js";
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(),
+  recordOpen: vi.fn(),
   repos: vi.fn(),
   navigate: vi.fn(),
   navigateToURL: vi.fn(),
@@ -53,6 +54,7 @@ async function clickItemRef(
     makeGeneratedClient({
       RepositoriesService: {
         listRepos: mocks.repos,
+        recordUntrackedRepoOpen: mocks.recordOpen,
         resolveRepoItem: mocks.post,
         resolveRepoItemOnHost: mocks.post,
       },
@@ -117,6 +119,7 @@ describe("itemRefHandler", () => {
     document.body.innerHTML = "";
     vi.restoreAllMocks();
     mocks.post.mockReset();
+    mocks.recordOpen.mockReset();
     mocks.repos.mockReset();
     mocks.navigate.mockReset();
     mocks.navigateToURL.mockReset();
@@ -200,7 +203,7 @@ describe("itemRefHandler", () => {
 
     expect(mocks.post).toHaveBeenCalledWith(
       { provider: "github", owner: "acme", name: "widgets", number: 12 },
-      undefined,
+      { item_type: "pr" },
       { signal: expect.any(AbortSignal) },
     );
     expect(mocks.navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12");
@@ -224,6 +227,16 @@ describe("itemRefHandler", () => {
 
     expect(result.captured).toBe(true);
     expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/pulls/github/acme/widgets/12");
+  });
+
+  it("passes GitHub item type hints to resolution", async () => {
+    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "issue" });
+    await clickItemRef({ class: "", href: "https://github.com/acme/widgets/issues/12" });
+    expect(mocks.post).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "github", owner: "acme", name: "widgets", number: 12 }),
+      { item_type: "issue" },
+      expect.objectContaining({ signal: expect.anything() }),
+    );
   });
 
   it("passes GitLab PR item type hints", async () => {
@@ -333,9 +346,41 @@ describe("itemRefHandler", () => {
   ])("opens an untracked reference at the provider on %s", async (_label, type, init) => {
     const click = await clickItemRef(untrackedReference, [], { type, init });
 
+    if (type === "contextmenu") expect(mocks.recordOpen).not.toHaveBeenCalled();
+    else
+      expect(mocks.recordOpen).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: "github", host: "github.com", owner: "other", name: "repo", number: 77 }),
+        expect.anything(),
+      );
     expect(click).toEqual({ captured: false, href: "https://github.com/other/repo/issues/77", target: "" });
     expect(mocks.post).not.toHaveBeenCalled();
     expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it("records a worklist click once when both handlers receive it", async () => {
+    const { initItemRefHandler } = await import("./itemRefHandler.js");
+    const runtime = makeAppRuntime(
+      makeGeneratedClient({
+        RepositoriesService: { listRepos: mocks.repos, recordUntrackedRepoOpen: mocks.recordOpen },
+      }),
+    );
+    const container = document.createElement("div");
+    const anchor = document.createElement("a");
+    anchor.className = "item-ref";
+    for (const [name, value] of Object.entries(untrackedReference)) anchor.setAttribute(name, value);
+    container.appendChild(anchor);
+    document.body.appendChild(container);
+    const cleanupDocument = initItemRefHandler(runtime, undefined, document);
+    const cleanupContainer = initItemRefHandler(runtime, undefined, container);
+    await vi.waitFor(() => expect(mocks.repos).toHaveBeenCalled());
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    anchor.dispatchEvent(event);
+    await vi.waitFor(() => expect(mocks.recordOpen).toHaveBeenCalledTimes(1));
+    expect(event.defaultPrevented).toBe(false);
+    expect(anchor.href).toBe("https://github.com/other/repo/issues/77");
+    cleanupContainer();
+    cleanupDocument();
+    await Effect.runPromise(runtime.disposeEffect);
   });
 
   it("keeps the Forge route of a tracked reference on ctrl-click", async () => {

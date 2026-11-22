@@ -78,6 +78,8 @@ import type {
   ResolveRepoItemParams,
   ResolveRepoItemPathParameters,
   SettingsResponse,
+  UntrackedOpenInputBody,
+  UntrackedRepoOpen,
 } from "../models";
 
 import { orvalFetch } from "../../runtime.ts";
@@ -1203,5 +1205,54 @@ export const listRepoSummaries = async (options?: Parameters<typeof orvalFetch>[
   return orvalFetch<RepoSummaryResponse[]>(getListRepoSummariesUrl(), {
     ...options,
     method: "GET",
+  });
+};
+
+export const getListUntrackedRepoOpensUrl = () => {
+  return `/repos/untracked-opens`;
+};
+
+/**
+ * @summary List untracked repository opens
+ */
+export const listUntrackedRepoOpens = async (
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<UntrackedRepoOpen[]> => {
+  return orvalFetch<UntrackedRepoOpen[]>(getListUntrackedRepoOpensUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getRecordUntrackedRepoOpenUrl = () => {
+  return `/repos/untracked-opens`;
+};
+
+/**
+ * @summary Record an untracked repository open
+ */
+export const recordUntrackedRepoOpen = async (
+  untrackedOpenInputBody: NonReadonly<UntrackedOpenInputBody>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<void> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return orvalFetch<void>(getRecordUntrackedRepoOpenUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(untrackedOpenInputBody),
   });
 };

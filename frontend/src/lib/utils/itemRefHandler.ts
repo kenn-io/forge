@@ -52,9 +52,7 @@ export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(
     const { provider, platformHost, owner, name, repoPath, number, itemType } = ref;
     const result = yield* executeGeneratedApiRequest("resolve item reference", (client, signal) => {
       const routeRef = { provider, platformHost, owner, name, repoPath };
-      // GitLab and Bitbucket number issues and pull requests separately.
-      const separateNumbers = ["gitlab", "bitbucket"].includes(canonicalProvider(provider));
-      const itemTypeHint = separateNumbers ? itemType : undefined;
+      const itemTypeHint = itemType;
       const query = itemTypeHint === undefined ? undefined : { item_type: itemTypeHint };
       return providerUsesHostRoute(routeRef)
         ? client.RepositoriesService.resolveRepoItemOnHost({ ...providerHostRouteParams(routeRef), number }, query, {
@@ -152,6 +150,8 @@ export function resolveItemReference(
   );
 }
 
+const recordedOpenEvents = new WeakSet<Event>();
+
 export function initItemRefHandler(
   runtime: AppRuntime,
   onNavigate?: (ref: RoutableItemRef) => void,
@@ -219,6 +219,25 @@ export function initItemRefHandler(
     // page for it.
     const browserURL = isTracked(ref) ? null : safeExternalURL(ref.externalUrl);
     if (browserURL) anchor.href = browserURL;
+    if (browserURL && !recordedOpenEvents.has(e) && (e.type === "click" || (e.type === "auxclick" && e.button === 1))) {
+      recordedOpenEvents.add(e);
+      runtime.runCommand(
+        executeGeneratedApiRequest("record untracked repository open", (client, signal) =>
+          client.RepositoriesService.recordUntrackedRepoOpen(
+            {
+              provider: ref.provider,
+              host: ref.platformHost ?? "",
+              owner: ref.owner,
+              name: ref.name,
+              ...(ref.itemType ? { item_type: ref.itemType } : {}),
+              number: ref.number,
+            },
+            { signal, keepalive: true },
+          ),
+        ),
+        { operation: "record untracked repository open", safeContext: {}, onFailure: () => {} },
+      );
+    }
 
     const plainClick = e.type === "click" && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
     if (!plainClick || (anchor.target && anchor.target.toLowerCase() !== "_self")) return;

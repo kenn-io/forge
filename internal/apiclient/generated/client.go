@@ -11049,6 +11049,31 @@ func (o *PreviewReposRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// RecordUntrackedRepoOpenRequestOptions is the options needed to make a request to RecordUntrackedRepoOpen.
+type RecordUntrackedRepoOpenRequestOptions struct {
+	Body *RecordUntrackedRepoOpenBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *RecordUntrackedRepoOpenRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *RecordUntrackedRepoOpenRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *RecordUntrackedRepoOpenRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *RecordUntrackedRepoOpenRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // LaunchHostRuntimeSessionRequestOptions is the options needed to make a request to LaunchHostRuntimeSession.
 type LaunchHostRuntimeSessionRequestOptions struct {
 	Body *LaunchHostRuntimeSessionBody
@@ -13513,6 +13538,8 @@ type ClientInterface interface {
 	BulkAddReposWithResponse(ctx context.Context, options *BulkAddReposRequestOptions, reqEditors ...runtime.RequestEditorFn) (*BulkAddReposResp, error)
 	PreviewReposWithResponse(ctx context.Context, options *PreviewReposRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PreviewReposResp, error)
 	ListRepoSummariesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListRepoSummariesResp, error)
+	ListUntrackedRepoOpensWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListUntrackedRepoOpensResp, error)
+	RecordUntrackedRepoOpenWithResponse(ctx context.Context, options *RecordUntrackedRepoOpenRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RecordUntrackedRepoOpenResp, error)
 	ListRoborevConfiguredRepositoriesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListRoborevConfiguredRepositoriesResp, error)
 	GetRoborevStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetRoborevStatusResp, error)
 	ListHostRuntimeSessionsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListHostRuntimeSessionsResp, error)
@@ -37352,6 +37379,128 @@ func (c *Client) ListRepoSummariesWithResponse(ctx context.Context, reqEditors .
 	}
 }
 
+// ListUntrackedRepoOpens List untracked repository opens
+func (c *Client) ListUntrackedRepoOpensWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListUntrackedRepoOpensResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/repos/untracked-opens",
+		Method:     "GET",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/repos/untracked-opens")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ListUntrackedRepoOpensResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ListUntrackedRepoOpensErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ListUntrackedRepoOpensResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListUntrackedRepoOpensResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(ListUntrackedRepoOpensErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListUntrackedRepoOpensErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// RecordUntrackedRepoOpen Record an untracked repository open
+func (c *Client) RecordUntrackedRepoOpenWithResponse(ctx context.Context, options *RecordUntrackedRepoOpenRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RecordUntrackedRepoOpenResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/repos/untracked-opens",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/repos/untracked-opens")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &RecordUntrackedRepoOpenResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(RecordUntrackedRepoOpenErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(RecordUntrackedRepoOpenErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RecordUntrackedRepoOpenErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // ListRoborevConfiguredRepositories List repositories configured for Roborev
 func (c *Client) ListRoborevConfiguredRepositoriesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListRoborevConfiguredRepositoriesResp, error) {
 	var err error
@@ -48709,6 +48858,36 @@ func (c *Client) ListRepoSummariesRaw(ctx context.Context, httpClient *http.Clie
 	return httpClient.Do(req)
 }
 
+// ListUntrackedRepoOpensRaw returns an unread response. The caller must close its body.
+func (c *Client) ListUntrackedRepoOpensRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/repos/untracked-opens",
+		Method:     "GET",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// RecordUntrackedRepoOpenRaw returns an unread response. The caller must close its body.
+func (c *Client) RecordUntrackedRepoOpenRaw(ctx context.Context, httpClient *http.Client, options *RecordUntrackedRepoOpenRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/repos/untracked-opens",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // ListRoborevConfiguredRepositoriesRaw returns an unread response. The caller must close its body.
 func (c *Client) ListRoborevConfiguredRepositoriesRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -56425,6 +56604,38 @@ func NewListRepoSummariesRequest(ctx context.Context, baseURL string, reqEditors
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewListUntrackedRepoOpensRequest constructs a typed request for a caller-owned transport.
+func NewListUntrackedRepoOpensRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/repos/untracked-opens",
+		Method:     "GET",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewRecordUntrackedRepoOpenRequest constructs a typed request for a caller-owned transport.
+func NewRecordUntrackedRepoOpenRequest(ctx context.Context, baseURL string, options *RecordUntrackedRepoOpenRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/repos/untracked-opens",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewListRoborevConfiguredRepositoriesRequest constructs a typed request for a caller-owned transport.
 func NewListRoborevConfiguredRepositoriesRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -60918,6 +61129,8 @@ type BulkAddReposBody = BulkAddReposRequest
 
 type PreviewReposBody = RepoPreviewRequest
 
+type RecordUntrackedRepoOpenBody = UntrackedOpenInputBody
+
 type LaunchHostRuntimeSessionBody = LaunchHostRuntimeSessionInputBody
 
 type UpdateSettingsBody = UpdateSettingsRequest
@@ -63166,6 +63379,12 @@ type PreviewReposErrorResponse = ProblemError
 type ListRepoSummariesResponse []RepoSummaryResponse
 
 type ListRepoSummariesErrorResponse = ProblemError
+
+type ListUntrackedRepoOpensResponse []UntrackedRepoOpen
+
+type ListUntrackedRepoOpensErrorResponse = ProblemError
+
+type RecordUntrackedRepoOpenErrorResponse = ProblemError
 
 type ListRoborevConfiguredRepositoriesResponse = RoborevConfiguredRepositoriesResponse
 
@@ -66639,6 +66858,23 @@ type ListRepoSummariesResp struct {
 	Error                             *ListRepoSummariesErrorResponse
 	JSON200                           *ListRepoSummariesResponse
 	ApplicationProblemPlusJSONDefault *ListRepoSummariesErrorResponse
+}
+
+type ListUntrackedRepoOpensResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListUntrackedRepoOpensErrorResponse
+	JSON200                           *ListUntrackedRepoOpensResponse
+	ApplicationProblemPlusJSONDefault *ListUntrackedRepoOpensErrorResponse
+}
+
+type RecordUntrackedRepoOpenResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RecordUntrackedRepoOpenErrorResponse
+	ApplicationProblemPlusJSONDefault *RecordUntrackedRepoOpenErrorResponse
 }
 
 type ListRoborevConfiguredRepositoriesResp struct {
@@ -71748,6 +71984,26 @@ type TriggerSyncResponse struct {
 type UnpreparedWorkspace struct {
 	Reason    string    `json:"reason"`
 	Workspace Workspace `json:"workspace"`
+}
+
+type UntrackedOpenInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string `json:"$schema,omitempty"`
+	Host     string  `json:"host"`
+	ItemType *string `json:"item_type,omitempty"`
+	Name     string  `json:"name"`
+	Number   *int64  `json:"number,omitempty"`
+	Owner    string  `json:"owner"`
+	Provider string  `json:"provider"`
+}
+
+type UntrackedRepoOpen struct {
+	Count        int64  `json:"count"`
+	Host         string `json:"host"`
+	LastOpenedAt string `json:"last_opened_at"`
+	Name         string `json:"name"`
+	Owner        string `json:"owner"`
+	Provider     string `json:"provider"`
 }
 
 type UpdateBranchBody struct {

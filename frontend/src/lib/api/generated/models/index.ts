@@ -965,6 +965,8 @@ export * from "./unresolvePrReviewThreadOnHostPathParameters.ts";
 export * from "./unresolvePrReviewThreadPathParameters.ts";
 export * from "./unsetStarredItemType.ts";
 export * from "./unsetStarredParams.ts";
+export * from "./untrackedOpenInputBody.ts";
+export * from "./untrackedRepoOpen.ts";
 export * from "./updateBranchBody.ts";
 export * from "./updateDevboxWorkspaceTargetPathParameters.ts";
 export * from "./updateDevboxWorkspaceViewStatePathParameters.ts";

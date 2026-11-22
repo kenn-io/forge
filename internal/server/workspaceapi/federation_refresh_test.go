@@ -120,6 +120,26 @@ func TestRefreshProviderWorkspaceFactsSyncsOnlyRequestedItem(t *testing.T) {
 	}
 }
 
+func TestRefreshProviderWorkspaceFactsRecordsUntrackedItems(t *testing.T) {
+	database := dbtest.Open(t)
+	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget"})
+	require.NoError(t, err)
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Hour, nil, nil)
+	t.Cleanup(syncer.Stop)
+	handler := New(Deps{DB: database, Syncer: syncer, Resolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database})})
+	for _, itemType := range []string{db.WorkspaceItemTypeIssue, db.WorkspaceItemTypePullRequest} {
+		err := handler.RefreshProviderWorkspaceFacts(t.Context(), providerplane.WorkspaceLaunchRequest{
+			Repository: providerplane.RepositoryRoute{Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget"},
+			ItemType:   itemType, ItemNumber: 7,
+		})
+		require.Error(t, err)
+	}
+	rows, err := database.ListUntrackedRepoOpens(t.Context())
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, 2, rows[0].Count)
+}
+
 func TestRefreshWorkspaceUsesHubProjectionWithoutLocalSyncer(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

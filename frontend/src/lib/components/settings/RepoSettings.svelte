@@ -9,6 +9,7 @@
   import type { ConfigRepo } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import { createRepoLabelFormatter } from "../../utils/repo-label.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
   import XIcon from "@lucide/svelte/icons/x";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
@@ -68,6 +69,11 @@
     );
     return providers.size > 1;
   });
+
+  const suggestionLabels = $derived(createRepoLabelFormatter(
+    suggestions.map((row) => ({ provider: row.provider, platformHost: row.host, owner: row.owner, name: row.name })),
+    { showOrgNames: true },
+  ));
 
   function repoKey(repo: ConfigRepo): string {
     return `${repo.provider}/${repo.platform_host}/${repo.repo_path || `${repo.owner}/${repo.name}`}`.toLowerCase();
@@ -344,7 +350,7 @@
     <p>Suggested from links you opened</p>
     {#each suggestions as suggestion (suggestionKey(suggestion))}
       {@const key = suggestionKey(suggestion)}
-      {@const label = `${suggestion.owner}/${suggestion.name}`}
+      {@const label = suggestionLabels.format({ provider: suggestion.provider, platformHost: suggestion.host, owner: suggestion.owner, name: suggestion.name })}
       <div class="repo-row">
         <div class="repo-line">
           <div class="repo-main">

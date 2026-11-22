@@ -738,6 +738,21 @@ describe("RepoSettings", () => {
     expect(mockRefreshSyncStatus).toHaveBeenCalled();
   });
 
+  it("names the host for suggestions that share a path across GitLab hosts", async () => {
+    mockListUntrackedOpens.mockResolvedValue([
+      { ...untrackedOpen("acme", "widgets", 4), provider: "gitlab", host: "gitlab.com" },
+      { ...untrackedOpen("acme", "widgets", 2), provider: "gitlab", host: "gitlab.example.com" },
+    ]);
+    mockAddRepo.mockReturnValue(new Promise(() => {}));
+    renderRepoSettings({ repos: [], onUpdate: vi.fn() });
+
+    expect(await screen.findByText("gitlab.com/acme/widgets")).toBeTruthy();
+    expect(screen.getByText("gitlab.example.com/acme/widgets")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Add gitlab.example.com/acme/widgets" }));
+    expect(mockAddRepo).toHaveBeenCalledWith("acme", "widgets", { provider: "gitlab", host: "gitlab.example.com" });
+    expect(screen.getByRole("button", { name: "Add gitlab.com/acme/widgets" }).textContent?.trim()).toBe("Add");
+  });
+
   it("keeps every suggestion when adding one fails", async () => {
     mockListUntrackedOpens.mockResolvedValue([untrackedOpen("acme", "widgets", 4), untrackedOpen("acme", "tools", 2)]);
     mockAddRepo.mockRejectedValue(new Error("repository not found"));

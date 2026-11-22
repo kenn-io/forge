@@ -1,8 +1,8 @@
 # Change settings in the app
 
-Open the gear in the app header to change everyday Kenn Forge behavior. The
-menu groups related settings and includes a search box for jumping straight to
-a category.
+To change everyday Kenn Forge behavior, open the gear in the app header. The
+menu groups related settings and includes a search box to jump straight to a
+category.
 
 <figure class="workflow-shot">
   <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/settings-overview-light.svg" alt="Forge Settings with the category menu and repository controls visible in light mode">
@@ -25,28 +25,30 @@ a category.
 | Visible modes | Choose which pages appear in the app header. |
 | Appearance | Choose the color theme and contrast, and show the desktop PR sidebar as two-line rows or as the table Activity uses, with Repo, Author, Item, and When columns and each pull request's status at the end of its Item cell. Sidebars 560px or narrower hide When and shorten Repo and Author to leave room for titles. Narrower sidebars, focus lists, and phone lists use two-line rows. Switches under **Shown in the PR table** hide the repository, author, labels, CI counts, review state, stack position, star, or time from the table. These choices apply only to the browser you set them in. |
 
-Forms save from the panel where you make the change. You can move between
-categories without discarding an unfinished form. Repository actions such as
-add, refresh, and remove run when you confirm the action.
+Each form saves from its own panel, and you can switch between categories
+without losing unfinished edits. Repository actions such as add, refresh, and
+remove run when you confirm them.
 
 ## Pause automatic sync
 
-Enable **Sync → Airplane mode** to pause automatic background sync after any
-running update finishes. Relay updates, opening an item, and manual **Sync**
-still work. Click **airplane mode** in the status bar to return to its setting.
+To pause automatic background sync after any running update finishes, turn on
+**Sync → Airplane mode**. Relay updates, opening an item, and manual **Sync**
+still work while it is on. To jump back to the setting later, click
+**airplane mode** in the status bar.
 
-Airplane mode is off by default and remembered across restarts. It applies to
-the Forge instance you are viewing. A fleet spoke pauses its local background
-refresh; its hub has a separate setting. See [Airplane mode](configuration.md#airplane-mode)
-for the configuration-file option.
+Airplane mode defaults to off, and Forge remembers your setting across
+restarts. It applies to the Forge instance you are viewing. On a fleet spoke,
+it pauses local background refresh, and the hub keeps its own setting. For the
+configuration-file option, see [Airplane mode](configuration.md#airplane-mode).
 
 ## ACP fonts
 
-Under **Workspaces → ACP**, choose a font family and size for all ACP harnesses.
-The font must be installed on the machine running your browser. Leave the family
-blank to use the app's default fonts. Terminal appearance has separate settings.
+To set a font family and size for all ACP harnesses, open **Workspaces → ACP**.
+The font must be installed on the machine running your browser. If you leave
+the family blank, Forge uses the app's default fonts. Terminal appearance has
+separate settings.
 
-Changes apply to open ACP chats and persist in `config.toml`:
+Forge applies your changes to open ACP chats and saves them in `config.toml`:
 
 ```toml
 [acp]
@@ -56,7 +58,7 @@ font_size = 16
 
 ## When to edit the configuration file
 
-Settings does not store provider credentials. Use
-[Configuration](configuration.md) for credentials and for options that do not
-have an app control, including the Roborev endpoint, tmux command, and Docs
-folders.
+Settings does not store provider credentials. For credentials and for options
+without an app control, such as the Roborev endpoint, tmux command, and Docs
+folders, edit the configuration file as described in
+[Configuration](configuration.md).

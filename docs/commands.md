@@ -1,19 +1,25 @@
 # Commands
 
-Run `kenn-forge` or `kenn-forge --help` for the complete command tree. Flags
-are scoped to the commands that use them; check command help before scripting.
+To see the complete Kenn Forge command tree, run `kenn-forge` or
+`kenn-forge --help`. Flags apply only to the commands that use them. Check a
+command's help output before scripting.
 
 ## Set up local embeddings
+
+Run local embeddings setup from the CLI:
 
 ```sh
 kenn-forge embeddings local
 kenn-forge embeddings local --yes --config /path/to/config.toml
 ```
 
-Setup asks before downloads and before switching to the built-in server. Restart
-Forge to apply the settings.
+Setup asks for confirmation before downloading files and before switching to
+the built-in server. After it finishes, restart Forge to apply the new
+settings.
 
 ## Manage the daemon
+
+Start, inspect, restart, or stop the background daemon:
 
 ```sh
 kenn-forge daemon start
@@ -23,16 +29,17 @@ kenn-forge daemon restart
 kenn-forge daemon stop
 ```
 
-`daemon start` and `daemon stop` are idempotent. Start returns after the daemon
-publishes its ready identity and safely reuses a compatible running process.
-Use `daemon restart` after changing startup configuration or replacing the
-binary.
+Both `daemon start` and `daemon stop` are idempotent. `daemon start` returns
+after the daemon publishes its ready identity. If a compatible process is
+already running, `daemon start` safely reuses it. After you change startup
+configuration or replace the binary, run `daemon restart`.
 
-On Unix, stop sends SIGTERM once. If the daemon does not exit within 15 seconds,
-the command leaves it running and directs you to inspect and terminate it
-manually rather than risking a force-kill of a reused PID.
+On Unix, `daemon stop` sends SIGTERM once. If the daemon does not exit within
+2 minutes 16 seconds, which the CLI prints as `2m16s`, the command leaves it
+running and tells you to inspect and terminate it manually instead of
+force-killing a PID that may have been reused.
 
-For foreground development or diagnosis, use:
+For foreground development or diagnosis, run `serve` directly:
 
 ```sh
 kenn-forge serve
@@ -43,20 +50,22 @@ Foreground starts reject a second process using the same data directory.
 
 ## Check build information
 
+Print the version and build metadata for the binary:
+
 ```sh
 kenn-forge version
 kenn-forge version --json
 ```
 
-The JSON object contains `name`, `version`, `commit`, and `buildDate`.
+The JSON output includes `name`, `version`, `commit`, and `buildDate`, where
 `buildDate` is a UTC RFC3339 timestamp or `unknown` for an uninjected build.
-This command does not read config or connect to a daemon.
+This command does not read configuration or connect to a daemon.
 
 ## Query and sync data
 
-The CLI includes commands for `activity`, `issues`, `pulls`, `repos`,
-`repos summaries`, `stacks`, `workspaces`, `rate-limits`, and `sync`. Use the
-command help before scripting an output shape:
+You can query and sync Forge data from the CLI with `activity`, `issues`,
+`pulls`, `repos`, `repos summaries`, `stacks`, `workspaces`, `rate-limits`, and
+`sync`. Before scripting against a command's output shape, check its help:
 
 ```sh
 kenn-forge pulls --help
@@ -65,20 +74,30 @@ kenn-forge repos summaries
 kenn-forge sync --help
 ```
 
-`pulls` and `issues` print summaries, at most 50 by default, with a stderr hint when more match.
-Use `--full` for full API records, also 50 at a time, or `pulls get` / `issues get` for one full record. Add `--limit 0` to return every match.
+By default, `pulls` and `issues` print summaries capped at 50 results and write
+a hint to stderr when more items match. To get full API records 50 at a time,
+pass `--full`. To fetch a single full record, run `pulls get` or `issues get`.
+To return every match, add `--limit 0`.
 
-Pull summaries contain `number`, `repo`, `title`, `author`, `state`, `is_draft`, `ci_status`, `review_decision`, `last_activity_at`, and `url`. Issue summaries contain `number`, `repo`, `title`, `author`, `state`, `last_activity_at`, and `url`. The `repo` object contains `provider`, `platform_host`, `owner`, and `name`.
-The JSON, YAML, and JSONL formats all print these summaries. Scripts that read bodies or other full-record fields need `--full`; scripts that need every match also need `--limit 0`.
+Pull summaries include `number`, `repo`, `title`, `author`, `state`,
+`is_draft`, `ci_status`, `review_decision`, `last_activity_at`, and `url`.
+Issue summaries include `number`, `repo`, `title`, `author`, `state`,
+`last_activity_at`, and `url`. In both, the `repo` object includes `provider`,
+`platform_host`, `owner`, and `name`. JSON, YAML, and JSONL output all print
+these summaries. If a script reads bodies or other full-record fields, pass
+`--full`. If it needs every match, pass `--limit 0` as well.
 
-`repos` lists configured repositories; `repos summaries` lists their summaries.
-The old `repo-summaries` spelling remains callable for at least one release,
-hidden from help and completion, with a deprecation warning on stderr.
+`repos` lists your configured repositories, and `repos summaries` lists their
+summaries. The older `repo-summaries` spelling stays callable for at least one
+release, hidden from help and completion, and prints a deprecation warning to
+stderr.
 
-Use `kenn-forge quickstart` for API request examples and output formats.
-Use `kenn-forge mcp quickstart` for MCP connectivity and client configuration.
+For API request examples and output formats, run `kenn-forge quickstart`. For
+MCP connectivity and client configuration, run `kenn-forge mcp quickstart`.
 
 ## Relay an API request
+
+Send authenticated HTTP requests to the selected daemon:
 
 ```sh
 kenn-forge api list
@@ -87,11 +106,14 @@ kenn-forge api POST /api/v1/sync
 kenn-forge api -i GET /api/v1/pulls
 ```
 
-`kenn-forge api` discovers the selected daemon and supplies its local
-credential. Use `--data @-` to read a request body from stdin. Exit status 0
-means 2xx, 1 means another HTTP status, and 2 means no request was made.
+`kenn-forge api` finds the selected daemon and attaches its local credential.
+To read a request body from stdin, pass `--data @-`. The command exits with
+status `0` for a 2xx response, `1` for any other HTTP status, and `2` if no
+request was made.
 
 ## Manage historical archives
+
+Start, inspect, pause, and report on historical activity archives:
 
 ```sh
 kenn-forge archive start --all
@@ -102,21 +124,27 @@ kenn-forge archive report --days 7
 kenn-forge archive report --start 2026-07-01 --end 2026-07-07 --verbose
 ```
 
-Use repeated `--repo` flags for multiple repositories. Reports default to
-Markdown. Add `--format json` or `--output PATH` when needed.
+To target more than one repository, repeat the `--repo` flag. Reports default
+to Markdown, and you can add `--format json` or `--output PATH` when you need
+JSON or file output.
 
-See [Historical activity archive](archive.md) for coverage and status rules.
+For coverage and status rules, see [Historical activity archive](archive.md).
 
 ## Read configuration
+
+Read a configuration value from the CLI:
 
 ```sh
 kenn-forge config read port
 kenn-forge config read --config /path/to/config.toml port
 ```
 
-Use Settings or edit TOML for normal configuration changes.
+For normal configuration changes, use Settings in the app or edit your TOML
+file.
 
 ## Set up and manage a fleet
+
+Configure a hub or spoke and manage fleet enrollment:
 
 ```sh
 kenn-forge fleet setup hub --tailscale --tailscale-login you@example.com
@@ -131,18 +159,21 @@ kenn-forge fleet abort-preparation
 kenn-forge fleet revoke ENROLLMENT_ID
 ```
 
-Setup requires exactly one publication mode. `--tailscale` manages a Tailscale
-Serve mapping and browser identity; `--origin` uses operator-managed private
-HTTPS and never invokes Tailscale. See [Federated Forge](federated-fleet.md) for
-the complete enrollment and verification workflow, including
-[replacing a hub](federated-fleet.md#replace-the-hub).
+`fleet setup` requires exactly one publication mode. `--tailscale` manages a
+Tailscale Serve mapping and browser identity, while `--origin` uses
+operator-managed private HTTPS and never invokes Tailscale. For the complete
+enrollment and verification workflow, including
+[replacing a hub](federated-fleet.md#replace-the-hub), see
+[Federated Forge](federated-fleet.md).
 
-For a service with a custom config, pass the same `--config /path/to/config.toml`
-to every fleet command. Joining and preparing use the existing local daemon;
-they do not reinstall its service. `fleet setup` is not needed just to move an
-already configured spoke to a new hub.
+If your service uses a custom config file, pass the same
+`--config /path/to/config.toml` flag to every fleet command. Joining and
+preparing use the existing local daemon without reinstalling its service. To
+move an already configured spoke to a new hub, you do not need `fleet setup`.
 
 ## Manage Docs folders
+
+List, add, or remove `[[doc_folders]]` entries in the selected config file:
 
 ```sh
 kenn-forge docs list-folders
@@ -151,12 +182,10 @@ kenn-forge docs add-folder --id project --daemon kata-main ~/project-docs
 kenn-forge docs remove-folder project
 ```
 
-These commands manage `[[doc_folders]]` in the selected config file.
-
 ## Install agent activity hooks
 
-Run `kenn-forge agent setup` to connect Claude Code and Codex to Forge.
-To manage hooks without MCP registration, use:
+To connect Claude Code and Codex to Forge, run `kenn-forge agent setup`. If
+you want to manage hooks without MCP registration, use `agent-hook`:
 
 ```sh
 kenn-forge agent-hook install
@@ -165,11 +194,12 @@ kenn-forge agent-hook uninstall
 kenn-forge agent-hook uninstall --agent codex
 ```
 
-Without `--agent`, install or remove every supported integration. Installed
-hooks send lifecycle activity to the running daemon. Codex asks you to review
-the installed commands through `/hooks` once. On Windows, Claude hooks need
-Claude Code 2.1.139 or later. Rerun `kenn-forge agent-hook install` after
-upgrading Forge so it rewrites existing Claude hooks.
+When you omit `--agent`, `install` and `uninstall` act on every supported
+integration. The installed hooks report lifecycle activity to the running
+daemon. Codex prompts you once through `/hooks` to review the installed
+commands. On Windows, Claude hooks need Claude Code 2.1.139 or later. After
+upgrading Forge, rerun `kenn-forge agent-hook install` so it rewrites existing
+Claude hooks.
 
 ## Stand in for the GitHub CLI
 
@@ -178,10 +208,13 @@ kenn-forge gh pr list --json number,title | cat
 ```
 
 `kenn-forge gh` answers supported `gh` pull request queries from Forge data
-and passes everything else to the real `gh`. A `gh` link to `kenn-forge` does
-the same. See [GitHub CLI shim](gh-shim.md).
+and passes everything else to the real `gh`. A `gh` link to `kenn-forge`
+behaves the same way. For details, see [GitHub CLI shim](gh-shim.md).
 
 ## Manage GitHub App credentials
+
+Use these commands when you want sync or archive reads to use GitHub App
+installation tokens:
 
 ```sh
 kenn-forge github-app create
@@ -194,12 +227,11 @@ kenn-forge github-app delete
 kenn-forge github-app open
 ```
 
-Use these commands when sync or archive reads should use GitHub App
-installation tokens. `create --org your-org` creates an organization-owned
-App; omit `--org` for personal ownership. Creation includes a browser-based
-installation step. See [GitHub App reads](configuration.md#github-app-reads)
-for setup and rate limits.
+Pass `--org your-org` to create an organization-owned App, or omit `--org` for
+a personally owned one. Creation includes a browser-based installation step.
+For setup details and rate limits, see
+[GitHub App reads](configuration.md#github-app-reads).
 
-`--role archive` creates a separate installation route
-for historical archive work. Comments, reviews, state changes, and merges
-still use the user PAT chain.
+Passing `--role archive` creates a separate installation route for historical
+archive work. Comments, reviews, state changes, and merges still use the user
+PAT chain.

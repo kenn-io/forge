@@ -1244,6 +1244,12 @@ func TestE2EGitPushCarriesMaintenanceConfigToReceivePack(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("hook requires a POSIX shell")
 	}
+	for _, key := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TERMINAL_PROMPT"} {
+		t.Setenv(key, os.Getenv(key))
+	}
+	cleanup, err := gitsafe.PrepareProcess()
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, cleanup()) })
 	root := gitfixture.ScratchDir(t)
 	bare := filepath.Join(root, "remote.git")
 	local := filepath.Join(root, "local")

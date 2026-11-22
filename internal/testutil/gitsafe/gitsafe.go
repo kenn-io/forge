@@ -144,8 +144,8 @@ func PinGoDirectories() error {
 	return nil
 }
 
-// Runner returns a real Git runner bound to the test binary's shared isolated
-// config. It creates no files or directories; RunIsolatedMain owns that setup.
+// Runner returns a real Git runner bound to the isolated process config.
+// RunIsolatedMain or PrepareProcess owns that setup.
 func Runner() gitcmd.Runner {
 	return gitcmd.Runner{
 		Env:                         isolatedCommandEnv(os.Environ()),

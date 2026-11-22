@@ -67,9 +67,10 @@
   // At or below this width the table drops When to leave room for titles.
   const NARROW_TABLE_MAX_WIDTH = 560;
   // The item cell's minimum: half the row in a narrow table, and otherwise room for any one
-  // status indicator. Repo and Author shrink to leave it.
+  // status indicator, never more than half the row so large text cannot push the table past
+  // its sidebar. Repo and Author shrink to leave it.
   const NARROW_TABLE_TITLE_MIN = "50%";
-  const TABLE_TITLE_MIN = "10rem";
+  const TABLE_TITLE_MIN = "min(10rem, 50%)";
 
   interface Props {
     getDetailTab?: () => string;

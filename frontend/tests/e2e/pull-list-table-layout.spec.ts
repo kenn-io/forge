@@ -545,22 +545,29 @@ test("Stack switched off leaves the table only the control that expands a stack"
   await expect(page.getByText("Third of three", { exact: true })).toBeVisible();
 });
 
-test("a large text size never makes the table wider than its sidebar", async ({ page }) => {
-  await mockTableApi(page);
-  await page.addInitScript(() => {
-    localStorage.setItem("kenn-forge:pullListLayout", "table");
-    localStorage.setItem("kenn-forge:groupingMode", "flat");
-    localStorage.setItem("kenn-forge-sidebar-width", "720");
+// 561px is the narrowest table whose item minimum is set in rem, so 64px text makes that
+// minimum wider than the sidebar unless it is capped.
+for (const [width, fontSize] of [
+  [720, 40],
+  [561, 64],
+] as const) {
+  test(`a ${fontSize}px text size never makes a ${width}px table wider than its sidebar`, async ({ page }) => {
+    await mockTableApi(page);
+    await page.addInitScript((width) => {
+      localStorage.setItem("kenn-forge:pullListLayout", "table");
+      localStorage.setItem("kenn-forge:groupingMode", "flat");
+      localStorage.setItem("kenn-forge-sidebar-width", String(width));
+    }, width);
+    await page.goto("/pulls");
+    const table = page.locator(".pull-table");
+    await expect(table.locator(".pull-item--table").first()).toBeVisible();
+    await page.evaluate((size) => (document.documentElement.style.fontSize = `${size}px`), fontSize);
+    const box = (await table.boundingBox())!;
+    const link = (await table.locator(".pull-item--table .cell--link").first().boundingBox())!;
+    expect(link.x + link.width).toBeLessThanOrEqual(box.x + box.width + 1);
+    expect(await table.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   });
-  await page.goto("/pulls");
-  const table = page.locator(".pull-table");
-  await expect(table.locator(".pull-item--table").first()).toBeVisible();
-  await page.evaluate(() => (document.documentElement.style.fontSize = "40px"));
-  const box = (await table.boundingBox())!;
-  const link = (await table.locator(".pull-item--table .cell--link").first().boundingBox())!;
-  expect(link.x + link.width).toBeLessThanOrEqual(box.x + box.width + 1);
-  expect(await table.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-});
+}
 
 for (const [name, hidden] of [
   ["only Author", ["author"]],

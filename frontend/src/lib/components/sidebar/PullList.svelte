@@ -66,8 +66,10 @@
   const TABLE_MIN_WIDTH = 340;
   // At or below this width the table drops When to leave room for titles.
   const NARROW_TABLE_MAX_WIDTH = 560;
-  // In a narrow table the title keeps this share of the row; Repo and Author shrink to leave it.
+  // The item cell's minimum: half the row in a narrow table, and otherwise room for any one
+  // status indicator. Repo and Author shrink to leave it.
   const NARROW_TABLE_TITLE_MIN = "50%";
+  const TABLE_TITLE_MIN = "10rem";
 
   interface Props {
     getDetailTab?: () => string;
@@ -558,7 +560,7 @@
           tableLayout && narrowTable && "pull-table--narrow",
         ]}
         style:grid-template-columns={tableLayout
-          ? itemTableColumns({ ...tableColumns, titleMin: narrowTable ? NARROW_TABLE_TITLE_MIN : undefined })
+          ? itemTableColumns({ ...tableColumns, titleMin: narrowTable ? NARROW_TABLE_TITLE_MIN : TABLE_TITLE_MIN })
           : undefined}
       >
         {#if tableLayout}

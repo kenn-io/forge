@@ -220,6 +220,15 @@
     margin-inline-start: auto;
   }
 
+  /* The CI counts are one cluster; in a table it wraps between counts too, so no count is
+     ever cut. Two-line rows keep it on one line to hold their height. */
+  .item-status :global(.ci) {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 100%;
+    row-gap: var(--space-1);
+  }
+
   .cell--time {
     font-size: var(--font-size-xs);
     color: var(--text-muted);

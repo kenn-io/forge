@@ -229,12 +229,28 @@ for (const [width, headers] of [
   });
 }
 
-// 580px has no title minimum, so long repository and author names at their caps leave the
-// item cell narrower than a busy status.
-for (const [width, author, repoName] of [
-  [340, "user-a", "widgets"],
-  [400, "user-a", "widgets"],
-  [580, "user-with-a-very-long-name", "a-repository-with-a-very-long-name"],
+const checkRuns = (count: number, status: string, conclusion: string, prefix: string) =>
+  Array.from({ length: count }, (_, index) => ({ name: `${prefix}-${index}`, status, conclusion }));
+const fewChecks = [
+  { name: "build", status: "completed", conclusion: "success" },
+  { name: "test", status: "completed", conclusion: "failure" },
+  { name: "lint", status: "in_progress", conclusion: "" },
+];
+// Every outcome with a multi-digit count makes one CI cluster that cannot break.
+const manyChecks = [
+  ...checkRuns(12, "completed", "failure", "fail"),
+  ...checkRuns(14, "in_progress", "", "run"),
+  ...checkRuns(11, "completed", "unrecognized", "odd"),
+  ...checkRuns(136, "completed", "success", "pass"),
+  ...checkRuns(23, "completed", "skipped", "skip"),
+];
+
+// At 561px, the narrowest table with When, long repository and author names reach their
+// column caps; the item cell keeps its minimum, so even that CI cluster fits.
+for (const [width, author, repoName, checks] of [
+  [340, "user-a", "widgets", fewChecks],
+  [400, "user-a", "widgets", fewChecks],
+  [561, "user-with-a-very-long-name", "a-repository-with-a-very-long-name", manyChecks],
 ] as const) {
   test(`a busy pull request keeps its status and link inside a ${width}px table`, async ({ page }) => {
     await mockTableApi(page);
@@ -251,11 +267,7 @@ for (const [width, author, repoName] of [
       ReviewDecision: "APPROVED",
       MergeableState: "dirty",
       stack: { position: 2, size: 3 },
-      CIChecksJSON: JSON.stringify([
-        { name: "build", status: "completed", conclusion: "success" },
-        { name: "test", status: "completed", conclusion: "failure" },
-        { name: "lint", status: "in_progress", conclusion: "" },
-      ]),
+      CIChecksJSON: JSON.stringify(checks),
     };
     await page.route("**/api/v1/pulls**", async (route) => {
       if (new URL(route.request().url()).pathname !== "/api/v1/pulls") return route.fallback();
@@ -278,9 +290,11 @@ for (const [width, author, repoName] of [
       ".review-indicator",
       ".stack-indicator",
       '[data-testid="ci-token-failed"]',
+      ".item-status .ci",
       ".conflict-icon",
     ]) {
       const box = (await row.locator(selector).boundingBox())!;
+      expect(box.x, selector).toBeGreaterThanOrEqual(cellBox.x - 0.5);
       expect(box.x + box.width, selector).toBeLessThanOrEqual(cellBox.x + cellBox.width + 0.5);
       expect(box.y + box.height, selector).toBeLessThanOrEqual(cellBox.y + cellBox.height + 0.5);
     }

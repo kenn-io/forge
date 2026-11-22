@@ -209,9 +209,10 @@ to the application.
   shared column, so a busy status costs only that row's title. Label chips take only the
   room the title leaves.
 - Activity is the reference layout for the PR table, not the other way around. Author
-  shows at every table width. At 560px and below the PR table drops When, keeps half the
-  row for the title so Repo and Author shrink instead, and moves a status that still
-  does not fit under its title rather than cutting it. Only a PR sidebar under 340px uses
+  shows at every table width. At 560px and below the PR table drops When and keeps half
+  the row for the item cell; wider, the item cell keeps 10rem. Repo and Author shrink to
+  leave it. A status that still does not fit moves under its title and wraps between
+  indicators and CI counts rather than being cut. Only a PR sidebar under 340px uses
   two-line rows (`frontend/src/lib/components/sidebar/PullList.svelte`).
 - Compact label chips outrank the title on two-line list rows: the title yields to a small floor,
   below which it shrinks only to keep the status, number, and badge in view, and a chip

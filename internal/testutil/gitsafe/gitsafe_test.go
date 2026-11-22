@@ -110,6 +110,11 @@ func TestPrepareProcessKeepsHomeAndUsesScratchIgnoreAndAttributes(t *testing.T) 
 	assert.Equal(callerHome, os.Getenv("HOME"))
 	assert.Equal(callerXDG, os.Getenv("XDG_CONFIG_HOME"))
 	root := filepath.Dir(os.Getenv("GIT_CONFIG_GLOBAL"))
+	for key, expected := range map[string]string{"maintenance.auto": "false", "gc.auto": "0"} {
+		out, err := Runner().Output(t.Context(), t.TempDir(), "config", "--global", "--get", key)
+		require.NoError(err, key)
+		assert.Equal(expected, strings.TrimSpace(string(out)), key)
+	}
 	for _, key := range []string{"core.excludesFile", "core.attributesFile"} {
 		out, err := Runner().Output(t.Context(), t.TempDir(), "config", "--global", "--path", "--get", key)
 		require.NoError(err, key)

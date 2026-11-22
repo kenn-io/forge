@@ -1240,34 +1240,6 @@ func TestRunRejectsMarkdownVideoInterruptWithoutClip(t *testing.T) {
 	require.ErrorContains(t, err, "-markdown-video-interrupt needs -markdown-video")
 }
 
-func TestE2EGitPushCarriesMaintenanceConfigToReceivePack(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("hook requires a POSIX shell")
-	}
-	for _, key := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TERMINAL_PROMPT"} {
-		t.Setenv(key, os.Getenv(key))
-	}
-	cleanup, err := gitsafe.PrepareProcess()
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, cleanup()) })
-	root := gitfixture.ScratchDir(t)
-	bare := filepath.Join(root, "remote.git")
-	local := filepath.Join(root, "local")
-	require.NoError(t, e2eGit(t.Context(), root, "init", "--bare", bare))
-	require.NoError(t, e2eGit(t.Context(), root, "init", local))
-	marker := filepath.Join(bare, "hooks", "config")
-	hook := `#!/bin/sh
-git config --get maintenance.auto > "$(dirname "$0")/config"
-git config --get gc.auto >> "$(dirname "$0")/config"
-`
-	require.NoError(t, os.WriteFile(filepath.Join(bare, "hooks", "pre-receive"), []byte(hook), 0o755))
-	require.NoError(t, e2eGit(t.Context(), local, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "fixture"))
-	require.NoError(t, e2eGit(t.Context(), local, "push", bare, "HEAD:refs/heads/main"))
-	result, err := os.ReadFile(marker)
-	require.NoError(t, err)
-	assert.Equal(t, "false\n0\n", string(result))
-}
-
 func TestE2EServerMainIgnoresCallerGitSettings(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and launches the e2e server")

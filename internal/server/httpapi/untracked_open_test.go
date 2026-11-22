@@ -26,14 +26,12 @@ func TestUntrackedOpenLogsWhenCounterWriteFails(t *testing.T) { //nolint:paralle
 	err = RecordUntrackedRepoOpen(t.Context(), database, syncer, "github", "github.com", "acme", "other", "issue", 42)
 	require.Error(t, err)
 	var entry map[string]any
-	require.NoError(t, json.NewDecoder(&logs).Decode(&entry))
-	require.Equal(t, "opened untracked repository", entry["msg"])
-	require.Equal(t, "github", entry["provider"])
-	require.Equal(t, "github.com", entry["host"])
-	require.Equal(t, "acme", entry["owner"])
-	require.Equal(t, "other", entry["name"])
-	require.Equal(t, "issue", entry["item_type"])
-	require.EqualValues(t, 42, entry["number"])
+	decoder := json.NewDecoder(&logs)
+	require.NoError(t, decoder.Decode(&entry))
+	require.NoError(t, decoder.Decode(&entry))
+	require.Equal(t, "WARN", entry["level"])
+	require.Equal(t, "record untracked repository open", entry["msg"])
+	require.NotEmpty(t, entry["error"])
 }
 
 func TestUntrackedOpenDistinguishesProvidersOnSameHost(t *testing.T) {

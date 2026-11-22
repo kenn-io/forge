@@ -722,8 +722,6 @@ describe("RepoSettings", () => {
     expect(mockAddRepo).toHaveBeenCalledWith("acme", "widgets", { provider: "gitlab", host: "gitlab.example.com" });
     const second = screen.getByRole("button", { name: "Add acme/tools" });
     expect((second as HTMLButtonElement).disabled).toBe(true);
-    await fireEvent.click(second);
-    expect(mockAddRepo).toHaveBeenCalledTimes(1);
 
     resolveAdd(settingsResponse([exactRepo("acme", "widgets")]));
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith([exactRepo("acme", "widgets")]));

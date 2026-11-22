@@ -1,5 +1,6 @@
 import { GeneratedProblemResponse } from "../api/runtime.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
+import { makeGeneratedClientFromRouteMocks } from "../testing/test/route-mock-client.js";
 import { startTestTelemetry } from "../testing/telemetry.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -334,12 +335,11 @@ function mockClient(overrides: Partial<GeneratedClient> = {}): GeneratedClient {
     TRACE: vi.fn(),
     ...overrides,
   };
-  const post = client.POST as (path: string, options?: Record<string, unknown>) => Promise<unknown>;
+  const generated = makeGeneratedClientFromRouteMocks(client);
   return {
-    ...client,
-    POST: (path: string, options?: Record<string, unknown>) =>
-      path === "/repos/untracked-opens" ? Promise.resolve(undefined) : post(path, options),
-  } as unknown as GeneratedClient;
+    ...generated,
+    RepositoriesService: { ...generated.RepositoriesService, recordUntrackedRepoOpen: vi.fn(async () => undefined) },
+  };
 }
 
 describe("createIssuesStore", () => {

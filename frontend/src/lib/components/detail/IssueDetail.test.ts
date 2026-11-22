@@ -915,7 +915,7 @@ describe("IssueDetail inline workspace handoff", () => {
     });
   });
 
-  it("records the override when a layout change unmounts the detail mid-create", async () => {
+  it("ends the visit and records the override when a layout change unmounts the detail mid-create", async () => {
     // Drawer tab and layout changes unmount IssueDetail with the same
     // issue still selected; the successful response must still land its
     // store-level override instead of orphaning the created workspace.

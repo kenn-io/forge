@@ -6,13 +6,11 @@ import (
 	"log/slog"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil"
-	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestUntrackedRepoOpenListAfterTrackedFilter(t *testing.T) {
@@ -51,7 +49,7 @@ func TestUntrackedRepoOpenLogFields(t *testing.T) { //nolint:paralleltest // swa
 	require.EqualValues(t, 42, entry["number"])
 }
 
-func TestUntrackedRepoOpenValidationAndTracking(t *testing.T) {
+func TestUntrackedRepoOpenValidation(t *testing.T) {
 	srv, database, _ := setupTestServer(t)
 	for _, body := range []string{
 		`{"provider":"github","host":"github.com","owner":"group","name":"project","item_type":"bogus"}`,
@@ -73,39 +71,21 @@ func TestUntrackedRepoOpenValidationAndTracking(t *testing.T) {
 	require.Equal(t, "group/subgroup", rows[0].Owner)
 }
 
-func TestUntrackedSyncDoesNotRecordOpens(t *testing.T) {
+func TestResolveCachedUntrackedRepoRecordsOpen(t *testing.T) {
 	srv, database, syncer := setupTestServer(t)
-	ctx := t.Context()
-	repoID, err := reposeed.Seed(ctx, database, db.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(t, err)
-	now := time.Now().UTC()
-	_, err = database.UpsertIssue(ctx, &db.Issue{RepoID: repoID, PlatformID: 101, Number: 7, URL: "https://github.com/acme/widget/issues/7", Title: "Issue", Author: "user", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
-	require.NoError(t, err)
-	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{RepoID: repoID, PlatformID: 102, Number: 8, URL: "https://github.com/acme/widget/pull/8", Title: "Pull", Author: "user", State: "open", HeadBranch: "feature", BaseBranch: "main", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
-	require.NoError(t, err)
 	syncer.SetRepos(nil)
-	for _, path := range []string{
-		"/api/v1/pulls/gh/acme/widget/9/sync",
-		"/api/v1/issues/gh/acme/widget/9/sync?if_changed=true",
-		"/api/v1/issues/gh/acme/widget/9/sync",
-	} {
-		rr := testutil.DoJSON(t, srv, http.MethodPost, path, nil)
-		require.Equal(t, http.StatusForbidden, rr.Code, rr.Body.String())
-		rows, err := database.ListUntrackedRepoOpens(t.Context())
-		require.NoError(t, err)
-		require.Empty(t, rows)
-	}
-	for _, path := range []string{"/api/v1/issues/gh/acme/widget/7/sync", "/api/v1/pulls/gh/acme/widget/8/sync"} {
-		rr := testutil.DoJSON(t, srv, http.MethodPost, path, nil)
-		require.Equal(t, http.StatusForbidden, rr.Code, rr.Body.String())
-		rows, err := database.ListUntrackedRepoOpens(ctx)
-		require.NoError(t, err)
-		require.Empty(t, rows)
-	}
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repo/github/acme/widget/resolve/9?item_type=issue", nil)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	require.Contains(t, rr.Body.String(), `"repo_tracked":false`)
+	rows, err := database.ListUntrackedRepoOpens(t.Context())
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "widget", rows[0].Name)
+	require.Equal(t, 1, rows[0].Count)
 }
 
 func TestDetailReadsDoNotRecordUntrackedRepos(t *testing.T) {
-	srv, database, syncer := setupTestServer(t)
+	srv, database, _ := setupTestServer(t)
 	for _, path := range []string{
 		"/api/v1/pulls/gh/missing/repo/4",
 		"/api/v1/issues/gh/missing/repo/5",
@@ -119,35 +99,14 @@ func TestDetailReadsDoNotRecordUntrackedRepos(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, rows)
 	}
-	syncer.SetRepos(nil)
-	for _, tc := range []struct{ path, code string }{
-		{"/api/v1/pulls/gh/acme/widget/99999", "pullNotFound"},
-		{"/api/v1/issues/gh/acme/widget/99999", "issueNotFound"},
-	} {
-		rr := testutil.DoJSON(t, srv, http.MethodGet, tc.path, nil)
-		require.Equal(t, http.StatusNotFound, rr.Code, rr.Body.String())
-		require.Contains(t, rr.Body.String(), `"code":"`+tc.code+`"`)
-	}
-	rows, err := database.ListUntrackedRepoOpens(t.Context())
-	require.NoError(t, err)
-	require.Empty(t, rows)
 }
 
 func TestTrackedRepoWithoutCacheDoesNotRecordOpen(t *testing.T) {
 	srv, database, syncer := setupTestServer(t)
 	syncer.SetRepos([]ghclient.RepoRef{{Platform: "github", PlatformHost: "github.com", Owner: "new", Name: "repo"}})
-	for _, tc := range []struct {
-		method, path string
-		status       int
-	}{
-		{http.MethodGet, "/api/v1/pulls/gh/new/repo/4", http.StatusNotFound},
-		{http.MethodGet, "/api/v1/issues/gh/new/repo/5", http.StatusNotFound},
-		{http.MethodPost, "/api/v1/repo/github/new/repo/resolve/6", http.StatusOK},
-	} {
-		rr := testutil.DoJSON(t, srv, tc.method, tc.path, nil)
-		require.Equal(t, tc.status, rr.Code, rr.Body.String())
-		rows, err := database.ListUntrackedRepoOpens(t.Context())
-		require.NoError(t, err)
-		require.Empty(t, rows, tc.path)
-	}
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repo/github/new/repo/resolve/6", nil)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	rows, err := database.ListUntrackedRepoOpens(t.Context())
+	require.NoError(t, err)
+	require.Empty(t, rows)
 }

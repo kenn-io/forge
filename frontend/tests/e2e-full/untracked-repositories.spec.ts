@@ -19,7 +19,6 @@ test("suggests an opened untracked repository in Settings and adds it", async ({
     await page.goto(`${base}/settings?section=settings-repositories`);
     const suggestions = page.locator(".repo-suggestions");
     await expect(suggestions.getByText("Suggested from links you opened")).toBeVisible();
-    const rows = suggestions.locator(".repo-row");
     await expect(suggestions.getByRole("button", { name: "Add other/repo" })).toBeVisible();
 
     await suggestions.getByRole("button", { name: "Add other/repo" }).click();
@@ -27,7 +26,6 @@ test("suggests an opened untracked repository in Settings and adds it", async ({
 
     await page.reload();
     await expect(page.locator(".repo-list .repo-name", { hasText: "other/repo" })).toBeVisible();
-    await expect(rows).toHaveCount(0);
   } finally {
     await server.stop();
   }

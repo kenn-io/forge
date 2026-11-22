@@ -186,32 +186,29 @@ describe("itemRefHandler", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
-  it.each([
-    ["github", "github.com", "acme", "widgets", "pr", "pulls"],
-    ["gitlab", "gitlab.example.com", "group", "project", "issue", "issues"],
-  ])("passes %s item hints for a tracked repository", async (provider, host, owner, name, itemType, route) => {
-    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: itemType });
+  it("navigates internally when the referenced repo is tracked", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "pr" });
+
     await clickItemRef({
-      "data-provider": provider,
-      "data-platform-host": host,
-      "data-owner": owner,
-      "data-name": name,
-      "data-repo-path": `${owner}/${name}`,
+      "data-provider": "github",
+      "data-platform-host": "github.com",
+      "data-owner": "acme",
+      "data-name": "widgets",
+      "data-repo-path": "acme/widgets",
       "data-number": "12",
-      "data-item-type": itemType,
+      "data-item-type": "pr",
+      "data-external-url": "https://github.com/acme/widgets/pull/12",
     });
+
     expect(mocks.post).toHaveBeenCalledWith(
-      expect.objectContaining({
-        provider,
-        owner,
-        name,
-        number: 12,
-        ...(provider === "gitlab" ? { platformHost: host } : {}),
-      }),
-      { item_type: itemType },
+      { provider: "github", owner: "acme", name: "widgets", number: 12 },
+      { item_type: "pr" },
       { signal: expect.any(AbortSignal) },
     );
-    expect(mocks.navigate).toHaveBeenCalledWith(`/${route}/${provider}/${owner}/${name}/12`);
+    expect(mocks.navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12");
+    expect(open).not.toHaveBeenCalled();
+    expect(mocks.showFlash).not.toHaveBeenCalled();
   });
 
   it("routes from the data attributes so a base-path href is not prefixed twice", async () => {
@@ -230,6 +227,49 @@ describe("itemRefHandler", () => {
 
     expect(result.captured).toBe(true);
     expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/pulls/github/acme/widgets/12");
+  });
+
+  it.each([
+    ["pr", "12", "merge_requests"],
+    ["issue", "10", "issues"],
+  ])("passes GitLab %s item type hints", async (itemType, number, route) => {
+    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: itemType });
+
+    await clickItemRef({
+      "data-provider": "gitlab",
+      "data-platform-host": "gitlab.example.com",
+      "data-owner": "group",
+      "data-name": "project",
+      "data-repo-path": "group/project",
+      "data-number": number,
+      "data-item-type": itemType,
+      "data-external-url": `https://gitlab.example.com/group/project/-/${route}/${number}`,
+    });
+
+    expect(mocks.post).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platformHost: "gitlab.example.com",
+        provider: "gitlab",
+        owner: "group",
+        name: "project",
+        number: Number(number),
+      }),
+      { item_type: itemType },
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+  });
+
+  it("passes Bitbucket Cloud issue item type hints so a same-numbered PR does not win", async () => {
+    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "issue" });
+
+    await clickItemRef({ class: "", href: "https://bitbucket.org/acme/widgets/issues/5" });
+
+    expect(mocks.post).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "bitbucket", owner: "acme", name: "widgets", number: 5 }),
+      { item_type: "issue" },
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+    expect(mocks.navigate).toHaveBeenCalledWith("/issues/bitbucket/acme/widgets/5");
   });
 
   it("preserves native navigation for an untracked reference with an external fallback", async () => {
@@ -272,8 +312,8 @@ describe("itemRefHandler", () => {
   ])("opens an untracked reference at the provider on %s", async (_label, type, init, records) => {
     const click = await clickItemRef(untrackedReference, [], { type, init });
 
-    if (!records) expect(mocks.recordOpen).not.toHaveBeenCalled();
-    else
+    expect(mocks.recordOpen).toHaveBeenCalledTimes(records ? 1 : 0);
+    if (records)
       expect(mocks.recordOpen).toHaveBeenCalledWith(
         expect.objectContaining({ provider: "github", host: "github.com", owner: "other", name: "repo", number: 77 }),
         { signal: expect.anything(), keepalive: true },

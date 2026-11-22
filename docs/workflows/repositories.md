@@ -1,9 +1,9 @@
 # Browse repository source
 
-Open **Repos** to check the repositories Kenn Forge knows about. Each card
-summarizes open work and recent repository state. Choose **View source** on a
-card, or run **View repository source** from the command palette while a pull
-request, issue, activity item, or workspace supplies the repository context.
+Open **Repos** to inspect the repositories Kenn Forge tracks. Each card
+summarizes open work and recent repository state. Select **View repo** on a
+card, or run **View repository source** from the command palette when a pull
+request, issue, activity item, or workspace provides the repository context.
 
 <figure class="workflow-shot">
   <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/repository-source-light.svg" alt="Forge repository source browser showing a Markdown file, file tree, and history in light mode">
@@ -13,22 +13,22 @@ request, issue, activity item, or workspace supplies the repository context.
 
 ## Pick a ref and file
 
-Switch between branches and tags with the ref picker. The path filter narrows
-the file tree without changing the selected ref.
+Use the ref picker to switch between branches and tags, and use the path filter
+to narrow the file tree without changing the selected ref.
 
-Select a file to read its source. Markdown files have **Preview** and **Source**
-modes, and headings in a preview can be linked directly. Supported images render
-inside Markdown previews.
+Select a file to read its source. Markdown files offer **Preview** and
+**Source** modes, headings in a preview can be linked directly, and supported
+images render inside Markdown previews.
 
-The history rail lists commits that changed the selected file. Open a commit to
-inspect its SHA, author, date, subject, and commit message without losing the
-current repository and path.
+The history rail lists commits that changed the selected file. Open any commit
+to inspect its SHA, author, date, subject, and commit message without losing
+the current repository and path.
 
 ## Share the exact view
 
 The browser URL records the provider host, repository, ref, file path, and
-preview mode. Copying the URL preserves that state, and browser Back and Forward
-return to earlier refs and files.
+preview mode. Copying the URL preserves that state, and your browser's Back and
+Forward buttons return to earlier refs and files.
 
 Branch and tag names can move. Forge resolves the selected ref to a commit
 while loading the page so the tree, file, and history belong to the same
@@ -36,10 +36,10 @@ revision.
 
 ## Refresh source
 
-The source browser reads from its own local clone. It does not read from a
-workspace worktree, so uncommitted workspace changes do not appear here.
+The source browser reads from its own local clone rather than a workspace
+worktree, so uncommitted workspace changes do not appear here.
 
 Forge creates the clone on first use and refreshes it automatically on the
-configured sync interval. This refresh is separate from repository sync. If a
-newly pushed branch or tag has not appeared yet, wait for the next source
-refresh, then reopen the ref picker.
+configured sync interval, separately from repository sync. If a newly pushed
+branch or tag has not appeared yet, wait for the next source refresh and reopen
+the ref picker.

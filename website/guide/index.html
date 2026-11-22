@@ -54,12 +54,12 @@
           <p class="eyebrow">Seven-stop tour</p>
           <h1>Guide to Forge</h1>
           <p class="sub">
-            How a day's work runs through Kenn Forge: scan what changed, hand
-            implementation to an agent, supervise its session, then review and merge the
-            result — without leaving one console. Every stop links into the operating docs.
+            Follow a day's work through Kenn Forge. Scan what changed, hand
+            implementation to an agent, supervise its session, and review and merge the
+            result from one console. Every stop links into the operating docs.
           </p>
           <p class="docs-callout">
-            Ready for setup and operating detail? Start with the
+            Ready for setup and operating details? Start with the
             <a href="/docs/quickstart/">Quick start</a> or browse the <a href="/docs/">Docs</a>.
           </p>
           <nav class="contents container" aria-label="On this page" style="padding: 0">
@@ -82,15 +82,15 @@
               <div>
                 <h2>Start in the queue</h2>
                 <p>
-                  <strong>Activity</strong> collects recent comments, reviews, commits, and
+                  <strong>Activity</strong> gathers recent comments, reviews, commits, and
                   state changes across every repository you track. Threaded mode groups
-                  events by pull request or issue; flat mode keeps exact order. Filter by
-                  time, event type, repository, text, or bot activity — then select a row
-                  and its detail opens beside the queue, so you never lose your place.
+                  events by pull request or issue, while flat mode keeps exact order. Filter
+                  by time, event type, repository, text, or bot activity, then select a row
+                  to open its detail beside the queue without losing your place.
                 </p>
                 <p>
-                  When you need to move faster than the mouse, the command palette is
-                  everywhere:
+                  When you want to move faster than the mouse, open the command palette from
+                  any view:
                 </p>
                 <div class="palette-hints">
                   <span><kbd>Cmd/Ctrl+K</kbd> open palette</span>
@@ -117,9 +117,9 @@
               <div>
                 <h2>Triage issues into work</h2>
                 <p>
-                  <strong>Issues</strong> is a queue, not a list: search, filter, comment,
-                  star, close, or reopen without leaving the view. When an issue is ready
-                  for implementation, create a workspace from it directly — the branch,
+                  Use <strong>Issues</strong> to search, filter, comment, star, close, or
+                  reopen issues without leaving the view. When an issue is ready for
+                  implementation, create a workspace directly from it. The branch,
                   worktree, and context arrive together, ready for you or an agent to
                   pick up.
                 </p>
@@ -141,18 +141,18 @@
               <div>
                 <h2>Hand the work to an agent</h2>
                 <p>
-                  Create a workspace from a pull request, issue, or from scratch: each one
-                  is a Git worktree with durable, tmux-backed sessions. Choose an agent
+                  Create a workspace from a pull request, an issue, or scratch. Each workspace
+                  gives you a Git worktree with durable, tmux-backed sessions. Pick an agent
                   from the action menu to create the workspace and launch it in one step,
                   then promote the session into the detail layout so it sits beside the
                   discussion and files it is working on.
                 </p>
                 <p>
                   Run <code style="font-family: var(--font-mono); color: var(--accent)">kenn-forge agent setup</code>
-                  to connect Claude Code and Codex: it installs lifecycle hooks and
-                  registers Forge's MCP tools. The hooks surface agent activity in
-                  workspace rows — active work, approval requests, and input
-                  requests — while the sidebar is open. Rerun it after upgrading Forge.
+                  to connect Claude Code and Codex. It installs lifecycle hooks and registers
+                  Forge's MCP tools. The hooks show active work, approval requests, and input
+                  requests in workspace rows while the sidebar is open. Rerun setup after
+                  upgrading Forge.
                 </p>
                 <figure class="shot">
                   <button class="image-zoom" type="button" aria-label="Zoom: coding-agent session inside a workspace">
@@ -175,13 +175,13 @@
                   When the agent's work comes back as a pull request, its detail view
                   combines description, discussion, CI, branch state, review state,
                   changed files, and provider actions. Open the file tree for
-                  line-by-line review, comment, approve, and merge when the provider
+                  line-by-line review, and comment, approve, or merge when the provider
                   allows it. Detected <strong>stacks</strong> show member order, and
                   mid-stack merges stay blocked until earlier members land.
                 </p>
                 <p>
-                  Conversation, files, and a workspace can share one pane layout —
-                  reorder, split, resize, or maximize panes as the task changes.
+                  Conversation, files, and a workspace can share one pane layout. Reorder,
+                  split, resize, or maximize panes as your task changes.
                 </p>
                 <figure class="shot">
                   <button class="image-zoom" type="button" aria-label="Zoom: pull request review with changed files">
@@ -201,7 +201,7 @@
               <div>
                 <h2>Browse source without cloning in your head</h2>
                 <p>
-                  <strong>Repos</strong> opens any tracked repository: switch among
+                  Open any tracked repository in <strong>Repos</strong> to switch among
                   branches and tags, filter the path tree, read files with rendered
                   Markdown previews, and follow a file's commit history in the side rail.
                   The URL records repository, ref, path, and preview mode, so copied
@@ -225,12 +225,13 @@
               <div>
                 <h2>Bring your other tools with you</h2>
                 <p>
-                  The <strong>Reviews</strong> panel in a PR workspace shows local Roborev jobs
-                  when opened. Read reviews, inspect logs and prompts, and refresh on demand. <strong>Kata</strong> tasks link to
-                  pull requests, issues, and workspaces with read-only detail inline.
-                  <strong>Docs</strong> registers local Markdown folders you can browse,
-                  search, edit, pull, and publish from the console. External systems stay
-                  the source of truth; Forge owns only the links.
+                  Open the <strong>Reviews</strong> panel in a PR workspace to view local
+                  Roborev jobs, read reviews, inspect logs and prompts, and refresh on
+                  demand. <strong>Kata</strong> tasks link to pull requests, issues, and
+                  workspaces with read-only detail inline. <strong>Docs</strong> registers
+                  local Markdown folders you can browse, search, edit, pull, and publish
+                  from the console. External systems stay the source of truth, and Forge
+                  owns only the links.
                 </p>
                 <p class="explore"><a href="/docs/integrations/">Explore integrations →</a></p>
               </div>
@@ -247,14 +248,14 @@
                 <p>
                   When one machine stops being enough, connect full Forge daemons into a
                   <strong>hub-and-spoke fleet</strong> over authenticated HTTPS. The hub
-                  syncs your forges once and shows workspaces across every machine;
+                  syncs your forges once and shows workspaces across every machine, while
                   remote actions route one hop to the spoke that owns them. Each spoke
-                  keeps its own repositories, worktrees, agents, and tmux sessions — and
+                  keeps its own repositories, worktrees, agents, and tmux sessions, and
                   stays usable even when the hub is unreachable.
                 </p>
                 <p>
                   Enrollment uses one-time tokens with separate credentials per
-                  direction, and Tailscale Serve is a first-class setup path — any
+                  direction. Tailscale Serve is a first-class setup path, and any
                   mutually reachable private HTTPS ingress works. Alongside the fleet,
                   the <a href="/docs/kenn-forge-mcp/">MCP companion</a> gives your agents
                   the same console over the Model Context Protocol, and

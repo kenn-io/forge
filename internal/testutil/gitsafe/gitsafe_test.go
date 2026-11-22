@@ -3,6 +3,7 @@ package gitsafe
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -97,6 +98,15 @@ func TestPrepareProcessKeepsHomeAndUsesScratchIgnoreAndAttributes(t *testing.T) 
 
 	callerHome := t.TempDir()
 	callerXDG := t.TempDir()
+	tempName := "git scratch"
+	if runtime.GOOS != "windows" {
+		tempName += "\"\\\n\t\b"
+	}
+	tempRoot := filepath.Join(t.TempDir(), tempName)
+	require.NoError(os.Mkdir(tempRoot, 0o700))
+	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(key, tempRoot)
+	}
 	t.Setenv("HOME", callerHome)
 	t.Setenv("XDG_CONFIG_HOME", callerXDG)
 	for _, key := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TERMINAL_PROMPT"} {

@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -51,9 +50,10 @@ func configureProcessGit(root string) error {
 			return fmt.Errorf("create global %s file: %w", filepath.Base(path), err)
 		}
 	}
+	quote := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\t", `\t`, "\b", `\b`)
 	return configureGit(root, SharedConfig+"[core]\n"+
-		"\texcludesFile = "+strconv.Quote(excludesFile)+"\n"+
-		"\tattributesFile = "+strconv.Quote(attributesFile)+"\n")
+		"\texcludesFile = \""+quote.Replace(excludesFile)+"\"\n"+
+		"\tattributesFile = \""+quote.Replace(attributesFile)+"\"\n")
 }
 
 // RunIsolatedMain runs a package's tests with one portable Git config that

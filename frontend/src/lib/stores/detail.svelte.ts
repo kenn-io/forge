@@ -259,6 +259,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   let detailRequestSequence = 0;
   const latestSuccessfulDetailRequestSequenceBySelection = new Map<string, number>();
   let activeSelectionKey: string | null = null;
+  let detailVisitKey: string | null = null;
   // Tracks the PR (if any) whose local body has been edited since
   // the last server confirmation. While set, background sync paths
   // preserve the local body when applying refreshed server data for
@@ -1221,6 +1222,24 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // sync mode joins the in-flight load and may promote the sync
     // intent if its requested mode is stronger.
     const key = prKey(requestRef);
+    const visitKey = providerItemKey({
+      provider: requestRef.provider,
+      platformHost: concretePlatformHost(requestRef),
+      owner,
+      name,
+      number,
+    });
+    if (detailVisitKey !== visitKey) {
+      detailVisitKey = visitKey;
+      recordUntrackedRepoOpen(runtime, {
+        provider: requestRef.provider,
+        host: concretePlatformHost(requestRef),
+        owner,
+        name,
+        item_type: "pr",
+        number,
+      });
+    }
     const newSelection = activeSelectionKey !== key;
     if (newSelection) {
       acknowledgedMembership.clear();
@@ -1299,16 +1318,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
       let data: PullDetail;
       if (Result.isSuccess(initialRead)) {
         data = initialRead.success;
-        if (newSelection) {
-          recordUntrackedRepoOpen(runtime, {
-            provider: requestRef.provider,
-            host: concretePlatformHost(requestRef),
-            owner,
-            name,
-            item_type: "pr",
-            number,
-          });
-        }
       } else if (
         currentLoad.syncMode !== false &&
         initialRead.failure._tag === "ApiProblemError" &&
@@ -2906,6 +2915,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
     getDetailLoaded,
     getDiscussionLoaded,
     clearDetail,
+    endDetailVisit: () => {
+      detailVisitKey = null;
+    },
     loadDetail,
     refreshDetailOnly,
     refreshDetailOnlyEffect,

@@ -674,6 +674,7 @@
   let workspaceRequestGen = 0;
   let componentDestroyed = false;
   onDestroy(() => {
+    issues.endIssueVisit();
     labelCatalogGeneration += 1;
     labelCatalogExecution?.interrupt();
     bodyCopyExecution?.interrupt();

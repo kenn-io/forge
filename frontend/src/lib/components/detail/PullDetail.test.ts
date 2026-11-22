@@ -304,6 +304,7 @@ function renderPullDetail(
     loadDetail: vi.fn(async () => undefined),
     startDetailPolling: vi.fn(),
     stopDetailPolling: vi.fn(),
+    endDetailVisit: vi.fn(),
     getDetail: () => detail,
     getDetailEnvelopeTick: () => envelopeTick,
     isDetailFromCache: () => options.detailFromCache ?? false,
@@ -1226,10 +1227,13 @@ describe("PullDetail activity refresh", () => {
   });
 
   it("drops a manual refresh failure after the pull-request detail unmounts", async () => {
-    const { failRefresh, unmount } = renderPullDetail(pullDetail(), undefined, undefined, { deferRefresh: true });
+    const { detailStore, failRefresh, unmount } = renderPullDetail(pullDetail(), undefined, undefined, {
+      deferRefresh: true,
+    });
     await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));
 
     unmount();
+    expect(detailStore.endDetailVisit).toHaveBeenCalledOnce();
     failRefresh("unmounted pull request failed");
 
     expect(getFlashes()).toHaveLength(0);
@@ -1372,7 +1376,8 @@ describe("PullDetail pending mutations across selections", () => {
       }),
       PUT: mutation,
       PATCH: mutation,
-      POST: mutation,
+      POST: (path: string, options?: Record<string, unknown>) =>
+        path === "/repos/untracked-opens" ? Promise.resolve({ data: undefined }) : mutation(path, options),
     });
     const commands = vi.spyOn(detailRuntime, "runCommand");
     const store = createDetailStore({ runtime: detailRuntime });

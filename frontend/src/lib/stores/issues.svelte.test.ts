@@ -357,13 +357,18 @@ describe("createIssuesStore", () => {
     await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1));
     await loadIssueDetail(store, "acme", "widget", 7, ref);
     expect(record).toHaveBeenCalledTimes(1);
+    await loadIssueDetail(store, "acme", "widget", 7, { ...ref, repositoryKey: { kind: "id", id: 1002 } });
+    expect(record).toHaveBeenCalledTimes(1);
+    store.endIssueVisit();
+    await loadIssueDetail(store, "acme", "widget", 7, ref);
+    await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(2));
     expect(record).toHaveBeenCalledWith(
       { provider: "github", host: "github.com", owner: "acme", name: "widget", item_type: "issue", number: 7 },
       expect.anything(),
     );
   });
 
-  it("leaves missing repository recording to the detail route", async () => {
+  it("records a visit even when the detail read fails", async () => {
     const record = vi.fn(async () => undefined);
     const problem = { code: "repoNotFound", status: 404, title: "Not found" };
     const get = vi
@@ -376,7 +381,7 @@ describe("createIssuesStore", () => {
       }),
     });
     await loadIssueDetail(store, "acme", "widget", 7, { provider: "github", repoPath: "acme/widget", sync: false });
-    expect(record).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1));
   });
 
   it("does not install a response from a different repository", async () => {

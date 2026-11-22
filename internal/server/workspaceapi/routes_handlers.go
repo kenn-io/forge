@@ -1235,9 +1235,8 @@ func (s *Handler) refreshWorkspace(
 		return nil, httpapi.Internal("workspace has unsupported item type")
 	}
 
-	prNumber, _ := workspaceAssociatedPRNumber(summary)
 	if err := s.refreshWorkspaceRepoIndex(
-		ctx, kind, host, repo.Owner, repo.Name, prNumber,
+		ctx, kind, host, repo.Owner, repo.Name,
 	); err != nil {
 		return nil, err
 	}
@@ -1304,7 +1303,6 @@ func (s *Handler) refreshWorkspaceRepoIndex(
 	ctx context.Context,
 	kind platform.Kind,
 	host, owner, name string,
-	prNumber int,
 ) error {
 	err := s.syncer.SyncRepoOnProvider(ctx, kind, host, owner, name)
 	if err == nil {
@@ -1322,11 +1320,6 @@ func (s *Handler) refreshWorkspaceRepoIndex(
 		return nil
 	}
 	if errors.Is(err, ghclient.ErrRepoNotTracked) {
-		itemType := ""
-		if prNumber > 0 {
-			itemType = "pr"
-		}
-		_ = httpapi.RecordUntrackedRepoOpen(ctx, s.db, s.syncer, string(kind), host, owner, name, itemType, prNumber)
 		return httpapi.Forbidden(err.Error(), nil)
 	}
 	return httpapi.ProviderCallProblemWithDetail(
@@ -1355,7 +1348,6 @@ func (s *Handler) refreshWorkspaceIssue(
 		return nil
 	}
 	if errors.Is(err, ghclient.ErrRepoNotTracked) {
-		_ = httpapi.RecordUntrackedRepoOpen(ctx, s.db, s.syncer, string(kind), host, owner, name, "issue", number)
 		return httpapi.Forbidden(err.Error(), nil)
 	}
 	return httpapi.ProviderCallProblemWithDetail(
@@ -1383,7 +1375,6 @@ func (s *Handler) refreshWorkspacePullRequest(
 	diffErr, isDiffErr := errors.AsType[*ghclient.DiffSyncError](err)
 	if err != nil && !isDiffErr {
 		if errors.Is(err, ghclient.ErrRepoNotTracked) {
-			_ = httpapi.RecordUntrackedRepoOpen(ctx, s.db, s.syncer, string(kind), host, owner, name, "pr", number)
 			return httpapi.Forbidden(err.Error(), nil)
 		}
 		return httpapi.ProviderCallProblemWithDetail(

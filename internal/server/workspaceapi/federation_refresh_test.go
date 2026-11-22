@@ -1,10 +1,7 @@
 package workspaceapi
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"log/slog"
 	"path/filepath"
 	"testing"
 	"time"
@@ -123,26 +120,6 @@ func TestRefreshProviderWorkspaceFactsSyncsOnlyRequestedItem(t *testing.T) {
 	}
 }
 
-func TestRefreshProviderWorkspaceFactsRecordsUntrackedItems(t *testing.T) {
-	database := dbtest.Open(t)
-	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget"})
-	require.NoError(t, err)
-	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Hour, nil, nil)
-	t.Cleanup(syncer.Stop)
-	handler := New(Deps{DB: database, Syncer: syncer, Resolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database})})
-	for _, itemType := range []string{db.WorkspaceItemTypeIssue, db.WorkspaceItemTypePullRequest} {
-		err := handler.RefreshProviderWorkspaceFacts(t.Context(), providerplane.WorkspaceLaunchRequest{
-			Repository: providerplane.RepositoryRoute{Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget"},
-			ItemType:   itemType, ItemNumber: 7,
-		})
-		require.Error(t, err)
-	}
-	rows, err := database.ListUntrackedRepoOpens(t.Context())
-	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	require.Equal(t, 2, rows[0].Count)
-}
-
 func TestRefreshWorkspaceUsesHubProjectionWithoutLocalSyncer(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
@@ -200,31 +177,4 @@ func TestRefreshWorkspaceUsesHubProjectionWithoutLocalSyncer(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(refreshed)
 	assert.Equal("After refresh", refreshed.SourceTitle)
-}
-
-func TestRefreshWorkspaceLogsUntrackedPullIdentity(t *testing.T) { //nolint:paralleltest // swaps the default logger
-	database := dbtest.Open(t)
-	_, err := reposeed.Seed(t.Context(), database, db.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(t, err)
-	ws := &db.Workspace{ID: "ws-untracked-refresh", Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7, ItemKey: "7", GitHeadRef: "feature", WorkspaceBranch: "feature", WorktreePath: filepath.Join(t.TempDir(), "worktree"), Status: "ready"}
-	spec := workspaceLaunchSpecForRequest(providerplane.WorkspaceLaunchRequest{Repository: providerplane.RepositoryRoute{Provider: ws.Platform, PlatformHost: ws.PlatformHost, Owner: ws.RepoOwner, Name: ws.RepoName}, ItemType: ws.ItemType, ItemNumber: ws.ItemNumber, ItemKey: ws.ItemKey, GitHeadRef: ws.GitHeadRef}, time.Now().UTC())
-	require.NoError(t, database.CreateWorkspaceWithLaunchSpec(t.Context(), ws, spec))
-	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Hour, nil, nil)
-	t.Cleanup(syncer.Stop)
-	manager := workspacetest.NewManager(t, database, t.TempDir())
-	handler := New(Deps{DB: database, Syncer: syncer, Workspaces: manager, Resolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database})})
-	var logs bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
-	t.Cleanup(func() { slog.SetDefault(previous) })
-	_, err = handler.refreshWorkspace(t.Context(), &refreshWorkspaceInput{ID: ws.ID})
-	require.Error(t, err)
-	var entry map[string]any
-	require.NoError(t, json.NewDecoder(&logs).Decode(&entry))
-	require.Equal(t, "pr", entry["item_type"])
-	require.EqualValues(t, 7, entry["number"])
-	rows, err := database.ListUntrackedRepoOpens(t.Context())
-	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	require.Equal(t, 1, rows[0].Count)
 }

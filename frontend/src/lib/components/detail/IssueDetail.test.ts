@@ -205,6 +205,7 @@ function renderIssueDetail(
   let pendingRefreshCallbacks: MutationCallbacks | null = null;
   const issuesStore = {
     loadIssueDetail: vi.fn(),
+    endIssueVisit: vi.fn(),
     startIssueDetailPolling: vi.fn(),
     stopIssueDetailPolling: vi.fn(),
     getIssueDetail: () => detail,
@@ -930,6 +931,7 @@ describe("IssueDetail inline workspace handoff", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
     const loadCallsBeforeUnmount = issuesStore.loadIssueDetail.mock.calls.length;
     unmount();
+    expect(issuesStore.endIssueVisit).toHaveBeenCalledOnce();
     resolvePost({ data: { id: "ws-new", status: "provisioning" } });
 
     await vi.waitFor(() => {

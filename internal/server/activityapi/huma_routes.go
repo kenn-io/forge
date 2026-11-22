@@ -655,15 +655,6 @@ func (s *Handlers) SyncIssue(ctx context.Context, input *itemapi.SyncIssueInput)
 	}
 	if err != nil {
 		if errors.Is(err, ghclient.ErrRepoNotTracked) {
-			if !input.IfChanged {
-				issue, lookupErr := s.Db.GetVisibleIssueByRepoIDAndNumber(ctx, repo.ID, input.Number)
-				if lookupErr != nil {
-					return nil, httpapi.Internal("get issue failed")
-				}
-				if issue == nil {
-					_ = httpapi.RecordUntrackedRepoOpen(ctx, s.Db, *s.Syncer, input.Provider, input.PlatformHost, input.Owner, input.Name, "issue", input.Number)
-				}
-			}
 			return nil, httpapi.Forbidden(err.Error(), nil)
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(

@@ -318,9 +318,6 @@ func (s *Handlers) SyncPR(ctx context.Context, input *RepoNumberInput) (*SyncPRO
 	diffErr, _ := errors.AsType[*ghclient.DiffSyncError](syncErr)
 	if syncErr != nil && diffErr == nil {
 		if errors.Is(syncErr, ghclient.ErrRepoNotTracked) {
-			if existing == nil {
-				_ = httpapi.RecordUntrackedRepoOpen(ctx, s.Db, *s.Syncer, input.Provider, input.PlatformHost, input.Owner, input.Name, "pr", input.Number)
-			}
 			return nil, httpapi.Forbidden(syncErr.Error(), nil)
 		}
 		return nil, httpapi.ProviderCallProblemWithDetail(

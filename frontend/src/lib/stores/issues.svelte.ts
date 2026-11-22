@@ -198,6 +198,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let unsavedLocalBody = $state<UnsavedIssueTarget | null>(null);
   let issueSyncGeneration = 0;
   let activeIssueSelectionKey: string | null = null;
+  let issueVisitKey: string | null = null;
   let issuePollingGeneration = 0;
   let activeIssueDetailRef: IssueDetailRequestRef | null = null;
   const recentDetails = createRecentDetails<{ detail: IssueDetail; envelopeTick: number; loaded: boolean }>(100);
@@ -1029,6 +1030,24 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function loadIssueDetail(owner: string, name: string, number: number, options: IssueDetailRequestOptions): void {
     const ref = issueDetailRequestRef(owner, name, number, options);
     const key = issueDetailKey(ref);
+    const visitKey = providerItemKey({
+      provider: ref.provider,
+      platformHost: concretePlatformHost(ref),
+      owner,
+      name,
+      number,
+    });
+    if (issueVisitKey !== visitKey) {
+      issueVisitKey = visitKey;
+      recordUntrackedRepoOpen(runtime, {
+        provider: ref.provider,
+        host: concretePlatformHost(ref),
+        owner,
+        name,
+        item_type: "issue",
+        number,
+      });
+    }
     const newSelection = activeIssueSelectionKey !== key;
     if (newSelection) {
       acknowledgedMembership.clear();
@@ -1058,16 +1077,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const program = Effect.gen(function* () {
       const workflow = yield* IssuesWorkflow;
       const result = yield* workflow.detail(issueDetailKey(ref), syncMode, readIssueDetail(ref, "GET issue detail"));
-      if (newSelection) {
-        recordUntrackedRepoOpen(runtime, {
-          provider: ref.provider,
-          host: concretePlatformHost(ref),
-          owner,
-          name,
-          item_type: "issue",
-          number,
-        });
-      }
       reconcileListsAfterDetailSync();
       const applied = yield* installIssueDetail(ref, result.detail, envelopeTick, generation, false);
       if (generation === issueSyncGeneration) detailLoading = false;
@@ -2238,6 +2247,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     startIssueDetailPolling,
     stopIssueDetailPolling,
     clearIssueDetail,
+    endIssueVisit: () => {
+      issueVisitKey = null;
+    },
     setIssueLabels,
     setIssueAssignees,
     submitIssueComment,

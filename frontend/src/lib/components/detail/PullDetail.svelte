@@ -741,6 +741,7 @@
   });
 
   onDestroy(() => {
+    detailStore.endDetailVisit();
     pullDetailScrollRestoreExecution?.interrupt();
     labelCatalogGeneration += 1;
     labelCatalogExecution?.interrupt();

@@ -32,14 +32,11 @@ func (s *Handlers) RecordUntrackedOpen(ctx context.Context, input *UntrackedOpen
 	if err := validateUntrackedOpen(body.ItemType, body.Number); err != nil {
 		return nil, err
 	}
-	repo, err := httpapi.NormalizeUntrackedRepo(body.Provider, body.Host, body.Owner, body.Name)
-	if err != nil {
+	if _, err := httpapi.NormalizeUntrackedRepo(body.Provider, body.Host, body.Owner, body.Name); err != nil {
 		return nil, httpapi.Validation("body", "valid provider, host, owner and name are required")
 	}
-	if _, tracked := s.trackedConfiguredRepoSet()[untrackedRepoKey(repo)]; !tracked {
-		if err := httpapi.RecordNormalizedUntrackedRepoOpen(ctx, s.Db, repo, body.ItemType, body.Number); err != nil {
-			return nil, httpapi.Internal("record untracked repository open: " + err.Error())
-		}
+	if err := httpapi.RecordUntrackedRepoOpen(ctx, s.Db, *s.Syncer, body.Provider, body.Host, body.Owner, body.Name, body.ItemType, body.Number); err != nil {
+		return nil, httpapi.Internal("record untracked repository open: " + err.Error())
 	}
 	return nil, nil
 }

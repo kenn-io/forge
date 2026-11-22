@@ -18,6 +18,7 @@ import type {
   UnsetStarredParams,
 } from "../api/types.js";
 import type { ApplySuggestionRequest } from "../utils/markdown-suggestions.js";
+import { recordUntrackedRepoOpen } from "../utils/itemRefHandler.js";
 import {
   isProblem,
   ProblemCodes,
@@ -1299,22 +1300,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
       if (Result.isSuccess(initialRead)) {
         data = initialRead.success;
         if (newSelection) {
-          runtime.runCommand(
-            executeGeneratedApiRequest("record untracked repository open", (client, signal) =>
-              client.RepositoriesService.recordUntrackedRepoOpen(
-                {
-                  provider: requestRef.provider,
-                  host: concretePlatformHost(requestRef),
-                  owner,
-                  name,
-                  item_type: "pr",
-                  number,
-                },
-                { signal, keepalive: true },
-              ),
-            ),
-            { operation: "record untracked repository open", safeContext: {}, onFailure: () => {} },
-          );
+          recordUntrackedRepoOpen(runtime, {
+            provider: requestRef.provider,
+            host: concretePlatformHost(requestRef),
+            owner,
+            name,
+            item_type: "pr",
+            number,
+          });
         }
       } else if (
         currentLoad.syncMode !== false &&

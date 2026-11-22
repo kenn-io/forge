@@ -50,6 +50,7 @@ import { createRecentDetails } from "./recent-details.js";
 import { repoIdentityKey } from "../utils/repo-label.js";
 import { cycleLabelFilter as cycleLabel, labelFilterParams, type LabelFilters } from "../utils/label-filter.js";
 import { isBotAuthor } from "../utils/bot-author.js";
+import { recordUntrackedRepoOpen } from "../utils/itemRefHandler.js";
 import {
   repositoryKeyAllows,
   repositoryKeyFromWire,
@@ -1058,15 +1059,14 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       const workflow = yield* IssuesWorkflow;
       const result = yield* workflow.detail(issueDetailKey(ref), syncMode, readIssueDetail(ref, "GET issue detail"));
       if (newSelection) {
-        runtime.runCommand(
-          executeGeneratedApiRequest("record untracked repository open", (client, signal) =>
-            client.RepositoriesService.recordUntrackedRepoOpen(
-              { provider: ref.provider, host: concretePlatformHost(ref), owner, name, item_type: "issue", number },
-              { signal, keepalive: true },
-            ),
-          ),
-          { operation: "record untracked repository open", safeContext: {}, onFailure: () => {} },
-        );
+        recordUntrackedRepoOpen(runtime, {
+          provider: ref.provider,
+          host: concretePlatformHost(ref),
+          owner,
+          name,
+          item_type: "issue",
+          number,
+        });
       }
       reconcileListsAfterDetailSync();
       const applied = yield* installIssueDetail(ref, result.detail, envelopeTick, generation, false);

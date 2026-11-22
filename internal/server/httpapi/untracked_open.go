@@ -48,10 +48,6 @@ func RecordUntrackedRepoOpen(ctx context.Context, database *db.DB, syncer *ghcli
 	if syncer.IsTrackedRepoByIdentity(platform.Kind(repo.Provider), repo.Owner, repo.Name, repo.Host) {
 		return nil
 	}
-	return RecordNormalizedUntrackedRepoOpen(ctx, database, repo, itemType, number)
-}
-
-func RecordNormalizedUntrackedRepoOpen(ctx context.Context, database *db.DB, repo db.UntrackedRepoOpen, itemType string, number int) error {
 	slog.Info("opened untracked repository", "provider", repo.Provider, "host", repo.Host, "owner", repo.Owner, "name", repo.Name, "item_type", itemType, "number", number)
 	if err := database.RecordUntrackedRepoOpen(ctx, repo); err != nil {
 		slog.Warn("record untracked repository open", "error", err)

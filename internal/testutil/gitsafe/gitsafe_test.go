@@ -105,3 +105,47 @@ func replaceEnv(base []string, replacements map[string]string) []string {
 	}
 	return out
 }
+
+func TestPrepareProcessRestoresEnvironment(t *testing.T) {
+	t.Setenv("GIT_DIR", "inherited-repository")
+	t.Setenv("SSH_ASKPASS", "inherited-askpass")
+	t.Setenv("GIT_SSH_COMMAND", "")
+	require.NoError(t, os.Unsetenv("GIT_SSH_COMMAND"))
+	before := make(map[string]string)
+	for _, key := range []string{"HOME", "PATH", "GOCACHE", "GOMODCACHE", "GOPATH"} {
+		before[key] = os.Getenv(key)
+	}
+	oldGlobal := os.Getenv("GIT_CONFIG_GLOBAL")
+	cleanup, err := PrepareProcess()
+	require.NoError(t, err)
+	config := os.Getenv("GIT_CONFIG_GLOBAL")
+	contents, err := os.ReadFile(config)
+	require.NoError(t, err)
+	assert.Equal(t, SharedConfig, string(contents))
+	assert.Equal(t, "1", os.Getenv("GIT_CONFIG_NOSYSTEM"))
+	assert.Empty(t, os.Getenv("GIT_DIR"))
+	assert.Empty(t, os.Getenv("SSH_ASKPASS"))
+	for key, value := range before {
+		assert.Equal(t, value, os.Getenv(key), key)
+	}
+	require.NoError(t, cleanup())
+	assert.Equal(t, "inherited-repository", os.Getenv("GIT_DIR"))
+	assert.Equal(t, "inherited-askpass", os.Getenv("SSH_ASKPASS"))
+	_, set := os.LookupEnv("GIT_SSH_COMMAND")
+	assert.False(t, set)
+	assert.Equal(t, oldGlobal, os.Getenv("GIT_CONFIG_GLOBAL"))
+	_, err = os.Stat(config)
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestPrepareProcessFailurePreservesEnvironment(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(key, missing)
+	}
+	t.Setenv("GIT_DIR", "inherited-repository")
+	before := os.Environ()
+	_, err := PrepareProcess()
+	require.Error(t, err)
+	assert.Equal(t, before, os.Environ())
+}

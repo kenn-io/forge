@@ -218,8 +218,9 @@ that observes the behavior's real owner.
   repository must forget the moved ID (`internal/testutil/fixture_client.go::FixtureClient.ForgetRepository`).
 - Seeded provider fakes return every child family present in seed data; complete
   mirroring deletes DB-only synthetic children (`internal/testutil/fixtures.go::SeedFixtures`).
-- e2e-server fixture Git reads the developer's global config (commits may sign or run
-  hooks) under a 60 s readiness timeout; build bulk commits with `git fast-import`.
+- e2e-server fixture Git uses `gitsafe.PrepareProcess` and `gitsafe.Runner` with
+  `SharedConfig`, ignoring developer hooks, signing, and identity. The readiness
+  timeout is 60 s; build bulk commits with `git fast-import`.
 - Markdown video specs use a committed synthetic VP9 WebM clip on a dedicated e2e
   server, since its seeded items change other specs' pages (`cmd/e2e-server/markdown_video.go`).
 - Browser-tier specs that need a load to hold use `/__browser-test/never-responds`

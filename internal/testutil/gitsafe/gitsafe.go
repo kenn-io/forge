@@ -24,6 +24,57 @@ import (
 // that can outlive the test and race its temporary-directory cleanup.
 const SharedConfig = "[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n"
 
+// PrepareProcess isolates Git commands and their children until cleanup is called.
+// Call it before starting concurrent work that reads or changes the environment.
+func PrepareProcess() (cleanup func() error, err error) {
+	root, err := os.MkdirTemp("", "kenn-forge-git-process-*")
+	if err != nil {
+		return nil, fmt.Errorf("create isolated Git directory: %w", err)
+	}
+	type envValue struct {
+		value string
+		set   bool
+	}
+	saved := make(map[string]envValue)
+	full := os.Environ()
+	kept := make(map[string]bool)
+	for _, entry := range gitenv.StripAll(full) {
+		key, _, _ := strings.Cut(entry, "=")
+		kept[key] = true
+	}
+	for _, entry := range full {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok && !kept[key] {
+			saved[key] = envValue{value, true}
+		}
+	}
+	for _, key := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TERMINAL_PROMPT"} {
+		value, ok := os.LookupEnv(key)
+		saved[key] = envValue{value, ok}
+	}
+	cleanup = func() error {
+		var errs []error
+		for key, value := range saved {
+			var err error
+			if value.set {
+				err = os.Setenv(key, value.value)
+			} else {
+				err = os.Unsetenv(key)
+			}
+			if err != nil {
+				errs = append(errs, fmt.Errorf("restore %s: %w", key, err))
+			}
+		}
+		errs = append(errs, os.RemoveAll(root))
+		return errors.Join(errs...)
+	}
+	unsetInheritedGitEnv()
+	if err := configureGit(root); err != nil {
+		return nil, errors.Join(err, cleanup())
+	}
+	return cleanup, nil
+}
+
 // RunIsolatedMain runs a package's tests with one portable Git config that
 // carries only SharedConfig.
 // The setup is shared by the test binary so Git-heavy suites do not create a
@@ -49,11 +100,8 @@ func configureGitForTests(root string) error {
 		return err
 	}
 
-	// Git for Windows cannot reliably use NUL as GIT_CONFIG_GLOBAL; a regular
-	// file works on every platform.
-	globalConfig := filepath.Join(root, "global.gitconfig")
-	if err := os.WriteFile(globalConfig, []byte(SharedConfig), 0o600); err != nil {
-		return fmt.Errorf("create global config: %w", err)
+	if err := configureGit(root); err != nil {
+		return err
 	}
 	xdgConfigHome := filepath.Join(root, "xdg")
 	if err := os.MkdirAll(xdgConfigHome, 0o755); err != nil {
@@ -61,11 +109,27 @@ func configureGitForTests(root string) error {
 	}
 
 	for key, value := range map[string]string{
+		"HOME":            root,
+		"XDG_CONFIG_HOME": xdgConfigHome,
+	} {
+		if err := os.Setenv(key, value); err != nil {
+			return fmt.Errorf("set %s: %w", key, err)
+		}
+	}
+	return nil
+}
+
+func configureGit(root string) error {
+	// Git for Windows cannot reliably use NUL as GIT_CONFIG_GLOBAL; a regular
+	// file works on every platform.
+	globalConfig := filepath.Join(root, "global.gitconfig")
+	if err := os.WriteFile(globalConfig, []byte(SharedConfig), 0o600); err != nil {
+		return fmt.Errorf("create global config: %w", err)
+	}
+	for key, value := range map[string]string{
 		"GIT_CONFIG_GLOBAL":   globalConfig,
 		"GIT_CONFIG_NOSYSTEM": "1",
 		"GIT_TERMINAL_PROMPT": "0",
-		"HOME":                root,
-		"XDG_CONFIG_HOME":     xdgConfigHome,
 	} {
 		if err := os.Setenv(key, value); err != nil {
 			return fmt.Errorf("set %s: %w", key, err)

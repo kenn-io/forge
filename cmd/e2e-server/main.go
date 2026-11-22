@@ -49,13 +49,13 @@ import (
 	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/federationtest"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/web"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 	"go.kenn.io/kit/atomicfile"
-	gitcmd "go.kenn.io/kit/git/cmd"
 	oteltelemetry "go.kenn.io/kit/telemetry"
 )
 
@@ -130,13 +130,18 @@ func main() {
 	)
 	flag.Parse()
 
+	cleanup, err := gitsafe.PrepareProcess()
+	if err != nil {
+		slog.Error("prepare fixture Git", "err", err)
+		os.Exit(1)
+	}
+
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
 		syscall.SIGINT,
 		syscall.SIGTERM,
 	)
 
-	var err error
 	if *federatedForges {
 		err = runFederatedForgesE2E(ctx, *roborev, *serverInfoFile)
 	} else {
@@ -154,6 +159,9 @@ func main() {
 		)
 	}
 	stop()
+	if cleanupErr := cleanup(); cleanupErr != nil {
+		err = errors.Join(err, cleanupErr)
+	}
 	if err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -697,7 +705,7 @@ func e2eGit(ctx context.Context, dir string, args ...string) error {
 	if len(args) == 0 {
 		return errors.New("git: no args")
 	}
-	cmd := gitcmd.New().Command(ctx, dir, args...)
+	cmd := gitsafe.Runner().Command(ctx, dir, args...)
 	cmd.Env = append(cmd.Env,
 		"GIT_AUTHOR_DATE=2026-04-28T12:00:00Z",
 		"GIT_COMMITTER_DATE=2026-04-28T12:00:00Z",
@@ -2301,7 +2309,7 @@ func buildAppState(
 			}
 			const branch = "kenn-forge/issue-10-widget-rendering-broken-on-safari"
 			for _, clonePath := range []string{identityClonePath, workspaceClonePath} {
-				_, stderr, err := gitcmd.New().Run(
+				_, stderr, err := gitsafe.Runner().Run(
 					r.Context(), clonePath, nil,
 					"update-ref", "refs/heads/"+branch, diffRepo.BaseSHA,
 				)
@@ -2340,7 +2348,7 @@ func buildAppState(
 				http.Error(w, "resolve fixture clone", http.StatusInternalServerError)
 				return
 			}
-			originOutput, err := gitcmd.New().Output(
+			originOutput, err := gitsafe.Runner().Output(
 				r.Context(), clonePath,
 				"config", "--get", "remote.origin.url",
 			)

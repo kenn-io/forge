@@ -29,6 +29,8 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/testsignal"
 	"go.kenn.io/forge/internal/web"
 	"go.kenn.io/forge/platform"
@@ -50,7 +52,7 @@ func TestMain(m *testing.M) {
 	runCleanup, stopSignalCleanup := testsignal.Install(testTmux.cleanup, func(err error) {
 		fmt.Fprintf(os.Stderr, "cleanup e2e-server test tmux: %v\n", err)
 	})
-	code := m.Run()
+	code := gitsafe.RunIsolatedMain(m)
 	if err := runCleanup(); err != nil {
 		fmt.Fprintf(os.Stderr, "cleanup e2e-server test tmux: %v\n", err)
 		if code == 0 {
@@ -1236,4 +1238,26 @@ func TestMarkdownVideoFixtureAbsentWithoutFlag(t *testing.T) {
 func TestRunRejectsMarkdownVideoInterruptWithoutClip(t *testing.T) {
 	err := run(t.Context(), 0, defaultRoborevEndpoint, "", "github.com", false, false, "", "", true)
 	require.ErrorContains(t, err, "-markdown-video-interrupt needs -markdown-video")
+}
+
+func TestE2EGitPushCarriesMaintenanceConfigToReceivePack(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("hook requires a POSIX shell")
+	}
+	root := gitfixture.ScratchDir(t)
+	bare := filepath.Join(root, "remote.git")
+	local := filepath.Join(root, "local")
+	require.NoError(t, e2eGit(t.Context(), root, "init", "--bare", bare))
+	require.NoError(t, e2eGit(t.Context(), root, "init", local))
+	marker := filepath.Join(bare, "hooks", "config")
+	hook := `#!/bin/sh
+git config --get maintenance.auto > "$(dirname "$0")/config"
+git config --get gc.auto >> "$(dirname "$0")/config"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(bare, "hooks", "pre-receive"), []byte(hook), 0o755))
+	require.NoError(t, e2eGit(t.Context(), local, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "fixture"))
+	require.NoError(t, e2eGit(t.Context(), local, "push", bare, "HEAD:refs/heads/main"))
+	result, err := os.ReadFile(marker)
+	require.NoError(t, err)
+	assert.Equal(t, "false\n0\n", string(result))
 }

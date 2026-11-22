@@ -8,11 +8,17 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/itemapi"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/serverfake"
+	"go.kenn.io/forge/platform"
 )
 
 func TestUntrackedRepoOpenListAfterTrackedFilter(t *testing.T) {
@@ -150,4 +156,31 @@ func TestUntrackedSyncCountsUserRequestsButNotIssuePolling(t *testing.T) {
 		require.Len(t, rows, 1)
 		require.Equal(t, tc.count, rows[0].Count)
 	}
+}
+
+func TestResolveGitLabRecordsUntrackedSync(t *testing.T) {
+	database := dbtest.Open(t)
+	_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{Platform: "gitlab", PlatformHost: "gitlab.com", Key: platform.RepositoryIDKey(99), Owner: "group", Name: "project"})
+	require.NoError(t, err)
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Hour, nil, nil)
+	t.Cleanup(syncer.Stop)
+	h := itemapi.Handlers{Db: database, Syncer: &syncer, RepoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database}), IsConfiguredRepoTracked: func(db.Repo) bool { return true }}
+	_, err = h.ResolveItem(t.Context(), &itemapi.ResolveItemInput{Provider: "gitlab", PlatformHost: "gitlab.com", Owner: "group", Name: "project", Number: 7, ItemType: "pr"})
+	var problem *httpapi.ProblemError
+	require.ErrorAs(t, err, &problem)
+	require.Equal(t, http.StatusForbidden, problem.Status)
+	rows, err := database.ListUntrackedRepoOpens(t.Context())
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, 1, rows[0].Count)
+}
+
+func TestUntrackedOpenListOmitsResolvedGlob(t *testing.T) {
+	srv, database, syncer := setupTestServer(t)
+	require.NoError(t, database.RecordUntrackedRepoOpen(t.Context(), db.UntrackedRepoOpen{Provider: "github", Host: "github.com", Owner: "acme", Name: "tools"}))
+	syncer.SetRepos([]ghclient.RepoRef{{Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "tools", ConfiguredRepoPath: "acme/*"}})
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/repos/untracked-opens", nil))
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	require.JSONEq(t, `[]`, rr.Body.String())
 }

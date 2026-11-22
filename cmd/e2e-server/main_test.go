@@ -1261,3 +1261,64 @@ git config --get gc.auto >> "$(dirname "$0")/config"
 	require.NoError(t, err)
 	assert.Equal(t, "false\n0\n", string(result))
 }
+
+func TestE2EServerMainIgnoresCallerGitHooks(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and launches the e2e server")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("hook and shutdown require POSIX")
+	}
+	require := require.New(t)
+	root := gitfixture.ScratchDir(t)
+	hooks := filepath.Join(root, "hooks")
+	require.NoError(os.Mkdir(hooks, 0o755))
+	marker := filepath.Join(root, "hook-ran")
+	hook := "#!/bin/sh\ntouch \"$TEST_GIT_HOOK_MARKER\"\n"
+	require.NoError(os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte(hook), 0o755))
+	config := filepath.Join(root, "global.gitconfig")
+	require.NoError(os.WriteFile(config, []byte("[core]\n\thooksPath = "+strconv.Quote(hooks)+"\n"), 0o600))
+
+	// Prove the caller's config invokes this hook before testing the server.
+	runner := gitsafe.Runner()
+	runner.Env = append(runner.Env, "GIT_CONFIG_GLOBAL="+config, "TEST_GIT_HOOK_MARKER="+marker)
+	_, stderr, err := runner.Run(t.Context(), root, nil, "init", "control")
+	require.NoError(err, string(stderr))
+	_, stderr, err = runner.Run(t.Context(), filepath.Join(root, "control"), nil,
+		"-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "control")
+	require.NoError(err, string(stderr))
+	require.FileExists(marker)
+	require.NoError(os.Remove(marker))
+
+	binary := filepath.Join(t.TempDir(), "e2e-server")
+	build := procutil.CommandContext(t.Context(), "go", "build", "-o", binary, ".")
+	output, err := build.CombinedOutput()
+	require.NoError(err, string(output))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	infoFile := filepath.Join(root, "server-info.json")
+	cmd := procutil.CommandContext(ctx, binary, "-server-info-file", infoFile)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+config, "TEST_GIT_HOOK_MARKER="+marker)
+	cmd.Stderr = os.Stderr
+	require.NoError(cmd.Start())
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		<-done
+	})
+	waitForServerInfo(t, infoFile, done)
+	require.NoError(cmd.Process.Signal(syscall.SIGTERM))
+	select {
+	case err := <-done:
+		require.NoError(err)
+	case <-time.After(10 * time.Second):
+		require.FailNow("e2e server did not stop after SIGTERM")
+	}
+	_, err = os.Stat(marker)
+	require.ErrorIs(err, os.ErrNotExist)
+}

@@ -250,9 +250,10 @@ const manyChecks = [
 for (const [width, author, repoName, checks] of [
   [340, "user-a", "widgets", fewChecks],
   [400, "user-a", "widgets", fewChecks],
+  [340, "user-with-a-very-long-name", "a-repository-with-a-very-long-name", manyChecks],
   [561, "user-with-a-very-long-name", "a-repository-with-a-very-long-name", manyChecks],
 ] as const) {
-  test(`a busy pull request keeps its status and link inside a ${width}px table`, async ({ page }) => {
+  test(`a busy pull request by ${author} keeps its status and link inside a ${width}px table`, async ({ page }) => {
     await mockTableApi(page);
     const base = mockPullFixture(42);
     const pull = {

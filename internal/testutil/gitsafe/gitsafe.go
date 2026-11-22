@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -76,7 +77,7 @@ func PrepareProcess() (cleanup func() error, err error) {
 }
 
 // RunIsolatedMain runs a package's tests with one portable Git config that
-// carries only SharedConfig.
+// carries SharedConfig and a scratch global ignore file.
 // The setup is shared by the test binary so Git-heavy suites do not create a
 // new config directory for every test or command, which is costly on Windows.
 func RunIsolatedMain(m *testing.M) int {
@@ -123,7 +124,12 @@ func configureGit(root string) error {
 	// Git for Windows cannot reliably use NUL as GIT_CONFIG_GLOBAL; a regular
 	// file works on every platform.
 	globalConfig := filepath.Join(root, "global.gitconfig")
-	if err := os.WriteFile(globalConfig, []byte(SharedConfig), 0o600); err != nil {
+	excludesFile := filepath.Join(root, "global-excludes")
+	if err := os.WriteFile(excludesFile, nil, 0o600); err != nil {
+		return fmt.Errorf("create global excludes: %w", err)
+	}
+	config := SharedConfig + "[core]\n\texcludesFile = " + strconv.Quote(excludesFile) + "\n"
+	if err := os.WriteFile(globalConfig, []byte(config), 0o600); err != nil {
 		return fmt.Errorf("create global config: %w", err)
 	}
 	for key, value := range map[string]string{

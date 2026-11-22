@@ -1262,7 +1262,7 @@ git config --get gc.auto >> "$(dirname "$0")/config"
 	assert.Equal(t, "false\n0\n", string(result))
 }
 
-func TestE2EServerMainIgnoresCallerGitHooks(t *testing.T) {
+func TestE2EServerMainIgnoresCallerGitSettings(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds and launches the e2e server")
 	}
@@ -1279,11 +1279,20 @@ func TestE2EServerMainIgnoresCallerGitHooks(t *testing.T) {
 	config := filepath.Join(root, "global.gitconfig")
 	require.NoError(os.WriteFile(config, []byte("[core]\n\thooksPath = "+strconv.Quote(hooks)+"\n"), 0o600))
 
-	// Prove the caller's config invokes this hook before testing the server.
+	home := filepath.Join(root, "home")
+	xdg := filepath.Join(root, "xdg")
+	require.NoError(os.MkdirAll(filepath.Join(xdg, "git"), 0o755))
+	require.NoError(os.Mkdir(home, 0o755))
+	require.NoError(os.WriteFile(filepath.Join(xdg, "git", "ignore"), []byte("README.md\n"), 0o600))
+
+	// Prove the caller's hook and ignore file both affect a Git repository.
 	runner := gitsafe.Runner()
-	runner.Env = append(runner.Env, "GIT_CONFIG_GLOBAL="+config, "TEST_GIT_HOOK_MARKER="+marker)
+	runner.Env = append(runner.Env, "GIT_CONFIG_GLOBAL="+config, "TEST_GIT_HOOK_MARKER="+marker, "HOME="+home, "XDG_CONFIG_HOME="+xdg)
 	_, stderr, err := runner.Run(t.Context(), root, nil, "init", "control")
 	require.NoError(err, string(stderr))
+	ignored, err := runner.Output(t.Context(), filepath.Join(root, "control"), "check-ignore", "README.md")
+	require.NoError(err)
+	require.Equal("README.md", strings.TrimSpace(string(ignored)))
 	_, stderr, err = runner.Run(t.Context(), filepath.Join(root, "control"), nil,
 		"-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "control")
 	require.NoError(err, string(stderr))
@@ -1299,7 +1308,7 @@ func TestE2EServerMainIgnoresCallerGitHooks(t *testing.T) {
 	defer cancel()
 	infoFile := filepath.Join(root, "server-info.json")
 	cmd := procutil.CommandContext(ctx, binary, "-server-info-file", infoFile)
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+config, "TEST_GIT_HOOK_MARKER="+marker)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+config, "TEST_GIT_HOOK_MARKER="+marker, "HOME="+home, "XDG_CONFIG_HOME="+xdg)
 	cmd.Stderr = os.Stderr
 	require.NoError(cmd.Start())
 	done := make(chan error, 1)
@@ -1311,7 +1320,17 @@ func TestE2EServerMainIgnoresCallerGitHooks(t *testing.T) {
 		_ = cmd.Process.Kill()
 		<-done
 	})
-	waitForServerInfo(t, infoFile, done)
+	info := waitForServerInfo(t, infoFile, done)
+	diff := getJSON(t, info.BaseURL+"/api/v1/pulls/github/acme/widgets/1/diff")
+	files, ok := diff["files"].([]any)
+	require.True(ok)
+	var readmeFound bool
+	for _, file := range files {
+		if fields, ok := file.(map[string]any); ok && fields["path"] == "README.md" {
+			readmeFound = true
+		}
+	}
+	require.True(readmeFound, "fixture diff must include README.md")
 	require.NoError(cmd.Process.Signal(syscall.SIGTERM))
 	select {
 	case err := <-done:

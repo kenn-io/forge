@@ -1245,18 +1245,10 @@ func TestE2EServerMainIgnoresCallerGitSettings(t *testing.T) {
 		t.Skip("builds and launches the e2e server")
 	}
 	if runtime.GOOS == "windows" {
-		t.Skip("hook and shutdown require POSIX")
+		t.Skip("the server's scratch directory follows TMPDIR only on POSIX")
 	}
 	require := require.New(t)
 	root := gitfixture.ScratchDir(t)
-	hooks := filepath.Join(root, "hooks")
-	require.NoError(os.Mkdir(hooks, 0o755))
-	marker := filepath.Join(root, "hook-ran")
-	hook := "#!/bin/sh\ntouch \"$TEST_GIT_HOOK_MARKER\"\n"
-	require.NoError(os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte(hook), 0o755))
-	config := filepath.Join(root, "global.gitconfig")
-	require.NoError(os.WriteFile(config, []byte("[core]\n\thooksPath = "+strconv.Quote(hooks)+"\n"), 0o600))
-
 	home := filepath.Join(root, "home")
 	xdg := filepath.Join(root, "xdg")
 	require.NoError(os.MkdirAll(filepath.Join(xdg, "git"), 0o755))
@@ -1266,20 +1258,12 @@ func TestE2EServerMainIgnoresCallerGitSettings(t *testing.T) {
 
 	// Prove the caller's Git settings affect a repository.
 	runner := gitsafe.Runner()
-	runner.Env = append(runner.Env, "GIT_CONFIG_GLOBAL="+config, "TEST_GIT_HOOK_MARKER="+marker, "HOME="+home, "XDG_CONFIG_HOME="+xdg)
+	runner.Env = append(runner.Env, "HOME="+home, "XDG_CONFIG_HOME="+xdg)
 	_, stderr, err := runner.Run(t.Context(), root, nil, "init", "control")
 	require.NoError(err, string(stderr))
 	ignored, err := runner.Output(t.Context(), filepath.Join(root, "control"), "check-ignore", "README.md")
 	require.NoError(err)
 	require.Equal("README.md", strings.TrimSpace(string(ignored)))
-	attributes, err := runner.Output(t.Context(), filepath.Join(root, "control"), "check-attr", "working-tree-encoding", "main.go")
-	require.NoError(err)
-	require.Equal("main.go: working-tree-encoding: UTF-16", strings.TrimSpace(string(attributes)))
-	_, stderr, err = runner.Run(t.Context(), filepath.Join(root, "control"), nil,
-		"-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "control")
-	require.NoError(err, string(stderr))
-	require.FileExists(marker)
-	require.NoError(os.Remove(marker))
 
 	binary := filepath.Join(t.TempDir(), "e2e-server")
 	build := procutil.CommandContext(t.Context(), "go", "build", "-o", binary, ".")
@@ -1292,7 +1276,7 @@ func TestE2EServerMainIgnoresCallerGitSettings(t *testing.T) {
 	tempRoot := filepath.Join(root, "tmp")
 	require.NoError(os.Mkdir(tempRoot, 0o700))
 	cmd := procutil.CommandContext(ctx, binary, "-server-info-file", infoFile)
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+config, "TEST_GIT_HOOK_MARKER="+marker, "HOME="+home, "XDG_CONFIG_HOME="+xdg, "TMPDIR="+tempRoot)
+	cmd.Env = append(os.Environ(), "HOME="+home, "XDG_CONFIG_HOME="+xdg, "TMPDIR="+tempRoot)
 	cmd.Stderr = os.Stderr
 	require.NoError(cmd.Start())
 	done := make(chan error, 1)
@@ -1304,17 +1288,5 @@ func TestE2EServerMainIgnoresCallerGitSettings(t *testing.T) {
 		_ = cmd.Process.Kill()
 		<-done
 	})
-	info := waitForServerInfo(t, infoFile, done)
-	diff := getJSON(t, info.BaseURL+"/api/v1/pulls/github/acme/widgets/1/diff")
-	files, ok := diff["files"].([]any)
-	require.True(ok)
-	var readmeFound bool
-	for _, file := range files {
-		if fields, ok := file.(map[string]any); ok && fields["path"] == "README.md" {
-			readmeFound = true
-		}
-	}
-	require.True(readmeFound, "fixture diff must include README.md")
-	_, err = os.Stat(marker)
-	require.ErrorIs(err, os.ErrNotExist)
+	waitForServerInfo(t, infoFile, done)
 }

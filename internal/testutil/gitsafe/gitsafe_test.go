@@ -92,7 +92,7 @@ func TestMutableRunnerKeepsGlobalWritesPrivate(t *testing.T) {
 	require.Error(err, "private global config leaked into the package config")
 }
 
-func TestPrepareProcessKeepsHomeAndUsesScratchIgnoreAndAttributes(t *testing.T) {
+func TestPrepareProcessIsolatesGitAndKeepsHome(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -120,11 +120,6 @@ func TestPrepareProcessKeepsHomeAndUsesScratchIgnoreAndAttributes(t *testing.T) 
 	assert.Equal(callerHome, os.Getenv("HOME"))
 	assert.Equal(callerXDG, os.Getenv("XDG_CONFIG_HOME"))
 	root := filepath.Dir(os.Getenv("GIT_CONFIG_GLOBAL"))
-	for key, expected := range map[string]string{"maintenance.auto": "false", "gc.auto": "0"} {
-		out, err := Runner().Output(t.Context(), t.TempDir(), "config", "--global", "--get", key)
-		require.NoError(err, key)
-		assert.Equal(expected, strings.TrimSpace(string(out)), key)
-	}
 	for _, key := range []string{"core.excludesFile", "core.attributesFile"} {
 		out, err := Runner().Output(t.Context(), t.TempDir(), "config", "--global", "--path", "--get", key)
 		require.NoError(err, key)
@@ -133,6 +128,31 @@ func TestPrepareProcessKeepsHomeAndUsesScratchIgnoreAndAttributes(t *testing.T) 
 		contents, err := os.ReadFile(path)
 		require.NoError(err, key)
 		assert.Empty(contents, key)
+	}
+
+	// The receive-pack hook below needs a POSIX shell.
+	if runtime.GOOS != "windows" {
+		repos := t.TempDir()
+		_, err := Runner().Output(t.Context(), repos, "rev-parse", "--absolute-git-dir")
+		require.Error(err, "fixture must be outside any repository or worktree")
+		remote := filepath.Join(repos, "remote.git")
+		local := filepath.Join(repos, "local")
+		_, stderr, err := Runner().Run(t.Context(), repos, nil, "init", "--bare", remote)
+		require.NoError(err, string(stderr))
+		_, stderr, err = Runner().Run(t.Context(), repos, nil, "init", local)
+		require.NoError(err, string(stderr))
+		hook := `#!/bin/sh
+git config --get maintenance.auto > "$(dirname "$0")/config"
+git config --get gc.auto >> "$(dirname "$0")/config"
+`
+		require.NoError(os.WriteFile(filepath.Join(remote, "hooks", "pre-receive"), []byte(hook), 0o755))
+		_, stderr, err = Runner().Run(t.Context(), local, nil, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "fixture")
+		require.NoError(err, string(stderr))
+		_, stderr, err = Runner().Run(t.Context(), local, nil, "push", remote, "HEAD:refs/heads/main")
+		require.NoError(err, string(stderr))
+		config, err := os.ReadFile(filepath.Join(remote, "hooks", "config"))
+		require.NoError(err)
+		assert.Equal("false\n0\n", string(config))
 	}
 
 	require.NoError(cleanup())
@@ -152,39 +172,4 @@ func replaceEnv(base []string, replacements map[string]string) []string {
 		out = append(out, key+"="+value)
 	}
 	return out
-}
-
-func TestPrepareProcessPassesMaintenanceConfigToReceivePack(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("hook requires a POSIX shell")
-	}
-	for _, key := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TERMINAL_PROMPT"} {
-		t.Setenv(key, os.Getenv(key))
-	}
-	cleanup, err := PrepareProcess()
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, cleanup()) })
-
-	root := t.TempDir()
-	remote := filepath.Join(root, "remote.git")
-	local := filepath.Join(root, "local")
-	runner := Runner()
-	_, err = runner.Output(t.Context(), root, "rev-parse", "--absolute-git-dir")
-	require.Error(t, err, "fixture must be outside any repository or worktree")
-	_, stderr, err := runner.Run(t.Context(), root, nil, "init", "--bare", remote)
-	require.NoError(t, err, string(stderr))
-	_, stderr, err = runner.Run(t.Context(), root, nil, "init", local)
-	require.NoError(t, err, string(stderr))
-	hook := `#!/bin/sh
-git config --get maintenance.auto > "$(dirname "$0")/config"
-git config --get gc.auto >> "$(dirname "$0")/config"
-`
-	require.NoError(t, os.WriteFile(filepath.Join(remote, "hooks", "pre-receive"), []byte(hook), 0o755))
-	_, stderr, err = runner.Run(t.Context(), local, nil, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "fixture")
-	require.NoError(t, err, string(stderr))
-	_, stderr, err = runner.Run(t.Context(), local, nil, "push", remote, "HEAD:refs/heads/main")
-	require.NoError(t, err, string(stderr))
-	config, err := os.ReadFile(filepath.Join(remote, "hooks", "config"))
-	require.NoError(t, err)
-	assert.Equal(t, "false\n0\n", string(config))
 }

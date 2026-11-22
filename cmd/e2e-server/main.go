@@ -159,9 +159,7 @@ func main() {
 		)
 	}
 	stop()
-	if cleanupErr := cleanup(); cleanupErr != nil {
-		err = errors.Join(err, cleanupErr)
-	}
+	err = errors.Join(err, cleanup())
 	if err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)

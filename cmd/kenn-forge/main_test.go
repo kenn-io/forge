@@ -216,7 +216,7 @@ func TestDesktopLog(t *testing.T) {
 			} else {
 				_, err := os.Stat(logPath)
 				if tc.obstruct {
-					assert.NoError(err)
+					require.NoError(err)
 				} else {
 					assert.True(os.IsNotExist(err))
 				}

@@ -164,7 +164,7 @@ func main() {
 	os.Exit(runMain())
 }
 
-var closeDesktopLog func() error
+var closeDesktopLog = func() error { return nil }
 
 func runMain() int {
 	closeLog, err := configureLogging(os.Stderr, strings.TrimSpace(os.Getenv("KENN_FORGE_LOG_FILE")))
@@ -173,13 +173,7 @@ func runMain() int {
 		return 1
 	}
 	defer func() {
-		if closeDesktopLog != nil {
-			if err := closeDesktopLog(); err != nil {
-				_, _ = fmt.Fprintf(os.Stderr, "close desktop log file: %v\n", err)
-			}
-			closeDesktopLog = nil
-		}
-		if err := closeLog(); err != nil {
+		if err := errors.Join(closeDesktopLog(), closeLog()); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "close log file: %v\n", err)
 		}
 	}()

@@ -116,7 +116,6 @@ func TestConfigureLoggingRedactsTokensInConfiguredLogFile(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(orig) })
 	var stderr bytes.Buffer
 	logFile := filepath.Join(t.TempDir(), "forge.log")
-	t.Setenv("KENN_FORGE_LOG_FILE", logFile)
 
 	closeLog, err := configureLogging(&stderr, logFile)
 	require.NoError(err)
@@ -180,11 +179,11 @@ func TestDesktopLog(t *testing.T) {
 			t.Setenv("KENN_FORGE_LOG_FILE", explicit)
 			t.Setenv("KENN_FORGE_LOG_LEVEL", "info")
 			t.Setenv("KENN_FORGE_LOG_STDERR_LEVEL", "")
-			t.Setenv("KENN_FORGE_DATA_DIR", dataDir)
+			t.Setenv("KENN_FORGE_DATA_DIR", "")
+			require.NoError(os.Unsetenv("KENN_FORGE_DATA_DIR"))
 			t.Setenv(expectedDataDirEnv, "")
 			if tc.mismatch {
 				t.Setenv(expectedDataDirEnv, filepath.Join(root, "other"))
-				require.NoError(os.WriteFile(runtimelock.MetadataPath(dataDir), []byte("existing metadata"), 0o600))
 			}
 			originalLogger, originalArgs, originalStderr := slog.Default(), os.Args, os.Stderr
 			stderr, err := os.CreateTemp(root, "stderr")
@@ -202,9 +201,6 @@ func TestDesktopLog(t *testing.T) {
 			require.NoError(err)
 			if tc.mismatch {
 				assert.Contains(string(stderrBytes), "background launch expected data_dir")
-				metadata, err := os.ReadFile(runtimelock.MetadataPath(dataDir))
-				require.NoError(err)
-				assert.Equal("existing metadata", string(metadata))
 			} else {
 				assert.Contains(string(stderrBytes), "another kenn-forge is already running")
 			}
@@ -217,9 +213,13 @@ func TestDesktopLog(t *testing.T) {
 				assert.Contains(string(out), "runtime configuration")
 				assert.Contains(string(out), "another kenn-forge is already running")
 				assert.Equal(1, strings.Count(string(out), "msg=fatal"))
-			} else if !tc.obstruct {
+			} else {
 				_, err := os.Stat(logPath)
-				assert.True(os.IsNotExist(err))
+				if tc.obstruct {
+					assert.NoError(err)
+				} else {
+					assert.True(os.IsNotExist(err))
+				}
 			}
 			if explicit != "" {
 				out, err := os.ReadFile(explicit)

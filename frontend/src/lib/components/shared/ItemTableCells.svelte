@@ -206,12 +206,17 @@
   }
 
   /* Never squeezed: the title gives way instead. Pushed to the end of the item cell,
-     so every row's status ends at the same edge. */
+     so every row's status ends at the same edge. A status wider than the whole cell
+     wraps its own indicators rather than running past the cell's edge. */
   .item-status {
     display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     align-items: center;
     gap: 6px;
+    row-gap: var(--space-1);
     flex-shrink: 0;
+    max-width: 100%;
     margin-inline-start: auto;
   }
 

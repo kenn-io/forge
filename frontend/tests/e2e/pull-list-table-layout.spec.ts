@@ -229,14 +229,22 @@ for (const [width, headers] of [
   });
 }
 
-for (const width of [340, 400]) {
+// 580px has no title minimum, so long repository and author names at their caps leave the
+// item cell narrower than a busy status.
+for (const [width, author, repoName] of [
+  [340, "user-a", "widgets"],
+  [400, "user-a", "widgets"],
+  [580, "user-with-a-very-long-name", "a-repository-with-a-very-long-name"],
+] as const) {
   test(`a busy pull request keeps its status and link inside a ${width}px table`, async ({ page }) => {
     await mockTableApi(page);
+    const base = mockPullFixture(42);
     const pull = {
-      ...mockPullFixture(42),
+      ...base,
+      repo: { ...base.repo, name: repoName },
       Number: 1234,
       Title: "Improve cache refresh",
-      Author: "user-a",
+      Author: author,
       IsDraft: true,
       labels,
       workspace: { id: "workspace-a", status: "ready", agent_state: "approval" },
@@ -278,7 +286,7 @@ for (const width of [340, 400]) {
     }
     const link = (await row.locator(".cell--link").boundingBox())!;
     expect(link.x + link.width).toBeLessThanOrEqual(tableBox.x + tableBox.width);
-    await expect(row.locator(".cell--author")).toHaveText("user-a");
+    await expect(row.locator(".cell--author")).toHaveText(author);
     expect(await table.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   });
 }

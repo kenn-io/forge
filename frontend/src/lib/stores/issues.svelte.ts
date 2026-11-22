@@ -1028,7 +1028,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function loadIssueDetail(owner: string, name: string, number: number, options: IssueDetailRequestOptions): void {
     const ref = issueDetailRequestRef(owner, name, number, options);
     const key = issueDetailKey(ref);
-    if (activeIssueSelectionKey !== key) {
+    const newSelection = activeIssueSelectionKey !== key;
+    if (newSelection) {
       acknowledgedMembership.clear();
       rememberIssueDetail();
       const previous = ref.repositoryKey
@@ -1056,6 +1057,17 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const program = Effect.gen(function* () {
       const workflow = yield* IssuesWorkflow;
       const result = yield* workflow.detail(issueDetailKey(ref), syncMode, readIssueDetail(ref, "GET issue detail"));
+      if (newSelection) {
+        runtime.runCommand(
+          executeGeneratedApiRequest("record untracked repository open", (client, signal) =>
+            client.RepositoriesService.recordUntrackedRepoOpen(
+              { provider: ref.provider, host: concretePlatformHost(ref), owner, name, item_type: "issue", number },
+              { signal, keepalive: true },
+            ),
+          ),
+          { operation: "record untracked repository open", safeContext: {}, onFailure: () => {} },
+        );
+      }
       reconcileListsAfterDetailSync();
       const applied = yield* installIssueDetail(ref, result.detail, envelopeTick, generation, false);
       if (generation === issueSyncGeneration) detailLoading = false;

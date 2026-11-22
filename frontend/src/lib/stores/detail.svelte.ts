@@ -1220,7 +1220,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // sync mode joins the in-flight load and may promote the sync
     // intent if its requested mode is stronger.
     const key = prKey(requestRef);
-    if (activeSelectionKey !== key) {
+    const newSelection = activeSelectionKey !== key;
+    if (newSelection) {
       acknowledgedMembership.clear();
       rememberDetail();
       const previous = requestRef.repositoryKey
@@ -1297,6 +1298,24 @@ export function createDetailStore(opts: DetailStoreOptions) {
       let data: PullDetail;
       if (Result.isSuccess(initialRead)) {
         data = initialRead.success;
+        if (newSelection) {
+          runtime.runCommand(
+            executeGeneratedApiRequest("record untracked repository open", (client, signal) =>
+              client.RepositoriesService.recordUntrackedRepoOpen(
+                {
+                  provider: requestRef.provider,
+                  host: concretePlatformHost(requestRef),
+                  owner,
+                  name,
+                  item_type: "pr",
+                  number,
+                },
+                { signal, keepalive: true },
+              ),
+            ),
+            { operation: "record untracked repository open", safeContext: {}, onFailure: () => {} },
+          );
+        }
       } else if (
         currentLoad.syncMode !== false &&
         initialRead.failure._tag === "ApiProblemError" &&

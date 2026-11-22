@@ -15,6 +15,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/itemapi"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/serverfake"
@@ -244,4 +245,32 @@ func TestDirectDetailLinksRecordUntrackedRepos(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rows, 4)
 	require.Equal(t, 4, rows[0].Count)
+}
+
+func TestCachedUntrackedDetailSyncDoesNotCountAgain(t *testing.T) {
+	srv, database, _, syncer := setupTestServerWithConfig(t)
+	ctx := t.Context()
+	repoID, err := reposeed.Seed(ctx, database, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(t, err)
+	now := time.Now().UTC()
+	_, err = database.UpsertIssue(ctx, &db.Issue{RepoID: repoID, PlatformID: 101, Number: 7, URL: "https://github.com/acme/widget/issues/7", Title: "Issue", Author: "user", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
+	require.NoError(t, err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{RepoID: repoID, PlatformID: 102, Number: 8, URL: "https://github.com/acme/widget/pull/8", Title: "Pull", Author: "user", State: "open", HeadBranch: "feature", BaseBranch: "main", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
+	require.NoError(t, err)
+	syncer.SetRepos(nil)
+	for _, tc := range []struct{ detail, sync, kind string }{
+		{"/api/v1/issues/gh/acme/widget/7", "/api/v1/issues/gh/acme/widget/7/sync", "issue"},
+		{"/api/v1/pulls/gh/acme/widget/8", "/api/v1/pulls/gh/acme/widget/8/sync", "pr"},
+	} {
+		rr := testutil.DoJSON(t, srv, http.MethodGet, tc.detail, nil)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+		rr = testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repos/untracked-opens", map[string]any{"provider": "github", "host": "github.com", "owner": "acme", "name": "widget", "item_type": tc.kind})
+		require.Less(t, rr.Code, 300, rr.Body.String())
+		testutil.DoJSON(t, srv, http.MethodPost, tc.sync, nil)
+		testutil.DoJSON(t, srv, http.MethodGet, tc.detail, nil)
+	}
+	rows, err := database.ListUntrackedRepoOpens(ctx)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, 2, rows[0].Count)
 }

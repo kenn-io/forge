@@ -337,6 +337,42 @@ function mockClient(overrides: Partial<GeneratedClient> = {}): GeneratedClient {
 }
 
 describe("createIssuesStore", () => {
+  it("records the initial detail selection once across refreshes", async () => {
+    const record = vi.fn(async () => undefined);
+    const get = vi.fn(async () => issueDetail());
+    const store = createIssuesStore({
+      client: makeGeneratedClient({
+        IssuesService: { getIssue: get },
+        RepositoriesService: { recordUntrackedRepoOpen: record },
+      }),
+    });
+    const ref = { provider: "github", platformHost: "github.com", repoPath: "acme/widget", sync: false } as const;
+    await loadIssueDetail(store, "acme", "widget", 7, ref);
+    await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1));
+    await loadIssueDetail(store, "acme", "widget", 7, ref);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith(
+      { provider: "github", host: "github.com", owner: "acme", name: "widget", item_type: "issue", number: 7 },
+      expect.objectContaining({ keepalive: true }),
+    );
+  });
+
+  it("leaves missing repository recording to the detail route", async () => {
+    const record = vi.fn(async () => undefined);
+    const problem = { code: "repoNotFound", status: 404, title: "Not found" };
+    const get = vi
+      .fn()
+      .mockRejectedValue(new GeneratedProblemResponse(problem, Response.json(problem, { status: 404 })));
+    const store = createIssuesStore({
+      client: makeGeneratedClient({
+        IssuesService: { getIssue: get },
+        RepositoriesService: { recordUntrackedRepoOpen: record },
+      }),
+    });
+    await loadIssueDetail(store, "acme", "widget", 7, { provider: "github", repoPath: "acme/widget", sync: false });
+    expect(record).not.toHaveBeenCalled();
+  });
+
   it("does not install a response from a different repository", async () => {
     const store = createIssuesStore({
       client: mockClient({ GET: vi.fn().mockResolvedValue({ data: issueDetail() }) }),

@@ -42,7 +42,7 @@ test("the PR list layout chosen in Settings shows table rows and survives a relo
   await expect(page.locator(".pull-item--table").first()).toBeVisible();
   await selectFlatList(page);
   const headers = page.locator(".item-table-headers");
-  await expect(headers).toHaveText(/Repo\s*Author\s*Item\s*Status\s*When/);
+  await expect(headers).toHaveText(/Repo\s*Author\s*Item\s*When/);
 
   const row = page
     .locator(".pull-item--table")
@@ -89,18 +89,18 @@ test("a part switched off in Settings leaves the PR table and stays off after a 
 
   await page.goto("/pulls");
   const headers = page.locator(".item-table-headers");
-  await expect(headers).toHaveText(/^\s*Repo\s*Item\s*Status\s*When\s*$/);
+  await expect(headers).toHaveText(/^\s*Repo\s*Item\s*When\s*$/);
   await expect(page.locator(".pull-item--table").first()).toBeVisible();
   await expect(page.locator(".pull-item--table .cell--author")).toHaveCount(0);
 
   await page.reload();
-  await expect(headers).toHaveText(/^\s*Repo\s*Item\s*Status\s*When\s*$/);
+  await expect(headers).toHaveText(/^\s*Repo\s*Item\s*When\s*$/);
 
   await page.goto("/settings?section=settings-appearance");
   await expect(author).not.toBeChecked();
   await author.click();
   await page.goto("/pulls");
-  await expect(headers).toHaveText(/Repo\s*Author\s*Item\s*Status\s*When/);
+  await expect(headers).toHaveText(/Repo\s*Author\s*Item\s*When/);
   await expect(page.locator(".pull-item--table .cell--author").first()).toBeVisible();
 });
 
@@ -111,7 +111,7 @@ test("grouped by repo, the table drops the Repo column", async ({ page }) => {
   });
   await page.goto("/pulls");
   const headers = page.locator(".item-table-headers");
-  await expect(headers).toHaveText(/^\s*Author\s*Item\s*Status\s*When\s*$/);
+  await expect(headers).toHaveText(/^\s*Author\s*Item\s*When\s*$/);
   const row = page.locator(".pull-item--table").first();
   await expect(row).toBeVisible();
   await expect(row.locator(".cell--repo")).toHaveCount(0);

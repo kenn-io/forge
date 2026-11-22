@@ -204,15 +204,16 @@ to the application.
 - Activity and the PR table are one item table: shared column tracks, headers, and
   cells. Neither gets its own cell markup or column sizing
   (`frontend/src/lib/components/shared/ItemTableHeaders.svelte::itemTableColumns`).
-- In an item table the title outranks the rest of its row: status has its own column,
-  and label chips take only the room the title leaves.
-- Activity is the reference layout for the PR table, not the other way around. Item
-  table rows stay on one line: Activity at every width, with titles taking only what Repo
-  and Author leave (`--item-table-item-min: 0px`), and the PR table down to a 340px
-  sidebar. At 560px and below the PR table drops Author and When and the title's
-  minimum width, so a busy Status cell and the provider link stay inside the sidebar.
-  Only a PR sidebar under 340px uses two-line rows
-  (`frontend/src/lib/components/sidebar/PullList.svelte`).
+- In an item table, Repo, Author, and When keep their width and the title takes what is
+  left, in Activity and the PR table alike. A PR row's status ends its own Item cell, not a
+  shared column, so a busy status costs only that row's title. Label chips take only the
+  room the title leaves.
+- Activity is the reference layout for the PR table, not the other way around. Author
+  shows at every table width. At 560px and below the PR table drops When and keeps half
+  the row for the item cell; wider, the item cell keeps 10rem. Repo and Author shrink to
+  leave it. A status that still does not fit moves under its title and wraps between
+  indicators and CI counts rather than being cut. Only a PR sidebar under 340px uses
+  two-line rows (`frontend/src/lib/components/sidebar/PullList.svelte`).
 - Compact label chips outrank the title on two-line list rows: the title yields to a small floor,
   below which it shrinks only to keep the status, number, and badge in view, and a chip
   that cannot fit whole moves into the `+N` badge; chip and badge text is never cut

@@ -247,6 +247,56 @@ test.describe("threaded activity columns", () => {
     expect(await row.locator(".cell--author").evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(false);
   });
 
+  test("dragging the rail restyles the rail, not every row in it", async ({ page, browser, browserName }) => {
+    // Chromium's trace counts the elements each style pass touches.
+    test.skip(browserName !== "chromium", "style recalculation counts come from Chromium tracing");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await mockSettings(page);
+    const rows = 40;
+    await mockActivity(
+      page,
+      Array.from({ length: rows }, (_, index) =>
+        itemEvent({
+          id: `evt-${index}`,
+          number: 1000 + index,
+          type: "new_pr",
+          author: "user-a",
+          authorName: "User A",
+          createdAt: `2026-04-27T12:${String(index).padStart(2, "0")}:00Z`,
+          title: `Pull request number ${index}`,
+        }),
+      ),
+    );
+    await page.addInitScript(() => localStorage.setItem("kenn-forge:groupingMode", "flat"));
+    await page.goto("/?view=threaded");
+    await page.locator(".item-row").first().click();
+    const handle = page.getByRole("separator", { name: "Resize Activity rail" });
+    await expect(handle).toBeVisible();
+    await expect(page.locator(".item-row")).toHaveCount(rows);
+
+    const box = (await handle.boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + 100;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await browser.startTracing(page, { categories: ["devtools.timeline"] });
+    for (let step = 1; step <= 5; step++) {
+      await page.mouse.move(x + step * 10, y);
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+    }
+    const trace = JSON.parse((await browser.stopTracing()).toString()) as {
+      traceEvents: { name: string; args?: { elementCount?: number } }[];
+    };
+    await page.mouse.up();
+
+    const restyled = trace.traceEvents
+      .filter((event) => event.name === "UpdateLayoutTree")
+      .map((event) => event.args?.elementCount ?? 0);
+    expect(restyled.length).toBeGreaterThan(0);
+    // Each row is several elements, so restyling every row would touch hundreds.
+    expect(Math.max(...restyled)).toBeLessThan(rows);
+  });
+
   for (const width of [320, 360]) {
     test(`flat Activity at ${width}px keeps the time and link inside the window`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });

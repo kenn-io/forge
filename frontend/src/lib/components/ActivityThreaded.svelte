@@ -958,8 +958,6 @@
   .threaded-view {
     padding: 0 16px;
     --threaded-col-caret: 18px;
-    /* Repo and Author keep their full width; the title takes what is left. */
-    --item-table-item-min: 0px;
     display: grid;
     column-gap: 6px;
     align-content: start;

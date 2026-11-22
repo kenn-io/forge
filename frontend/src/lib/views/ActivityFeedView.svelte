@@ -679,6 +679,14 @@
 {/snippet}
 
 <style>
+  /* Dragging the rail changes this on every step. Inherited, it would restyle every
+     row in the feed each time; only the pane reads it. */
+  @property --activity-pane-width {
+    syntax: "<length>";
+    inherits: false;
+    initial-value: 360px;
+  }
+
   .activity-shell {
     flex: 1;
     overflow: hidden;

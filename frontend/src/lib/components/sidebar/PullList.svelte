@@ -64,8 +64,13 @@
   const LOCAL_FILTER_ICON_ONLY_MAX_WIDTH = 520;
   // Table rows stay on one line down to this width; narrower sidebars use two-line rows.
   const TABLE_MIN_WIDTH = 340;
-  // At or below this width the table drops Author and When to leave room for titles.
+  // At or below this width the table drops When to leave room for titles.
   const NARROW_TABLE_MAX_WIDTH = 560;
+  // The item cell's minimum: half the row in a narrow table, and otherwise room for any one
+  // status indicator, never more than half the row so large text cannot push the table past
+  // its sidebar. Repo and Author shrink to leave it.
+  const NARROW_TABLE_TITLE_MIN = "50%";
+  const TABLE_TITLE_MIN = "min(10rem, 50%)";
 
   interface Props {
     getDetailTab?: () => string;
@@ -304,7 +309,7 @@
   // Grouping by repository names the repo in the group heading, so its column goes.
   const tableColumns = $derived({
     repo: renderedGroups === null && pulls.isTablePartShown("repo"),
-    author: !narrowTable && pulls.isTablePartShown("author"),
+    author: pulls.isTablePartShown("author"),
     when: !narrowTable && pulls.isTablePartShown("when"),
   });
   const renderedFlatRows = $derived(flatRows.slice(0, mountBudget));
@@ -555,10 +560,12 @@
           tableLayout && renderedGroups !== null && "pull-table--grouped",
           tableLayout && narrowTable && "pull-table--narrow",
         ]}
-        style:grid-template-columns={tableLayout ? itemTableColumns({ ...tableColumns, status: true }) : undefined}
+        style:grid-template-columns={tableLayout
+          ? itemTableColumns({ ...tableColumns, titleMin: narrowTable ? NARROW_TABLE_TITLE_MIN : TABLE_TITLE_MIN })
+          : undefined}
       >
         {#if tableLayout}
-          <ItemTableHeaders {...tableColumns} status />
+          <ItemTableHeaders {...tableColumns} />
         {/if}
         {@render listRows()}
       </div>
@@ -612,14 +619,7 @@
     --item-table-header-position: static;
   }
 
-  /* A narrow table drops the title's minimum width, so a busy Status cell and the
-     provider link stay inside the sidebar and the title gives way instead. */
-  .pull-table--narrow {
-    --item-table-item-min: 0px;
-  }
-
-  /* A narrow table has no Author or When tracks, so their cells leave the grid. */
-  .pull-table--narrow :global(.col-author),
+  /* A narrow table has no When track, so its cells leave the grid. */
   .pull-table--narrow :global(.col-when) {
     display: none;
   }

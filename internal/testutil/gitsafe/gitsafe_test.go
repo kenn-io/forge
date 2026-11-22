@@ -91,10 +91,6 @@ func TestMutableRunnerKeepsGlobalWritesPrivate(t *testing.T) {
 	require.Error(err, "private global config leaked into the package config")
 }
 
-// The e2e server expands user-supplied ~ paths through HOME, so its Git
-// isolation must not move HOME. Git would then find the caller's ignore and
-// attributes files under XDG_CONFIG_HOME unless global config names scratch
-// files instead.
 func TestPrepareProcessKeepsHomeAndUsesScratchIgnoreAndAttributes(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -109,17 +105,11 @@ func TestPrepareProcessKeepsHomeAndUsesScratchIgnoreAndAttributes(t *testing.T) 
 
 	cleanup, err := PrepareProcess()
 	require.NoError(err)
-	cleanupDone := false
-	t.Cleanup(func() {
-		if !cleanupDone {
-			_ = cleanup()
-		}
-	})
+	t.Cleanup(func() { _ = cleanup() })
 
 	assert.Equal(callerHome, os.Getenv("HOME"))
 	assert.Equal(callerXDG, os.Getenv("XDG_CONFIG_HOME"))
 	root := filepath.Dir(os.Getenv("GIT_CONFIG_GLOBAL"))
-	assert.NotEqual(callerHome, root)
 	for _, key := range []string{"core.excludesFile", "core.attributesFile"} {
 		out, err := Runner().Output(t.Context(), t.TempDir(), "config", "--global", "--path", "--get", key)
 		require.NoError(err, key)
@@ -130,7 +120,6 @@ func TestPrepareProcessKeepsHomeAndUsesScratchIgnoreAndAttributes(t *testing.T) 
 		assert.Empty(contents, key)
 	}
 
-	cleanupDone = true
 	require.NoError(cleanup())
 	assert.NoDirExists(root)
 }

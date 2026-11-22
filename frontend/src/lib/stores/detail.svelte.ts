@@ -1240,8 +1240,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         number,
       });
     }
-    const newSelection = activeSelectionKey !== key;
-    if (newSelection) {
+    if (activeSelectionKey !== key) {
       acknowledgedMembership.clear();
       rememberDetail();
       const previous = requestRef.repositoryKey

@@ -1048,8 +1048,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         number,
       });
     }
-    const newSelection = activeIssueSelectionKey !== key;
-    if (newSelection) {
+    if (activeIssueSelectionKey !== key) {
       acknowledgedMembership.clear();
       rememberIssueDetail();
       const previous = ref.repositoryKey

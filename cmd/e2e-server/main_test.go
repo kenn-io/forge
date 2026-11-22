@@ -1249,21 +1249,33 @@ func TestE2EServerMainIgnoresCallerGitSettings(t *testing.T) {
 	}
 	require := require.New(t)
 	root := gitfixture.ScratchDir(t)
+	hooks := filepath.Join(root, "hooks")
+	require.NoError(os.Mkdir(hooks, 0o755))
+	marker := filepath.Join(root, "hook-ran")
+	hook := "#!/bin/sh\ntouch \"$TEST_GIT_HOOK_MARKER\"\n"
+	require.NoError(os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte(hook), 0o755))
+	config := filepath.Join(root, "global.gitconfig")
+	runner := gitsafe.Runner()
+	_, stderr, err := runner.Run(t.Context(), root, nil, "config", "--file", config, "core.hooksPath", hooks)
+	require.NoError(err, string(stderr))
 	home := filepath.Join(root, "home")
 	xdg := filepath.Join(root, "xdg")
 	require.NoError(os.MkdirAll(filepath.Join(xdg, "git"), 0o755))
 	require.NoError(os.Mkdir(home, 0o755))
 	require.NoError(os.WriteFile(filepath.Join(xdg, "git", "ignore"), []byte("README.md\n"), 0o600))
-	require.NoError(os.WriteFile(filepath.Join(xdg, "git", "attributes"), []byte("*.go working-tree-encoding=UTF-16\n"), 0o600))
 
 	// Prove the caller's Git settings affect a repository.
-	runner := gitsafe.Runner()
-	runner.Env = append(runner.Env, "HOME="+home, "XDG_CONFIG_HOME="+xdg)
-	_, stderr, err := runner.Run(t.Context(), root, nil, "init", "control")
+	runner.Env = append(runner.Env, "GIT_CONFIG_GLOBAL="+config, "TEST_GIT_HOOK_MARKER="+marker, "HOME="+home, "XDG_CONFIG_HOME="+xdg)
+	_, stderr, err = runner.Run(t.Context(), root, nil, "init", "control")
 	require.NoError(err, string(stderr))
 	ignored, err := runner.Output(t.Context(), filepath.Join(root, "control"), "check-ignore", "README.md")
 	require.NoError(err)
 	require.Equal("README.md", strings.TrimSpace(string(ignored)))
+	_, stderr, err = runner.Run(t.Context(), filepath.Join(root, "control"), nil,
+		"-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "control")
+	require.NoError(err, string(stderr))
+	require.FileExists(marker)
+	require.NoError(os.Remove(marker))
 
 	binary := filepath.Join(t.TempDir(), "e2e-server")
 	build := procutil.CommandContext(t.Context(), "go", "build", "-o", binary, ".")
@@ -1276,7 +1288,7 @@ func TestE2EServerMainIgnoresCallerGitSettings(t *testing.T) {
 	tempRoot := filepath.Join(root, "tmp")
 	require.NoError(os.Mkdir(tempRoot, 0o700))
 	cmd := procutil.CommandContext(ctx, binary, "-server-info-file", infoFile)
-	cmd.Env = append(os.Environ(), "HOME="+home, "XDG_CONFIG_HOME="+xdg, "TMPDIR="+tempRoot)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+config, "TEST_GIT_HOOK_MARKER="+marker, "HOME="+home, "XDG_CONFIG_HOME="+xdg, "TMPDIR="+tempRoot)
 	cmd.Stderr = os.Stderr
 	require.NoError(cmd.Start())
 	done := make(chan error, 1)
@@ -1289,4 +1301,6 @@ func TestE2EServerMainIgnoresCallerGitSettings(t *testing.T) {
 		<-done
 	})
 	waitForServerInfo(t, infoFile, done)
+	_, err = os.Stat(marker)
+	require.ErrorIs(err, os.ErrNotExist)
 }

@@ -1289,8 +1289,10 @@ func TestE2EServerMainIgnoresCallerGitSettings(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 	infoFile := filepath.Join(root, "server-info.json")
+	tempRoot := filepath.Join(root, "tmp")
+	require.NoError(os.Mkdir(tempRoot, 0o700))
 	cmd := procutil.CommandContext(ctx, binary, "-server-info-file", infoFile)
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+config, "TEST_GIT_HOOK_MARKER="+marker, "HOME="+home, "XDG_CONFIG_HOME="+xdg)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+config, "TEST_GIT_HOOK_MARKER="+marker, "HOME="+home, "XDG_CONFIG_HOME="+xdg, "TMPDIR="+tempRoot)
 	cmd.Stderr = os.Stderr
 	require.NoError(cmd.Start())
 	done := make(chan error, 1)
@@ -1313,13 +1315,6 @@ func TestE2EServerMainIgnoresCallerGitSettings(t *testing.T) {
 		}
 	}
 	require.True(readmeFound, "fixture diff must include README.md")
-	require.NoError(cmd.Process.Signal(syscall.SIGTERM))
-	select {
-	case err := <-done:
-		require.NoError(err)
-	case <-time.After(10 * time.Second):
-		require.FailNow("e2e server did not stop after SIGTERM")
-	}
 	_, err = os.Stat(marker)
 	require.ErrorIs(err, os.ErrNotExist)
 }

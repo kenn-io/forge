@@ -210,7 +210,7 @@ func (s *Handler) getIssueRouteCore(ctx context.Context, input *issueRepoNumberI
 	repo, err := s.resolver.LookupRoute(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name)
 	if err != nil {
 		if errors.Is(err, httpapi.ErrRepoNotFound) {
-			_ = httpapi.RecordUntrackedRepoOpen(ctx, s.db, input.Provider, input.PlatformHost, input.Owner, input.Name, "issue", input.Number)
+			_ = httpapi.RecordUntrackedRepoOpen(ctx, s.db, s.syncer, input.Provider, input.PlatformHost, input.Owner, input.Name, "issue", input.Number)
 		}
 		return nil, httpapi.ProviderRouteLookupError(err)
 	}

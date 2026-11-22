@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
@@ -18,7 +19,7 @@ func TestUntrackedOpenLogsWhenCounterWriteFails(t *testing.T) { //nolint:paralle
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(previous) })
-	err = RecordUntrackedRepoOpen(t.Context(), database, "github", "github.com", "acme", "other", "issue", 42)
+	err = RecordUntrackedRepoOpen(t.Context(), database, &ghclient.Syncer{}, "github", "github.com", "acme", "other", "issue", 42)
 	require.Error(t, err)
 	var entry map[string]any
 	require.NoError(t, json.NewDecoder(&logs).Decode(&entry))

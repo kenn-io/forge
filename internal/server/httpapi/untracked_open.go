@@ -8,6 +8,7 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/platform"
 )
 
@@ -38,11 +39,14 @@ func NormalizeUntrackedRepo(provider, host, owner, name string) (db.UntrackedRep
 	return repo, nil
 }
 
-func RecordUntrackedRepoOpen(ctx context.Context, database *db.DB, provider, host, owner, name, itemType string, number int) error {
+func RecordUntrackedRepoOpen(ctx context.Context, database *db.DB, syncer *ghclient.Syncer, provider, host, owner, name, itemType string, number int) error {
 	repo, err := NormalizeUntrackedRepo(provider, host, owner, name)
 	if err != nil {
 		slog.Warn("record untracked repository open", "error", err)
 		return err
+	}
+	if syncer.IsTrackedRepoByIdentity(platform.Kind(repo.Provider), repo.Owner, repo.Name, repo.Host) {
+		return nil
 	}
 	return RecordNormalizedUntrackedRepoOpen(ctx, database, repo, itemType, number)
 }

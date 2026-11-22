@@ -319,7 +319,7 @@ func (s *Handlers) SyncPR(ctx context.Context, input *RepoNumberInput) (*SyncPRO
 	if syncErr != nil && diffErr == nil {
 		if errors.Is(syncErr, ghclient.ErrRepoNotTracked) {
 			if existing == nil {
-				_ = httpapi.RecordUntrackedRepoOpen(ctx, s.Db, input.Provider, input.PlatformHost, input.Owner, input.Name, "pr", input.Number)
+				_ = httpapi.RecordUntrackedRepoOpen(ctx, s.Db, *s.Syncer, input.Provider, input.PlatformHost, input.Owner, input.Name, "pr", input.Number)
 			}
 			return nil, httpapi.Forbidden(syncErr.Error(), nil)
 		}
@@ -645,7 +645,7 @@ func (s *Handlers) ResolveItem(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if errors.Is(err, httpapi.ErrRepoNotFound) {
-		_ = httpapi.RecordUntrackedRepoOpen(ctx, s.Db, input.Provider, input.PlatformHost, input.Owner, input.Name, requestedItemType, number)
+		_ = httpapi.RecordUntrackedRepoOpen(ctx, s.Db, *s.Syncer, input.Provider, input.PlatformHost, input.Owner, input.Name, requestedItemType, number)
 		return &ResolveItemOutput{
 			Body: resolveItemResponse{
 				Number:      number,
@@ -665,7 +665,7 @@ func (s *Handlers) ResolveItem(
 		itemTypeHint = ""
 	}
 	if !s.IsConfiguredRepoTracked(repo.Repo) {
-		_ = httpapi.RecordUntrackedRepoOpen(ctx, s.Db, input.Provider, input.PlatformHost, input.Owner, input.Name, requestedItemType, number)
+		_ = httpapi.RecordUntrackedRepoOpen(ctx, s.Db, *s.Syncer, input.Provider, input.PlatformHost, input.Owner, input.Name, requestedItemType, number)
 		return &ResolveItemOutput{
 			Body: resolveItemResponse{
 				Number:      number,

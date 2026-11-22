@@ -29,6 +29,9 @@ func untrackedRepoKey(repo db.UntrackedRepoOpen) string {
 
 func (s *Handlers) RecordUntrackedOpen(ctx context.Context, input *UntrackedOpenInput) (*struct{}, error) {
 	body := input.Body
+	if err := validateUntrackedOpen(body.ItemType, body.Number); err != nil {
+		return nil, err
+	}
 	repo, err := httpapi.NormalizeUntrackedRepo(body.Provider, body.Host, body.Owner, body.Name)
 	if err != nil {
 		return nil, httpapi.Validation("body", "valid provider, host, owner and name are required")
@@ -39,6 +42,16 @@ func (s *Handlers) RecordUntrackedOpen(ctx context.Context, input *UntrackedOpen
 		}
 	}
 	return nil, nil
+}
+
+func validateUntrackedOpen(itemType string, number int) error {
+	if itemType != "" && itemType != "pr" && itemType != "issue" {
+		return httpapi.Validation("body.item_type", "item_type must be 'pr' or 'issue'", "pr", "issue")
+	}
+	if number < 0 {
+		return httpapi.Validation("body.number", "number must be non-negative")
+	}
+	return nil
 }
 
 func (s *Handlers) ListUntrackedOpens(ctx context.Context, _ *struct{}) (*UntrackedOpensOutput, error) {

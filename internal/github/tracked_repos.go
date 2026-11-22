@@ -106,6 +106,12 @@ func (s *Syncer) trackedRepoByIdentity(
 	return RepoRef{}, false
 }
 
+// IsTrackedRepoByIdentity reports whether the provider route is configured.
+func (s *Syncer) IsTrackedRepoByIdentity(kind platform.Kind, owner, name, host string) bool {
+	_, ok := s.trackedRepoByIdentity(kind, owner, name, host)
+	return ok
+}
+
 func (s *Syncer) trackedRepoByProviderKey(
 	kind platform.Kind,
 	host string, key platform.RepositoryKey,

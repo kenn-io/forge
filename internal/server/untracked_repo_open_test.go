@@ -82,6 +82,8 @@ func TestUntrackedRepoOpenAPI(t *testing.T) {
 func TestUntrackedRepoOpenValidationAndTracking(t *testing.T) {
 	srv, database, syncer := setupTestServer(t)
 	for _, body := range []string{
+		`{"provider":"github","host":"github.com","owner":"group","name":"project","item_type":"bogus"}`,
+		`{"provider":"github","host":"github.com","owner":"group","name":"project","number":-1}`,
 		`{"provider":"unknown","host":"example.com","owner":"group","name":"project"}`,
 		`{"provider":"github","host":"bad host","owner":"group","name":"project"}`,
 		`{"provider":"github","host":"github.com","owner":"bad/owner","name":"project"}`,
@@ -203,4 +205,20 @@ func TestCachedUntrackedDetailSyncDoesNotCountAgain(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.Equal(t, 2, rows[0].Count)
+}
+
+func TestTrackedRepoWithoutCacheDoesNotRecordOpen(t *testing.T) {
+	srv, database, syncer := setupTestServer(t)
+	syncer.SetRepos([]ghclient.RepoRef{{Platform: "github", PlatformHost: "github.com", Owner: "new", Name: "repo"}})
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/pulls/gh/new/repo/4"},
+		{http.MethodGet, "/api/v1/issues/gh/new/repo/5"},
+		{http.MethodPost, "/api/v1/repo/github/new/repo/resolve/6"},
+	} {
+		rr := httptest.NewRecorder()
+		srv.ServeHTTP(rr, httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, nil))
+		rows, err := database.ListUntrackedRepoOpens(t.Context())
+		require.NoError(t, err)
+		require.Empty(t, rows, tc.path)
+	}
 }

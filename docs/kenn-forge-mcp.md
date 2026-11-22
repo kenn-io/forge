@@ -1,37 +1,38 @@
 # Kenn Forge MCP
 
-Connect installed Claude Code and Codex clients with `kenn-forge agent setup`.
-Run `kenn-forge agent setup --check` to check the connection, or use `--print`
-to print manual registration commands. Outside Forge-launched terminals, export
-`KENN_FORGE_API_TOKEN` from the reported `token_path` when authentication is
-enabled.
-
-After upgrading Forge, rerun setup to update existing hooks. Review the updated
-Codex hooks in `/hooks`.
-
 Forge can expose cached maintainer workflows to local MCP clients from the
 running daemon. The companion reads the same in-process repository, activity,
 workflow, and workspace services as the UI. It does not force provider refreshes
 or add provider mutations.
 
+To connect installed Claude Code and Codex clients, run `kenn-forge agent setup`.
+To verify the connection, run `kenn-forge agent setup --check`, or pass
+`--print` to print manual registration commands. Outside Forge-launched
+terminals, export `KENN_FORGE_API_TOKEN` from the reported `token_path` when
+authentication is enabled.
+
+After you upgrade Forge, rerun setup to update existing hooks, and review the
+updated Codex hooks in `/hooks`.
+
 `kenn_forge_list_activity`, `kenn_forge_search_items`,
 `kenn_forge_find_review_candidates`, `kenn_forge_get_item_context`, and
 `kenn_forge_list_pull_contexts` may return `hints` explaining empty results or
-lowered limits, with
-`code` (`excluded_drafts`, `excluded_closed`, `excluded_default_state`,
-`every_word_required`, or `limit_lowered`), `message`, and an optional `retry_with`
-object containing retry arguments.
+lowered limits. Each hint includes a `code` (`excluded_drafts`,
+`excluded_closed`, `excluded_default_state`, `every_word_required`, or
+`limit_lowered`), a `message`, and an optional `retry_with` object containing
+retry arguments.
 
-The tool list is about 40 KB of JSON, including output schemas, with 23 tools by default and 24 when Kata task targets are available.
-`TestRegisteredToolsResourcesAndPromptsAreCurated` holds the Kata-enabled list to 44,000 bytes.
-Changes that exceed the budget must raise it in review.
+The tool list is about 40 KB of JSON, including output schemas, with 23 tools
+by default and 24 when Kata task targets are available.
+`TestRegisteredToolsResourcesAndPromptsAreCurated` holds the Kata-enabled list
+to 44,000 bytes, and changes that exceed the budget must raise it in review.
 
 ## On by default
 
-With `mcp.enabled` and `mcp.port` omitted, the companion runs on Forge's own
-port when `host` is a loopback IP, such as `127.0.0.1` or `::1`, and Forge
-isn't an execution worker. Other hosts, such as `0.0.0.0` or a tailnet IP,
-require `enabled = true`. With the default backend port, the endpoint is:
+When you omit `mcp.enabled` and `mcp.port`, the companion runs on Forge's own
+port if `host` is a loopback IP, such as `127.0.0.1` or `::1`, and Forge is not
+an execution worker. Other hosts, such as `0.0.0.0` or a tailnet IP, require
+`enabled = true`. With the default backend port, the endpoint is:
 
 ```text
 http://127.0.0.1:8091/mcp
@@ -44,31 +45,30 @@ To turn it off, save this in `~/.kenn/forge/config.toml`:
 enabled = false
 ```
 
-With `enabled = true` and no `port`, the companion also uses Forge's own port.
-For a separate loopback listener, set `port`. A saved `port` with `enabled`
-omitted keeps the companion off.
+If you set `enabled = true` without a `port`, the companion also uses Forge's
+own port. To use a separate loopback listener, set `port`. A saved `port` with
+`enabled` omitted keeps the companion off.
 
 Older versions dropped `enabled = false` when saving. Configurations with no
-`enabled` key and no MCP port start serving `/mcp` after upgrade when the default
-applies, so set `enabled = false` to keep it off.
+`enabled` key and no MCP port start serving `/mcp` after upgrade when the
+default applies, so set `enabled = false` to keep it off.
 
-Restart the daemon after changing MCP enablement or its listener port:
+After changing MCP enablement or its listener port, restart the daemon:
 
 ```sh
 kenn-forge daemon restart
 ```
 
-Loopback MCP follows `[api].require_auth`, same as the HTTP API.
-When authentication is enabled, send the daemon bearer token.
-Runtime discovery publishes the resolved MCP listener and URL, and
-`kenn-forge daemon status --json` shows both the listener address and the token
-file path.
+Loopback MCP follows `[api].require_auth`, the same as the HTTP API. When
+authentication is enabled, send the daemon bearer token. Runtime discovery
+publishes the resolved MCP listener and URL, and `kenn-forge daemon status --json`
+shows both the listener address and the token file path.
 
 While MCP is enabled, `/mcp` on the main listener also accepts daemon bearer
 holders and, with `[api.tailscale_serve]`, allowlisted Serve users and holders
-of its `app_capability`. `/api/ping`
-reports `mcp_url` on the origin the caller used, so a client that reaches Forge
-through Tailscale Serve discovers the Serve URL.
+of its `app_capability`. `/api/ping` reports `mcp_url` on the origin the caller
+used, so a client that reaches Forge through Tailscale Serve discovers the
+Serve URL.
 
 For a machine-readable listener list, run:
 
@@ -78,15 +78,15 @@ kenn-forge mcp status --json
 
 The command returns an array with `pid`, `transport: "http"`, `url`,
 `backend_url`, and an optional `token_path`. It reports the active listener,
-including when saved settings require a restart. A stopped daemon or inactive
-companion returns `[]`; the command never starts either. Use `--config` to
-select another configuration and `--timeout` to set the daemon request timeout.
-Token contents never appear in the output. For client configuration and
-restart guidance, use `kenn-forge mcp quickstart`.
+including when saved settings require a restart. If the daemon is stopped or
+the companion is inactive, it returns `[]` and never starts either. Use
+`--config` to select another configuration and `--timeout` to set the daemon
+request timeout. Token contents never appear in the output. For client
+configuration and restart guidance, run `kenn-forge mcp quickstart`.
 
 For Claude Code and Codex, use `kenn-forge agent setup` instead of the manual
-steps below. For other MCP clients, configure the HTTP URL by hand. For clients
-that accept a JSON server catalog, the shape is typically similar to:
+steps below. For other MCP clients, configure the HTTP URL by hand. Clients
+that accept a JSON server catalog typically use a shape like this:
 
 ```json
 {
@@ -99,10 +99,10 @@ that accept a JSON server catalog, the shape is typically similar to:
 }
 ```
 
-With `[api].require_auth` enabled, add the bearer token as an `Authorization`
-header. The daemon mints the token into the `auth_token` file in its data
-directory (mode 0600); read it from there rather than pasting it into shared
-configuration:
+When `[api].require_auth` is enabled, add the bearer token as an
+`Authorization` header. The daemon mints the token into the `auth_token` file
+in its data directory (mode 0600); read it from there rather than pasting it
+into shared configuration:
 
 ```json
 {
@@ -125,11 +125,11 @@ Set the referenced environment variable from the token file, for example
 Terminal agents that Forge launches in a workspace already have
 `KENN_FORGE_API_TOKEN` set while the companion is running, so the same client
 configuration connects from inside a workspace terminal without any export.
-Agents configured with `disable_forge_tools = true` don't get it.
+Agents configured with `disable_forge_tools = true` do not get it.
 
 If Forge is published with Tailscale Serve and your Tailscale login is allowed
-(see [Federated Forge](federated-fleet.md)), point the client at the Serve origin
-instead. No token is needed:
+(see [Federated Forge](federated-fleet.md)), point the client at the Serve
+origin instead. No token is needed:
 
 ```json
 {
@@ -146,120 +146,126 @@ instead. No token is needed:
 
 The companion listener stays on loopback. A client elsewhere on your network,
 such as an MCP gateway in a container, connects to `/mcp` on the main Forge
-port with the daemon bearer token instead. Bind the main listener to an
-address that client can reach, list the name it uses in `allowed_hosts`, keep
-`[mcp].enabled = true`, and turn on API authentication:
+port with the daemon bearer token instead.
 
-```toml
-host = "192.0.2.10"
-allowed_hosts = ["forge.lan:8091"]
+1. Bind the main listener to an address that client can reach, list the name
+   it uses in `allowed_hosts`, keep `[mcp].enabled = true`, and turn on API
+   authentication:
 
-[api]
-require_auth = true
+   ```toml
+   host = "192.0.2.10"
+   allowed_hosts = ["forge.lan:8091"]
 
-[mcp]
-enabled = true
-```
+   [api]
+   require_auth = true
 
-Background start (`kenn-forge daemon start` or `restart`) only binds loopback,
-so run this setup in the foreground with `kenn-forge serve`, for example under
-a service manager.
+   [mcp]
+   enabled = true
+   ```
 
-Then point the client at `http://forge.lan:8091/mcp` with the
-`Authorization: Bearer ${KENN_FORGE_API_TOKEN}` header shown above. The main
-port requires the token for MCP whether or not `[api].require_auth` is set,
-but that setting is what protects the rest of the API on the same port.
-Without it, anyone who can reach the address can use the web UI and API
-without a token. Plain HTTP sends the token in the clear, so use this only on
-a network you trust, such as a tailnet or a private container network, or put
-an HTTPS proxy in front.
+2. Run Forge in the foreground with `kenn-forge serve`, for example under a
+   service manager. Background start (`kenn-forge daemon start` or `restart`)
+   only binds loopback.
 
-Requests whose Host isn't in `allowed_hosts` or the bind address get `403`, as
-do requests with an `Origin` header other than the matching `https://` origin;
-server-side clients normally send no `Origin`.
+3. Point the client at `http://forge.lan:8091/mcp` with the
+   `Authorization: Bearer ${KENN_FORGE_API_TOKEN}` header shown above.
+
+The main port requires the token for MCP whether or not `[api].require_auth` is
+set, while that setting protects the rest of the API on the same port.
+Without it, anyone who can reach the address can use the web UI and API without
+a token. Plain HTTP sends the token in the clear, so use this only on a network
+you trust, such as a tailnet or a private container network, or put an HTTPS
+proxy in front.
+
+Requests whose Host is not in `allowed_hosts` or the bind address receive `403`,
+as do requests with an `Origin` header other than the matching `https://`
+origin. Server-side clients normally send no `Origin`.
 
 Earlier previews exposed a standalone `kenn-forge mcp` command with a stdio
-transport. That command and transport are removed without a compatibility
-shim: MCP is served only by the running daemon over the HTTP endpoint above,
-so update any client configuration that launched the old command.
+transport. That command and transport are removed without a compatibility shim.
+MCP is served only by the running daemon over the HTTP endpoint above, so
+update any client configuration that launched the old command.
 
 ## Review workflow
 
-Call `kenn_forge_list_repos` first to discover provider-aware repository filters,
-stable repository keys, and sync freshness. Each repository has a
+Start by calling `kenn_forge_list_repos` to discover provider-aware repository
+filters, stable repository keys, and sync freshness. Each repository has a
 `platform_repo_id`, or a `bitbucket_repository_uuid` for Bitbucket Cloud. Copy
 the returned key into later repository and item references so they keep
 resolving after a rename. A reference with only provider, owner, and name
 resolves to the repository that currently holds that route. `platform_host`
 defaults to the provider's public host; pass it for self-hosted instances and
-Bitbucket Data Center. For review triage:
+Bitbucket Data Center.
+
+For review triage:
 
 1. Call `kenn_forge_find_review_candidates` with the desired time window and
    item types.
 2. Inspect likely items with `kenn_forge_get_item_context`.
-3. For pull requests, use `kenn_forge_get_item_diff` in summary mode first.
-4. Use `kenn_forge_get_stack_context` before claiming work on a stacked pull
-   request.
+3. For pull requests, call `kenn_forge_get_item_diff` in summary mode first.
+4. Before claiming work on a stacked pull request, call
+   `kenn_forge_get_stack_context`.
 
-`kenn_forge_search_items` finds quiet cached pull requests and issues that are
-absent from recent activity. Candidate output defaults to 25 items and never
-exceeds 100. With `semantic: true` it ranks them by how closely their titles,
-descriptions, and comments match the query instead of matching its text; that
-needs [semantic search](configuration.md#semantic-search) configured.
+To find quiet cached pull requests and issues that are absent from recent
+activity, use `kenn_forge_search_items`. Candidate output defaults to 25 items
+and never exceeds 100. With `semantic: true`, it ranks items by how closely
+their titles, descriptions, and comments match the query instead of matching
+its text; this requires [semantic search](configuration.md#semantic-search)
+to be configured.
 
 `kenn_forge_list_pull_contexts` keeps aggregate CI status and omits completed
-`success`, `neutral`, and `skipped` checks by default. Use `include_checks: true`
-or `kenn_forge_get_item_context` for every check.
+`success`, `neutral`, and `skipped` checks by default. To see every check, pass
+`include_checks: true` or call `kenn_forge_get_item_context`.
 
 To see merge queues, call `kenn_forge_list_pull_contexts` with
-`merge_queue: true`. A repository filter is optional, so one call covers every
-queue, as the **Queues** tab does. Each pull request's `pull_status` gives its
-queue branch, position, state, and estimated time to merge, or why the queue
-removed it and which checks failed. `kenn_forge_get_item_context` also reports
-`merge_queue_target` when merging the pull request would add it to a queue. The
-data is the queue state Forge last synced; these tools never add to or remove
-from a queue.
+`merge_queue: true`. Because a repository filter is optional, one call covers
+every queue, as the **Queues** tab does. Each pull request's `pull_status`
+gives its queue branch, position, state, and estimated time to merge, or why
+the queue removed it and which checks failed. `kenn_forge_get_item_context`
+also reports `merge_queue_target` when merging the pull request would add it to
+a queue. These tools return the queue state Forge last synced and never add to
+or remove from a queue.
 
 Diff files produced by `kenn_forge_get_item_diff` are temporary files on the
 daemon host. Forge keeps the most recently requested files within the
-`[mcp].diff_cache_mb` limit, which defaults to 128 MiB. Older files may be
-deleted before daemon shutdown.
+`[mcp].diff_cache_mb` limit, which defaults to 128 MiB, and may delete older
+files before daemon shutdown.
 
 ## Coding-agent handoff
 
 Call `kenn_forge_list_agent_targets` to discover configured coding agents,
-including custom targets. Use the returned target key as `agent_target`; it
-does not need to match the agent name reported by hooks. The launched agent
-must report a supported hook session for the handoff to complete.
+including custom targets. Pass the returned target key as `agent_target`; it
+does not need to match the agent name reported by hooks. For the handoff to
+complete, the launched agent must report a supported hook session.
 
 Call `kenn_forge_spawn_workspace_with_agent` with one source:
 
-- a provider-aware pull request or issue; or
-- a provider-aware repository with an optional ad-hoc branch; or
-- a Kata task (`source.type` `kata` with `daemon_id`, `project_uid` and
+- A provider-aware pull request or issue.
+- A provider-aware repository with an optional ad-hoc branch.
+- A Kata task (`source.type` `kata` with `daemon_id`, `project_uid` and
   `issue_uid`), which creates the same Kata-task workspace as the UI.
 
 The tool creates or reuses a workspace, launches a new agent runtime, submits
-one initial message, and then waits for the resulting live hook session. It does
-not clean up a workspace or runtime after a later failure. The response uses
+one initial message, and waits for the resulting live hook session. It does not
+clean up a workspace or runtime after a later failure. The response uses
 `stage` and `initial_message.state` as the authoritative handoff evidence.
 
 If prompt submission or hook observation times out after the response includes
 a workspace ID and runtime session key, call the same tool with `resume` instead
-of `source`. Pass those two IDs with the same `agent_target` and normalized
-`initial_message`. Resume targets the existing runtime and does not launch a
-second agent.
+of `source`. Pass those two IDs along with the same `agent_target` and
+normalized `initial_message`. Resume targets the existing runtime and does not
+launch a second agent.
 
-Use `kenn_forge_list_workspace_agent_sessions` to inspect live agent runtimes
-and fresh coding sessions. A runtime with `hook_observed=false` has launched but
-has not reported its first hook.
+To inspect live agent runtimes and fresh coding sessions, call
+`kenn_forge_list_workspace_agent_sessions`. A runtime with `hook_observed=false`
+has launched but has not reported its first hook.
 
 To send another instruction after the initial handoff, call
 `kenn_forge_send_agent_message` with the persisted workspace ID, the live
 runtime session key, and the message. The tool submits the prompt to that
 running agent through the same runtime input path as the initial message. It
 does not launch a runtime, resume a handoff, or wait for later agent activity.
-Historical sessions and arbitrary terminal bytes are outside the MCP surface.
+Historical sessions and arbitrary terminal bytes are not available through MCP.
 
 ## Build worklists
 
@@ -290,7 +296,7 @@ again. Handled marks survive a rewrite for items that stay on the list.
 
 ## Troubleshooting
 
-If the endpoint is unavailable, check `kenn-forge mcp quickstart`, restart the
+If the endpoint is unavailable, run `kenn-forge mcp quickstart`, restart the
 daemon, and inspect daemon status for the resolved listener. A separate MCP
 port must be free at startup.
 

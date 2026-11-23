@@ -23,7 +23,9 @@
 
 <style>
   /* The picker draws its own header and close button, so it fills the
-     panel: the negative margin cancels kit Modal's 16px body padding. */
+     panel: the negative margin cancels kit Modal's 16px body padding, and
+     the card takes the panel's fill so it matches whichever fill kit-ui
+     gives dialogs. */
   .picker-modal {
     margin: -16px;
     outline: none;
@@ -32,6 +34,7 @@
   }
 
   .picker-modal > :global(.kit-popover-card) {
+    background: transparent;
     border: 0;
     box-shadow: none;
   }

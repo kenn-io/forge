@@ -27,10 +27,7 @@
     makeTerminalClipboardWriter,
     type TerminalClipboardWriter,
   } from "./terminalClipboardWriter.js";
-  import {
-    buildTerminalFontFamily,
-    primaryTerminalFontFamily,
-  } from "./terminalFontFamily.js";
+  import { buildTerminalFontFamily } from "./terminalFontFamily.js";
   import { createInitialFocusIntent } from "./terminal-focus.js";
   import { supportsReplayBoundary } from "./terminalReplayBoundary.js";
   import {
@@ -1425,28 +1422,26 @@
         return yield* Effect.never;
       }
 
-      // Loading only the selected terminal face avoids making xterm wait
-      // for unrelated page fonts. The bound keeps terminal construction
-      // moving when the face is slow or unavailable; a late completion
-      // then repairs the fallback metrics once, provided the pane lives.
-      // The bold face loads too: a family with separate weight files
-      // (the bundled MesloLGS NF) would otherwise cache fallback bold
-      // glyphs in the renderer's texture atlas.
-      const fontDescriptor = `${terminalFontSize}px ${primaryTerminalFontFamily(terminalFontFamily)}`;
+      // Loading only the terminal's own font stack avoids making xterm wait
+      // for unrelated page fonts. The whole stack loads, not just its first
+      // family: a custom font falls back to the bundled MesloLGS NF for
+      // prompt icons it lacks. The bound keeps terminal construction moving
+      // when a face is slow or unavailable; a late completion then repairs
+      // the fallback metrics once, provided the pane lives. The bold faces
+      // load too: a family with separate weight files would otherwise cache
+      // fallback bold glyphs in the renderer's texture atlas. Every request
+      // settles before the outcome is decided, so one failure does not hide
+      // a later success.
+      const fontDescriptor = `${terminalFontSize}px ${terminalFontFamily}`;
+      // async turns a synchronous SyntaxError for a bad descriptor into a
+      // rejection that allSettled records.
+      const loadFont = async (descriptor: string) => fontSet.load(descriptor, TERMINAL_FONT_LOAD_GLYPHS);
       const fontCompletion = yield* Deferred.make<"loaded" | "failed">();
       yield* Effect.forkScoped(
-        Effect.tryPromise({
-          try: () =>
-            Promise.all([
-              fontSet.load(fontDescriptor, TERMINAL_FONT_LOAD_GLYPHS),
-              fontSet.load(`bold ${fontDescriptor}`, TERMINAL_FONT_LOAD_GLYPHS),
-            ]),
-          catch: (cause) => cause,
-        }).pipe(
-          Effect.match({
-            onFailure: () => FONT_FAILED,
-            onSuccess: () => FONT_LOADED,
-          }),
+        Effect.promise(() => Promise.allSettled([loadFont(fontDescriptor), loadFont(`bold ${fontDescriptor}`)])).pipe(
+          Effect.map((results) =>
+            results.some((result) => result.status === "fulfilled") ? FONT_LOADED : FONT_FAILED,
+          ),
           Effect.flatMap((result) => Deferred.succeed(fontCompletion, result)),
         ),
       );

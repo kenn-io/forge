@@ -228,15 +228,23 @@ test.describe("terminal options popover", () => {
       expect(createResponse.status()).toBe(202);
       const workspace = (await createResponse.json()) as WorkspaceStatusResponse;
       await waitForWorkspaceReady(workspaceApi, workspace.id);
+      // A custom font that is not installed, so the terminal falls back to
+      // the bundled face for every glyph, including the prompt icons.
+      const settingsResponse = await workspaceApi.get("/api/v1/settings");
+      const { terminal: terminalSettings } = (await settingsResponse.json()) as { terminal: Record<string, unknown> };
+      const fontResponse = await workspaceApi.put("/api/v1/settings", {
+        data: { terminal: { ...terminalSettings, font_family: '"Example Mono"' } },
+      });
+      expect(fontResponse.status(), await fontResponse.text()).toBe(200);
 
       await page.goto(`${workspaceServer.info.base_url}/terminal/${workspace.id}`);
       await page.getByRole("button", { name: "Open terminal panel" }).click();
       const terminal = page.getByRole("region", { name: "Terminal panel" }).locator(".terminal-container");
       await expect(terminal.locator(".xterm-screen")).toBeVisible();
       await expect.poll(() => terminalScreenSizeKey(terminal)).not.toBe("0pxx0px");
-      // With no font configured, the terminal loads the regular and bold
-      // MesloLGS NF faces that hold the prompt icons (the Powerline arrow,
-      // U+E0B0). The app stylesheet's core faces do not cover it.
+      // The terminal loads the regular and bold MesloLGS NF faces that hold
+      // the prompt icons (the Powerline arrow, U+E0B0) behind the custom
+      // font. The app stylesheet's core faces do not cover it.
       await expect
         .poll(() =>
           page.evaluate(() => {

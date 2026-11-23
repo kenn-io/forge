@@ -268,12 +268,15 @@ test.describe("embedded workspace launcher", () => {
           '.workspace-tab-slot [data-pane-key^="session:"] .terminal-container, .workspace-tab-slot [data-pane-key="terminal"] .terminal-container',
         );
         await expect(terminal).toBeVisible();
+        // Launch focus can be queued until the renderer finishes loading fonts.
+        // Let it finish before blurring so it cannot race the tap precondition.
+        await waitForTerminalInputReady(terminal);
+        await expect(terminal.locator(".xterm-helper-textarea")).toBeFocused();
         await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
         await expect
           .poll(() => page.evaluate(() => document.activeElement?.classList.contains("xterm-helper-textarea")))
           .toBe(false);
 
-        await waitForTerminalInputReady(terminal);
         await terminal.tap({ position: { x: 10, y: 10 } });
 
         await expect

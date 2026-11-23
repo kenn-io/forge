@@ -3,6 +3,7 @@ package gitsafe
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -89,6 +90,73 @@ func TestMutableRunnerKeepsGlobalWritesPrivate(t *testing.T) {
 
 	_, err = Runner().Output(t.Context(), "", "config", "--global", "--get", "user.name")
 	require.Error(err, "private global config leaked into the package config")
+}
+
+func TestPrepareProcessIsolatesGitAndKeepsHome(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	callerHome := t.TempDir()
+	callerXDG := t.TempDir()
+	tempName := "git scratch"
+	if runtime.GOOS != "windows" {
+		tempName += "\"\\\n\t\b"
+	}
+	tempRoot := filepath.Join(t.TempDir(), tempName)
+	require.NoError(os.Mkdir(tempRoot, 0o700))
+	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(key, tempRoot)
+	}
+	t.Setenv("HOME", callerHome)
+	t.Setenv("XDG_CONFIG_HOME", callerXDG)
+	for _, key := range []string{"GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_TERMINAL_PROMPT"} {
+		t.Setenv(key, os.Getenv(key))
+	}
+
+	cleanup, err := PrepareProcess()
+	require.NoError(err)
+	t.Cleanup(func() { _ = cleanup() })
+
+	assert.Equal(callerHome, os.Getenv("HOME"))
+	assert.Equal(callerXDG, os.Getenv("XDG_CONFIG_HOME"))
+	root := filepath.Dir(os.Getenv("GIT_CONFIG_GLOBAL"))
+	for _, key := range []string{"core.excludesFile", "core.attributesFile"} {
+		out, err := Runner().Output(t.Context(), t.TempDir(), "config", "--global", "--path", "--get", key)
+		require.NoError(err, key)
+		path := strings.TrimSpace(string(out))
+		assert.Equal(root, filepath.Dir(path), "%s is outside the scratch root", key)
+		contents, err := os.ReadFile(path)
+		require.NoError(err, key)
+		assert.Empty(contents, key)
+	}
+
+	// The receive-pack hook below needs a POSIX shell.
+	if runtime.GOOS != "windows" {
+		repos := t.TempDir()
+		_, err := Runner().Output(t.Context(), repos, "rev-parse", "--absolute-git-dir")
+		require.Error(err, "fixture must be outside any repository or worktree")
+		remote := filepath.Join(repos, "remote.git")
+		local := filepath.Join(repos, "local")
+		_, stderr, err := Runner().Run(t.Context(), repos, nil, "init", "--bare", remote)
+		require.NoError(err, string(stderr))
+		_, stderr, err = Runner().Run(t.Context(), repos, nil, "init", local)
+		require.NoError(err, string(stderr))
+		hook := `#!/bin/sh
+git config --get maintenance.auto > "$(dirname "$0")/config"
+git config --get gc.auto >> "$(dirname "$0")/config"
+`
+		require.NoError(os.WriteFile(filepath.Join(remote, "hooks", "pre-receive"), []byte(hook), 0o755))
+		_, stderr, err = Runner().Run(t.Context(), local, nil, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "fixture")
+		require.NoError(err, string(stderr))
+		_, stderr, err = Runner().Run(t.Context(), local, nil, "push", remote, "HEAD:refs/heads/main")
+		require.NoError(err, string(stderr))
+		config, err := os.ReadFile(filepath.Join(remote, "hooks", "config"))
+		require.NoError(err)
+		assert.Equal("false\n0\n", string(config))
+	}
+
+	require.NoError(cleanup())
+	assert.NoDirExists(root)
 }
 
 func replaceEnv(base []string, replacements map[string]string) []string {

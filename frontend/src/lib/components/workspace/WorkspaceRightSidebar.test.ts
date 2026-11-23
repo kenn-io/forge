@@ -292,6 +292,57 @@ describe("WorkspaceRightSidebar", () => {
     expect(api.requests.filter(({ method }) => method === "PATCH" || method === "PUT")).toEqual([]);
   });
 
+  it.each([
+    ["pr", "pull_request", 42],
+    ["issue", "issue", 7],
+  ] as const)(
+    "counts a workspace %s visit once across refresh and again after reopening",
+    async (activeTab, ownerItemType, number) => {
+      const api = createMockApiFetch();
+      vi.spyOn(globalThis, "fetch").mockImplementation(api.fetch);
+      const { stores } = createAppStores({ runtime });
+      const endVisit =
+        activeTab === "pr" ? vi.spyOn(stores.detail, "endDetailVisit") : vi.spyOn(stores.issues, "endIssueVisit");
+      const sidebarProps = {
+        activeTab,
+        workspaceID: "ws-1",
+        worktreePath: "",
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widgets",
+        repoPath: "acme/widgets",
+        ownerItemType,
+        ownerItemNumber: number,
+        associatedPRNumber: activeTab === "pr" ? number : null,
+        branch: "work",
+        roborevBaseUrl: "/api/roborev",
+        refreshToken: 0,
+      };
+      const view = render(WorkspaceRightSidebarTestHarness, {
+        props: { runtime, sidebarProps },
+        context: new Map([[STORES_KEY, stores]]),
+      });
+      const opens = () => api.requests.filter(({ url }) => url.pathname === "/api/v1/repos/untracked-opens");
+      await waitFor(() => expect(opens()).toHaveLength(1));
+      await view.rerender({ runtime, sidebarProps: { ...sidebarProps, refreshToken: 1 } });
+      await waitFor(() =>
+        expect(
+          api.requests.filter(({ method, url }) => method === "GET" && url.pathname.includes(`/${number}`)).length,
+        ).toBeGreaterThan(1),
+      );
+      expect(opens()).toHaveLength(1);
+      await view.rerender({
+        runtime,
+        sidebarProps: { ...sidebarProps, provider: "gh", platformHost: undefined, refreshToken: 1 },
+      });
+      expect(endVisit).not.toHaveBeenCalled();
+      await view.rerender({ runtime, sidebarProps: { ...sidebarProps, activeTab: "diff" } });
+      await view.rerender({ runtime, sidebarProps: { ...sidebarProps, refreshToken: 1 } });
+      await waitFor(() => expect(opens()).toHaveLength(2));
+    },
+  );
+
   it("counts a hidden failed PR view once when shown", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(
       createMockApiFetch([

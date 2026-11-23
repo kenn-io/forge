@@ -137,6 +137,7 @@ function renderWithRealPullDetail(
 ) {
   const detailStore = {
     loadDetail: vi.fn(async () => undefined),
+    beginDetailVisit: vi.fn(),
     startDetailPolling: vi.fn(),
     stopDetailPolling: vi.fn(),
     endDetailVisit: vi.fn(),

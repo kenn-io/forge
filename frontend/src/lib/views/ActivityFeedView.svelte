@@ -1,6 +1,7 @@
 <script lang="ts">
-  import type { Snippet } from "svelte";
+  import { untrack, type Snippet } from "svelte";
   import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
+  import { providerItemKey } from "../stores/provider-key.js";
   import { getStackDepth } from "../stores/keyboard/modal-stack.svelte.js";
   import ActivityFeed from "../components/ActivityFeed.svelte";
   import CommitDiffPanel from "../components/CommitDiffPanel.svelte";
@@ -252,6 +253,15 @@
       : null,
   );
   const isPRSelection = $derived(drawerPRSelection !== null);
+  const visitKey = $derived(drawerPRSelection ? providerItemKey({ ...drawerPRSelection, platformHost: drawerPRSelection.platformHost ?? "" }) : null);
+  $effect(() => {
+    if (visitKey === null) return;
+    untrack(() => {
+      const ref = drawerPRSelection!;
+      detailStore.beginDetailVisit(ref.owner, ref.name, ref.number, ref);
+    });
+    return () => detailStore.endDetailVisit();
+  });
 
   /** The selected item, whichever kind, for the claim lifecycle. */
   const claimIdentity = $derived<WorkspaceItemIdentity | null>(
@@ -634,6 +644,7 @@
             {/if}
           {:else if drawerPRSelection}
             <PullDetailPane
+              manageVisit={false}
               {tabKey}
               {visible}
               keyboardActive={inputActive}

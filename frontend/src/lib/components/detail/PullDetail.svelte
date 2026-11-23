@@ -312,6 +312,7 @@
      */
     phonePresentation?: boolean;
     hideStaleWhileLoading?: boolean;
+    manageVisit?: boolean;
     autoSync?: DetailSyncMode;
     workflowApprovalSync?: boolean;
     onStackMemberNavigate?: (ref: PullRequestRouteRef) => boolean | void;
@@ -334,6 +335,7 @@
     hideWorkspaceAction = false,
     phonePresentation = false,
     hideStaleWhileLoading = false,
+    manageVisit = true,
     autoSync = "background",
     workflowApprovalSync = true,
     onStackMemberNavigate,
@@ -741,7 +743,7 @@
   });
 
   onDestroy(() => {
-    detailStore.endDetailVisit();
+    if (manageVisit) detailStore.endDetailVisit();
     pullDetailScrollRestoreExecution?.interrupt();
     labelCatalogGeneration += 1;
     labelCatalogExecution?.interrupt();

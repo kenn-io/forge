@@ -1215,13 +1215,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
     );
   }
 
-  function startDetailLoad(owner: string, name: string, number: number, options: DetailRequestOptions): void {
-    const syncMode = options.sync ?? true;
+  function beginDetailVisit(owner: string, name: string, number: number, options: DetailRequestOptions): void {
     const requestRef = detailRequestRef(owner, name, number, options);
-    // Dedup by item identity only. A second caller with a different
-    // sync mode joins the in-flight load and may promote the sync
-    // intent if its requested mode is stronger.
-    const key = prKey(requestRef);
     const visitKey = providerItemKey({
       provider: requestRef.provider,
       platformHost: concretePlatformHost(requestRef),
@@ -1240,6 +1235,16 @@ export function createDetailStore(opts: DetailStoreOptions) {
         number,
       });
     }
+  }
+
+  function startDetailLoad(owner: string, name: string, number: number, options: DetailRequestOptions): void {
+    const syncMode = options.sync ?? true;
+    const requestRef = detailRequestRef(owner, name, number, options);
+    // Dedup by item identity only. A second caller with a different
+    // sync mode joins the in-flight load and may promote the sync
+    // intent if its requested mode is stronger.
+    const key = prKey(requestRef);
+    beginDetailVisit(owner, name, number, options);
     if (activeSelectionKey !== key) {
       acknowledgedMembership.clear();
       rememberDetail();
@@ -2914,6 +2919,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     getDetailLoaded,
     getDiscussionLoaded,
     clearDetail,
+    beginDetailVisit,
     endDetailVisit: () => {
       detailVisitKey = null;
     },

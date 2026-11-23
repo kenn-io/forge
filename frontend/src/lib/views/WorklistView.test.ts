@@ -104,7 +104,12 @@ function renderView(path: string, server: WorklistServer, overrides: MockRouteOv
     worklists: createWorklistsStore(),
     settings: createSettingsStore(),
     grouping: createGroupingStore(),
-    detail: { getDetail: () => null, loadDetail: vi.fn(async () => undefined) },
+    detail: {
+      getDetail: () => null,
+      loadDetail: vi.fn(async () => undefined),
+      beginDetailVisit: vi.fn(),
+      endDetailVisit: vi.fn(),
+    },
     issues: { getIssueDetail: () => null, loadIssueDetail: vi.fn(async () => undefined) },
   };
   render(WorklistView, {
@@ -153,13 +158,17 @@ describe("WorklistView", () => {
   });
 
   it("keeps a review thread's jump to diff on the worklist and shows the files pane", async () => {
-    renderView("/worklists/5", server);
+    const stores = renderView("/worklists/5", server);
     expect(await visiblePullPane()).toContain("PR acme/widgets#42 conversation");
+    expect(stores.detail.beginDetailVisit).toHaveBeenCalledOnce();
 
     await fireEvent.click(screen.getByRole("button", { name: "Jump to diff" }));
 
     await waitFor(() => expect(currentPath()).toMatch(/^\/worklists\/5\?selected=pr%3A42&.*selected_tab=files/));
     expect(await visiblePullPane()).toContain("PR acme/widgets#42 files");
+    expect(stores.detail.endDetailVisit).not.toHaveBeenCalled();
+    navigate("/");
+    await waitFor(() => expect(stores.detail.endDetailVisit).toHaveBeenCalledOnce());
   });
 
   it("keeps the user's route when a dismissal finishes after they left", async () => {

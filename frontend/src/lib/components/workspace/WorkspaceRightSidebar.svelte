@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { providerItemKey } from "../../stores/provider-key.js";
+  import { untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { reportPRViewed } from "../../app/telemetry.js";
   import { documentVisible } from "../../browser/document-visible.svelte.js";
@@ -74,7 +76,7 @@
   }: Props = $props();
 
   const appRuntime = getAppRuntime();
-  const { detail } = getStores();
+  const { detail, issues } = getStores();
   $effect(() => {
     if (visible && activeTab === "pr" && displayedPR && pullDetailMatchesRef(detail.getDetail(), displayedPR) && documentVisible()) {
       reportPRViewed(appRuntime, displayedPR.provider);
@@ -110,6 +112,18 @@
   const workspaceRepo = $derived({ provider, platformHost, repositoryKey, owner: repoOwner, name: repoName, repoPath });
   const displayedPR = $derived(viewedPR ?? (hasPR && associatedPRNumber !== null ? { ...workspaceRepo, number: associatedPRNumber } : null));
   const displayedIssue = $derived(viewedIssue ?? (hasIssue ? { ...workspaceRepo, number: ownerItemNumber } : null));
+  const visitKey = $derived.by(() => {
+    const ref = activeTab === "pr" ? displayedPR : activeTab === "issue" ? displayedIssue : null;
+    return ref ? `${activeTab}:${providerItemKey({ ...ref, platformHost: ref.platformHost ?? "" })}` : null;
+  });
+  $effect(() => {
+    if (visitKey === null) return;
+    const tab = untrack(() => activeTab);
+    return () => {
+      if (tab === "pr") detail.endDetailVisit();
+      else issues.endIssueVisit();
+    };
+  });
   const hasMergeTarget = $derived(
     ownerItemType === "pull_request"
       ? ownerItemNumber > 0 && hasRepo
@@ -155,6 +169,7 @@
       {#key `pr:${workspaceHostKey ?? "self"}:${workspaceID}:${refreshToken}`}
         <div class="pr-scroll" inert={disabled}>
           <PullDetail
+            manageVisit={false}
             {visible}
             {...displayedPR}
             hideTabs={true}
@@ -175,7 +190,7 @@
     {#if displayedIssue}
       {#key `issue:${workspaceHostKey ?? "self"}:${workspaceID}:${JSON.stringify(displayedIssue)}:${refreshToken}`}
         <div class="pr-scroll" inert={disabled}>
-          <IssueDetail {...displayedIssue} hideStaleWhileLoading={true} />
+          <IssueDetail {...displayedIssue} manageVisit={false} hideStaleWhileLoading={true} />
         </div>
       {/key}
     {:else}

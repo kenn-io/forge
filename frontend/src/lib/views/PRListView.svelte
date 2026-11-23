@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+  import { providerItemKey } from "../stores/provider-key.js";
   import { getCommentNavigation } from "../stores/router.svelte.js";
   import type { Snippet } from "svelte";
   import { untrack } from "svelte";
@@ -103,6 +104,15 @@
   const selectedPR = $derived(
     routeSelection ? { ...routeSelection, repositoryKey: selectedRepositoryKey } : null,
   );
+  const visitKey = $derived(selectedPR ? providerItemKey({ ...selectedPR, platformHost: selectedPR.platformHost ?? "" }) : null);
+  $effect(() => {
+    if (visitKey === null) return;
+    untrack(() => {
+      const ref = selectedPR!;
+      detailStore.beginDetailVisit(ref.owner, ref.name, ref.number, ref);
+    });
+    return () => detailStore.endDetailVisit();
+  });
   const commentNavigation = $derived(
     selectedPR ? getCommentNavigation({ ...selectedPR, itemType: "pull" }) : null,
   );
@@ -290,6 +300,7 @@
     <div class="detail-host">
       {#if detailPresentation === "focused"}
         <PullDetailPane
+          manageVisit={false}
           tabKey={detailTab}
           visible={true}
           keyboardActive={diffKeyboardActive(detailTab, false)}
@@ -350,6 +361,7 @@
             />
           {:else}
             <PullDetailPane
+              manageVisit={false}
               {tabKey}
               {visible}
               keyboardActive={diffKeyboardActive(tabKey, inputActive)}

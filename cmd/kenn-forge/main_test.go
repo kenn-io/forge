@@ -31,7 +31,6 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/ptyowner"
-	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/hostapi"
 	"go.kenn.io/forge/internal/testutil"
@@ -86,7 +85,7 @@ func TestConfigureLoggingRedactsTokens(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(orig) })
 	var buf bytes.Buffer
 
-	closeLog, err := configureLogging(&buf, "")
+	closeLog, err := configureLogging(&buf)
 	require.NoError(err)
 	t.Cleanup(func() { require.NoError(closeLog()) })
 
@@ -116,8 +115,9 @@ func TestConfigureLoggingRedactsTokensInConfiguredLogFile(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(orig) })
 	var stderr bytes.Buffer
 	logFile := filepath.Join(t.TempDir(), "forge.log")
+	t.Setenv("KENN_FORGE_LOG_FILE", logFile)
 
-	closeLog, err := configureLogging(&stderr, logFile)
+	closeLog, err := configureLogging(&stderr)
 	require.NoError(err)
 
 	slog.Error(
@@ -140,93 +140,6 @@ func TestConfigureLoggingRedactsTokensInConfiguredLogFile(t *testing.T) {
 			assert.NotContains(out, secret)
 		}
 		assert.Contains(out, "[REDACTED]")
-	}
-}
-
-func TestDesktopLog(t *testing.T) {
-	for _, tc := range []struct {
-		name, marker, explicit string
-		obstruct, mismatch     bool
-	}{
-		{name: "desktop", marker: "1"},
-		{name: "unmarked"},
-		{name: "other marker", marker: "true"},
-		{name: "explicit", marker: "1", explicit: "explicit.log"},
-		{name: "unwritable", marker: "1", obstruct: true},
-		{name: "background mismatch", marker: "1", mismatch: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			assert := assert.New(t)
-			require := require.New(t)
-			root := t.TempDir()
-			dataDir := filepath.Join(root, "data")
-			require.NoError(os.Mkdir(dataDir, 0o700))
-			configPath := filepath.Join(root, "config.toml")
-			writeMinimalConfig(t, configPath, dataDir, 8123)
-			lock, err := runtimelock.Acquire(t.Context(), dataDir)
-			require.NoError(err)
-			t.Cleanup(func() { assert.NoError(lock.Release()) })
-
-			logPath := filepath.Join(dataDir, "forge.log")
-			if tc.obstruct {
-				require.NoError(os.Mkdir(logPath, 0o700))
-			}
-			explicit := ""
-			if tc.explicit != "" {
-				explicit = filepath.Join(root, tc.explicit)
-			}
-			t.Setenv("KENN_FORGE_DESKTOP", tc.marker)
-			t.Setenv("KENN_FORGE_LOG_FILE", explicit)
-			t.Setenv("KENN_FORGE_LOG_LEVEL", "info")
-			t.Setenv("KENN_FORGE_LOG_STDERR_LEVEL", "")
-			t.Setenv("KENN_FORGE_DATA_DIR", "")
-			require.NoError(os.Unsetenv("KENN_FORGE_DATA_DIR"))
-			t.Setenv(expectedDataDirEnv, "")
-			if tc.mismatch {
-				t.Setenv(expectedDataDirEnv, filepath.Join(root, "other"))
-			}
-			originalLogger, originalArgs, originalStderr := slog.Default(), os.Args, os.Stderr
-			stderr, err := os.CreateTemp(root, "stderr")
-			require.NoError(err)
-			os.Stderr = stderr
-			os.Args = []string{"kenn-forge", "serve", "--config", configPath}
-			t.Cleanup(func() {
-				os.Args, os.Stderr = originalArgs, originalStderr
-				slog.SetDefault(originalLogger)
-				assert.NoError(stderr.Close())
-			})
-
-			assert.Equal(1, runMain())
-			stderrBytes, err := os.ReadFile(stderr.Name())
-			require.NoError(err)
-			if tc.mismatch {
-				assert.Contains(string(stderrBytes), "background launch expected data_dir")
-			} else {
-				assert.Contains(string(stderrBytes), "another kenn-forge is already running")
-			}
-			if tc.obstruct {
-				assert.Contains(string(stderrBytes), "open desktop log file")
-			}
-			if tc.marker == "1" && !tc.obstruct && !tc.mismatch && explicit == "" {
-				out, err := os.ReadFile(logPath)
-				require.NoError(err)
-				assert.Contains(string(out), "runtime configuration")
-				assert.Contains(string(out), "another kenn-forge is already running")
-				assert.Equal(1, strings.Count(string(out), "msg=fatal"))
-			} else {
-				_, err := os.Stat(logPath)
-				if tc.obstruct {
-					require.NoError(err)
-				} else {
-					assert.True(os.IsNotExist(err))
-				}
-			}
-			if explicit != "" {
-				out, err := os.ReadFile(explicit)
-				require.NoError(err)
-				assert.Contains(string(out), "another kenn-forge is already running")
-			}
-		})
 	}
 }
 

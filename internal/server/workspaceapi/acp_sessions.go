@@ -46,7 +46,11 @@ func (s *Handler) listWorkspaceACPSessions(
 	if s.runtime == nil {
 		return nil, httpapi.ServiceUnavailable("workspace runtime not configured")
 	}
-	sessions, err := s.runtime.ListACPSessions(ctx, summary.ID, summary.WorktreePath, targetKey)
+	chatKeys, err := s.storedChatKeys(ctx, summary.ID)
+	if err != nil {
+		return nil, err
+	}
+	sessions, err := s.runtime.ListACPSessions(ctx, summary.ID, summary.WorktreePath, targetKey, chatKeys)
 	if err != nil {
 		return nil, acpSessionsError(err)
 	}
@@ -61,6 +65,26 @@ func (s *Handler) listWorkspaceACPSessions(
 		output.Body.Sessions = append(output.Body.Sessions, response)
 	}
 	return output, nil
+}
+
+// storedChatKeys returns the workspace's stored ACP chats. Their records, not
+// a leftover saved session, decide which agent sessions the workspace holds:
+// a chat forgotten after its agent exited no longer holds one.
+func (s *Handler) storedChatKeys(ctx context.Context, workspaceID string) ([]string, error) {
+	if s.db == nil {
+		return nil, nil
+	}
+	rows, err := s.db.ListWorkspaceRuntimeSessions(ctx, workspaceID)
+	if err != nil {
+		return nil, httpapi.Internal("list workspace chats: " + err.Error())
+	}
+	var keys []string
+	for _, row := range rows {
+		if localruntime.LaunchTargetKind(strings.TrimSpace(row.Kind)) == localruntime.LaunchTargetACP {
+			keys = append(keys, row.SessionKey)
+		}
+	}
+	return keys, nil
 }
 
 func acpSessionsError(err error) error {

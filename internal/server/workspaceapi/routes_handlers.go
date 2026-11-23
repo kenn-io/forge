@@ -2885,7 +2885,11 @@ func (s *Handler) launchWorkspaceRuntimeService(
 		}
 	}
 	if acpSessionID != "" {
-		session, err = s.runtime.ResumeACPSession(ctx, summary.ID, summary.WorktreePath, targetKey, acpSessionID, acpOptions)
+		var chatKeys []string
+		if chatKeys, err = s.storedChatKeys(ctx, summary.ID); err != nil {
+			return localruntime.SessionInfo{}, err
+		}
+		session, err = s.runtime.ResumeACPSession(ctx, summary.ID, summary.WorktreePath, targetKey, acpSessionID, chatKeys, acpOptions)
 	} else {
 		session, err = s.runtime.LaunchWithInitialMessage(ctx, summary.ID, summary.WorktreePath, targetKey, initialMessage, acpOptions)
 	}

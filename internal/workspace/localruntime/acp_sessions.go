@@ -52,13 +52,14 @@ func (m *Manager) acpTarget(targetKey string) (LaunchTarget, error) {
 
 // ListACPSessions starts a configured ACP target in cwd, without Forge tools,
 // and returns the sessions it keeps for cwd, newest first, leaving out any a
-// chat of workspaceID holds. It retains no process.
-func (m *Manager) ListACPSessions(ctx context.Context, workspaceID, cwd, targetKey string) ([]ACPAgentSession, error) {
+// chat of workspaceID holds. chatKeys are the workspace's stored chats; see
+// heldACPSessions. It retains no process.
+func (m *Manager) ListACPSessions(ctx context.Context, workspaceID, cwd, targetKey string, chatKeys []string) ([]ACPAgentSession, error) {
 	target, err := m.acpTarget(targetKey)
 	if err != nil {
 		return nil, err
 	}
-	held, err := m.heldACPSessions(workspaceID)
+	held, err := m.heldACPSessions(workspaceID, chatKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -121,25 +122,42 @@ func (m *Manager) ListACPSessions(ctx context.Context, workspaceID, cwd, targetK
 
 // ResumeACPSession opens a new chat on a session the agent keeps for cwd, such
 // as one another client started, with the agent's history of it as the
-// transcript. It never falls back to a new session.
-func (m *Manager) ResumeACPSession(ctx context.Context, workspaceID, cwd, targetKey, sessionID string, acpOptions map[string]string) (SessionInfo, error) {
-	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", sessionID, "", acpOptions)
+// transcript. It never falls back to a new session. chatKeys are the
+// workspace's stored chats; see heldACPSessions.
+func (m *Manager) ResumeACPSession(ctx context.Context, workspaceID, cwd, targetKey, sessionID string, chatKeys []string, acpOptions map[string]string) (SessionInfo, error) {
+	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", "", "", acpOptions, &acpImport{sessionID: sessionID, chatKeys: chatKeys})
 }
 
-// importACPLaunchCommand prepares a chat that loads sessionID. The record it
-// seeds is the chat's saved session, so a reload, park, or restart after a
-// reboot loads the same session. The check and the seed hold acpImportMu, so
-// two launches cannot both take one session.
-func (m *Manager) importACPLaunchCommand(ctx context.Context, target LaunchTarget, workspaceID, key, cwd, sessionID string, options map[string]string) (launchCommand, error) {
+// acpImport is an agent session a new chat resumes, with the stored chats of
+// its workspace that may already hold it.
+type acpImport struct {
+	sessionID string
+	chatKeys  []string
+}
+
+// pendingACPImport is a resumed session whose chat is starting: it is neither
+// running nor stored yet, but already holds its session.
+type pendingACPImport struct {
+	workspaceID string
+	sessionID   string
+}
+
+// importACPLaunchCommand prepares a chat that loads the resumed session. The
+// record it seeds is the chat's saved session, so a reload, park, or restart
+// after a reboot loads the same session. The check and the pending mark hold
+// acpImportMu, so two launches cannot both take one session; the caller ends
+// the mark once the chat runs or fails.
+func (m *Manager) importACPLaunchCommand(ctx context.Context, target LaunchTarget, workspaceID, key, cwd string, resume acpImport, options map[string]string) (launchCommand, error) {
 	m.acpImportMu.Lock()
 	defer m.acpImportMu.Unlock()
-	held, err := m.heldACPSessions(workspaceID)
+	held, err := m.heldACPSessions(workspaceID, resume.chatKeys)
 	if err != nil {
 		return launchCommand{}, err
 	}
-	if held[sessionID] {
+	if held[resume.sessionID] {
 		return launchCommand{}, ErrACPSessionInUse
 	}
+	sessionID := resume.sessionID
 	// Preparing a tmux launch already starts the owner, which reads its saved
 	// session at once, so the seed must exist first.
 	path := m.acpSessionPath(key)
@@ -160,47 +178,47 @@ func (m *Manager) importACPLaunchCommand(ctx context.Context, target LaunchTarge
 	if err != nil {
 		return launchCommand{}, errors.Join(err, os.Remove(path))
 	}
+	m.mu.Lock()
+	m.acpImports[key] = pendingACPImport{workspaceID: workspaceID, sessionID: sessionID}
+	m.mu.Unlock()
 	return launch, nil
 }
 
-// heldACPSessions returns the agent sessions the chats of workspaceID hold,
-// running or not.
-func (m *Manager) heldACPSessions(workspaceID string) (map[string]bool, error) {
+// endACPImport ends a resumed chat's pending mark. By then the chat runs, so
+// it holds its session as a live chat, or it failed and holds nothing.
+func (m *Manager) endACPImport(key string) {
+	m.mu.Lock()
+	delete(m.acpImports, key)
+	m.mu.Unlock()
+}
+
+// heldACPSessions returns the agent sessions the chats of workspaceID hold.
+// Only chats the workspace still has count: chatKeys, its stored chats, which
+// include parked, dormant, and recovery-pending ones; its running chats, which
+// may not be stored yet; and resumed chats still starting. A chat forgotten
+// after its agent exited holds nothing, though its saved record remains.
+func (m *Manager) heldACPSessions(workspaceID string, chatKeys []string) (map[string]bool, error) {
 	held := make(map[string]bool)
-	if m.acpSessionsDir == "" {
-		return held, nil
-	}
-	entries, err := os.ReadDir(m.acpSessionsDir)
-	if errors.Is(err, os.ErrNotExist) {
-		return held, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+	keys := slices.Clone(chatKeys)
+	m.mu.Lock()
+	for key, s := range m.sessions {
+		if info := s.snapshot(); info.WorkspaceID == workspaceID && info.Kind == LaunchTargetACP {
+			keys = append(keys, key)
 		}
-		dir := filepath.Join(m.acpSessionsDir, entry.Name())
-		data, err := os.ReadFile(filepath.Join(dir, "config.json"))
-		if errors.Is(err, os.ErrNotExist) {
-			continue
+	}
+	for _, pending := range m.acpImports {
+		if pending.workspaceID == workspaceID {
+			held[pending.sessionID] = true
 		}
+	}
+	m.mu.Unlock()
+	slices.Sort(keys)
+	for _, key := range slices.Compact(keys) {
+		saved, err := m.loadACPSaved(key)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("read saved chat %s: %w", key, err)
 		}
-		var cfg acpOwnerConfig
-		if err := json.Unmarshal(data, &cfg); err != nil || cfg.Info.WorkspaceID != workspaceID {
-			continue
-		}
-		saved, err := readACPSaved(filepath.Join(dir, "session.json"))
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("read saved chat %s: %w", entry.Name(), err)
-		}
-		if saved.SessionID != "" {
+		if saved != nil && saved.SessionID != "" {
 			held[saved.SessionID] = true
 		}
 	}

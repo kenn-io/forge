@@ -10,18 +10,73 @@ import (
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/activityrelay"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
+
+func TestRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	blocked := make(chan struct{})
+	release := make(chan struct{})
+	client := &serverfake.MockGH{ListOpenPullRequestsFn: func(ctx context.Context, _, repo string) ([]*gh.PullRequest, error) {
+		if repo == "second" {
+			close(blocked)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			return nil, nil
+		}
+		now := time.Now().UTC()
+		return []*gh.PullRequest{{
+			ID: new(int64(1)), Number: new(1), State: new("open"), Title: new("Example"),
+			User: &gh.User{Login: new("user-a")}, CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now},
+			Head: &gh.PullRequestBranch{Ref: new("feature"), SHA: new("head")},
+			Base: &gh.PullRequestBranch{Ref: new("main"), SHA: new("base")},
+		}}, nil
+	}}
+	repos := []github.RepoRef{{Owner: "acme", Name: "first", PlatformHost: "github.com"}, {Owner: "acme", Name: "second", PlatformHost: "github.com"}}
+	syncer := github.NewSyncer(map[string]github.Client{"github.com": client}, database, nil, repos, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	hub := syncevents.NewEventHub()
+	t.Cleanup(hub.Close)
+	events, _ := hub.Subscribe(ctx, false)
+	wireRepoSynced(ctx, syncer, database, hub)
+	finished := make(chan struct{})
+	go func() { defer close(finished); syncer.RunOnce(ctx) }()
+	t.Cleanup(func() { close(release); <-finished })
+
+	select {
+	case <-blocked:
+	case <-time.After(10 * time.Second):
+		t.Fatal("second repository did not start")
+	}
+	select {
+	case event := <-events:
+		require.Equal(t, "data_changed", event.Event.Type)
+	case <-time.After(10 * time.Second):
+		t.Fatal("no data_changed event while the second repository was syncing")
+	}
+	prs, err := database.ListMergeRequests(ctx, db.ListMergeRequestsOpts{})
+	require.NoError(t, err)
+	require.Len(t, prs, 1)
+	require.Equal(t, 1, prs[0].Number)
+}
 
 func TestWireSyncStatusDoesNotReloadDataForRelayConnectionChanges(t *testing.T) {
 	t.Parallel()

@@ -971,7 +971,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		syncer.SetOnWatchedMRSyncCompleted(func() {
 			srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 		})
-		syncer.SetOnRepoSynced(stacks.DetectionHook(ctx, database, nil))
+		wireRepoSynced(ctx, syncer, database, srv.Hub())
 		syncCompleted := fleetapi.WorktreeLinksSyncHook(
 			ctx, database, syncer,
 			srv.Fleet().NotifyWorktreeLinksChanged,

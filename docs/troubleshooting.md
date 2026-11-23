@@ -170,3 +170,4 @@ KENN_FORGE_LOG_STDERR_LEVEL=warn KENN_FORGE_LOG_FILE=~/.kenn/forge/forge.log ken
 ```
 
 Forge redacts configured token-shaped values from log output.
+With `KENN_FORGE_DESKTOP=1`, Forge appends to `<data_dir>/forge.log` after loading config unless `KENN_FORGE_LOG_FILE` specifies another path; Forge does not rotate the file.

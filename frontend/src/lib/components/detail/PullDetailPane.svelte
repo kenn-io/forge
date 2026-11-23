@@ -34,7 +34,6 @@
     detail: PullDetailResponse | null;
     autoSync?: DetailSyncMode;
     hideStaleWhileLoading?: boolean;
-    manageVisit?: boolean;
     workflowApprovalSync?: boolean;
     inlineWorkspace?: InlineWorkspaceController | null;
     onStackMemberNavigate?: ((ref: PullRequestRouteRef) => boolean | void) | undefined;
@@ -56,7 +55,6 @@
     detail,
     autoSync = "background",
     hideStaleWhileLoading = false,
-    manageVisit = true,
     workflowApprovalSync = true,
     inlineWorkspace = null,
     onStackMemberNavigate = undefined,
@@ -139,7 +137,6 @@
     {workflowApprovalSync}
     hideTabs={true}
     {hideStaleWhileLoading}
-    {manageVisit}
     onStackMemberNavigate={onStackMemberNavigate ?? (() => undefined)}
     {onDetailTabChange}
     {onOpenWorkspace}

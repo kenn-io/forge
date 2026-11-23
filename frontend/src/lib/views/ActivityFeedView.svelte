@@ -644,7 +644,6 @@
             {/if}
           {:else if drawerPRSelection}
             <PullDetailPane
-              manageVisit={false}
               {tabKey}
               {visible}
               keyboardActive={inputActive}

@@ -300,7 +300,6 @@
     <div class="detail-host">
       {#if detailPresentation === "focused"}
         <PullDetailPane
-          manageVisit={false}
           tabKey={detailTab}
           visible={true}
           keyboardActive={diffKeyboardActive(detailTab, false)}
@@ -361,7 +360,6 @@
             />
           {:else}
             <PullDetailPane
-              manageVisit={false}
               {tabKey}
               {visible}
               keyboardActive={diffKeyboardActive(tabKey, inputActive)}

@@ -11,7 +11,6 @@ import { NAVIGATE_KEY, STORES_KEY } from "../../context.js";
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
 import { createDetailStore } from "../../stores/detail.svelte.js";
 import { makeTestAppRuntime } from "../../testing/effect-layers.js";
-import { makeGeneratedClientFromRouteMocks } from "../../testing/test/route-mock-client.js";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
 import { createWorkflowActionsStore } from "../../stores/workflow-actions.svelte.js";
 import { dismissFlash, getFlashes, showFlash } from "../../stores/flash.svelte.js";
@@ -305,7 +304,6 @@ function renderPullDetail(
     loadDetail: vi.fn(async () => undefined),
     startDetailPolling: vi.fn(),
     stopDetailPolling: vi.fn(),
-    endDetailVisit: vi.fn(),
     getDetail: () => detail,
     getDetailEnvelopeTick: () => envelopeTick,
     isDetailFromCache: () => options.detailFromCache ?? false,
@@ -1227,14 +1225,11 @@ describe("PullDetail activity refresh", () => {
     expect(getFlashes()).toHaveLength(0);
   });
 
-  it("ends the visit and drops a manual refresh failure when the pull-request detail unmounts", async () => {
-    const { detailStore, failRefresh, unmount } = renderPullDetail(pullDetail(), undefined, undefined, {
-      deferRefresh: true,
-    });
+  it("drops a manual refresh failure after the pull-request detail unmounts", async () => {
+    const { failRefresh, unmount } = renderPullDetail(pullDetail(), undefined, undefined, { deferRefresh: true });
     await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));
 
     unmount();
-    expect(detailStore.endDetailVisit).toHaveBeenCalledOnce();
     failRefresh("unmounted pull request failed");
 
     expect(getFlashes()).toHaveLength(0);
@@ -1364,7 +1359,7 @@ describe("PullDetail pending mutations across selections", () => {
       } = options?.params as { path: { number: number } };
       return responses[number - 1].promise;
     });
-    const client = makeGeneratedClientFromRouteMocks({
+    detailRuntime = makeTestAppRuntime({
       GET: vi.fn(async (path: string, options?: Record<string, unknown>) => {
         if (path === "/repo/{provider}/{owner}/{name}/labels") return { data: { labels: labelCatalog } };
         if (path === "/repo/{provider}/{owner}/{name}/comment-autocomplete")
@@ -1378,10 +1373,6 @@ describe("PullDetail pending mutations across selections", () => {
       PUT: mutation,
       PATCH: mutation,
       POST: mutation,
-    });
-    detailRuntime = makeTestAppRuntime({
-      ...client,
-      RepositoriesService: { ...client.RepositoriesService, recordUntrackedRepoOpen: vi.fn(async () => undefined) },
     });
     const commands = vi.spyOn(detailRuntime, "runCommand");
     const store = createDetailStore({ runtime: detailRuntime });

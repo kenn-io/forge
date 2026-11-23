@@ -241,7 +241,6 @@ async function renderWorkflowDetail(phoneShell = false) {
     loadDetail: vi.fn(),
     startDetailPolling: vi.fn(),
     stopDetailPolling: vi.fn(),
-    endDetailVisit: vi.fn(),
     getDetail: () => state.detail,
     getDetailEnvelopeTick: () => 0,
     isDetailFromCache: () => false,

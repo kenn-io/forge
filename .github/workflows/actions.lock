@@ -13,7 +13,7 @@ workflows:
         - 'astral-sh/setup-uv@v10.3.3'
         - 'dorny/test-reporter@v3.2.0'
         - 'eclipse-score/apt-install@main'
-        - 'jdx/mise-action@v5.2.7'
+        - 'jdx/mise-action@v5.2.9'
         - 'kenn-io/actions@main'
         - 'kenn-io/kit@v0.58.1'
         - 'step-security/paths-filter@v4.0.3'
@@ -25,7 +25,7 @@ workflows:
     '.github/workflows/mobile-android.yml':
         - 'actions/cache@v6.1.0'
         - 'actions/checkout@v7.0.1'
-        - 'actions/setup-java@v6.1.0'
+        - 'actions/setup-java@v6.3.0'
         - 'actions/upload-artifact@v7.0.2'
         - 'kenn-io/kit@v0.58.1'
         - 'step-security/setup-android@v4.0.4'
@@ -72,9 +72,9 @@ dependencies:
         commit: 'sha1-b7ad1dad31e06c5925ef5d2fc7ad053ef454303e'
         owner_id: 44036562
         repo_id: 192624594
-    'actions/setup-java@v6.1.0':
-        ref: 'v6.1.0'
-        commit: 'sha1-b843ebf9b913146b38da2eaa7aeddf76074ae1ad'
+    'actions/setup-java@v6.3.0':
+        ref: 'v6.3.0'
+        commit: 'sha1-d1374f8ac74474200d16ef8ecee22c7ae7a51880'
         owner_id: 44036562
         repo_id: 196057608
     'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1':
@@ -122,9 +122,9 @@ dependencies:
         commit: 'sha1-6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee'
         owner_id: 9919
         repo_id: 259445878
-    'jdx/mise-action@v5.2.7':
-        ref: 'v5.2.7'
-        commit: 'sha1-b44d12e7d0d8ee7461bb893e1b1993500433185b'
+    'jdx/mise-action@v5.2.9':
+        ref: 'v5.2.9'
+        commit: 'sha1-236a21c3b91f5db6d4e174b348674a0f0caac06d'
         owner_id: 216188
         repo_id: 738284564
     'kenn-io/actions@main':

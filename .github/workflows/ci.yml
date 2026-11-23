@@ -212,7 +212,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v10.3.3
         with:
-          version: "0.13.6"
+          version: "0.13.8"
           enable-cache: false
 
       - name: Restore Bun package cache
@@ -276,7 +276,7 @@ jobs:
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          version: "1.5.0"
+          version: "1.6.0"
           node-version-file: package.json
           cache: false
           run-install: false
@@ -286,7 +286,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v10.3.3
         with:
-          version: "0.13.6"
+          version: "0.13.8"
           enable-cache: false
 
       - name: Build the website and documentation
@@ -339,7 +339,7 @@ jobs:
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          version: "1.5.0"
+          version: "1.6.0"
           node-version-file: package.json
           cache: false
           run-install: false
@@ -364,7 +364,7 @@ jobs:
         run: ./node_modules/.bin/vp run -w check
 
       # MISE_ENV matches the Go test jobs so both restore the same tool cache.
-      - uses: jdx/mise-action@v5.2.7
+      - uses: jdx/mise-action@v5.2.9
         if: matrix.lane != 'frontend'
         with:
           cache_save: ${{ github.ref == 'refs/heads/main' }}
@@ -441,7 +441,7 @@ jobs:
 
       # glab and fj back the provider CLI credential tests, which skip when
       # the binary is absent and would otherwise never run in CI.
-      - uses: jdx/mise-action@v5.2.7
+      - uses: jdx/mise-action@v5.2.9
         with:
           cache_save: ${{ github.ref == 'refs/heads/main' }}
         env:
@@ -561,7 +561,7 @@ jobs:
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          version: "1.5.0"
+          version: "1.6.0"
           node-version-file: package.json
           cache: false
           run-install: false
@@ -1100,7 +1100,7 @@ jobs:
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          version: "1.5.0"
+          version: "1.6.0"
           node-version-file: package.json
           cache: false
           run-install: false
@@ -1418,7 +1418,7 @@ jobs:
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          version: "1.5.0"
+          version: "1.6.0"
           node-version-file: package.json
           cache: false
           run-install: false

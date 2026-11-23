@@ -707,7 +707,7 @@ describe("RepoSettings", () => {
       untrackedOpen("acme", "tools", 2),
     ]);
     let resolveAdd: (value: unknown) => void = () => {};
-    mockAddRepo.mockReturnValue(
+    mockBulkAddRepos.mockReturnValue(
       new Promise((resolve) => {
         resolveAdd = resolve;
       }),
@@ -719,7 +719,9 @@ describe("RepoSettings", () => {
     const pending = screen.getByRole("button", { name: "Add acme/widgets" });
     expect(pending.textContent?.trim()).toBe("Adding…");
     expect((pending as HTMLButtonElement).disabled).toBe(true);
-    expect(mockAddRepo).toHaveBeenCalledWith("acme", "widgets", { provider: "gitlab", host: "gitlab.example.com" });
+    expect(mockBulkAddRepos).toHaveBeenCalledWith([
+      { provider: "gitlab", host: "gitlab.example.com", owner: "acme", name: "widgets", repo_path: "acme/widgets" },
+    ]);
     const second = screen.getByRole("button", { name: "Add acme/tools" });
     expect((second as HTMLButtonElement).disabled).toBe(true);
 
@@ -730,7 +732,7 @@ describe("RepoSettings", () => {
     expect(mockRefreshSyncStatus).toHaveBeenCalled();
 
     const failed = Promise.withResolvers<ReturnType<typeof settingsResponse>>();
-    mockAddRepo.mockReturnValueOnce(failed.promise);
+    mockBulkAddRepos.mockReturnValueOnce(failed.promise);
     await fireEvent.click(screen.getByRole("button", { name: "Add acme/tools" }));
     failed.reject(new Error("repository not found"));
     await waitFor(() => expect(flash.getFlash()).toMatchObject({ message: "repository not found", tone: "danger" }));

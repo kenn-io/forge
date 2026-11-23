@@ -99,7 +99,7 @@
     runtime.runCommand(
       Effect.gen(function* () {
         const workflow = yield* SettingsWorkflow;
-        return yield* workflow.addRepo(repo.owner, repo.name, { provider: repo.provider, host: repo.host });
+        return yield* workflow.bulkAddRepos([{ provider: repo.provider, host: repo.host, owner: repo.owner, name: repo.name, repo_path: `${repo.owner}/${repo.name}` }]);
       }).pipe(
         Effect.matchEffect({
           onFailure: (failure) =>

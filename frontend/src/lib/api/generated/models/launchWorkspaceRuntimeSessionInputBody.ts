@@ -5,6 +5,8 @@
 export interface LaunchWorkspaceRuntimeSessionInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /** An ACP agent session to resume in the new chat, from list-workspace-acp-sessions. Only ACP targets accept it. */
+  acp_session_id?: string;
   display_region?: string;
   target_key: string;
 }

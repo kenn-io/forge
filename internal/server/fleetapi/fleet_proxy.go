@@ -272,6 +272,20 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 			},
 		},
 		{
+			operationID:  "list-fleet-workspace-acp-sessions",
+			responseType: reflect.TypeFor[workspaceapi.WorkspaceACPSessionsResponse](),
+			method:       http.MethodGet,
+			path:         "/fleet/hosts/{host_key}/workspaces/{id}/runtime/acp-sessions",
+			summary:      "List resumable ACP agent sessions in a workspace on fleet host",
+			pathParams:   []string{"host_key", "id"},
+			queryParams: []*huma.Param{
+				fleetStringQueryParam("target_key", "ACP agent target whose sessions to list."),
+			},
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/runtime/acp-sessions"
+			},
+		},
+		{
 			operationID: "get-fleet-workspace-commits",
 			method:      http.MethodGet,
 			path:        "/fleet/hosts/{host_key}/workspaces/{id}/commits",

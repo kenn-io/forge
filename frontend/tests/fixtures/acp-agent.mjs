@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 const write = (message) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
-const update = (value) => write({ method: "session/update", params: { sessionId: "workspace-chat", update: value } });
+// --resumable keeps one earlier session for the workspace, which a chat can list and load.
+const resumable = process.argv.includes("--resumable");
+let sessionId = "workspace-chat";
+const update = (value) => write({ method: "session/update", params: { sessionId, update: value } });
 let prompt;
 let screenshotDirectory;
 process.on("exit", () => {
@@ -60,7 +63,11 @@ for await (const line of createInterface({ input: process.stdin })) {
         id: request.id,
         result: {
           protocolVersion: 1,
-          agentCapabilities: { promptCapabilities: { image: true }, mcpCapabilities: { http: true } },
+          agentCapabilities: {
+            promptCapabilities: { image: true },
+            mcpCapabilities: { http: true },
+            ...(resumable ? { loadSession: true, sessionCapabilities: { list: {} } } : {}),
+          },
         },
       });
       break;
@@ -83,6 +90,36 @@ for await (const line of createInterface({ input: process.stdin })) {
           throw new Error("Forge MCP tools unavailable");
       }
       write({ id: request.id, result: { sessionId: "workspace-chat", configOptions } });
+      break;
+    case "session/list":
+      if (realpathSync(request.params.cwd) !== realpathSync(process.cwd()))
+        throw new Error("Wrong workspace directory");
+      write({
+        id: request.id,
+        result: {
+          sessions: [
+            {
+              sessionId: "earlier-chat",
+              cwd: request.params.cwd,
+              title: "Earlier parser work",
+              updatedAt: "2026-11-20T10:00:00Z",
+            },
+          ],
+        },
+      });
+      break;
+    case "session/load":
+      if (request.params.sessionId !== "earlier-chat") {
+        write({ id: request.id, error: { code: -32002, message: `Resource not found: ${request.params.sessionId}` } });
+        break;
+      }
+      sessionId = request.params.sessionId;
+      update({ sessionUpdate: "user_message_chunk", content: { type: "text", text: "Where did we leave off?" } });
+      update({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "We stopped at the parser tests." },
+      });
+      write({ id: request.id, result: { configOptions } });
       break;
     case "session/set_config_option": {
       const option = configOptions.find((option) => option.id === request.params.configId);

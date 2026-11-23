@@ -2754,7 +2754,7 @@ test.describe("workspace launcher", () => {
       const clicked = panel.getByRole("button", { name: agentLabel });
       const label = clicked.locator(".launch-target-label");
       const sibling = panel.getByRole("button", { name: "Shell", exact: true });
-      const laterSection = panel.getByRole("button", { name: "Chat agent" });
+      const laterSection = panel.getByRole("button", { name: "Chat agent", exact: true });
       const quickAction = panel.getByRole("button", { name: "Review" });
       await expect(quickAction).toBeVisible();
       const geometry = async () => ({

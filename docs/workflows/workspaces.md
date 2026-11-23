@@ -83,6 +83,14 @@ You can launch another shell or agent from the workspace header. Sessions keep
 running under tmux when you leave the page, reload the browser, or attach from
 another terminal.
 
+To continue an earlier conversation with an ACP agent, click the history button
+on the agent's card in the launcher. The list shows the sessions the agent keeps
+for the workspace's worktree, including ones started outside Forge, such as in
+the agent's own CLI. Pick one to open it in a new chat with its earlier
+messages. Sessions already open in a chat in the workspace are not listed. An
+agent that cannot list and reload its sessions says so instead of showing a
+list.
+
 Forge enables application clipboard copying on its dedicated tmux server, with
 no system-wide tmux change required. If you configure a custom shared tmux
 server, enable `set-clipboard on` there to forward agent OSC 52 copies to the

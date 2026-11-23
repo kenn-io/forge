@@ -146,6 +146,7 @@ type launchWorkspaceRuntimeSessionInput struct {
 	Body struct {
 		TargetKey     string `json:"target_key"`
 		DisplayRegion string `json:"display_region,omitempty"`
+		ACPSessionID  string `json:"acp_session_id,omitempty" doc:"An ACP agent session to resume in the new chat, from list-workspace-acp-sessions. Only ACP targets accept it."`
 	}
 }
 
@@ -2812,7 +2813,7 @@ func (s *Handler) launchWorkspaceRuntimeSession(
 	input *launchWorkspaceRuntimeSessionInput,
 ) (*workspaceRuntimeSessionOutput, error) {
 	session, err := s.launchWorkspaceRuntimeService(
-		ctx, input.ID, input.Body.TargetKey, input.Body.DisplayRegion, "", nil,
+		ctx, input.ID, input.Body.TargetKey, input.Body.DisplayRegion, "", nil, strings.TrimSpace(input.Body.ACPSessionID),
 	)
 	if err != nil {
 		return nil, err
@@ -2830,7 +2831,7 @@ func (s *Handler) LaunchWorkspaceRuntimeService(
 		}
 		initialMessage = message
 	}
-	return s.launchWorkspaceRuntimeService(ctx, workspaceID, targetKey, "", initialMessage, nil)
+	return s.launchWorkspaceRuntimeService(ctx, workspaceID, targetKey, "", initialMessage, nil, "")
 }
 
 func (s *Handler) PreferredWorkspaceAgentTargetService(
@@ -2839,8 +2840,10 @@ func (s *Handler) PreferredWorkspaceAgentTargetService(
 	return s.workspaces.PreferredWorkspaceAgentTarget(ctx, since, targetKeys)
 }
 
+// launchWorkspaceRuntimeService launches targetKey in the workspace. A
+// non-empty acpSessionID resumes that agent session in the new chat.
 func (s *Handler) launchWorkspaceRuntimeService(
-	ctx context.Context, workspaceID, targetKey, displayRegion, initialMessage string, acpOptions map[string]string,
+	ctx context.Context, workspaceID, targetKey, displayRegion, initialMessage string, acpOptions map[string]string, acpSessionID string,
 ) (session localruntime.SessionInfo, err error) {
 	started := time.Now()
 	defer func() {
@@ -2881,7 +2884,11 @@ func (s *Handler) launchWorkspaceRuntimeService(
 			return localruntime.SessionInfo{}, httpapi.Internal("prepare agent context: " + err.Error())
 		}
 	}
-	session, err = s.runtime.LaunchWithInitialMessage(ctx, summary.ID, summary.WorktreePath, targetKey, initialMessage, acpOptions)
+	if acpSessionID != "" {
+		session, err = s.runtime.ResumeACPSession(ctx, summary.ID, summary.WorktreePath, targetKey, acpSessionID, acpOptions)
+	} else {
+		session, err = s.runtime.LaunchWithInitialMessage(ctx, summary.ID, summary.WorktreePath, targetKey, initialMessage, acpOptions)
+	}
 	if err != nil {
 		return localruntime.SessionInfo{}, workspaceRuntimeLaunchError(err)
 	}
@@ -3299,6 +3306,12 @@ func (s *Handler) getReadyRuntimeWorkspace(
 func workspaceRuntimeLaunchError(err error) error {
 	msg := err.Error()
 	if errors.Is(err, tokenauth.ErrMissingToken) || errors.Is(err, ptyowner.ErrCommandLineTooLong) {
+		return httpapi.BadRequest(httpapi.CodeBadRequest, msg, nil)
+	}
+	if errors.Is(err, localruntime.ErrACPSessionInUse) {
+		return httpapi.Conflict(httpapi.CodeConflict, msg, nil)
+	}
+	if strings.Contains(msg, "is not an ACP agent") {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, msg, nil)
 	}
 	if strings.Contains(msg, "target not found") {

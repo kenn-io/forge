@@ -28,7 +28,7 @@
   import Modal from "../shared/Modal.svelte";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import DialogButton from "../shared/DialogButton.svelte";
-  import WorkspaceLauncher from "./WorkspaceLauncher.svelte";
+  import WorkspaceLauncher, { type AcpResumeList } from "./WorkspaceLauncher.svelte";
   import WorkspaceInfo from "./WorkspaceInfo.svelte";
   import WorkspaceLauncherOverlay from "./WorkspaceLauncherOverlay.svelte";
   import { visibleLaunchTargets } from "./launchTargets";
@@ -289,6 +289,7 @@
     region: "workflow" | "terminal",
     placement: WorkspaceRuntimeLaunchPlacement,
     admissionRuntime?: WorkspaceRuntimeState,
+    acpSessionId?: string,
   ) {
     return Effect.gen(function* () {
       const workflow = yield* WorkspaceRuntimeWorkflow;
@@ -298,6 +299,7 @@
         region,
         placement,
         admissionRuntime,
+        acpSessionId,
       );
     });
   }
@@ -482,6 +484,8 @@
     terminalZoom.dispose();
     emptyLaunchTargetsExecution?.interrupt();
     emptyLaunchTargetsExecution = null;
+    acpResumeExecution?.interrupt();
+    acpResumeExecution = null;
     const leases = retainedRuntimePresenterLeases;
     retainedRuntimePresenterLeases = [];
     if (leases.length === 0) return;
@@ -1096,6 +1100,44 @@
 
   function closeLauncher(): void {
     launcherState = null;
+    browseAcpSessions(null);
+  }
+
+  // The resume list belongs to the launcher: closing either cancels its read.
+  let acpResumeFor = $state<{ workspaceKey: string; list: AcpResumeList } | null>(null);
+  let acpResumeExecution: { interrupt: () => void } | null = null;
+  const acpResume = $derived(acpResumeFor?.workspaceKey === viewWorkspaceKey ? acpResumeFor.list : null);
+
+  function browseAcpSessions(targetKey: string | null): void {
+    acpResumeExecution?.interrupt();
+    acpResumeExecution = null;
+    if (targetKey === null || !workspaceId) {
+      acpResumeFor = null;
+      return;
+    }
+    const workspaceKey = viewWorkspaceKey;
+    const target = runtimeTarget(workspaceId, workspaceHostKey);
+    const current = () => acpResumeFor?.workspaceKey === workspaceKey && acpResumeFor.list.targetKey === targetKey;
+    acpResumeFor = { workspaceKey, list: { targetKey, status: "loading" } };
+    acpResumeExecution = appRuntime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* WorkspaceRuntimeWorkflow;
+        const sessions = yield* workflow.listAcpSessions(target, targetKey);
+        if (current()) acpResumeFor = { workspaceKey, list: { targetKey, status: "ready", sessions } };
+      }),
+      {
+        operation: "workspace.acp.sessions.list",
+        safeContext: { surface: "workspace" },
+        onFailure: (error) => {
+          if (!current()) return;
+          const message =
+            error._tag === "ApiProblemError"
+              ? apiErrorMessage(error.problem, "Could not list sessions")
+              : "Could not list sessions";
+          acpResumeFor = { workspaceKey, list: { targetKey, status: "failed", error: message } };
+        },
+      },
+    );
   }
 
   /**
@@ -3112,6 +3154,7 @@
     launchClaim?: WorkspaceLaunchClaim,
     leaf?: WorkspaceRuntimeLaunchLeaf,
     admissionRuntime?: WorkspaceRuntimeState,
+    acpSessionId?: string,
   ): void {
     if (!workspaceId || launchingKey || actionsBlocked) return;
     reportWorkspaceLaunch();
@@ -3144,7 +3187,7 @@
                 }
               },
             }),
-      }, admissionRuntime),
+      }, admissionRuntime, acpSessionId),
       {
         operation: "workspace.session.launch",
         safeContext: { surface: "workspace" },
@@ -5643,6 +5686,13 @@
       {quickActionBusy}
       onClose={closeLauncher}
       onLaunch={(key) => handleLaunch(key, undefined, launcherState?.leaf)}
+      {acpResume}
+      onBrowseAcpSessions={browseAcpSessions}
+      onResumeAcp={(key, sessionId) => {
+        const leaf = launcherState?.leaf;
+        browseAcpSessions(null);
+        handleLaunch(key, undefined, leaf, undefined, sessionId);
+      }}
       onQuickAction={(action) => {
         const leaf = launcherState?.leaf;
         closeLauncher();

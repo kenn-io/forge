@@ -22,10 +22,17 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 	u := params.Update
 	// A reload replays history; the saved transcript already holds it. Session
 	// settings and commands the agent sends meanwhile are current, not history.
-	if a.replaying && u.ConfigOptionUpdate == nil && u.AvailableCommandsUpdate == nil && u.SessionInfoUpdate == nil {
+	// An import keeps the replayed conversation, but not the usage of turns
+	// that ran elsewhere.
+	if a.replaying && u.ConfigOptionUpdate == nil && u.AvailableCommandsUpdate == nil && u.SessionInfoUpdate == nil &&
+		(!a.importing || u.UsageUpdate != nil) {
 		return nil
 	}
 	switch {
+	case u.UserMessageChunk != nil && a.importing:
+		if !a.appendContentLocked("user", u.UserMessageChunk.Content, deref(u.UserMessageChunk.MessageId)) {
+			return nil
+		}
 	case u.ConfigOptionUpdate != nil:
 		a.state.ConfigOptions = acpConfigOptions(u.ConfigOptionUpdate.ConfigOptions)
 	case u.AvailableCommandsUpdate != nil:

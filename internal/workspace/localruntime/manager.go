@@ -193,6 +193,9 @@ type Manager struct {
 	agentMCPURL        string
 	agentMCPToken      string
 	acpPreferencesMu   sync.Mutex
+	// acpImportMu holds a resumed session's check and seed together; see
+	// importACPLaunchCommand.
+	acpImportMu        sync.Mutex
 	acpPreferencesPath string
 	acpSessionsDir     string
 	parkedDir          string
@@ -503,7 +506,11 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 		return SessionInfo{}, fmt.Errorf("target %q is not an ACP agent and takes no ACP options", targetKey)
 	}
 
+	// Without a restored runtime, a session ID names an ACP session to resume.
+	importSession := restored == nil && sessionID != ""
 	switch {
+	case importSession && target.Kind != LaunchTargetACP:
+		return SessionInfo{}, fmt.Errorf("target %q is not an ACP agent and cannot resume a session", targetKey)
 	case restored == nil:
 	case target.Kind == LaunchTargetAgent:
 		target.Command, err = agentResumeCommand(target.Command, agent, sessionID)
@@ -565,9 +572,12 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 	// is never older than the runtime it reports for.
 	createdAt := time.Now().UTC()
 	var launch launchCommand
-	if target.Kind == LaunchTargetACP {
+	switch {
+	case importSession:
+		launch, err = m.importACPLaunchCommand(ctx, target, workspaceID, key, cwd, sessionID, acpOptions)
+	case target.Kind == LaunchTargetACP:
 		launch, err = m.acpLaunchCommand(ctx, target, workspaceID, key, cwd, acpOptions)
-	} else {
+	default:
 		launch, err = m.launchCommand(ctx, target, workspaceID, key, cwd)
 	}
 	if err != nil {
@@ -603,6 +613,12 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 		Reused:                 launch.TmuxSession != "" && !launch.TmuxCreated,
 	}, launch.Command, cwd, m.currentStripEnvVars(), launch.Env)
 	if err != nil {
+		if importSession {
+			// No chat holds the session, so it stays available to resume.
+			if removeErr := os.Remove(m.acpSessionPath(key)); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				slog.Warn("remove resumed ACP session record", "session_key", key, "err", removeErr)
+			}
+		}
 		if launch.TmuxCreated {
 			cleanupCtx, cancel := context.WithTimeout(
 				context.WithoutCancel(ctx), 5*time.Second,

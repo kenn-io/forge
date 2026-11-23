@@ -4,7 +4,7 @@
   import { untrack } from "svelte";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import type { LaunchTarget, QuickAction, RuntimeSession } from "../../api/types.js";
-  import WorkspaceLauncher from "./WorkspaceLauncher.svelte";
+  import WorkspaceLauncher, { type AcpResumeList } from "./WorkspaceLauncher.svelte";
 
   // Contained by the terminal frame. The rest of Forge remains interactive.
   interface Props {
@@ -20,6 +20,9 @@
     onLaunch: (targetKey: string) => void;
     onQuickAction?: (action: QuickAction) => void;
     onOpenSession: (sessionKey: string) => void;
+    acpResume?: AcpResumeList | null;
+    onBrowseAcpSessions?: ((targetKey: string | null) => void) | undefined;
+    onResumeAcp?: ((targetKey: string, sessionId: string) => void) | undefined;
   }
 
   const {
@@ -35,6 +38,9 @@
     onLaunch,
     onQuickAction,
     onOpenSession,
+    acpResume = null,
+    onBrowseAcpSessions,
+    onResumeAcp,
   }: Props = $props();
 
   let panel = $state<HTMLElement>();
@@ -92,6 +98,9 @@
           onLaunch={onLaunch}
           {onQuickAction}
           onOpenSession={onOpenSession}
+          {acpResume}
+          {onBrowseAcpSessions}
+          {onResumeAcp}
         />
       </div>
     </div>

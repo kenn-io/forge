@@ -1016,6 +1016,39 @@ func (o *GetDevboxRuntimeRequestOptions) GetHeader() (map[string]string, error) 
 	return nil, nil
 }
 
+// ListDevboxAcpSessionsRequestOptions is the options needed to make a request to ListDevboxAcpSessions.
+type ListDevboxAcpSessionsRequestOptions struct {
+	PathParams *ListDevboxAcpSessionsPath
+	Query      *ListDevboxAcpSessionsQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ListDevboxAcpSessionsRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ListDevboxAcpSessionsRequestOptions) GetQuery() (map[string]any, error) {
+	return paramcodec.Map(o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ListDevboxAcpSessionsRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *ListDevboxAcpSessionsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // LaunchDevboxHandoffRequestOptions is the options needed to make a request to LaunchDevboxHandoff.
 type LaunchDevboxHandoffRequestOptions struct {
 	PathParams *LaunchDevboxHandoffPath
@@ -3950,6 +3983,39 @@ func (o *GetFleetWorkspaceRuntimeRequestOptions) GetBody() any {
 
 // GetHeader returns the headers as a map.
 func (o *GetFleetWorkspaceRuntimeRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// ListFleetWorkspaceAcpSessionsRequestOptions is the options needed to make a request to ListFleetWorkspaceAcpSessions.
+type ListFleetWorkspaceAcpSessionsRequestOptions struct {
+	PathParams *ListFleetWorkspaceAcpSessionsPath
+	Query      *ListFleetWorkspaceAcpSessionsQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ListFleetWorkspaceAcpSessionsRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ListFleetWorkspaceAcpSessionsRequestOptions) GetQuery() (map[string]any, error) {
+	return paramcodec.Map(o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ListFleetWorkspaceAcpSessionsRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *ListFleetWorkspaceAcpSessionsRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
@@ -12515,6 +12581,39 @@ func (o *GetWorkspaceRuntimeRequestOptions) GetHeader() (map[string]string, erro
 	return nil, nil
 }
 
+// ListWorkspaceAcpSessionsRequestOptions is the options needed to make a request to ListWorkspaceAcpSessions.
+type ListWorkspaceAcpSessionsRequestOptions struct {
+	PathParams *ListWorkspaceAcpSessionsPath
+	Query      *ListWorkspaceAcpSessionsQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ListWorkspaceAcpSessionsRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ListWorkspaceAcpSessionsRequestOptions) GetQuery() (map[string]any, error) {
+	return paramcodec.Map(o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ListWorkspaceAcpSessionsRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *ListWorkspaceAcpSessionsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // LaunchWorkspaceAgentHandoffRequestOptions is the options needed to make a request to LaunchWorkspaceAgentHandoff.
 type LaunchWorkspaceAgentHandoffRequestOptions struct {
 	PathParams *LaunchWorkspaceAgentHandoffPath
@@ -13181,6 +13280,7 @@ type ClientInterface interface {
 	RefreshDevboxWorkspaceWithResponse(ctx context.Context, options *RefreshDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshDevboxWorkspaceResp, error)
 	RetryDevboxWorkspaceWithResponse(ctx context.Context, options *RetryDevboxWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RetryDevboxWorkspaceResp, error)
 	GetDevboxRuntimeWithResponse(ctx context.Context, options *GetDevboxRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxRuntimeResp, error)
+	ListDevboxAcpSessionsWithResponse(ctx context.Context, options *ListDevboxAcpSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListDevboxAcpSessionsResp, error)
 	LaunchDevboxHandoffWithResponse(ctx context.Context, options *LaunchDevboxHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchDevboxHandoffResp, error)
 	LaunchDevboxSessionWithResponse(ctx context.Context, options *LaunchDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchDevboxSessionResp, error)
 	StopDevboxSessionWithResponse(ctx context.Context, options *StopDevboxSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopDevboxSessionResp, error)
@@ -13283,6 +13383,7 @@ type ClientInterface interface {
 	RetryFleetWorkspaceWithResponse(ctx context.Context, options *RetryFleetWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RetryFleetWorkspaceResp, error)
 	RevealFleetWorkspaceWithResponse(ctx context.Context, options *RevealFleetWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RevealFleetWorkspaceResp, error)
 	GetFleetWorkspaceRuntimeWithResponse(ctx context.Context, options *GetFleetWorkspaceRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceRuntimeResp, error)
+	ListFleetWorkspaceAcpSessionsWithResponse(ctx context.Context, options *ListFleetWorkspaceAcpSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListFleetWorkspaceAcpSessionsResp, error)
 	LaunchFleetWorkspaceAgentHandoffWithResponse(ctx context.Context, options *LaunchFleetWorkspaceAgentHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchFleetWorkspaceAgentHandoffResp, error)
 	LaunchFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *LaunchFleetWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchFleetWorkspaceRuntimeSessionResp, error)
 	StopFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *StopFleetWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopFleetWorkspaceRuntimeSessionResp, error)
@@ -13577,6 +13678,7 @@ type ClientInterface interface {
 	RetryWorkspaceWithResponse(ctx context.Context, options *RetryWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RetryWorkspaceResp, error)
 	RevealWorkspaceWithResponse(ctx context.Context, options *RevealWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RevealWorkspaceResp, error)
 	GetWorkspaceRuntimeWithResponse(ctx context.Context, options *GetWorkspaceRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceRuntimeResp, error)
+	ListWorkspaceAcpSessionsWithResponse(ctx context.Context, options *ListWorkspaceAcpSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkspaceAcpSessionsResp, error)
 	LaunchWorkspaceAgentHandoffWithResponse(ctx context.Context, options *LaunchWorkspaceAgentHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchWorkspaceAgentHandoffResp, error)
 	LaunchWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *LaunchWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchWorkspaceRuntimeSessionResp, error)
 	StopWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *StopWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopWorkspaceRuntimeSessionResp, error)
@@ -16060,6 +16162,78 @@ func (c *Client) GetDevboxRuntimeWithResponse(ctx context.Context, options *GetD
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "GetDevboxRuntimeErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// ListDevboxAcpSessions Forward an execution operation to its owning devbox
+func (c *Client) ListDevboxAcpSessionsWithResponse(ctx context.Context, options *ListDevboxAcpSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListDevboxAcpSessionsResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"target_key": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/acp-sessions",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/runtime/acp-sessions")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ListDevboxAcpSessionsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ListDevboxAcpSessionsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ListDevboxAcpSessionsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListDevboxAcpSessionsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(ListDevboxAcpSessionsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListDevboxAcpSessionsErrorResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -21942,6 +22116,74 @@ func (c *Client) GetFleetWorkspaceRuntimeWithResponse(ctx context.Context, optio
 		}
 		if resp.StatusCode/100 == 2 {
 			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// ListFleetWorkspaceAcpSessions List resumable ACP agent sessions in a workspace on fleet host
+func (c *Client) ListFleetWorkspaceAcpSessionsWithResponse(ctx context.Context, options *ListFleetWorkspaceAcpSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListFleetWorkspaceAcpSessionsResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime/acp-sessions",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/fleet/hosts/{host_key}/workspaces/{id}/runtime/acp-sessions")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ListFleetWorkspaceAcpSessionsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ListFleetWorkspaceAcpSessionsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ListFleetWorkspaceAcpSessionsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListFleetWorkspaceAcpSessionsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.JSONDefault = new(ListFleetWorkspaceAcpSessionsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListFleetWorkspaceAcpSessionsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
 		}
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
@@ -41630,6 +41872,78 @@ func (c *Client) GetWorkspaceRuntimeWithResponse(ctx context.Context, options *G
 	}
 }
 
+// ListWorkspaceAcpSessions List an ACP agent's sessions in the workspace that a chat can resume
+func (c *Client) ListWorkspaceAcpSessionsWithResponse(ctx context.Context, options *ListWorkspaceAcpSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkspaceAcpSessionsResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"target_key": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/acp-sessions",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/workspaces/{id}/runtime/acp-sessions")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ListWorkspaceAcpSessionsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ListWorkspaceAcpSessionsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ListWorkspaceAcpSessionsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorkspaceAcpSessionsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(ListWorkspaceAcpSessionsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorkspaceAcpSessionsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // LaunchWorkspaceAgentHandoff Launch an agent with an initial message
 func (c *Client) LaunchWorkspaceAgentHandoffWithResponse(ctx context.Context, options *LaunchWorkspaceAgentHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchWorkspaceAgentHandoffResp, error) {
 	var err error
@@ -43299,6 +43613,25 @@ func (c *Client) GetDevboxRuntimeRaw(ctx context.Context, httpClient *http.Clien
 	return httpClient.Do(req)
 }
 
+// ListDevboxAcpSessionsRaw returns an unread response. The caller must close its body.
+func (c *Client) ListDevboxAcpSessionsRaw(ctx context.Context, httpClient *http.Client, options *ListDevboxAcpSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"target_key": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/acp-sessions",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // LaunchDevboxHandoffRaw returns an unread response. The caller must close its body.
 func (c *Client) LaunchDevboxHandoffRaw(ctx context.Context, httpClient *http.Client, options *LaunchDevboxHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -44877,6 +45210,21 @@ func (c *Client) GetFleetWorkspaceRuntimeRaw(ctx context.Context, httpClient *ht
 
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// ListFleetWorkspaceAcpSessionsRaw returns an unread response. The caller must close its body.
+func (c *Client) ListFleetWorkspaceAcpSessionsRaw(ctx context.Context, httpClient *http.Client, options *ListFleetWorkspaceAcpSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime/acp-sessions",
 		Method:     "GET",
 		Options:    options,
 	}
@@ -49750,6 +50098,25 @@ func (c *Client) GetWorkspaceRuntimeRaw(ctx context.Context, httpClient *http.Cl
 	return httpClient.Do(req)
 }
 
+// ListWorkspaceAcpSessionsRaw returns an unread response. The caller must close its body.
+func (c *Client) ListWorkspaceAcpSessionsRaw(ctx context.Context, httpClient *http.Client, options *ListWorkspaceAcpSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"target_key": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/acp-sessions",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // LaunchWorkspaceAgentHandoffRaw returns an unread response. The caller must close its body.
 func (c *Client) LaunchWorkspaceAgentHandoffRaw(ctx context.Context, httpClient *http.Client, options *LaunchWorkspaceAgentHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -50678,6 +51045,26 @@ func NewGetDevboxRuntimeRequest(ctx context.Context, baseURL string, options *Ge
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewListDevboxAcpSessionsRequest constructs a typed request for a caller-owned transport.
+func NewListDevboxAcpSessionsRequest(ctx context.Context, baseURL string, options *ListDevboxAcpSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"target_key": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime/acp-sessions",
 		Method:        "GET",
 		Options:       options,
 		QueryEncoding: queryEncoding,
@@ -52367,6 +52754,22 @@ func NewGetFleetWorkspaceRuntimeRequest(ctx context.Context, baseURL string, opt
 
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewListFleetWorkspaceAcpSessionsRequest constructs a typed request for a caller-owned transport.
+func NewListFleetWorkspaceAcpSessionsRequest(ctx context.Context, baseURL string, options *ListFleetWorkspaceAcpSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/runtime/acp-sessions",
 		Method:     "GET",
 		Options:    options,
 	}
@@ -57530,6 +57933,26 @@ func NewGetWorkspaceRuntimeRequest(ctx context.Context, baseURL string, options 
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewListWorkspaceAcpSessionsRequest constructs a typed request for a caller-owned transport.
+func NewListWorkspaceAcpSessionsRequest(ctx context.Context, baseURL string, options *ListWorkspaceAcpSessionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"target_key": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/acp-sessions",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewLaunchWorkspaceAgentHandoffRequest constructs a typed request for a caller-owned transport.
 func NewLaunchWorkspaceAgentHandoffRequest(ctx context.Context, baseURL string, options *LaunchWorkspaceAgentHandoffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -58640,6 +59063,11 @@ type GetDevboxRuntimePath struct {
 	ConnectionID string `json:"connection_id"`
 }
 
+type ListDevboxAcpSessionsPath struct {
+	ID           string `json:"id"`
+	ConnectionID string `json:"connection_id"`
+}
+
 type LaunchDevboxHandoffPath struct {
 	ID           string `json:"id"`
 	ConnectionID string `json:"connection_id"`
@@ -59005,6 +59433,11 @@ type RevealFleetWorkspacePath struct {
 }
 
 type GetFleetWorkspaceRuntimePath struct {
+	HostKey string `json:"host_key"`
+	ID      string `json:"id"`
+}
+
+type ListFleetWorkspaceAcpSessionsPath struct {
 	HostKey string `json:"host_key"`
 	ID      string `json:"id"`
 }
@@ -60554,6 +60987,10 @@ type GetWorkspaceRuntimePath struct {
 	ID string `json:"id"`
 }
 
+type ListWorkspaceAcpSessionsPath struct {
+	ID string `json:"id"`
+}
+
 type LaunchWorkspaceAgentHandoffPath struct {
 	ID string `json:"id"`
 }
@@ -61230,6 +61667,11 @@ type GetDevboxRuntimeQuery struct {
 	Viewing *bool `json:"viewing,omitempty"`
 }
 
+type ListDevboxAcpSessionsQuery struct {
+	// TargetKey ACP agent target whose sessions to list.
+	TargetKey string `json:"target_key"`
+}
+
 type BrowseDocsFoldersQuery struct {
 	Path *string `json:"path,omitempty"`
 }
@@ -61367,6 +61809,11 @@ type GetFleetWorkspaceFilesQuery struct {
 type GetFleetWorkspaceRuntimeQuery struct {
 	// Viewing Set to true when the workspace view is showing.
 	Viewing *bool `json:"viewing,omitempty"`
+}
+
+type ListFleetWorkspaceAcpSessionsQuery struct {
+	// TargetKey ACP agent target whose sessions to list.
+	TargetKey *string `json:"target_key,omitempty"`
 }
 
 type ListWorkflowRunsOnHostQuery struct {
@@ -61861,6 +62308,11 @@ type GetWorkspaceRuntimeQuery struct {
 	Viewing *bool `json:"viewing,omitempty"`
 }
 
+type ListWorkspaceAcpSessionsQuery struct {
+	// TargetKey ACP agent target whose sessions to list.
+	TargetKey string `json:"target_key"`
+}
+
 type GetWorkspaceChatQuery struct {
 	// After Transcript index of the first message to return.
 	After *int64 `json:"after,omitempty"`
@@ -62002,6 +62454,10 @@ type RetryDevboxWorkspaceErrorResponse = ProblemError
 type GetDevboxRuntimeResponse = WorkspaceRuntimeResponse
 
 type GetDevboxRuntimeErrorResponse = ProblemError
+
+type ListDevboxAcpSessionsResponse = WorkspaceACPSessionsResponse
+
+type ListDevboxAcpSessionsErrorResponse = ProblemError
 
 type LaunchDevboxHandoffResponse = WorkspaceAgentHandoffResponse
 
@@ -62296,6 +62752,14 @@ type RetryFleetWorkspaceResponse map[string]any
 type RevealFleetWorkspaceResponse map[string]any
 
 type GetFleetWorkspaceRuntimeResponse map[string]any
+
+type ListFleetWorkspaceAcpSessionsResponse = WorkspaceACPSessionsResponse
+
+type ListFleetWorkspaceAcpSessionsErrorResponse map[string]any
+
+func (r ListFleetWorkspaceAcpSessionsErrorResponse) Error() string {
+	return "unmapped client error"
+}
 
 type LaunchFleetWorkspaceAgentHandoffResponse = WorkspaceAgentHandoffResponse
 
@@ -63401,6 +63865,10 @@ type GetWorkspaceRuntimeResponse = WorkspaceRuntimeResponse
 
 type GetWorkspaceRuntimeErrorResponse = ProblemError
 
+type ListWorkspaceAcpSessionsResponse = WorkspaceACPSessionsResponse
+
+type ListWorkspaceAcpSessionsErrorResponse = ProblemError
+
 type LaunchWorkspaceAgentHandoffResponse = WorkspaceAgentHandoffResponse
 
 type LaunchWorkspaceAgentHandoffErrorResponse = ProblemError
@@ -63767,6 +64235,15 @@ type GetDevboxRuntimeResp struct {
 	Error                             *GetDevboxRuntimeErrorResponse
 	JSON200                           *GetDevboxRuntimeResponse
 	ApplicationProblemPlusJSONDefault *GetDevboxRuntimeErrorResponse
+}
+
+type ListDevboxAcpSessionsResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListDevboxAcpSessionsErrorResponse
+	JSON200                           *ListDevboxAcpSessionsResponse
+	ApplicationProblemPlusJSONDefault *ListDevboxAcpSessionsErrorResponse
 }
 
 type LaunchDevboxHandoffResp struct {
@@ -64579,6 +65056,15 @@ type GetFleetWorkspaceRuntimeResp struct {
 	Body         []byte
 	StatusCode   int
 	JSONDefault  *GetFleetWorkspaceRuntimeResponse
+}
+
+type ListFleetWorkspaceAcpSessionsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *ListFleetWorkspaceAcpSessionsErrorResponse
+	JSON200      *ListFleetWorkspaceAcpSessionsResponse
+	JSONDefault  *ListFleetWorkspaceAcpSessionsErrorResponse
 }
 
 type LaunchFleetWorkspaceAgentHandoffResp struct {
@@ -67206,6 +67692,15 @@ type GetWorkspaceRuntimeResp struct {
 	ApplicationProblemPlusJSONDefault *GetWorkspaceRuntimeErrorResponse
 }
 
+type ListWorkspaceAcpSessionsResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListWorkspaceAcpSessionsErrorResponse
+	JSON200                           *ListWorkspaceAcpSessionsResponse
+	ApplicationProblemPlusJSONDefault *ListWorkspaceAcpSessionsErrorResponse
+}
+
 type LaunchWorkspaceAgentHandoffResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -69543,7 +70038,10 @@ type LaunchWorkspaceAgentHandoffInputBody struct {
 
 type LaunchWorkspaceRuntimeSessionInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema        *string `json:"$schema,omitempty"`
+	Schema *string `json:"$schema,omitempty"`
+
+	// AcpSessionID An ACP agent session to resume in the new chat, from list-workspace-acp-sessions. Only ACP targets accept it.
+	AcpSessionID  *string `json:"acp_session_id,omitempty"`
 	DisplayRegion *string `json:"display_region,omitempty"`
 	TargetKey     string  `json:"target_key"`
 }
@@ -72151,6 +72649,21 @@ type Workspace struct {
 	TmuxSession        string                `json:"TmuxSession"`
 	WorkspaceBranch    string                `json:"WorkspaceBranch"`
 	WorktreePath       string                `json:"WorktreePath"`
+}
+
+type WorkspaceACPSessionResponse struct {
+	// SessionID The agent's session ID; pass it as acp_session_id to resume the session in a new chat.
+	SessionID string  `json:"session_id"`
+	Title     *string `json:"title,omitempty"`
+
+	// UpdatedAt When the agent last updated the session, if it says.
+	UpdatedAt *time.Time `json:"updated_at,omitempty"`
+}
+
+type WorkspaceACPSessionsResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string                       `json:"$schema,omitempty"`
+	Sessions []WorkspaceACPSessionResponse `json:"sessions"`
 }
 
 type WorkspaceActivitySubjectResponse struct {

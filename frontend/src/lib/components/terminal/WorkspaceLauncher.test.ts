@@ -206,6 +206,90 @@ describe("WorkspaceLauncher", () => {
     expect(onLaunch).toHaveBeenCalledWith("chat");
   });
 
+  it("opens and closes an ACP agent's resume list from its card", async () => {
+    const onBrowseAcpSessions = vi.fn();
+    const props = {
+      launchTargets: [
+        { key: "codex", label: "Codex", kind: "agent" as const, source: "builtin" as const, available: true },
+        { key: "chat", label: "Chat agent", kind: "acp" as const, source: "config" as const, available: true },
+      ],
+      sessions: [],
+      onBrowseAcpSessions,
+    };
+    const view = render(WorkspaceLauncher, { props });
+
+    // Only ACP agents keep sessions a chat can resume.
+    expect(screen.queryByRole("button", { name: "Resume a Codex session" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Resume a Chat agent session" }));
+    expect(onBrowseAcpSessions).toHaveBeenLastCalledWith("chat");
+
+    await view.rerender({ ...props, acpResume: { targetKey: "chat", status: "loading" } });
+    const open = screen.getByRole("button", { name: "Resume a Chat agent session" });
+    expect(open.getAttribute("aria-expanded")).toBe("true");
+    await fireEvent.click(open);
+    expect(onBrowseAcpSessions).toHaveBeenLastCalledWith(null);
+  });
+
+  it("resumes the session picked from an ACP agent's list", async () => {
+    const onResumeAcp = vi.fn();
+    render(WorkspaceLauncher, {
+      props: {
+        launchTargets: [{ key: "chat", label: "Chat agent", kind: "acp", source: "config", available: true }],
+        sessions: [],
+        onBrowseAcpSessions: vi.fn(),
+        onResumeAcp,
+        acpResume: {
+          targetKey: "chat",
+          status: "ready",
+          sessions: [
+            { session_id: "session-b", title: "Fix the parser", updated_at: "2026-11-21T09:30:00Z" },
+            { session_id: "session-a" },
+          ],
+        },
+      },
+    });
+
+    const list = within(screen.getByRole("group", { name: "Resume a Chat agent session" }));
+    await fireEvent.click(list.getByRole("button", { name: /Untitled session/ }));
+    expect(onResumeAcp).toHaveBeenCalledWith("chat", "session-a");
+    await fireEvent.click(list.getByRole("button", { name: /Fix the parser/ }));
+    expect(onResumeAcp).toHaveBeenLastCalledWith("chat", "session-b");
+  });
+
+  it("disables resuming while another launch runs", () => {
+    render(WorkspaceLauncher, {
+      props: {
+        launchTargets: [{ key: "chat", label: "Chat agent", kind: "acp", source: "config", available: true }],
+        sessions: [],
+        launchingKey: "chat",
+        onBrowseAcpSessions: vi.fn(),
+        acpResume: { targetKey: "chat", status: "ready", sessions: [{ session_id: "session-a", title: "Earlier" }] },
+      },
+    });
+
+    expect(screen.getByRole("button", { name: /Earlier/ }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("shows an empty or failed resume list", async () => {
+    const props = {
+      launchTargets: [
+        { key: "chat", label: "Chat agent", kind: "acp" as const, source: "config" as const, available: true },
+      ],
+      sessions: [],
+      onBrowseAcpSessions: vi.fn(),
+    };
+    const view = render(WorkspaceLauncher, {
+      props: { ...props, acpResume: { targetKey: "chat", status: "ready", sessions: [] } },
+    });
+    expect(screen.getByText("No earlier sessions")).toBeTruthy();
+
+    await view.rerender({
+      ...props,
+      acpResume: { targetKey: "chat", status: "failed", error: "this agent cannot list its sessions" },
+    });
+    expect(screen.getByRole("alert").textContent).toBe("this agent cannot list its sessions");
+  });
+
   it("shows only the ACP section when every launch target is ACP", () => {
     render(WorkspaceLauncher, {
       props: {

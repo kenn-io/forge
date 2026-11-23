@@ -370,7 +370,9 @@ describe("app store composition", () => {
           events: [{ Body: "Edited upstream comment" }],
         }),
       );
-      expect(api.requests.every(({ method }) => method === "GET")).toBe(true);
+      expect(
+        api.requests.filter(({ method }) => method !== "GET").map(({ method, url }) => [method, url.pathname]),
+      ).toEqual([["POST", "/api/v1/repos/untracked-opens"]]);
     },
   );
 

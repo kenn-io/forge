@@ -227,11 +227,13 @@ export const WebSocketFailureTest = makeWebSocketTestLayer("failure");
 export const WebSocketInterruptionTest = makeWebSocketTestLayer("interruption");
 
 export function makeTestAppRuntime(client: GeneratedClient | RouteMockClient = makeGeneratedClient()): OwnedAppRuntime {
-  return makeAppRuntimeBoundary(
-    ManagedRuntime.make(
-      makeAppLiveLayer(
-        makeGeneratedApiLayer(isRouteMockClient(client) ? makeGeneratedClientFromRouteMocks(client) : client),
-      ),
-    ),
-  );
+  const generated = isRouteMockClient(client) ? makeGeneratedClientFromRouteMocks(client) : client;
+  // Tests of visit recording supply a generated client with their own spy.
+  const api = isRouteMockClient(client)
+    ? {
+        ...generated,
+        RepositoriesService: { ...generated.RepositoriesService, recordUntrackedRepoOpen: async () => undefined },
+      }
+    : generated;
+  return makeAppRuntimeBoundary(ManagedRuntime.make(makeAppLiveLayer(makeGeneratedApiLayer(api))));
 }

@@ -574,7 +574,7 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 	createdAt := time.Now().UTC()
 	var launch launchCommand
 	switch {
-	case importSession:
+	case resume != nil:
 		launch, err = m.importACPLaunchCommand(ctx, target, workspaceID, key, cwd, *resume, acpOptions)
 		if err == nil {
 			// Ended on return: by then the chat is stored as running, or it failed.

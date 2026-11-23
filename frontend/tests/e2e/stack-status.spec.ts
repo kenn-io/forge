@@ -526,6 +526,39 @@ test("stack status surfaces inherited downstack merge conflicts", async ({ page 
   await expect(page.getByText("× Conflicts")).toHaveCount(2);
 });
 
+test("stack panel reserves purple for merged members", async ({ page }) => {
+  await mockStackedPR(page);
+
+  await page.goto("/pulls/github/acme/widgets/102");
+  await page.getByTestId("stack-chip").click();
+  await expect(page.getByText("7 PRs · current 2/7 · downstack CI failure")).toBeVisible();
+
+  const purpleParts = await page.locator(".stack-panel").evaluate((panel) => {
+    function rgb(value: string): number[] | null {
+      const srgb = value.match(/^color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/);
+      if (srgb) return srgb.slice(1, 4).map((channel) => Number(channel) * 255);
+      const legacy = value.match(/^rgba?\((\d+), (\d+), (\d+)/);
+      return legacy ? legacy.slice(1, 4).map(Number) : null;
+    }
+    const probe = document.createElement("span");
+    probe.style.color = "var(--accent-purple)";
+    panel.append(probe);
+    const purple = rgb(getComputedStyle(probe).color)!;
+    probe.remove();
+    const props = ["color", "background-color", "border-left-color", "border-top-color"] as const;
+    return [panel, ...panel.querySelectorAll("*")].flatMap((element) => {
+      const style = getComputedStyle(element);
+      return props
+        .filter((prop) => {
+          const channels = rgb(style.getPropertyValue(prop));
+          return channels?.every((channel, i) => Math.abs(channel - purple[i]!) <= 2) ?? false;
+        })
+        .map((prop) => `${element.className} ${prop}`);
+    });
+  });
+  expect(purpleParts).toEqual([]);
+});
+
 test("stack status follows refreshed detail stack data", async ({ page }) => {
   await installMockEventSource(page);
   let currentStackMembers: StackMember[] = stackMembers;

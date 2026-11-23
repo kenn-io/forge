@@ -437,10 +437,10 @@
   }
 
   .stack-row--current {
-    background: color-mix(in srgb, var(--accent-purple) 13%, transparent);
+    background: color-mix(in srgb, var(--accent-blue) 13%, transparent);
     border-start-start-radius: 0;
     border-end-start-radius: 0;
-    border-left: 2px solid var(--accent-purple);
+    border-left: 2px solid var(--accent-blue);
     padding-left: 10px;
   }
 
@@ -475,7 +475,7 @@
   .stack-dot--current {
     width: 10px;
     height: 10px;
-    background: var(--accent-purple);
+    background: var(--accent-blue);
   }
 
   .stack-dot--merged {

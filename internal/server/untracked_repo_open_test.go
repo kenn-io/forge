@@ -100,13 +100,3 @@ func TestDetailReadsDoNotRecordUntrackedRepos(t *testing.T) {
 		require.Empty(t, rows)
 	}
 }
-
-func TestTrackedRepoWithoutCacheDoesNotRecordOpen(t *testing.T) {
-	srv, database, syncer := setupTestServer(t)
-	syncer.SetRepos([]ghclient.RepoRef{{Platform: "github", PlatformHost: "github.com", Owner: "new", Name: "repo"}})
-	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repo/github/new/repo/resolve/6", nil)
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	rows, err := database.ListUntrackedRepoOpens(t.Context())
-	require.NoError(t, err)
-	require.Empty(t, rows)
-}

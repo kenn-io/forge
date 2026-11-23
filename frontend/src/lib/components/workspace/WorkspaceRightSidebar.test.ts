@@ -296,7 +296,7 @@ describe("WorkspaceRightSidebar", () => {
     ["pr", "pull_request", 42],
     ["issue", "issue", 7],
   ] as const)(
-    "counts a workspace %s visit once across refresh and again after reopening",
+    "keeps a workspace %s visit across refresh and ends it on leaving",
     async (activeTab, ownerItemType, number) => {
       const api = createMockApiFetch();
       vi.spyOn(globalThis, "fetch").mockImplementation(api.fetch);
@@ -323,23 +323,18 @@ describe("WorkspaceRightSidebar", () => {
         props: { runtime, sidebarProps },
         context: new Map([[STORES_KEY, stores]]),
       });
-      const opens = () => api.requests.filter(({ url }) => url.pathname === "/api/v1/repos/untracked-opens");
-      await waitFor(() => expect(opens()).toHaveLength(1));
+      const heading = activeTab === "pr" ? "Add browser regression coverage" : "Theme toggle does not stick";
+      await screen.findByRole("heading", { name: heading });
       await view.rerender({ runtime, sidebarProps: { ...sidebarProps, refreshToken: 1 } });
-      await waitFor(() =>
-        expect(
-          api.requests.filter(({ method, url }) => method === "GET" && url.pathname.includes(`/${number}`)).length,
-        ).toBeGreaterThan(1),
-      );
-      expect(opens()).toHaveLength(1);
+      await screen.findByRole("heading", { name: heading });
+      expect(endVisit).not.toHaveBeenCalled();
       await view.rerender({
         runtime,
         sidebarProps: { ...sidebarProps, provider: "gh", platformHost: undefined, refreshToken: 1 },
       });
       expect(endVisit).not.toHaveBeenCalled();
       await view.rerender({ runtime, sidebarProps: { ...sidebarProps, activeTab: "diff" } });
-      await view.rerender({ runtime, sidebarProps: { ...sidebarProps, refreshToken: 1 } });
-      await waitFor(() => expect(opens()).toHaveLength(2));
+      expect(endVisit).toHaveBeenCalledOnce();
     },
   );
 

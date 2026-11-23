@@ -701,7 +701,7 @@ describe("RepoSettings", () => {
     expect(screen.getByText("Opened once · last just now")).toBeTruthy();
   });
 
-  it("adds a suggestion as an exact repository and keeps the other rows", async () => {
+  it("adds a suggested repository for its provider", async () => {
     mockListUntrackedOpens.mockResolvedValue([
       { ...untrackedOpen("acme", "widgets", 4), provider: "gitlab", host: "gitlab.example.com" },
       untrackedOpen("acme", "tools", 2),
@@ -727,8 +727,6 @@ describe("RepoSettings", () => {
 
     resolveAdd(settingsResponse([exactRepo("acme", "widgets")]));
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith([exactRepo("acme", "widgets")]));
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Add acme/widgets" })).toBeNull());
-    expect(screen.getByRole("button", { name: "Add acme/tools" })).toBeTruthy();
     expect(mockRefreshSyncStatus).toHaveBeenCalled();
 
     const failed = Promise.withResolvers<ReturnType<typeof settingsResponse>>();

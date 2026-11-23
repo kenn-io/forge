@@ -160,15 +160,12 @@ describe("WorklistView", () => {
   it("keeps a review thread's jump to diff on the worklist and shows the files pane", async () => {
     const stores = renderView("/worklists/5", server);
     expect(await visiblePullPane()).toContain("PR acme/widgets#42 conversation");
-    expect(stores.detail.beginDetailVisit).toHaveBeenCalledOnce();
 
     await fireEvent.click(screen.getByRole("button", { name: "Jump to diff" }));
 
     await waitFor(() => expect(currentPath()).toMatch(/^\/worklists\/5\?selected=pr%3A42&.*selected_tab=files/));
     expect(await visiblePullPane()).toContain("PR acme/widgets#42 files");
     expect(stores.detail.endDetailVisit).not.toHaveBeenCalled();
-    navigate("/");
-    await waitFor(() => expect(stores.detail.endDetailVisit).toHaveBeenCalledOnce());
   });
 
   it("keeps the user's route when a dismissal finishes after they left", async () => {

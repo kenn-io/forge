@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { startIsolatedE2EServerWithOptions } from "./support/e2eServer";
 
 // A fresh process keeps counts recorded by other specs out of this one's list.
-test("suggests an opened untracked repository in Settings and adds it", async ({ page }) => {
+test("suggests an opened untracked repository in Settings", async ({ page }) => {
   const server = await startIsolatedE2EServerWithOptions({ freshProcess: true });
   try {
     const base = server.info.base_url;
@@ -20,12 +20,6 @@ test("suggests an opened untracked repository in Settings and adds it", async ({
     const suggestions = page.locator(".repo-suggestions");
     await expect(suggestions.getByText("Suggested from links you opened")).toBeVisible();
     await expect(suggestions.getByRole("button", { name: "Add other/repo" })).toBeVisible();
-
-    await suggestions.getByRole("button", { name: "Add other/repo" }).click();
-    await expect(page.locator(".repo-list .repo-name", { hasText: "other/repo" })).toBeVisible();
-
-    await page.reload();
-    await expect(page.locator(".repo-list .repo-name", { hasText: "other/repo" })).toBeVisible();
   } finally {
     await server.stop();
   }

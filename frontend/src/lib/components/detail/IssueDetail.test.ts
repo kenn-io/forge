@@ -440,11 +440,12 @@ describe("IssueDetail activity view", () => {
     expect(getFlashes()).toHaveLength(0);
   });
 
-  it("drops a manual refresh failure after the issue detail unmounts", async () => {
-    const { failRefresh, unmount } = renderIssueDetail(issueDetail(), undefined, { deferRefresh: true });
+  it("ends the visit and drops a manual refresh failure on unmount", async () => {
+    const { failRefresh, unmount, issuesStore } = renderIssueDetail(issueDetail(), undefined, { deferRefresh: true });
     await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));
 
     unmount();
+    expect(issuesStore.endIssueVisit).toHaveBeenCalledOnce();
     failRefresh("unmounted issue failed");
 
     expect(getFlashes()).toHaveLength(0);
@@ -915,7 +916,7 @@ describe("IssueDetail inline workspace handoff", () => {
     });
   });
 
-  it("ends the visit and records the override when a layout change unmounts the detail mid-create", async () => {
+  it("records the override when a layout change unmounts the detail mid-create", async () => {
     // Drawer tab and layout changes unmount IssueDetail with the same
     // issue still selected; the successful response must still land its
     // store-level override instead of orphaning the created workspace.
@@ -931,7 +932,6 @@ describe("IssueDetail inline workspace handoff", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
     const loadCallsBeforeUnmount = issuesStore.loadIssueDetail.mock.calls.length;
     unmount();
-    expect(issuesStore.endIssueVisit).toHaveBeenCalledOnce();
     resolvePost({ data: { id: "ws-new", status: "provisioning" } });
 
     await vi.waitFor(() => {

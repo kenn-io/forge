@@ -34,23 +34,29 @@ func TestUntrackedOpenLogsWhenCounterWriteFails(t *testing.T) { //nolint:paralle
 	require.NotEmpty(t, entry["error"])
 }
 
-func TestUntrackedOpenDistinguishesProvidersOnSameHost(t *testing.T) {
+func TestUntrackedOpenFiltersTrackedProviderOnSameHost(t *testing.T) {
 	for _, tc := range []struct {
-		tracked platform.Kind
-		opened  string
+		tracked  platform.Kind
+		opened   string
+		recorded bool
 	}{
-		{platform.KindGitHub, "gitlab"},
-		{platform.KindGitLab, "github"},
+		{platform.KindGitHub, "gitlab", true},
+		{platform.KindGitLab, "github", true},
+		{platform.KindGitHub, "github", false},
 	} {
-		t.Run(tc.opened, func(t *testing.T) {
+		t.Run(string(tc.tracked)+"/"+tc.opened, func(t *testing.T) {
 			database := dbtest.Open(t)
 			syncer := ghclient.NewSyncer(nil, database, nil, []ghclient.RepoRef{{Platform: tc.tracked, PlatformHost: "code.example.com", Owner: "group", Name: "project"}}, time.Minute, nil, nil)
 			t.Cleanup(syncer.Stop)
 			require.NoError(t, RecordUntrackedRepoOpen(t.Context(), database, syncer, tc.opened, "code.example.com", "group", "project", "issue", 1))
 			rows, err := database.ListUntrackedRepoOpens(t.Context())
 			require.NoError(t, err)
-			require.Len(t, rows, 1)
-			require.Equal(t, tc.opened, rows[0].Provider)
+			if tc.recorded {
+				require.Len(t, rows, 1)
+				require.Equal(t, tc.opened, rows[0].Provider)
+			} else {
+				require.Empty(t, rows)
+			}
 		})
 	}
 }

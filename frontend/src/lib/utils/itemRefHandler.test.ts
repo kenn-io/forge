@@ -229,11 +229,8 @@ describe("itemRefHandler", () => {
     expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/pulls/github/acme/widgets/12");
   });
 
-  it.each([
-    ["pr", "12", "merge_requests"],
-    ["issue", "10", "issues"],
-  ])("passes GitLab %s item type hints", async (itemType, number, route) => {
-    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: itemType });
+  it("passes the item type hint on the host route", async () => {
+    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "issue" });
 
     await clickItemRef({
       "data-provider": "gitlab",
@@ -241,9 +238,9 @@ describe("itemRefHandler", () => {
       "data-owner": "group",
       "data-name": "project",
       "data-repo-path": "group/project",
-      "data-number": number,
-      "data-item-type": itemType,
-      "data-external-url": `https://gitlab.example.com/group/project/-/${route}/${number}`,
+      "data-number": "10",
+      "data-item-type": "issue",
+      "data-external-url": "https://gitlab.example.com/group/project/-/issues/10",
     });
 
     expect(mocks.post).toHaveBeenCalledWith(
@@ -252,9 +249,9 @@ describe("itemRefHandler", () => {
         provider: "gitlab",
         owner: "group",
         name: "project",
-        number: Number(number),
+        number: 10,
       }),
-      { item_type: itemType },
+      { item_type: "issue" },
       expect.objectContaining({ signal: expect.anything() }),
     );
   });

@@ -1,8 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { Effect } from "effect";
-import { makeAppRuntime } from "../app/runtime.js";
-import { createDetailStore } from "../stores/detail.svelte.js";
-import { createMockApiFetch } from "../../test/mockApiFetch.js";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { createRawSnippet, flushSync, tick, type Snippet } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY } from "../context.js";
@@ -139,66 +135,26 @@ function renderPRListView(options: RenderPRListViewOptions = {}) {
 
 describe("PRListView visit recording", () => {
   it("counts cached Files visits again after leaving the selection", async () => {
-    const api = createMockApiFetch();
-    vi.spyOn(globalThis, "fetch").mockImplementation(api.fetch);
-    const runtime = makeAppRuntime();
-    const detail = createDetailStore({ runtime });
-    const ref = { ...selectedPR, number: 42 };
-    detail.loadDetail(ref.owner, ref.name, ref.number, { ...ref, sync: false });
-    await waitFor(() => expect(detail.getDetail()?.merge_request.Number).toBe(42));
-    await waitFor(() =>
-      expect(api.requests.filter(({ url }) => url.pathname === "/api/v1/repos/untracked-opens")).toHaveLength(1),
-    );
-    detail.endDetailVisit();
-    const endVisit = vi.spyOn(detail, "endDetailVisit");
-    const view = render(PRListView, {
-      props: {
-        selectedPR: ref,
-        detailTab: "files",
-        detailPresentation: "focused",
-        hideSidebar: true,
-        phonePresentation: true,
-      },
-      context: new Map<symbol, unknown>([
-        [SIDEBAR_KEY, { toggleSidebar: vi.fn() }],
-        [NAVIGATE_KEY, vi.fn()],
-        [STORES_KEY, { detail, pulls: { getPulls: () => [] } }],
-      ]),
+    const ref = selectedPR;
+    const view = renderPRListView({
+      selectedPR: ref,
+      detailTab: "files",
+      detailPresentation: "focused",
+      detail: pullDetailFixture(undefined),
     });
-    try {
-      await waitFor(() =>
-        expect(api.requests.filter(({ url }) => url.pathname === "/api/v1/repos/untracked-opens")).toHaveLength(2),
-      );
-      await view.rerender({
-        selectedPR: { ...ref, provider: "gh", platformHost: undefined },
-        detailTab: "files",
-        detailPresentation: "focused",
-        hideSidebar: true,
-        phonePresentation: true,
-      });
-      expect(endVisit).not.toHaveBeenCalled();
-      await view.rerender({
-        selectedPR: null,
-        detailTab: "files",
-        detailPresentation: "focused",
-        hideSidebar: true,
-        phonePresentation: true,
-      });
-      await view.rerender({
-        selectedPR: ref,
-        detailTab: "files",
-        detailPresentation: "focused",
-        hideSidebar: true,
-        phonePresentation: true,
-      });
-      await waitFor(() =>
-        expect(api.requests.filter(({ url }) => url.pathname === "/api/v1/repos/untracked-opens")).toHaveLength(3),
-      );
-    } finally {
-      view.unmount();
-      await Effect.runPromise(runtime.disposeEffect);
-      vi.restoreAllMocks();
-    }
+    expect(view.detailStore.beginDetailVisit).toHaveBeenCalledOnce();
+    await view.rerender({
+      selectedPR: { ...ref, provider: "gh", platformHost: undefined },
+      detailTab: "files",
+      detailPresentation: "focused",
+      hideSidebar: true,
+    });
+    expect(view.detailStore.endDetailVisit).not.toHaveBeenCalled();
+    await view.rerender({ selectedPR: null, detailTab: "files", detailPresentation: "focused", hideSidebar: true });
+    expect(view.detailStore.endDetailVisit).toHaveBeenCalledOnce();
+    await view.rerender({ selectedPR: ref, detailTab: "files", detailPresentation: "focused", hideSidebar: true });
+    expect(view.detailStore.beginDetailVisit).toHaveBeenCalledTimes(2);
+    view.unmount();
   });
 });
 

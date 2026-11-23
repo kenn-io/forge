@@ -371,8 +371,11 @@ describe("app store composition", () => {
         }),
       );
       expect(
-        api.requests.filter(({ method }) => method !== "GET").map(({ method, url }) => [method, url.pathname]),
-      ).toEqual([["POST", "/api/v1/repos/untracked-opens"]]);
+        api.requests.filter(
+          ({ method, url }) =>
+            method !== "GET" && !(method === "POST" && url.pathname === "/api/v1/repos/untracked-opens"),
+        ),
+      ).toEqual([]);
     },
   );
 

@@ -72,7 +72,28 @@ func TestMessagesRefuseWhatTheyCannotRead(t *testing.T) {
 	require.Error(t, err, "a name that is not an object ID")
 
 	_, err = landedwork.Messages(ctx, r.Root, []string{commit}, 64, landedwork.Limits{InputBytes: 8})
-	require.ErrorIs(t, err, landedwork.ErrInputBudget)
+	require.ErrorIs(t, err, landedwork.ErrInputBudget, "a budget too small to open the repository")
+}
+
+// Each commit read is charged to the input budget: a budget that opens the
+// repository but cannot hold the commit refuses it.
+func TestMessagesChargeTheCommitReadToTheInputBudget(t *testing.T) {
+	r := messageRepo(t)
+	commit := r.CommitFile("a.txt", "a", "Add a feature\n\n"+strings.Repeat("x", 64<<10))
+	ctx := messageContext(t)
+	small := landedwork.Limits{InputBytes: 16 << 10}
+
+	got, err := landedwork.Messages(ctx, r.Root, nil, 64, small)
+	require.NoError(t, err, "the budget opens the repository")
+	assert.Empty(t, got)
+
+	_, err = landedwork.Messages(ctx, r.Root, []string{commit}, 64, small)
+	require.ErrorIs(t, err, landedwork.ErrInputBudget, "the 64 KiB commit does not fit")
+
+	got, err = landedwork.Messages(ctx, r.Root, []string{commit}, 64, landedwork.Limits{InputBytes: 1 << 20})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.True(t, got[0].Truncated)
 }
 
 func TestParseIdentity(t *testing.T) {

@@ -642,6 +642,7 @@ func (s *Handlers) ResolveItem(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
 	if errors.Is(err, httpapi.ErrRepoNotFound) {
+		_ = httpapi.RecordUntrackedRepoOpen(ctx, s.Db, *s.Syncer, input.Provider, input.PlatformHost, input.Owner, input.Name, requestedItemType, number)
 		return &ResolveItemOutput{
 			Body: resolveItemResponse{
 				Number:      number,
@@ -661,6 +662,7 @@ func (s *Handlers) ResolveItem(
 		itemTypeHint = ""
 	}
 	if !s.IsConfiguredRepoTracked(repo.Repo) {
+		_ = httpapi.RecordUntrackedRepoOpen(ctx, s.Db, *s.Syncer, input.Provider, input.PlatformHost, input.Owner, input.Name, requestedItemType, number)
 		return &ResolveItemOutput{
 			Body: resolveItemResponse{
 				Number:      number,

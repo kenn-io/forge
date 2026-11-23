@@ -1,5 +1,6 @@
 import { GeneratedProblemResponse } from "../api/runtime.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
+import { makeGeneratedClientFromRouteMocks } from "../testing/test/route-mock-client.js";
 import { startTestTelemetry } from "../testing/telemetry.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -323,7 +324,7 @@ function issueDetail(): IssueDetail {
 }
 
 function mockClient(overrides: Partial<GeneratedClient> = {}): GeneratedClient {
-  return {
+  const client = {
     GET: vi.fn(),
     POST: vi.fn(),
     PUT: vi.fn(),
@@ -333,10 +334,56 @@ function mockClient(overrides: Partial<GeneratedClient> = {}): GeneratedClient {
     HEAD: vi.fn(),
     TRACE: vi.fn(),
     ...overrides,
-  } as unknown as GeneratedClient;
+  };
+  const generated = makeGeneratedClientFromRouteMocks(client);
+  return {
+    ...generated,
+    RepositoriesService: { ...generated.RepositoriesService, recordUntrackedRepoOpen: vi.fn(async () => undefined) },
+  };
 }
 
 describe("createIssuesStore", () => {
+  it("records the initial detail selection once across refreshes", async () => {
+    const record = vi.fn(async () => undefined);
+    const get = vi.fn(async () => issueDetail());
+    const store = createIssuesStore({
+      client: makeGeneratedClient({
+        IssuesService: { getIssue: get },
+        RepositoriesService: { recordUntrackedRepoOpen: record },
+      }),
+    });
+    const ref = { provider: "github", platformHost: "github.com", repoPath: "acme/widget", sync: false } as const;
+    await loadIssueDetail(store, "acme", "widget", 7, ref);
+    await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1));
+    await loadIssueDetail(store, "acme", "widget", 7, ref);
+    expect(record).toHaveBeenCalledTimes(1);
+    await loadIssueDetail(store, "acme", "widget", 7, { ...ref, repositoryKey: { kind: "id", id: 1002 } });
+    expect(record).toHaveBeenCalledTimes(1);
+    store.endIssueVisit();
+    await loadIssueDetail(store, "acme", "widget", 7, ref);
+    await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(2));
+    expect(record).toHaveBeenCalledWith(
+      { provider: "github", host: "github.com", owner: "acme", name: "widget", item_type: "issue", number: 7 },
+      expect.anything(),
+    );
+  });
+
+  it("records a visit even when the detail read fails", async () => {
+    const record = vi.fn(async () => undefined);
+    const problem = { code: "repoNotFound", status: 404, title: "Not found" };
+    const get = vi
+      .fn()
+      .mockRejectedValue(new GeneratedProblemResponse(problem, Response.json(problem, { status: 404 })));
+    const store = createIssuesStore({
+      client: makeGeneratedClient({
+        IssuesService: { getIssue: get },
+        RepositoriesService: { recordUntrackedRepoOpen: record },
+      }),
+    });
+    await loadIssueDetail(store, "acme", "widget", 7, { provider: "github", repoPath: "acme/widget", sync: false });
+    await vi.waitFor(() => expect(record).toHaveBeenCalledTimes(1));
+  });
+
   it("does not install a response from a different repository", async () => {
     const store = createIssuesStore({
       client: mockClient({ GET: vi.fn().mockResolvedValue({ data: issueDetail() }) }),

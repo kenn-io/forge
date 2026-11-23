@@ -18,6 +18,7 @@ import type {
   UnsetStarredParams,
 } from "../api/types.js";
 import type { ApplySuggestionRequest } from "../utils/markdown-suggestions.js";
+import { recordUntrackedRepoOpen } from "../utils/itemRefHandler.js";
 import {
   isProblem,
   ProblemCodes,
@@ -258,6 +259,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   let detailRequestSequence = 0;
   const latestSuccessfulDetailRequestSequenceBySelection = new Map<string, number>();
   let activeSelectionKey: string | null = null;
+  let detailVisitKey: string | null = null;
   // Tracks the PR (if any) whose local body has been edited since
   // the last server confirmation. While set, background sync paths
   // preserve the local body when applying refreshed server data for
@@ -1213,6 +1215,28 @@ export function createDetailStore(opts: DetailStoreOptions) {
     );
   }
 
+  function beginDetailVisit(owner: string, name: string, number: number, options: DetailRequestOptions): void {
+    const requestRef = detailRequestRef(owner, name, number, options);
+    const visitKey = providerItemKey({
+      provider: requestRef.provider,
+      platformHost: concretePlatformHost(requestRef),
+      owner,
+      name,
+      number,
+    });
+    if (detailVisitKey !== visitKey) {
+      detailVisitKey = visitKey;
+      recordUntrackedRepoOpen(runtime, {
+        provider: requestRef.provider,
+        host: concretePlatformHost(requestRef),
+        owner,
+        name,
+        item_type: "pr",
+        number,
+      });
+    }
+  }
+
   function startDetailLoad(owner: string, name: string, number: number, options: DetailRequestOptions): void {
     const syncMode = options.sync ?? true;
     const requestRef = detailRequestRef(owner, name, number, options);
@@ -1220,6 +1244,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // sync mode joins the in-flight load and may promote the sync
     // intent if its requested mode is stronger.
     const key = prKey(requestRef);
+    beginDetailVisit(owner, name, number, options);
     if (activeSelectionKey !== key) {
       acknowledgedMembership.clear();
       rememberDetail();
@@ -2894,6 +2919,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
     getDetailLoaded,
     getDiscussionLoaded,
     clearDetail,
+    beginDetailVisit,
+    endDetailVisit: () => {
+      detailVisitKey = null;
+    },
     loadDetail,
     refreshDetailOnly,
     refreshDetailOnlyEffect,

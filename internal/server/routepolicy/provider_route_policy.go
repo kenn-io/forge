@@ -327,6 +327,8 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "list-repo-labels", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "list-repo-labels-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "list-repo-summaries", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
+	{OperationID: "list-untracked-repo-opens", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
+	{OperationID: "record-untracked-repo-open", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "list-repos", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "list-roborev-configured-repositories", Owner: NodeLocal},
 	{OperationID: "list-stacks", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},

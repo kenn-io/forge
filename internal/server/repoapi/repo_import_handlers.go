@@ -76,21 +76,6 @@ type ResolvedBulkRepo struct {
 	Ref    ghclient.RepoRef
 }
 
-func NormalizeImportPlatform(provider, host string) (platform.Kind, string, error) {
-	if strings.TrimSpace(provider) == "" {
-		return "", "", fmt.Errorf("provider is required")
-	}
-	kind, err := platform.NormalizeKind(provider)
-	if err != nil {
-		return "", "", err
-	}
-	normalizedHost, err := config.NormalizePlatformHost(string(kind), host)
-	if err != nil {
-		return "", "", err
-	}
-	return kind, normalizedHost, nil
-}
-
 func ImportRequestHost(host, platformHost string) string {
 	if strings.TrimSpace(host) != "" {
 		return host
@@ -123,7 +108,7 @@ func normalizeImportOwnerPattern(
 }
 
 func NormalizeExactRepoInput(raw bulkAddRepoRequest) (config.Repo, error) {
-	provider, host, err := NormalizeImportPlatform(
+	provider, host, err := httpapi.NormalizeImportPlatform(
 		raw.Provider,
 		ImportRequestHost(raw.Host, raw.PlatformHost),
 	)
@@ -419,7 +404,7 @@ func (s *Handlers) PreviewRepos(
 		return nil, httpapi.NotFound(httpapi.CodeSettingsUnavailable, "settings not available", nil)
 	}
 
-	provider, host, err := NormalizeImportPlatform(
+	provider, host, err := httpapi.NormalizeImportPlatform(
 		input.Body.Provider,
 		ImportRequestHost(input.Body.Host, input.Body.PlatformHost),
 	)

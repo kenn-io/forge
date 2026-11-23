@@ -100,6 +100,8 @@ function renderPRListView(options: RenderPRListViewOptions = {}) {
   const detailStore = {
     getDetail: detailBox.get,
     loadDetail: vi.fn(async () => undefined),
+    beginDetailVisit: vi.fn(),
+    endDetailVisit: vi.fn(),
   };
 
   return {
@@ -130,6 +132,31 @@ function renderPRListView(options: RenderPRListViewOptions = {}) {
     }),
   };
 }
+
+describe("PRListView visit recording", () => {
+  it("counts cached Files visits again after leaving the selection", async () => {
+    const ref = selectedPR;
+    const view = renderPRListView({
+      selectedPR: ref,
+      detailTab: "files",
+      detailPresentation: "focused",
+      detail: pullDetailFixture(undefined),
+    });
+    expect(view.detailStore.beginDetailVisit).toHaveBeenCalledOnce();
+    await view.rerender({
+      selectedPR: { ...ref, provider: "gh", platformHost: undefined },
+      detailTab: "files",
+      detailPresentation: "focused",
+      hideSidebar: true,
+    });
+    expect(view.detailStore.endDetailVisit).not.toHaveBeenCalled();
+    await view.rerender({ selectedPR: null, detailTab: "files", detailPresentation: "focused", hideSidebar: true });
+    expect(view.detailStore.endDetailVisit).toHaveBeenCalledOnce();
+    await view.rerender({ selectedPR: ref, detailTab: "files", detailPresentation: "focused", hideSidebar: true });
+    expect(view.detailStore.beginDetailVisit).toHaveBeenCalledTimes(2);
+    view.unmount();
+  });
+});
 
 describe("PRListView detail panes", () => {
   beforeEach(() => {

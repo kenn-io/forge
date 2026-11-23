@@ -292,6 +292,52 @@ describe("WorkspaceRightSidebar", () => {
     expect(api.requests.filter(({ method }) => method === "PATCH" || method === "PUT")).toEqual([]);
   });
 
+  it.each([
+    ["pr", "pull_request", 42],
+    ["issue", "issue", 7],
+  ] as const)(
+    "keeps a workspace %s visit across refresh and ends it on leaving",
+    async (activeTab, ownerItemType, number) => {
+      const api = createMockApiFetch();
+      vi.spyOn(globalThis, "fetch").mockImplementation(api.fetch);
+      const { stores } = createAppStores({ runtime });
+      const endVisit =
+        activeTab === "pr" ? vi.spyOn(stores.detail, "endDetailVisit") : vi.spyOn(stores.issues, "endIssueVisit");
+      const sidebarProps = {
+        activeTab,
+        workspaceID: "ws-1",
+        worktreePath: "",
+        provider: "github",
+        platformHost: "github.com",
+        repoOwner: "acme",
+        repoName: "widgets",
+        repoPath: "acme/widgets",
+        ownerItemType,
+        ownerItemNumber: number,
+        associatedPRNumber: activeTab === "pr" ? number : null,
+        branch: "work",
+        roborevBaseUrl: "/api/roborev",
+        refreshToken: 0,
+      };
+      const view = render(WorkspaceRightSidebarTestHarness, {
+        props: { runtime, sidebarProps },
+        context: new Map([[STORES_KEY, stores]]),
+      });
+      const heading = activeTab === "pr" ? "Add browser regression coverage" : "Theme toggle does not stick";
+      await screen.findByRole("heading", { name: heading });
+      await view.rerender({ runtime, sidebarProps: { ...sidebarProps, refreshToken: 1 } });
+      await screen.findByRole("heading", { name: heading });
+      expect(endVisit).not.toHaveBeenCalled();
+      await view.rerender({
+        runtime,
+        sidebarProps: { ...sidebarProps, provider: "gh", platformHost: undefined, refreshToken: 1 },
+      });
+      expect(endVisit).not.toHaveBeenCalled();
+      await view.rerender({ runtime, sidebarProps: { ...sidebarProps, activeTab: "diff" } });
+      expect(endVisit).toHaveBeenCalledOnce();
+    },
+  );
+
   it("counts a hidden failed PR view once when shown", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(
       createMockApiFetch([

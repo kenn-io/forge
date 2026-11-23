@@ -1,0 +1,67 @@
+package repoapi
+
+import (
+	"context"
+
+	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
+	"go.kenn.io/forge/platform"
+)
+
+type UntrackedOpenInput struct {
+	Body struct {
+		Provider string `json:"provider"`
+		Host     string `json:"host"`
+		Owner    string `json:"owner"`
+		Name     string `json:"name"`
+		ItemType string `json:"item_type,omitempty"`
+		Number   int    `json:"number,omitempty"`
+	}
+}
+
+type UntrackedOpensOutput = httpapi.BodyOutput[[]db.UntrackedRepoOpen]
+
+func untrackedRepoKey(repo db.UntrackedRepoOpen) string {
+	return spokeapi.TrackedRepoKey(ghclient.RepoRef{Platform: platform.Kind(repo.Provider), PlatformHost: repo.Host, Owner: repo.Owner, Name: repo.Name})
+}
+
+func (s *Handlers) RecordUntrackedOpen(ctx context.Context, input *UntrackedOpenInput) (*struct{}, error) {
+	body := input.Body
+	if err := validateUntrackedOpen(body.ItemType, body.Number); err != nil {
+		return nil, err
+	}
+	if _, err := httpapi.NormalizeUntrackedRepo(body.Provider, body.Host, body.Owner, body.Name); err != nil {
+		return nil, httpapi.Validation("body", "valid provider, host, owner and name are required")
+	}
+	if err := httpapi.RecordUntrackedRepoOpen(ctx, s.Db, *s.Syncer, body.Provider, body.Host, body.Owner, body.Name, body.ItemType, body.Number); err != nil {
+		return nil, httpapi.Internal("record untracked repository open: " + err.Error())
+	}
+	return nil, nil
+}
+
+func validateUntrackedOpen(itemType string, number int) error {
+	if itemType != "" && itemType != "pr" && itemType != "issue" {
+		return httpapi.Validation("body.item_type", "item_type must be 'pr' or 'issue'", "pr", "issue")
+	}
+	if number < 0 {
+		return httpapi.Validation("body.number", "number must be non-negative")
+	}
+	return nil
+}
+
+func (s *Handlers) ListUntrackedOpens(ctx context.Context, _ *struct{}) (*UntrackedOpensOutput, error) {
+	repos, err := s.Db.ListUntrackedRepoOpens(ctx)
+	if err != nil {
+		return nil, httpapi.Internal("list untracked repository opens: " + err.Error())
+	}
+	tracked := s.trackedConfiguredRepoSet()
+	result := make([]db.UntrackedRepoOpen, 0, len(repos))
+	for _, repo := range repos {
+		if _, ok := tracked[untrackedRepoKey(repo)]; !ok {
+			result = append(result, repo)
+		}
+	}
+	return &UntrackedOpensOutput{Body: result}, nil
+}

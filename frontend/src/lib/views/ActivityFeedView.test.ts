@@ -89,7 +89,12 @@ function renderActivity(options: RenderOptions = {}) {
   const issueBox = createReactiveValue(options.issueDetail ?? null);
   const stores = {
     activity: { getItemActivity: () => [], getActivityItems: () => [], getWorkspaceActivity: () => [] },
-    detail: { getDetail: pullBox.get, loadDetail: vi.fn(async () => undefined) },
+    detail: {
+      getDetail: pullBox.get,
+      loadDetail: vi.fn(async () => undefined),
+      beginDetailVisit: vi.fn(),
+      endDetailVisit: vi.fn(),
+    },
     issues: { getIssueDetail: issueBox.get, loadIssueDetail: vi.fn(async () => undefined) },
   };
 
@@ -138,6 +143,16 @@ describe("ActivityFeedView detail panes", () => {
     localStorage.clear();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("keeps one PR visit while changing panes and ends it on close", async () => {
+    const view = renderActivity({ drawerItem: prDrawer(), pullDetail: pullDetailFixture(12) });
+    await tick();
+    expect(view.stores.detail.beginDetailVisit).toHaveBeenCalledOnce();
+    await view.rerender({ drawerItem: prDrawer(), detailTab: "files" });
+    expect(view.stores.detail.endDetailVisit).not.toHaveBeenCalled();
+    await view.rerender({ drawerItem: null });
+    expect(view.stores.detail.endDetailVisit).toHaveBeenCalledOnce();
   });
 
   it("offers the diff pane for a PR selection", () => {

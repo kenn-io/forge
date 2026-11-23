@@ -39,6 +39,7 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 
 ### Routes and observation
 
+- Record untracked repository opens on the hub for foreground visits and link clicks; polling, refresh, and sync do not count.
 - Owner/name is edge input: resolve it to a repository once where it enters and key
   everything below by the repository; a request carrying a provider ID resolves by that
   ID (`internal/db/queries.go::DB.GetRepoByIdentity`).

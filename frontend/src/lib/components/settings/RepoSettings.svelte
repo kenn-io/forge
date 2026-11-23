@@ -2,11 +2,14 @@
   import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import { Effect } from "effect";
   import { tick } from "svelte";
-  import { Button, Disclosure, IconButton, TextInput } from "@kenn-io/kit-ui";
+  import { Button, Disclosure, formatRelativeTime, IconButton, TextInput } from "@kenn-io/kit-ui";
+  import { executeGeneratedApiRequest } from "../../api/generated-api.js";
+  import type { UntrackedRepoOpen } from "../../api/generated/index.js";
   import { getStores } from "../../context.js";
   import type { ConfigRepo } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import { createRepoLabelFormatter } from "../../utils/repo-label.js";
   import { SettingsWorkflow, settingsErrorMessage } from "../../stores/settings-workflow.js";
   import XIcon from "@lucide/svelte/icons/x";
   import ProviderIcon from "../provider/ProviderIcon.svelte";
@@ -39,6 +42,26 @@
   let cloneEditorOpen = $state<Record<string, boolean>>({});
   let savingVisibilityByKey = $state<Record<string, boolean>>({});
   let promoteRepo = $state<ConfigRepo | null>(null);
+  let suggestions = $state<UntrackedRepoOpen[]>([]);
+  let addingSuggestion = $state<string | null>(null);
+
+  // The server drops every repository the tracked list covers, globs
+  // included, so a change to `repos` refetches instead of filtering here.
+  $effect(() => {
+    void repos;
+    const execution = runtime.runCommand(
+      executeGeneratedApiRequest("list untracked repository opens", (client, signal) =>
+        client.RepositoriesService.listUntrackedRepoOpens({ signal }),
+      ).pipe(
+        Effect.match({
+          onFailure: () => { suggestions = []; },
+          onSuccess: (rows) => { suggestions = rows; },
+        }),
+      ),
+      { operation: "list untracked repository opens", safeContext: {}, onFailure: () => {} },
+    );
+    return () => execution.interrupt();
+  });
 
   const showProviderIcons = $derived.by(() => {
     const providers = new Set(
@@ -46,6 +69,11 @@
     );
     return providers.size > 1;
   });
+
+  const suggestionLabels = $derived(createRepoLabelFormatter(
+    suggestions.map((row) => ({ provider: row.provider, platformHost: row.host, owner: row.owner, name: row.name })),
+    { showOrgNames: true },
+  ));
 
   function repoKey(repo: ConfigRepo): string {
     return `${repo.provider}/${repo.platform_host}/${repo.repo_path || `${repo.owner}/${repo.name}`}`.toLowerCase();
@@ -58,6 +86,41 @@
   function repoDisplayLabel(repo: ConfigRepo): string {
     const label = repoLabel(repo);
     return repo.is_glob ? `${label} (${repo.matched_repo_count})` : label;
+  }
+
+  function suggestionKey(repo: UntrackedRepoOpen): string {
+    return `${repo.provider}/${repo.host}/${repo.owner}/${repo.name}`.toLowerCase();
+  }
+
+  function handleAddSuggestion(repo: UntrackedRepoOpen): void {
+    if (addingSuggestion !== null) return;
+    const key = suggestionKey(repo);
+    addingSuggestion = key;
+    runtime.runCommand(
+      Effect.gen(function* () {
+        const workflow = yield* SettingsWorkflow;
+        return yield* workflow.bulkAddRepos([{ provider: repo.provider, host: repo.host, owner: repo.owner, name: repo.name, repo_path: `${repo.owner}/${repo.name}` }]);
+      }).pipe(
+        Effect.matchEffect({
+          onFailure: (failure) =>
+            Effect.sync(() => showFlash(settingsErrorMessage(failure), { tone: "danger" })),
+          onSuccess: (settings) =>
+            Effect.sync(() => {
+              suggestions = suggestions.filter((row) => suggestionKey(row) !== key);
+              onUpdate(settings.repos);
+              sync.refreshSyncStatus();
+            }),
+        }),
+        Effect.ensuring(Effect.sync(() => {
+          addingSuggestion = null;
+        })),
+      ),
+      {
+        operation: "add suggested repository",
+        safeContext: { provider: repo.provider, host: repo.host },
+        onFailure: () => {},
+      },
+    );
   }
 
   function worktreeBaseValue(repo: ConfigRepo, key: string): string {
@@ -283,6 +346,34 @@
   }}
 />
 
+{#if suggestions.length > 0}
+  <div class="repo-suggestions">
+    <p>Suggested from links you opened</p>
+    {#each suggestions as suggestion (suggestionKey(suggestion))}
+      {@const key = suggestionKey(suggestion)}
+      {@const label = suggestionLabels.format({ provider: suggestion.provider, platformHost: suggestion.host, owner: suggestion.owner, name: suggestion.name })}
+      <div class="repo-row">
+        <div class="repo-line">
+          <div class="repo-main">
+            <span class="repo-name">{#if showProviderIcons}<ProviderIcon provider={suggestion.provider} size={16} class="repo-provider-icon" />{/if}{label}</span>
+            <span class="suggestion-meta">Opened {suggestion.count === 1 ? "once" : `${suggestion.count} times`} · last {formatRelativeTime(suggestion.last_opened_at)}</span>
+          </div>
+          <div class="repo-actions">
+            <Button
+              size="sm"
+              tone="info"
+              surface="soft"
+              ariaLabel={`Add ${label}`}
+              disabled={addingSuggestion !== null}
+              onclick={() => handleAddSuggestion(suggestion)}
+            >{addingSuggestion === key ? "Adding…" : "Add"}</Button>
+          </div>
+        </div>
+      </div>
+    {/each}
+  </div>
+{/if}
+
 <div class="repo-list">
   {#each repos as repo (repoKey(repo))}
     {@const key = repoKey(repo)}
@@ -425,6 +516,9 @@
 <style>
   .repo-import-entry { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--border-muted); }
   .repo-import-entry p { margin: 0; color: var(--text-muted); font-size: var(--font-size-sm); }
+  .repo-suggestions { display: flex; flex-direction: column; padding-bottom: 12px; border-bottom: 1px solid var(--border-muted); }
+  .repo-suggestions > p { margin: 8px 0 0; color: var(--text-muted); font-size: var(--font-size-sm); }
+  .suggestion-meta { color: var(--text-muted); font-size: var(--font-size-sm); }
   .advanced-add { padding-top: 8px; }
   .advanced-body { display: flex; flex-direction: column; gap: 6px; }
   .repo-list { display: flex; flex-direction: column; }

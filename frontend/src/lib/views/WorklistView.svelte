@@ -4,6 +4,7 @@
   import { Button, copyToClipboard, EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
   import ListChecksIcon from "@lucide/svelte/icons/list-checks";
   import XIcon from "@lucide/svelte/icons/x";
+  import { providerItemKey } from "../stores/provider-key.js";
   import { ApiProblemError } from "../api/effect-errors.js";
   import { getWorklistLink, worklistFailureMessage, type Worklist, type WorklistItem } from "../api/worklists.js";
   import { getAppRuntime } from "../app/runtime-context.js";
@@ -458,6 +459,15 @@
       : null,
   );
   const isPRSelection = $derived(prSelection !== null);
+  const visitKey = $derived(prSelection ? providerItemKey({ ...prSelection, platformHost: prSelection.platformHost ?? "" }) : null);
+  $effect(() => {
+    if (visitKey === null) return;
+    untrack(() => {
+      const ref = prSelection!;
+      detailStore.beginDetailVisit(ref.owner, ref.name, ref.number, ref);
+    });
+    return () => detailStore.endDetailVisit();
+  });
 
   const claimIdentity = $derived<WorkspaceItemIdentity | null>(
     target

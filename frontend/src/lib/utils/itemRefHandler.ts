@@ -8,6 +8,7 @@ import {
   providerUsesHostRoute,
 } from "../api/provider-routes.js";
 import { RepositoryReads } from "../api/repository-reads.js";
+import type { UntrackedOpenInputBody } from "../api/generated/index.js";
 import type { RepoCatalog } from "../api/types.js";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { navigate, buildItemRoute, getURLChangeCount, type RoutableItemRef } from "../stores/router.svelte.js";
@@ -52,10 +53,7 @@ export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(
     const { provider, platformHost, owner, name, repoPath, number, itemType } = ref;
     const result = yield* executeGeneratedApiRequest("resolve item reference", (client, signal) => {
       const routeRef = { provider, platformHost, owner, name, repoPath };
-      // GitLab and Bitbucket number issues and pull requests separately.
-      const separateNumbers = ["gitlab", "bitbucket"].includes(canonicalProvider(provider));
-      const itemTypeHint = separateNumbers ? itemType : undefined;
-      const query = itemTypeHint === undefined ? undefined : { item_type: itemTypeHint };
+      const query = itemType === undefined ? undefined : { item_type: itemType };
       return providerUsesHostRoute(routeRef)
         ? client.RepositoriesService.resolveRepoItemOnHost({ ...providerHostRouteParams(routeRef), number }, query, {
             signal,
@@ -152,6 +150,17 @@ export function resolveItemReference(
   );
 }
 
+const recordedOpenEvents = new WeakSet<Event>();
+
+export function recordUntrackedRepoOpen(runtime: AppRuntime, body: UntrackedOpenInputBody): void {
+  runtime.runCommand(
+    executeGeneratedApiRequest("record untracked repository open", (client, signal) =>
+      client.RepositoriesService.recordUntrackedRepoOpen(body, { signal, keepalive: true }),
+    ),
+    { operation: "record untracked repository open", safeContext: {}, onFailure: () => {} },
+  );
+}
+
 export function initItemRefHandler(
   runtime: AppRuntime,
   onNavigate?: (ref: RoutableItemRef) => void,
@@ -219,6 +228,17 @@ export function initItemRefHandler(
     // page for it.
     const browserURL = isTracked(ref) ? null : safeExternalURL(ref.externalUrl);
     if (browserURL) anchor.href = browserURL;
+    if (browserURL && !recordedOpenEvents.has(e) && (e.type === "click" || (e.type === "auxclick" && e.button === 1))) {
+      recordedOpenEvents.add(e);
+      recordUntrackedRepoOpen(runtime, {
+        provider: ref.provider,
+        host: ref.platformHost ?? "",
+        owner: ref.owner,
+        name: ref.name,
+        ...(ref.itemType ? { item_type: ref.itemType } : {}),
+        number: ref.number,
+      });
+    }
 
     const plainClick = e.type === "click" && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
     if (!plainClick || (anchor.target && anchor.target.toLowerCase() !== "_self")) return;

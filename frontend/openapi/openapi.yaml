@@ -11301,6 +11301,59 @@ components:
         - workspace
         - reason
       type: object
+    UntrackedOpenInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/UntrackedOpenInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        host:
+          type: string
+        item_type:
+          type: string
+        name:
+          type: string
+        number:
+          format: int64
+          type: integer
+        owner:
+          type: string
+        provider:
+          type: string
+      required:
+        - provider
+        - host
+        - owner
+        - name
+      type: object
+    UntrackedRepoOpen:
+      additionalProperties: false
+      properties:
+        count:
+          format: int64
+          type: integer
+        host:
+          type: string
+        last_opened_at:
+          type: string
+        name:
+          type: string
+        owner:
+          type: string
+        provider:
+          type: string
+      required:
+        - provider
+        - host
+        - owner
+        - name
+        - count
+        - last_opened_at
+      type: object
     UpdateBranchBody:
       additionalProperties: false
       properties:
@@ -28973,6 +29026,47 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List repository summaries
+      tags:
+        - Repositories
+  /repos/untracked-opens:
+    get:
+      operationId: list-untracked-repo-opens
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/UntrackedRepoOpen"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List untracked repository opens
+      tags:
+        - Repositories
+    post:
+      operationId: record-untracked-repo-open
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UntrackedOpenInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Record an untracked repository open
       tags:
         - Repositories
   /roborev/configured-repositories:

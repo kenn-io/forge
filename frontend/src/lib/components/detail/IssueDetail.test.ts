@@ -205,6 +205,7 @@ function renderIssueDetail(
   let pendingRefreshCallbacks: MutationCallbacks | null = null;
   const issuesStore = {
     loadIssueDetail: vi.fn(),
+    endIssueVisit: vi.fn(),
     startIssueDetailPolling: vi.fn(),
     stopIssueDetailPolling: vi.fn(),
     getIssueDetail: () => detail,
@@ -439,11 +440,12 @@ describe("IssueDetail activity view", () => {
     expect(getFlashes()).toHaveLength(0);
   });
 
-  it("drops a manual refresh failure after the issue detail unmounts", async () => {
-    const { failRefresh, unmount } = renderIssueDetail(issueDetail(), undefined, { deferRefresh: true });
+  it("ends the visit and drops a manual refresh failure on unmount", async () => {
+    const { failRefresh, unmount, issuesStore } = renderIssueDetail(issueDetail(), undefined, { deferRefresh: true });
     await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));
 
     unmount();
+    expect(issuesStore.endIssueVisit).toHaveBeenCalledOnce();
     failRefresh("unmounted issue failed");
 
     expect(getFlashes()).toHaveLength(0);

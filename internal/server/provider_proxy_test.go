@@ -1624,3 +1624,32 @@ func TestSpokeForwardsListFiltersToHub(t *testing.T) {
 	assert.Equal("true", query.Get("starred"))
 	assert.Equal("true", query.Get("not_referenced_by_pr"))
 }
+
+func TestSpokeForwardsUntrackedOpenToHub(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	type receivedRequest struct {
+		method, path string
+		body         []byte
+		err          error
+	}
+	received := make(chan receivedRequest, 1)
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		received <- receivedRequest{r.Method, r.URL.Path, body, err}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(hub.Close)
+	spoke := newProviderProxyTestServer(t, hub, hub.Client(), nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, spoke.URL+"/api/v1/repos/untracked-opens", strings.NewReader(`{"provider":"github","host":"github.com","owner":"other","name":"repo"}`))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := spoke.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+	got := <-received
+	require.NoError(t, got.err)
+	require.Equal(t, http.MethodPost, got.method)
+	require.Equal(t, "/api/v1/repos/untracked-opens", got.path)
+	require.JSONEq(t, `{"provider":"github","host":"github.com","owner":"other","name":"repo"}`, string(got.body))
+}

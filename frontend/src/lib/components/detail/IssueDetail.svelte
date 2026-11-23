@@ -180,6 +180,7 @@
     repositoryKey?: RepositoryKey | undefined;
     repoPath: string;
     hideStaleWhileLoading?: boolean;
+    manageVisit?: boolean;
     autoSync?: IssueDetailSyncMode;
     onOpenWorkspace?: ((workspaceId: string, hostKey?: string) => void) | undefined;
     onViewWorkspaces?: (() => void) | undefined;
@@ -196,6 +197,7 @@
     repositoryKey,
     repoPath,
     hideStaleWhileLoading = false,
+    manageVisit = true,
     autoSync = "background",
     onOpenWorkspace,
     onViewWorkspaces,
@@ -674,6 +676,7 @@
   let workspaceRequestGen = 0;
   let componentDestroyed = false;
   onDestroy(() => {
+    if (manageVisit) issues.endIssueVisit();
     labelCatalogGeneration += 1;
     labelCatalogExecution?.interrupt();
     bodyCopyExecution?.interrupt();

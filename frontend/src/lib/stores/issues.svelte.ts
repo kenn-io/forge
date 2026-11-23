@@ -50,6 +50,7 @@ import { createRecentDetails } from "./recent-details.js";
 import { repoIdentityKey } from "../utils/repo-label.js";
 import { cycleLabelFilter as cycleLabel, labelFilterParams, type LabelFilters } from "../utils/label-filter.js";
 import { isBotAuthor } from "../utils/bot-author.js";
+import { recordUntrackedRepoOpen } from "../utils/itemRefHandler.js";
 import {
   repositoryKeyAllows,
   repositoryKeyFromWire,
@@ -197,6 +198,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let unsavedLocalBody = $state<UnsavedIssueTarget | null>(null);
   let issueSyncGeneration = 0;
   let activeIssueSelectionKey: string | null = null;
+  let issueVisitKey: string | null = null;
   let issuePollingGeneration = 0;
   let activeIssueDetailRef: IssueDetailRequestRef | null = null;
   const recentDetails = createRecentDetails<{ detail: IssueDetail; envelopeTick: number; loaded: boolean }>(100);
@@ -1028,6 +1030,24 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function loadIssueDetail(owner: string, name: string, number: number, options: IssueDetailRequestOptions): void {
     const ref = issueDetailRequestRef(owner, name, number, options);
     const key = issueDetailKey(ref);
+    const visitKey = providerItemKey({
+      provider: ref.provider,
+      platformHost: concretePlatformHost(ref),
+      owner,
+      name,
+      number,
+    });
+    if (issueVisitKey !== visitKey) {
+      issueVisitKey = visitKey;
+      recordUntrackedRepoOpen(runtime, {
+        provider: ref.provider,
+        host: concretePlatformHost(ref),
+        owner,
+        name,
+        item_type: "issue",
+        number,
+      });
+    }
     if (activeIssueSelectionKey !== key) {
       acknowledgedMembership.clear();
       rememberIssueDetail();
@@ -2226,6 +2246,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     startIssueDetailPolling,
     stopIssueDetailPolling,
     clearIssueDetail,
+    endIssueVisit: () => {
+      issueVisitKey = null;
+    },
     setIssueLabels,
     setIssueAssignees,
     submitIssueComment,

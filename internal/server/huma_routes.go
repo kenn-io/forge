@@ -118,6 +118,10 @@ func (s *Server) registerAPI(api huma.API) {
 		Tags:          []string{"Settings"},
 	}, s.activityapi.UnsetStarred)
 
+	huma.Get(api, "/repos/untracked-opens", s.repoapi.ListUntrackedOpens,
+		httpapi.DocumentOperation("list-untracked-repo-opens", "List untracked repository opens", "Repositories"))
+	huma.Post(api, "/repos/untracked-opens", s.repoapi.RecordUntrackedOpen,
+		httpapi.DocumentOperation("record-untracked-repo-open", "Record an untracked repository open", "Repositories"))
 	huma.Get(api, "/repos", s.activityapi.ListRepos,
 		httpapi.DocumentOperation("list-repos", "List repositories", "Repositories"))
 	huma.Register(api, huma.Operation{

@@ -27,13 +27,8 @@ import (
 )
 
 func repoSyncedHook(ctx context.Context, database *db.DB, hub *syncevents.EventHub) func([]github.RepoSyncResult) {
-	return stacks.DetectionHook(ctx, database, func(results []github.RepoSyncResult) {
-		for _, result := range results {
-			if result.Error == "" || result.PartialFailure != nil {
-				hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
-				return
-			}
-		}
+	return stacks.DetectionHook(ctx, database, func([]github.RepoSyncResult) {
+		hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 	})
 }
 

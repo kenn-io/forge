@@ -30,19 +30,15 @@ import (
 )
 
 func TestRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T) {
-	for _, partial := range []bool{false, true} {
-		name := "success"
-		if partial {
-			name = "partial pull request failure"
-		}
+	for _, name := range []string{"success", "partial pull request failure", "notification closeout failure"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			testRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t, partial)
+			testRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t, name)
 		})
 	}
 }
 
-func testRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T, partial bool) {
+func testRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T, result string) {
 	t.Helper()
 	ctx := t.Context()
 	database := dbtest.Open(t)
@@ -53,16 +49,24 @@ func testRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T, partial bo
 	require.NoError(t, database.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{
 		CloneURL: "https://github.com/acme/first.git", DefaultBranch: "main",
 	}, nil, nil))
-	if partial {
+	if result == "partial pull request failure" {
 		now := time.Now().UTC()
 		_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{RepoID: repoID, PlatformID: 3, Number: 3, Title: "Previous", Author: "user-a", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
+		require.NoError(t, err)
+	}
+	if result == "notification closeout failure" {
+		now := time.Now().UTC()
+		_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{RepoID: repoID, PlatformID: 3, Number: 3, Title: "Previous", Author: "user-a", State: "closed", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
+		require.NoError(t, err)
+		require.NoError(t, database.UpsertNotifications(ctx, []db.Notification{{Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "thread-1", RepoID: &repoID, RepoOwner: "acme", RepoName: "first", SubjectType: "PullRequest", SubjectTitle: "Previous", ItemNumber: new(3), ItemType: "pr", Reason: "mention", SourceUpdatedAt: now, SyncedAt: now}}))
+		_, err = database.WriteDB().ExecContext(ctx, `CREATE TRIGGER reject_closeout BEFORE UPDATE OF done_at ON forge_notification_items BEGIN SELECT RAISE(ABORT, 'closeout failed'); END`)
 		require.NoError(t, err)
 	}
 	blocked := make(chan struct{})
 	release := make(chan struct{})
 	var failed atomic.Bool
 	client := &serverfake.MockGH{GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
-		if partial && number == 3 {
+		if result == "partial pull request failure" && number == 3 {
 			failed.Store(true)
 			return nil, errors.New("pull request unavailable")
 		}
@@ -115,9 +119,17 @@ func testRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T, partial bo
 	}
 	prs, err := database.ListMergeRequests(ctx, db.ListMergeRequestsOpts{})
 	require.NoError(t, err)
-	if partial {
+	if result == "partial pull request failure" {
 		require.True(t, failed.Load())
 		require.Len(t, prs, 3)
+		return
+	}
+	if result == "notification closeout failure" {
+		var syncError string
+		require.NoError(t, database.ReadDB().QueryRowContext(ctx, `SELECT last_sync_error FROM forge_repos WHERE id = ?`, repoID).Scan(&syncError))
+		require.Contains(t, syncError, "closeout failed")
+		require.Len(t, prs, 2)
+		require.ElementsMatch(t, []int{1, 2}, []int{prs[0].Number, prs[1].Number})
 		return
 	}
 	require.Len(t, prs, 2)
@@ -127,36 +139,6 @@ func testRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T, partial bo
 	require.Len(t, members, 2)
 	require.Equal(t, 1, members[0].Number)
 	require.Equal(t, 2, members[1].Number)
-}
-
-func TestRepoSyncedBroadcastAfterPartialSync(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		result    github.RepoSyncResult
-		wantEvent bool
-	}{
-		{name: "success", wantEvent: true},
-		{name: "issue failure", result: github.RepoSyncResult{Error: "issue failure", PartialFailure: &github.PartialSyncError{Issues: true}}, wantEvent: true},
-		{name: "pull request failure", result: github.RepoSyncResult{Error: "pull request failure", PartialFailure: &github.PartialSyncError{MergeRequests: true}}, wantEvent: true},
-		{name: "repository failure", result: github.RepoSyncResult{Error: "repository failure"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			ctx := t.Context()
-			database := dbtest.Open(t)
-			hub := syncevents.NewEventHub()
-			t.Cleanup(hub.Close)
-			events, _ := hub.Subscribe(ctx, false)
-			repoSyncedHook(ctx, database, hub)([]github.RepoSyncResult{tc.result})
-			select {
-			case event := <-events:
-				require.True(t, tc.wantEvent)
-				require.Equal(t, "data_changed", event.Event.Type)
-			default:
-				require.False(t, tc.wantEvent)
-			}
-		})
-	}
 }
 
 func TestWireSyncStatusDoesNotReloadDataForRelayConnectionChanges(t *testing.T) {

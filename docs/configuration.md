@@ -540,6 +540,57 @@ mode without Forge first asking Codex which mode its settings allow.
 You can also edit agents, including their environment, under
 **Settings → Workspace agents**.
 
+### Antigravity (ACP)
+
+To run Google Antigravity (`agy`) as an ACP chat agent with Forge's companion
+MCP tools enabled, pass `--process-per-session`:
+
+```toml
+[[agents]]
+protocol = "acp"
+key = "antigravity"
+label = "Antigravity"
+command = ["agy", "acp", "--process-per-session"]
+enabled = true
+```
+
+Without `--process-per-session`, `agy acp` does not advertise HTTP MCP support
+during ACP initialization, so Forge drops its companion MCP server and its
+tools stay unavailable in Antigravity chats.
+
+For command approvals, choose between sandboxed `Auto` mode and unrestricted
+execution:
+
+- **Sandboxed `Auto` mode (recommended):** Antigravity advertises an `Auto`
+  mode in Forge's mode picker that runs terminal commands inside its OS sandbox
+  without prompting on every command. On Linux hosts where AppArmor restricts
+  unprivileged user namespaces
+  (`kernel.apparmor_restrict_unprivileged_userns = 1`, the default on Ubuntu
+  24.04 and newer), `agy` cannot initialize its sandbox and omits `Auto` from
+  the modes it offers, leaving only `Default`, `Accept edits` (which still
+  prompts for shell commands), and `Plan`. To enable `Auto` mode on those
+  hosts, allow unprivileged user namespaces:
+
+  ```sh
+  sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+  ```
+
+  To persist the setting across reboots, write
+  `kernel.apparmor_restrict_unprivileged_userns=0` to
+  `/etc/sysctl.d/60-apparmor-userns.conf` and reload it with
+  `sudo sysctl -p /etc/sysctl.d/60-apparmor-userns.conf`.
+
+- **Unrestricted execution:** `agy acp` does not expose a bypass-permissions
+  mode in the ACP mode picker. To auto-approve all tool calls without the
+  sandbox, add `--dangerously-skip-permissions` to `command`:
+
+  ```toml
+  command = ["agy", "acp", "--process-per-session", "--dangerously-skip-permissions"]
+  ```
+
+Changes to `command` apply to new chats; existing ACP chats keep the command
+recorded when they were created.
+
 ## Quick actions
 
 A quick action creates a workspace for the current pull request or issue,

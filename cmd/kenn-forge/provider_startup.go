@@ -27,9 +27,18 @@ import (
 )
 
 func wireRepoSynced(ctx context.Context, syncer *github.Syncer, database *db.DB, hub *syncevents.EventHub) {
-	syncer.SetOnRepoSynced(stacks.DetectionHook(ctx, database, func([]github.RepoSyncResult) {
-		hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
-	}))
+	syncer.SetOnRepoSynced(repoSyncedHook(ctx, database, hub))
+}
+
+func repoSyncedHook(ctx context.Context, database *db.DB, hub *syncevents.EventHub) func([]github.RepoSyncResult) {
+	return stacks.DetectionHook(ctx, database, func(results []github.RepoSyncResult) {
+		for _, result := range results {
+			if result.Error == "" || (result.PartialFailure != nil && !result.PartialFailure.MergeRequests) {
+				hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
+				return
+			}
+		}
+	})
 }
 
 func wireSyncStatus(syncer *github.Syncer, hub *syncevents.EventHub) {

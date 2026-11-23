@@ -20,7 +20,9 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/syncevents"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -30,6 +32,13 @@ func TestRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 	database := dbtest.Open(t)
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "first")), Owner: "acme", Name: "first",
+	})
+	require.NoError(t, err)
+	require.NoError(t, database.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{
+		CloneURL: "https://github.com/acme/first.git", DefaultBranch: "main",
+	}, nil, nil))
 	blocked := make(chan struct{})
 	release := make(chan struct{})
 	client := &serverfake.MockGH{ListOpenPullRequestsFn: func(ctx context.Context, _, repo string) ([]*gh.PullRequest, error) {
@@ -43,14 +52,20 @@ func TestRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T) {
 			return nil, nil
 		}
 		now := time.Now().UTC()
+		cloneURL := "https://github.com/acme/first.git"
 		return []*gh.PullRequest{{
 			ID: new(int64(1)), Number: new(1), State: new("open"), Title: new("Example"),
 			User: &gh.User{Login: new("user-a")}, CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now},
-			Head: &gh.PullRequestBranch{Ref: new("feature"), SHA: new("head")},
+			Head: &gh.PullRequestBranch{Ref: new("feature"), SHA: new("head"), Repo: &gh.Repository{CloneURL: &cloneURL}},
 			Base: &gh.PullRequestBranch{Ref: new("main"), SHA: new("base")},
+		}, {
+			ID: new(int64(2)), Number: new(2), State: new("open"), Title: new("Example 2"),
+			User: &gh.User{Login: new("user-a")}, CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now},
+			Head: &gh.PullRequestBranch{Ref: new("feature-2"), SHA: new("head-2"), Repo: &gh.Repository{CloneURL: &cloneURL}},
+			Base: &gh.PullRequestBranch{Ref: new("feature"), SHA: new("head")},
 		}}, nil
 	}}
-	repos := []github.RepoRef{{Owner: "acme", Name: "first", PlatformHost: "github.com"}, {Owner: "acme", Name: "second", PlatformHost: "github.com"}}
+	repos := []github.RepoRef{{Owner: "acme", Name: "first", PlatformHost: "github.com", CloneURL: "https://github.com/acme/first.git"}, {Owner: "acme", Name: "second", PlatformHost: "github.com"}}
 	syncer := github.NewSyncer(map[string]github.Client{"github.com": client}, database, nil, repos, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	hub := syncevents.NewEventHub()
@@ -74,8 +89,42 @@ func TestRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T) {
 	}
 	prs, err := database.ListMergeRequests(ctx, db.ListMergeRequestsOpts{})
 	require.NoError(t, err)
-	require.Len(t, prs, 1)
-	require.Equal(t, 1, prs[0].Number)
+	require.Len(t, prs, 2)
+	stack, members, err := database.GetStackForPR(ctx, "github", "github.com", "acme", "first", 1)
+	require.NoError(t, err)
+	require.NotNil(t, stack)
+	require.Len(t, members, 2)
+	require.Equal(t, 1, members[0].Number)
+	require.Equal(t, 2, members[1].Number)
+}
+
+func TestRepoSyncedBroadcastRequiresCompletePullRequests(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		result    github.RepoSyncResult
+		wantEvent bool
+	}{
+		{name: "success", wantEvent: true},
+		{name: "issue failure", result: github.RepoSyncResult{Error: "issue failure", PartialFailure: &github.PartialSyncError{Issues: true}}, wantEvent: true},
+		{name: "pull request failure", result: github.RepoSyncResult{Error: "pull request failure", PartialFailure: &github.PartialSyncError{MergeRequests: true}}},
+		{name: "repository failure", result: github.RepoSyncResult{Error: "repository failure"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			database := dbtest.Open(t)
+			hub := syncevents.NewEventHub()
+			t.Cleanup(hub.Close)
+			events, _ := hub.Subscribe(ctx, false)
+			repoSyncedHook(ctx, database, hub)([]github.RepoSyncResult{tc.result})
+			select {
+			case event := <-events:
+				require.True(t, tc.wantEvent)
+				require.Equal(t, "data_changed", event.Event.Type)
+			default:
+				require.False(t, tc.wantEvent)
+			}
+		})
+	}
 }
 
 func TestWireSyncStatusDoesNotReloadDataForRelayConnectionChanges(t *testing.T) {

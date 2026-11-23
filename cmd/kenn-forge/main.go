@@ -164,16 +164,14 @@ func main() {
 	os.Exit(runMain())
 }
 
-var closeDesktopLog = func() error { return nil }
-
 func runMain() int {
-	closeLog, err := configureLogging(os.Stderr, strings.TrimSpace(os.Getenv("KENN_FORGE_LOG_FILE")))
+	closeLog, err := configureLogging(os.Stderr)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "configure logging: %v\n", err)
 		return 1
 	}
 	defer func() {
-		if err := errors.Join(closeDesktopLog(), closeLog()); err != nil {
+		if err := closeLog(); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "close log file: %v\n", err)
 		}
 	}()
@@ -195,25 +193,14 @@ func runMain() int {
 	return 0
 }
 
-func attachDesktopLog(dataDir string) {
-	if os.Getenv("KENN_FORGE_DESKTOP") != "1" || strings.TrimSpace(os.Getenv("KENN_FORGE_LOG_FILE")) != "" {
-		return
-	}
-	closeLog, err := configureLogging(os.Stderr, filepath.Join(dataDir, "forge.log"))
-	if err != nil {
-		slog.Warn("open desktop log file", "err", err)
-		return
-	}
-	closeDesktopLog = closeLog
-}
-
-func configureLogging(stderr io.Writer, logFile string) (func() error, error) {
+func configureLogging(stderr io.Writer) (func() error, error) {
 	level, err := parseLogLevel(os.Getenv("KENN_FORGE_LOG_LEVEL"))
 	if err != nil {
 		return nil, err
 	}
 
 	var file *os.File
+	logFile := strings.TrimSpace(os.Getenv("KENN_FORGE_LOG_FILE"))
 	stderrLevel := level
 	if logFile != "" {
 		stderrLevel = slog.LevelInfo
@@ -404,14 +391,13 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	logRuntimeConfig(slog.Default(), cfg)
 	if err := validateBackgroundLaunchConfig(cfg); err != nil {
 		return err
 	}
 	if cfg.ExecutionWorker.Enabled && (runtime.GOOS != "linux" || uint32(os.Getuid()) != cfg.ExecutionWorker.UID) {
 		return errors.New("execution worker must run as its configured non-root Linux account")
 	}
-	attachDesktopLog(cfg.DataDir)
-	logRuntimeConfig(slog.Default(), cfg)
 	slog.Debug(
 		"config loaded",
 		"config_path", configPath,

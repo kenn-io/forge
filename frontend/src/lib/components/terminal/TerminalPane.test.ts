@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 import { createSettingsStore, type SettingsStore } from "../../stores/settings.svelte.js";
 import { beginTerminalGeometryIntent, extendTerminalGeometryIntent } from "./terminalGeometryIntent.js";
 import TerminalPaneInputHarness from "./TerminalPaneInputHarness.svelte";
@@ -870,14 +870,19 @@ describe("TerminalPane", () => {
   });
 
   it("constructs xterm when the selected font resolves", async () => {
-    configuredFontFamily = '"MesloLGS NF", monospace';
+    // A custom font falls back to the bundled face for prompt icons it
+    // lacks, so the whole stack loads, not just the custom font.
+    configuredFontFamily = '"Example Mono"';
+    document.documentElement.style.setProperty("--font-mono", '"MesloLGS NF", monospace');
+    onTestFinished(() => document.documentElement.style.removeProperty("--font-mono"));
     const fontLoad = deferred<FontFace[]>();
     const load = stubFontLoad(fontLoad.promise);
 
     render(TerminalPane, { props: { workspaceId: "ws-123" } });
     await waitFor(() => expect(load).toHaveBeenCalled());
 
-    expect(load).toHaveBeenCalledWith('14px "MesloLGS NF"', "0MWim@#");
+    expect(load).toHaveBeenCalledWith('14px "Example Mono", "MesloLGS NF", monospace', "0MWim@#\ue0b0");
+    expect(load).toHaveBeenCalledWith('bold 14px "Example Mono", "MesloLGS NF", monospace', "0MWim@#\ue0b0");
     expect(xtermTerminalCtor).not.toHaveBeenCalled();
 
     fontLoad.resolve([]);
@@ -947,6 +952,32 @@ describe("TerminalPane", () => {
     await waitFor(() => expect(terminal.clearTextureAtlas).toHaveBeenCalledTimes(1));
     expect(fitAddon.fit).toHaveBeenCalledTimes(1);
     expect(terminal.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("rebuilds the xterm atlas when one face fails and the other resolves after the bound", async () => {
+    vi.useFakeTimers();
+    mockSocketsStartOpen = false;
+    const failed = Promise.reject(new DOMException("Font load failed", "NetworkError"));
+    void failed.catch(() => undefined);
+    const boldLoad = deferred<FontFace[]>();
+    const load = stubFontLoad(boldLoad.promise);
+    load.mockReturnValueOnce(failed);
+
+    render(TerminalPane, { props: { workspaceId: "ws-123" } });
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+    await vi.advanceTimersByTimeAsync(300);
+    vi.useRealTimers();
+    await waitFor(() => expect(mockSockets).toHaveLength(1));
+    mockSockets[0]!.readyState = MockWebSocket.OPEN;
+    mockSockets[0]!.onopen();
+    await waitForSocketConnected(mockSockets[0]!);
+
+    const terminal = xtermInstances[0]!;
+    terminal.clearTextureAtlas.mockClear();
+
+    boldLoad.resolve([]);
+
+    await waitFor(() => expect(terminal.clearTextureAtlas).toHaveBeenCalledTimes(1));
   });
 
   it("pushes the re-measured size when a font resolves late in a painted pane", async () => {

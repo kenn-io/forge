@@ -118,11 +118,18 @@ to the application.
 - Theme tokens come from kit `theme.css` plus the kit `quiet` identity. Quiet is the
   default; preserve an explicit e-reader choice through startup and first paint
   (`frontend/src/lib/stores/theme.svelte.ts`).
-- UI (`--font-sans`) and monospace (`--font-mono`) text use bundled Inter and
-  JetBrains Mono variable fonts from `@kenn-io/kit-ui/fonts/*` (inlined in built
-  stylesheets with `hold-first-paint.js`), overriding `quiet`'s OS system stacks so
-  typography renders consistently across Windows, Linux, and macOS
-  (`frontend/src/app.css`, `frontend/vite.config.ts`).
+- UI (`--font-sans`) and monospace (`--font-mono`) text use bundled Inter (from
+  `@kenn-io/kit-ui/fonts/*`) and MesloLGS NF (inlined in built stylesheets with
+  `hold-first-paint.js`), overriding `quiet`'s OS system stacks so typography renders
+  consistently across Windows, Linux, and macOS (`frontend/src/app.css`,
+  `frontend/vite.config.ts`). The app, GitHub App setup page, and website use the same
+  monospace face.
+- MesloLGS NF is split by Unicode range (`scripts/build-meslo-fonts.py`). Stylesheets
+  inline only the small core text faces. The extended faces (about 1 MB each, mostly
+  the Nerd Font icons shell prompts draw) are separate hashed files that only the lazy
+  xterm pane declares, so they stay out of first paint
+  (`frontend/src/lib/components/terminal/terminal-fonts.css`). Outside a terminal,
+  characters beyond the core ranges fall back to the next font in `--font-mono`.
 - Kit's theme store owns dark/light/system resolution and persistence.
 - E-reader modes are always light: pure white surfaces, pure black text, strong
   edges. Plain e-reader forces black ink with pale fills; color e-reader keeps inline

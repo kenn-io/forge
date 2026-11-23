@@ -36,7 +36,7 @@ screenshots, or the Zensical site.
   binary, CLI, config, and path references in code spans. Internal docs keep
   `kenn-forge` (`scripts/check-docs-branding.mjs`).
 - The public site is tiered: static marketing pages in `website/` (dark-only,
-  JetBrains Mono headings, ember accent) lead into the Zensical docs under
+  MesloLGS NF headings, ember accent) lead into the Zensical docs under
   `/docs/`.
 - Position the product as an integrated agent workspace with local-first code
   forge sync, not a maintainer-only console.

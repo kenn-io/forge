@@ -406,7 +406,7 @@
         class="font-input"
         type="text"
         bind:value={fontFamilyDraft}
-        placeholder='"JetBrains Mono", "SF Mono", Menlo, Consolas, monospace'
+        placeholder='"MesloLGS NF", "SF Mono", Menlo, Consolas, monospace'
         disabled={saving}
       />
       <button
@@ -537,7 +537,7 @@
 
   <div class="setting-actions">
     <p class="setting-help">
-      Leave the font blank to use the app default monospace stack.
+      Leave the font blank to use the app monospace font, MesloLGS NF.
     </p>
     <div class="button-row">
       <button

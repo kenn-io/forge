@@ -3,7 +3,7 @@
 @import "@kenn-io/kit-ui/theme.css";
 /* The quiet identity (AA muted text, sentence-case labels); index.html and
    initTheme select it with data-kit-theme="quiet". Forge overrides quiet's
-   OS system font stacks below with the bundled Inter and JetBrains Mono
+   OS system font stacks below with the bundled Inter and MesloLGS NF
    faces so typography stays consistent across Windows, Linux, and macOS. */
 @import "@kenn-io/kit-ui/themes.css";
 /* Mermaid viewer chrome plus the --mermaid- tokens (opt-in kit module). */
@@ -13,8 +13,11 @@
 @import "./e-reader.css";
 
 /* Bundle only the two brand faces Forge uses (not kit-ui's full theme-pack
-   fonts.css). Vite inlines .woff2 files as data URLs in production builds,
-   and hold-first-paint.js waits for them to decode before first paint. */
+   fonts.css). Vite inlines these .woff2 files as data URLs in production
+   builds, and hold-first-paint.js waits for them to decode before first
+   paint. The MesloLGS NF files here hold only the core text ranges from
+   scripts/build-meslo-fonts.py; the terminal adds the extended faces
+   (lib/components/terminal/terminal-fonts.css). */
 @font-face {
   font-family: "Inter";
   font-style: normal;
@@ -24,16 +27,57 @@
 }
 
 @font-face {
-  font-family: "JetBrains Mono";
+  font-family: "MesloLGS NF";
   font-style: normal;
-  font-weight: 100 800;
+  font-weight: 400;
   font-display: swap;
-  src: url("@kenn-io/kit-ui/fonts/jetbrains-mono-var.woff2") format("woff2");
+  src: url("./fonts/meslo/MesloLGS-NF-Regular.woff2") format("woff2");
+  unicode-range:
+    U+0000-017F, U+0192, U+02C6-02DD, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-22FF, U+2318, U+2325, U+2387,
+    U+238B, U+23CE-23CF, U+2500-25FF, U+2713-2718, U+FFFD;
+}
+
+@font-face {
+  font-family: "MesloLGS NF";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/meslo/MesloLGS-NF-Bold.woff2") format("woff2");
+  unicode-range:
+    U+0000-017F, U+0192, U+02C6-02DD, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-22FF, U+2318, U+2325, U+2387,
+    U+238B, U+23CE-23CF, U+2500-25FF, U+2713-2718, U+FFFD;
+}
+
+@font-face {
+  font-family: "MesloLGS NF";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/meslo/MesloLGS-NF-Italic.woff2") format("woff2");
+  unicode-range:
+    U+0000-017F, U+0192, U+02C6-02DD, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-22FF, U+2318, U+2325, U+2387,
+    U+238B, U+23CE-23CF, U+2500-25FF, U+2713-2718, U+FFFD;
+}
+
+@font-face {
+  font-family: "MesloLGS NF";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/meslo/MesloLGS-NF-Bold-Italic.woff2") format("woff2");
+  unicode-range:
+    U+0000-017F, U+0192, U+02C6-02DD, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-22FF, U+2318, U+2325, U+2387,
+    U+238B, U+23CE-23CF, U+2500-25FF, U+2713-2718, U+FFFD;
 }
 
 :root[data-kit-theme="quiet"] {
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Every theme, e-reader included, uses the bundled monospace face. kit's
+   brand.css default names JetBrains Mono, which Forge does not ship. */
+:root[data-kit-theme] {
+  --font-mono: "MesloLGS NF", "SF Mono", Menlo, Consolas, monospace;
 }
 
 /* kit's themes.css tints scrollbars under every named theme; Forge's scroll

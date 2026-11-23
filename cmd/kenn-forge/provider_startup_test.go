@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -29,7 +30,20 @@ import (
 )
 
 func TestRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T) {
-	t.Parallel()
+	for _, partial := range []bool{false, true} {
+		name := "success"
+		if partial {
+			name = "partial pull request failure"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			testRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t, partial)
+		})
+	}
+}
+
+func testRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T, partial bool) {
+	t.Helper()
 	ctx := t.Context()
 	database := dbtest.Open(t)
 	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
@@ -39,9 +53,21 @@ func TestRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T) {
 	require.NoError(t, database.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{
 		CloneURL: "https://github.com/acme/first.git", DefaultBranch: "main",
 	}, nil, nil))
+	if partial {
+		now := time.Now().UTC()
+		_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{RepoID: repoID, PlatformID: 3, Number: 3, Title: "Previous", Author: "user-a", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
+		require.NoError(t, err)
+	}
 	blocked := make(chan struct{})
 	release := make(chan struct{})
-	client := &serverfake.MockGH{ListOpenPullRequestsFn: func(ctx context.Context, _, repo string) ([]*gh.PullRequest, error) {
+	var failed atomic.Bool
+	client := &serverfake.MockGH{GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+		if partial && number == 3 {
+			failed.Store(true)
+			return nil, errors.New("pull request unavailable")
+		}
+		return nil, nil
+	}, ListOpenPullRequestsFn: func(ctx context.Context, _, repo string) ([]*gh.PullRequest, error) {
 		if repo == "second" {
 			close(blocked)
 			select {
@@ -71,7 +97,7 @@ func TestRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T) {
 	hub := syncevents.NewEventHub()
 	t.Cleanup(hub.Close)
 	events, _ := hub.Subscribe(ctx, false)
-	wireRepoSynced(ctx, syncer, database, hub)
+	syncer.SetOnRepoSynced(repoSyncedHook(ctx, database, hub))
 	finished := make(chan struct{})
 	go func() { defer close(finished); syncer.RunOnce(ctx) }()
 	t.Cleanup(func() { close(release); <-finished })
@@ -89,6 +115,11 @@ func TestRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T) {
 	}
 	prs, err := database.ListMergeRequests(ctx, db.ListMergeRequestsOpts{})
 	require.NoError(t, err)
+	if partial {
+		require.True(t, failed.Load())
+		require.Len(t, prs, 3)
+		return
+	}
 	require.Len(t, prs, 2)
 	stack, members, err := database.GetStackForPR(ctx, "github", "github.com", "acme", "first", 1)
 	require.NoError(t, err)
@@ -98,7 +129,7 @@ func TestRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T) {
 	require.Equal(t, 2, members[1].Number)
 }
 
-func TestRepoSyncedBroadcastRequiresCompletePullRequests(t *testing.T) {
+func TestRepoSyncedBroadcastAfterPartialSync(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		result    github.RepoSyncResult
@@ -106,10 +137,11 @@ func TestRepoSyncedBroadcastRequiresCompletePullRequests(t *testing.T) {
 	}{
 		{name: "success", wantEvent: true},
 		{name: "issue failure", result: github.RepoSyncResult{Error: "issue failure", PartialFailure: &github.PartialSyncError{Issues: true}}, wantEvent: true},
-		{name: "pull request failure", result: github.RepoSyncResult{Error: "pull request failure", PartialFailure: &github.PartialSyncError{MergeRequests: true}}},
+		{name: "pull request failure", result: github.RepoSyncResult{Error: "pull request failure", PartialFailure: &github.PartialSyncError{MergeRequests: true}}, wantEvent: true},
 		{name: "repository failure", result: github.RepoSyncResult{Error: "repository failure"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := t.Context()
 			database := dbtest.Open(t)
 			hub := syncevents.NewEventHub()

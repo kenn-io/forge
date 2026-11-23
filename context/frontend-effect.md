@@ -79,8 +79,8 @@ and API error contracts remain in [`error-handling.md`](./error-handling.md).
   The checkpoint stays before the oldest hint no finished refresh covers, so a lost refresh
   replays on reconnect (`frontend/src/lib/stores/provider-events-workflow.ts::DATA_CHANGED_REFRESH_INTERVAL`).
 - The workspace item search reads only when used; provider events mark it stale. Sync-complete
-  list reloads run only while live updates are disconnected, since the server's end-of-sync
-  `data_changed` already covers them (`frontend/src/lib/stores/sync.svelte.ts::subscribeSyncCompleteWithoutLiveUpdates`).
+  list reloads run only while live updates are disconnected, since the server sends `data_changed`
+  after repository syncs and full sync completion (`frontend/src/lib/stores/sync.svelte.ts::subscribeSyncCompleteWithoutLiveUpdates`).
 - Provider mutations share one app-scoped acknowledged queue: order by submission, key
   rollback by full item identity plus mutation family, never retry writes, and turn
   `stale_state` into refresh-and-review without replay

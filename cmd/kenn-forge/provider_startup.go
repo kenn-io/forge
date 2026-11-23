@@ -26,14 +26,10 @@ import (
 	gitlabclient "go.kenn.io/forge/platform/gitlab"
 )
 
-func wireRepoSynced(ctx context.Context, syncer *github.Syncer, database *db.DB, hub *syncevents.EventHub) {
-	syncer.SetOnRepoSynced(repoSyncedHook(ctx, database, hub))
-}
-
 func repoSyncedHook(ctx context.Context, database *db.DB, hub *syncevents.EventHub) func([]github.RepoSyncResult) {
 	return stacks.DetectionHook(ctx, database, func(results []github.RepoSyncResult) {
 		for _, result := range results {
-			if result.Error == "" || (result.PartialFailure != nil && !result.PartialFailure.MergeRequests) {
+			if result.Error == "" || result.PartialFailure != nil {
 				hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 				return
 			}

@@ -115,13 +115,22 @@ const connectionDSN = "?_pragma=busy_timeout(5000)" +
 	"&_pragma=mmap_size(268435456)" +
 	"&_pragma=temp_store(MEMORY)"
 
+// writerTxLock makes every transaction on the writer pool begin with BEGIN
+// IMMEDIATE. A deferred transaction that reads before it writes cannot wait
+// for the write lock: when another process holds it, SQLite fails the first
+// write with SQLITE_BUSY at once and skips busy_timeout. A replicator such as
+// Litestream takes the write lock for each WAL checkpoint, so deferred writes
+// failed whenever they overlapped one. IMMEDIATE takes the lock at BEGIN,
+// where busy_timeout applies.
+const writerTxLock = "&_txlock=immediate"
+
 func open(path string, initialize bool) (*DB, error) {
-	rw, err := openPool(path, writePoolSize)
+	rw, err := openPool(path+connectionDSN+writerTxLock, writePoolSize)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 
-	ro, err := openPool(path, readPoolSize)
+	ro, err := openPool(path+connectionDSN, readPoolSize)
 	if err != nil {
 		rw.Close()
 		return nil, fmt.Errorf("open db read-only: %w", err)
@@ -146,8 +155,8 @@ func open(path string, initialize bool) (*DB, error) {
 // openPool opens one connection pool whose idle limit matches its open limit,
 // so connections (and the statements compiled on them) survive idle periods
 // instead of being closed and re-opened with the DSN pragmas on every burst.
-func openPool(path string, size int) (*sql.DB, error) {
-	pool, err := sql.Open("sqlite", path+connectionDSN)
+func openPool(dsn string, size int) (*sql.DB, error) {
+	pool, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}

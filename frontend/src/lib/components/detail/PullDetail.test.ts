@@ -781,6 +781,58 @@ describe("PullDetail provider workflow actions", () => {
     expect(screen.getByRole("button", { name: "Release" })).toBeTruthy();
   });
 
+  it("keeps the actions menu open across same-PR detail refreshes and closes it on repository change", async () => {
+    const firstDetail = pullDetail();
+    enableWorkflowActions(firstDetail);
+    const refreshedDetail = pullDetail();
+    enableWorkflowActions(refreshedDetail);
+    refreshedDetail.merge_request.Title = "Refreshed pull title";
+
+    const baseApi = workflowClient(firstDetail);
+    let detailFetches = 0;
+    const GET = vi.fn(async (path: string, options?: Parameters<typeof baseApi.GET>[1]) => {
+      if (path.includes("/pulls/")) {
+        detailFetches += 1;
+        return { data: detailFetches === 1 ? firstDetail : refreshedDetail };
+      }
+      return baseApi.GET(path, options);
+    });
+    const client = { GET, POST: baseApi.POST } as unknown as GeneratedClient;
+    detailRuntime = makeTestAppRuntime(client);
+    const detailStore = createDetailStore({ runtime: detailRuntime });
+
+    const { rerender } = renderPullDetail(firstDetail, baseApi.repoSettings, client, {
+      actionsModeVisible: true,
+      runtimeClient: client,
+      store: detailStore,
+    });
+
+    await waitFor(() => {
+      expect(detailFetches).toBeGreaterThanOrEqual(1);
+      expect(GET.mock.calls.some(([path]) => String(path).endsWith("/workflows"))).toBe(true);
+    });
+    await fireEvent.click(await screen.findByRole("button", { name: "Run workflow" }));
+    expect(await screen.findByRole("region", { name: "GitHub Actions" })).toBeTruthy();
+
+    const fetchesBeforeRefresh = detailFetches;
+    await detailStore.loadDetail("acme", "widget", 1, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    await waitFor(() => {
+      expect(detailFetches).toBeGreaterThan(fetchesBeforeRefresh);
+    });
+    await tick();
+
+    expect(screen.getByRole("region", { name: "GitHub Actions" })).toBeTruthy();
+
+    await rerender({ name: "other", repoPath: "acme/other", number: 2 });
+    await tick();
+    expect(screen.queryByRole("region", { name: "GitHub Actions" })).toBeNull();
+  });
+
   it("opens the shared confirmation without dispatching when a workflow is selected", async () => {
     const detail = pullDetail();
     const { api } = await openReleaseWorkflow(detail);

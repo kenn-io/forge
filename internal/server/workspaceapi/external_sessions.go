@@ -351,8 +351,7 @@ func (s *Handler) adoptExternalSession(
 		if held, err := s.runtime.ACPSessionHeld(ws.ID, session.SessionID, chats); err != nil || held {
 			return err
 		}
-	}
-	if created {
+	} else {
 		// Setup runs even when recording the chat fails below, or the new
 		// workspace stays creating; a later pass adds the chat.
 		defer func() {
@@ -376,8 +375,9 @@ func (s *Handler) adoptExternalSession(
 	}
 	if err := s.db.AdoptExternalAgentSession(ctx, session.Agent, session.SessionID, ws.ID, key); err != nil {
 		// The next pass adds a chat for the still unadopted session, so this
-		// one would stay as a chat that follows nothing.
-		if removeErr := s.db.DeleteWorkspaceRuntimeSession(ctx, ws.ID, key); removeErr != nil {
+		// one would stay as a chat that follows nothing. The link fails when
+		// shutdown cancels ctx, and the removal must still run then.
+		if removeErr := s.db.DeleteWorkspaceRuntimeSession(context.WithoutCancel(ctx), ws.ID, key); removeErr != nil {
 			return errors.Join(err, fmt.Errorf("remove unadopted chat: %w", removeErr))
 		}
 		return err

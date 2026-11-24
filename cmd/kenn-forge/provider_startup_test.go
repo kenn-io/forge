@@ -102,7 +102,7 @@ func testRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T, result str
 	hub := syncevents.NewEventHub()
 	t.Cleanup(hub.Close)
 	events, _ := hub.Subscribe(ctx, false)
-	syncer.SetOnRepoSynced(repoSyncedHook(ctx, database, hub))
+	wireRepoSynced(ctx, syncer, database, hub)
 	finished := make(chan struct{})
 	go func() { defer close(finished); syncer.RunOnce(ctx) }()
 	t.Cleanup(func() { close(release); <-finished })

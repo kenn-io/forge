@@ -46,11 +46,11 @@ func (s *Handler) listWorkspaceACPSessions(
 	if s.runtime == nil {
 		return nil, httpapi.ServiceUnavailable("workspace runtime not configured")
 	}
-	chatKeys, err := s.storedChatKeys(ctx, summary.ID)
+	chats, err := s.workspaceChats(ctx, summary.ID)
 	if err != nil {
 		return nil, err
 	}
-	sessions, err := s.runtime.ListACPSessions(ctx, summary.ID, summary.WorktreePath, targetKey, chatKeys)
+	sessions, err := s.runtime.ListACPSessions(ctx, summary.ID, summary.WorktreePath, targetKey, chats)
 	if err != nil {
 		return nil, acpSessionsError(err)
 	}
@@ -67,24 +67,33 @@ func (s *Handler) listWorkspaceACPSessions(
 	return output, nil
 }
 
-// storedChatKeys returns the workspace's stored ACP chats. Their records, not
-// a leftover saved session, decide which agent sessions the workspace holds:
-// a chat forgotten after its agent exited no longer holds one.
-func (s *Handler) storedChatKeys(ctx context.Context, workspaceID string) ([]string, error) {
+// workspaceChats returns the workspace's stored ACP chats and the sessions
+// its mirrored chats follow. Their records, not a leftover saved session,
+// decide which agent sessions the workspace holds: a chat forgotten after its
+// agent exited no longer holds one.
+func (s *Handler) workspaceChats(ctx context.Context, workspaceID string) (localruntime.ACPWorkspaceChats, error) {
+	var chats localruntime.ACPWorkspaceChats
 	if s.db == nil {
-		return nil, nil
+		return chats, nil
 	}
 	rows, err := s.db.ListWorkspaceRuntimeSessions(ctx, workspaceID)
 	if err != nil {
-		return nil, httpapi.Internal("list workspace chats: " + err.Error())
+		return chats, httpapi.Internal("list workspace chats: " + err.Error())
 	}
-	var keys []string
 	for _, row := range rows {
-		if localruntime.LaunchTargetKind(strings.TrimSpace(row.Kind)) == localruntime.LaunchTargetACP {
-			keys = append(keys, row.SessionKey)
+		if localruntime.LaunchTargetKind(strings.TrimSpace(row.Kind)) != localruntime.LaunchTargetACP {
+			continue
+		}
+		chats.Keys = append(chats.Keys, row.SessionKey)
+		mirrored, err := s.db.GetExternalAgentSessionByRuntimeKey(ctx, row.SessionKey)
+		if err != nil {
+			return chats, httpapi.Internal("read mirrored chat: " + err.Error())
+		}
+		if mirrored != nil {
+			chats.Mirrored = append(chats.Mirrored, mirrored.SessionID)
 		}
 	}
-	return keys, nil
+	return chats, nil
 }
 
 func acpSessionsError(err error) error {

@@ -48,7 +48,7 @@ func TestACPResumesAListedSessionWithItsHistory(t *testing.T) {
 	manager, dir := newACPSessionsTestManager(t)
 	assert := assert.New(t)
 
-	sessions, err := manager.ListACPSessions(t.Context(), "workspace", dir, "chat", nil)
+	sessions, err := manager.ListACPSessions(t.Context(), "workspace", dir, "chat", ACPWorkspaceChats{})
 	require.NoError(t, err)
 	// Pages are followed past an empty first page; newest first, undated last.
 	assert.Equal([]string{"newer-session", "fixture-session", "undated-session"}, listedSessionIDs(sessions))
@@ -56,7 +56,7 @@ func TestACPResumesAListedSessionWithItsHistory(t *testing.T) {
 	assert.Equal(time.Date(2026, 11, 21, 9, 30, 0, 250_000_000, time.UTC), sessions[0].UpdatedAt)
 	assert.True(sessions[2].UpdatedAt.IsZero())
 
-	info, err := manager.ResumeACPSession(t.Context(), "workspace", dir, "chat", "fixture-session", nil, nil)
+	info, err := manager.ResumeACPSession(t.Context(), "workspace", dir, "chat", "fixture-session", ACPWorkspaceChats{}, nil)
 	require.NoError(t, err)
 	agent, err := manager.ACP("workspace", info.Key)
 	require.NoError(t, err)
@@ -75,10 +75,10 @@ func TestACPResumesAListedSessionWithItsHistory(t *testing.T) {
 	assert.False(saved.Import)
 	assert.Len(saved.State.Messages, 2)
 
-	sessions, err = manager.ListACPSessions(t.Context(), "workspace", dir, "chat", nil)
+	sessions, err = manager.ListACPSessions(t.Context(), "workspace", dir, "chat", ACPWorkspaceChats{})
 	require.NoError(t, err)
 	assert.Equal([]string{"newer-session", "undated-session"}, listedSessionIDs(sessions))
-	_, err = manager.ResumeACPSession(t.Context(), "workspace", dir, "chat", "fixture-session", nil, nil)
+	_, err = manager.ResumeACPSession(t.Context(), "workspace", dir, "chat", "fixture-session", ACPWorkspaceChats{}, nil)
 	require.ErrorIs(t, err, ErrACPSessionInUse)
 }
 
@@ -91,7 +91,7 @@ func TestACPSessionIsHeldOnlyByChatsTheWorkspaceHas(t *testing.T) {
 	manager, dir := newACPSessionsTestManager(t)
 	assert := assert.New(t)
 
-	info, err := manager.ResumeACPSession(t.Context(), "workspace", dir, "chat", "fixture-session", nil, nil)
+	info, err := manager.ResumeACPSession(t.Context(), "workspace", dir, "chat", "fixture-session", ACPWorkspaceChats{}, nil)
 	require.NoError(t, err)
 	agent, err := manager.ACP("workspace", info.Key)
 	require.NoError(t, err)
@@ -99,16 +99,16 @@ func TestACPSessionIsHeldOnlyByChatsTheWorkspaceHas(t *testing.T) {
 	require.Eventually(t, func() bool { return len(manager.ListSessions("workspace")) == 0 }, 10*time.Second, 10*time.Millisecond)
 	assert.Equal("fixture-session", savedACPSession(t, manager, info.Key).SessionID, "the exited chat's record remains")
 
-	sessions, err := manager.ListACPSessions(t.Context(), "workspace", dir, "chat", []string{info.Key})
+	sessions, err := manager.ListACPSessions(t.Context(), "workspace", dir, "chat", ACPWorkspaceChats{Keys: []string{info.Key}})
 	require.NoError(t, err)
 	assert.NotContains(listedSessionIDs(sessions), "fixture-session")
-	_, err = manager.ResumeACPSession(t.Context(), "workspace", dir, "chat", "fixture-session", []string{info.Key}, nil)
+	_, err = manager.ResumeACPSession(t.Context(), "workspace", dir, "chat", "fixture-session", ACPWorkspaceChats{Keys: []string{info.Key}}, nil)
 	require.ErrorIs(t, err, ErrACPSessionInUse)
 
-	sessions, err = manager.ListACPSessions(t.Context(), "workspace", dir, "chat", nil)
+	sessions, err = manager.ListACPSessions(t.Context(), "workspace", dir, "chat", ACPWorkspaceChats{})
 	require.NoError(t, err)
 	assert.Contains(listedSessionIDs(sessions), "fixture-session")
-	_, err = manager.ResumeACPSession(t.Context(), "workspace", dir, "chat", "fixture-session", nil, nil)
+	_, err = manager.ResumeACPSession(t.Context(), "workspace", dir, "chat", "fixture-session", ACPWorkspaceChats{}, nil)
 	require.NoError(t, err)
 }
 
@@ -119,12 +119,12 @@ func TestACPResumeOfAMissingSessionFails(t *testing.T) {
 	t.Setenv("KENN_FORGE_ACP_LOAD_NOT_FOUND", "1")
 	manager, dir := newACPSessionsTestManager(t)
 
-	_, err := manager.ResumeACPSession(t.Context(), "workspace", dir, "chat", "fixture-session", nil, nil)
+	_, err := manager.ResumeACPSession(t.Context(), "workspace", dir, "chat", "fixture-session", ACPWorkspaceChats{}, nil)
 	require.Error(t, err)
 	assert.Equal(t, "session/load\n", acpSessionLog(t, dir))
 	assert.Empty(t, manager.ListSessions("workspace"))
 
-	sessions, err := manager.ListACPSessions(t.Context(), "workspace", dir, "chat", nil)
+	sessions, err := manager.ListACPSessions(t.Context(), "workspace", dir, "chat", ACPWorkspaceChats{})
 	require.NoError(t, err)
 	assert.Contains(t, listedSessionIDs(sessions), "fixture-session")
 }
@@ -142,7 +142,7 @@ func TestACPListSessionsNeedsAnAgentThatListsAndLoads(t *testing.T) {
 				t.Setenv(key, value)
 			}
 			manager, dir := newACPSessionsTestManager(t)
-			_, err := manager.ListACPSessions(t.Context(), "workspace", dir, "chat", nil)
+			_, err := manager.ListACPSessions(t.Context(), "workspace", dir, "chat", ACPWorkspaceChats{})
 			require.ErrorIs(t, err, ErrACPCannotListSessions)
 		})
 	}
@@ -150,6 +150,21 @@ func TestACPListSessionsNeedsAnAgentThatListsAndLoads(t *testing.T) {
 
 func TestACPResumeNeedsAnACPTarget(t *testing.T) {
 	manager := NewManager(Options{Targets: []LaunchTarget{{Key: "codex", Label: "Codex", Kind: LaunchTargetAgent, Command: []string{"codex"}, Available: true}}})
-	_, err := manager.ResumeACPSession(t.Context(), "workspace", t.TempDir(), "codex", "fixture-session", nil, nil)
+	_, err := manager.ResumeACPSession(t.Context(), "workspace", t.TempDir(), "codex", "fixture-session", ACPWorkspaceChats{}, nil)
 	require.ErrorContains(t, err, "is not an ACP agent")
+}
+
+// A chat that follows an agent running outside Forge keeps no saved record of
+// its session until Forge takes the agent over, yet it holds the session.
+func TestACPSessionAMirroredChatFollowsIsHeld(t *testing.T) {
+	t.Setenv("KENN_FORGE_ACP_LIST", "1")
+	manager, dir := newACPSessionsTestManager(t)
+	chats := ACPWorkspaceChats{Keys: []string{"mirrored-chat"}, Mirrored: []string{"fixture-session"}}
+
+	sessions, err := manager.ListACPSessions(t.Context(), "workspace", dir, "chat", chats)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"newer-session", "undated-session"}, listedSessionIDs(sessions))
+	_, err = manager.ResumeACPSession(t.Context(), "workspace", dir, "chat", "fixture-session", chats, nil)
+	require.ErrorIs(t, err, ErrACPSessionInUse)
+	assert.Empty(t, manager.ListSessions("workspace"))
 }

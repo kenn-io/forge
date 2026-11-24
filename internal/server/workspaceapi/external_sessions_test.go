@@ -534,6 +534,24 @@ func TestExitedExternalAgentNeedsAChatAgentToContinue(t *testing.T) {
 	assert.ErrorContains(chat.Command(localruntime.ACPCommand{Type: "prompt", Text: "continue"}), `add a chat agent in Settings whose key starts with "claude"`)
 }
 
+// An adopted chat holds its session before Forge takes the agent over, so a
+// new chat in the workspace cannot resume the same session beside it.
+func TestAdoptedChatHoldsItsSessionAgainstResume(t *testing.T) {
+	f := newExternalSessionFixture(t)
+	f.handler.runtime.UpdateTargets([]localruntime.LaunchTarget{{
+		Key: "claude-chat", Label: "Claude chat", Kind: localruntime.LaunchTargetACP, Command: []string{"claude-agent-acp"}, Available: true,
+	}})
+	f.openPull(t, "feature/login", f.head)
+	f.hook(t, "claude", "session-1", "UserPromptSubmit", runningAgentHeaders())
+	f.pass(t)
+	ws, _ := f.adopted(t)
+
+	chats, err := f.handler.workspaceChats(t.Context(), ws.ID)
+	require.NoError(t, err)
+	_, err = f.handler.runtime.ResumeACPSession(t.Context(), ws.ID, ws.WorktreePath, "claude-chat", "session-1", chats, nil)
+	require.ErrorIs(t, err, localruntime.ErrACPSessionInUse)
+}
+
 // This runtime has no way to run an owner, so the start stops there: past the
 // point where it needs the chat agent's command, with the session still unclaimed.
 func TestExitedExternalAgentContinuesInTheChatAgent(t *testing.T) {

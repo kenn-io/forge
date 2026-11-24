@@ -75,9 +75,16 @@ for (const width of [960, 390]) {
       });
       await expect.element(page.getByText(card.recommendation.reason, { exact: true })).toBeVisible();
       await document.fonts.ready;
+      const details = target.querySelector("details")!;
+      expect(details.open).toBe(false);
+      expect(target.querySelector(".context-recommendation")!.closest("details")).toBeNull();
       expect(target.scrollWidth).toBeLessThanOrEqual(width);
+      expect([...target.querySelectorAll("button")].map((b) => b.textContent?.trim())).toEqual(["Refresh", "Reassess"]);
       await page.getByText("Details:", { exact: false }).click();
+      expect(details.open).toBe(true);
       await expect.element(page.getByText(card.recommendation.reason, { exact: true })).toBeVisible();
+      expect(target.querySelectorAll(".context-recommendation")).toHaveLength(1);
+      if (name === "stale") await expect.element(page.getByText("Results are for an older commit")).toBeVisible();
     });
   }
 }

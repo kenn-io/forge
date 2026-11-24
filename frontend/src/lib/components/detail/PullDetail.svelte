@@ -1694,16 +1694,29 @@
     workflowDialogWorkflowId = null;
   }
 
-  function loadWorkflowCatalog(ref: WorkflowRepositoryRef | null): Attachment {
+  const workflowCatalogKey = $derived(
+    workflowCatalogDemandEnabled && workflowRef
+      ? [
+          workflowRef.provider,
+          workflowRef.platformHost ?? "",
+          workflowRef.owner,
+          workflowRef.name,
+          repositoryKeyString(workflowRef.repositoryKey),
+          workflowRef.repoPath ?? "",
+        ].join("\0")
+      : null,
+  );
+  $effect(() => {
+    const key = workflowCatalogKey;
+    if (!key) return;
+    const ref = untrack(() => workflowRef);
+    if (!ref) return;
+    untrack(() => workflowActions.loadCatalog(ref));
     return () => {
-      if (!ref) return;
-      untrack(() => workflowActions.loadCatalog(ref));
-      return () => {
-        workflowDialogWorkflowId = null;
-        closeActionMenu();
-      };
+      workflowDialogWorkflowId = null;
+      closeActionMenu();
     };
-  }
+  });
 
   function closeStateMenu(): void {
     stateMenuOpen = false;
@@ -2481,7 +2494,7 @@
       detail.repo?.owner ?? owner,
       detail.repo?.name ?? name,
     )}
-    <div class="pull-detail-wrap" {@attach loadWorkflowCatalog(workflowCatalogDemandEnabled ? workflowRef : null)}>
+    <div class="pull-detail-wrap">
       {#if detailLoadError}
         <div class="detail-load-error" data-testid="detail-load-error">
           {detailMismatch ? "Couldn't load this pull request:" : "Couldn't refresh this pull request. Showing previously loaded content:"}

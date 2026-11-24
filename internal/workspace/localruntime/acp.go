@@ -596,7 +596,8 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 			// be loaded. It holds no agent context, so a new session loses
 			// nothing. A session chosen to resume, or a mirrored agent's that
 			// was prompted, must not quietly become a new one.
-			if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok && requestErr.Code == acpResourceNotFound && !saved.State.prompted() && !saved.AgentPrompted {
+			if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok && requestErr.Code == acpResourceNotFound &&
+				!saved.State.prompted() && !saved.AgentPrompted && (!imported || saved.Mirrored) {
 				load, err = false, nil
 				// The new session's updates may arrive before its ID does.
 				a.mu.Lock()

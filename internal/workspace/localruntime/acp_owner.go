@@ -62,6 +62,10 @@ type acpSavedSession struct {
 	// started, so its load builds the transcript from the agent's history.
 	// The chat's first save drops it. See Manager.ResumeACPSession.
 	Import bool `json:",omitempty"`
+	// Mirrored marks a record a chat wrote when it took over an agent that ran
+	// outside Forge. Unlike another import, a load of it that finds nothing
+	// starts a new session when the agent was never prompted.
+	Mirrored bool `json:",omitempty"`
 	// AgentPrompted records that the agent received a prompt the saved state
 	// may not show, as for a mirrored agent whose transcript Forge did not read.
 	// A load that finds no session then fails, instead of starting a new one.

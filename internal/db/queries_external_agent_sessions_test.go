@@ -38,16 +38,22 @@ func TestExternalAgentSessionLifecycle(t *testing.T) {
 	assert.True(saved.Prompted, "an event without a prompt does not undo an earlier one")
 
 	// An exit seen for a process the session no longer runs in, as after a
-	// resume reported since the check, leaves the session running.
-	ended, err := database.MarkExternalAgentProcessEnded(ctx, "claude", "s1", 6, "90", time.Now())
-	require.NoError(err)
-	assert.False(ended)
+	// resume reported since the check, leaves the session running. A reused
+	// PID or a matching start time alone is another process.
+	for _, stale := range []struct {
+		pid   int
+		start string
+	}{{7, "90"}, {6, "100"}} {
+		ended, err := database.MarkExternalAgentProcessEnded(ctx, "claude", "s1", stale.pid, stale.start, time.Now())
+		require.NoError(err)
+		assert.False(ended, "process %d started at %s", stale.pid, stale.start)
+	}
 	running, err := database.ListRunningExternalAgentSessions(ctx)
 	require.NoError(err)
 	assert.Len(running, 1)
 
 	// An ended session stops being listed; a report means it runs again.
-	ended, err = database.MarkExternalAgentProcessEnded(ctx, "claude", "s1", 7, "100", time.Now())
+	ended, err := database.MarkExternalAgentProcessEnded(ctx, "claude", "s1", 7, "100", time.Now())
 	require.NoError(err)
 	assert.True(ended)
 	running, err = database.ListRunningExternalAgentSessions(ctx)

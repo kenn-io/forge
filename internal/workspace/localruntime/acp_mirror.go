@@ -123,8 +123,8 @@ func (m *Manager) saveMirroredSession(dormant *DormantACP, mirror ACPMirror) err
 	// shows the history the agent replays on load instead.
 	saved := acpSavedSession{
 		SessionID: mirror.SessionID, LoadSession: true, Import: len(dormant.saved.state.Messages) == 0,
-		AgentPrompted: prompted,
-		State:         ACPState{Messages: slices.Clone(dormant.saved.state.Messages)},
+		Mirrored: true, AgentPrompted: prompted,
+		State: ACPState{Messages: slices.Clone(dormant.saved.state.Messages)},
 	}
 	dormant.saved.mu.Unlock()
 	data, err := json.Marshal(saved, json.Deterministic(true))

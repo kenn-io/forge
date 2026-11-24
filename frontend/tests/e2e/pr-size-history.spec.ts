@@ -87,7 +87,9 @@ test("shows total PR size by observed revision in the header and worklist", asyn
   await page.setViewportSize({ width: 1440, height: 900 });
   await setup(page);
   await page.goto("/worklists/5");
-  const charts = page.getByRole("img", { name: /^PR size: 132 lines · \+32 since the earliest revision shown/ });
+  const charts = page.getByRole("img", {
+    name: /^PR size: 132 changed lines · up 32 since the earliest revision shown/,
+  });
   await expect(charts).toHaveCount(2);
   const headerChart = page.locator(".chips-row").getByRole("img", { name: /^PR size:/ });
   const diffStats = page.locator(".chips-row").getByText("+120", { exact: false }).first();
@@ -102,7 +104,7 @@ test("shows total PR size by observed revision in the header and worklist", asyn
   for (const chart of await charts.all()) {
     await expect(chart.locator("circle")).toHaveCount(history.length);
     await chart.hover();
-    await expect(page.getByRole("tooltip")).toHaveText("+32 lines over 4 revisions");
+    await expect(page.getByRole("tooltip")).toHaveText("Changed lines: 100 → 132 over 4 revisions");
     await page.mouse.move(0, 0);
     await expect(page.getByRole("tooltip")).toHaveCount(0);
   }

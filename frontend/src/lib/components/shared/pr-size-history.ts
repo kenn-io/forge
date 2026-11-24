@@ -1,5 +1,7 @@
 import type { PRDiffSizePoint } from "../../api/generated/models/pRDiffSizePoint.js";
 
+const count = (value: number) => value.toLocaleString("en-US");
+
 /** Returns null below two observations, where there is no trend to draw. */
 export function prSizeSummary(
   history: readonly PRDiffSizePoint[],
@@ -13,10 +15,14 @@ export function prSizeSummary(
   const last = history.at(-1)!;
   const past = last.head_sha !== currentHead || (currentBase !== undefined && last.base_sha !== currentBase);
   const delta = latest - first;
-  const signed = delta < 0 ? `−${Math.abs(delta)}` : `+${delta}`;
+  // Size is additions plus deletions. A signed "+N" would read as N added
+  // lines next to the diff stats, so describe the change in words.
+  let change = "unchanged";
+  if (delta > 0) change = `up ${count(delta)}`;
+  else if (delta < 0) change = `down ${count(-delta)}`;
   const label = past
-    ? `PR size: ${latest} lines · past revision`
-    : `PR size: ${latest} lines · ${signed} since the earliest revision shown`;
+    ? `PR size: ${count(latest)} changed lines · past revision`
+    : `PR size: ${count(latest)} changed lines · ${change} since the earliest revision shown`;
   const max = Math.max(1, ...totals);
   let tone = "neutral";
   if (!past && first !== latest) {
@@ -28,5 +34,6 @@ export function prSizeSummary(
     x: 3 + (index / (totals.length - 1)) * 64,
     y: 21 - (total / max) * 18,
   }));
-  return { label, tooltip: `${signed} lines over ${history.length} revisions`, delta, past, points, tone };
+  const tooltip = `Changed lines: ${count(first)} → ${count(latest)} over ${history.length} revisions`;
+  return { label, tooltip, delta, past, points, tone };
 }

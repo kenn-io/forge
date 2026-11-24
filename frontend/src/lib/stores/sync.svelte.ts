@@ -111,8 +111,9 @@ export function createSyncStore(opts: SyncStoreOptions) {
     };
   }
 
-  // The server sends data_changed after repository syncs and full sync completion.
-  // While live updates are connected, those events reload the visible list.
+  // For list reloads that the server's end-of-sync data_changed already
+  // covers: while live updates are connected, that event reloads the visible
+  // list, so reloading here as well would read every list twice per sync.
   function subscribeSyncCompleteWithoutLiveUpdates(fn: () => void): () => void {
     return subscribeSyncComplete(() => {
       if (!liveUpdatesConnected) fn();

@@ -544,7 +544,8 @@ export function makeWorkspaceRuntimeWorkflow(
       const target = runtimeTargetKey(request.target.workspaceId, request.target.hostKey);
       switch (request._tag) {
         case "Launch":
-          return JSON.stringify([target, "launch", request.targetKey, request.region]);
+          // Resuming another conversation is a different launch, not a retry.
+          return JSON.stringify([target, "launch", request.targetKey, request.region, request.acpSessionId ?? null]);
         case "Stop":
         case "Rename":
           return JSON.stringify([target, "session", request.sessionKey]);

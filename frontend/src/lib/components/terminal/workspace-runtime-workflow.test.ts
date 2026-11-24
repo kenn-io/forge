@@ -1258,6 +1258,63 @@ describe("WorkspaceRuntimeWorkflow", () => {
     ),
   );
 
+  it.effect("launches a different conversation while an earlier resume is uncertain", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const firstOutcome = yield* Deferred.make<void>();
+        const resumed = yield* Deferred.make<RuntimeSession>();
+        const conversations: Array<string | undefined> = [];
+        const session: RuntimeSession = {
+          key: "ws-1:chat-2",
+          workspace_id: "ws-1",
+          target_key: "chat",
+          label: "Chat",
+          kind: "acp",
+          status: "running",
+          created_at: "2026-08-05T00:00:00Z",
+          display_region: "workflow",
+        };
+        const port: WorkspaceRuntimePort = {
+          read: () =>
+            Effect.fail(TransientTransportError.make({ operation: "load workspace runtime", cause: "offline" })),
+          launch: (_target, _targetKey, _region, acpSessionId) => {
+            conversations.push(acpSessionId);
+            return acpSessionId === "conversation-a"
+              ? Effect.fail(
+                  TransientTransportError.make({ operation: "launch workspace session", cause: "response lost" }),
+                )
+              : Effect.succeed(session);
+          },
+          rename: unusedPortMethod,
+          stop: unusedPortMethod,
+          refresh: unusedPortMethod,
+          retry: unusedPortMethod,
+          delete: unusedPortMethod,
+        };
+        const workflow = yield* makeWorkspaceRuntimeWorkflow(port);
+        const target = { workspaceId: "ws-1" };
+        yield* workflow.claimPresenter(target, "route", (state) =>
+          Effect.gen(function* () {
+            if (state.kind === "pending") return false;
+            if (state.kind === "succeeded" && state.operation === "Launch") {
+              yield* Deferred.succeed(resumed, state.session);
+            } else {
+              yield* Deferred.succeed(firstOutcome, undefined);
+            }
+            return true;
+          }),
+        );
+
+        yield* workflow.launch(target, "chat", "workflow", { _tag: "Workflow" }, emptyRuntime, "conversation-a");
+        yield* Deferred.await(firstOutcome);
+        yield* workflow.launch(target, "chat", "workflow", { _tag: "Workflow" }, emptyRuntime, "conversation-b");
+
+        assert.strictEqual((yield* Deferred.await(resumed)).key, "ws-1:chat-2");
+        assert.deepStrictEqual(conversations, ["conversation-a", "conversation-b"]);
+      }),
+    ),
+  );
+
   it.effect("recovers rename and stop outcomes from runtime authority", () =>
     Effect.scoped(
       Effect.gen(function* () {

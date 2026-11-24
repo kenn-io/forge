@@ -537,6 +537,9 @@ test.describe("workspace create-and-launch full stack", () => {
       expect(composeLabelCenterDelta).toBeLessThanOrEqual(1);
       const phoneTerminal = phonePage.locator(".mobile-workspace-terminal__viewport .terminal-container");
       const xtermInput = phoneTerminal.locator(".xterm-helper-textarea");
+      // Font loading creates the terminal input asynchronously. A tap before
+      // it exists cannot apply the software-keyboard policy we assert below.
+      await expect(xtermInput).toBeAttached();
       await phoneTerminal.tap({ position: { x: 24, y: 24 } });
       await expect(xtermInput).toHaveAttribute("inputmode", "none");
       await composerToggle.tap();

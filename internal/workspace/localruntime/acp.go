@@ -124,6 +124,9 @@ type ACP struct {
 	// takeoverPending records a turn the agent started after a steer that
 	// no thread status has confirmed yet; the next active status claims it.
 	takeoverPending bool
+	// steerPromptResult is the original prompt's outcome while an in-flight
+	// supervised steer may still continue the same turn.
+	steerPromptResult *acpTurnResult
 	// beforePromptWrite lets tests stop the owner between saving a prompt or
 	// a steer as sending and writing it. It is nil in production.
 	beforePromptWrite func()
@@ -149,6 +152,7 @@ type ACP struct {
 // settles the shared turn once the original prompt has completed.
 type acpExternalTurn struct {
 	promptDone bool
+	result     acpTurnResult
 }
 
 // ErrACPAgentUnavailable rejects a prompt before anything is written to a
@@ -297,8 +301,8 @@ type ACPState struct {
 	Queue       []ACPQueuedPrompt `json:"queue"`
 	QueuePaused bool              `json:"queuePaused"`
 	// SteeringSupported reports the agent's steering extension. Steers holds
-	// people's prompts accepted to steer the running turn, oldest first; the
-	// head is with the agent. Steering is true while Steers is not empty.
+	// prompts accepted to steer the running turn, oldest first. Steering is
+	// true while Steers is not empty.
 	SteeringSupported bool              `json:"steeringSupported"`
 	Steering          bool              `json:"steering"`
 	Steers            []ACPQueuedPrompt `json:"steers"`
@@ -313,9 +317,11 @@ type ACPState struct {
 	// saved before the write, so an owner that stops before recording the
 	// message leaves it behind for the replacement to queue again.
 	Sending *ACPQueuedPrompt `json:"sending,omitempty"`
-	// Withdrawn holds submission IDs a person removed from the queue; they
-	// never run. It lasts for the life of the session.
+	// Withdrawn holds submission IDs removed from the queue or confirmed
+	// undelivered. Uncertain holds steer IDs the agent might have received.
+	// Neither kind can be retried under the same submission ID.
 	Withdrawn []string `json:"withdrawn,omitempty"`
+	Uncertain []string `json:"uncertain,omitempty"`
 	// Turns records the newest prompt turns; see ACPTurnRecord.
 	Turns []ACPTurnRecord `json:"turns,omitempty"`
 	// Supervision names the coordinator supervising this chat; see
@@ -335,6 +341,8 @@ type ACPQueuedPrompt struct {
 	// acp_allowance.go. Both are zero for people's prompts.
 	Generation uint64 `json:"generation,omitempty"`
 	Allowance  int64  `json:"allowanceMillis,omitempty"`
+	// SteerTarget pins a supervised steer to the submission it may join.
+	SteerTarget string `json:"steerTarget,omitempty"`
 	// Refused is why this queued prompt could not be sent. It waits at the
 	// head of the paused queue until a person retries, edits, or removes it.
 	Refused string `json:"refused,omitempty"`
@@ -375,7 +383,8 @@ type ACPCommand struct {
 	Images   []ACPContent `json:"images,omitempty"`
 	ID       string       `json:"id,omitempty"`
 	OptionID string       `json:"optionId,omitempty"`
-	Value    string       `json:"value,omitempty"`
+	// Value is the target submission ID for a supervised steer.
+	Value string `json:"value,omitempty"`
 	// BeforeID and Limit select a history page.
 	BeforeID string `json:"beforeId,omitempty"`
 	Limit    int    `json:"limit,omitempty"`
@@ -806,8 +815,7 @@ func (a *ACP) wait() {
 	a.state.Permissions = nil
 	a.state.Elicitations = nil
 	a.refreshBlockedLocked()
-	// Steers stay with the steering loop: the closed connection fails its
-	// request, and it queues them.
+	// The steering loop settles any steers when its connection closes.
 	a.external = nil
 	a.takeoverPending = false
 	a.terminals = nil

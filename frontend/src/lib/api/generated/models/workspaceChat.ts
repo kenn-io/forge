@@ -48,5 +48,6 @@ export interface WorkspaceChat {
   stopping?: boolean;
   supervision?: ACPSupervision;
   turns?: ACPTurnRecord[];
+  uncertain?: string[];
   withdrawn?: string[];
 }

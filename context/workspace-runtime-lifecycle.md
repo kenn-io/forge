@@ -186,9 +186,13 @@ Processes on the execution host:
 - Once accepted, a prompt runs unless a person removes it from the queue. A failed direct write waits
   at the head of a paused queue; a prompt in flight at owner stop returns to the queue head on restore,
   accepting possible duplicate delivery (`internal/workspace/localruntime/acp_submissions.go::ACP.restoreSubmissionsLocked`).
-- A steer is accepted when saved in the published `steers` list. Steers are handed to the agent in
-  order without a timeout; a steer the agent does not take, and every steer behind it, moves to the
-  queue front (`internal/workspace/localruntime/acp_queue.go::ACP.steer`).
+- A steer is accepted when saved in the published `steers` list. Steers reach the agent in order
+  without a timeout. A person's undelivered steer goes to the front of the queue. An undelivered
+  supervised steer is reported as withdrawn so its supervisor can decide whether to admit it as
+  new work. If the reply is lost or the owner stops with a steer in flight, the supervisor sees
+  an uncertain outcome and the same submission ID cannot run again. If the native prompt ends
+  before a supervised steer responds, the turn record stays open until its outcome is known.
+  A continuation with a native idle signal still belongs to the original submission.
 - Publish streamed text only in finished markdown blocks, paced (400 ms) and flushed before tool
   activity, on quiet, and at turn end; never per token.
 - Keep every ACP content type: a changed `messageId` starts a new message, and non-text blocks
@@ -244,9 +248,11 @@ Processes on the execution host:
   (`internal/workspace/localruntime/acp_queue.go::ACP.submittedLocked`).
 - Supervision limits only the coordinator; people chat, steer, configure, answer, reorder, remove,
   and stop anything without a takeover (`internal/workspace/localruntime/acp_supervision.go`).
-- A coordinator names the generation it holds; it may send or queue, remove only its own queued
-  prompts, and stop or answer only in a turn its prompt started. Steering, reordering, and
-  resuming a paused queue are person-only; an agent without the generation cannot add input.
+- A coordinator names the generation it holds. It may send or queue, remove only its own queued
+  prompts, and stop, answer, or steer only in a turn its prompt started. A supervised steer
+  supplies the turn's original submission ID before Forge accepts or sends it. Only a person
+  can steer without a target, reorder the queue, or resume it. An agent without the generation
+  cannot add input.
 - Claims may come any time; earlier input keeps its sender. A takeover only ends supervision and a
   person's always applies; a coordinator releasing must name its generation. Every claim or
   takeover advances the generation and stales all earlier ones.

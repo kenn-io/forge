@@ -537,7 +537,14 @@ func TestWorkspaceChatCommandsReportConflictsByCode(t *testing.T) {
 	require.Len(t, commands, 1)
 	assert.Equal(localruntime.ACPCommand{Type: "prompt", Mode: "send", Text: "hello", ID: "submission-1", Generation: 1, AllowanceMillis: 60000}, commands[0])
 
-	for _, code := range []string{"supervised", "stale_generation", "stale_request", "not_owned", "person_only", "withdrawn", "sending", "already_answered", "not_pending"} {
+	steer := `{"type":"prompt","mode":"steer","text":"adjust","id":"steer-1","value":"submission-1","generation":1}`
+	status, data = f.do(http.MethodPost, chatKey+"/chat/commands", steer)
+	require.Equal(t, http.StatusOK, status, string(data))
+	_, commands = owner.received()
+	require.Len(t, commands, 2)
+	assert.Equal(localruntime.ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer-1", Value: "submission-1", Generation: 1}, commands[1])
+
+	for _, code := range []string{"supervised", "stale_generation", "stale_request", "not_owned", "person_only", "withdrawn", "uncertain", "sending", "already_answered", "not_pending"} {
 		owner.mu.Lock()
 		owner.code = code
 		owner.mu.Unlock()

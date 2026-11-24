@@ -23,9 +23,8 @@ type acpTurnResult struct {
 	err        error
 }
 
-// submit never rejects input because a turn is running: a busy chat queues
-// the prompt, or steers it into the turn when a person asks and the agent
-// supports it. Coordinators' prompts queue like people's.
+// submit queues prompts to busy chats. A supervised steer may only join its
+// named turn, so a missing target is a refusal instead of a queued prompt.
 func (a *ACP) submit(command ACPCommand) error {
 	text := command.Text
 	if strings.TrimSpace(text) == "" && len(command.Images) == 0 {
@@ -65,6 +64,13 @@ func (a *ACP) submit(command ACPCommand) error {
 		ID: command.ID, Text: text, Images: command.Images, Sender: sender,
 		Generation: command.Generation, Allowance: command.AllowanceMillis,
 	}
+	if command.Mode == "steer" && command.Generation != 0 {
+		prompt.SteerTarget = command.Value
+		if !a.canDeliverSteerLocked(prompt) {
+			a.mu.Unlock()
+			return errACPSubmissionWithdrawn
+		}
+	}
 	running := a.state.Busy || a.state.Steering
 	if !running && len(a.state.Queue) == 0 {
 		// A new message after a stop starts work again; a paused backlog
@@ -97,6 +103,9 @@ func (a *ACP) submittedLocked(id, text string, images []ACPContent) (bool, error
 	}
 	if slices.Contains(a.state.Withdrawn, id) {
 		return true, errACPSubmissionWithdrawn
+	}
+	if slices.Contains(a.state.Uncertain, id) {
+		return true, errACPSubmissionUncertain
 	}
 	for _, message := range a.state.Messages {
 		if message.SubmissionID == id {
@@ -304,9 +313,29 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 		a.mu.Unlock()
 		return
 	}
+	if a.promptIndex != nil && len(a.state.Steers) > 0 && a.state.Steers[0].SteerTarget != "" {
+		// The native prompt ended while the steering request was in flight.
+		// Keep its record and reservation until the steer returns an outcome.
+		a.steerPromptResult = &result
+		a.state.Busy = false
+		a.clearPendingLocked()
+		a.releaseHeldTextLocked()
+		a.publishProgressLocked()
+		a.mu.Unlock()
+		return
+	}
 	a.endTurnLocked(string(result.stopReason), result.err)
 	a.mu.Unlock()
 	a.drain()
+}
+
+// finishSteeredPromptLocked settles the original prompt after a steer that
+// did not start a tracked continuation.
+func (a *ACP) finishSteeredPromptLocked() {
+	if result := a.steerPromptResult; result != nil {
+		a.steerPromptResult = nil
+		a.endTurnLocked(string(result.stopReason), result.err)
+	}
 }
 
 // endTurnLocked settles what a finished turn leaves behind: its record ends,
@@ -360,7 +389,19 @@ func (a *ACP) setErrorLocked(err error) {
 	}
 }
 
-// acceptSteerLocked accepts a person's prompt to steer the running turn.
+// canDeliverSteerLocked checks the target before acceptance and again before
+// dispatch. A later turn under the same supervision is a different target.
+func (a *ACP) canDeliverSteerLocked(prompt ACPQueuedPrompt) bool {
+	if !a.state.Connected || !a.state.Busy || a.state.Stopping || !a.state.SteeringSupported ||
+		!a.heldAtLocked(prompt.Generation) {
+		return false
+	}
+	turn := a.runningTurnRecordLocked()
+	return turn != nil && turn.Generation == prompt.Generation && turn.Sender == prompt.Sender &&
+		turn.SubmissionID == prompt.SteerTarget
+}
+
+// acceptSteerLocked accepts a prompt to steer the running turn.
 // The steer is saved and published at once; the steering loop hands steers
 // to the agent one at a time, in order, and starts with the first.
 func (a *ACP) acceptSteerLocked(prompt ACPQueuedPrompt) {
@@ -377,22 +418,28 @@ func (a *ACP) acceptSteerLocked(prompt ACPQueuedPrompt) {
 }
 
 // steer hands the accepted steers to the agent, oldest first, while the turn
-// runs. It runs while Steers is not empty. An accepted steer always runs: the
-// agent takes it into the turn, or it and every steer behind it move to the
-// front of the queue and run as the next prompts. Nothing times a steer out;
-// the agent answers when it takes the text or its turn ends, and a closed
-// connection fails the request.
+// runs. A person's undelivered steer goes to the front of the queue. A
+// supervised steer can only join its target, so Forge records a miss for the
+// supervisor to handle. A lost reply never proves that the agent missed it.
 func (a *ACP) steer() {
 	defer a.drain()
 	for {
 		a.mu.Lock()
 		if !a.state.Connected || !a.state.Busy {
 			// The turn ended before this steer reached the agent.
-			a.requeueSteersLocked()
+			a.requeueSteersLocked(false)
 			a.mu.Unlock()
 			return
 		}
 		prompt := a.state.Steers[0]
+		if prompt.SteerTarget != "" && !a.canDeliverSteerLocked(prompt) {
+			done := a.withdrawSteerLocked(prompt.ID)
+			a.mu.Unlock()
+			if done {
+				return
+			}
+			continue
+		}
 		// Output that arrives while the agent takes the text follows it.
 		a.releaseHeldTextLocked()
 		a.promptIndex = new(len(a.state.Messages))
@@ -405,6 +452,19 @@ func (a *ACP) steer() {
 		a.mu.Unlock()
 		if a.beforePromptWrite != nil {
 			a.beforePromptWrite()
+		}
+		if prompt.SteerTarget != "" {
+			a.mu.Lock()
+			if !a.canDeliverSteerLocked(prompt) {
+				a.promptIndex = nil
+				done := a.withdrawSteerLocked(prompt.ID)
+				a.mu.Unlock()
+				if done {
+					return
+				}
+				continue
+			}
+			a.mu.Unlock()
 		}
 		raw, err := a.client.CallExtension(context.Background(), acpSteeringMethod, map[string]any{
 			"sessionId": a.sessionID,
@@ -429,10 +489,11 @@ func (a *ACP) steer() {
 		a.promptIndex = nil
 		if err != nil || (result.Outcome != "injected" && result.Outcome != "startedNewTurn") {
 			if err != nil || result.Outcome != "promptRequired" {
-				slog.Warn("ACP agent did not take a steer; it runs as the next prompt",
+				slog.Warn("ACP agent did not confirm a steer",
 					"submission_id", prompt.ID, "outcome", result.Outcome, "error", err)
 			}
-			a.requeueSteersLocked()
+			a.requeueSteersLocked(err != nil || result.Outcome != "promptRequired")
+			a.finishSteeredPromptLocked()
 			a.mu.Unlock()
 			a.turnMu.Unlock()
 			return
@@ -440,7 +501,14 @@ func (a *ACP) steer() {
 		a.state.Steers = a.state.Steers[1:]
 		a.state.Steering = len(a.state.Steers) > 0
 		a.insertMessageLocked(index, promptMessage(prompt))
+		var cancelReplacement bool
 		if result.Outcome == "startedNewTurn" {
+			original := acpTurnResult{stopReason: acpsdk.StopReasonEndTurn}
+			if a.steerPromptResult != nil {
+				original = *a.steerPromptResult
+			}
+			cancelReplacement = prompt.SteerTarget != "" &&
+				(a.state.Stopping || original.err != nil || original.stopReason != acpsdk.StopReasonEndTurn)
 			// The agent owns this turn; it ends when the thread goes idle,
 			// whether or not the original prompt has completed yet. Until a
 			// thread status confirms it, the turn only waits for one: an agent
@@ -452,19 +520,33 @@ func (a *ACP) steer() {
 				} else {
 					a.beginExternalTurnLocked(prompt, index)
 				}
+				if prompt.SteerTarget != "" {
+					a.steerPromptResult = nil
+					a.external.result = original
+				}
 				a.reconcileExternalTurnLocked(a.threadStatus)
 			} else if !a.takeoverPending {
 				a.takeoverPending = true
 				a.state.Messages[index].Turn = &ACPTurn{}
 				a.publishMessageLocked(index)
 			}
-			if a.state.Stopping {
+			if a.state.Stopping && prompt.SteerTarget == "" {
 				// A stop requested during the steer applies to the new turn too.
 				go func() {
 					_ = a.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: acpsdk.SessionId(a.sessionID)})
 				}()
 			}
 		}
+		if cancelReplacement {
+			// Keep turnMu through the cancel so it cannot reach a later
+			// prompt. The original turn still owns the continuation.
+			a.mu.Unlock()
+			if err := a.sendCancel(); err != nil {
+				slog.Warn("ACP could not cancel a replaced turn", "submission_id", prompt.ID, "error", err)
+			}
+			a.mu.Lock()
+		}
+		a.finishSteeredPromptLocked()
 		a.saveTakenEffectLocked("steering")
 		a.changedLocked()
 		done := !a.state.Steering
@@ -476,12 +558,28 @@ func (a *ACP) steer() {
 	}
 }
 
-// requeueSteersLocked moves every steer the agent has not taken to the front
-// of the queue, in order, so each runs as a next prompt. Nothing is being
-// sent from the queue while a steer is pending. A queue left behind by an
-// exited agent waits for a person, as on any exit.
-func (a *ACP) requeueSteersLocked() {
-	a.state.Queue = slices.Insert(a.state.Queue, 0, a.state.Steers...)
+// withdrawSteerLocked removes the head before it reaches the agent. Later
+// steers still get to check their own targets.
+func (a *ACP) withdrawSteerLocked(id string) bool {
+	a.state.Withdrawn = append(a.state.Withdrawn, id)
+	a.state.Steers = a.state.Steers[1:]
+	a.state.Steering = len(a.state.Steers) > 0
+	if !a.state.Busy && !a.state.Steering {
+		a.state.Stopping = false
+	}
+	a.finishSteeredPromptLocked()
+	a.saveTakenEffectLocked("withdrawing a steer after its target ended")
+	a.changedLocked()
+	return !a.state.Steering
+}
+
+// requeueSteersLocked puts people's undelivered steers first in the queue.
+// The supervisor learns the outcome of each steer separately.
+func (a *ACP) requeueSteersLocked(headMayHaveRun bool) {
+	queue, withdrawn, uncertain := partitionSteers(a.state.Steers, headMayHaveRun)
+	a.state.Queue = slices.Insert(a.state.Queue, 0, queue...)
+	a.state.Withdrawn = append(a.state.Withdrawn, withdrawn...)
+	a.state.Uncertain = append(a.state.Uncertain, uncertain...)
 	a.state.Steers = nil
 	a.state.Steering = false
 	if !a.state.Busy {
@@ -493,6 +591,22 @@ func (a *ACP) requeueSteersLocked() {
 	}
 	a.saveTakenEffectLocked("queueing steers the agent did not take")
 	a.changedLocked()
+}
+
+// partitionSteers separates people's queued fallback from the supervised
+// results. Only the head could have been sent because steering is serial.
+func partitionSteers(steers []ACPQueuedPrompt, headMayHaveRun bool) (queue []ACPQueuedPrompt, withdrawn, uncertain []string) {
+	for index, prompt := range steers {
+		switch {
+		case prompt.SteerTarget == "":
+			queue = append(queue, prompt)
+		case index == 0 && headMayHaveRun:
+			uncertain = append(uncertain, prompt.ID)
+		default:
+			withdrawn = append(withdrawn, prompt.ID)
+		}
+	}
+	return queue, withdrawn, uncertain
 }
 
 // acpForgeMeta is the _meta key under which Forge describes a prompt to the

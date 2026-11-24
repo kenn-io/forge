@@ -189,6 +189,8 @@ components:
           type: string
         sender:
           $ref: "#/components/schemas/ACPSender"
+        steerTarget:
+          type: string
         text:
           type: string
       required:
@@ -12585,6 +12587,10 @@ components:
         turns:
           items:
             $ref: "#/components/schemas/ACPTurnRecord"
+          type: array
+        uncertain:
+          items:
+            type: string
           type: array
         withdrawn:
           items:

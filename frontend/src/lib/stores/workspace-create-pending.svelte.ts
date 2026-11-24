@@ -342,6 +342,35 @@ export function reconcileWorkspaceCreated(
   created = created.filter((e) => !identityEquals(e.identity, identity));
 }
 
+// A workspace another fleet machine runs for an item, found in the fleet
+// snapshot. The item's detail names only this Forge's workspaces, so this
+// stands in for the detail when it names none. Each lookup replaces it, so a
+// workspace deleted elsewhere drops out with the next one, and a workspace this
+// tab created or reused keeps winning over it.
+type DiscoveredEntry = { identity: WorkspaceItemIdentity; ref: WorkspaceRefLite };
+let discovered = $state.raw<DiscoveredEntry[]>([]);
+
+// Remote workspaces their own machine reported gone. The fleet snapshot can list
+// one for a while after that, and a lookup must not bring it back.
+let goneRemoteWorkspaces = new Set<string>();
+
+function remoteWorkspaceKey(workspaceId: string, hostKey: string): string {
+  return `${hostKey}\u0000${workspaceId}`;
+}
+
+export function remoteWorkspaceGone(workspaceId: string, hostKey: string): boolean {
+  return goneRemoteWorkspaces.has(remoteWorkspaceKey(workspaceId, hostKey));
+}
+
+export function recordDiscoveredWorkspace(identity: WorkspaceItemIdentity, ref: WorkspaceRefLite | null): void {
+  const others = discovered.filter((entry) => !identityEquals(entry.identity, identity));
+  discovered = ref ? [...others, { identity, ref }] : others;
+}
+
+export function discoveredWorkspaceRef(identity: WorkspaceItemIdentity): WorkspaceRefLite | null {
+  return discovered.find((entry) => identityEquals(entry.identity, identity))?.ref ?? null;
+}
+
 // Workspace resolution for detail instances WITHOUT an inline controller
 // (focus/mobile views) — the controller-less mirror of the
 // host store's effectiveRef. The confirmed creation record wins until
@@ -354,6 +383,7 @@ export function resolveControllerlessWorkspaceRef(
   identity: WorkspaceItemIdentity,
   envelopeRef: WorkspaceRefLite | null | undefined,
 ): WorkspaceRefLite | null {
+  envelopeRef ??= discoveredWorkspaceRef(identity);
   const created = createdWorkspaceRef(identity);
   // A same-ID envelope is the server refreshing the workspace this record
   // confirmed — its status is fresher than the confirmation snapshot.
@@ -366,7 +396,11 @@ export function resolveControllerlessWorkspaceRef(
 // Deletions arrive by workspace ID and machine (Workspaces tab, terminal
 // toolbar), possibly with no detail instance mounted for the item at all.
 export function clearCreatedWorkspaceById(workspaceId: string, hostKey?: string): void {
-  const matches = (entry: CreatedEntry) => entry.ref.id === workspaceId && entry.ref.hostKey === hostKey;
+  const matches = (entry: { ref: WorkspaceRefLite }) => entry.ref.id === workspaceId && entry.ref.hostKey === hostKey;
+  if (hostKey !== undefined) {
+    goneRemoteWorkspaces.add(remoteWorkspaceKey(workspaceId, hostKey));
+    if (discovered.some(matches)) discovered = discovered.filter((entry) => !matches(entry));
+  }
   if (!created.some(matches)) return;
   created = created.filter((entry) => !matches(entry));
 }
@@ -374,6 +408,8 @@ export function clearCreatedWorkspaceById(workspaceId: string, hostKey?: string)
 export function resetWorkspaceCreatePendingForTest(): void {
   pending = [];
   created = [];
+  discovered = [];
+  goneRemoteWorkspaces = new Set();
   lifecycleClock = 0;
   deletedIds = new Set();
   pendingWorkspaceDeletions = [];

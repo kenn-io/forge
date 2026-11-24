@@ -51,6 +51,16 @@ afterEach(() => {
   quickActionWorkspaces.clear();
 });
 
+// Create Workspace waits until the page has looked for the item's workspace on
+// other machines.
+async function waitForWorkspaceLookup(): Promise<void> {
+  await waitFor(() =>
+    expect(
+      (screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
+}
+
 let detailRuntime: OwnedAppRuntime | null = null;
 
 afterEach(async () => {
@@ -1814,8 +1824,9 @@ describe("PullDetail approvals", () => {
     expect(checkbox?.dataset.taskIndex).toBe("0");
   });
 
-  it("explains that creating a workspace enables agent sessions", () => {
+  it("explains that creating a workspace enables agent sessions", async () => {
     renderPullDetail(pullDetail(), undefined, undefined, { hideWorkspaceAction: false });
+    await waitForWorkspaceLookup();
 
     const buttons = screen.getAllByRole("button", { name: "Create Workspace" });
     expect(buttons.length).toBeGreaterThan(0);
@@ -4849,6 +4860,18 @@ describe("PullDetail inline workspace handoff", () => {
     expect(apiClient.POST).not.toHaveBeenCalled();
   });
 
+  it("holds Create Workspace on this machine until it has looked for one on other machines", async () => {
+    const snapshot = Promise.withResolvers<{ data: { hosts: never[]; workspaces: never[] } }>();
+    const apiClient = { GET: vi.fn(() => snapshot.promise), POST: vi.fn() };
+    renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false });
+
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    expect(create.getAttribute("title")).toBe("Checking other machines for a workspace.");
+    snapshot.resolve({ data: { hosts: [], workspaces: [] } });
+    await waitFor(() => expect(create.disabled).toBe(false));
+  });
+
   it("lets the surface beside the pull request claim the workspace another fleet member runs", async () => {
     workspaceHost.resetWorkspaceHostForTest();
     onTestFinished(workspaceHost.resetWorkspaceHostForTest);
@@ -5236,6 +5259,7 @@ describe("PullDetail inline workspace handoff", () => {
       POST: vi.fn().mockResolvedValue({ error: { status: 403, title: "Create denied" } }),
     };
     const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false });
+    await waitForWorkspaceLookup();
     settings.setQuickActions([{ label: "Review", agent: "codex", prompt: "Review this change" }]);
     const telemetry = vi.fn();
     await startTestTelemetry(detailRuntime!, (event) => telemetry(event)).ready;
@@ -5294,6 +5318,7 @@ describe("PullDetail inline workspace handoff", () => {
     const { navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
       hideWorkspaceAction: false,
     });
+    await waitForWorkspaceLookup();
 
     await fireEvent.click(
       screen.getAllByRole("button", {
@@ -5336,6 +5361,7 @@ describe("PullDetail inline workspace handoff", () => {
       hideWorkspaceAction: false,
       inlineWorkspace: controller,
     });
+    await waitForWorkspaceLookup();
     settings.setLaunchTargets([{ key: "chat", label: "Chat agent", kind: "acp", available: true }]);
     startTestTelemetry(detailRuntime!, (event) => telemetry(event));
     settings.setQuickActions([rebase]);
@@ -5385,6 +5411,7 @@ describe("PullDetail inline workspace handoff", () => {
       }),
     };
     const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false });
+    await waitForWorkspaceLookup();
     settings.setQuickActions([{ label: "Rebase", agent: "codex", prompt: "rebase this" }]);
 
     await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
@@ -5418,6 +5445,7 @@ describe("PullDetail inline workspace handoff", () => {
       }),
     };
     const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false });
+    await waitForWorkspaceLookup();
     settings.setQuickActions([{ label: "Rebase", agent: "codex", prompt: "rebase this" }]);
 
     await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));

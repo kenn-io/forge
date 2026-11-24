@@ -39,6 +39,16 @@ const launchTargets = [
 // that pending identity into later tests.
 afterEach(resetWorkspaceCreatePendingForTest);
 
+// Create Workspace waits until the page has looked for the item's workspace on
+// other machines.
+async function waitForWorkspaceLookup(): Promise<void> {
+  await waitFor(() =>
+    expect(
+      (screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
+}
+
 const clipboardMockState = vi.hoisted(() => ({
   resolvers: [] as Array<(ok: boolean) => void>,
 }));
@@ -519,8 +529,9 @@ describe("IssueDetail activity view", () => {
     expect(issuesStore.getIssueDetail()?.issue.Title).toBe("Fresh issue detail");
   });
 
-  it("explains that creating a workspace enables agent sessions", () => {
+  it("explains that creating a workspace enables agent sessions", async () => {
     renderIssueDetail(issueDetail());
+    await waitForWorkspaceLookup();
 
     const button = screen.getByRole("button", { name: "Create Workspace" });
     expect(button.getAttribute("aria-describedby")).toBe("issue-create-workspace-description");
@@ -950,6 +961,7 @@ describe("IssueDetail inline workspace handoff", () => {
         }),
     };
     renderIssueDetail(issueDetail(), undefined, {}, apiClient);
+    await waitForWorkspaceLookup();
     await startTestTelemetry(issueRuntime!, (event) => telemetry(event)).ready;
 
     if (launch) {
@@ -978,6 +990,7 @@ describe("IssueDetail inline workspace handoff", () => {
       POST: vi.fn().mockResolvedValueOnce({ error: conflict }).mockResolvedValueOnce({ error: conflict }),
     };
     renderIssueDetail(issueDetail(), undefined, {}, apiClient);
+    await waitForWorkspaceLookup();
     await startTestTelemetry(issueRuntime!, (event) => telemetry(event)).ready;
 
     if (launch) {
@@ -1096,6 +1109,7 @@ describe("IssueDetail inline workspace handoff", () => {
       { quickActions: [{ label: "Rebase", agent: "codex", prompt: "Rebase this change" }] },
       apiClient,
     );
+    await waitForWorkspaceLookup();
     const telemetry = vi.fn();
     await startTestTelemetry(issueRuntime!, (event) => telemetry(event)).ready;
     if (intent === "agent") {
@@ -1135,6 +1149,7 @@ describe("IssueDetail inline workspace handoff", () => {
     const controller = createTestController("split");
     const { apiClient, resolvePost } = deferredWorkspaceApiClient();
     renderIssueDetail(issueDetail(), undefined, { inlineWorkspace: controller }, apiClient);
+    await waitForWorkspaceLookup();
 
     await fireEvent.click(
       screen.getByRole("button", {
@@ -1173,6 +1188,7 @@ describe("IssueDetail inline workspace handoff", () => {
       }),
     };
     renderIssueDetail(issueDetail(), undefined, { inlineWorkspace: controller, quickActions: [triage] }, apiClient);
+    await waitForWorkspaceLookup();
     startTestTelemetry(issueRuntime!, (event) => telemetry(event));
 
     await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
@@ -1207,6 +1223,7 @@ describe("IssueDetail inline workspace handoff", () => {
         .mockResolvedValueOnce({ data: { id: "ws-existing", status: "ready" } }),
     };
     renderIssueDetail(issueDetail(), undefined, { inlineWorkspace: controller }, apiClient);
+    await waitForWorkspaceLookup();
 
     await fireEvent.click(
       screen.getByRole("button", {

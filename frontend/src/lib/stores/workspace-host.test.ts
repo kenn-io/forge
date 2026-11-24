@@ -14,6 +14,7 @@ import {
 import {
   createdWorkspaceRef,
   markWorkspaceIdDeleted,
+  recordDiscoveredWorkspace,
   nextWorkspaceLifecycleTick,
   recordWorkspaceCreated,
   resetWorkspaceCreatePendingForTest,
@@ -185,6 +186,33 @@ describe("workspace host store", () => {
     expect(desiredSlot()).toBe("prs");
     expect(desiredKey()).toEqual({ workspaceId: "ws-r", hostKey: "devbox:compute-a" });
     expect(prs.workspacePaneLabel()).toBe("Workspace on compute-a (devbox)");
+  });
+
+  it("keeps the remote workspace this tab created over one found on another machine", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.recordCreated(identityA, { id: "ws-b", status: "ready", hostKey: "b".repeat(32) });
+    recordDiscoveredWorkspace(identityA, { id: "ws-c", status: "ready", hostKey: "c".repeat(32) });
+    expect(prs.effectiveWorkspaceRef(identityA, null)?.id).toBe("ws-b");
+  });
+
+  it("uses a workspace found on another machine only when this Forge has none", () => {
+    const prs = getInlineWorkspaceController("prs");
+    recordDiscoveredWorkspace(identityA, { id: "ws-c", status: "ready", hostKey: "c".repeat(32) });
+    expect(prs.effectiveWorkspaceRef(identityA, null)?.id).toBe("ws-c");
+    expect(prs.effectiveWorkspaceRef(identityA, refA)?.id).toBe("ws-a");
+  });
+
+  it("stops showing a found workspace once its machine reports it gone", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const found = { id: "ws-c", status: "ready", hostKey: "c".repeat(32) };
+    recordDiscoveredWorkspace(identityA, found);
+    prs.claim(identityA, prs.effectiveWorkspaceRef(identityA, null)!);
+    notifyWorkspaceDeleted("ws-c", found.hostKey);
+    // The fleet snapshot can still list it for a while.
+    recordDiscoveredWorkspace(identityA, found);
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
+    recordDiscoveredWorkspace(identityA, { ...found, id: "ws-d" });
+    expect(prs.effectiveWorkspaceRef(identityA, null)?.id).toBe("ws-d");
   });
 
   it("names a fleet member without a known name as another machine, not by its node ID", () => {

@@ -16,6 +16,7 @@ import { canonicalProvider, resolvedPlatformHost } from "../api/provider-routes.
 import {
   clearCreatedWorkspaceById,
   createdWorkspaceRef,
+  discoveredWorkspaceRef,
   isWorkspaceIdDeleted,
   markWorkspaceIdDeleted,
   nextWorkspaceLifecycleTick,
@@ -376,6 +377,7 @@ function effectiveRef(
   identity: WorkspaceItemIdentity,
   envelopeRef: WorkspaceRefLite | null | undefined,
 ): WorkspaceRefLite | null {
+  envelopeRef ??= discoveredWorkspaceRef(identity);
   const override = overrides[identityKey(identity)];
   if (isTombstone(override)) {
     // An envelope survives the masks only when it carries neither this

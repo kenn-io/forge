@@ -1553,18 +1553,13 @@
       number: detail.merge_request.Number,
     };
   });
-  const fleetWorkspace = createFleetItemWorkspace(runtime, () => fleetWorkspaceItem, () => detailStore.getDetailEnvelopeTick());
-  const envelopeWorkspace = $derived(detailStore.getDetail()?.workspace ?? fleetWorkspace.ref(fleetWorkspaceItem));
-
-  // The surface beside the item claims its pane from the controller, which knows
-  // only this Forge's workspaces and the ones recorded on it. Recording the remote
-  // one lets the surface claim it, so Focus Terminal has a pane to open.
-  $effect(() => {
-    const ref = fleetWorkspace.ref(fleetWorkspaceItem);
-    if (!ref || !inlineWorkspace) return;
-    const controller = inlineWorkspace;
-    untrack(() => controller.recordCreated($state.snapshot(itemIdentity), ref));
-  });
+  const fleetWorkspace = createFleetItemWorkspace(
+    runtime,
+    () => fleetWorkspaceItem,
+    () => itemIdentity,
+    () => detailStore.getDetailEnvelopeTick(),
+  );
+  const envelopeWorkspace = $derived(detailStore.getDetail()?.workspace ?? null);
   const workspace = $derived(
     stalePR
       ? null
@@ -1607,6 +1602,11 @@
   const workspaceTarget = createDefaultWorkspaceTarget(runtime, events.subscribeWorkspaceEvents,
     () => settings.getWorkspaceSettings().default_execution_target ?? "",
     () => itemIdentity,
+  );
+  // A create on this machine would add a second workspace beside the one the
+  // lookup may find; a create on another machine reuses that one.
+  const fleetLookupPending = $derived(
+    workspaceTarget.hostKey === undefined && fleetWorkspace.pending(fleetWorkspaceItem),
   );
   // The shared pending store outlives this component and its local flag:
   // route resets and remounts clear wsCreating while the POST is still in
@@ -3331,10 +3331,12 @@
             size="sm"
             launchTargets={settings.getLaunchTargets()}
             busy={wsCreateBlocked}
-            disabled={stalePR || workspaceTarget.reason !== ""}
+            disabled={stalePR || fleetLookupPending || workspaceTarget.reason !== ""}
             disabledReason={stalePR
               ? "Refresh details before creating a workspace."
-              : workspaceTarget.reason || workspaceTarget.hint || createWorkspaceTitle}
+              : fleetLookupPending
+                ? "Checking other machines for a workspace."
+                : workspaceTarget.reason || workspaceTarget.hint || createWorkspaceTitle}
             descriptionId={createWorkspaceDescriptionId}
             onCreate={(targetKey) => createWorkspace(targetKey)}
             quickActions={settings.getQuickActions()}
@@ -3345,7 +3347,7 @@
             <WorkspaceHostAlternatives
               reason={workspaceTarget.reason}
               choices={workspaceTarget.alternatives}
-              disabled={wsCreateBlocked}
+              disabled={wsCreateBlocked || fleetWorkspace.pending(fleetWorkspaceItem)}
               onChoose={(choice) => createWorkspace(undefined, undefined, choice)}
             />
           {/if}

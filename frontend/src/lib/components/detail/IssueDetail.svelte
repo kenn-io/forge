@@ -733,18 +733,18 @@
       number: itemIdentity.number,
     };
   });
-  const fleetWorkspace = createFleetItemWorkspace(runtime, () => fleetWorkspaceItem, () => issues.getIssueDetailEnvelopeTick());
-  const envelopeWorkspace = $derived(issues.getIssueDetail()?.workspace ?? fleetWorkspace.ref(fleetWorkspaceItem));
-
-  // The surface beside the item claims its pane from the controller, which knows
-  // only this Forge's workspaces and the ones recorded on it. Recording the remote
-  // one lets the surface claim it, so Focus Terminal has a pane to open.
-  $effect(() => {
-    const ref = fleetWorkspace.ref(fleetWorkspaceItem);
-    if (!ref || !inlineWorkspace) return;
-    const controller = inlineWorkspace;
-    untrack(() => controller.recordCreated($state.snapshot(itemIdentity), ref));
-  });
+  const fleetWorkspace = createFleetItemWorkspace(
+    runtime,
+    () => fleetWorkspaceItem,
+    () => itemIdentity,
+    () => issues.getIssueDetailEnvelopeTick(),
+  );
+  // A create on this machine would add a second workspace beside the one the
+  // lookup may find; a create on another machine reuses that one.
+  const fleetLookupPending = $derived(
+    workspaceTarget.hostKey === undefined && fleetWorkspace.pending(fleetWorkspaceItem),
+  );
+  const envelopeWorkspace = $derived(issues.getIssueDetail()?.workspace ?? null);
   const workspace = $derived(
     staleIssue
       ? null
@@ -1617,10 +1617,12 @@
             busyLabel="Creating..."
             launchTargets={settings.getLaunchTargets()}
             busy={workspaceCreateBlocked}
-            disabled={staleIssue || workspaceTarget.reason !== ""}
+            disabled={staleIssue || fleetLookupPending || workspaceTarget.reason !== ""}
             disabledReason={staleIssue
               ? "Refresh details before creating a workspace."
-              : workspaceTarget.reason || workspaceTarget.hint || createWorkspaceTitle}
+              : fleetLookupPending
+                ? "Checking other machines for a workspace."
+                : workspaceTarget.reason || workspaceTarget.hint || createWorkspaceTitle}
             descriptionId={createWorkspaceDescriptionId}
             onCreate={(targetKey) => void createWorkspace(
               targetKey === undefined ? {} : { launchTargetKey: targetKey },
@@ -1633,7 +1635,7 @@
             <WorkspaceHostAlternatives
               reason={workspaceTarget.reason}
               choices={workspaceTarget.alternatives}
-              disabled={workspaceCreateBlocked}
+              disabled={workspaceCreateBlocked || fleetWorkspace.pending(fleetWorkspaceItem)}
               onChoose={(choice) => void createWorkspace({ hostChoice: choice })}
             />
           {/if}

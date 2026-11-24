@@ -121,6 +121,7 @@
   import { createDefaultWorkspaceTarget, type WorkspaceHostChoice } from "../../stores/workspace-target.svelte.js";
   import { createItemWorkspace, type ItemWorkspaceRequest } from "../../api/item-workspace.js";
   import { runLinkedRemoteItemQuickAction } from "../../stores/bulk-quick-action.js";
+  import { createFleetItemWorkspace, type FleetItemWorkspaceItem } from "../../stores/fleet-item-workspace.svelte.js";
   import WorkspaceHostAlternatives from "../workspace/WorkspaceHostAlternatives.svelte";
   import { ScrollBox } from "@kenn-io/kit-ui";
   import LabelPicker from "./LabelPicker.svelte";
@@ -1534,17 +1535,42 @@
   let labelCatalogExecution: AppExecution<void, ApiProblemError | TransientTransportError> | null = null;
   let labelCatalogGeneration = 0;
 
+  // The detail lists only this Forge's workspaces; a workspace for this pull
+  // request on another machine comes from the fleet snapshot.
+  const fleetWorkspaceItem = $derived.by((): FleetItemWorkspaceItem | null => {
+    const detail = detailStore.getDetail();
+    if (!detail || detail.workspace || !detailMatchesIdentity(detail, itemIdentity)) return null;
+    return {
+      kind: "pull",
+      repo: {
+        provider: itemIdentity.provider,
+        platformHost: detail.platform_host,
+        repositoryKey: repositoryKeyFromWire(detail.repo),
+        owner: detail.repo_owner,
+        name: detail.repo_name,
+        repoPath: itemIdentity.repoPath,
+      },
+      number: detail.merge_request.Number,
+    };
+  });
+  const fleetWorkspace = createFleetItemWorkspace(
+    runtime,
+    () => fleetWorkspaceItem,
+    () => itemIdentity,
+    () => detailStore.getDetailEnvelopeTick(),
+  );
+  const envelopeWorkspace = $derived(detailStore.getDetail()?.workspace ?? null);
   const workspace = $derived(
     stalePR
       ? null
       : inlineWorkspace
-      ? inlineWorkspace.effectiveWorkspaceRef(itemIdentity, detailStore.getDetail()?.workspace ?? null)
+      ? inlineWorkspace.effectiveWorkspaceRef(itemIdentity, envelopeWorkspace)
       : // Without a controller there is no override store: the shared
         // resolver stands in — the confirmed created record wins over a
         // stale cached envelope, and an envelope still carrying a
         // session-deleted workspace ID is masked instead of re-offering
         // "Open Workspace" for a workspace that no longer exists.
-        resolveControllerlessWorkspaceRef(itemIdentity, detailStore.getDetail()?.workspace ?? null),
+        resolveControllerlessWorkspaceRef(itemIdentity, envelopeWorkspace),
   );
   const workspaceDeletionLifecycle = $derived(
     workspace?.status === "deleting" || workspace?.status === "deletion_failed",
@@ -1577,6 +1603,9 @@
     () => settings.getWorkspaceSettings().default_execution_target ?? "",
     () => itemIdentity,
   );
+  // A create before the lookup ends would add a second workspace beside the
+  // one it may find, on whichever machine the create targets.
+  const fleetLookupPending = $derived(fleetWorkspace.pending(fleetWorkspaceItem));
   // The shared pending store outlives this component and its local flag:
   // route resets and remounts clear wsCreating while the POST is still in
   // flight, and a round-trip back to this PR must keep the button disabled
@@ -3300,10 +3329,12 @@
             size="sm"
             launchTargets={settings.getLaunchTargets()}
             busy={wsCreateBlocked}
-            disabled={stalePR || workspaceTarget.reason !== ""}
+            disabled={stalePR || fleetLookupPending || workspaceTarget.reason !== ""}
             disabledReason={stalePR
               ? "Refresh details before creating a workspace."
-              : workspaceTarget.reason || workspaceTarget.hint || createWorkspaceTitle}
+              : fleetLookupPending
+                ? "Checking other machines for a workspace."
+                : workspaceTarget.reason || workspaceTarget.hint || createWorkspaceTitle}
             descriptionId={createWorkspaceDescriptionId}
             onCreate={(targetKey) => createWorkspace(targetKey)}
             quickActions={settings.getQuickActions()}
@@ -3314,7 +3345,7 @@
             <WorkspaceHostAlternatives
               reason={workspaceTarget.reason}
               choices={workspaceTarget.alternatives}
-              disabled={wsCreateBlocked}
+              disabled={wsCreateBlocked || fleetLookupPending}
               onChoose={(choice) => createWorkspace(undefined, undefined, choice)}
             />
           {/if}

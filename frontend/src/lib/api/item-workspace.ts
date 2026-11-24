@@ -1,16 +1,17 @@
 import { Effect } from "effect";
 import { ApiProblemError } from "./effect-errors.js";
-import { loadFleetSnapshot } from "./fleet-snapshot.js";
+import { loadFleetSnapshot, type FleetWorkspaceSummary } from "./fleet-snapshot.js";
 import { executeGeneratedApiRequest, executeOpaqueGeneratedApiRequest } from "./generated-api.js";
 import { ProblemCodes } from "./problems.js";
 import {
+  canonicalProvider,
   providerHostRouteParams,
   providerRouteParams,
   providerUsesHostRoute,
   resolvedPlatformHost,
   type ProviderRouteRef,
 } from "./provider-routes.js";
-import { repositoryKeyAllows, repositoryKeyFromWire, repositoryKeyToWire } from "./repository-key.js";
+import { repositoryKeyFromWire, repositoryKeyToWire, sameRepositoryKey } from "./repository-key.js";
 
 export type ItemWorkspaceRequest = {
   readonly kind: "pull" | "issue";
@@ -112,21 +113,32 @@ export function createItemWorkspace(hostKey: string | undefined, request: ItemWo
   }).pipe(Effect.map(created));
 }
 
-function existingFleetItemWorkspace(hostKey: string, request: ItemWorkspaceRequest, conflict: ApiProblemError) {
+/** True when a fleet snapshot workspace was created for this pull request or issue. */
+export function fleetWorkspaceIsForItem(
+  ws: FleetWorkspaceSummary,
+  request: Pick<ItemWorkspaceRequest, "kind" | "repo" | "number">,
+): boolean {
   const { kind, repo, number } = request;
-  const itemType = kind === "pull" ? "pull_request" : "issue";
-  const platformHost = resolvedPlatformHost(repo.provider, repo.platformHost);
+  if (
+    ws.item_type !== (kind === "pull" ? "pull_request" : "issue") ||
+    ws.item_number !== number ||
+    canonicalProvider(ws.repo.provider) !== canonicalProvider(repo.provider) ||
+    ws.platform_host !== resolvedPlatformHost(repo.provider, repo.platformHost)
+  ) {
+    return false;
+  }
+  // Owner and name change when a repository is renamed or moved, and a machine
+  // can list its workspace under the old ones. The repository ID does not change.
+  const candidateKey = repositoryKeyFromWire(ws.repo);
+  if (repo.repositoryKey && candidateKey) return sameRepositoryKey(repo.repositoryKey, candidateKey);
+  return ws.repo_owner === repo.owner && ws.repo_name === repo.name;
+}
+
+function existingFleetItemWorkspace(hostKey: string, request: ItemWorkspaceRequest, conflict: ApiProblemError) {
   return loadFleetSnapshot().pipe(
     Effect.flatMap((snapshot) => {
       const existing = (snapshot.workspaces ?? []).find(
-        (ws) =>
-          ws.fleet_host_key === hostKey &&
-          ws.item_type === itemType &&
-          ws.item_number === number &&
-          ws.platform_host === platformHost &&
-          ws.repo_owner === repo.owner &&
-          ws.repo_name === repo.name &&
-          repositoryKeyAllows(repo.repositoryKey, repositoryKeyFromWire(ws.repo)),
+        (ws) => ws.fleet_host_key === hostKey && fleetWorkspaceIsForItem(ws, request),
       );
       return existing
         ? Effect.succeed<CreatedItemWorkspace>({ id: existing.id, status: existing.status, reused: true })

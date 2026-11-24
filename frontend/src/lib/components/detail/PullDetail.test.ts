@@ -788,12 +788,22 @@ describe("PullDetail provider workflow actions", () => {
     enableWorkflowActions(refreshedDetail);
     refreshedDetail.merge_request.Title = "Refreshed pull title";
 
+    let activeDetail = firstDetail;
     const baseApi = workflowClient(firstDetail);
     let detailFetches = 0;
     const GET = vi.fn(async (path: string, options?: Parameters<typeof baseApi.GET>[1]) => {
       if (path.includes("/pulls/")) {
         detailFetches += 1;
-        return { data: detailFetches === 1 ? firstDetail : refreshedDetail };
+        return { data: activeDetail };
+      }
+      if (path.endsWith("/workflows")) {
+        return {
+          data: {
+            repo: activeDetail.repo,
+            environments: [],
+            workflows: [releaseWorkflow],
+          },
+        };
       }
       return baseApi.GET(path, options);
     });
@@ -814,6 +824,7 @@ describe("PullDetail provider workflow actions", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Run workflow" }));
     expect(await screen.findByRole("region", { name: "GitHub Actions" })).toBeTruthy();
 
+    activeDetail = refreshedDetail;
     const fetchesBeforeRefresh = detailFetches;
     await detailStore.loadDetail("acme", "widget", 1, {
       provider: "github",

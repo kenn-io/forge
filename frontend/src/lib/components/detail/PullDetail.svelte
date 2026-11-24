@@ -1701,7 +1701,7 @@
           workflowRef.platformHost ?? "",
           workflowRef.owner,
           workflowRef.name,
-          workflowRef.repositoryKey ?? "",
+          repositoryKeyString(workflowRef.repositoryKey),
           workflowRef.repoPath ?? "",
         ].join("\0")
       : null,

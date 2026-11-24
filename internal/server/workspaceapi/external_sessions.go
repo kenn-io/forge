@@ -352,6 +352,14 @@ func (s *Handler) adoptExternalSession(
 			return err
 		}
 	}
+	if created {
+		// Setup runs even when recording the chat fails below, or the new
+		// workspace stays creating; a later pass adds the chat.
+		defer func() {
+			s.PublishWorkspaceCreated(ws.ID, true)
+			s.runWorkspaceSetup(ws)
+		}()
+	}
 	key, err := localruntime.NewSessionKey(ws.ID)
 	if err != nil {
 		return err
@@ -367,6 +375,11 @@ func (s *Handler) adoptExternalSession(
 		return fmt.Errorf("record mirrored chat: %w", err)
 	}
 	if err := s.db.AdoptExternalAgentSession(ctx, session.Agent, session.SessionID, ws.ID, key); err != nil {
+		// The next pass adds a chat for the still unadopted session, so this
+		// one would stay as a chat that follows nothing.
+		if removeErr := s.db.DeleteWorkspaceRuntimeSession(ctx, ws.ID, key); removeErr != nil {
+			return errors.Join(err, fmt.Errorf("remove unadopted chat: %w", removeErr))
+		}
 		return err
 	}
 	// Later sessions in this pass read running, so they see this adoption.
@@ -379,10 +392,7 @@ func (s *Handler) adoptExternalSession(
 			slog.Warn("record mirrored agent activity", "session_key", key, "err", err)
 		}
 	}
-	if created {
-		s.PublishWorkspaceCreated(ws.ID, true)
-		s.runWorkspaceSetup(ws)
-	} else {
+	if !created {
 		s.broadcastWorkspaceStatus(ws.ID)
 	}
 	return nil

@@ -556,6 +556,29 @@ func TestAdoptedChatHoldsItsSessionAgainstResume(t *testing.T) {
 	require.ErrorIs(t, err, localruntime.ErrACPSessionInUse)
 }
 
+// A failed write while adopting into a new workspace still finishes the
+// workspace's setup, and the next pass adds one chat, not a second.
+func TestAdoptionWriteFailureLeavesNoStuckWorkspaceOrSpareChat(t *testing.T) {
+	f := newExternalSessionFixture(t)
+	f.openPull(t, "feature/login", f.head)
+	_, err := f.database.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER refuse_adoption
+		BEFORE UPDATE OF workspace_id ON forge_external_agent_sessions
+		BEGIN SELECT RAISE(FAIL, 'adoption refused'); END`)
+	require.NoError(t, err)
+	f.hook(t, "claude", "session-1", "UserPromptSubmit", runningAgentHeaders())
+	f.pass(t)
+
+	_, rows := f.adopted(t)
+	assert.Empty(t, rows, "a chat whose session was never adopted stayed")
+
+	_, err = f.database.WriteDB().ExecContext(t.Context(), `DROP TRIGGER refuse_adoption`)
+	require.NoError(t, err)
+	f.hook(t, "claude", "session-1", "PostToolUse", runningAgentHeaders())
+	f.pass(t)
+	_, rows = f.adopted(t)
+	assert.Len(t, rows, 1)
+}
+
 // A later agent's session waits while the first agent runs, and the resume
 // picker offers it meanwhile. Once a chat resumed it there, adoption leaves it
 // to that chat, so no second chat drives the same conversation.

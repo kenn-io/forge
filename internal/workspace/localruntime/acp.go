@@ -107,6 +107,9 @@ type ACP struct {
 	// replaying drops the agent's history replay during session/load: the
 	// saved transcript, not the replay, is the conversation of record.
 	replaying bool
+	// importing keeps the replay's conversation while an imported session
+	// loads: it has no saved transcript, so the replay is its history.
+	importing bool
 	// external is a turn the agent started itself after a steering request.
 	// It ends when the agent reports an idle thread after an active one.
 	external     *acpExternalTurn
@@ -492,12 +495,18 @@ func acpInitializeRequest() acpsdk.InitializeRequest {
 	}
 }
 
+// open starts the protocol connection over the agent's pipes and the waiter
+// that notices its exit.
+func (a *ACP) open() {
+	a.client = acpsdk.NewClientSideConnection(a, a, newACPLineLimitReader(a.stdout))
+	go a.wait()
+}
+
 // connect initializes the agent and creates or loads the chat's session.
 // onInitialized, if not nil, learns the agent's name once it answers initialize,
 // before the session starts.
 func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpServer, saved *acpSavedSession, onInitialized func(agentName string)) (*ACP, error) {
-	a.client = acpsdk.NewClientSideConnection(a, a, newACPLineLimitReader(a.stdout))
-	go a.wait()
+	a.open()
 	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
 	defer cancel()
 	step := "initialize"
@@ -528,12 +537,14 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 		// supported resume. A chat that never supported it may still show its
 		// saved transcript in a new session, unless a coordinator holds it.
 		load := saved != nil && initialized.AgentCapabilities.LoadSession
+		imported := saved != nil && saved.Import
 		if saved != nil && (saved.LoadSession || saved.State.Supervision.held()) && !initialized.AgentCapabilities.LoadSession {
 			err = ErrACPCannotReload
 		} else if load {
 			a.mu.Lock()
 			a.sessionID = saved.SessionID
 			a.replaying = true
+			a.importing = imported
 			a.mu.Unlock()
 			var loaded acpsdk.LoadSessionResponse
 			step = "session/load"
@@ -542,16 +553,24 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 			tracing.EndSpan(stepSpan, err)
 			a.mu.Lock()
 			a.replaying = false
+			a.importing = false
 			if err == nil {
 				a.state.ConfigOptions = acpConfigOptions(loaded.ConfigOptions)
-				a.restoreTranscriptLocked(saved.State)
+				// An imported session's history is the replay just received,
+				// all of it shown at once rather than paced like live output.
+				if imported {
+					a.releaseHeldTextLocked()
+				} else {
+					a.restoreTranscriptLocked(saved.State)
+				}
 			}
 			a.mu.Unlock()
 			// An agent may store a session only at its first prompt, as
 			// Claude Code does, so a session that never received one cannot
 			// be loaded. It holds no agent context, so a new session loses
-			// nothing.
-			if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok && requestErr.Code == acpResourceNotFound && !saved.State.prompted() {
+			// nothing. A session chosen to resume must not quietly become a
+			// new one.
+			if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok && requestErr.Code == acpResourceNotFound && !imported && !saved.State.prompted() {
 				load, err = false, nil
 				// The new session's updates may arrive before its ID does.
 				a.mu.Lock()

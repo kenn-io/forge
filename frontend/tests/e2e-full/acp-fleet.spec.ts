@@ -40,6 +40,11 @@ test("hub chat exchanges ACP events with the owning spoke", async ({ page }) => 
     expect(launched.status(), await launched.text()).toBe(200);
     const session = await launched.json();
     expect(session.kind).toBe("acp");
+    // The hub reaches the spoke's agent history through peer authentication;
+    // this agent keeps none, which the spoke itself reports.
+    const history = await hub.get(`${route}/runtime/acp-sessions?target_key=remote-chat`);
+    expect(history.status(), await history.text()).toBe(400);
+    expect((await history.json()).detail).toBe("this agent cannot list its sessions");
     const local = await spoke.get(`/api/v1/workspaces/${workspaceID}/runtime`);
     expect((await local.json()).sessions.some((entry: { key: string }) => entry.key === session.key)).toBe(true);
 

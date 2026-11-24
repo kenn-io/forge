@@ -109,6 +109,8 @@ import type {
   ListFleetProjectBranchesPathParameters,
   ListFleetProjectWorktreesDefaultOne,
   ListFleetProjectWorktreesPathParameters,
+  ListFleetWorkspaceAcpSessionsParams,
+  ListFleetWorkspaceAcpSessionsPathParameters,
   ListFleetWorkspaceTargetsPathParameters,
   ListFleetWorkspacesDefaultOne,
   ListFleetWorkspacesPathParameters,
@@ -182,6 +184,7 @@ import type {
   WatchFleetWorkspaceDiffPathParameters,
   WorklistMarksCleared,
   WorklistPutResult,
+  WorkspaceACPSessionsResponse,
   WorkspaceAgentHandoffResponse,
   WorkspaceLaunchRequest,
   WorkspaceLaunchSpec,
@@ -2137,6 +2140,39 @@ export const getFleetWorkspaceRuntime = async (
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<GetFleetWorkspaceRuntimeDefaultOne> => {
   return orvalFetch<GetFleetWorkspaceRuntimeDefaultOne>(getGetFleetWorkspaceRuntimeUrl({ hostKey, id }, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListFleetWorkspaceAcpSessionsUrl = (
+  { hostKey, id }: ListFleetWorkspaceAcpSessionsPathParameters,
+  params?: ListFleetWorkspaceAcpSessionsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/runtime/acp-sessions?${stringifiedParams}`
+    : `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/runtime/acp-sessions`;
+};
+
+/**
+ * @summary List resumable ACP agent sessions in a workspace on fleet host
+ */
+export const listFleetWorkspaceAcpSessions = async (
+  { hostKey, id }: ListFleetWorkspaceAcpSessionsPathParameters,
+  params?: ListFleetWorkspaceAcpSessionsParams,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorkspaceACPSessionsResponse> => {
+  return orvalFetch<WorkspaceACPSessionsResponse>(getListFleetWorkspaceAcpSessionsUrl({ hostKey, id }, params), {
     ...options,
     method: "GET",
   });

@@ -58,6 +58,10 @@ type acpSavedSession struct {
 	// Base identifies this snapshot; journal records name the snapshot they
 	// extend. See acp_journal.go.
 	Base string `json:",omitempty"`
+	// Import marks a record that holds only an agent session another client
+	// started, so its load builds the transcript from the agent's history.
+	// The chat's first save drops it. See Manager.ResumeACPSession.
+	Import bool `json:",omitempty"`
 }
 
 func (m *Manager) acpSessionPath(key string) string {

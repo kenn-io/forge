@@ -33,6 +33,8 @@ import type {
   LaunchDevboxSessionPathParameters,
   LaunchWorkspaceAgentHandoffInputBody,
   LaunchWorkspaceRuntimeSessionInputBody,
+  ListDevboxAcpSessionsParams,
+  ListDevboxAcpSessionsPathParameters,
   ListDevboxAgentSessionsPathParameters,
   ListDevboxWorkspaceTargetsPathParameters,
   ListDevboxWorkspacesPathParameters,
@@ -64,6 +66,7 @@ import type {
   WorkerCreateRequest,
   WorkerIdentity,
   WorkerWorkspaceTargetRequest,
+  WorkspaceACPSessionsResponse,
   WorkspaceAgentHandoffResponse,
   WorkspaceDiffWatchResponse,
   WorkspaceLaunchSpec,
@@ -599,6 +602,39 @@ export const getDevboxRuntime = async (
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<WorkspaceRuntimeResponse> => {
   return orvalFetch<WorkspaceRuntimeResponse>(getGetDevboxRuntimeUrl({ connectionId, id }, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDevboxAcpSessionsUrl = (
+  { connectionId, id }: ListDevboxAcpSessionsPathParameters,
+  params: ListDevboxAcpSessionsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/devboxes/${encodeURIComponent(String(connectionId))}/workspaces/${encodeURIComponent(String(id))}/runtime/acp-sessions?${stringifiedParams}`
+    : `/devboxes/${encodeURIComponent(String(connectionId))}/workspaces/${encodeURIComponent(String(id))}/runtime/acp-sessions`;
+};
+
+/**
+ * @summary Forward an execution operation to its owning devbox
+ */
+export const listDevboxAcpSessions = async (
+  { connectionId, id }: ListDevboxAcpSessionsPathParameters,
+  params: ListDevboxAcpSessionsParams,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorkspaceACPSessionsResponse> => {
+  return orvalFetch<WorkspaceACPSessionsResponse>(getListDevboxAcpSessionsUrl({ connectionId, id }, params), {
     ...options,
     method: "GET",
   });

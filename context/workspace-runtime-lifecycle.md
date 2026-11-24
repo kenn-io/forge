@@ -148,6 +148,23 @@ Processes on the execution host:
   answers within the attach timeout is unresponsive too, so a chat start never holds the runtime
   lock without end (`internal/workspace/localruntime/acp_owner.go::Manager.attachRunningACPOwner`,
   `Manager.boundedACPAttachment`).
+- A chat can resume an agent session another client started (`session/list` filtered by the
+  worktree, then `session/load`). The launch seeds the chat's saved record with that session and
+  an `Import` mark, so every later reload, park, and post-reboot restore loads the same session;
+  the chat's first save drops the mark. An import keeps the replay as its transcript, minus usage,
+  and fails rather than open a new session when the agent no longer has it
+  (`internal/workspace/localruntime/acp_sessions.go::Manager.importACPLaunchCommand`).
+- One agent session has at most one chat per workspace: listing leaves out sessions the
+  workspace's chats hold, and a launch that would take one is a conflict. Only chats the workspace
+  still has hold one: its stored chats (parked, dormant, supervised, and recovery-pending
+  included), its running chats, and resumed chats still starting. A chat forgotten after its agent
+  exited releases its session even though its saved record remains. The check and the starting
+  mark share one lock; a failed start removes the seed so the session stays offered.
+- Session IDs are compared without the target: two targets over one agent store name the same
+  conversation, which must not open twice.
+- Listing follows cursors to the end: agents such as Codex answer empty pages with a cursor. It
+  starts the agent on the execution host, so a fleet peer needs workspace write scope, as a launch
+  does (`internal/federationauth/authenticator.go::authorizedRoutes`).
 - Supervised chats are the exception: after their agent exits the record is kept as recovery
   pending, reported as exited until restored or stopped, and omitted from fleet inventory. The
   mark is in memory; after a restart a kept chat reloads like any orphaned chat.

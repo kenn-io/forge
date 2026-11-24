@@ -22,6 +22,7 @@ import { isProblem, type ProblemBody } from "../../api/problems.js";
 import { orvalRequest } from "../../api/runtime.js";
 import { type WorkspaceRuntimeState } from "../../api/workspace-runtime.js";
 import type { LaunchTarget, RuntimeSession, WorkspaceRuntime } from "../../api/types.js";
+import type { WorkspaceACPSessionResponse } from "../../api/generated/models/index.js";
 import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { notifyWorkspaceDeleted } from "../../stores/workspace-host.svelte.js";
 import {
@@ -50,7 +51,13 @@ export interface WorkspaceRuntimePort {
     target: WorkspaceRuntimeTarget,
     targetKey: string,
     region: "workflow" | "terminal",
+    acpSessionId?: string,
   ) => Effect.Effect<RuntimeSession, WorkspaceRuntimePortFailure>;
+  /** Sessions an ACP agent keeps for the workspace that a new chat can resume. */
+  readonly listAcpSessions: (
+    target: WorkspaceRuntimeTarget,
+    targetKey: string,
+  ) => Effect.Effect<readonly WorkspaceACPSessionResponse[], WorkspaceRuntimePortFailure>;
   readonly rename: (
     target: WorkspaceRuntimeTarget,
     sessionKey: string,
@@ -150,6 +157,8 @@ interface WorkspaceRuntimeLaunchRequest extends WorkspaceRuntimeMutationRequestB
   readonly region: "workflow" | "terminal";
   readonly placement: WorkspaceRuntimeLaunchPlacement;
   readonly admissionRuntime?: WorkspaceRuntimeState | undefined;
+  /** An ACP agent session the launched chat resumes. */
+  readonly acpSessionId?: string | undefined;
 }
 
 interface WorkspaceRuntimeStopRequest extends WorkspaceRuntimeMutationRequestBase {
@@ -376,7 +385,9 @@ export interface WorkspaceRuntimeWorkflowService {
     // Only pass the fresh read performed for this queued launch's admission,
     // immediately before submission. Presentation snapshots are not authority.
     admissionRuntime?: WorkspaceRuntimeState,
+    acpSessionId?: string,
   ) => Effect.Effect<void>;
+  readonly listAcpSessions: WorkspaceRuntimePort["listAcpSessions"];
   readonly rename: (target: WorkspaceRuntimeTarget, sessionKey: string, label: string) => Effect.Effect<void>;
   readonly stop: (target: WorkspaceRuntimeTarget, sessionKey: string) => Effect.Effect<void>;
   readonly applyPreset: (target: WorkspaceRuntimeTarget, preset: WorkflowPreset) => Effect.Effect<void>;
@@ -533,7 +544,8 @@ export function makeWorkspaceRuntimeWorkflow(
       const target = runtimeTargetKey(request.target.workspaceId, request.target.hostKey);
       switch (request._tag) {
         case "Launch":
-          return JSON.stringify([target, "launch", request.targetKey, request.region]);
+          // Resuming another conversation is a different launch, not a retry.
+          return JSON.stringify([target, "launch", request.targetKey, request.region, request.acpSessionId ?? null]);
         case "Stop":
         case "Rename":
           return JSON.stringify([target, "session", request.sessionKey]);
@@ -1004,7 +1016,7 @@ export function makeWorkspaceRuntimeWorkflow(
                 const baselineKeys = new Set(baseline.sessions.map((session) => session.key));
                 return runRecoverableMutation(
                   request,
-                  port.launch(request.target, request.targetKey, request.region),
+                  port.launch(request.target, request.targetKey, request.region, request.acpSessionId),
                   reconcileLaunch(request, baselineKeys),
                   (session) => ({ kind: "succeeded", operation: "Launch", request, session }),
                 );
@@ -1272,8 +1284,9 @@ export function makeWorkspaceRuntimeWorkflow(
 
     return {
       read,
-      launch: (target, targetKey, region, placement, admissionRuntime) =>
-        submitMutation({ _tag: "Launch", target, targetKey, region, placement, admissionRuntime }),
+      launch: (target, targetKey, region, placement, admissionRuntime, acpSessionId) =>
+        submitMutation({ _tag: "Launch", target, targetKey, region, placement, admissionRuntime, acpSessionId }),
+      listAcpSessions: port.listAcpSessions,
       rename: (target, sessionKey, label) => submitMutation({ _tag: "Rename", target, sessionKey, label }),
       stop: (target, sessionKey) => submitMutation({ _tag: "Stop", target, sessionKey }),
       applyPreset: (target, preset) => submitMutation({ _tag: "ApplyPreset", target, preset }),
@@ -1404,9 +1417,14 @@ export const WorkspaceRuntimePortLive = Effect.gen(function* () {
     target: WorkspaceRuntimeTarget,
     targetKey: string,
     region: "workflow" | "terminal",
+    acpSessionId?: string,
   ) {
     const { workspaceId, hostKey } = target;
-    const body = { target_key: targetKey, display_region: region };
+    const body = {
+      target_key: targetKey,
+      display_region: region,
+      ...(acpSessionId === undefined ? {} : { acp_session_id: acpSessionId }),
+    };
     if (hostKey !== undefined) {
       const data = yield* api.execute<unknown>("launch fleet workspace session", (signal) =>
         hostKey.startsWith("devbox:")
@@ -1420,6 +1438,28 @@ export const WorkspaceRuntimePortLive = Effect.gen(function* () {
     return yield* api.execute("launch workspace session", (signal) =>
       api.client.WorkspacesService.launchWorkspaceRuntimeSession({ id: workspaceId }, body, { signal }),
     );
+  });
+
+  const listAcpSessions = Effect.fn("WorkspaceRuntimePort.listAcpSessions")(function* (
+    target: WorkspaceRuntimeTarget,
+    targetKey: string,
+  ) {
+    const { workspaceId, hostKey } = target;
+    const params = { target_key: targetKey };
+    const response = yield* api.execute("list ACP agent sessions", (signal) =>
+      hostKey === undefined
+        ? api.client.WorkspacesService.listWorkspaceAcpSessions({ id: workspaceId }, params, { signal })
+        : hostKey.startsWith("devbox:")
+          ? api.client.DevboxesService.listDevboxAcpSessions(
+              { connectionId: hostKey.slice(7), id: workspaceId },
+              params,
+              {
+                signal,
+              },
+            )
+          : api.client.FleetService.listFleetWorkspaceAcpSessions({ hostKey, id: workspaceId }, params, { signal }),
+    );
+    return response.sessions;
   });
 
   const rename = Effect.fn("WorkspaceRuntimePort.rename")(function* (
@@ -1607,6 +1647,7 @@ export const WorkspaceRuntimePortLive = Effect.gen(function* () {
   return {
     read,
     launch,
+    listAcpSessions,
     rename,
     stop,
     refresh,

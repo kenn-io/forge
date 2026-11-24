@@ -193,6 +193,10 @@ type Manager struct {
 	agentMCPURL        string
 	agentMCPToken      string
 	acpPreferencesMu   sync.Mutex
+	// acpImportMu holds a resumed session's check and pending mark together;
+	// see importACPLaunchCommand. acpImports, guarded by mu, are the marks.
+	acpImportMu        sync.Mutex
+	acpImports         map[string]pendingACPImport
 	acpPreferencesPath string
 	acpSessionsDir     string
 	parkedDir          string
@@ -405,6 +409,7 @@ func NewManager(options Options) *Manager {
 		startLocks:        make(map[string]*sync.Mutex),
 		stoppingWS:        make(map[string]int),
 		inflightWS:        make(map[string]int),
+		acpImports:        make(map[string]pendingACPImport),
 		inflightCh:        make(map[string]chan struct{}),
 	}
 }
@@ -444,7 +449,7 @@ func (m *Manager) Launch(
 	cwd string,
 	targetKey string,
 ) (SessionInfo, error) {
-	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", "", "", nil)
+	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", "", "", nil, nil)
 }
 
 // LaunchWithInitialMessage uses Claude's native prompt argument so startup
@@ -455,16 +460,16 @@ func (m *Manager) Launch(
 func (m *Manager) LaunchWithInitialMessage(
 	ctx context.Context, workspaceID, cwd, targetKey, message string, acpOptions map[string]string,
 ) (SessionInfo, error) {
-	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", "", message, acpOptions)
+	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", "", message, acpOptions, nil)
 }
 
 // Resume launches the saved conversation under its original runtime key.
 // It never submits an opening prompt or falls back to a new conversation.
 func (m *Manager) Resume(ctx context.Context, restored RestoredRuntimeSession, agent, sessionID string) (SessionInfo, error) {
-	return m.launch(ctx, restored.WorkspaceID, restored.CWD, restored.TargetKey, &restored, agent, sessionID, "", nil)
+	return m.launch(ctx, restored.WorkspaceID, restored.CWD, restored.TargetKey, &restored, agent, sessionID, "", nil, nil)
 }
 
-func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string, restored *RestoredRuntimeSession, agent, sessionID, initialMessage string, acpOptions map[string]string) (SessionInfo, error) {
+func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string, restored *RestoredRuntimeSession, agent, sessionID, initialMessage string, acpOptions map[string]string, resume *acpImport) (SessionInfo, error) {
 	slog.Debug(
 		"runtime launch requested",
 		"workspace_id", workspaceID,
@@ -503,7 +508,10 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 		return SessionInfo{}, fmt.Errorf("target %q is not an ACP agent and takes no ACP options", targetKey)
 	}
 
+	importSession := resume != nil
 	switch {
+	case importSession && target.Kind != LaunchTargetACP:
+		return SessionInfo{}, fmt.Errorf("target %q is not an ACP agent and cannot resume a session", targetKey)
 	case restored == nil:
 	case target.Kind == LaunchTargetAgent:
 		target.Command, err = agentResumeCommand(target.Command, agent, sessionID)
@@ -565,9 +573,16 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 	// is never older than the runtime it reports for.
 	createdAt := time.Now().UTC()
 	var launch launchCommand
-	if target.Kind == LaunchTargetACP {
+	switch {
+	case resume != nil:
+		launch, err = m.importACPLaunchCommand(ctx, target, workspaceID, key, cwd, *resume, acpOptions)
+		if err == nil {
+			// Ended on return: by then the chat is stored as running, or it failed.
+			defer m.endACPImport(key)
+		}
+	case target.Kind == LaunchTargetACP:
 		launch, err = m.acpLaunchCommand(ctx, target, workspaceID, key, cwd, acpOptions)
-	} else {
+	default:
 		launch, err = m.launchCommand(ctx, target, workspaceID, key, cwd)
 	}
 	if err != nil {
@@ -603,6 +618,12 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 		Reused:                 launch.TmuxSession != "" && !launch.TmuxCreated,
 	}, launch.Command, cwd, m.currentStripEnvVars(), launch.Env)
 	if err != nil {
+		if importSession {
+			// No chat holds the session, so it stays available to resume.
+			if removeErr := os.Remove(m.acpSessionPath(key)); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				slog.Warn("remove resumed ACP session record", "session_key", key, "err", removeErr)
+			}
+		}
 		if launch.TmuxCreated {
 			cleanupCtx, cancel := context.WithTimeout(
 				context.WithoutCancel(ctx), 5*time.Second,

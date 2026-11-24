@@ -33,6 +33,8 @@ import type {
   LaunchWorkspaceAgentHandoffPathParameters,
   LaunchWorkspaceRuntimeSessionInputBody,
   LaunchWorkspaceRuntimeSessionPathParameters,
+  ListWorkspaceAcpSessionsParams,
+  ListWorkspaceAcpSessionsPathParameters,
   ListWorkspaceAgentSessionsOutputBody,
   ListWorkspaceAgentSessionsPathParameters,
   ListWorkspaceTargetsPathParameters,
@@ -57,6 +59,7 @@ import type {
   UpdateWorkspaceViewStatePathParameters,
   WatchWorkspaceDiffParams,
   WatchWorkspaceDiffPathParameters,
+  WorkspaceACPSessionsResponse,
   WorkspaceAgentHandoffResponse,
   WorkspaceChat,
   WorkspaceChatCommand,
@@ -527,6 +530,39 @@ export const getWorkspaceRuntime = async (
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<WorkspaceRuntimeResponse> => {
   return orvalFetch<WorkspaceRuntimeResponse>(getGetWorkspaceRuntimeUrl({ id }, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListWorkspaceAcpSessionsUrl = (
+  { id }: ListWorkspaceAcpSessionsPathParameters,
+  params: ListWorkspaceAcpSessionsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/workspaces/${encodeURIComponent(String(id))}/runtime/acp-sessions?${stringifiedParams}`
+    : `/workspaces/${encodeURIComponent(String(id))}/runtime/acp-sessions`;
+};
+
+/**
+ * @summary List an ACP agent's sessions in the workspace that a chat can resume
+ */
+export const listWorkspaceAcpSessions = async (
+  { id }: ListWorkspaceAcpSessionsPathParameters,
+  params: ListWorkspaceAcpSessionsParams,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorkspaceACPSessionsResponse> => {
+  return orvalFetch<WorkspaceACPSessionsResponse>(getListWorkspaceAcpSessionsUrl({ id }, params), {
     ...options,
     method: "GET",
   });

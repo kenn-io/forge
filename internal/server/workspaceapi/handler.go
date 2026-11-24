@@ -398,6 +398,8 @@ func (s *Handler) RegisterExecution(api huma.API) {
 		httpapi.DocumentOperation("update-workspace-view-state", "Update workspace view state", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/agent-sessions", s.listWorkspaceAgentSessions,
 		httpapi.DocumentOperation("list-workspace-agent-sessions", "List live coding sessions", "Workspaces"))
+	huma.Get(api, "/workspaces/{id}/runtime/acp-sessions", s.listWorkspaceACPSessions,
+		httpapi.DocumentOperation("list-workspace-acp-sessions", "List an ACP agent's sessions in the workspace that a chat can resume", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/commits", s.getWorkspaceCommits,
 		httpapi.DocumentOperation("get-workspace-commits", "Get workspace commits", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/diff", s.getWorkspaceDiff,

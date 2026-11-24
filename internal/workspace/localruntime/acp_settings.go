@@ -259,19 +259,9 @@ func (a *ACP) noteUnappliedLaunchOptions(options map[string]string) {
 // the given ones, and returns the options the agent then offers. It retains no
 // process. Settings use it to offer real choices for a launch's options.
 func (m *Manager) ProbeACPOptions(ctx context.Context, targetKey string, options map[string]string) ([]ACPConfigOption, error) {
-	target, err := m.target(targetKey)
+	target, err := m.acpTarget(targetKey)
 	if err != nil {
 		return nil, err
-	}
-	if target.Kind != LaunchTargetACP {
-		return nil, fmt.Errorf("target %q is not an ACP agent", targetKey)
-	}
-	if !target.Available {
-		reason := target.DisabledReason
-		if reason == "" {
-			reason = "target not available"
-		}
-		return nil, fmt.Errorf("target %q not available: %s", targetKey, reason)
 	}
 	values, err := m.acpConfigValues(target.Key, nil)
 	if err != nil {

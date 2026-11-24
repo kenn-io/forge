@@ -145,7 +145,30 @@ func TestACPStdioHelper(t *testing.T) {
 				os.Exit(3)
 			}
 			elicitationOffered = params.ClientCapabilities.Elicitation != nil && params.ClientCapabilities.Elicitation.Form != nil
-			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":%t,"mcpCapabilities":{"http":%t}},"_meta":{"steering":{"supported":%t}}}}`+"\n", message.ID, os.Getenv("KENN_FORGE_ACP_NO_LOAD") != "1", os.Getenv("KENN_FORGE_ACP_NO_HTTP") != "1", os.Getenv("KENN_FORGE_ACP_STEERING") == "1")
+			sessionCapabilities := "{}"
+			if os.Getenv("KENN_FORGE_ACP_LIST") == "1" {
+				sessionCapabilities = `{"list":{}}`
+			}
+			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":%t,"mcpCapabilities":{"http":%t},"sessionCapabilities":%s},"_meta":{"steering":{"supported":%t}}}}`+"\n", message.ID, os.Getenv("KENN_FORGE_ACP_NO_LOAD") != "1", os.Getenv("KENN_FORGE_ACP_NO_HTTP") != "1", sessionCapabilities, os.Getenv("KENN_FORGE_ACP_STEERING") == "1")
+		case "session/list":
+			var params struct {
+				CWD    string `json:"cwd"`
+				Cursor string `json:"cursor"`
+			}
+			if json.Unmarshal(message.Params, &params) != nil {
+				os.Exit(19)
+			}
+			cwd, cwdErr := os.Stat(".")
+			requested, err := os.Stat(params.CWD)
+			if cwdErr != nil || err != nil || !os.SameFile(cwd, requested) {
+				os.Exit(19)
+			}
+			// Like Codex, the first page can be empty with more to follow.
+			if params.Cursor == "" {
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessions":[],"nextCursor":"page-2"}}`+"\n", message.ID)
+				continue
+			}
+			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessions":[{"sessionId":"fixture-session","cwd":%q,"title":"Earlier work","updatedAt":"2026-11-20T10:00:00Z"},{"sessionId":"undated-session","cwd":%q},{"sessionId":"newer-session","cwd":%q,"title":"Newer work","updatedAt":"2026-11-21T09:30:00.250Z"}]}}`+"\n", message.ID, params.CWD, params.CWD, params.CWD)
 		case "session/new", "session/load":
 			if os.Getenv("KENN_FORGE_ACP_EMPTY_SESSION") == "1" {
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessionId":""}}`+"\n", message.ID)

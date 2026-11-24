@@ -1,4 +1,17 @@
+<script lang="ts" module>
+  import type { WorkspaceACPSessionResponse } from "../../api/generated/models/index.js";
+
+  /** An ACP agent's earlier sessions, as read for the resume list. */
+  export type AcpResumeList =
+    | { readonly targetKey: string; readonly status: "loading" }
+    | { readonly targetKey: string; readonly status: "failed"; readonly error: string }
+    | { readonly targetKey: string; readonly status: "ready"; readonly sessions: readonly WorkspaceACPSessionResponse[] };
+</script>
+
 <script lang="ts">
+  import { formatRelativeTime, Spinner } from "@kenn-io/kit-ui";
+  import HistoryIcon from "@lucide/svelte/icons/history";
+  import XIcon from "@lucide/svelte/icons/x";
   import type {
     LaunchTarget,
     QuickAction,
@@ -23,6 +36,11 @@
     onLaunch?: (targetKey: string) => void;
     onQuickAction?: ((action: QuickAction) => void) | undefined;
     onOpenSession?: (sessionKey: string) => void;
+    /** The resume list being shown, if any. */
+    acpResume?: AcpResumeList | null;
+    /** Shows an ACP target's earlier sessions, or with null closes the list. */
+    onBrowseAcpSessions?: ((targetKey: string | null) => void) | undefined;
+    onResumeAcp?: ((targetKey: string, sessionId: string) => void) | undefined;
   }
 
   const {
@@ -36,6 +54,9 @@
     onLaunch,
     onQuickAction,
     onOpenSession,
+    acpResume = null,
+    onBrowseAcpSessions,
+    onResumeAcp,
   }: WorkspaceLauncherProps = $props();
 
   const visibleTargets = $derived(visibleLaunchTargets(launchTargets));
@@ -45,6 +66,7 @@
   const sortedQuickActions = $derived(sortQuickActionsByLabel(quickActions));
   const showQuickActions = $derived(quickActions.length > 0 && onQuickAction !== undefined);
   const launchingTarget = $derived(visibleTargets.find((target) => target.key === launchingKey));
+  const resumeTarget = $derived(acpTargets.find((target) => target.key === acpResume?.targetKey));
 
   function quickActionTarget(action: QuickAction): LaunchTarget | undefined {
     return launchTargets.find((target) => target.key === action.agent && (target.kind === "agent" || target.kind === "acp"));
@@ -75,10 +97,12 @@
 </script>
 
 <section class={["workspace-launcher", readonly && "readonly"]} aria-label="Session launcher">
-  {#snippet launchCards(targets: LaunchTarget[])}
+  {#snippet launchCards(targets: LaunchTarget[], resumable = false)}
     <div class="launch-grid">
       {#each targets as target (target.key)}
         {@const isLaunching = launchingKey === target.key}
+        {@const canResume = resumable && onBrowseAcpSessions !== undefined && target.available && !readonly}
+        <div class={["card-slot", canResume && "has-action"]}>
         <!-- aria-disabled while launching: `disabled` would drop keyboard focus to the
              body, and Escape only closes the panel while focus is inside it. -->
         <button
@@ -93,6 +117,20 @@
         >
           <LaunchTargetName {target} label={targetLabel(target)} iconSize={14} fallbackIcon loading={isLaunching} />
         </button>
+        {#if canResume}
+          {@const open = acpResume?.targetKey === target.key}
+          <button
+            class="card-action"
+            type="button"
+            aria-label={`Resume a ${targetLabel(target)} session`}
+            title={`Resume a ${targetLabel(target)} session`}
+            aria-expanded={open}
+            onclick={() => onBrowseAcpSessions?.(open ? null : target.key)}
+          >
+            <HistoryIcon size="13" strokeWidth="2.2" aria-hidden="true" />
+          </button>
+        {/if}
+        </div>
       {/each}
     </div>
   {/snippet}
@@ -131,7 +169,37 @@
         <span class="section-count">{acpTargets.length}</span>
         <span class="section-hint">Chat sessions</span>
       </div>
-      {@render launchCards(acpTargets)}
+      {@render launchCards(acpTargets, true)}
+      {#if acpResume && resumeTarget}
+        <div class="resume-list" role="group" aria-label={`Resume a ${targetLabel(resumeTarget)} session`}>
+          <div class="resume-heading">
+            <span>Resume a {targetLabel(resumeTarget)} session</span>
+            <button class="resume-close" type="button" aria-label="Close" onclick={() => onBrowseAcpSessions?.(null)}>
+              <XIcon size="12" strokeWidth="2.2" aria-hidden="true" />
+            </button>
+          </div>
+          {#if acpResume.status === "loading"}
+            <div class="resume-note" role="status"><Spinner size={14} /></div>
+          {:else if acpResume.status === "failed"}
+            <p class="resume-note error" role="alert">{acpResume.error}</p>
+          {:else if acpResume.sessions.length === 0}
+            <p class="resume-note">No earlier sessions</p>
+          {:else}
+            <div class="session-list">
+              {#each acpResume.sessions as session (session.session_id)}
+                <button
+                  class="session-row resume-row"
+                  disabled={readonly || launchingKey !== null}
+                  onclick={() => onResumeAcp?.(resumeTarget.key, session.session_id)}
+                >
+                  <span class="session-label">{session.title || "Untitled session"}</span>
+                  <span class="session-status">{session.updated_at ? formatRelativeTime(session.updated_at) : ""}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -263,6 +331,101 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 4px;
+  }
+
+  /* A card's trailing action floats over its end, so the card's hover runs the
+     full width behind it. */
+  .card-slot {
+    position: relative;
+    display: grid;
+  }
+
+  .card-slot.has-action .launch-card {
+    padding-right: 34px;
+  }
+
+  .card-action {
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transform: translateY(-50%);
+  }
+
+  .card-action:hover,
+  .card-action:focus-visible,
+  .card-action[aria-expanded="true"] {
+    border-color: color-mix(in srgb, var(--accent-blue) 55%, transparent);
+    color: var(--accent-blue);
+    outline: none;
+  }
+
+  .resume-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+
+  .resume-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+  }
+
+  .resume-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .resume-close:hover,
+  .resume-close:focus-visible {
+    background: var(--bg-surface-hover);
+    color: var(--text-primary);
+    outline: none;
+  }
+
+  .resume-note {
+    margin: 0;
+    padding: 6px 10px;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+  }
+
+  .resume-note.error {
+    color: var(--accent-red);
+  }
+
+  /* Resume rows carry no status dot. */
+  .session-row.resume-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .session-row.resume-row:disabled {
+    cursor: not-allowed;
+    opacity: var(--opacity-disabled);
   }
 
   .launch-card {

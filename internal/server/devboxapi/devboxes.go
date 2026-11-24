@@ -61,6 +61,7 @@ var DevboxProxyRoutes = []DevboxProxyRoute{
 	{"POST", "/workspaces/{id}/pull", "pull-devbox-workspace"},
 	{"DELETE", "/workspaces/{id}", "delete-devbox-workspace"},
 	{"GET", "/workspaces/{id}/runtime", "get-devbox-runtime"},
+	{"GET", "/workspaces/{id}/runtime/acp-sessions", "list-devbox-acp-sessions"},
 	{"POST", "/workspaces/{id}/runtime/sessions", "launch-devbox-session"},
 	{"DELETE", "/workspaces/{id}/runtime/sessions/{session_key}", "stop-devbox-session"},
 	{"PATCH", "/workspaces/{id}/runtime/sessions/{session_key}", "rename-devbox-session"},

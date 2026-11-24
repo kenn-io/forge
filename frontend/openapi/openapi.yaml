@@ -5312,6 +5312,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        acp_session_id:
+          description: An ACP agent session to resume in the new chat, from list-workspace-acp-sessions. Only ACP targets accept it.
+          type: string
         display_region:
           type: string
         target_key:
@@ -12442,6 +12445,38 @@ components:
         - CreatedAt
         - KataMetadata
       type: object
+    WorkspaceACPSessionResponse:
+      additionalProperties: false
+      properties:
+        session_id:
+          description: The agent's session ID; pass it as acp_session_id to resume the session in a new chat.
+          type: string
+        title:
+          type: string
+        updated_at:
+          description: When the agent last updated the session, if it says.
+          format: date-time
+          type: string
+      required:
+        - session_id
+      type: object
+    WorkspaceACPSessionsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkspaceACPSessionsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        sessions:
+          items:
+            $ref: "#/components/schemas/WorkspaceACPSessionResponse"
+          type: array
+      required:
+        - sessions
+      type: object
     WorkspaceActivitySubjectResponse:
       additionalProperties: false
       properties:
@@ -15370,6 +15405,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkspaceRuntimeResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+  /devboxes/{connection_id}/workspaces/{id}/runtime/acp-sessions:
+    get:
+      operationId: list-devbox-acp-sessions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: ACP agent target whose sessions to list.
+          explode: false
+          in: query
+          name: target_key
+          required: true
+          schema:
+            description: ACP agent target whose sessions to list.
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceACPSessionsResponse"
           description: OK
         default:
           content:
@@ -18473,6 +18546,45 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Response returned by the owning fleet host.
       summary: Get workspace runtime on fleet host
+      tags:
+        - Fleet
+  /fleet/hosts/{host_key}/workspaces/{id}/runtime/acp-sessions:
+    get:
+      operationId: list-fleet-workspace-acp-sessions
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: ACP agent target whose sessions to list.
+          in: query
+          name: target_key
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceACPSessionsResponse"
+          description: Response returned by the owning fleet host.
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: List resumable ACP agent sessions in a workspace on fleet host
       tags:
         - Fleet
   /fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs:
@@ -30810,6 +30922,39 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get workspace runtime
+      tags:
+        - Workspaces
+  /workspaces/{id}/runtime/acp-sessions:
+    get:
+      operationId: list-workspace-acp-sessions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - description: ACP agent target whose sessions to list.
+          explode: false
+          in: query
+          name: target_key
+          required: true
+          schema:
+            description: ACP agent target whose sessions to list.
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceACPSessionsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List an ACP agent's sessions in the workspace that a chat can resume
       tags:
         - Workspaces
   /workspaces/{id}/runtime/agent-handoffs:

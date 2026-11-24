@@ -43,6 +43,9 @@ var authorizedRoutes = []authorizedRoute{
 	{method: http.MethodGet, path: "/api/v1/workspaces/{id}/file-preview", scope: ScopeWorkspaceRead},
 	{method: http.MethodGet, path: "/api/v1/workspaces/{id}/files", scope: ScopeWorkspaceRead},
 	{method: http.MethodGet, path: "/api/v1/workspaces/{id}/diff/watch", scope: ScopeWorkspaceRead},
+	// Listing starts the agent on this host, and it serves only a launch, so
+	// it takes the launch's scope.
+	{method: http.MethodGet, path: "/api/v1/workspaces/{id}/runtime/acp-sessions", scope: ScopeWorkspaceWrite},
 	{method: http.MethodPost, path: "/api/v1/workspaces/{id}/runtime/sessions", scope: ScopeWorkspaceWrite},
 	{method: http.MethodPost, path: "/api/v1/workspaces/{id}/runtime/agent-handoffs", scope: ScopeWorkspaceWrite},
 	{method: http.MethodPatch, path: "/api/v1/workspaces/{id}/runtime/sessions/{session_key}", scope: ScopeWorkspaceWrite},

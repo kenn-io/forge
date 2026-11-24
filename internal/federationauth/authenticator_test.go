@@ -38,6 +38,16 @@ func TestFederationCredentialAuthorizationUsesExactRouteInventory(t *testing.T) 
 	require.True(listed)
 	assert.Equal(ScopeWorkspaceWrite, required)
 	required, listed = authenticator.RequiredScope(
+		http.MethodGet, "/api/v1/workspaces/ws-1/runtime/acp-sessions",
+	)
+	require.True(listed)
+	assert.Equal(ScopeWorkspaceWrite, required)
+	readOnly, err := store.MintInbound(testMemberNodeID, []Scope{ScopeWorkspaceRead})
+	require.NoError(err)
+	reader, ok := authenticator.Authenticate(readOnly)
+	require.True(ok)
+	assert.False(reader.Has(required), "a read-only peer cannot start an agent to list its sessions")
+	required, listed = authenticator.RequiredScope(
 		http.MethodPost, "/api/v1/host/git.example.test/repo/gitlab/acme/widgets/workspaces",
 	)
 	require.True(listed)
@@ -83,6 +93,8 @@ func TestFleetHostRoutesRequireTheirTargetRouteScope(t *testing.T) {
 		{http.MethodGet, "/api/v1" + host + "/workspaces/ws-1", ScopeWorkspaceRead},
 		{http.MethodDelete, "/api/v1" + host + "/workspaces/ws-1", ScopeWorkspaceWrite},
 		{http.MethodPost, "/api/v1" + host + "/issues/github/acme/widget/7/workspace", ScopeWorkspaceWrite},
+		// Listing an agent's sessions starts the agent, so read access is not enough.
+		{http.MethodGet, "/api/v1" + host + "/workspaces/ws-1/runtime/acp-sessions", ScopeWorkspaceWrite},
 		{http.MethodGet, "/ws/v1" + host + "/workspaces/ws-1/terminal", ScopeTerminalAttach},
 	} {
 		required, listed := RouteScope(tc.method, tc.path)

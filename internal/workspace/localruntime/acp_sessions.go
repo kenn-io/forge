@@ -167,7 +167,9 @@ func (m *Manager) importACPLaunchCommand(ctx context.Context, target LaunchTarge
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return launchCommand{}, err
 	}
-	data, err := json.Marshal(acpSavedSession{SessionID: sessionID, LoadSession: true, Import: true})
+	// A session chosen to resume must not quietly become a new one when its
+	// load finds nothing, so it counts as prompted.
+	data, err := json.Marshal(acpSavedSession{SessionID: sessionID, LoadSession: true, Import: true, AgentPrompted: true})
 	if err != nil {
 		return launchCommand{}, err
 	}

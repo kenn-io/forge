@@ -300,8 +300,16 @@ func externalProcessGone(session db.ExternalAgentSession) bool {
 }
 
 func (s *Handler) endExternalSession(ctx context.Context, id externalSessionID, session db.ExternalAgentSession) {
-	if err := s.db.MarkExternalAgentSessionEnded(ctx, id.agent, id.sessionID, time.Now()); err != nil {
+	ended, err := s.db.MarkExternalAgentProcessEnded(
+		ctx, id.agent, id.sessionID, session.ProcessID, session.ProcessStart, time.Now(),
+	)
+	if err != nil {
 		slog.Warn("record external agent exit", "agent", id.agent, "err", err)
+		return
+	}
+	// A report since the check named another process: the session was resumed
+	// and runs again, so its tracked hooks and activity stay.
+	if !ended {
 		return
 	}
 	s.externalSessions.forget(id)

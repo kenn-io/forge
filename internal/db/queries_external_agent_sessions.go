@@ -107,6 +107,28 @@ func (d *DB) MarkExternalAgentSessionEnded(ctx context.Context, agent, sessionID
 	return nil
 }
 
+// MarkExternalAgentProcessEnded records that the session ended because the
+// given process is gone. It reports false and changes nothing when a later
+// report named another process, as when the session was resumed meanwhile.
+func (d *DB) MarkExternalAgentProcessEnded(
+	ctx context.Context, agent, sessionID string, processID int, processStart string, at time.Time,
+) (bool, error) {
+	res, err := d.rwExecContext(ctx, `
+		UPDATE forge_external_agent_sessions SET ended_at = ?
+		WHERE agent = ? AND session_id = ? AND ended_at IS NULL
+		  AND process_id = ? AND process_start = ?`,
+		at.UTC(), agent, sessionID, processID, processStart,
+	)
+	if err != nil {
+		return false, fmt.Errorf("mark external agent process ended: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("mark external agent process ended: %w", err)
+	}
+	return affected == 1, nil
+}
+
 // ListRunningExternalAgentSessions returns sessions whose agent may still run,
 // oldest first, so a worktree's first agent is considered before any agent it
 // started.

@@ -11,7 +11,7 @@ const cards = {
     status: "neutral",
     summary: "Importance 8/10 \u00b7 Complexity 2.1 \u00b7 Alignment 9.2",
     markdown:
-      "Rejects empty paths before loading configuration.\n\n| | |\n| --- | --- |\n| Design | **Uses existing validation**<br>Keeps path checks in the configuration loader. |\n| Size | \u2022 Change: 48 lines (18 code, 30 tests, 0 docs) |\n| State | CI passed. Review approved. |\n\n[View in Kennel](https://kennel.example/releases/pr-grading)",
+      "Rejects empty paths before loading configuration.\n\n| | |\n| --- | --- |\n| Design | **Uses existing validation**<br>Keeps path checks in the configuration loader. |\n| Size | \u2022 Change: 48 lines (18 code, 30 tests, 0 docs) |\n| State | CI passed. Review approved. |\n\n[View assessment](https://example.com/releases/pr-grading)",
     result_head_sha: "head",
     actions: [{ id: "reassess:3", label: "Reassess" }],
     refresh_after_seconds: 0,
@@ -21,7 +21,7 @@ const cards = {
     status: "neutral",
     summary: "Importance 8/10 \u00b7 Complexity 2.1 \u00b7 Alignment 9.2",
     markdown:
-      "Rejects empty paths before loading configuration.\n\n| | |\n| --- | --- |\n| Design | **Uses existing validation**<br>Keeps path checks in the configuration loader. |\n| Size | \u2022 Change: 48 lines (18 code, 30 tests, 0 docs) |\n| State | Windows path test failed. Review approved. |\n\n[View in Kennel](https://kennel.example/releases/pr-grading)",
+      "Rejects empty paths before loading configuration.\n\n| | |\n| --- | --- |\n| Design | **Uses existing validation**<br>Keeps path checks in the configuration loader. |\n| Size | \u2022 Change: 48 lines (18 code, 30 tests, 0 docs) |\n| State | Windows path test failed. Review approved. |\n\n[View assessment](https://example.com/releases/pr-grading)",
     result_head_sha: "head",
     actions: [{ id: "reassess:3", label: "Reassess" }],
     refresh_after_seconds: 0,
@@ -31,7 +31,7 @@ const cards = {
     status: "neutral",
     summary: "Importance 8/10 \u00b7 Complexity 2.1 \u00b7 Alignment 9.2",
     markdown:
-      "Previous assessment\n\nRejects empty paths before loading configuration.\n\n| | |\n| --- | --- |\n| Design | **Uses existing validation**<br>Keeps path checks in the configuration loader. |\n| Size | \u2022 Change: 48 lines (18 code, 30 tests, 0 docs) |\n| State | Windows path test failed. Review approved. |\n\n[View in Kennel](https://kennel.example/releases/pr-grading)",
+      "Previous assessment\n\nRejects empty paths before loading configuration.\n\n| | |\n| --- | --- |\n| Design | **Uses existing validation**<br>Keeps path checks in the configuration loader. |\n| Size | \u2022 Change: 48 lines (18 code, 30 tests, 0 docs) |\n| State | Windows path test failed. Review approved. |\n\n[View assessment](https://example.com/releases/pr-grading)",
     result_head_sha: "old",
     actions: [{ id: "reassess:3", label: "Reassess" }],
     refresh_after_seconds: 0,
@@ -40,7 +40,7 @@ const cards = {
     recommendation: { verdict: "Hold", reason: "No assessment is available." },
     status: "neutral",
     summary: "No PR assessment yet",
-    markdown: "\n\n[View in Kennel](https://kennel.example/releases/pr-grading)",
+    markdown: "\n\n[View assessment](https://example.com/releases/pr-grading)",
     actions: [{ id: "reassess:3", label: "Reassess" }],
     refresh_after_seconds: 0,
   },

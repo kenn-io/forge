@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,18 +11,133 @@ import (
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/activityrelay"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/syncevents"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
+
+func TestRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"success", "partial pull request failure", "notification closeout failure"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			testRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t, name)
+		})
+	}
+}
+
+func testRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T, result string) {
+	t.Helper()
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "first")), Owner: "acme", Name: "first",
+	})
+	require.NoError(t, err)
+	require.NoError(t, database.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{
+		CloneURL: "https://github.com/acme/first.git", DefaultBranch: "main",
+	}, nil, nil))
+	if result == "partial pull request failure" {
+		now := time.Now().UTC()
+		_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{RepoID: repoID, PlatformID: 3, Number: 3, Title: "Previous", Author: "user-a", State: "open", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
+		require.NoError(t, err)
+	}
+	if result == "notification closeout failure" {
+		now := time.Now().UTC()
+		_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{RepoID: repoID, PlatformID: 3, Number: 3, Title: "Previous", Author: "user-a", State: "closed", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
+		require.NoError(t, err)
+		require.NoError(t, database.UpsertNotifications(ctx, []db.Notification{{Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "thread-1", RepoID: &repoID, RepoOwner: "acme", RepoName: "first", SubjectType: "PullRequest", SubjectTitle: "Previous", ItemNumber: new(3), ItemType: "pr", Reason: "mention", SourceUpdatedAt: now, SyncedAt: now}}))
+		_, err = database.WriteDB().ExecContext(ctx, `CREATE TRIGGER reject_closeout BEFORE UPDATE OF done_at ON forge_notification_items BEGIN SELECT RAISE(ABORT, 'closeout failed'); END`)
+		require.NoError(t, err)
+	}
+	blocked := make(chan struct{})
+	release := make(chan struct{})
+	var failed atomic.Bool
+	client := &serverfake.MockGH{GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+		if result == "partial pull request failure" && number == 3 {
+			failed.Store(true)
+			return nil, errors.New("pull request unavailable")
+		}
+		return nil, nil
+	}, ListOpenPullRequestsFn: func(ctx context.Context, _, repo string) ([]*gh.PullRequest, error) {
+		if repo == "second" {
+			close(blocked)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			return nil, nil
+		}
+		now := time.Now().UTC()
+		cloneURL := "https://github.com/acme/first.git"
+		return []*gh.PullRequest{{
+			ID: new(int64(1)), Number: new(1), State: new("open"), Title: new("Example"),
+			User: &gh.User{Login: new("user-a")}, CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now},
+			Head: &gh.PullRequestBranch{Ref: new("feature"), SHA: new("head"), Repo: &gh.Repository{CloneURL: &cloneURL}},
+			Base: &gh.PullRequestBranch{Ref: new("main"), SHA: new("base")},
+		}, {
+			ID: new(int64(2)), Number: new(2), State: new("open"), Title: new("Example 2"),
+			User: &gh.User{Login: new("user-a")}, CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now},
+			Head: &gh.PullRequestBranch{Ref: new("feature-2"), SHA: new("head-2"), Repo: &gh.Repository{CloneURL: &cloneURL}},
+			Base: &gh.PullRequestBranch{Ref: new("feature"), SHA: new("head")},
+		}}, nil
+	}}
+	repos := []github.RepoRef{{Owner: "acme", Name: "first", PlatformHost: "github.com", CloneURL: "https://github.com/acme/first.git"}, {Owner: "acme", Name: "second", PlatformHost: "github.com"}}
+	syncer := github.NewSyncer(map[string]github.Client{"github.com": client}, database, nil, repos, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	hub := syncevents.NewEventHub()
+	t.Cleanup(hub.Close)
+	events, _ := hub.Subscribe(ctx, false)
+	wireRepoSynced(ctx, syncer, database, hub)
+	finished := make(chan struct{})
+	go func() { defer close(finished); syncer.RunOnce(ctx) }()
+	t.Cleanup(func() { close(release); <-finished })
+
+	select {
+	case <-blocked:
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "second repository did not start")
+	}
+	select {
+	case event := <-events:
+		require.Equal(t, "data_changed", event.Event.Type)
+	case <-time.After(10 * time.Second):
+		require.FailNow(t, "no data_changed event while the second repository was syncing")
+	}
+	prs, err := database.ListMergeRequests(ctx, db.ListMergeRequestsOpts{})
+	require.NoError(t, err)
+	if result == "partial pull request failure" {
+		require.True(t, failed.Load())
+		require.Len(t, prs, 3)
+		return
+	}
+	if result == "notification closeout failure" {
+		var syncError string
+		require.NoError(t, database.ReadDB().QueryRowContext(ctx, `SELECT last_sync_error FROM forge_repos WHERE id = ?`, repoID).Scan(&syncError))
+		require.Contains(t, syncError, "closeout failed")
+		require.Len(t, prs, 2)
+		require.ElementsMatch(t, []int{1, 2}, []int{prs[0].Number, prs[1].Number})
+		return
+	}
+	require.Len(t, prs, 2)
+	stack, _, err := database.GetStackForPR(ctx, "github", "github.com", "acme", "first", 1)
+	require.NoError(t, err)
+	require.NotNil(t, stack)
+}
 
 func TestWireSyncStatusDoesNotReloadDataForRelayConnectionChanges(t *testing.T) {
 	t.Parallel()

@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/syncevents"
+	"go.kenn.io/forge/internal/stacks"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/platform"
@@ -24,6 +25,12 @@ import (
 	giteaclient "go.kenn.io/forge/platform/gitea"
 	gitlabclient "go.kenn.io/forge/platform/gitlab"
 )
+
+func wireRepoSynced(ctx context.Context, syncer *github.Syncer, database *db.DB, hub *syncevents.EventHub) {
+	syncer.SetOnRepoSynced(stacks.DetectionHook(ctx, database, func([]github.RepoSyncResult) {
+		hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
+	}))
+}
 
 func wireSyncStatus(syncer *github.Syncer, hub *syncevents.EventHub) {
 	// Syncer serializes status callbacks, including relay-only updates.

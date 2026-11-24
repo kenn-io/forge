@@ -146,7 +146,9 @@ func TestDetectionHookDistinguishesPartialScopeFailures(t *testing.T) {
 			result.PlatformHost = "github.com"
 			result.Owner = "org"
 			result.Name = "repo"
-			DetectionHook(ctx, d, nil)([]ghclient.RepoSyncResult{result})
+			calls := 0
+			DetectionHook(ctx, d, func([]ghclient.RepoSyncResult) { calls++ })([]ghclient.RepoSyncResult{result})
+			assert.Equal(t, 1, calls)
 
 			stacks, _, err := d.ListStacksWithMembers(ctx, "")
 			require.NoError(err)

@@ -339,7 +339,9 @@ GitHub data sources are layered and may stay GitHub-specific behind the provider
 - Stack detection runs for each repository as soon as that repository's sync finishes, without
   waiting for other repositories or the detail and comment drains (maintainer decision). The drains
   can save a retarget or merge afterward, so the end of the pass joins those runs and detects again
-  before reporting completion (`internal/github/sync_run.go::Syncer.startRepoSyncedHook`).
+  before reporting completion (`internal/github/sync_run.go::Syncer.startRepoSyncedHook`). Repository
+  sync attempts broadcast `data_changed` after the stack hook, and full sync
+  completion broadcasts it again (`cmd/kenn-forge/provider_startup.go::wireRepoSynced`).
 - Native projections use the bottom PR number as the neutral stack key; GitHub's stack number is
   cache-only.
 - Merging a native member also merges every unmerged member below it, so the merge UI names every

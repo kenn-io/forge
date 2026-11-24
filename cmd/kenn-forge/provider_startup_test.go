@@ -30,6 +30,7 @@ import (
 )
 
 func TestRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"success", "partial pull request failure", "notification closeout failure"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -109,13 +110,13 @@ func testRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T, result str
 	select {
 	case <-blocked:
 	case <-time.After(10 * time.Second):
-		t.Fatal("second repository did not start")
+		require.FailNow(t, "second repository did not start")
 	}
 	select {
 	case event := <-events:
 		require.Equal(t, "data_changed", event.Event.Type)
 	case <-time.After(10 * time.Second):
-		t.Fatal("no data_changed event while the second repository was syncing")
+		require.FailNow(t, "no data_changed event while the second repository was syncing")
 	}
 	prs, err := database.ListMergeRequests(ctx, db.ListMergeRequestsOpts{})
 	require.NoError(t, err)

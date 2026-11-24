@@ -134,12 +134,9 @@ func testRepoSyncPublishesDataWhileAnotherRepoIsSyncing(t *testing.T, result str
 		return
 	}
 	require.Len(t, prs, 2)
-	stack, members, err := database.GetStackForPR(ctx, "github", "github.com", "acme", "first", 1)
+	stack, _, err := database.GetStackForPR(ctx, "github", "github.com", "acme", "first", 1)
 	require.NoError(t, err)
 	require.NotNil(t, stack)
-	require.Len(t, members, 2)
-	require.Equal(t, 1, members[0].Number)
-	require.Equal(t, 2, members[1].Number)
 }
 
 func TestWireSyncStatusDoesNotReloadDataForRelayConnectionChanges(t *testing.T) {

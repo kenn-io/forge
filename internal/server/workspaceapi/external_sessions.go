@@ -342,6 +342,15 @@ func (s *Handler) adoptExternalSession(
 				return nil
 			}
 		}
+		// A chat may have resumed the session from the picker while it waited,
+		// and two chats would drive the one conversation over each other.
+		chats, err := s.workspaceChats(ctx, ws.ID)
+		if err != nil {
+			return err
+		}
+		if held, err := s.runtime.ACPSessionHeld(ws.ID, session.SessionID, chats); err != nil || held {
+			return err
+		}
 	}
 	key, err := localruntime.NewSessionKey(ws.ID)
 	if err != nil {

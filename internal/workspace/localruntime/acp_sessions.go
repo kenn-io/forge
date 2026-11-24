@@ -192,6 +192,13 @@ func (m *Manager) importACPLaunchCommand(ctx context.Context, target LaunchTarge
 	return launch, nil
 }
 
+// ACPSessionHeld reports whether a chat of workspaceID holds the agent session
+// sessionID; see heldACPSessions.
+func (m *Manager) ACPSessionHeld(workspaceID, sessionID string, chats ACPWorkspaceChats) (bool, error) {
+	held, err := m.heldACPSessions(workspaceID, chats)
+	return held[sessionID], err
+}
+
 // endACPImport ends a resumed chat's pending mark. By then the chat runs, so
 // it holds its session as a live chat, or it failed and holds nothing.
 func (m *Manager) endACPImport(key string) {

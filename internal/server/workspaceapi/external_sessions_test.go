@@ -24,6 +24,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/projects"
+	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/reposeed"
@@ -41,6 +42,8 @@ type externalSessionFixture struct {
 	transcript string
 	// activityRoot holds the agent activity reports.
 	activityRoot string
+	// acpSessionsDir holds the chats' saved ACP sessions.
+	acpSessionsDir string
 }
 
 const externalClaudeTranscript = `{"type":"user","timestamp":"2026-01-02T03:04:05Z","message":{"role":"user","content":"Open a pull request"}}
@@ -74,9 +77,10 @@ func newExternalSessionFixture(t *testing.T) *externalSessionFixture {
 	require.NoError(os.WriteFile(tmux, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 	manager.SetTmuxCommand([]string{tmux})
 	activityRoot := t.TempDir()
+	acpSessionsDir := t.TempDir()
 	handler := New(Deps{
 		DB: database, Workspaces: manager, LaunchSpecResolver: resolver,
-		Runtime:            localruntime.NewManager(localruntime.Options{ACPSessionsDir: t.TempDir()}),
+		Runtime:            localruntime.NewManager(localruntime.Options{ACPSessionsDir: acpSessionsDir}),
 		AgentActivity:      agentactivity.NewStore(activityRoot),
 		EnrichmentDisabled: true,
 	})
@@ -91,7 +95,7 @@ func newExternalSessionFixture(t *testing.T) *externalSessionFixture {
 	return &externalSessionFixture{
 		database: database, handler: handler, mux: mux, repoID: repoID, worktree: worktree,
 		head:       strings.TrimSpace(string(gitfixture.Run(t, repository.Dir, "rev-parse", "HEAD"))),
-		transcript: transcript, activityRoot: activityRoot,
+		transcript: transcript, activityRoot: activityRoot, acpSessionsDir: acpSessionsDir,
 	}
 }
 
@@ -550,6 +554,38 @@ func TestAdoptedChatHoldsItsSessionAgainstResume(t *testing.T) {
 	require.NoError(t, err)
 	_, err = f.handler.runtime.ResumeACPSession(t.Context(), ws.ID, ws.WorktreePath, "claude-chat", "session-1", chats, nil)
 	require.ErrorIs(t, err, localruntime.ErrACPSessionInUse)
+}
+
+// A later agent's session waits while the first agent runs, and the resume
+// picker offers it meanwhile. Once a chat resumed it there, adoption leaves it
+// to that chat, so no second chat drives the same conversation.
+func TestAdoptionSkipsASessionAResumedChatHolds(t *testing.T) {
+	f := newExternalSessionFixture(t)
+	f.openPull(t, "feature/login", f.head)
+	f.hook(t, "claude", "first", "UserPromptSubmit", runningAgentHeaders())
+	f.pass(t)
+	ws, _ := f.adopted(t)
+	f.hook(t, "claude", "nested", "UserPromptSubmit", runningAgentHeaders())
+	f.hook(t, "claude", "nested", "SessionEnd", nil)
+
+	const resumedKey = "resumed-chat"
+	require.NoError(t, f.database.UpsertWorkspaceRuntimeSession(t.Context(), &db.WorkspaceRuntimeSession{
+		WorkspaceID: ws.ID, SessionKey: resumedKey, TargetKey: "claude-chat", Label: "Claude chat",
+		Kind: "acp", Scope: "session", DisplayRegion: "workflow", CreatedAt: time.Now().UTC(),
+	}))
+	paths, err := ptyowner.NewSessionPaths(f.acpSessionsDir, resumedKey)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(paths.Dir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(paths.Dir, "session.json"), []byte(`{"SessionID":"nested","LoadSession":true,"Import":true}`), 0o600))
+
+	f.hook(t, "claude", "first", "SessionEnd", nil)
+	f.pass(t)
+
+	_, rows := f.adopted(t)
+	assert.Len(t, rows, 2, "adoption added a chat for a session a resumed chat holds")
+	nested, err := f.database.GetExternalAgentSession(t.Context(), "claude", "nested")
+	require.NoError(t, err)
+	assert.Empty(t, nested.WorkspaceID)
 }
 
 // This runtime has no way to run an owner, so the start stops there: past the

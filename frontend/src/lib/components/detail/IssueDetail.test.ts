@@ -689,6 +689,21 @@ describe("IssueDetail inline workspace handoff", () => {
       await fireEvent.click(create);
       expect(apiClient.POST).not.toHaveBeenCalled();
     } else {
+      // A devbox create also waits until the page has looked for a workspace
+      // on other machines.
+      expect((create as HTMLButtonElement).disabled).toBe(true);
+      snapshot.resolve({
+        data: {
+          hosts: [
+            {
+              configKey: "devbox:compute-a",
+              kind: "devbox",
+              operationAvailability: { workspaceWrite: { available: true } },
+            },
+          ],
+          workspaces: [],
+        },
+      });
       await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
       await fireEvent.click(create);
       await waitFor(() =>

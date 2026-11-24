@@ -4359,6 +4359,21 @@ describe("PullDetail inline workspace handoff", () => {
       await fireEvent.click(create);
       expect(apiClient.POST).not.toHaveBeenCalled();
     } else {
+      // A devbox create also waits until the page has looked for a workspace
+      // on other machines.
+      expect((create as HTMLButtonElement).disabled).toBe(true);
+      snapshot.resolve({
+        data: {
+          hosts: [
+            {
+              configKey: "devbox:compute-a",
+              kind: "devbox",
+              operationAvailability: { workspaceWrite: { available: true } },
+            },
+          ],
+          workspaces: [],
+        },
+      });
       await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
       await fireEvent.click(create);
       await waitFor(() =>
@@ -4402,71 +4417,65 @@ describe("PullDetail inline workspace handoff", () => {
     );
   });
 
-  it.each(["pending", "failed"])(
-    "creates on the saved devbox when cached availability is unavailable and directory refresh is %s",
-    async (refresh) => {
-      const snapshot = Promise.withResolvers<unknown>();
-      const apiClient = {
-        GET: vi
-          .fn()
-          .mockResolvedValueOnce({
-            data: {
-              hosts: [
-                {
-                  configKey: "devbox:compute-a",
-                  kind: "devbox",
-                  operationAvailability: {
-                    workspaceWrite: { available: false, unavailableReason: "Devbox is in maintenance" },
-                  },
+  it("creates on the saved devbox when cached availability is unavailable and directory refresh fails", async () => {
+    const snapshot = Promise.withResolvers<unknown>();
+    const apiClient = {
+      GET: vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            hosts: [
+              {
+                configKey: "devbox:compute-a",
+                kind: "devbox",
+                operationAvailability: {
+                  workspaceWrite: { available: false, unavailableReason: "Devbox is in maintenance" },
                 },
-              ],
-            },
-          })
-          .mockImplementation((path: string) =>
-            path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: {} }),
-          ),
-        POST: vi.fn().mockResolvedValue({ data: { id: "ws-devbox", status: "provisioning" } }),
-      };
-      detailRuntime = makeTestAppRuntime(apiClient);
-      const warm = detailRuntime.runCommand(loadFleetSnapshot(), {
-        operation: "warm workspace directory",
-        safeContext: {},
-        onFailure: () => {},
-      });
-      expect((await warm.exit)._tag).toBe("Success");
-
-      renderPullDetail(pullDetail(), undefined, apiClient, {
-        hideWorkspaceAction: false,
-        defaultExecutionTarget: "devbox:compute-a",
-      });
-      const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
-      await waitFor(() => expect(apiClient.GET.mock.calls.filter(([path]) => path === "/snapshot")).toHaveLength(2));
-      if (refresh === "failed") {
-        snapshot.reject(new Error("directory unavailable"));
-        await waitFor(() => expect(create.title).toContain("Preferred devbox status unavailable."));
-      }
-      expect(create.disabled).toBe(false);
-      await fireEvent.click(create);
-      await waitFor(() =>
-        expect(apiClient.POST).toHaveBeenCalledWith(
-          "/devboxes/{connection_id}/workspaces",
-          expect.objectContaining({
-            params: { path: { connection_id: "compute-a" } },
-            body: {
-              provider: "github",
-              platform_host: "github.com",
-              platform_repo_id: 1001,
-              owner: "acme",
-              name: "widget",
-              mr_number: 1,
-            },
-          }),
+              },
+            ],
+          },
+        })
+        .mockImplementation((path: string) =>
+          path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: {} }),
         ),
-      );
-      expect(apiClient.POST).toHaveBeenCalledTimes(1);
-      snapshot.resolve({ data: { hosts: [] } });
-    },
-  );
+      POST: vi.fn().mockResolvedValue({ data: { id: "ws-devbox", status: "provisioning" } }),
+    };
+    detailRuntime = makeTestAppRuntime(apiClient);
+    const warm = detailRuntime.runCommand(loadFleetSnapshot(), {
+      operation: "warm workspace directory",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    expect((await warm.exit)._tag).toBe("Success");
+
+    renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "devbox:compute-a",
+    });
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(apiClient.GET.mock.calls.filter(([path]) => path === "/snapshot")).toHaveLength(2));
+    snapshot.reject(new Error("directory unavailable"));
+    await waitFor(() => expect(create.title).toContain("Preferred devbox status unavailable."));
+    expect(create.disabled).toBe(false);
+    await fireEvent.click(create);
+    await waitFor(() =>
+      expect(apiClient.POST).toHaveBeenCalledWith(
+        "/devboxes/{connection_id}/workspaces",
+        expect.objectContaining({
+          params: { path: { connection_id: "compute-a" } },
+          body: {
+            provider: "github",
+            platform_host: "github.com",
+            platform_repo_id: 1001,
+            owner: "acme",
+            name: "widget",
+            mr_number: 1,
+          },
+        }),
+      ),
+    );
+    expect(apiClient.POST).toHaveBeenCalledTimes(1);
+  });
 
   const hubNode = "a".repeat(32);
   const buildBNode = "b".repeat(32);
@@ -4860,15 +4869,23 @@ describe("PullDetail inline workspace handoff", () => {
     expect(apiClient.POST).not.toHaveBeenCalled();
   });
 
-  it("holds Create Workspace on this machine until it has looked for one on other machines", async () => {
-    const snapshot = Promise.withResolvers<{ data: { hosts: never[]; workspaces: never[] } }>();
+  it.each([
+    ["this machine", undefined],
+    // A node ID is sent before the snapshot names its machine, so this default
+    // is ready while the lookup is still running.
+    ["another fleet member", buildBNode],
+  ])("holds Create Workspace on %s until it has looked for one on other machines", async (_label, target) => {
+    const snapshot = Promise.withResolvers<unknown>();
     const apiClient = { GET: vi.fn(() => snapshot.promise), POST: vi.fn() };
-    renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false });
+    renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      ...(target ? { defaultExecutionTarget: target } : {}),
+    });
 
     const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
     expect(create.disabled).toBe(true);
     expect(create.getAttribute("title")).toBe("Checking other machines for a workspace.");
-    snapshot.resolve({ data: { hosts: [], workspaces: [] } });
+    snapshot.resolve({ data: { hosts: fleetHosts({ available: true }), workspaces: [] } });
     await waitFor(() => expect(create.disabled).toBe(false));
   });
 

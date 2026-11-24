@@ -1603,11 +1603,9 @@
     () => settings.getWorkspaceSettings().default_execution_target ?? "",
     () => itemIdentity,
   );
-  // A create on this machine would add a second workspace beside the one the
-  // lookup may find; a create on another machine reuses that one.
-  const fleetLookupPending = $derived(
-    workspaceTarget.hostKey === undefined && fleetWorkspace.pending(fleetWorkspaceItem),
-  );
+  // A create before the lookup ends would add a second workspace beside the
+  // one it may find, on whichever machine the create targets.
+  const fleetLookupPending = $derived(fleetWorkspace.pending(fleetWorkspaceItem));
   // The shared pending store outlives this component and its local flag:
   // route resets and remounts clear wsCreating while the POST is still in
   // flight, and a round-trip back to this PR must keep the button disabled
@@ -3347,7 +3345,7 @@
             <WorkspaceHostAlternatives
               reason={workspaceTarget.reason}
               choices={workspaceTarget.alternatives}
-              disabled={wsCreateBlocked || fleetWorkspace.pending(fleetWorkspaceItem)}
+              disabled={wsCreateBlocked || fleetLookupPending}
               onChoose={(choice) => createWorkspace(undefined, undefined, choice)}
             />
           {/if}

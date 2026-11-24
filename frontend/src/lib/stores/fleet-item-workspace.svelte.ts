@@ -80,10 +80,11 @@ export function createFleetItemWorkspace(
               return;
             }
             // A machine that did not answer lists none of its workspaces; its
-            // workspace is unknown, not gone.
+            // workspace is unknown, not gone. When this machine cannot reach
+            // the hub, the snapshot leaves out every other member entirely.
             const previous = discoveredWorkspaceRef(identity);
             const owner = previous && hosts.find((candidate) => candidate.configKey === previous.hostKey);
-            if (owner?.reachable === false) return;
+            if (owner?.reachable === false || (previous && !owner && snapshot.aggregateIncomplete)) return;
             recordDiscoveredWorkspace(identity, null);
           });
         }),

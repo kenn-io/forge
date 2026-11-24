@@ -739,11 +739,9 @@
     () => itemIdentity,
     () => issues.getIssueDetailEnvelopeTick(),
   );
-  // A create on this machine would add a second workspace beside the one the
-  // lookup may find; a create on another machine reuses that one.
-  const fleetLookupPending = $derived(
-    workspaceTarget.hostKey === undefined && fleetWorkspace.pending(fleetWorkspaceItem),
-  );
+  // A create before the lookup ends would add a second workspace beside the
+  // one it may find, on whichever machine the create targets.
+  const fleetLookupPending = $derived(fleetWorkspace.pending(fleetWorkspaceItem));
   const envelopeWorkspace = $derived(issues.getIssueDetail()?.workspace ?? null);
   const workspace = $derived(
     staleIssue
@@ -1635,7 +1633,7 @@
             <WorkspaceHostAlternatives
               reason={workspaceTarget.reason}
               choices={workspaceTarget.alternatives}
-              disabled={workspaceCreateBlocked || fleetWorkspace.pending(fleetWorkspaceItem)}
+              disabled={workspaceCreateBlocked || fleetLookupPending}
               onChoose={(choice) => void createWorkspace({ hostChoice: choice })}
             />
           {/if}

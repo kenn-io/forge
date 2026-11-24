@@ -50,7 +50,11 @@ function host(configKey: string, name: string, reachable: boolean) {
   return { configKey, name, kind: "remote", reachable };
 }
 
-type Snapshot = { hosts: ReturnType<typeof host>[]; workspaces: ReturnType<typeof workspace>[] };
+type Snapshot = {
+  hosts: ReturnType<typeof host>[];
+  workspaces: ReturnType<typeof workspace>[];
+  aggregateIncomplete?: boolean;
+};
 
 // Runs the lookup the way a detail page does; bump() stands in for a new
 // detail load.
@@ -105,6 +109,26 @@ describe("fleet item workspace lookup", () => {
     expect(discoveredWorkspaceRef(identity)?.id).toBe("ws-remote");
 
     snapshot = { hosts: [host(buildB, "build-b", true)], workspaces: [] };
+    bump();
+    await vi.waitFor(() => expect(discoveredWorkspaceRef(identity)).toBeNull());
+  });
+
+  it("keeps a workspace while this machine cannot reach the hub, and drops it once a full snapshot omits it", async () => {
+    let snapshot: Snapshot = {
+      hosts: [host(buildB, "build-b", true)],
+      workspaces: [workspace("ws-remote", buildB, "ready")],
+    };
+    const { bump } = startLookup(async () => ({ data: snapshot }));
+    await vi.waitFor(() => expect(discoveredWorkspaceRef(identity)?.id).toBe("ws-remote"));
+
+    // Without the hub, the snapshot holds only this machine and the hub.
+    snapshot = { hosts: [host("a".repeat(32), "forge-hub", false)], workspaces: [], aggregateIncomplete: true };
+    bump();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(discoveredWorkspaceRef(identity)?.id).toBe("ws-remote");
+
+    // A complete snapshot without the machine means it left the fleet.
+    snapshot = { hosts: [host("a".repeat(32), "forge-hub", true)], workspaces: [] };
     bump();
     await vi.waitFor(() => expect(discoveredWorkspaceRef(identity)).toBeNull());
   });

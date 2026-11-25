@@ -20,7 +20,7 @@ var (
 	// or request that belongs to someone else.
 	ErrACPNotOwned = errors.New("this belongs to someone else")
 	// ErrACPPersonOnly refuses a coordinator a command only people may give:
-	// steering, reordering the queue, and resuming it.
+	// steering without a target, reordering the queue, and resuming it.
 	ErrACPPersonOnly = errors.New("only a person can do this")
 )
 
@@ -156,17 +156,16 @@ func personGate(generation uint64) error {
 }
 
 // promptSenderLocked applies the gate to a prompt and returns its sender.
-// A coordinator's prompts must be identified so it can settle their outcomes,
-// and may not steer. An agent that does not hold a supervised chat cannot
-// add to it.
+// A coordinator's prompts must be identified so it can settle their outcomes.
+// An agent that does not hold a supervised chat cannot add to it.
 func (a *ACP) promptSenderLocked(command ACPCommand) (ACPSender, error) {
 	if err := a.supervisionGateLocked(command.Generation); err != nil {
 		return ACPSender{}, err
 	}
 	switch {
 	case command.Generation != 0:
-		if command.Mode == "steer" {
-			return ACPSender{}, ErrACPPersonOnly
+		if command.Mode == "steer" && command.SteerTarget == "" {
+			return ACPSender{}, errors.New("a coordinator's steer must name the turn it corrects in steerTarget")
 		}
 		if command.ID == "" {
 			return ACPSender{}, errors.New("a coordinator's prompts require a submission ID")

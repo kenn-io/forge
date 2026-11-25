@@ -9,7 +9,10 @@ import (
 // acpTurnRecordLimit bounds the turn records kept in the session.
 const acpTurnRecordLimit = 50
 
-var errACPSubmissionWithdrawn = errors.New("submission was withdrawn")
+var (
+	errACPSubmissionWithdrawn = errors.New("submission was withdrawn")
+	errACPSubmissionUncertain = errors.New("the agent may have received this submission")
+)
 
 // acpExitedDuringTurn ends a turn record that a replacement owner restored
 // while it was still running.
@@ -87,16 +90,19 @@ func (a *ACP) endTurnRecordLocked(stopReason string, err error) {
 // owner after the queue is restored. Every accepted prompt still runs: a
 // prompt that was sending when the owner stopped stays at the head of the
 // queue, or goes back to it (the owner records its message and clears
-// sending in one save), and steers the agent had not taken lead the queue. A turn that was running did not finish
-// in this process.
+// sending in one save). People's steers lead the queue. Supervised steers
+// cannot run after their target ended. The head might have reached the agent
+// before the owner stopped; later steers had not been sent yet.
 func (a *ACP) restoreSubmissionsLocked(saved ACPState) {
-	a.state.Withdrawn = saved.Withdrawn
+	queue, withdrawn, uncertain := partitionSteers(saved.Steers, true)
+	a.state.Withdrawn = append(saved.Withdrawn, withdrawn...)
+	a.state.Uncertain = append(saved.Uncertain, uncertain...)
 	var restored []ACPQueuedPrompt
 	if sending := saved.Sending; sending != nil &&
 		!slices.ContainsFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == sending.ID }) {
 		restored = append(restored, *sending)
 	}
-	restored = append(restored, saved.Steers...)
+	restored = append(restored, queue...)
 	a.state.Queue = slices.Insert(a.state.Queue, 0, restored...)
 	a.state.Turns = saved.Turns
 	a.endTurnRecordLocked("", errors.New(acpExitedDuringTurn))

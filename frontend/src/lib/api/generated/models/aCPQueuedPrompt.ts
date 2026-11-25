@@ -12,5 +12,6 @@ export interface ACPQueuedPrompt {
   images?: ACPContent[];
   refused?: string;
   sender: ACPSender;
+  steerTarget?: string;
   text: string;
 }

@@ -18,6 +18,7 @@ export interface WorkspaceChatCommand {
   index?: number;
   mode?: string;
   optionId?: string;
+  steerTarget?: string;
   supervisor?: string;
   text?: string;
   type: WorkspaceChatCommandType;

@@ -189,6 +189,8 @@ components:
           type: string
         sender:
           $ref: "#/components/schemas/ACPSender"
+        steerTarget:
+          type: string
         text:
           type: string
       required:
@@ -12674,6 +12676,10 @@ components:
           items:
             $ref: "#/components/schemas/ACPTurnRecord"
           type: array
+        uncertain:
+          items:
+            type: string
+          type: array
         withdrawn:
           items:
             type: string
@@ -12715,6 +12721,8 @@ components:
         mode:
           type: string
         optionId:
+          type: string
+        steerTarget:
           type: string
         supervisor:
           type: string

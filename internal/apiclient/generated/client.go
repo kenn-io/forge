@@ -68148,6 +68148,7 @@ type ACPQueuedPrompt struct {
 	Images          []ACPContent `json:"images,omitempty"`
 	Refused         *string      `json:"refused,omitempty"`
 	Sender          ACPSender    `json:"sender"`
+	SteerTarget     *string      `json:"steerTarget,omitempty"`
 	Text            string       `json:"text"`
 }
 
@@ -72997,6 +72998,7 @@ type WorkspaceChat struct {
 	Stopping          *bool                  `json:"stopping,omitempty"`
 	Supervision       *ACPSupervision        `json:"supervision,omitempty"`
 	Turns             []ACPTurnRecord        `json:"turns,omitempty"`
+	Uncertain         []string               `json:"uncertain,omitempty"`
 	Withdrawn         []string               `json:"withdrawn,omitempty"`
 }
 
@@ -73012,6 +73014,7 @@ type WorkspaceChatCommand struct {
 	Index           *int64                   `json:"index,omitempty"`
 	Mode            *string                  `json:"mode,omitempty"`
 	OptionID        *string                  `json:"optionId,omitempty"`
+	SteerTarget     *string                  `json:"steerTarget,omitempty"`
 	Supervisor      *string                  `json:"supervisor,omitempty"`
 	Text            *string                  `json:"text,omitempty"`
 	Type            WorkspaceChatCommandType `json:"type"`

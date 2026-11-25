@@ -115,6 +115,7 @@ var acpErrorCodes = []struct {
 	{"cannot_reload", ErrACPCannotReload},
 	{"start_timeout", ErrACPAgentStartTimeout},
 	{"withdrawn", errACPSubmissionWithdrawn},
+	{"uncertain", errACPSubmissionUncertain},
 	{"sending", errACPQueuedPromptSending},
 	{"already_answered", errACPAlreadyAnswered},
 	{"not_pending", errACPNotPending},

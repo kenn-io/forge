@@ -99,11 +99,13 @@ const acpOwnerUpgradeFile = "upgrade.json"
 // acpOwnerUpgrade is the part of an old owner's state its replacement cannot
 // take from the saved session: Queue is the prompts it published in the order
 // it published them, including any it failed to save, Withdrawn names the
-// prompts a person removed, including removals it failed to save, and
-// Cancelled names the requests that end with it.
+// prompts known not to have run, including removals it failed to save.
+// Uncertain names steers that may have reached the agent, and Cancelled
+// names the requests that end with the old owner.
 type acpOwnerUpgrade struct {
 	Queue     []ACPQueuedPrompt
 	Withdrawn []string
+	Uncertain []string `json:",omitempty"`
 	Cancelled []string
 }
 
@@ -115,7 +117,25 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 		return err
 	}
 	path := filepath.Join(paths.Dir, acpOwnerUpgradeFile)
-	upgrade := acpOwnerUpgrade{Queue: slices.Concat(state.Steers, state.Queue), Withdrawn: state.Withdrawn}
+	queue, withdrawn, uncertain := partitionSteers(state.Steers, true)
+	upgrade := acpOwnerUpgrade{
+		Queue: slices.Concat(queue, state.Queue), Withdrawn: slices.Concat(state.Withdrawn, withdrawn),
+		Uncertain: slices.Concat(state.Uncertain, uncertain),
+	}
+	saved, err := m.loadACPSaved(key)
+	if err != nil {
+		return err
+	}
+	// A saved steer absent from the live lists may have been delivered after a failed save.
+	if saved != nil {
+		for _, steer := range saved.State.Steers {
+			if !slices.ContainsFunc(upgrade.Queue, func(live ACPQueuedPrompt) bool {
+				return live.ID == steer.ID
+			}) && !slices.Contains(upgrade.Withdrawn, steer.ID) && !slices.Contains(upgrade.Uncertain, steer.ID) {
+				upgrade.Uncertain = append(upgrade.Uncertain, steer.ID)
+			}
+		}
+	}
 	for _, permission := range state.Permissions {
 		name := permission.Title
 		if name == "" {
@@ -126,7 +146,7 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 	for _, elicitation := range state.Elicitations {
 		upgrade.Cancelled = append(upgrade.Cancelled, elicitation.Message)
 	}
-	if len(upgrade.Queue) == 0 && len(upgrade.Withdrawn) == 0 && len(upgrade.Cancelled) == 0 {
+	if len(upgrade.Queue) == 0 && len(upgrade.Withdrawn) == 0 && len(upgrade.Uncertain) == 0 && len(upgrade.Cancelled) == 0 {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -167,18 +187,26 @@ func (a *ACP) applyOwnerUpgrade(dir string) error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	// The live owner knows which steers were in flight; the saved order may be stale.
 	for _, id := range upgrade.Withdrawn {
+		a.state.Uncertain = slices.DeleteFunc(a.state.Uncertain, func(uncertain string) bool { return uncertain == id })
 		if !slices.Contains(a.state.Withdrawn, id) {
 			a.state.Withdrawn = append(a.state.Withdrawn, id)
 		}
 	}
+	for _, id := range upgrade.Uncertain {
+		a.state.Withdrawn = slices.DeleteFunc(a.state.Withdrawn, func(withdrawn string) bool { return withdrawn == id })
+		if !slices.Contains(a.state.Uncertain, id) {
+			a.state.Uncertain = append(a.state.Uncertain, id)
+		}
+	}
 	a.state.Queue = slices.DeleteFunc(a.state.Queue, func(saved ACPQueuedPrompt) bool {
-		return slices.Contains(a.state.Withdrawn, saved.ID) ||
+		return slices.Contains(a.state.Withdrawn, saved.ID) || slices.Contains(a.state.Uncertain, saved.ID) ||
 			slices.ContainsFunc(upgrade.Queue, func(published ACPQueuedPrompt) bool { return published.ID == saved.ID })
 	})
 	for _, prompt := range upgrade.Queue {
 		submitted, err := a.submittedLocked(prompt.ID, prompt.Text, prompt.Images)
-		if err != nil && !errors.Is(err, errACPSubmissionWithdrawn) {
+		if err != nil && !errors.Is(err, errACPSubmissionWithdrawn) && !errors.Is(err, errACPSubmissionUncertain) {
 			a.setErrorLocked(fmt.Errorf("restore queued prompt: %w", err))
 		}
 		if !submitted {

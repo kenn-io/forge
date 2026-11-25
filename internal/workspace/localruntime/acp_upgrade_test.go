@@ -444,6 +444,37 @@ func TestOwnerUpgradePreservesSupervisedSteerOutcomes(t *testing.T) {
 	require.ErrorIs(t, err, errACPSubmissionWithdrawn)
 }
 
+func TestOwnerUpgradePreservesDeliveredSteerFromStaleSave(t *testing.T) {
+	dir := t.TempDir()
+	manager := &Manager{acpSessionsDir: dir}
+	paths, err := ptyowner.NewSessionPaths(dir, "chat")
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(paths.Dir, 0o700))
+	coordinator := ACPSender{Kind: ACPSenderCoordinator, Name: "planner"}
+	savedState := ACPState{
+		Supervision: &ACPSupervision{Supervisor: "planner", Generation: 1},
+		Steers: []ACPQueuedPrompt{
+			{ID: "first", Text: "first", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
+			{ID: "delivered", Text: "second", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
+		},
+	}
+	data, err := json.Marshal(acpSavedSession{State: savedState})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(manager.acpSessionPath("chat"), data, 0o600))
+	live := ACPState{Messages: []ACPMessage{{Role: "user", SubmissionID: "delivered", Text: "second", Sender: &coordinator}}}
+	require.NoError(t, manager.saveACPOwnerUpgrade("chat", live))
+	agent := newDetachedACP(t)
+	agent.restoreTranscriptLocked(savedState)
+	agent.recordPath = manager.acpSessionPath("chat")
+	require.NoError(t, agent.applyOwnerUpgrade(paths.Dir))
+	saved := readSavedSession(t, agent.recordPath).State
+	assert.Equal(t, []string{"first", "delivered"}, saved.Uncertain)
+	assert.Empty(t, saved.Withdrawn)
+	assert.Empty(t, saved.Queue)
+	err = agent.Command(ACPCommand{Type: "prompt", Mode: "steer", ID: "delivered", Text: "second", SteerTarget: "turn", Generation: 1})
+	require.ErrorIs(t, err, errACPSubmissionUncertain)
+}
+
 // The handoff file may hold the only copy of a prompt, so it stays until the
 // queue that holds that prompt is saved, and an owner that cannot save it
 // refuses to start rather than run with a handoff that would apply again.

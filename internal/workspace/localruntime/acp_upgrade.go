@@ -122,6 +122,20 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 		Queue: slices.Concat(queue, state.Queue), Withdrawn: slices.Concat(state.Withdrawn, withdrawn),
 		Uncertain: slices.Concat(state.Uncertain, uncertain),
 	}
+	saved, err := m.loadACPSaved(key)
+	if err != nil {
+		return err
+	}
+	// A saved follower may already be in the live transcript after a failed save.
+	if saved != nil {
+		for _, steer := range saved.State.Steers {
+			if steer.SteerTarget != "" && slices.ContainsFunc(state.Messages, func(message ACPMessage) bool {
+				return message.SubmissionID == steer.ID
+			}) && !slices.Contains(upgrade.Uncertain, steer.ID) {
+				upgrade.Uncertain = append(upgrade.Uncertain, steer.ID)
+			}
+		}
+	}
 	for _, permission := range state.Permissions {
 		name := permission.Title
 		if name == "" {

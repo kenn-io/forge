@@ -17,7 +17,7 @@ function run(command, commandArgs, cwd, env = process.env) {
   if (!dryRun) execFileSync(command, commandArgs, { cwd, env, stdio: "inherit" });
 }
 
-// The APK embeds assets/web.bundle, so rebuild it from the current frontend first.
+// The APK packages the web UI from assets/android, so rebuild it from the current frontend first.
 run(process.execPath, [path.join(mobile, "scripts/build-web.mjs")], mobile);
 
 if (!existsSync(gradlew)) {
@@ -30,10 +30,6 @@ if (!existsSync(gradlew)) {
   );
 }
 
-// React Native's bundle task tracks JS/TS inputs, not assets/web.bundle. Force it
-// in its own invocation so assembleRelease packages the fresh bundle instead of a
-// cached one.
-run(gradlew, [":app:createBundleReleaseJsAndAssets", "--rerun-tasks"], android);
 run(gradlew, [":app:assembleRelease"], android);
 
 if (!dryRun && !existsSync(apk)) throw new Error(`Gradle finished without producing ${apk}`);

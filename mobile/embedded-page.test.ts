@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
-import { gzipSync } from "node:zlib";
-import { embeddedPage } from "./embedded-page.ts";
+import { appAssetsPath, embeddedPage } from "./embedded-page.ts";
 
 const frontend = '<html><body><div id="app">Bundled Forge</div></body></html>';
-const bundle = gzipSync(frontend).toString("base64");
+const appIndex = "https://forge.example.test" + appAssetsPath + "index.html";
 
-async function boot(token: string, status: number, target?: string) {
+// packaged is false when the app has no web UI to serve, as on a platform
+// without the Android asset handler.
+async function boot(token: string, status: number, target?: string, packaged = true) {
   const page = embeddedPage(
-    bundle,
     { server: "https://forge.example.test/forge", token, desktop: false },
     false,
     target,
@@ -24,15 +24,11 @@ async function boot(token: string, status: number, target?: string) {
     window,
     history: { replaceState: (_state: unknown, _title: string, url: string) => events.push(url) },
     fetch: async (url: string, options: unknown) => {
+      if (url === appIndex) return { ok: packaged, status: packaged ? 200 : 404, text: async () => frontend };
       events.push({ url, options: structuredClone(options) });
       return { ok: status === 200, status };
     },
     document: { open() {}, write: (html: string) => events.push(html), close() {} },
-    atob,
-    Uint8Array,
-    Blob,
-    DecompressionStream,
-    Response,
   });
   return { page, events, window };
 }
@@ -74,4 +70,13 @@ test("a linked page opens in place of the launch route and the page may offer ke
   assert.equal(events[0], "https://forge.example.test/forge/worklists/import#v1.abc");
   assert.equal(window.__KENN_EMBEDDED_KENN_LINKS__, true);
   assert.equal(events.at(-1), frontend);
+});
+
+test("a missing packaged web UI reports a native error instead of a blank page", async () => {
+  const { events } = await boot("", 200, undefined, false);
+  assert.deepEqual(events.at(-1), {
+    type: "connection-error",
+    message: "This app is missing its Forge web UI. Reinstall the app.",
+  });
+  assert.equal(events.includes(frontend), false);
 });

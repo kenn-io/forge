@@ -1,9 +1,11 @@
 import path from "node:path";
-import { viteSingleFile } from "vite-plugin-singlefile";
 import frontend from "../frontend/vite.config";
 
+// The Android app packages these files in the APK and serves them under
+// /__forge_app__/ on the connected server's origin (see embedded-page.ts).
 export default {
   ...frontend,
+  base: "/__forge_app__/",
   publicDir: false,
   plugins: [
     ...frontend.plugins.flat().filter((plugin) => plugin.name !== "kenn-forge-precompress-assets"),
@@ -13,21 +15,12 @@ export default {
       transformIndexHtml(html: string) {
         return html.replace(/<link[^>]*rel="icon"[^>]*>/, '<link rel="icon" href="data:,">');
       },
-      transform(code: string, id: string) {
-        if (!id.endsWith("/pierre-worker-pool.ts")) return;
-        return (
-          'import InlineDiffWorker from "./pierre-diff-worker-entry.js?worker&inline";\n' +
-          code.replace(
-            /new Worker\(new URL\("\.\/pierre-diff-worker-entry\.js", import\.meta\.url\), \{\s*type: "module",\s*\}\)/,
-            "new InlineDiffWorker()",
-          )
-        );
-      },
     },
-    viteSingleFile(),
   ],
   build: {
     ...frontend.build,
-    outDir: path.resolve(import.meta.dirname, "assets"),
+    // Local files load fast, so keep fonts and images out of the stylesheet.
+    assetsInlineLimit: 0,
+    outDir: path.resolve(import.meta.dirname, "assets/android/forge-web"),
   },
 };

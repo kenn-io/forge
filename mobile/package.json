@@ -15,9 +15,7 @@
   },
   "dependencies": {
     "expo": "~58.0.26",
-    "expo-asset": "~58.0.21",
     "expo-build-properties": "~58.0.12",
-    "expo-file-system": "~58.0.14",
     "expo-secure-store": "~58.0.3",
     "expo-status-bar": "~58.0.5",
     "expo-system-ui": "~58.0.7",
@@ -33,8 +31,7 @@
     "@types/react-test-renderer": "19.3.0",
     "jsdom": "31.0.0",
     "react-test-renderer": "19.3.0",
-    "typescript": "6.0.3",
-    "vite-plugin-singlefile": "^2.3.3"
+    "typescript": "6.0.3"
   },
   "packageManager": "bun@1.4.4",
   "patchedDependencies": {

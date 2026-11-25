@@ -16,9 +16,11 @@ sizing until each mode has a deliberately designed phone workflow.
 - Bundle the shared web UI in the native app; use the selected server only for
   APIs, event streams, and WebSockets. Do not duplicate ACP or terminal UI in
   React Native (`mobile/embedded-page.ts`).
-- React Native's Gradle task inputs do not track `mobile/assets/web.bundle`;
-  build release APKs through `mobile/scripts/release-android.mjs`, which forces
-  the bundle task to rerun.
+- The APK packages the web UI as files, and the patched WebView client serves
+  them under `/__forge_app__/` on the server's origin; the WebView receives only
+  a small bootstrap page. Android WebView renders an empty page once the HTML
+  handed to it reaches about 15 MB, so never inline the UI, its fonts, or images
+  into that HTML (`mobile/scripts/build-web.mjs` enforces this).
 - Desktop layout is opt-in for tablets (`mobile/connection.ts::launchURL`).
 - Frontend tests must not import from `mobile/`: its tsconfig extends
   `expo/tsconfig.base`, which frontend CI does not install. Pin shared route

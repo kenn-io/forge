@@ -63,8 +63,11 @@ After the first native build, start Metro with:
 node node_modules/expo/bin/cli start --localhost
 ```
 
-Rebuild the web bundle with `node scripts/build-web.mjs` after changing the
-frontend. Rebuild the native app after changing dependencies or `app.json`.
+Rebuild the web UI with `node scripts/build-web.mjs` after changing the
+frontend. It writes the files the APK packages to `assets/android/forge-web`.
+Rebuild the native app after changing dependencies or `app.json`. If your
+`android/` project predates this layout, delete it so the next build
+regenerates it with the web UI assets.
 
 For a standalone release APK with the current Forge web UI bundled, run:
 
@@ -72,8 +75,8 @@ For a standalone release APK with the current Forge web UI bundled, run:
 node scripts/release-android.mjs
 ```
 
-It rebuilds the web bundle, generates `android/` if missing, forces Gradle to
-repackage the bundle, and prints the APK path. Add `--dry-run` to print the
+It rebuilds the web UI, generates `android/` if missing, and prints the APK
+path. Add `--dry-run` to print the
 commands without running them. The generated project signs release builds with
 the debug keystore; distribution needs your own signing configuration.
 
@@ -85,9 +88,9 @@ the version is applied only when the native project is generated.
 ## iOS
 
 The Expo config includes iOS settings, but the iOS app has not been built or
-verified yet. Android is the supported platform for now. To experiment on macOS
-with Xcode, run `node scripts/build-web.mjs` followed by
-`node node_modules/expo/bin/cli run:ios`.
+verified yet. Android is the supported platform for now. iOS has no handler
+that serves the packaged web UI under `/__forge_app__/` yet, so the app does
+not work on iOS.
 
 ## Checks
 

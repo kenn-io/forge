@@ -30,6 +30,7 @@ func TestDaemonStartDefersCloneRepairUntilPublicationWindowsE2E(t *testing.T) {
 	require.NoError(t, safefileio.EnsurePrivateDir(fixture.store.Dir))
 	store, err := daemonruntime.Store()
 	require.NoError(t, err)
+	store.ValidateFiles = true
 
 	// Move an inherited broad-access clone into an already private home.
 	source := filepath.Join(root, "source")

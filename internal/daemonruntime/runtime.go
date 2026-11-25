@@ -70,7 +70,7 @@ func Store() (daemon.RuntimeStore, error) {
 	if err != nil {
 		return daemon.RuntimeStore{}, fmt.Errorf("resolve runtime directory: %w", err)
 	}
-	return daemon.RuntimeStore{Dir: runtimeDir, ValidateFiles: true}, nil
+	return daemon.RuntimeStore{Dir: runtimeDir}, nil
 }
 
 // StartLockStore returns the kit lock identity for one canonical data directory.

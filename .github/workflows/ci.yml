@@ -698,6 +698,18 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+      - name: Run clone repair publication test
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-daemon-clone-repair.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-daemon-clone-repair-reruns.txt --packages "./cmd/kenn-forge" -- -run '^TestDaemonStartDefersCloneRepairUntilPublicationWindowsE2E$' -shuffle=on
+
+      - name: Upload gotestsum results
+        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/pty-windows-daemon-clone-repair-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-pty-windows-daemon-clone-repair-attempt-${{ github.run_attempt }}
+          path: gotestsum/pty-windows-daemon-clone-repair.json
+          retention-days: 14
+          if-no-files-found: ignore
+
       - uses: kenn-io/kit/.github/actions/kit-retry@v0.58.1
 
       - name: Install the pinned Rust toolchain

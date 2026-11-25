@@ -129,7 +129,7 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 	// A saved steer absent from the live lists may have been delivered after a failed save.
 	if saved != nil {
 		for _, steer := range saved.State.Steers {
-			if steer.SteerTarget != "" && !slices.ContainsFunc(state.Steers, func(live ACPQueuedPrompt) bool {
+			if !slices.ContainsFunc(upgrade.Queue, func(live ACPQueuedPrompt) bool {
 				return live.ID == steer.ID
 			}) && !slices.Contains(upgrade.Withdrawn, steer.ID) && !slices.Contains(upgrade.Uncertain, steer.ID) &&
 				!slices.ContainsFunc(saved.State.Messages, func(message ACPMessage) bool { return message.SubmissionID == steer.ID }) {
@@ -147,7 +147,7 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 	for _, elicitation := range state.Elicitations {
 		upgrade.Cancelled = append(upgrade.Cancelled, elicitation.Message)
 	}
-	if len(upgrade.Queue) == 0 && len(upgrade.Withdrawn) == 0 && len(upgrade.Uncertain) == 0 && len(upgrade.Cancelled) == 0 && (saved == nil || len(saved.State.Steers) == 0) {
+	if len(upgrade.Queue) == 0 && len(upgrade.Withdrawn) == 0 && len(upgrade.Uncertain) == 0 && len(upgrade.Cancelled) == 0 && (saved == nil || !slices.ContainsFunc(saved.State.Steers, func(steer ACPQueuedPrompt) bool { return steer.SteerTarget != "" })) {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}

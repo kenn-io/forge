@@ -124,15 +124,16 @@ func TestDaemonStartDefersCloneRepairUntilPublicationWindowsE2E(t *testing.T) {
 		return err == nil && ready
 	}, 15*time.Second, 50*time.Millisecond)
 	require.NotEqual(t, before, cloneFileDACL(t, cloneFile))
-	_, stderr, err = fixture.run("stop")
-	require.NoError(t, err, stderr)
-
-	// Idle status and stop must leave newly moved-in files for the next serve.
 	fresh := filepath.Join(source, "fresh")
 	require.NoError(t, os.WriteFile(fresh, nil, 0o600))
 	cloneFile = filepath.Join(cloneDir, "fresh")
 	require.NoError(t, os.Rename(fresh, cloneFile))
 	before = cloneFileDACL(t, cloneFile)
+	_, stderr, err = fixture.run("stop")
+	require.NoError(t, err, stderr)
+	require.Equal(t, before, cloneFileDACL(t, cloneFile))
+
+	// Stopped status and stop also leave the moved-in file untouched.
 	for _, args := range [][]string{{"status"}, {"status", "--json"}, {"stop"}} {
 		_, stderr, err := fixture.run(args...)
 		require.NoError(t, err, stderr)

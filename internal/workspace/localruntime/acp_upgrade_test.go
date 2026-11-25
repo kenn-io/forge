@@ -423,12 +423,22 @@ func TestOwnerUpgradePreservesSupervisedSteerOutcomes(t *testing.T) {
 	}}
 	require.NoError(t, manager.saveACPOwnerUpgrade("chat", state))
 	agent := newDetachedACP(t)
+	// A failed save can leave the current in-flight steer behind an older one.
+	agent.restoreTranscriptLocked(ACPState{
+		Supervision: &ACPSupervision{Supervisor: "planner", Generation: 1},
+		Steers: []ACPQueuedPrompt{
+			{ID: "old", Text: "earlier", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
+			state.Steers[0],
+		},
+	})
 	agent.recordPath = filepath.Join(paths.Dir, "session.json")
 	require.NoError(t, agent.applyOwnerUpgrade(paths.Dir))
 	saved := readSavedSession(t, agent.recordPath).State
-	assert.Equal(t, []string{"head"}, saved.Uncertain)
+	assert.Equal(t, []string{"old", "head"}, saved.Uncertain)
 	assert.Equal(t, []string{"follower"}, saved.Withdrawn)
 	assert.Empty(t, saved.Queue)
+	err = agent.Command(ACPCommand{Type: "prompt", Mode: "steer", ID: "head", Text: "first", SteerTarget: "turn", Generation: 1})
+	require.ErrorIs(t, err, errACPSubmissionUncertain)
 }
 
 // The handoff file may hold the only copy of a prompt, so it stays until the

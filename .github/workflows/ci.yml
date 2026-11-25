@@ -686,8 +686,8 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-      - name: Run case-insensitive daemon lifecycle tests
-        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-daemon-case.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-daemon-case-reruns.txt --packages "./cmd/kenn-forge" -- -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E|TestWindowsCommandHint' -shuffle=on
+      - name: Run Windows daemon lifecycle tests
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-daemon-case.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-daemon-case-reruns.txt --packages "./cmd/kenn-forge" -- -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E|TestWindowsCommandHint|TestDaemonStartDefersCloneRepairUntilPublicationWindowsE2E' -shuffle=on
 
       - name: Upload gotestsum results
         if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/pty-windows-daemon-case-reruns.txt') != ''
@@ -695,18 +695,6 @@ jobs:
         with:
           name: gotestsum-pty-windows-daemon-case-attempt-${{ github.run_attempt }}
           path: gotestsum/pty-windows-daemon-case.json
-          retention-days: 14
-          if-no-files-found: ignore
-
-      - name: Run clone repair publication test
-        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-daemon-clone-repair.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-daemon-clone-repair-reruns.txt --packages "./cmd/kenn-forge" -- -run '^TestDaemonStartDefersCloneRepairUntilPublicationWindowsE2E$' -shuffle=on
-
-      - name: Upload gotestsum results
-        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/pty-windows-daemon-clone-repair-reruns.txt') != ''
-        uses: actions/upload-artifact@v7.0.2
-        with:
-          name: gotestsum-pty-windows-daemon-clone-repair-attempt-${{ github.run_attempt }}
-          path: gotestsum/pty-windows-daemon-clone-repair.json
           retention-days: 14
           if-no-files-found: ignore
 

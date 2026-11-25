@@ -416,9 +416,10 @@ func TestOwnerUpgradePreservesSupervisedSteerOutcomes(t *testing.T) {
 	paths, err := ptyowner.NewSessionPaths(dir, "chat")
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(paths.Dir, 0o700))
-	state := ACPState{Steers: []ACPQueuedPrompt{
-		{ID: "head", Text: "first", SteerTarget: "turn"},
-		{ID: "follower", Text: "second", SteerTarget: "turn"},
+	coordinator := ACPSender{Kind: ACPSenderCoordinator, Name: "planner"}
+	state := ACPState{Busy: true, Steering: true, Steers: []ACPQueuedPrompt{
+		{ID: "head", Text: "first", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
+		{ID: "follower", Text: "second", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
 	}}
 	require.NoError(t, manager.saveACPOwnerUpgrade("chat", state))
 	agent := newDetachedACP(t)

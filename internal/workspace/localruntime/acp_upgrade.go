@@ -131,8 +131,7 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 		for _, steer := range saved.State.Steers {
 			if !slices.ContainsFunc(upgrade.Queue, func(live ACPQueuedPrompt) bool {
 				return live.ID == steer.ID
-			}) && !slices.Contains(upgrade.Withdrawn, steer.ID) && !slices.Contains(upgrade.Uncertain, steer.ID) &&
-				!slices.ContainsFunc(saved.State.Messages, func(message ACPMessage) bool { return message.SubmissionID == steer.ID }) {
+			}) && !slices.Contains(upgrade.Withdrawn, steer.ID) && !slices.Contains(upgrade.Uncertain, steer.ID) {
 				upgrade.Uncertain = append(upgrade.Uncertain, steer.ID)
 			}
 		}
@@ -147,7 +146,7 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 	for _, elicitation := range state.Elicitations {
 		upgrade.Cancelled = append(upgrade.Cancelled, elicitation.Message)
 	}
-	if len(upgrade.Queue) == 0 && len(upgrade.Withdrawn) == 0 && len(upgrade.Uncertain) == 0 && len(upgrade.Cancelled) == 0 && (saved == nil || !slices.ContainsFunc(saved.State.Steers, func(steer ACPQueuedPrompt) bool { return steer.SteerTarget != "" })) {
+	if len(upgrade.Queue) == 0 && len(upgrade.Withdrawn) == 0 && len(upgrade.Uncertain) == 0 && len(upgrade.Cancelled) == 0 {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -188,13 +187,6 @@ func (a *ACP) applyOwnerUpgrade(dir string) error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	// Restoring stale steers can infer an outcome for an already saved message.
-	for _, message := range a.state.Messages {
-		if message.SubmissionID != "" {
-			a.state.Withdrawn = slices.DeleteFunc(a.state.Withdrawn, func(id string) bool { return id == message.SubmissionID })
-			a.state.Uncertain = slices.DeleteFunc(a.state.Uncertain, func(id string) bool { return id == message.SubmissionID })
-		}
-	}
 	// The live owner knows which steers were in flight; the saved order may be stale.
 	for _, id := range upgrade.Withdrawn {
 		a.state.Uncertain = slices.DeleteFunc(a.state.Uncertain, func(uncertain string) bool { return uncertain == id })

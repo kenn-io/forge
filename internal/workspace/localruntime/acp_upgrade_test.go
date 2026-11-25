@@ -454,17 +454,15 @@ func TestOwnerUpgradePreservesDeliveredSteerFromStaleSave(t *testing.T) {
 	coordinator := ACPSender{Kind: ACPSenderCoordinator, Name: "planner"}
 	savedState := ACPState{
 		Supervision: &ACPSupervision{Supervisor: "planner", Generation: 1},
-		Messages:    []ACPMessage{{Role: "user", SubmissionID: "saved", Text: "saved", Sender: &coordinator}},
 		Steers: []ACPQueuedPrompt{
 			{ID: "first", Text: "first", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
 			{ID: "delivered", Text: "second", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
-			{ID: "saved", Text: "saved", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
 		},
 	}
 	data, err := json.Marshal(acpSavedSession{State: savedState})
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(manager.acpSessionPath("chat"), data, 0o600))
-	// Neither delivered correction is in the bounded live transcript window.
+	// The delivered correction is outside the bounded live transcript window.
 	live := ACPState{}
 	require.NoError(t, manager.saveACPOwnerUpgrade("chat", live))
 	agent := newDetachedACP(t)
@@ -477,33 +475,6 @@ func TestOwnerUpgradePreservesDeliveredSteerFromStaleSave(t *testing.T) {
 	assert.Empty(t, saved.Queue)
 	err = agent.Command(ACPCommand{Type: "prompt", Mode: "steer", ID: "delivered", Text: "second", SteerTarget: "turn", Generation: 1})
 	require.ErrorIs(t, err, errACPSubmissionUncertain)
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", ID: "saved", Text: "saved", SteerTarget: "turn", Generation: 1}))
-}
-
-func TestOwnerUpgradeReconcilesOnlySavedDeliveredSteer(t *testing.T) {
-	dir := t.TempDir()
-	manager := &Manager{acpSessionsDir: dir}
-	paths, err := ptyowner.NewSessionPaths(dir, "chat")
-	require.NoError(t, err)
-	require.NoError(t, os.MkdirAll(paths.Dir, 0o700))
-	coordinator := ACPSender{Kind: ACPSenderCoordinator, Name: "planner"}
-	state := ACPState{
-		Supervision: &ACPSupervision{Supervisor: "planner", Generation: 1},
-		Messages:    []ACPMessage{{Role: "user", SubmissionID: "saved", Text: "saved", Sender: &coordinator}},
-		Steers:      []ACPQueuedPrompt{{ID: "saved", Text: "saved", Sender: coordinator, Generation: 1, SteerTarget: "turn"}},
-	}
-	data, err := json.Marshal(acpSavedSession{State: state})
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(manager.acpSessionPath("chat"), data, 0o600))
-	require.NoError(t, manager.saveACPOwnerUpgrade("chat", ACPState{}))
-	agent := newDetachedACP(t)
-	agent.restoreTranscriptLocked(state)
-	agent.recordPath = manager.acpSessionPath("chat")
-	require.NoError(t, agent.applyOwnerUpgrade(paths.Dir))
-	saved := readSavedSession(t, agent.recordPath).State
-	assert.Empty(t, saved.Uncertain)
-	assert.Empty(t, saved.Withdrawn)
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", ID: "saved", Text: "saved", SteerTarget: "turn", Generation: 1}))
 }
 
 func TestOwnerUpgradeDoesNotReplayStalePersonSteer(t *testing.T) {

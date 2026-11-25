@@ -65,8 +65,11 @@ func (a *ACP) submit(command ACPCommand) error {
 		Generation: command.Generation, Allowance: command.AllowanceMillis,
 	}
 	if command.Mode == "steer" && command.Generation != 0 {
-		prompt.SteerTarget = command.Value
+		prompt.SteerTarget = command.SteerTarget
 		if !a.canDeliverSteerLocked(prompt) {
+			a.state.Withdrawn = append(a.state.Withdrawn, prompt.ID)
+			a.saveTakenEffectLocked("withdrawing a steer that cannot reach its target")
+			a.changedLocked()
 			a.mu.Unlock()
 			return errACPSubmissionWithdrawn
 		}

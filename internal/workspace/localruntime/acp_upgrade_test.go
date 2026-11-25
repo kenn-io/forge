@@ -410,6 +410,26 @@ func TestOpeningReplacesABusyOwnerOnceItFinishes(t *testing.T) {
 	require.Eventually(t, func() bool { return len(sentSubmissions(chat.state(t))) == 1 }, 10*time.Second, 10*time.Millisecond)
 }
 
+func TestOwnerUpgradePreservesSupervisedSteerOutcomes(t *testing.T) {
+	dir := t.TempDir()
+	manager := &Manager{acpSessionsDir: dir}
+	paths, err := ptyowner.NewSessionPaths(dir, "chat")
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(paths.Dir, 0o700))
+	state := ACPState{Steers: []ACPQueuedPrompt{
+		{ID: "head", Text: "first", SteerTarget: "turn"},
+		{ID: "follower", Text: "second", SteerTarget: "turn"},
+	}}
+	require.NoError(t, manager.saveACPOwnerUpgrade("chat", state))
+	agent := newDetachedACP(t)
+	agent.recordPath = filepath.Join(paths.Dir, "session.json")
+	require.NoError(t, agent.applyOwnerUpgrade(paths.Dir))
+	saved := readSavedSession(t, agent.recordPath).State
+	assert.Equal(t, []string{"head"}, saved.Uncertain)
+	assert.Equal(t, []string{"follower"}, saved.Withdrawn)
+	assert.Empty(t, saved.Queue)
+}
+
 // The handoff file may hold the only copy of a prompt, so it stays until the
 // queue that holds that prompt is saved, and an owner that cannot save it
 // refuses to start rather than run with a handoff that would apply again.

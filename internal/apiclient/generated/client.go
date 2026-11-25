@@ -72245,6 +72245,7 @@ type WorkspaceChatCommand struct {
 	Index           *int64                   `json:"index,omitempty"`
 	Mode            *string                  `json:"mode,omitempty"`
 	OptionID        *string                  `json:"optionId,omitempty"`
+	SteerTarget     *string                  `json:"steerTarget,omitempty"`
 	Supervisor      *string                  `json:"supervisor,omitempty"`
 	Text            *string                  `json:"text,omitempty"`
 	Type            WorkspaceChatCommandType `json:"type"`

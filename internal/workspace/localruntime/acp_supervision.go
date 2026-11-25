@@ -164,8 +164,8 @@ func (a *ACP) promptSenderLocked(command ACPCommand) (ACPSender, error) {
 	}
 	switch {
 	case command.Generation != 0:
-		if command.Mode == "steer" && command.Value == "" {
-			return ACPSender{}, ErrACPPersonOnly
+		if command.Mode == "steer" && command.SteerTarget == "" {
+			return ACPSender{}, errors.New("a coordinator's steer must name the turn it corrects")
 		}
 		if command.ID == "" {
 			return ACPSender{}, errors.New("a coordinator's prompts require a submission ID")

@@ -378,13 +378,13 @@ type ACPCommand struct {
 	Type string `json:"type"`
 	// Mode chooses how a prompt is submitted: send (the default), queue, or
 	// steer. A send while a turn is running queues instead of failing.
-	Mode     string       `json:"mode,omitempty"`
-	Text     string       `json:"text,omitempty"`
-	Images   []ACPContent `json:"images,omitempty"`
-	ID       string       `json:"id,omitempty"`
-	OptionID string       `json:"optionId,omitempty"`
-	// Value is the target submission ID for a supervised steer.
-	Value string `json:"value,omitempty"`
+	Mode        string       `json:"mode,omitempty"`
+	Text        string       `json:"text,omitempty"`
+	Images      []ACPContent `json:"images,omitempty"`
+	ID          string       `json:"id,omitempty"`
+	OptionID    string       `json:"optionId,omitempty"`
+	Value       string       `json:"value,omitempty"`
+	SteerTarget string       `json:"steerTarget,omitempty"`
 	// BeforeID and Limit select a history page.
 	BeforeID string `json:"beforeId,omitempty"`
 	Limit    int    `json:"limit,omitempty"`

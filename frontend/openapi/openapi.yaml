@@ -12634,6 +12634,8 @@ components:
           type: string
         optionId:
           type: string
+        steerTarget:
+          type: string
         supervisor:
           type: string
         text:

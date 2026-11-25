@@ -11,6 +11,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestACPSubmissionRefusedSteerStaysWithdrawnWhenTargetStarts(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		agent.state.SteeringSupported = true
+		agent.recordPath = filepath.Join(t.TempDir(), "session.json")
+		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "planner"}))
+		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "first", ID: "first", Generation: 1}))
+		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "next", ID: "target", Generation: 1}))
+		steer := ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "correction", SteerTarget: "target", Generation: 1}
+		require.ErrorIs(t, agent.Command(steer), errACPSubmissionWithdrawn)
+		assert.Equal(t, []string{"correction"}, readSavedSession(t, agent.recordPath).State.Withdrawn)
+		assert.Equal(t, []string{"correction"}, publishedACPState(t, agent).Withdrawn)
+
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+		require.Len(t, peer.params(acpsdk.AgentMethodSessionPrompt), 2)
+		require.ErrorIs(t, agent.Command(steer), errACPSubmissionWithdrawn)
+		assert.Empty(t, peer.params(acpSteeringMethod))
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+	})
+}
+
 func TestACPSubmissionSteersItsSupervisedTurnInOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		agent, peer := newScriptedACP(t)
@@ -18,8 +40,8 @@ func TestACPSubmissionSteersItsSupervisedTurnInOrder(t *testing.T) {
 		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "planner"}))
 		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "start", Generation: 1}))
 
-		first := ACPCommand{Type: "prompt", Mode: "steer", Text: "correct that", ID: "first", Value: "start", Generation: 1}
-		second := ACPCommand{Type: "prompt", Mode: "steer", Text: "one more correction", ID: "second", Value: "start", Generation: 1}
+		first := ACPCommand{Type: "prompt", Mode: "steer", Text: "correct that", ID: "first", SteerTarget: "start", Generation: 1}
+		second := ACPCommand{Type: "prompt", Mode: "steer", Text: "one more correction", ID: "second", SteerTarget: "start", Generation: 1}
 		require.NoError(t, agent.Command(first))
 		require.NoError(t, agent.Command(second))
 		require.NoError(t, agent.Command(first))
@@ -52,7 +74,7 @@ func TestACPSubmissionCannotSteerAnUnownedOrMissingTurn(t *testing.T) {
 		agent, peer := newScriptedACP(t)
 		agent.state.SteeringSupported = true
 		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "planner"}))
-		steer := ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "idle", Value: "their-turn", Generation: 1}
+		steer := ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "idle", SteerTarget: "their-turn", Generation: 1}
 		require.ErrorIs(t, agent.Command(steer), errACPSubmissionWithdrawn)
 
 		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "browser input", ID: "their-turn"}))
@@ -64,7 +86,7 @@ func TestACPSubmissionCannotSteerAnUnownedOrMissingTurn(t *testing.T) {
 		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "new request", ID: "new-turn", Generation: 1}))
 		steer.ID = "different"
 		require.ErrorIs(t, agent.Command(steer), errACPSubmissionWithdrawn)
-		steer.ID, steer.Value, steer.Generation = "stale", "new-turn", 2
+		steer.ID, steer.SteerTarget, steer.Generation = "stale", "new-turn", 2
 		require.ErrorIs(t, agent.Command(steer), ErrACPStaleGeneration)
 
 		agent.mu.Lock()
@@ -87,8 +109,8 @@ func TestACPSubmissionDoesNotStartAnotherTurnAfterSteerMisses(t *testing.T) {
 		agent.recordPath = filepath.Join(t.TempDir(), "session.json")
 		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "planner"}))
 		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "start", Generation: 1}))
-		first := ACPCommand{Type: "prompt", Mode: "steer", Text: "correct that", ID: "first", Value: "start", Generation: 1}
-		second := ACPCommand{Type: "prompt", Mode: "steer", Text: "one more correction", ID: "second", Value: "start", Generation: 1}
+		first := ACPCommand{Type: "prompt", Mode: "steer", Text: "correct that", ID: "first", SteerTarget: "start", Generation: 1}
+		second := ACPCommand{Type: "prompt", Mode: "steer", Text: "one more correction", ID: "second", SteerTarget: "start", Generation: 1}
 		require.NoError(t, agent.Command(first))
 		require.NoError(t, agent.Command(second))
 		synctest.Wait()
@@ -115,8 +137,8 @@ func TestACPSubmissionPreservesAnAmbiguousSteerWithoutRetryingIt(t *testing.T) {
 		agent.recordPath = filepath.Join(t.TempDir(), "session.json")
 		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "planner"}))
 		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "start", Generation: 1}))
-		first := ACPCommand{Type: "prompt", Mode: "steer", Text: "correct that", ID: "first", Value: "start", Generation: 1}
-		second := ACPCommand{Type: "prompt", Mode: "steer", Text: "one more correction", ID: "second", Value: "start", Generation: 1}
+		first := ACPCommand{Type: "prompt", Mode: "steer", Text: "correct that", ID: "first", SteerTarget: "start", Generation: 1}
+		second := ACPCommand{Type: "prompt", Mode: "steer", Text: "one more correction", ID: "second", SteerTarget: "start", Generation: 1}
 		require.NoError(t, agent.Command(first))
 		require.NoError(t, agent.Command(second))
 		synctest.Wait()
@@ -143,7 +165,7 @@ func TestACPSubmissionWithdrawsBeforeSendingWhenItsTargetEnds(t *testing.T) {
 
 		allowWrite := make(chan struct{})
 		agent.beforePromptWrite = func() { <-allowWrite }
-		steer := ACPCommand{Type: "prompt", Mode: "steer", Text: "correct that", ID: "first", Value: "start", Generation: 1}
+		steer := ACPCommand{Type: "prompt", Mode: "steer", Text: "correct that", ID: "first", SteerTarget: "start", Generation: 1}
 		require.NoError(t, agent.Command(steer))
 		synctest.Wait()
 		peer.endTurn(acpsdk.StopReasonEndTurn)
@@ -165,8 +187,8 @@ func TestACPSubmissionRestoresInterruptedSteersWithoutStartingThem(t *testing.T)
 		agent.recordPath = filepath.Join(t.TempDir(), "session.json")
 		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "planner"}))
 		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "start", Generation: 1}))
-		first := ACPCommand{Type: "prompt", Mode: "steer", Text: "correct that", ID: "first", Value: "start", Generation: 1}
-		second := ACPCommand{Type: "prompt", Mode: "steer", Text: "one more correction", ID: "second", Value: "start", Generation: 1}
+		first := ACPCommand{Type: "prompt", Mode: "steer", Text: "correct that", ID: "first", SteerTarget: "start", Generation: 1}
+		second := ACPCommand{Type: "prompt", Mode: "steer", Text: "one more correction", ID: "second", SteerTarget: "start", Generation: 1}
 		require.NoError(t, agent.Command(first))
 		require.NoError(t, agent.Command(second))
 		synctest.Wait()
@@ -193,7 +215,7 @@ func TestACPSubmissionKeepsItsTurnWhenTheAgentStartsAReplacement(t *testing.T) {
 		acpThreadStatus(t, agent, "idle")
 		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "planner"}))
 		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "start", Generation: 1}))
-		steer := ACPCommand{Type: "prompt", Mode: "steer", Text: "correct that", ID: "first", Value: "start", Generation: 1}
+		steer := ACPCommand{Type: "prompt", Mode: "steer", Text: "correct that", ID: "first", SteerTarget: "start", Generation: 1}
 		require.NoError(t, agent.Command(steer))
 		synctest.Wait()
 		require.Len(t, peer.params(acpSteeringMethod), 1)
@@ -232,7 +254,7 @@ func TestACPSubmissionStopsTheReplacementWhenTheOriginalWasCancelled(t *testing.
 		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "planner"}))
 		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "start", Generation: 1}))
 		require.NoError(t, agent.Command(ACPCommand{
-			Type: "prompt", Mode: "steer", Text: "correct that", ID: "first", Value: "start", Generation: 1,
+			Type: "prompt", Mode: "steer", Text: "correct that", ID: "first", SteerTarget: "start", Generation: 1,
 		}))
 		synctest.Wait()
 

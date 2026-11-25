@@ -36,8 +36,7 @@ async function gotoWithWebKitRetry(page: Page, url: string): Promise<void> {
 }
 
 async function openPRTimeline(page: Page): Promise<void> {
-  await gotoWithWebKitRetry(page, "/pulls/github/acme/widgets/1");
-  await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
+  await openPRTimelinePath(page, "/pulls/github/acme/widgets/1");
   await expect(page.getByText("feat: add cache store")).toBeVisible();
   await expect(page.getByText("Cache entries now expire")).toBeVisible();
   await expect(page.getByText("Widget rendering broken on Safari")).toBeVisible();
@@ -46,6 +45,7 @@ async function openPRTimeline(page: Page): Promise<void> {
 async function openPRTimelinePath(page: Page, path: string): Promise<void> {
   await gotoWithWebKitRetry(page, path);
   await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
+  await page.getByRole("list", { name: "Item activity" }).waitFor({ state: "visible", timeout: 10_000 });
 }
 
 async function openIssueTimeline(page: Page): Promise<void> {

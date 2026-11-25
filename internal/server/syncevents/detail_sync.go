@@ -200,6 +200,13 @@ func (s *Handlers) startDetailSyncJob(key string, job DetailSyncJob) bool {
 		if before != after {
 			event := RepositoryEvent{Provider: job.repo.Platform, PlatformHost: job.repo.PlatformHost, RepoPath: job.repo.RepoPath, Key: job.repo.Key}
 			(*s.Hub).Broadcast(Event{Type: "data_changed", Data: RepositoryChanges{Repositories: []RepositoryEvent{event}}})
+			// Broadcast pr_detail_refreshed so open PR views refresh over SSE
+			// without waiting for background poll intervals (broad data_changed
+			// does not refresh an open PR detail). Mutation jobs broadcast it in
+			// job.after.
+			if job.after == nil && job.number > 0 {
+				s.BroadcastPRDetailRefresh(ctx, job.repo.ID, job.number)
+			}
 		}
 	})
 	if started {

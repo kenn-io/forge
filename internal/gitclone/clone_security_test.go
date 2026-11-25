@@ -222,3 +222,35 @@ func TestValidateRemoteTransportAllowsLoopbackHTTPWithoutPlatformPolicy(t *testi
 		"http://127.0.0.1:3000/acme/widget.git",
 	))
 }
+
+func TestSetBlockRemoteNetworkRejectsNonLocalRemotes(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr := New(t.TempDir(), nil)
+	mgr.SetBlockRemoteNetwork(true)
+
+	for _, blocked := range []struct {
+		platform, host, owner, name, remote string
+	}{
+		{"github", "github.com", "acme", "tools", "https://github.com/acme/tools.git"},
+		{"github", "github.com", "acme", "tools", "ssh://git@github.com/acme/tools.git"},
+		{"github", "github.com", "acme", "tools", "git@github.com:acme/tools.git"},
+	} {
+		err := mgr.EnsureClone(
+			t.Context(), blocked.platform, blocked.host, blocked.owner, blocked.name, blocked.remote,
+		)
+		require.Error(err, "expected remote %q to be blocked", blocked.remote)
+		assert.Contains(err.Error(), "remote git transport disabled")
+	}
+
+	// Local paths, file URLs, loopback URLs, and explicitly allowed insecure
+	// HTTP proxies remain permitted.
+	require.NoError(mgr.validateRemoteTransport("github", "github.com", "/tmp/acme/widgets.git"))
+	require.NoError(mgr.validateRemoteTransport("github", "github.com", "file:///tmp/acme/widgets.git"))
+	require.NoError(mgr.validateRemoteTransport("github", "127.0.0.1:3000", "https://127.0.0.1:3000/acme/tools.git"))
+	require.NoError(mgr.validateRemoteTransport("github", "127.0.0.1:3000", "http://127.0.0.1:3000/acme/tools.git"))
+
+	mgr.SetAllowInsecureHTTP("github", "github.com", true)
+	require.NoError(mgr.validateRemoteTransport("github", "github.com", "http://github.com/forker/widgets.git"))
+}

@@ -173,13 +173,14 @@ func (a *ACP) applyOwnerUpgrade(dir string) error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	// The live owner knows which steers were in flight; the saved order may be stale.
 	for _, id := range upgrade.Withdrawn {
+		a.state.Uncertain = slices.DeleteFunc(a.state.Uncertain, func(uncertain string) bool { return uncertain == id })
 		if !slices.Contains(a.state.Withdrawn, id) {
 			a.state.Withdrawn = append(a.state.Withdrawn, id)
 		}
 	}
 	for _, id := range upgrade.Uncertain {
-		// The live owner knows which steer was in flight; the saved order may be stale.
 		a.state.Withdrawn = slices.DeleteFunc(a.state.Withdrawn, func(withdrawn string) bool { return withdrawn == id })
 		if !slices.Contains(a.state.Uncertain, id) {
 			a.state.Uncertain = append(a.state.Uncertain, id)

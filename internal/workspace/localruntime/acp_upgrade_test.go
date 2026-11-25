@@ -417,16 +417,17 @@ func TestOwnerUpgradePreservesSupervisedSteerOutcomes(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(paths.Dir, 0o700))
 	coordinator := ACPSender{Kind: ACPSenderCoordinator, Name: "planner"}
-	state := ACPState{Busy: true, Steering: true, Steers: []ACPQueuedPrompt{
+	state := ACPState{Busy: true, Steering: true, Withdrawn: []string{"follower"}, Steers: []ACPQueuedPrompt{
 		{ID: "head", Text: "first", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
-		{ID: "follower", Text: "second", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
+		{ID: "later", Text: "later", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
 	}}
 	require.NoError(t, manager.saveACPOwnerUpgrade("chat", state))
 	agent := newDetachedACP(t)
-	// A failed save can leave the current in-flight steer behind an older one.
+	// Failed saves can leave a stale steer order that conflicts with the handoff.
 	agent.restoreTranscriptLocked(ACPState{
 		Supervision: &ACPSupervision{Supervisor: "planner", Generation: 1},
 		Steers: []ACPQueuedPrompt{
+			{ID: "follower", Text: "second", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
 			{ID: "old", Text: "earlier", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
 			state.Steers[0],
 		},
@@ -434,11 +435,13 @@ func TestOwnerUpgradePreservesSupervisedSteerOutcomes(t *testing.T) {
 	agent.recordPath = filepath.Join(paths.Dir, "session.json")
 	require.NoError(t, agent.applyOwnerUpgrade(paths.Dir))
 	saved := readSavedSession(t, agent.recordPath).State
-	assert.Equal(t, []string{"old", "head"}, saved.Uncertain)
-	assert.Equal(t, []string{"follower"}, saved.Withdrawn)
+	assert.Equal(t, []string{"head"}, saved.Uncertain)
+	assert.Equal(t, []string{"old", "follower", "later"}, saved.Withdrawn)
 	assert.Empty(t, saved.Queue)
 	err = agent.Command(ACPCommand{Type: "prompt", Mode: "steer", ID: "head", Text: "first", SteerTarget: "turn", Generation: 1})
 	require.ErrorIs(t, err, errACPSubmissionUncertain)
+	err = agent.Command(ACPCommand{Type: "prompt", Mode: "steer", ID: "follower", Text: "second", SteerTarget: "turn", Generation: 1})
+	require.ErrorIs(t, err, errACPSubmissionWithdrawn)
 }
 
 // The handoff file may hold the only copy of a prompt, so it stays until the

@@ -398,19 +398,13 @@ jobs:
         if: matrix.lane == 'go-windows'
         run: GOOS=windows ./custom-gcl run ./...
 
-      - name: Install NilAway
-        if: matrix.lane == 'go-linux'
-        run: |
-          kit-retry 3 5 go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260808063849-8649a03c818a
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-
       - name: Check shared Huma API contract
         if: matrix.lane == 'go-linux'
         run: kit-retry 3 5 make huma-check
 
       - name: Run NilAway
         if: matrix.lane == 'go-linux'
-        run: make nilaway NILAWAY_BIN="$(go env GOPATH)/bin/nilaway"
+        run: make nilaway
 
   test_go:
     name: Go tests (${{ matrix.shard }})

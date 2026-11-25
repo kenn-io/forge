@@ -18,6 +18,12 @@ import (
 	"go.kenn.io/kit/daemon"
 )
 
+func TestStoreKeepsDeepRepairDefault(t *testing.T) {
+	store, err := Store()
+	require.NoError(t, err)
+	require.False(t, store.ValidateFiles)
+}
+
 // TestNewIdentityKeepsDiscoverySurfacesAligned protects clients of both the
 // authoritative lock metadata and generic daemon record. If either surface is
 // built independently again, they can advertise different process or listener

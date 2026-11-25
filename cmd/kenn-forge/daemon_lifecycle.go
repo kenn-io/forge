@@ -78,7 +78,14 @@ type daemonMutationOptions struct {
 func defaultDaemonLifecycleDeps() daemonLifecycleDeps {
 	return daemonLifecycleDeps{
 		loadConfig: config.LoadOrCreate,
-		store:      daemonruntime.Store,
+		store: func() (daemon.RuntimeStore, error) {
+			store, err := daemonruntime.Store()
+			if err != nil {
+				return daemon.RuntimeStore{}, err
+			}
+			store.ValidateFiles = true
+			return store, nil
+		},
 		acquireConfigLock: func(
 			ctx context.Context,
 			store daemon.RuntimeStore,

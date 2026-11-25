@@ -175,6 +175,7 @@ Federation peers and the hub event stream live in
 
 ## Startup Lock
 
+- Daemon lifecycle commands and background startup validate the existing private config home; unsafe state falls back to deep repair. Other callers, including `fleet leave`, keep deep repair. The detached server repairs inherited clone permissions during publication, after taking its data-directory lock and before readiness.
 - Config and data-directory identity must converge across relative, symlinked, and
   filesystem-equivalent aliases before hashing or comparison (`internal/config/data_dir.go::CanonicalDataDir`).
 - Linux without procfs keeps the symlink-resolved spelling rather than failing config-backed

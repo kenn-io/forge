@@ -49,6 +49,7 @@ func ensureBackground(
 	if err != nil {
 		return daemon.RuntimeRecord{}, err
 	}
+	store.ValidateFiles = true
 	manager, err := daemonruntime.NewManager(
 		store, cfg.DataDir, version,
 		func(ctx context.Context) error {

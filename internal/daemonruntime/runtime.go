@@ -123,10 +123,8 @@ func scopedLockStore(
 	prefix, identity string,
 ) daemon.RuntimeStore {
 	digest := sha256.Sum256([]byte(identity))
-	return daemon.RuntimeStore{
-		Dir:    discoveryStore.Dir,
-		Prefix: fmt.Sprintf("%s-%x", prefix, digest[:16]),
-	}
+	discoveryStore.Prefix = fmt.Sprintf("%s-%x", prefix, digest[:16])
+	return discoveryStore
 }
 
 // LifecycleLock is a held cross-process daemon lifecycle lock.

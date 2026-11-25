@@ -2,6 +2,7 @@ package localruntime
 
 import (
 	"encoding/json/v2"
+	"os"
 	"path/filepath"
 	"testing"
 	"testing/synctest"
@@ -10,6 +11,21 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestACPSubmissionRefusedSteerSaveFailureLeavesNoOutcome(t *testing.T) {
+	agent, _ := newScriptedACP(t)
+	agent.state.SteeringSupported = true
+	require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "planner"}))
+	agent.recordPath = filepath.Join(t.TempDir(), "missing", "session.json")
+	steer := ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "correction", SteerTarget: "target", Generation: 1}
+
+	require.ErrorIs(t, agent.Command(steer), os.ErrNotExist)
+	assert.Empty(t, publishedACPState(t, agent).Withdrawn)
+
+	agent.recordPath = filepath.Join(t.TempDir(), "session.json")
+	require.ErrorIs(t, agent.Command(steer), errACPSubmissionWithdrawn)
+	assert.Equal(t, []string{"correction"}, readSavedSession(t, agent.recordPath).State.Withdrawn)
+}
 
 func TestACPSubmissionRefusedSteerStaysWithdrawnWhenTargetStarts(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {

@@ -70,7 +70,7 @@ func Store() (daemon.RuntimeStore, error) {
 	if err != nil {
 		return daemon.RuntimeStore{}, fmt.Errorf("resolve runtime directory: %w", err)
 	}
-	return daemon.RuntimeStore{Dir: runtimeDir}, nil
+	return daemon.RuntimeStore{Dir: runtimeDir, ValidateFiles: true}, nil
 }
 
 // StartLockStore returns the kit lock identity for one canonical data directory.
@@ -123,10 +123,8 @@ func scopedLockStore(
 	prefix, identity string,
 ) daemon.RuntimeStore {
 	digest := sha256.Sum256([]byte(identity))
-	return daemon.RuntimeStore{
-		Dir:    discoveryStore.Dir,
-		Prefix: fmt.Sprintf("%s-%x", prefix, digest[:16]),
-	}
+	discoveryStore.Prefix = fmt.Sprintf("%s-%x", prefix, digest[:16])
+	return discoveryStore
 }
 
 // LifecycleLock is a held cross-process daemon lifecycle lock.

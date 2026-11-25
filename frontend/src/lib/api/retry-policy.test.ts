@@ -1,10 +1,10 @@
 import { assert, it } from "@effect/vitest";
-import { Effect, Fiber, Ref } from "effect";
+import { Duration, Effect, Fiber, Ref, Schedule } from "effect";
 import { TestClock } from "effect/testing";
 import { ApiProblemError, TransientTransportError } from "./effect-errors.js";
 import { executeGeneratedRequest } from "./generated-api.js";
 import { listRepos } from "./generated/repositories/repositories.js";
-import { isTransientPickerReadFailure, retryIdempotentRead } from "./retry-policy.js";
+import { isTransientPickerReadFailure, retryIdempotentRead, transientRetrySchedule } from "./retry-policy.js";
 
 it.effect("retries a transient idempotent read at most twice", () =>
   Effect.gen(function* () {
@@ -27,6 +27,25 @@ it.effect("retries a transient idempotent read at most twice", () =>
 
     assert.strictEqual(exit._tag, "Failure");
     assert.strictEqual(yield* Ref.get(attempts), 3);
+  }),
+);
+
+it.effect("produces whole-millisecond jittered retry delays", () =>
+  Effect.gen(function* () {
+    for (let run = 0; run < 20; run++) {
+      const step = yield* Schedule.toStep(transientRetrySchedule);
+      const [, firstDelay] = yield* step(0, undefined);
+      const [, secondDelay] = yield* step(0, undefined);
+      const firstMs = Duration.toMillis(firstDelay);
+      const secondMs = Duration.toMillis(secondDelay);
+
+      assert.isTrue(Number.isInteger(firstMs), `expected integer ms, got ${firstMs}`);
+      assert.isAtLeast(firstMs, 400);
+      assert.isAtMost(firstMs, 600);
+      assert.isTrue(Number.isInteger(secondMs), `expected integer ms, got ${secondMs}`);
+      assert.isAtLeast(secondMs, 800);
+      assert.isAtMost(secondMs, 1_200);
+    }
   }),
 );
 

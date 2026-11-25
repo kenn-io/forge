@@ -780,7 +780,7 @@ export function createMockApiHandler(overrides: MockRouteOverride[] = []): MockA
       return jsonResponse(syncStatus);
     }
 
-    if (method === "GET" && pathname === "/api/v1/settings") {
+    if (method === "GET" && (pathname === "/api/v1/settings" || pathname === "/api/v1/settings/local")) {
       return jsonResponse(mockSettings);
     }
 

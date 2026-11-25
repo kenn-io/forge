@@ -2,8 +2,13 @@ import { Duration, Effect, Schedule } from "effect";
 import { ApiProblemError, TransientTransportError } from "./effect-errors.js";
 import { InvalidGeneratedErrorResponse } from "./runtime.js";
 
+// Round jittered delays to whole milliseconds to match browser setTimeout
+// truncation. Fractional delays advance fake clocks such as Playwright's
+// Date.now() to non-integers, which makes Effect's BigInt(Date.now()) span
+// clock throw RangeError.
 export const transientRetrySchedule = Schedule.exponential("500 millis").pipe(
   Schedule.jittered,
+  Schedule.modifyDelay(({ duration }) => Effect.succeed(Duration.millis(Math.round(Duration.toMillis(duration))))),
   Schedule.upTo({ times: 2 }),
 );
 

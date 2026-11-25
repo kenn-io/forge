@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/daemonruntime"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/runtimelock"
+	"go.kenn.io/kit/daemon"
 	"go.kenn.io/kit/safefileio"
 	"golang.org/x/sys/windows"
 )
@@ -31,9 +32,7 @@ func TestDaemonStartDefersCloneRepairUntilPublicationWindowsE2E(t *testing.T) {
 	dataDir := fixture.dataDir("data")
 	fixture.writeConfig(dataDir)
 	require.NoError(t, safefileio.EnsurePrivateDir(fixture.store.Dir))
-	store, err := daemonruntime.Store()
-	require.NoError(t, err)
-	store.ValidateFiles = true
+	fixture.store.ValidateFiles = true
 
 	// Move an inherited broad-access clone into an already private home.
 	source := filepath.Join(root, "source")
@@ -94,7 +93,7 @@ func TestDaemonStartDefersCloneRepairUntilPublicationWindowsE2E(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, response.Body.Close())
 	require.Equal(t, http.StatusServiceUnavailable, response.StatusCode)
-	records, err := store.List()
+	records, err := fixture.store.List()
 	require.NoError(t, err)
 	require.Empty(t, records)
 
@@ -113,16 +112,21 @@ func TestDaemonStartDefersCloneRepairUntilPublicationWindowsE2E(t *testing.T) {
 	require.Equal(t, before, cloneFileDACL(t, cloneFile))
 
 	require.NoError(t, os.Remove(gatePath))
+	var published daemon.RuntimeRecord
 	require.Eventually(t, func() bool {
-		record, _, found, err := daemonruntime.FindVerified(t.Context(), store, dataDir)
+		record, _, found, err := daemonruntime.FindVerified(t.Context(), fixture.store, dataDir)
 		if err != nil || !found {
 			return false
 		}
-		require.Equal(t, pid, record.PID)
-		require.Equal(t, "v-clone-repair", record.Version)
 		ready, err := daemonruntime.IsVerifiedReady(t.Context(), record, dataDir)
-		return err == nil && ready
+		if err != nil || !ready {
+			return false
+		}
+		published = record
+		return true
 	}, 15*time.Second, 50*time.Millisecond)
+	require.Equal(t, pid, published.PID)
+	require.Equal(t, "v-clone-repair", published.Version)
 	require.NotEqual(t, before, cloneFileDACL(t, cloneFile))
 	fresh := filepath.Join(source, "fresh")
 	require.NoError(t, os.WriteFile(fresh, nil, 0o600))
@@ -134,6 +138,9 @@ func TestDaemonStartDefersCloneRepairUntilPublicationWindowsE2E(t *testing.T) {
 	require.Equal(t, before, cloneFileDACL(t, cloneFile))
 
 	// Stopped status and stop also leave the moved-in file untouched.
+	stdout, stderr, err = fixture.run("status", "--json")
+	require.NoError(t, err, stderr)
+	require.Contains(t, stdout, `"running": false`)
 	for _, args := range [][]string{{"status"}, {"status", "--json"}, {"stop"}} {
 		_, stderr, err := fixture.run(args...)
 		require.NoError(t, err, stderr)

@@ -222,7 +222,7 @@ jobs:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.58.1
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.59.0
 
       - name: Install dependencies
         run: kit-retry 3 5 bun install --frozen-lockfile
@@ -271,7 +271,7 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.58.1
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.59.0
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
@@ -334,7 +334,7 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.58.1
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.59.0
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
@@ -550,7 +550,7 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.58.1
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.59.0
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
@@ -710,7 +710,7 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.58.1
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.59.0
 
       - name: Install the pinned Rust toolchain
         shell: bash
@@ -742,7 +742,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.58.1
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.59.0
 
       - name: Install the pinned Rust toolchain
         run: kit-retry 3 5 rustup toolchain install
@@ -809,7 +809,7 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.58.1
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.59.0
 
       # The removed-shell test skips without tmux, and the macOS images do not
       # all ship it. Fail here so a green test step proves the test ran.
@@ -1044,7 +1044,7 @@ jobs:
             echo 'ready=true' >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.58.1
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.59.0
         id: cache-retry-setup
         continue-on-error: true
         timeout-minutes: 1
@@ -1101,7 +1101,7 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.58.1
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.59.0
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
@@ -1216,7 +1216,7 @@ jobs:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.58.1
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.59.0
 
       - name: Install frontend dependencies
         run: kit-retry 3 5 bun install --frozen-lockfile
@@ -1305,7 +1305,7 @@ jobs:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.58.1
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.59.0
 
       - name: Install frontend dependencies
         # Restore only Bun's package cache; materialize node_modules from the
@@ -1419,7 +1419,7 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.58.1
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.59.0
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
@@ -1536,7 +1536,7 @@ jobs:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.58.1
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.59.0
 
       - name: Install frontend dependencies
         run: kit-retry 3 5 bun install --frozen-lockfile

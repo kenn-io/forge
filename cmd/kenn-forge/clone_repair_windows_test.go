@@ -20,10 +20,13 @@ import (
 )
 
 func TestDaemonStartDefersCloneRepairUntilPublicationWindowsE2E(t *testing.T) {
-	root := t.TempDir()
+	root := filepath.Join(t.TempDir(), "with spaces")
+	require.NoError(t, os.Mkdir(root, 0o700))
 	gatePath := filepath.Join(root, "publish-gate")
 	require.NoError(t, os.WriteFile(gatePath, nil, 0o600))
-	bin := buildForgeWithLDFlags(t, "-X main.version=v-clone-repair -X main.runtimePublishGatePath="+gatePath)
+	bin := buildForgeWithLDFlags(t, fmt.Sprintf(
+		`-X main.version=v-clone-repair -X "main.runtimePublishGatePath=%s"`, gatePath,
+	))
 	fixture := newDaemonLifecycleFixture(t, bin)
 	dataDir := fixture.dataDir("data")
 	fixture.writeConfig(dataDir)

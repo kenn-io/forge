@@ -292,7 +292,7 @@ func TestDaemonStartSerializesConfigMoveBeforeRuntimePublicationE2E(t *testing.T
 	gatePath := filepath.Join(root, "runtime-publish-gate")
 	require.NoError(os.WriteFile(gatePath, []byte("hold\n"), 0o600))
 	bin := buildForgeWithLDFlags(
-		t, "-X main.runtimePublishGatePath="+gatePath,
+		t, fmt.Sprintf(`-X "main.runtimePublishGatePath=%s"`, gatePath),
 	)
 
 	firstDataDir := filepath.Join(root, "first-data")

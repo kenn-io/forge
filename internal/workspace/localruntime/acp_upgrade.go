@@ -128,13 +128,7 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 	}
 	// A saved steer absent from the live lists may have been delivered after a failed save.
 	if saved != nil {
-		for _, steer := range saved.State.Steers {
-			if !slices.ContainsFunc(upgrade.Queue, func(live ACPQueuedPrompt) bool {
-				return live.ID == steer.ID
-			}) && !slices.Contains(upgrade.Withdrawn, steer.ID) && !slices.Contains(upgrade.Uncertain, steer.ID) {
-				upgrade.Uncertain = append(upgrade.Uncertain, steer.ID)
-			}
-		}
+		upgrade.addStaleSteers(saved.State.Steers)
 	}
 	for _, permission := range state.Permissions {
 		name := permission.Title
@@ -160,6 +154,25 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 		return err
 	}
 	return nil
+}
+
+// addStaleSteers handles saved steers absent from the handoff's live lists: a
+// person's steer returns to the front of the queue, and a supervised one may
+// have reached the agent, so it is uncertain.
+func (u *acpOwnerUpgrade) addStaleSteers(saved []ACPQueuedPrompt) {
+	var people []ACPQueuedPrompt
+	for _, steer := range saved {
+		if slices.ContainsFunc(u.Queue, func(live ACPQueuedPrompt) bool { return live.ID == steer.ID }) ||
+			slices.Contains(u.Withdrawn, steer.ID) || slices.Contains(u.Uncertain, steer.ID) {
+			continue
+		}
+		if steer.SteerTarget == "" {
+			people = append(people, steer)
+		} else {
+			u.Uncertain = append(u.Uncertain, steer.ID)
+		}
+	}
+	u.Queue = slices.Concat(people, u.Queue)
 }
 
 // applyOwnerUpgrade takes over what a replaced owner left in dir: its prompts
@@ -201,7 +214,7 @@ func (a *ACP) applyOwnerUpgrade(dir string) error {
 		}
 	}
 	a.state.Queue = slices.DeleteFunc(a.state.Queue, func(saved ACPQueuedPrompt) bool {
-		return slices.Contains(a.state.Withdrawn, saved.ID) || slices.Contains(a.state.Uncertain, saved.ID) ||
+		return (saved.ID != "" && (slices.Contains(a.state.Withdrawn, saved.ID) || slices.Contains(a.state.Uncertain, saved.ID))) ||
 			slices.ContainsFunc(upgrade.Queue, func(published ACPQueuedPrompt) bool { return published.ID == saved.ID })
 	})
 	for _, prompt := range upgrade.Queue {

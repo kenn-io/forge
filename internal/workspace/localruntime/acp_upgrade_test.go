@@ -493,15 +493,70 @@ func TestOwnerUpgradeDoesNotReplayStaleSteers(t *testing.T) {
 					require.ErrorIs(t, err, errACPSubmissionUncertain)
 				} else {
 					require.Len(t, peer.params(acpsdk.AgentMethodSessionPrompt), 1)
-					assert.Equal(t, []string{"live"}, userSubmissions(publishedACPState(t, agent)))
-					peer.endTurn(acpsdk.StopReasonEndTurn)
-					synctest.Wait()
-					assert.Len(t, peer.params(acpsdk.AgentMethodSessionPrompt), 1)
-					assert.Equal(t, []string{"live"}, userSubmissions(publishedACPState(t, agent)))
+					state := publishedACPState(t, agent)
+					assert.Equal(t, []string{"person"}, userSubmissions(state))
+					require.Len(t, state.Queue, 1)
+					assert.Equal(t, "live", state.Queue[0].ID)
 				}
 			})
 		})
 	}
+}
+
+func TestOwnerUpgradeRequeuesStaleSavedPersonSteer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		dir := t.TempDir()
+		manager := &Manager{acpSessionsDir: dir}
+		paths, err := ptyowner.NewSessionPaths(dir, "chat")
+		require.NoError(t, err)
+		require.NoError(t, os.MkdirAll(paths.Dir, 0o700))
+		person := ACPQueuedPrompt{ID: "person", Text: "person steer", Sender: ACPSender{Kind: ACPSenderUser}}
+		later := ACPQueuedPrompt{ID: "later", Text: "later prompt", Sender: ACPSender{Kind: ACPSenderUser}}
+		saved := ACPState{Steers: []ACPQueuedPrompt{person}}
+		data, err := json.Marshal(acpSavedSession{State: saved})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(manager.acpSessionPath("chat"), data, 0o600))
+		require.NoError(t, manager.saveACPOwnerUpgrade("chat", ACPState{Queue: []ACPQueuedPrompt{later}}))
+
+		agent := newDetachedACP(t)
+		agent.restoreTranscriptLocked(saved)
+		agent.state.Connected = false
+		agent.recordPath = manager.acpSessionPath("chat")
+		require.NoError(t, agent.applyOwnerUpgrade(paths.Dir))
+		synctest.Wait()
+
+		state := readSavedSession(t, agent.recordPath).State
+		require.Equal(t, []ACPQueuedPrompt{person, later}, state.Queue)
+		assert.Empty(t, state.Uncertain)
+	})
+}
+
+func TestOwnerUpgradeKeepsIDlessPromptWhenUncertainIDIsEmpty(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		dir := t.TempDir()
+		manager := &Manager{acpSessionsDir: dir}
+		paths, err := ptyowner.NewSessionPaths(dir, "chat")
+		require.NoError(t, err)
+		require.NoError(t, os.MkdirAll(paths.Dir, 0o700))
+		saved := ACPState{Queue: []ACPQueuedPrompt{{Text: "legacy prompt", Sender: ACPSender{Kind: ACPSenderUser}}}}
+		data, err := json.Marshal(acpSavedSession{State: saved})
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(manager.acpSessionPath("chat"), data, 0o600))
+		supervised := ACPQueuedPrompt{Text: "correction", Sender: ACPSender{Kind: ACPSenderCoordinator}, Generation: 1, SteerTarget: "turn"}
+		require.NoError(t, manager.saveACPOwnerUpgrade("chat", ACPState{Steers: []ACPQueuedPrompt{supervised}}))
+
+		agent := newDetachedACP(t)
+		agent.restoreTranscriptLocked(saved)
+		agent.state.Connected = false
+		agent.recordPath = manager.acpSessionPath("chat")
+		require.NoError(t, agent.applyOwnerUpgrade(paths.Dir))
+		synctest.Wait()
+
+		state := readSavedSession(t, agent.recordPath).State
+		require.Len(t, state.Queue, 1)
+		assert.Empty(t, state.Queue[0].ID)
+		assert.Equal(t, "legacy prompt", state.Queue[0].Text)
+	})
 }
 
 // The handoff file may hold the only copy of a prompt, so it stays until the

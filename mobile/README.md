@@ -89,8 +89,9 @@ the version is applied only when the native project is generated.
 
 The Expo config includes iOS settings, but the iOS app has not been built or
 verified yet. Android is the supported platform for now. iOS has no handler
-that serves the packaged web UI yet, so the app reports it as missing after
-connecting.
+that serves the packaged web UI yet. After connecting, the page asks the server
+for `/__forge_app__/index.html`, and Forge answers with its own web UI, so iOS
+loads the server's frontend instead of the packaged one.
 
 ## Checks
 

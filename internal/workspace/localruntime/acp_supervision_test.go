@@ -82,7 +82,7 @@ func TestACPCoordinatorPromptsQueueBehindARunningTurn(t *testing.T) {
 	require.ErrorContains(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", Generation: generation}),
 		"a coordinator's prompts require a submission ID")
 	require.ErrorContains(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "work", ID: "steer", Generation: generation}),
-		"a coordinator's steer must name the turn it corrects")
+		"a coordinator's steer must name the turn it corrects in steerTarget")
 	require.False(t, publishedACPState(t, agent).Busy, "a rejected prompt starts nothing")
 
 	first := ACPCommand{Type: "prompt", Mode: "send", Text: "work", ID: "first", Generation: generation}

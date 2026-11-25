@@ -445,28 +445,27 @@ func TestOwnerUpgradePreservesSupervisedSteerOutcomes(t *testing.T) {
 	require.ErrorIs(t, err, errACPSubmissionWithdrawn)
 }
 
-func TestOwnerUpgradeDoesNotReplayStaleSteers(t *testing.T) {
+func TestOwnerUpgradeRestoresSavedSteers(t *testing.T) {
+	person := ACPQueuedPrompt{ID: "person", Text: "person steer", Sender: ACPSender{Kind: ACPSenderUser}}
 	coordinator := ACPSender{Kind: ACPSenderCoordinator, Name: "planner"}
+	supervised := ACPQueuedPrompt{ID: "delivered", Text: "second", Sender: coordinator, Generation: 1, SteerTarget: "turn"}
+	queued := ACPQueuedPrompt{ID: "queued", Text: "queued prompt", Sender: ACPSender{Kind: ACPSenderUser}}
 	for _, tc := range []struct {
-		name  string
-		saved ACPState
-		live  ACPState
+		name      string
+		saved     ACPState
+		live      ACPState
+		uncertain []string
+		order     []string
 	}{
 		{
-			name: "delivered supervised steer",
+			name: "supervised steers",
 			saved: ACPState{Supervision: &ACPSupervision{Supervisor: "planner", Generation: 1}, Steers: []ACPQueuedPrompt{
-				{ID: "first", Text: "first", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
-				{ID: "delivered", Text: "second", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
+				{ID: "first", Text: "first", Sender: coordinator, Generation: 1, SteerTarget: "turn"}, supervised,
 			}},
+			uncertain: []string{"first", "delivered"},
 		},
-		{
-			name: "person steer with live queue",
-			saved: ACPState{Steers: []ACPQueuedPrompt{
-				{ID: "person", Text: "person steer", Sender: ACPSender{Kind: ACPSenderUser}},
-				{ID: "coordinator", Text: "correction", Sender: coordinator, Generation: 1, SteerTarget: "turn"},
-			}},
-			live: ACPState{Queue: []ACPQueuedPrompt{{ID: "live", Text: "live prompt", Sender: ACPSender{Kind: ACPSenderUser}}}},
-		},
+		{name: "no live handoff", saved: ACPState{Steers: []ACPQueuedPrompt{person}}, order: []string{"person", "later"}},
+		{name: "mixed steers and live queue", saved: ACPState{Steers: []ACPQueuedPrompt{person, supervised}}, live: ACPState{Queue: []ACPQueuedPrompt{queued}}, uncertain: []string{"delivered"}, order: []string{"person", "queued", "later"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -484,20 +483,20 @@ func TestOwnerUpgradeDoesNotReplayStaleSteers(t *testing.T) {
 				agent.recordPath = manager.acpSessionPath("chat")
 				require.NoError(t, agent.applyOwnerUpgrade(paths.Dir))
 				synctest.Wait()
-				if tc.name == "delivered supervised steer" {
-					saved := readSavedSession(t, agent.recordPath).State
-					assert.Equal(t, []string{"first", "delivered"}, saved.Uncertain)
-					assert.Empty(t, saved.Withdrawn)
-					assert.Empty(t, saved.Queue)
-					err = agent.Command(ACPCommand{Type: "prompt", Mode: "steer", ID: "delivered", Text: "second", SteerTarget: "turn", Generation: 1})
-					require.ErrorIs(t, err, errACPSubmissionUncertain)
-				} else {
-					require.Len(t, peer.params(acpsdk.AgentMethodSessionPrompt), 1)
-					assert.Equal(t, []string{"live"}, userSubmissions(publishedACPState(t, agent)))
-					peer.endTurn(acpsdk.StopReasonEndTurn)
-					synctest.Wait()
-					assert.Len(t, peer.params(acpsdk.AgentMethodSessionPrompt), 1)
-					assert.Equal(t, []string{"live"}, userSubmissions(publishedACPState(t, agent)))
+				state := publishedACPState(t, agent)
+				assert.Equal(t, tc.uncertain, state.Uncertain)
+				assert.Empty(t, state.Withdrawn)
+				if len(tc.order) == 0 {
+					return
+				}
+				require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "send", ID: "later", Text: "later prompt"}))
+				synctest.Wait()
+				for i := range tc.order {
+					require.Equal(t, tc.order[:i+1], userSubmissions(publishedACPState(t, agent)))
+					if i+1 < len(tc.order) {
+						peer.endTurn(acpsdk.StopReasonEndTurn)
+						synctest.Wait()
+					}
 				}
 			})
 		})

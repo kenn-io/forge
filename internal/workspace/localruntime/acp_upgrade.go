@@ -126,16 +126,7 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 	if err != nil {
 		return err
 	}
-	// A saved steer absent from the live lists may have been delivered after a failed save.
-	if saved != nil {
-		for _, steer := range saved.State.Steers {
-			if !slices.ContainsFunc(upgrade.Queue, func(live ACPQueuedPrompt) bool {
-				return live.ID == steer.ID
-			}) && !slices.Contains(upgrade.Withdrawn, steer.ID) && !slices.Contains(upgrade.Uncertain, steer.ID) {
-				upgrade.Uncertain = append(upgrade.Uncertain, steer.ID)
-			}
-		}
-	}
+	restoreSavedSteers(saved, &upgrade)
 	for _, permission := range state.Permissions {
 		name := permission.Title
 		if name == "" {
@@ -160,6 +151,28 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 		return err
 	}
 	return nil
+}
+
+// restoreSavedSteers restores saved person steers ahead of the queue when no
+// live list holds them; a saved supervised steer may have reached the agent.
+func restoreSavedSteers(saved *acpSavedSession, upgrade *acpOwnerUpgrade) {
+	if saved == nil {
+		return
+	}
+	var people []ACPQueuedPrompt
+	for _, steer := range saved.State.Steers {
+		if slices.ContainsFunc(upgrade.Queue, func(live ACPQueuedPrompt) bool {
+			return live.ID == steer.ID
+		}) || slices.Contains(upgrade.Withdrawn, steer.ID) || slices.Contains(upgrade.Uncertain, steer.ID) {
+			continue
+		}
+		if steer.SteerTarget == "" {
+			people = append(people, steer)
+		} else {
+			upgrade.Uncertain = append(upgrade.Uncertain, steer.ID)
+		}
+	}
+	upgrade.Queue = slices.Concat(people, upgrade.Queue)
 }
 
 // applyOwnerUpgrade takes over what a replaced owner left in dir: its prompts

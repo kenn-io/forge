@@ -42,7 +42,7 @@ AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 # Resolve the real NilAway binary, not a mise shim: go vet runs the tool from
 # dependency directories in the module cache, where a shim cannot find the
 # repository's mise.toml.
-NILAWAY_BIN := $(shell if command -v mise >/dev/null 2>&1 && mise which nilaway >/dev/null 2>&1; then mise which nilaway; \
+NILAWAY_BIN := $(shell if command -v mise >/dev/null 2>&1; then mise which nilaway 2>/dev/null; \
 	elif command -v nilaway >/dev/null 2>&1; then command -v nilaway; \
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/nilaway$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/nilaway$(EXE_SUFFIX)"; \
 	elif [ -x "$(GOPATH_FIRST)/bin/nilaway$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/nilaway$(EXE_SUFFIX)"; \

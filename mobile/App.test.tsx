@@ -55,7 +55,6 @@ vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: "SafeAreaView",
 }));
 vi.mock("react-native-webview", () => ({ WebView: "WebView" }));
-vi.mock("./web-bundle", () => ({ loadWebBundle: async () => "bundled-ui" }));
 
 let app: ReactTestRenderer;
 

@@ -1,11 +1,16 @@
 import { launchURL, serverURL, type Connection } from "./connection.ts";
 
+// The Android app answers requests under this path on the server's origin
+// from the web UI files packaged in the APK, so the page and its scripts,
+// styles, and fonts stay same-origin with the server's API.
+export const appAssetsPath = "/__forge_app__/";
+
 // JSON is embedded in script text, so a pasted value must not end the script.
 const scriptValue = (value: string) => JSON.stringify(value).replaceAll("<", "\\u003c");
 
 // page, a path with an optional fragment such as a kenn:// link names, opens
 // instead of the launch route.
-export function embeddedPage(bundle: string, connection: Connection, tablet: boolean, page?: string) {
+export function embeddedPage(connection: Connection, tablet: boolean, page?: string) {
   const server = serverURL(connection.server);
   const baseUrl = page ? server + page : launchURL(connection, tablet);
   const basePath = new URL(server).pathname.replace(/\/$/, "") + "/";
@@ -23,9 +28,9 @@ try {
   if (!response.ok) throw new Error(response.status === 401 || response.status === 403
     ? "The server refused this connection. Check your auth token and the server's access settings."
     : "The server returned HTTP " + response.status + ". Try again.");
-  const compressed = Uint8Array.from(atob(${scriptValue(bundle)}), character => character.charCodeAt(0));
-  const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream("gzip"));
-  const html = await new Response(stream).text();
+  const app = await fetch(${scriptValue(new URL(server).origin + appAssetsPath + "index.html")});
+  if (!app.ok) throw new Error("This app is missing its Forge web UI. Reinstall the app.");
+  const html = await app.text();
   document.open();
   document.write(html);
   document.close();

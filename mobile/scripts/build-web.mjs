@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { readFileSync, writeFileSync, readdirSync, unlinkSync } from "node:fs";
-import { gzipSync } from "node:zlib";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 
 const mobile = path.resolve(import.meta.dirname, "..");
 execFileSync(
@@ -10,9 +9,16 @@ execFileSync(
   { cwd: path.resolve(mobile, "../frontend"), stdio: "inherit" },
 );
 
-const assets = path.join(mobile, "assets");
-if (readdirSync(assets).join() !== "index.html") throw new Error("The mobile frontend must be self-contained");
-const html = path.join(assets, "index.html");
-// Keep the HTML passed through the native WebView small.
-writeFileSync(path.join(assets, "web.bundle"), gzipSync(readFileSync(html)).toString("base64"));
-unlinkSync(html);
+// The WebView writes index.html into the page, and the APK serves everything
+// else as files. Android WebView renders an empty page once the HTML handed to
+// it reaches about 15 MB, so fail the build if code or fonts get inlined again.
+const web = path.join(mobile, "assets/android/forge-web");
+const index = readFileSync(path.join(web, "index.html"), "utf8");
+const indexLimit = 64 * 1024;
+if (index.length > indexLimit) {
+  throw new Error(`index.html is ${index.length} bytes; keep it under ${indexLimit} so the page loads its assets as files`);
+}
+const inlined = readdirSync(web, { recursive: true })
+  .filter((file) => /\.(css|js|html)$/.test(file) && statSync(path.join(web, file)).isFile())
+  .filter((file) => /data:(font|image)\/[a-z0-9.+-]+;base64,/.test(readFileSync(path.join(web, file), "utf8")));
+if (inlined.length) throw new Error(`Fonts or images are inlined in ${inlined.join(", ")}; ship them as files`);

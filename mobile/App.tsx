@@ -22,7 +22,6 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 import { isForgePageURL, isServerURL, kennLinkPage, readConnection, serverURL, type Connection } from "./connection";
 import { embeddedPage } from "./embedded-page";
-import { loadWebBundle } from "./web-bundle";
 
 const storageKey = "forge.connection";
 const emptyConnection: Connection = { server: "", token: "", desktop: false };
@@ -66,7 +65,6 @@ function ForgeApp() {
   const [draft, setDraft] = useState<Connection>(emptyConnection);
   const [connection, setConnection] = useState<Connection | null>(null);
   const [source, setSource] = useState<{ html: string; baseUrl: string } | null>(null);
-  const bundle = useRef("");
   const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -129,8 +127,7 @@ function ForgeApp() {
     setSaving(true);
     try {
       const next = { ...draft, server: serverURL(draft.server), token: draft.token.trim() };
-      bundle.current = await loadWebBundle();
-      const page = embeddedPage(bundle.current, next, tablet, pendingPage.current ?? undefined);
+      const page = embeddedPage(next, tablet, pendingPage.current ?? undefined);
       await SecureStore.setItemAsync(storageKey, JSON.stringify(next));
       setDraft(next);
       setPageError("");
@@ -227,7 +224,7 @@ function ForgeApp() {
                 "Retry",
                 () => {
                   setPageError("");
-                  setSource(embeddedPage(bundle.current, connection, tablet, pendingPage.current ?? undefined));
+                  setSource(embeddedPage(connection, tablet, pendingPage.current ?? undefined));
                 },
                 true,
               )}

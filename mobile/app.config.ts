@@ -1,16 +1,28 @@
 import type { ConfigContext, ExpoConfig } from "expo/config";
+import { withAppBuildGradle } from "expo/config-plugins";
 
 // Release builds set FORGE_MOBILE_VERSION to the Forge release, for example v0.4.0.
 export default ({ config }: ConfigContext): ExpoConfig => {
   const release = process.env.FORGE_MOBILE_VERSION;
-  if (!release) return config as ExpoConfig;
+  if (!release) return withWebAssets(config as ExpoConfig);
   const version = release.replace(/^v/, "");
-  return {
+  return withWebAssets({
     ...(config as ExpoConfig),
     version,
     android: { ...config.android, versionCode: androidVersionCode(version) },
-  };
+  });
 };
+
+// Package the web UI that scripts/build-web.mjs writes to assets/android as APK
+// assets; the patched WebView client serves them under /__forge_app__/.
+const webAssets = 'android.sourceSets.main.assets.srcDirs += file("../../assets/android")';
+
+function withWebAssets(config: ExpoConfig): ExpoConfig {
+  return withAppBuildGradle(config, (gradle) => {
+    if (!gradle.modResults.contents.includes(webAssets)) gradle.modResults.contents += `\n${webAssets}\n`;
+    return gradle;
+  });
+}
 
 // Android installs an update only when its versionCode is higher, so each
 // MAJOR.MINOR.PATCH release maps to MAJOR * 1,000,000 + MINOR * 1,000 + PATCH.

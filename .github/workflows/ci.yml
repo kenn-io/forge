@@ -401,7 +401,7 @@ jobs:
       - name: Install NilAway
         if: matrix.lane == 'go-linux'
         run: |
-          kit-retry 3 5 go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260808063849-8649a03c818a
+          kit-retry 3 5 go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20261124161746-91ad9bf5d8e6
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Check shared Huma API contract

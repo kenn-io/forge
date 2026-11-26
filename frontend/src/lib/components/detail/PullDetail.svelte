@@ -682,10 +682,23 @@
     const requestAutoSync = autoSync;
     const requestWorkflowApprovalSync = workflowApprovalSync;
     const requestIdentity = $state.snapshot(itemIdentity);
+    const loadedRepositoryKey = untrack(() => {
+      const loaded = detailStore.getDetail();
+      return loaded
+        && loaded.repo_owner === requestOwner
+        && loaded.repo_name === requestName
+        && (loaded.merge_request?.Number ?? -1) === requestNumber
+        ? repositoryKeyFromWire(loaded.repo)
+        : undefined;
+    });
+    const hydratedSameRepository =
+      lastDetailLoadRepositoryKey === undefined
+      && requestRepositoryKey !== undefined
+      && (loadedRepositoryKey === undefined || sameRepositoryKey(loadedRepositoryKey, requestRepositoryKey));
     const shouldLoad =
       lastDetailLoadIdentity === null
       || !identityEquals(lastDetailLoadIdentity, requestIdentity)
-      || !sameRepositoryKey(lastDetailLoadRepositoryKey, requestRepositoryKey)
+      || (!sameRepositoryKey(lastDetailLoadRepositoryKey, requestRepositoryKey) && !hydratedSameRepository)
       || lastDetailLoadAutoSync !== requestAutoSync
       || lastDetailLoadWorkflowApprovalSync !== requestWorkflowApprovalSync;
     if (shouldLoad) {
@@ -693,6 +706,8 @@
       lastDetailLoadRepositoryKey = requestRepositoryKey;
       lastDetailLoadAutoSync = requestAutoSync;
       lastDetailLoadWorkflowApprovalSync = requestWorkflowApprovalSync;
+    } else if (hydratedSameRepository) {
+      lastDetailLoadRepositoryKey = requestRepositoryKey;
     }
     untrack(() => {
       if (shouldLoad) {

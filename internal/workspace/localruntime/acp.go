@@ -49,9 +49,9 @@ type ACP struct {
 	turnMu     sync.Mutex
 	cancelling bool
 	mu         sync.Mutex
-	// bg tracks background goroutines started by this chat so Stop and test
-	// cleanup can await them before removing state files. stopped prevents new
-	// goroutines from starting once the chat has disconnected.
+	// bg tracks background goroutines and active prompt submissions so Stop
+	// and test cleanup wait for them before removing state files. stopped
+	// prevents new work from joining bg once the chat has disconnected.
 	bg              sync.WaitGroup
 	stopped         bool
 	cmd             *exec.Cmd
@@ -769,12 +769,6 @@ func (a *ACP) goLocked(fn func()) bool {
 	return true
 }
 
-func (a *ACP) tryGo(fn func()) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.goLocked(fn)
-}
-
 func (a *ACP) waitBackground(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() {
@@ -1036,13 +1030,16 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 		a.beforePromptWrite()
 	}
 	completed := make(chan acpTurnResult, 1)
-	if !a.tryGo(func() {
+	a.mu.Lock()
+	started := a.goLocked(func() {
 		response, err := a.client.Prompt(context.Background(), acpsdk.PromptRequest{
 			SessionId: acpsdk.SessionId(a.sessionID), Prompt: acpPromptContent(text, images),
 			Meta: map[string]any{acpForgeMeta: acpPromptMeta(prompt)},
 		})
 		completed <- acpTurnResult{stopReason: response.StopReason, err: err}
-	}) {
+	})
+	a.mu.Unlock()
+	if !started {
 		completed <- acpTurnResult{err: ErrACPAgentUnavailable}
 	}
 	var err error

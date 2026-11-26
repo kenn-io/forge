@@ -56,10 +56,12 @@ func (a *ACP) submit(command ACPCommand) error {
 		a.mu.Unlock()
 		return err
 	}
-	if !a.state.Connected {
+	if !a.state.Connected || a.stopped {
 		a.mu.Unlock()
 		return ErrACPAgentUnavailable
 	}
+	a.bg.Add(1)
+	defer a.bg.Done()
 	prompt := ACPQueuedPrompt{
 		ID: command.ID, Text: text, Images: command.Images, Sender: sender,
 		Generation: command.Generation, Allowance: command.AllowanceMillis,

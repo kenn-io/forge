@@ -546,31 +546,144 @@ func TestACPFixturePermissionBlocksTheTurn(t *testing.T) {
 
 type closeFuncWriter struct {
 	io.Writer
+	writeFn func([]byte) (int, error)
 	closeFn func() error
+}
+
+func (w closeFuncWriter) Write(p []byte) (int, error) {
+	if w.writeFn != nil {
+		return w.writeFn(p)
+	}
+	return w.Writer.Write(p)
 }
 
 func (w closeFuncWriter) Close() error { return w.closeFn() }
 
-// Stop waits for in-flight turn completion to finish saving before returning,
-// so removing saved chat files afterwards never races with a late journal write.
+// Stop waits for in-flight turn completion and active prompt submissions to
+// finish saving before returning, so parking keeps accepted prompts and
+// removing saved chat files afterwards never races with a late journal write.
 func TestACPStopWaitsForBackgroundTurnPersistence(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		dir := t.TempDir()
-		peerReader, peerWriter := io.Pipe()
-		peer := &scriptedPeer{t: t, writer: peerWriter}
-		agent := newACP(closeFuncWriter{Writer: peer, closeFn: peerWriter.Close}, peerReader, &acpStderrTail{out: io.Discard, done: make(chan struct{})})
-		close(agent.stderr.done)
-		agent.sessionID = "session"
-		agent.state.Connected = true
-		agent.recordPath = filepath.Join(dir, "session.json")
-		agent.open()
+	t.Run("active turn", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			dir := t.TempDir()
+			peerReader, peerWriter := io.Pipe()
+			peer := &scriptedPeer{t: t, writer: peerWriter}
+			agent := newACP(closeFuncWriter{Writer: peer, closeFn: peerWriter.Close}, peerReader, &acpStderrTail{out: io.Discard, done: make(chan struct{})})
+			close(agent.stderr.done)
+			agent.sessionID = "session"
+			agent.state.Connected = true
+			agent.recordPath = filepath.Join(dir, "session.json")
+			agent.open()
 
-		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", ID: "in-flight", Text: "work"}))
-		require.NoError(t, agent.Stop(t.Context()))
-		require.NoError(t, removeACPSaved(agent.recordPath))
-		synctest.Wait()
+			require.NoError(t, agent.Command(ACPCommand{Type: "prompt", ID: "in-flight", Text: "work"}))
+			require.NoError(t, agent.Stop(t.Context()))
+			require.NoError(t, removeACPSaved(agent.recordPath))
+			synctest.Wait()
 
-		assert.NoFileExists(t, agent.recordPath)
-		assert.NoFileExists(t, acpJournalPath(agent.recordPath))
+			assert.NoFileExists(t, agent.recordPath)
+			assert.NoFileExists(t, acpJournalPath(agent.recordPath))
+		})
+	})
+
+	t.Run("submission before prompt write", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			dir := t.TempDir()
+			peerReader, peerWriter := io.Pipe()
+			peer := &scriptedPeer{t: t, writer: peerWriter}
+			agent := newACP(closeFuncWriter{Writer: peer, closeFn: peerWriter.Close}, peerReader, &acpStderrTail{out: io.Discard, done: make(chan struct{})})
+			close(agent.stderr.done)
+			agent.sessionID = "session"
+			agent.state.Connected = true
+			agent.recordPath = filepath.Join(dir, "session.json")
+			paused := make(chan struct{})
+			resume := make(chan struct{})
+			agent.beforePromptWrite = func() {
+				close(paused)
+				<-resume
+			}
+			agent.open()
+
+			submitted := make(chan error, 1)
+			go func() { submitted <- agent.Command(ACPCommand{Type: "prompt", ID: "before-write", Text: "work"}) }()
+			<-paused
+
+			stopped := make(chan error, 1)
+			go func() { stopped <- agent.Stop(t.Context()) }()
+			synctest.Wait()
+			select {
+			case err := <-stopped:
+				require.FailNow(t, "Stop returned before active submission finished", "err=%v", err)
+			default:
+			}
+
+			close(resume)
+			require.NoError(t, <-submitted)
+			require.NoError(t, <-stopped)
+
+			saved := readSavedSession(t, agent.recordPath).State
+			require.Len(t, saved.Queue, 1)
+			assert.Equal(t, "before-write", saved.Queue[0].ID)
+
+			require.NoError(t, removeACPSaved(agent.recordPath))
+			synctest.Wait()
+			assert.NoFileExists(t, agent.recordPath)
+			assert.NoFileExists(t, acpJournalPath(agent.recordPath))
+		})
+	})
+
+	t.Run("submission before final save", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			dir := t.TempDir()
+			peerReader, peerWriter := io.Pipe()
+			peer := &scriptedPeer{t: t, writer: peerWriter}
+			writing := make(chan struct{})
+			resumeWrite := make(chan struct{})
+			var once sync.Once
+			stdin := closeFuncWriter{
+				Writer: peer,
+				writeFn: func(p []byte) (int, error) {
+					n, err := peer.Write(p)
+					once.Do(func() {
+						close(writing)
+						<-resumeWrite
+					})
+					return n, err
+				},
+				closeFn: peerWriter.Close,
+			}
+			agent := newACP(stdin, peerReader, &acpStderrTail{out: io.Discard, done: make(chan struct{})})
+			close(agent.stderr.done)
+			agent.sessionID = "session"
+			agent.state.Connected = true
+			agent.recordPath = filepath.Join(dir, "session.json")
+			agent.open()
+
+			submitted := make(chan error, 1)
+			go func() { submitted <- agent.Command(ACPCommand{Type: "prompt", ID: "after-write", Text: "work"}) }()
+			<-writing
+
+			stopped := make(chan error, 1)
+			go func() { stopped <- agent.Stop(t.Context()) }()
+			synctest.Wait()
+			select {
+			case err := <-stopped:
+				require.FailNow(t, "Stop returned before final prompt save finished", "err=%v", err)
+			default:
+			}
+
+			close(resumeWrite)
+			require.NoError(t, <-submitted)
+			require.NoError(t, <-stopped)
+
+			saved := readSavedSession(t, agent.recordPath).State
+			assert.Equal(t, []string{"after-write"}, userSubmissions(saved))
+			require.Len(t, saved.Turns, 1)
+			assert.Equal(t, acpExitedDuringTurn, saved.Turns[0].Error)
+
+			require.NoError(t, removeACPSaved(agent.recordPath))
+			synctest.Wait()
+			assert.NoFileExists(t, agent.recordPath)
+			assert.NoFileExists(t, acpJournalPath(agent.recordPath))
+		})
 	})
 }

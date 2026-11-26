@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -23,6 +24,10 @@ const (
 	browserLoginTicketParam = "login_ticket"
 	browserAuthTokenParam   = "auth_token"
 	maxBrowserLoginTicket   = 128
+	// siblingBrowserLoginFailedReason marks a hub 502 that reports the
+	// sibling's own failure, so a spoke can tell it apart from a 502 that a
+	// proxy in front of a stopped hub returns.
+	siblingBrowserLoginFailedReason = "siblingBrowserLoginFailed"
 )
 
 type browserLoginRequestBody struct {
@@ -169,7 +174,12 @@ func (h *Handler) issueSiblingBrowserLoginTicket(
 	}
 	ticket, err := h.requestBrowserLoginTicket(ctx, route.target)
 	if err != nil {
-		return nil, browserLoginUpstreamProblem(nodeID, err)
+		// The spoke adds its own login-failure prefix, so the hub sends only
+		// the sibling's cause.
+		return nil, httpapi.NewProblem(
+			http.StatusBadGateway, httpapi.CodeUpstreamError, err.Error(),
+			map[string]any{"hostKey": nodeID, "reason": siblingBrowserLoginFailedReason},
+		)
 	}
 	return &siblingBrowserLoginTicketOutput{Body: siblingBrowserLoginTicketBody{
 		Ticket: ticket.Ticket, ExpiresAt: ticket.ExpiresAt.UTC(),
@@ -182,7 +192,9 @@ func (h *Handler) issueSiblingBrowserLoginTicket(
 // one, including an older hub without the route or a hub that is down,
 // leaves the browser to open the sibling's plain address, so those outcomes
 // keep the 409 the frontend falls back on. A hub that answers with the
-// sibling's own failure still reports it.
+// sibling's own failure still reports it. The hub waits up to one peer
+// timeout for the sibling, so the spoke allows two for the hub; otherwise a
+// stalled sibling would surface as a stalled hub and open the plain link.
 func (h *Handler) requestSiblingBrowserLoginTicket(
 	ctx context.Context, route browserLoginRoute,
 ) (browserLoginTicket, string, error) {
@@ -199,7 +211,7 @@ func (h *Handler) requestSiblingBrowserLoginTicket(
 	fleet := h.configSnapshot().Fleet
 	if err := h.fetchFederationJSON(
 		ctx, route.target, route.target.clients.rest,
-		fleet.PeerTimeoutOrDefault(), request, &body,
+		2*fleet.PeerTimeoutOrDefault(), request, &body,
 	); err != nil {
 		if hubCannotRelayBrowserLogin(err) {
 			return browserLoginTicket{}, "", noDirectBrowserLoginCredential(route.sibling)
@@ -218,12 +230,20 @@ func (h *Handler) requestSiblingBrowserLoginTicket(
 }
 
 // hubCannotRelayBrowserLogin reports a hub outcome that means "no ticket for
-// that node": an unknown or inactive sibling, a hub that predates the route,
-// or a hub that is unreachable, timed out, or unavailable. Hubs from before
-// fleet host routes were peer-callable reject the path in authentication
-// rather than routing. A 502 from the hub carries the sibling's own failure.
+// that node": an unknown or inactive sibling, a hub that predates the route
+// or has fleet connections turned off, or a hub that is unreachable, stalls,
+// or is unavailable, including a proxy's 502 in front of a stopped hub. Hubs
+// from before fleet host routes were peer-callable reject the path in
+// authentication rather than routing. Only a 502 the hub marks as the
+// sibling's own failure is reported to the person.
 func hubCannotRelayBrowserLogin(err error) bool {
 	if _, ok := errors.AsType[*url.Error](err); ok {
+		return true
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	if timeout, ok := errors.AsType[net.Error](err); ok && timeout.Timeout() {
 		return true
 	}
 	refusal, ok := errors.AsType[*federationPeerStatusError](err)
@@ -234,8 +254,11 @@ func hubCannotRelayBrowserLogin(err error) bool {
 	case http.StatusNotFound, http.StatusConflict,
 		http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 		return true
+	case http.StatusBadGateway:
+		return refusal.Reason != siblingBrowserLoginFailedReason
 	case http.StatusForbidden:
-		return refusal.Reason == "federationRouteNotAllowed"
+		return refusal.Reason == "federationRouteNotAllowed" ||
+			refusal.Reason == "federationEnrollmentInactive"
 	}
 	return false
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/httpapi"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
@@ -264,18 +265,41 @@ func TestFleetBrowserLoginSpokeToSiblingE2E(t *testing.T) {
 }
 
 // TestFleetBrowserLoginReportsSiblingFailure keeps a sibling outage visible:
-// the hub was reached and reported the sibling's own failure, so the spoke
-// reports it as well.
+// the real hub relay reaches the sibling, the sibling refuses it, and the
+// spoke reports that failure once instead of opening the plain link.
 func TestFleetBrowserLoginReportsSiblingFailure(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	fixture := newFederatedForgesFixture(t)
-	answerHubSiblingTickets(http.StatusBadGateway, "")(fixture)
+	require.NoError(t, fixture.NodeB.Credentials.RevokeInboundNode(fixture.Hub.NodeID))
 	response, body := fixture.requestBrowserLogin(t, fixture.NodeA,
 		fixture.NodeB.NodeID, `{"path":"/"}`, localBearer(fixture.NodeA))
 	require.Equal(t, http.StatusBadGateway, response.StatusCode, string(body))
 	problem := decodeFleetProblem(t, string(body))
 	assert.Equal(t, string(httpapi.CodeUpstreamError), problem.Code)
 	assert.Equal(t, fixture.NodeB.NodeID, problem.Details["hostKey"])
+	assert.Equal(t, 1, strings.Count(problem.Detail, "fleet peer browser login failed"),
+		"the login failure prefix appears once: %s", problem.Detail)
+}
+
+// TestFleetSiblingBrowserLoginRefusesInactiveSibling covers a listed sibling
+// the hub can no longer reach: the hub refuses to relay, and the spoke falls
+// back to the plain link.
+func TestFleetSiblingBrowserLoginRefusesInactiveSibling(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	fixture := newFederatedForgesFixture(t)
+	require.NoError(t, fixture.Hub.Credentials.RevokeOutbound(fixture.NodeB.NodeID))
+
+	response, body := fixture.requestSiblingTicket(t, fixture.Hub,
+		fixture.NodeB.NodeID, peerBearer(fixture.nodeAToken))
+	require.Equal(t, http.StatusConflict, response.StatusCode, string(body))
+	assert.Equal(t, "noDirectFederationCredential",
+		decodeFleetProblem(t, string(body)).Details["reason"], "the hub refuses")
+
+	response, body = fixture.requestBrowserLogin(t, fixture.NodeA,
+		fixture.NodeB.NodeID, `{"path":"/"}`, localBearer(fixture.NodeA))
+	require.Equal(t, http.StatusConflict, response.StatusCode, string(body))
+	assert.Equal(t, "noDirectFederationCredential",
+		decodeFleetProblem(t, string(body)).Details["reason"], "the spoke falls back")
 }
 
 func (f *federatedForgesFixture) requestSiblingTicket(
@@ -364,6 +388,44 @@ func TestFleetBrowserLoginSiblingFallsBackWithoutHubRelay(t *testing.T) {
 		{name: "unreachable hub", setup: func(fixture *federatedForgesFixture) {
 			fixture.Hub.Switch.Set(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 				panic(http.ErrAbortHandler)
+			}))
+		}},
+		{name: "proxy 502 in front of a stopped hub", setup: answerHubSiblingTickets(http.StatusBadGateway, "")},
+		{name: "hub with fleet connections turned off", setup: func(fixture *federatedForgesFixture) {
+			hub := fixture.Hub
+			hub.Server = newFederatedDaemonServer(t, hub, &config.Config{
+				BasePath: "/",
+				Tmux:     config.Tmux{Command: []string{"kenn-forge-no-such-tmux"}},
+				Fleet:    config.Fleet{Role: config.FleetRoleHub},
+			}, fixture.HTTPClient, false)
+			hub.Switch.Set(hub.Server)
+		}},
+		{name: "hub that stalls mid-reply", setup: func(fixture *federatedForgesFixture) {
+			nodeA := fixture.NodeA
+			spokeConfig := federatedSpokeConfig(fixture.Hub)
+			spokeConfig.Fleet.PeerTimeout = "250ms"
+			nodeA.Server = newFederatedDaemonServer(
+				t, nodeA, spokeConfig, fixture.HTTPClient, true,
+			)
+			nodeA.Switch.Set(nodeA.Server)
+			current := fixture.Hub.Server
+			fixture.Hub.Switch.Set(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !strings.HasSuffix(r.URL.Path, "/federation/browser-login-tickets") {
+					current.ServeHTTP(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				if _, err := w.Write([]byte(`{"ticket":`)); err != nil {
+					return
+				}
+				if err := http.NewResponseController(w).Flush(); err != nil {
+					return
+				}
+				select {
+				case <-r.Context().Done():
+				case <-time.After(10 * time.Second):
+				}
 			}))
 		}},
 		{name: "inactive hub federation", setup: func(fixture *federatedForgesFixture) {

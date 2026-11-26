@@ -29,7 +29,7 @@ function safeExternalURL(raw: string | undefined): string | null {
   return null;
 }
 
-function findAnchor(target: EventTarget | null): HTMLAnchorElement | null {
+export function findItemRefAnchor(target: EventTarget | null): HTMLAnchorElement | null {
   let el = target instanceof Element ? target : null;
   while (el) {
     if (el instanceof HTMLAnchorElement) {
@@ -40,13 +40,50 @@ function findAnchor(target: EventTarget | null): HTMLAnchorElement | null {
   return null;
 }
 
+export function resolveAnchorItemReference(
+  anchor: HTMLAnchorElement,
+  providerContexts: ReadonlyArray<ProviderContext> = [],
+): ResolvableItemReference | null {
+  const provider = anchor.dataset.provider;
+  const owner = anchor.dataset.owner;
+  const name = anchor.dataset.name;
+  const repoPath = anchor.dataset.repoPath;
+  const numberStr = anchor.dataset.number;
+  if (anchor.classList.contains("item-ref") && provider && owner && name && repoPath && numberStr) {
+    const itemType = anchor.dataset.itemType;
+    return {
+      provider,
+      platformHost: anchor.dataset.platformHost,
+      owner,
+      name,
+      repoPath,
+      number: parseInt(numberStr, 10),
+      itemType: itemType === "pr" || itemType === "issue" ? itemType : undefined,
+      externalUrl: anchor.dataset.externalUrl,
+    };
+  }
+  return parseKnownProviderItemURL(anchor.href, providerContexts);
+}
+
+export function isTrackedItemReference(ref: ResolvableItemReference, repos: ReadonlyArray<RepoCatalog>): boolean {
+  const provider = canonicalProvider(ref.provider);
+  const host = resolvedPlatformHost(ref.provider, ref.platformHost).toLowerCase();
+  const repoPath = ref.repoPath.toLowerCase();
+  return repos.some(
+    (repo) =>
+      canonicalProvider(repo.Platform) === provider &&
+      resolvedPlatformHost(repo.Platform, repo.PlatformHost).toLowerCase() === host &&
+      `${repo.Owner}/${repo.Name}`.toLowerCase() === repoPath,
+  );
+}
+
 // A reference resolves to an in-app item, to its provider page when Forge has
 // not synced the item, or to a message saying why it cannot open. Callers
 // decide whether the result is still current before acting on it.
 export type ItemReferenceResolution =
   | { readonly kind: "item"; readonly item: RoutableItemRef }
   | { readonly kind: "providerPage"; readonly url: string }
-  | { readonly kind: "unresolved"; readonly message: string };
+  | { readonly kind: "unresolved"; readonly message: string; readonly reason: "not-found" | "not-tracked" | "error" };
 
 export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(
   function* (ref: ResolvableItemReference) {
@@ -73,6 +110,7 @@ export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(
         }
         return {
           kind: "unresolved",
+          reason: result.problem.status === 404 ? "not-found" : "error",
           message:
             result.problem.status === 404
               ? `Item ${owner}/${name}#${number} not found.`
@@ -81,7 +119,11 @@ export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(
       }
 
       if (!result.data.repo_tracked) {
-        return { kind: "unresolved", message: `${owner}/${name} is not tracked. Add it in Settings to navigate here.` };
+        return {
+          kind: "unresolved",
+          reason: "not-tracked",
+          message: `${owner}/${name} is not tracked. Add it in Settings to navigate here.`,
+        };
       }
 
       return {
@@ -103,6 +145,7 @@ export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(
       Effect.catchTag("TransientTransportError", () =>
         Effect.succeed<ItemReferenceResolution>({
           kind: "unresolved",
+          reason: "error",
           message: `Could not reach Forge to open ${ref.owner}/${ref.name}#${ref.number}. Try again.`,
         }),
       ),
@@ -184,49 +227,17 @@ export function initItemRefHandler(
     },
   );
 
-  function anchorReference(anchor: HTMLAnchorElement): ResolvableItemReference | null {
-    const provider = anchor.dataset.provider;
-    const owner = anchor.dataset.owner;
-    const name = anchor.dataset.name;
-    const repoPath = anchor.dataset.repoPath;
-    const numberStr = anchor.dataset.number;
-    if (anchor.classList.contains("item-ref") && provider && owner && name && repoPath && numberStr) {
-      const itemType = anchor.dataset.itemType;
-      return {
-        provider,
-        platformHost: anchor.dataset.platformHost,
-        owner,
-        name,
-        repoPath,
-        number: parseInt(numberStr, 10),
-        itemType: itemType === "pr" || itemType === "issue" ? itemType : undefined,
-        externalUrl: anchor.dataset.externalUrl,
-      };
-    }
-    return parseKnownProviderItemURL(anchor.href, getProviderContexts());
-  }
-
-  function isTracked(ref: ResolvableItemReference): boolean {
-    return getRepositories().some(
-      (repo) =>
-        canonicalProvider(repo.Platform) === canonicalProvider(ref.provider) &&
-        resolvedPlatformHost(repo.Platform, repo.PlatformHost).toLowerCase() ===
-          resolvedPlatformHost(ref.provider, ref.platformHost).toLowerCase() &&
-        `${repo.Owner}/${repo.Name}`.toLowerCase() === ref.repoPath.toLowerCase(),
-    );
-  }
-
   function handleClick(e: Event): void {
     if (!(e instanceof MouseEvent) || e.defaultPrevented) return;
-    const anchor = findAnchor(e.target);
+    const anchor = findItemRefAnchor(e.target);
     if (!anchor || anchor.hasAttribute("download")) return;
-    const ref = anchorReference(anchor);
+    const ref = resolveAnchorItemReference(anchor, getProviderContexts());
     if (!ref) return;
 
     // Every way of opening an untracked item, including new-tab clicks and the
     // context menu's open and copy entries, uses the provider URL; Forge has no
     // page for it.
-    const browserURL = isTracked(ref) ? null : safeExternalURL(ref.externalUrl);
+    const browserURL = isTrackedItemReference(ref, getRepositories()) ? null : safeExternalURL(ref.externalUrl);
     if (browserURL) anchor.href = browserURL;
     if (browserURL && !recordedOpenEvents.has(e) && (e.type === "click" || (e.type === "auxclick" && e.button === 1))) {
       recordedOpenEvents.add(e);

@@ -73,6 +73,7 @@
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { isSafeExternalHTTPURL } from "./lib/utils/safe-external-url.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
+  import ItemReferencePopover from "./lib/components/shared/ItemReferencePopover.svelte";
   import { initMarkdownVideoFallback } from "./lib/utils/markdown-video-fallback.js";
   import { initMarkdownVideoToggle } from "./lib/utils/markdown-video-toggle.js";
   import { isPhoneLikeViewport as isPhoneLikePresentation } from "./lib/utils/phone-presentation.js";
@@ -1727,6 +1728,15 @@
   {/if}
 
     {#if !onboardingActive}
+      <ItemReferencePopover
+        getProviderContexts={() =>
+          stores?.settings.getConfiguredRepos().map((repo) => ({
+            provider: repo.provider,
+            platformHost: repo.platform_host,
+          })) ?? []
+        }
+        onOpenItem={handleItemReference}
+      />
       <Palette
         docsSearch={docsAPI.searchAll}
         onOpenDoc={openDoc}

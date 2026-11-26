@@ -111,7 +111,7 @@ func (a *ACP) deliverTextLocked() {
 // agent that went quiet in the middle of a block gets that text shown instead
 // of held indefinitely.
 func (a *ACP) scheduleTextDeliveryLocked(wait time.Duration) {
-	if a.textDelivery != nil || a.heldBytes == 0 {
+	if a.stopped || a.textDelivery != nil || a.heldBytes == 0 {
 		return
 	}
 	seq, received := a.heldSeq, a.lastMessageBytesLocked()

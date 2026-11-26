@@ -66,6 +66,7 @@ func TestACPSubmissionSteersOnlyItsOwnedTurn(t *testing.T) {
 		require.ErrorIs(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "correction", SteerTarget: "target", Generation: 1}), errACPSubmissionWithdrawn)
 		assert.Len(t, peer.params(acpSteeringMethod), 1)
 		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
 	})
 }
 

@@ -104,7 +104,7 @@ func (a *ACP) startTurnClockLocked(firstMessage int) {
 	a.stopClock = stop
 	a.clockSaved = time.Now()
 	a.refreshBlockedLocked()
-	go a.runTurnClock(stop)
+	a.goLocked(func() { a.runTurnClock(stop) })
 }
 
 // stopTurnClockLocked counts the turn's last active time and stops its clock.

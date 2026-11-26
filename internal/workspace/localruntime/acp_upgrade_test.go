@@ -493,11 +493,12 @@ func TestOwnerUpgradeRestoresSavedSteers(t *testing.T) {
 				synctest.Wait()
 				for i := range tc.order {
 					require.Equal(t, tc.order[:i+1], userSubmissions(publishedACPState(t, agent)))
-					if i+1 < len(tc.order) {
-						peer.endTurn(acpsdk.StopReasonEndTurn)
-						synctest.Wait()
-					}
+					peer.endTurn(acpsdk.StopReasonEndTurn)
+					synctest.Wait()
 				}
+				state = publishedACPState(t, agent)
+				assert.False(t, state.Busy)
+				assert.Empty(t, state.Queue)
 			})
 		})
 	}

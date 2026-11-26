@@ -4,7 +4,85 @@ import { devices, expect, request, test } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServer } from "./support/e2eServer";
 import { openSettingsPanel } from "./support/settingsPanel";
 
-test.use({ launchOptions: { args: ["--host-resolver-rules=MAP acp.test 127.0.0.1"] } });
+test.use({
+  launchOptions: { args: ["--host-resolver-rules=MAP acp.test 127.0.0.1"] },
+  trace: "retain-on-first-failure",
+});
+
+type DiagnosticFrame = {
+  updates?: DiagnosticState & { more?: boolean };
+  accepted?: { command?: string; id?: string };
+  commandError?: string;
+  command?: string;
+  id?: string;
+  history?: { beforeId?: string; offset?: number; messages?: DiagnosticMessage[] };
+  toolDetails?: DiagnosticMessage;
+} & DiagnosticState;
+
+type DiagnosticState = {
+  busy?: boolean;
+  connected?: boolean;
+  messageCount?: number;
+  messageCursor?: number;
+  lastMessageId?: string;
+  permissions?: unknown[];
+  messages?: DiagnosticMessage[];
+  error?: string;
+};
+
+type DiagnosticMessage = {
+  role?: string;
+  id?: string;
+  version?: number;
+  text?: string;
+  toolCallId?: string;
+  status?: string;
+};
+
+function pushBounded(entries: string[], limit: number, line: string): void {
+  entries.push(`${new Date().toISOString().slice(11, 23)} ${line}`);
+  if (entries.length > limit) entries.shift();
+}
+
+function summarizeACPFrame(payload: string): string {
+  try {
+    const parsed = JSON.parse(payload) as DiagnosticFrame;
+    if (parsed.accepted) {
+      return `accepted cmd=${parsed.accepted.command ?? ""} id=${parsed.accepted.id ?? ""}`;
+    }
+    if (parsed.commandError !== undefined) {
+      return `commandError cmd=${parsed.command ?? ""} id=${parsed.id ?? ""} err=${parsed.commandError}`;
+    }
+    if (parsed.history) {
+      return `history before=${parsed.history.beforeId ?? ""} offset=${parsed.history.offset ?? ""} count=${parsed.history.messages?.length ?? 0}`;
+    }
+    if (parsed.toolDetails) {
+      const m = parsed.toolDetails;
+      return `toolDetails ${m.role ?? ""}:${m.id?.slice(0, 6) ?? ""}@${m.version ?? ""} tc=${m.toolCallId ?? ""}`;
+    }
+    const state = parsed.updates ?? parsed;
+    const kind = parsed.updates ? `upd more=${parsed.updates.more}` : "snap";
+    const msgs = (state.messages ?? [])
+      .map(
+        (m) =>
+          `${m.role ?? ""}:${m.id?.slice(0, 6) ?? ""}@${m.version ?? ""}(len=${m.text?.length ?? 0}${m.toolCallId ? `,tc=${m.toolCallId}` : ""}${m.status ? `,st=${m.status}` : ""})`,
+      )
+      .join(",");
+    return `${kind} len=${payload.length} conn=${state.connected} busy=${state.busy} cnt=${state.messageCount} cur=${state.messageCursor} last=${state.lastMessageId?.slice(0, 6) ?? ""} perms=${state.permissions?.length ?? 0} msgs=[${msgs}]${state.error ? ` err=${state.error}` : ""}`;
+  } catch {
+    return `raw len=${payload.length} ${payload.slice(0, 160)}`;
+  }
+}
+
+let activeDiagnostics: ((failure?: unknown) => Promise<void>) | null = null;
+
+test.afterEach(async ({}, testInfo) => {
+  const flush = activeDiagnostics;
+  activeDiagnostics = null;
+  if (flush && testInfo.status !== testInfo.expectedStatus) {
+    await flush(testInfo.error);
+  }
+});
 
 test("ACP workspace streams, approves tools, and reconnects on desktop and phone", async ({
   page,
@@ -20,19 +98,36 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
   const host = "acp.test";
   let origin = "";
   const sockets = new Set<{ destroy(): void }>();
+  const wsLog: string[] = [];
+  const httpLog: string[] = [];
+  const consoleLog: string[] = [];
+  const proxyLog: string[] = [];
   const proxy = createServer((incoming, outgoing) => {
     const headers = { ...incoming.headers, host: upstream.host };
     if (headers.origin === origin) headers.origin = upstream.origin;
     const forwarded = httpRequest(
       new URL(incoming.url ?? "/", upstream),
-      { method: incoming.method, headers },
+      { method: incoming.method, headers, agent: false },
       (response) => {
         outgoing.writeHead(response.statusCode ?? 502, response.headers);
+        response.on("aborted", () => outgoing.destroy());
+        response.on("error", (error) => {
+          pushBounded(
+            proxyLog,
+            40,
+            `HTTP upstream response error ${incoming.method} ${incoming.url}: ${error.message}`,
+          );
+          outgoing.destroy();
+        });
         response.pipe(outgoing);
       },
     );
-    forwarded.on("error", () => {
-      outgoing.writeHead(502);
+    outgoing.on("close", () => {
+      if (!outgoing.writableEnded) forwarded.destroy();
+    });
+    forwarded.on("error", (error) => {
+      pushBounded(proxyLog, 40, `HTTP proxy error ${incoming.method} ${incoming.url}: ${error.message}`);
+      if (!outgoing.headersSent) outgoing.writeHead(502);
       outgoing.end();
     });
     incoming.pipe(forwarded);
@@ -40,15 +135,29 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
   proxy.on("upgrade", (incoming, client, head) => {
     const headers = { ...incoming.headers, host: upstream.host };
     if (headers.origin === origin) headers.origin = upstream.origin;
-    const forwarded = httpRequest(new URL(incoming.url ?? "/", upstream), { headers });
+    const forwarded = httpRequest(new URL(incoming.url ?? "/", upstream), { headers, agent: false });
     sockets.add(client);
     client.on("close", () => sockets.delete(client));
-    client.on("error", () => forwarded.destroy());
-    forwarded.on("error", () => client.destroy());
+    client.on("error", (error) => {
+      pushBounded(proxyLog, 40, `WS client error ${incoming.url}: ${error.message}`);
+      forwarded.destroy();
+    });
+    forwarded.on("error", (error) => {
+      pushBounded(proxyLog, 40, `WS proxy error ${incoming.url}: ${error.message}`);
+      client.destroy();
+    });
+    forwarded.on("response", (response) => {
+      pushBounded(proxyLog, 40, `WS upgrade rejected ${response.statusCode} ${incoming.url}`);
+      response.resume();
+      client.destroy();
+    });
     forwarded.on("upgrade", (response, peer, peerHead) => {
       sockets.add(peer);
       peer.on("close", () => sockets.delete(peer));
-      peer.on("error", () => client.destroy());
+      peer.on("error", (error) => {
+        pushBounded(proxyLog, 40, `WS peer error ${incoming.url}: ${error.message}`);
+        client.destroy();
+      });
       client.on("close", () => peer.destroy());
       peer.on("close", () => client.destroy());
       const responseHeaders = response.rawHeaders.reduce<string[]>((lines, value, index) => {
@@ -63,6 +172,114 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     });
     forwarded.end();
   });
+  page.on("console", (message) => {
+    if (message.type() === "error" || message.type() === "warning") {
+      pushBounded(consoleLog, 40, `[${message.type()}] ${message.text().slice(0, 240)}`);
+    }
+  });
+  page.on("pageerror", (error) => {
+    pushBounded(consoleLog, 40, `[pageerror] ${error.message}`);
+  });
+  page.on("requestfailed", (failedRequest) => {
+    pushBounded(
+      httpLog,
+      40,
+      `FAIL ${failedRequest.method()} ${failedRequest.url()} (${failedRequest.failure()?.errorText ?? "unknown"})`,
+    );
+  });
+  page.on("response", (response) => {
+    const url = response.url();
+    if (response.status() >= 400 || url.includes("/mcp-apps/") || url.includes("/runtime/sessions")) {
+      pushBounded(httpLog, 40, `RESP ${response.status()} ${response.request().method()} ${url}`);
+    }
+  });
+  page.on("websocket", (ws) => {
+    if (!ws.url().includes("protocol=acp")) return;
+    pushBounded(wsLog, 60, `OPEN ${ws.url()}`);
+    ws.on("close", () => pushBounded(wsLog, 60, `CLOSE ${ws.url()}`));
+    ws.on("socketerror", (error) => pushBounded(wsLog, 60, `ERROR ${error}`));
+    ws.on("framesent", ({ payload }) => {
+      if (typeof payload !== "string" || payload.includes('"heartbeat"')) return;
+      pushBounded(wsLog, 60, `SEND len=${payload.length} ${payload.slice(0, 160)}`);
+    });
+    ws.on("framereceived", ({ payload }) => {
+      if (typeof payload !== "string" || payload.includes('"heartbeat"')) return;
+      pushBounded(wsLog, 60, `RECV ${summarizeACPFrame(payload)}`);
+    });
+  });
+  let diagnosticsFlushed = false;
+  const flushDiagnostics = async (failure?: unknown) => {
+    if (diagnosticsFlushed) return;
+    diagnosticsFlushed = true;
+    let domSummary = "<page closed>";
+    if (!page.isClosed()) {
+      try {
+        domSummary = await Promise.race([
+          page.evaluate(() => {
+            const region = document.querySelector<HTMLElement>('section[aria-label="Workspace Chat chat"]');
+            const textarea = region?.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message agent"]');
+            const buttons = [...(region?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+              .map((button) => ({
+                label: (button.getAttribute("aria-label") || button.textContent || "").trim().slice(0, 60),
+                disabled: button.disabled,
+              }))
+              .filter((button) => button.label.length > 0);
+            const alerts = [...(region?.querySelectorAll('[role="alert"]') ?? [])].map((el) =>
+              (el.textContent ?? "").trim().slice(0, 200),
+            );
+            const statuses = [...(region?.querySelectorAll('[role="status"]') ?? [])]
+              .map((el) => (el.textContent ?? "").trim().slice(0, 120))
+              .filter(Boolean);
+            const iframes = [...document.querySelectorAll("iframe")].map((el) => ({
+              title: el.title,
+              src: el.src.slice(0, 80),
+            }));
+            const messages = [...(region?.querySelectorAll('[role="log"] > *') ?? [])]
+              .slice(-6)
+              .map((el) => `${el.className || el.tagName}: ${(el.textContent ?? "").trim().slice(0, 120)}`);
+            return JSON.stringify({
+              url: location.href,
+              hasChatRegion: Boolean(region),
+              composerLength: textarea?.value.length ?? null,
+              composerPreview: textarea?.value.slice(0, 80) ?? null,
+              composerDisabled: textarea?.disabled ?? null,
+              buttons,
+              alerts,
+              statuses,
+              iframes,
+              tailRows: messages,
+            });
+          }),
+          new Promise<string>((resolve) => setTimeout(() => resolve("<dom snapshot timed out>"), 3_000)),
+        ]);
+      } catch (snapshotError) {
+        domSummary = `<dom snapshot failed: ${snapshotError instanceof Error ? snapshotError.message : String(snapshotError)}>`;
+      }
+    }
+    const failureText =
+      failure instanceof Error
+        ? failure.message
+        : typeof failure === "object" && failure !== null && "message" in failure
+          ? String((failure as { message?: unknown }).message ?? "")
+          : String(failure ?? "");
+    const report = [
+      `ACP workspace failure diagnostics (retry=${testInfo.retry}, node=${process.version})`,
+      `Error: ${failureText}`,
+      `DOM: ${domSummary}`,
+      `Proxy errors (${proxyLog.length}):\n${proxyLog.join("\n") || "<none>"}`,
+      `HTTP log (${httpLog.length}):\n${httpLog.join("\n") || "<none>"}`,
+      `Console/page errors (${consoleLog.length}):\n${consoleLog.join("\n") || "<none>"}`,
+      `ACP WebSocket frames (${wsLog.length}):\n${wsLog.join("\n") || "<none>"}`,
+    ].join("\n\n");
+    console.error(report);
+    await testInfo
+      .attach("acp-workspace-diagnostics", {
+        body: Buffer.from(report, "utf8"),
+        contentType: "text/plain",
+      })
+      .catch(() => {});
+  };
+  activeDiagnostics = flushDiagnostics;
   try {
     await new Promise<void>((resolve, reject) => {
       proxy.once("error", reject);
@@ -238,7 +455,9 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     // The fixture agent authors a component and calls the real Forge publishing
     // tool. Its tagged text travels through ACP and reads the seeded cache.
     await chat.getByRole("textbox", { name: "Message agent" }).fill("Build a PR dashboard");
-    const renderer = page.waitForResponse((response) => response.url().endsWith("/mcp-apps/resource"));
+    const renderer = page.waitForResponse((response) => response.url().endsWith("/mcp-apps/resource"), {
+      timeout: 30_000,
+    });
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     expect((await renderer).status()).toBe(200);
     const dashboard = page.frameLocator('iframe[title="PR attention dashboard"]').frameLocator("iframe");
@@ -436,7 +655,11 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await chat.getByRole("textbox", { name: "Message agent" }).fill("exit");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByRole("tab", { name: /Workspace Chat/ })).toHaveCount(0);
+  } catch (error) {
+    await flushDiagnostics(error);
+    throw error;
   } finally {
+    if (activeDiagnostics === flushDiagnostics) activeDiagnostics = null;
     for (const socket of sockets) socket.destroy();
     proxy.closeAllConnections();
     await new Promise<void>((resolve, reject) => proxy.close((error) => (error ? reject(error) : resolve())));

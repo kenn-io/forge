@@ -6,7 +6,7 @@
   "osvVulnerabilityAlerts": true,
   "prCreation": "not-pending",
   "constraints": {
-    "ghActionsLock": "v0.3.0"
+    "ghActionsLock": "v0.5.1"
   },
   "packageRules": [
     {

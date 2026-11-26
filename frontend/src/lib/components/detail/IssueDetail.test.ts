@@ -427,6 +427,23 @@ describe("IssueDetail activity view", () => {
     expect(navigating.issuesStore.syncIssueDetailNow).not.toHaveBeenCalled();
   });
 
+  it("does not reload issue detail when repositoryKey hydrates for the same repository, but reloads on replacement", async () => {
+    const detail = issueDetail();
+    const loadedKey = repositoryKeyFromWire(detail.repo);
+    expect(loadedKey).toBeDefined();
+
+    const { rerender, issuesStore } = renderIssueDetail(detail, undefined, {
+      detailProps: { repositoryKey: undefined },
+    });
+    expect(issuesStore.loadIssueDetail).toHaveBeenCalledTimes(1);
+
+    await rerender({ repositoryKey: loadedKey });
+    expect(issuesStore.loadIssueDetail).toHaveBeenCalledTimes(1);
+
+    await rerender({ repositoryKey: { kind: "id", id: 7999 } });
+    expect(issuesStore.loadIssueDetail).toHaveBeenCalledTimes(2);
+  });
+
   it("drops pending manual refresh UI and late failures after an issue reroute", async () => {
     const { failRefresh, rerender } = renderIssueDetail(issueDetail(), undefined, { deferRefresh: true });
     await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));

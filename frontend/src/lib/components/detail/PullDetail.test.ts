@@ -1156,6 +1156,23 @@ describe("PullDetail activity refresh", () => {
     },
   );
 
+  it("does not reload pull detail when repositoryKey hydrates for the same repository, but reloads on replacement", async () => {
+    const detail = pullDetail();
+    const loadedKey = repositoryKeyFromWire(detail.repo);
+    expect(loadedKey).toBeDefined();
+
+    const { rerender, detailStore } = renderPullDetail(detail, undefined, undefined, {
+      detailProps: { repositoryKey: undefined },
+    });
+    expect(detailStore.loadDetail).toHaveBeenCalledTimes(1);
+
+    await rerender({ repositoryKey: loadedKey });
+    expect(detailStore.loadDetail).toHaveBeenCalledTimes(1);
+
+    await rerender({ repositoryKey: { kind: "id", id: 7999 } });
+    expect(detailStore.loadDetail).toHaveBeenCalledTimes(2);
+  });
+
   it.each([false, true])("allows a cached pull draft only for the selected item (mismatch=%s)", async (mismatch) => {
     const detail = pullDetail();
     detail.repo.capabilities = { ...detail.repo.capabilities, comment_mutation: true };

@@ -324,15 +324,30 @@
     const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
     const requestIdentity = $state.snapshot(itemIdentity);
+    const loadedRepositoryKey = untrack(() => {
+      const loaded = issues.getIssueDetail();
+      return loaded
+        && loaded.repo_owner === requestOwner
+        && loaded.repo_name === requestName
+        && (loaded.issue?.Number ?? -1) === requestNumber
+        ? repositoryKeyFromWire(loaded.repo)
+        : undefined;
+    });
+    const hydratedSameRepository =
+      lastDetailLoadRepositoryKey === undefined
+      && requestRepositoryKey !== undefined
+      && (loadedRepositoryKey === undefined || sameRepositoryKey(loadedRepositoryKey, requestRepositoryKey));
     const shouldLoad =
       lastDetailLoadIdentity === null
       || !identityEquals(lastDetailLoadIdentity, requestIdentity)
-      || !sameRepositoryKey(lastDetailLoadRepositoryKey, requestRepositoryKey)
+      || (!sameRepositoryKey(lastDetailLoadRepositoryKey, requestRepositoryKey) && !hydratedSameRepository)
       || lastDetailLoadAutoSync !== requestAutoSync;
     if (shouldLoad) {
       lastDetailLoadIdentity = requestIdentity;
       lastDetailLoadRepositoryKey = requestRepositoryKey;
       lastDetailLoadAutoSync = requestAutoSync;
+    } else if (hydratedSameRepository) {
+      lastDetailLoadRepositoryKey = requestRepositoryKey;
     }
     untrack(() => {
       if (shouldLoad) {

@@ -140,7 +140,7 @@ func (a *ACP) reconcileExternalTurnLocked(kind string) {
 			result.stopReason = acpsdk.StopReasonCancelled
 		}
 		a.endTurnLocked(string(result.stopReason), result.err)
-		go a.drain()
+		a.goLocked(a.drain)
 	}
 }
 

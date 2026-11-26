@@ -71,9 +71,9 @@ func (a *ACP) configure(id, value string, generation uint64) error {
 		a.mu.Lock()
 		a.state.Configuring = false
 		a.changedLocked()
-		a.mu.Unlock()
 		// Prompts queued while settings changed run once the change settles.
-		go a.drain()
+		a.goLocked(a.drain)
+		a.mu.Unlock()
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

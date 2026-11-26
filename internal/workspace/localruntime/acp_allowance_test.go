@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -103,6 +104,13 @@ func newScriptedACP(t *testing.T) (*ACP, *scriptedPeer) {
 	}
 	agent.client = acpsdk.NewClientSideConnection(agent, agent, peerReader)
 	t.Cleanup(func() {
+		agent.mu.Lock()
+		agent.stopped = true
+		agent.state.Connected = false
+		agent.endTurnRecordLocked("", errors.New(acpExitedDuringTurn))
+		agent.clearPendingLocked()
+		agent.releaseHeldTextLocked()
+		agent.mu.Unlock()
 		_ = peerWriter.Close()
 		_ = peerReader.Close()
 		select {
@@ -110,6 +118,8 @@ func newScriptedACP(t *testing.T) (*ACP, *scriptedPeer) {
 		default:
 			close(agent.done)
 		}
+		<-agent.client.Done()
+		agent.bg.Wait()
 	})
 	return agent, peer
 }
@@ -532,4 +542,35 @@ func TestACPFixturePermissionBlocksTheTurn(t *testing.T) {
 	require.NoError(t, c.chat.Command(ACPCommand{Type: "permission", ID: permission.ID, OptionID: "allow"}))
 	state := c.awaitIdle()
 	assert.False(t, state.Blocked)
+}
+
+type closeFuncWriter struct {
+	io.Writer
+	closeFn func() error
+}
+
+func (w closeFuncWriter) Close() error { return w.closeFn() }
+
+// Stop waits for in-flight turn completion to finish saving before returning,
+// so removing saved chat files afterwards never races with a late journal write.
+func TestACPStopWaitsForBackgroundTurnPersistence(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		dir := t.TempDir()
+		peerReader, peerWriter := io.Pipe()
+		peer := &scriptedPeer{t: t, writer: peerWriter}
+		agent := newACP(closeFuncWriter{Writer: peer, closeFn: peerWriter.Close}, peerReader, &acpStderrTail{out: io.Discard, done: make(chan struct{})})
+		close(agent.stderr.done)
+		agent.sessionID = "session"
+		agent.state.Connected = true
+		agent.recordPath = filepath.Join(dir, "session.json")
+		agent.open()
+
+		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", ID: "in-flight", Text: "work"}))
+		require.NoError(t, agent.Stop(t.Context()))
+		require.NoError(t, removeACPSaved(agent.recordPath))
+		synctest.Wait()
+
+		assert.NoFileExists(t, agent.recordPath)
+		assert.NoFileExists(t, acpJournalPath(agent.recordPath))
+	})
 }

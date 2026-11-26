@@ -239,7 +239,7 @@ func (a *ACP) applyOwnerUpgrade(dir string) error {
 		return fmt.Errorf("remove the applied Forge upgrade: %w", err)
 	}
 	a.changedLocked()
-	go a.drain()
+	a.goLocked(a.drain)
 	return nil
 }
 

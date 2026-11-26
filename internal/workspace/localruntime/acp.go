@@ -46,9 +46,14 @@ type ACPChat interface {
 
 // ACP owns the SDK connection inside the durable ACP owner process.
 type ACP struct {
-	turnMu          sync.Mutex
-	cancelling      bool
-	mu              sync.Mutex
+	turnMu     sync.Mutex
+	cancelling bool
+	mu         sync.Mutex
+	// bg tracks background goroutines started by this chat so Stop and test
+	// cleanup can await them before removing state files. stopped prevents new
+	// goroutines from starting once the chat has disconnected.
+	bg              sync.WaitGroup
+	stopped         bool
 	cmd             *exec.Cmd
 	stdin           io.WriteCloser
 	stdout          io.ReadCloser
@@ -754,6 +759,36 @@ func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeToo
 
 const acpStopExitGrace = 5 * time.Second
 
+// goLocked starts fn in a tracked background goroutine unless the chat has
+// stopped. Callers hold a.mu.
+func (a *ACP) goLocked(fn func()) bool {
+	if a.stopped {
+		return false
+	}
+	a.bg.Go(fn)
+	return true
+}
+
+func (a *ACP) tryGo(fn func()) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.goLocked(fn)
+}
+
+func (a *ACP) waitBackground(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		a.bg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (a *ACP) Stop(ctx context.Context) error {
 	if a.cmd == nil {
 		// Closing a host connection cancels and closes the session there;
@@ -764,7 +799,7 @@ func (a *ACP) Stop(ctx context.Context) error {
 		_ = a.stdin.Close()
 		select {
 		case <-a.done:
-			return nil
+			return a.waitBackground(ctx)
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -780,7 +815,7 @@ func (a *ACP) Stop(ctx context.Context) error {
 		// An agent that exits once stdin closes can fail the kill (Windows reports access denied), so let the waiter confirm the exit.
 		select {
 		case <-a.done:
-			return nil
+			return a.waitBackground(ctx)
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(acpStopExitGrace):
@@ -789,7 +824,7 @@ func (a *ACP) Stop(ctx context.Context) error {
 	}
 	select {
 	case <-a.done:
-		return nil
+		return a.waitBackground(ctx)
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -824,6 +859,7 @@ func (a *ACP) wait() {
 		exitCode = waitExitCode(a.cmd.Wait())
 	}
 	a.mu.Lock()
+	a.stopped = true
 	a.exitCode = exitCode
 	a.state.Connected = false
 	// A failed in-flight prompt may end the record first; a turn the agent
@@ -967,8 +1003,8 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 			// The prompt queues under the lock its sender's generation was checked under, so
 			// a takeover cannot slip in between and leave a former coordinator's work queued.
 			a.enqueueLocked(prompt, false)
+			a.goLocked(a.drain)
 			a.mu.Unlock()
-			go a.drain()
 			return nil
 		}
 		a.mu.Unlock()
@@ -1000,13 +1036,15 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 		a.beforePromptWrite()
 	}
 	completed := make(chan acpTurnResult, 1)
-	go func() {
+	if !a.tryGo(func() {
 		response, err := a.client.Prompt(context.Background(), acpsdk.PromptRequest{
 			SessionId: acpsdk.SessionId(a.sessionID), Prompt: acpPromptContent(text, images),
 			Meta: map[string]any{acpForgeMeta: acpPromptMeta(prompt)},
 		})
 		completed <- acpTurnResult{stopReason: response.StopReason, err: err}
-	}()
+	}) {
+		completed <- acpTurnResult{err: ErrACPAgentUnavailable}
+	}
 	var err error
 	select {
 	case err = <-written:
@@ -1048,9 +1086,9 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 	if a.cancelling {
 		// Stop arrived while the prompt was being written, so the agent may
 		// have received that cancel before this turn existed.
-		go func() {
+		a.goLocked(func() {
 			_ = a.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: acpsdk.SessionId(a.sessionID)})
-		}()
+		})
 	}
 	message := promptMessage(prompt)
 	messageIndex := *a.promptIndex
@@ -1068,10 +1106,12 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 		prompt.Allowance = 0
 	}
 	a.beginTurnRecordLocked(prompt, messageIndex)
+	if !a.goLocked(func() { a.finishTurn(completed) }) {
+		a.endTurnRecordLocked("", errors.New(acpExitedDuringTurn))
+	}
 	a.saveTakenEffectLocked("sending a prompt")
 	a.changedLocked()
 	a.mu.Unlock()
-	go a.finishTurn(completed)
 	return nil
 }
 

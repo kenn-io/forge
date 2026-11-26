@@ -1354,6 +1354,17 @@ jobs:
           path: frontend/test-results/
           retention-days: 7
 
+      - name: Upload Playwright retry failure artifacts
+        if: success()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: e2e-retry-diagnostics-${{ matrix.browser }}-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
+          path: |
+            frontend/test-results/**/trace.zip
+            frontend/test-results/**/error-context.md
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Upload GitHub App setup UI Playwright report
         if: failure() && matrix.browser == 'chromium' && matrix.shard == 1
         uses: actions/upload-artifact@v7.0.2

@@ -386,14 +386,17 @@ for (const [width, grouping] of [
       expect(Math.abs(busy.x - header.x), column).toBeLessThan(1);
     }
 
-    // As in Activity, Repo, Author, and When keep their whole text at every width, and the
-    // title takes what is left. Labels take only the room the title leaves. Grouped by
-    // repository, this long author is the first column and reaches the author cap.
+    // As in Activity, Repo and When keep their whole text at every width, and the title takes
+    // what is left. Labels take only the room the title leaves. This long author reaches
+    // Activity's author cap, so it is cut rather than widening Author for the other row.
     const overflows = (selector: string) => row.locator(selector).evaluate((el) => el.scrollWidth > el.clientWidth);
-    const kept = grouping === "flat" ? [".repo-chip__label", ".cell--author", ".cell--time"] : [".cell--time"];
+    const kept = grouping === "flat" ? [".repo-chip__label", ".cell--time"] : [".cell--time"];
     for (const cell of kept) {
       expect(await overflows(cell), cell).toBe(false);
     }
+    expect(await overflows(".cell--author")).toBe(true);
+    await expect(ordinary.locator(".cell--author")).toHaveText("user-b");
+    expect(await ordinary.locator(".cell--author").evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(false);
     // This busy row needs more than 1000px for the full title plus a label.
     if (width >= 1080) {
       expect(await overflows(".item-title")).toBe(false);

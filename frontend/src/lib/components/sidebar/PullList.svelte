@@ -605,11 +605,15 @@
 
 <style>
   /* The grid every table row shares. The header padding matches a row's 3px
-     selection border and side padding so the headers sit over the columns. */
+     selection border and side padding so the headers sit over the columns.
+     Repo and Author take the caps of Activity's sidebar table, so one long
+     name, such as a bot's, cannot widen its column for every row. */
   .pull-table {
     display: grid;
     column-gap: 6px;
     align-content: start;
+    --item-table-repo-max: 140px;
+    --item-table-author-max: 96px;
     --item-table-header-padding: 6px 10px 4px 13px;
     --item-table-header-bg: var(--bg-surface);
   }

@@ -715,7 +715,7 @@ func (s *Handlers) ResolveItem(
 		}
 	}
 
-	if providerKind == platform.KindGitLab && itemTypeHint != "" {
+	if (providerKind == platform.KindGitLab || providerKind == platform.KindBitbucket) && itemTypeHint != "" {
 		var syncErr error
 		switch itemTypeHint {
 		case "pr":
@@ -757,6 +757,66 @@ func (s *Handlers) ResolveItem(
 		return &ResolveItemOutput{
 			Body: resolveItemResponse{
 				ItemType:    itemType,
+				Number:      number,
+				RepoTracked: true,
+			},
+		}, nil
+	}
+
+	if providerKind == platform.KindForgejo || providerKind == platform.KindGitea {
+		// Forgejo and Gitea share one number space across pull requests and
+		// issues, and their issue endpoint also returns pull requests. Try
+		// SyncMROnProvider first so pull requests are never stored as issues.
+		mrErr := (*s.Syncer).SyncMROnProvider(
+			ctx, providerKind, providerHost, repo.Owner, repo.Name, number,
+		)
+		diffErr, _ := errors.AsType[*ghclient.DiffSyncError](mrErr)
+		if mrErr != nil && diffErr == nil {
+			if errors.Is(mrErr, ghclient.ErrRepoNotTracked) {
+				return nil, httpapi.Forbidden(mrErr.Error(), nil)
+			}
+			if !errors.Is(mrErr, platform.ErrNotFound) &&
+				!errors.Is(mrErr, platform.ErrUnsupportedCapability) {
+				return nil, httpapi.ProviderCallProblemWithDetail(
+					mrErr, string(providerKind), providerHost,
+					"resolve item: "+mrErr.Error(),
+				)
+			}
+			issueErr := (*s.Syncer).SyncIssueOnProvider(
+				ctx, providerKind, providerHost, repo.Owner, repo.Name, number,
+			)
+			if issueErr != nil {
+				if errors.Is(issueErr, ghclient.ErrRepoNotTracked) {
+					return nil, httpapi.Forbidden(issueErr.Error(), nil)
+				}
+				if errors.Is(issueErr, platform.ErrUnsupportedCapability) &&
+					errors.Is(mrErr, platform.ErrNotFound) {
+					return nil, httpapi.NotFound(httpapi.CodeNotFound, "item not found", nil)
+				}
+				return nil, httpapi.ProviderCallProblemWithDetail(
+					issueErr, string(providerKind), providerHost,
+					"resolve item: "+issueErr.Error(),
+				)
+			}
+		}
+		resolvedType, visible, resolveErr := s.Db.ResolveItemNumber(ctx, repo.ID, number)
+		if resolveErr != nil {
+			return nil, httpapi.Internal("resolve item: " + resolveErr.Error())
+		}
+		if !visible {
+			return nil, httpapi.NotFound(httpapi.CodeNotFound, "item not found", nil)
+		}
+		if diffErr != nil {
+			slog.Warn("resolve item: diff sync failed but PR row was synced",
+				"owner", repo.Owner,
+				"name", repo.Name,
+				"number", number,
+				"err", mrErr,
+			)
+		}
+		return &ResolveItemOutput{
+			Body: resolveItemResponse{
+				ItemType:    resolvedType,
 				Number:      number,
 				RepoTracked: true,
 			},

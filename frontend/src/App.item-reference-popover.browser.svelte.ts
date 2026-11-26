@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
 import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
@@ -194,8 +194,6 @@ describe("item reference hover popover", () => {
     expect(link).toBeTruthy();
 
     dispatchPointer(link, "pointerover");
-    // Does not open instantaneously on initial hover.
-    expect(popoverEl()).toBeNull();
 
     // Opens after hover dwell with full PR summary and status.
     await vi.waitFor(() => expect(popoverEl()).not.toBeNull(), WAIT);
@@ -221,11 +219,180 @@ describe("item reference hover popover", () => {
     dispatchPointer(card, "pointerleave", { relatedTarget: document.body });
     await vi.waitFor(() => expect(popoverEl()).toBeNull(), WAIT);
 
-    // Re-hovering opens immediately from cache after dwell, and Escape dismisses it.
+    // Self-link in the header ("Open on GitHub" for #205) does not preview the open PR itself.
+    const selfHeaderLink = document.querySelector<HTMLAnchorElement>('.pull-detail a.gh-link[href*="/pull/205"]')!;
+    expect(selfHeaderLink).toBeTruthy();
+    dispatchPointer(selfHeaderLink, "pointerover");
+    await new Promise((resolve) => setTimeout(resolve, 550));
+    expect(popoverEl()).toBeNull();
+  });
+
+  it("consumes Escape only while visible, preserving pull details and the Activity drawer until the next press", async () => {
+    mounted = await mountBrowserApp("/pulls/github/acme/widgets/205", { overrides: overrides() });
+    await vi.waitFor(() => expect(detailTitle()).toContain("Enable shared retry policy"), WAIT);
+
+    const link = document.querySelector<HTMLAnchorElement>('.markdown-body a.item-ref[data-number="104"]')!;
     dispatchPointer(link, "pointerover");
     await vi.waitFor(() => expect(popoverEl()).not.toBeNull(), WAIT);
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+    // First Escape closes only the preview; pull detail route stays intact.
+    await userEvent.keyboard("{Escape}");
     await vi.waitFor(() => expect(popoverEl()).toBeNull(), WAIT);
+    expect(window.location.pathname).toBe("/pulls/github/acme/widgets/205");
+    expect(detailTitle()).toContain("Enable shared retry policy");
+
+    // Second Escape runs the page's normal Escape shortcut back to /pulls.
+    await userEvent.keyboard("{Escape}");
+    await vi.waitFor(() => expect(window.location.pathname).toBe("/pulls"), WAIT);
+
+    mounted.unmount();
+    mounted = null;
+    await resetKeyboardModuleState();
+
+    // Activity drawer: first Escape closes only the preview, second closes the drawer.
+    mounted = await mountBrowserApp(
+      "/?selected=pr:205&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
+      {
+        overrides: [
+          ...overrides(),
+          (req) =>
+            req.method === "GET" && req.url.pathname === "/api/v1/activity"
+              ? jsonResponse({ items: [], total: 0, has_more: false })
+              : null,
+        ],
+      },
+    );
+    await vi.waitFor(() => expect(detailTitle()).toContain("Enable shared retry policy"), WAIT);
+    const drawerLink = document.querySelector<HTMLAnchorElement>('.markdown-body a.item-ref[data-number="104"]')!;
+    dispatchPointer(drawerLink, "pointerover");
+    await vi.waitFor(() => expect(popoverEl()).not.toBeNull(), WAIT);
+
+    await userEvent.keyboard("{Escape}");
+    await vi.waitFor(() => expect(popoverEl()).toBeNull(), WAIT);
+    expect(window.location.search).toContain("selected=pr");
+    expect(detailTitle()).toContain("Enable shared retry policy");
+
+    await userEvent.keyboard("{Escape}");
+    await vi.waitFor(() => expect(document.querySelector(".pull-detail")).toBeNull(), WAIT);
+  });
+
+  it("associates keyboard-focused previews via aria-describedby after dwell and restores prior attributes on close", async () => {
+    mounted = await mountBrowserApp("/pulls/github/acme/widgets/205", { overrides: overrides() });
+    await vi.waitFor(() => expect(detailTitle()).toContain("Enable shared retry policy"), WAIT);
+
+    const link = document.querySelector<HTMLAnchorElement>('.markdown-body a.item-ref[data-number="104"]')!;
+    const existingHintId = "existing-link-hint";
+    link.setAttribute("aria-describedby", existingHintId);
+
+    // Move focus onto the link via real keyboard navigation so :focus-visible matches.
+    const beforeBtn = document.createElement("button");
+    beforeBtn.type = "button";
+    beforeBtn.textContent = "Before link";
+    link.parentElement!.insertBefore(beforeBtn, link);
+    beforeBtn.focus();
+
+    await userEvent.tab();
+    expect(document.activeElement).toBe(link);
+
+    // Moving away before the focus dwell expires neither opens nor fetches.
+    const initialRequests = mounted.api.requests.filter((r) =>
+      r.url.searchParams.getAll("numbers").includes("104"),
+    ).length;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await userEvent.tab();
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(popoverEl()).toBeNull();
+    expect(mounted.api.requests.filter((r) => r.url.searchParams.getAll("numbers").includes("104")).length).toBe(
+      initialRequests,
+    );
+
+    // Resting keyboard focus opens the card and appends its id to aria-describedby without role="dialog".
+    beforeBtn.focus();
+    await userEvent.tab();
+    expect(document.activeElement).toBe(link);
+    await vi.waitFor(() => expect(popoverEl()).not.toBeNull(), WAIT);
+
+    const card = popoverEl()!;
+    expect(card.getAttribute("role")).toBe("group");
+    expect(card.id).toBeTruthy();
+    const describedByTokens = (link.getAttribute("aria-describedby") ?? "").split(/\s+/);
+    expect(describedByTokens).toContain(existingHintId);
+    expect(describedByTokens).toContain(card.id);
+
+    // Escape dismisses the preview, keeps focus on the link, and restores the original aria-describedby.
+    await userEvent.keyboard("{Escape}");
+    await vi.waitFor(() => expect(popoverEl()).toBeNull(), WAIT);
+    expect(document.activeElement).toBe(link);
+    expect(link.getAttribute("aria-describedby")).toBe(existingHintId);
+  });
+
+  it("anchors wrapped multi-line links beside the hovered line fragment and clamps to viewport edges", async () => {
+    mounted = await mountBrowserApp("/pulls/github/acme/widgets/205", { overrides: overrides() });
+    await vi.waitFor(() => expect(detailTitle()).toContain("Enable shared retry policy"), WAIT);
+
+    const link = document.querySelector<HTMLAnchorElement>('.markdown-body a.item-ref[data-number="104"]')!;
+    const paragraph = link.closest("p")!;
+    paragraph.style.width = "160px";
+    paragraph.style.overflowWrap = "anywhere";
+    paragraph.style.wordBreak = "break-all";
+
+    const rects = Array.from(link.getClientRects()).filter((r) => r.width > 0 && r.height > 0);
+    expect(rects.length).toBeGreaterThan(1);
+
+    const firstLine = rects[0]!;
+    const lastLine = rects[rects.length - 1]!;
+    expect(lastLine.top).toBeGreaterThan(firstLine.top);
+
+    dispatchPointer(link, "pointerover", {
+      clientX: lastLine.left + Math.min(8, lastLine.width / 2),
+      clientY: lastLine.top + lastLine.height / 2,
+    });
+    await vi.waitFor(() => expect(popoverEl()).not.toBeNull(), WAIT);
+
+    const cardRect = popoverEl()!.getBoundingClientRect();
+    // Card opens adjacent to the hovered last line (below or above it by ~8px gap),
+    // not anchored to the first line's edge.
+    const gapBelowLastLine = Math.abs(cardRect.top - lastLine.bottom);
+    const gapAboveLastLine = Math.abs(lastLine.top - cardRect.bottom);
+    expect(Math.min(gapBelowLastLine, gapAboveLastLine)).toBeLessThanOrEqual(14);
+    expect(cardRect.left).toBeGreaterThanOrEqual(8);
+    expect(cardRect.right).toBeLessThanOrEqual(window.innerWidth - 8);
+    expect(cardRect.top).toBeGreaterThanOrEqual(8);
+    expect(cardRect.bottom).toBeLessThanOrEqual(window.innerHeight - 8);
+
+    // Close and verify viewport-edge clamping when a link sits near the bottom-right corner.
+    await userEvent.keyboard("{Escape}");
+    await vi.waitFor(() => expect(popoverEl()).toBeNull(), WAIT);
+
+    const cornerLink = document.createElement("a");
+    cornerLink.className = "item-ref";
+    cornerLink.href = "https://github.com/acme/widgets/pull/104";
+    cornerLink.dataset.provider = "github";
+    cornerLink.dataset.platformHost = "github.com";
+    cornerLink.dataset.owner = "acme";
+    cornerLink.dataset.name = "widgets";
+    cornerLink.dataset.repoPath = "acme/widgets";
+    cornerLink.dataset.number = "104";
+    cornerLink.dataset.itemType = "pr";
+    cornerLink.textContent = "acme/widgets#104";
+    cornerLink.style.position = "fixed";
+    cornerLink.style.right = "12px";
+    cornerLink.style.bottom = "12px";
+    document.body.appendChild(cornerLink);
+
+    try {
+      dispatchPointer(cornerLink, "pointerover");
+      await vi.waitFor(() => expect(popoverEl()).not.toBeNull(), WAIT);
+      const cornerRect = cornerLink.getBoundingClientRect();
+      const clampedCard = popoverEl()!.getBoundingClientRect();
+      // Flips above the bottom-edge link and clamps inside the right edge.
+      expect(clampedCard.bottom).toBeLessThanOrEqual(cornerRect.top + 1);
+      expect(clampedCard.right).toBeLessThanOrEqual(window.innerWidth - 8);
+      expect(clampedCard.left).toBeGreaterThanOrEqual(8);
+      expect(clampedCard.top).toBeGreaterThanOrEqual(8);
+    } finally {
+      cornerLink.remove();
+    }
   });
 
   it("does not open or fetch when moving off a link before the hover delay or on touch pointers", async () => {

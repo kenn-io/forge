@@ -1248,6 +1248,246 @@ func TestResolveItem_UsesItemTypeHintForBitbucketCloud(t *testing.T) {
 	}
 }
 
+// TestResolveItem_SyncsUnsyncedItemsAcrossProviders verifies on-demand item
+// resolution for Forgejo, Gitea, and Bitbucket Cloud when the repository is
+// tracked and the item has not been synced into SQLite yet.
+func TestResolveItem_SyncsUnsyncedItemsAcrossProviders(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+
+	for _, kind := range []platform.Kind{platform.KindForgejo, platform.KindGitea} {
+		t.Run(string(kind), func(t *testing.T) {
+			require := require.New(t)
+			ctx := t.Context()
+			host := string(kind) + ".test"
+			base := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+			transport := &serverfake.ApiTestGitealikeTransport{
+				Repo: gitealike.RepositoryDTO{
+					ID:            101,
+					Owner:         gitealike.UserDTO{UserName: "acme"},
+					Name:          "widgets",
+					FullName:      "acme/widgets",
+					HTMLURL:       "https://" + host + "/acme/widgets",
+					CloneURL:      "https://" + host + "/acme/widgets.git",
+					DefaultBranch: "main",
+					Created:       base,
+					Updated:       base,
+				},
+				Pulls: []gitealike.PullRequestDTO{{
+					ID:      201,
+					Index:   7,
+					HTMLURL: "https://" + host + "/acme/widgets/pulls/7",
+					Title:   "Sync unsynced pull",
+					User:    gitealike.UserDTO{UserName: "alice"},
+					State:   "open",
+					Head:    gitealike.BranchDTO{Ref: "feature", SHA: "abc123"},
+					Base:    gitealike.BranchDTO{Ref: "main", SHA: "def456"},
+					Created: base,
+					Updated: base.Add(time.Minute),
+				}},
+				Issues: []gitealike.IssueDTO{{
+					ID:      401,
+					Index:   8,
+					HTMLURL: "https://" + host + "/acme/widgets/issues/8",
+					Title:   "Sync unsynced issue",
+					User:    gitealike.UserDTO{UserName: "bob"},
+					State:   "open",
+					Created: base,
+					Updated: base.Add(time.Minute),
+				}},
+			}
+			provider := gitealike.NewProvider(kind, host, transport)
+			registry, err := platform.NewRegistry(provider)
+			require.NoError(err)
+			database := dbtest.Open(t)
+			_, err = reposeed.Seed(ctx, database, db.RepoIdentity{
+				Platform:     string(kind),
+				PlatformHost: host,
+				Owner:        "acme",
+				Name:         "widgets",
+				Key:          platform.RepositoryIDKey(101),
+			})
+			require.NoError(err)
+			syncer := ghclient.NewSyncerWithRegistry(
+				registry,
+				database,
+				nil,
+				[]ghclient.RepoRef{{
+					Platform:     kind,
+					PlatformHost: host,
+					Owner:        "acme",
+					Name:         "widgets",
+					RepoPath:     "acme/widgets",
+					Key:          platform.RepositoryIDKey(101),
+				}},
+				time.Minute,
+				nil,
+				nil,
+			)
+			t.Cleanup(syncer.Stop)
+			srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+			t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+			client := servertest.SetupTestClient(t, srv)
+
+			// Unsynced PR resolves as "pr" even without an item_type hint.
+			prResp, err := client.HTTP.ResolveRepoItemOnHostWithResponse(ctx, &generated.ResolveRepoItemOnHostRequestOptions{
+				PathParams: &generated.ResolveRepoItemOnHostPath{
+					Provider:     string(kind),
+					PlatformHost: host,
+					Owner:        "acme",
+					Name:         "widgets",
+					Number:       7,
+				},
+			})
+			require.NoError(err)
+			require.Equal(http.StatusOK, prResp.StatusCode)
+			require.NotNil(prResp.JSON200)
+			require.Equal("pr", prResp.JSON200.ItemType)
+			require.True(prResp.JSON200.RepoTracked)
+
+			// Unsynced issue falls back from SyncMROnProvider 404 to SyncIssueOnProvider.
+			issueResp, err := client.HTTP.ResolveRepoItemOnHostWithResponse(ctx, &generated.ResolveRepoItemOnHostRequestOptions{
+				PathParams: &generated.ResolveRepoItemOnHostPath{
+					Provider:     string(kind),
+					PlatformHost: host,
+					Owner:        "acme",
+					Name:         "widgets",
+					Number:       8,
+				},
+			})
+			require.NoError(err)
+			require.Equal(http.StatusOK, issueResp.StatusCode)
+			require.NotNil(issueResp.JSON200)
+			require.Equal("issue", issueResp.JSON200.ItemType)
+			require.True(issueResp.JSON200.RepoTracked)
+
+			// Missing item returns 404 after checking both PR and issue endpoints.
+			missingResp, err := client.HTTP.ResolveRepoItemOnHostWithResponse(ctx, &generated.ResolveRepoItemOnHostRequestOptions{
+				PathParams: &generated.ResolveRepoItemOnHostPath{
+					Provider:     string(kind),
+					PlatformHost: host,
+					Owner:        "acme",
+					Name:         "widgets",
+					Number:       999,
+				},
+			})
+			require.Error(err)
+			require.NotNil(missingResp)
+			require.Equal(http.StatusNotFound, missingResp.StatusCode)
+		})
+	}
+
+	t.Run("bitbucket", func(t *testing.T) {
+		require := require.New(t)
+		ctx := t.Context()
+		repoKey := platform.RepositoryUUIDKey(uuid.MustParse("22222222-2222-4222-8222-222222222222"))
+		now := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+		ref := platform.RepoRef{
+			Platform:      platform.KindBitbucket,
+			Host:          platform.DefaultBitbucketHost,
+			Owner:         "acme",
+			Name:          "widgets",
+			RepoPath:      "acme/widgets",
+			Key:           repoKey,
+			DefaultBranch: "main",
+			WebURL:        "https://bitbucket.org/acme/widgets",
+		}
+		provider := &serverfake.ApiTestGitLabProvider{
+			Ref: ref,
+			MergeRequests: []platform.MergeRequest{{
+				Repo:           ref,
+				PlatformID:     501,
+				Number:         5,
+				Title:          "Bitbucket PR 5",
+				Author:         "alice",
+				State:          "open",
+				HeadBranch:     "feat/bb",
+				BaseBranch:     "main",
+				URL:            "https://bitbucket.org/acme/widgets/pull-requests/5",
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				LastActivityAt: now,
+			}},
+			Issues: []platform.Issue{{
+				Repo:           ref,
+				PlatformID:     601,
+				Number:         5,
+				Title:          "Bitbucket Issue 5",
+				Author:         "bob",
+				State:          "open",
+				URL:            "https://bitbucket.org/acme/widgets/issues/5",
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				LastActivityAt: now,
+			}},
+		}
+		registry, err := platform.NewRegistry(provider)
+		require.NoError(err)
+		database := dbtest.Open(t)
+		_, err = reposeed.Seed(ctx, database, db.RepoIdentity{
+			Platform:     string(platform.KindBitbucket),
+			PlatformHost: platform.DefaultBitbucketHost,
+			Owner:        "acme",
+			Name:         "widgets",
+			Key:          repoKey,
+		})
+		require.NoError(err)
+		syncer := ghclient.NewSyncerWithRegistry(
+			registry,
+			database,
+			nil,
+			[]ghclient.RepoRef{{
+				Platform:     platform.KindBitbucket,
+				PlatformHost: platform.DefaultBitbucketHost,
+				Owner:        "acme",
+				Name:         "widgets",
+				RepoPath:     "acme/widgets",
+				Key:          repoKey,
+			}},
+			time.Minute,
+			nil,
+			nil,
+		)
+		t.Cleanup(syncer.Stop)
+		srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+		t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+		client := servertest.SetupTestClient(t, srv)
+
+		// Without item_type, separate PR/issue namespaces are not conflated.
+		untypedResp, err := client.HTTP.ResolveRepoItemWithResponse(ctx, &generated.ResolveRepoItemRequestOptions{
+			PathParams: &generated.ResolveRepoItemPath{
+				Provider: "bitbucket",
+				Owner:    "acme",
+				Name:     "widgets",
+				Number:   5,
+			},
+		})
+		require.Error(err)
+		require.NotNil(untypedResp)
+		require.Equal(http.StatusNotFound, untypedResp.StatusCode)
+
+		// Typed hints sync PR #5 and Issue #5 independently on demand.
+		for _, itemType := range []generated.ResolveRepoItemQueryItemType{
+			generated.ResolveRepoItemQueryItemTypePr,
+			generated.ResolveRepoItemQueryItemTypeIssue,
+		} {
+			resp, err := client.HTTP.ResolveRepoItemWithResponse(ctx, &generated.ResolveRepoItemRequestOptions{
+				PathParams: &generated.ResolveRepoItemPath{
+					Provider: "bitbucket",
+					Owner:    "acme",
+					Name:     "widgets",
+					Number:   5,
+				},
+				Query: &generated.ResolveRepoItemQuery{ItemType: &itemType},
+			})
+			require.NoError(err)
+			require.Equal(http.StatusOK, resp.StatusCode)
+			require.NotNil(resp.JSON200)
+			require.Equal(string(itemType), resp.JSON200.ItemType)
+			require.True(resp.JSON200.RepoTracked)
+		}
+	})
+}
+
 func TestResolveItem_NotFoundOnGitHub(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

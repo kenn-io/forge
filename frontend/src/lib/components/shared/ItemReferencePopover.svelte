@@ -1,7 +1,6 @@
 <script lang="ts">
   import { Effect } from "effect";
   import { tick, untrack } from "svelte";
-  import MessageSquareIcon from "@lucide/svelte/icons/message-square";
   import {
     autoReposition,
     Chip,
@@ -11,13 +10,23 @@
     formatRelativeTime,
     Spinner,
   } from "@kenn-io/kit-ui";
-  import { providerUsesHostRoute } from "../../api/provider-routes.js";
+  import {
+    canonicalProvider,
+    providerUsesHostRoute,
+    resolvedPlatformHost,
+  } from "../../api/provider-routes.js";
   import { RepositoryReads } from "../../api/repository-reads.js";
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
   import type { Issue, PullRequest, RepoCatalog } from "../../api/types.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { ItemPreviewCache, loadItemPreviewEffect, type ItemPreview, type ItemPreviewOutcome } from "../../stores/item-preview.js";
+  import {
+    ItemPreviewCache,
+    loadItemPreviewEffect,
+    PREVIEW_LOAD_ERROR_MESSAGE,
+    type ItemPreview,
+    type ItemPreviewOutcome,
+  } from "../../stores/item-preview.js";
   import { isPullMerging } from "../../stores/pull-merges.svelte.js";
   import { getRoute, getURLChangeCount, type RoutableItemRef } from "../../stores/router.svelte.js";
   import { bucketCIChecks, parseCIChecks, safeDiagnosticText } from "../../utils/ci-buckets.js";
@@ -39,45 +48,43 @@
   import RepoPrivateIcon from "./RepoPrivateIcon.svelte";
   import WorkspaceIndicator from "./WorkspaceIndicator.svelte";
 
+  const OPEN_DELAY_MS = 450;
+  const CLOSE_DELAY_MS = 200;
+  const LOADING_DELAY_MS = 100;
+  const EDGE_GAP = 8;
+  const TRIGGER_GAP = 8;
+  const MAX_VISIBLE_LABELS = 4;
+
   interface Props {
     getProviderContexts?: () => ReadonlyArray<ProviderContext>;
+    getCurrentItem?: () => RoutableItemRef | null;
     onOpenItem?: (item: RoutableItemRef) => void;
-    target?: Document | HTMLElement;
-    openDelayMs?: number;
-    closeDelayMs?: number;
-    loadingDelayMs?: number;
-    cache?: ItemPreviewCache;
   }
 
   let {
     getProviderContexts = () => [],
+    getCurrentItem = () => null,
     onOpenItem = undefined,
-    target = document,
-    openDelayMs = 450,
-    closeDelayMs = 200,
-    loadingDelayMs = 100,
-    cache = new ItemPreviewCache(),
   }: Props = $props();
 
   type CardState =
     | { readonly kind: "loading"; readonly ref: ResolvableItemReference }
     | { readonly kind: "loaded"; readonly ref: ResolvableItemReference; readonly preview: ItemPreview }
+    | { readonly kind: "not-synced"; readonly ref: ResolvableItemReference }
     | { readonly kind: "not-found"; readonly ref: ResolvableItemReference }
     | { readonly kind: "error"; readonly ref: ResolvableItemReference; readonly message: string };
 
   const runtime = getAppRuntime();
   const popoverId = $props.id();
-  const edgeGap = 8;
-  const triggerGap = 8;
-  const maxVisibleLabels = 4;
+  const cache = new ItemPreviewCache();
 
   let visible = $state(false);
   let card = $state.raw<CardState | null>(null);
   let popoverEl = $state<HTMLDivElement>();
   let popoverStyle = $state("");
-  let placedSide = $state<"top" | "bottom">("bottom");
 
   let activeAnchor: HTMLAnchorElement | null = null;
+  let describedAnchor: HTMLAnchorElement | null = null;
   let pendingAnchor: HTMLAnchorElement | null = null;
   let lastPointer: { x: number; y: number } | null = null;
   let openTimer: ReturnType<typeof setTimeout> | undefined;
@@ -112,11 +119,38 @@
     clearLoadingTimer();
   }
 
+  function detachDescribedBy(): void {
+    if (!describedAnchor) return;
+    const existing = describedAnchor.getAttribute("aria-describedby")?.trim() ?? "";
+    const remaining = existing
+      ? existing.split(/\s+/).filter((token) => token !== popoverId)
+      : [];
+    if (remaining.length > 0) {
+      describedAnchor.setAttribute("aria-describedby", remaining.join(" "));
+    } else {
+      describedAnchor.removeAttribute("aria-describedby");
+    }
+    describedAnchor = null;
+  }
+
+  function attachDescribedBy(anchor: HTMLAnchorElement): void {
+    if (describedAnchor && describedAnchor !== anchor) {
+      detachDescribedBy();
+    }
+    const existing = anchor.getAttribute("aria-describedby")?.trim() ?? "";
+    const tokens = existing ? existing.split(/\s+/) : [];
+    if (!tokens.includes(popoverId)) {
+      anchor.setAttribute("aria-describedby", [...tokens, popoverId].join(" "));
+    }
+    describedAnchor = anchor;
+  }
+
   function hide(): void {
     requestToken += 1;
     clearAllTimers();
     previewExecution?.interrupt();
     previewExecution = null;
+    detachDescribedBy();
     pendingAnchor = null;
     activeAnchor = null;
     lastPointer = null;
@@ -132,7 +166,7 @@
     closeTimer = setTimeout(() => {
       closeTimer = undefined;
       hide();
-    }, closeDelayMs);
+    }, CLOSE_DELAY_MS);
   }
 
   function triggerRectForAnchor(anchor: HTMLAnchorElement, pointer: { x: number; y: number } | null): DOMRect {
@@ -144,18 +178,6 @@
           pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom,
       );
       if (containing) return containing;
-      let nearest = rects[0]!;
-      let nearestDist = Infinity;
-      for (const rect of rects) {
-        const dx = Math.max(rect.left - pointer.x, 0, pointer.x - rect.right);
-        const dy = Math.max(rect.top - pointer.y, 0, pointer.y - rect.bottom);
-        const dist = dx * dx + dy * dy;
-        if (dist < nearestDist) {
-          nearestDist = dist;
-          nearest = rect;
-        }
-      }
-      return nearest;
     }
     return rects[0]!;
   }
@@ -186,12 +208,10 @@
       popoverWidth: width,
       popoverHeight: height,
       align: "start",
-      edgeGap,
-      triggerGap,
+      edgeGap: EDGE_GAP,
+      triggerGap: TRIGGER_GAP,
       placement: "auto",
     });
-    const top = Number.parseFloat(/top: (-?[0-9.]+)px/.exec(popoverStyle)?.[1] ?? "0");
-    placedSide = top < trigger.top ? "top" : "bottom";
   }
 
   function applyOutcome(
@@ -208,12 +228,15 @@
     }
     if (outcome.status === "found") {
       card = { kind: "loaded", ref, preview: outcome.preview };
+    } else if (outcome.status === "not-synced") {
+      card = { kind: "not-synced", ref };
     } else if (outcome.status === "not-found") {
       card = { kind: "not-found", ref };
     } else {
       card = { kind: "error", ref, message: outcome.message };
     }
     visible = true;
+    attachDescribedBy(activeAnchor);
     void position();
   }
 
@@ -241,8 +264,9 @@
       if (token !== requestToken || getURLChangeCount() !== urlCountAtOpen || !activeAnchor?.isConnected) return;
       card = { kind: "loading", ref };
       visible = true;
+      attachDescribedBy(activeAnchor);
       void position();
-    }, loadingDelayMs);
+    }, LOADING_DELAY_MS);
 
     previewExecution = untrack(() =>
       runtime.runCommand(
@@ -258,11 +282,31 @@
             number: ref.number,
           },
           onFailure: () => {
-            applyOutcome(token, urlCountAtOpen, ref, { status: "error", message: "Could not load preview." });
+            applyOutcome(token, urlCountAtOpen, ref, { status: "error", message: PREVIEW_LOAD_ERROR_MESSAGE });
           },
         },
       ),
     );
+  }
+
+  function isCurrentOpenItem(ref: ResolvableItemReference): boolean {
+    const current = getCurrentItem();
+    if (!current || current.number !== ref.number) return false;
+    const refProvider = canonicalProvider(ref.provider);
+    if (refProvider !== canonicalProvider(current.provider)) return false;
+    const refHost = resolvedPlatformHost(ref.provider, ref.platformHost).toLowerCase();
+    const currentHost = resolvedPlatformHost(current.provider, current.platformHost).toLowerCase();
+    if (refHost !== currentHost) return false;
+    const currentPath = (current.repoPath || `${current.owner}/${current.name}`).toLowerCase();
+    if (ref.repoPath.toLowerCase() !== currentPath) return false;
+    if (
+      ref.itemType !== undefined &&
+      ref.itemType !== current.itemType &&
+      (refProvider === "gitlab" || refProvider === "bitbucket")
+    ) {
+      return false;
+    }
+    return true;
   }
 
   function resolveHoverTarget(eventTarget: EventTarget | null): {
@@ -273,18 +317,18 @@
     if (!anchor || anchor.hasAttribute("download")) return null;
     if (popoverEl?.contains(anchor)) return null;
     const ref = resolveAnchorItemReference(anchor, getProviderContexts());
-    if (!ref) return null;
+    if (!ref || isCurrentOpenItem(ref)) return null;
     const repos = getCachedRepositories();
     if (repos !== undefined && !isTrackedItemReference(ref, repos)) return null;
     return { anchor, ref };
   }
 
-  function handlePointerOver(event: Event): void {
-    if (!(event instanceof PointerEvent) || event.pointerType === "touch") return;
-    const resolved = resolveHoverTarget(event.target);
-    if (!resolved) return;
-    const { anchor, ref } = resolved;
-    lastPointer = { x: event.clientX, y: event.clientY };
+  function scheduleOpenForAnchor(
+    anchor: HTMLAnchorElement,
+    ref: ResolvableItemReference,
+    pointer: { x: number; y: number } | null,
+  ): void {
+    lastPointer = pointer;
 
     if (anchor === activeAnchor) {
       clearCloseTimer();
@@ -295,7 +339,7 @@
     clearCloseTimer();
     if (activeAnchor !== null) {
       hide();
-      lastPointer = { x: event.clientX, y: event.clientY };
+      lastPointer = pointer;
     }
     clearOpenTimer();
     pendingAnchor = anchor;
@@ -303,7 +347,14 @@
       openTimer = undefined;
       if (pendingAnchor !== anchor) return;
       openForAnchor(anchor, ref);
-    }, openDelayMs);
+    }, OPEN_DELAY_MS);
+  }
+
+  function handlePointerOver(event: Event): void {
+    if (!(event instanceof PointerEvent) || event.pointerType === "touch") return;
+    const resolved = resolveHoverTarget(event.target);
+    if (!resolved) return;
+    scheduleOpenForAnchor(resolved.anchor, resolved.ref, { x: event.clientX, y: event.clientY });
   }
 
   function handlePointerMove(event: Event): void {
@@ -343,12 +394,7 @@
     if (!(targetEl instanceof HTMLAnchorElement) || !targetEl.matches(":focus-visible")) return;
     const resolved = resolveHoverTarget(targetEl);
     if (!resolved) return;
-    if (resolved.anchor === activeAnchor) {
-      clearCloseTimer();
-      return;
-    }
-    lastPointer = null;
-    openForAnchor(resolved.anchor, resolved.ref);
+    scheduleOpenForAnchor(resolved.anchor, resolved.ref, null);
   }
 
   function handleFocusOut(event: Event): void {
@@ -360,7 +406,14 @@
   }
 
   function handleWindowKeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape" && (visible || activeAnchor || pendingAnchor)) {
+    if (event.key !== "Escape") return;
+    if (visible) {
+      event.preventDefault();
+      event.stopPropagation();
+      hide();
+      return;
+    }
+    if (activeAnchor || pendingAnchor) {
       hide();
     }
   }
@@ -374,12 +427,6 @@
     const related = event.relatedTarget;
     if (related instanceof Node && activeAnchor?.contains(related)) return;
     scheduleClose();
-  }
-
-  function handlePopoverFocusOut(event: FocusEvent): void {
-    const related = event.relatedTarget;
-    if (related instanceof Node && (popoverEl?.contains(related) || activeAnchor?.contains(related))) return;
-    hide();
   }
 
   function portalToBody(node: HTMLElement): () => void {
@@ -406,23 +453,24 @@
     return () => execution.interrupt();
   });
 
-  // Attach delegated hover and focus listeners on the target container.
+  // Attach delegated hover, focus, and capture-phase Escape listeners.
   $effect(() => {
-    const host = target;
-    host.addEventListener("pointerover", handlePointerOver);
-    host.addEventListener("pointermove", handlePointerMove);
-    host.addEventListener("pointerout", handlePointerOut);
-    host.addEventListener("pointerdown", handlePointerDown);
-    host.addEventListener("focusin", handleFocusIn);
-    host.addEventListener("focusout", handleFocusOut);
+    document.addEventListener("pointerover", handlePointerOver);
+    document.addEventListener("pointermove", handlePointerMove);
+    document.addEventListener("pointerout", handlePointerOut);
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("focusout", handleFocusOut);
+    window.addEventListener("keydown", handleWindowKeydown, true);
     return () => {
       hide();
-      host.removeEventListener("pointerover", handlePointerOver);
-      host.removeEventListener("pointermove", handlePointerMove);
-      host.removeEventListener("pointerout", handlePointerOut);
-      host.removeEventListener("pointerdown", handlePointerDown);
-      host.removeEventListener("focusin", handleFocusIn);
-      host.removeEventListener("focusout", handleFocusOut);
+      document.removeEventListener("pointerover", handlePointerOver);
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerout", handlePointerOut);
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("focusout", handleFocusOut);
+      window.removeEventListener("keydown", handleWindowKeydown, true);
     };
   });
 
@@ -508,14 +556,9 @@
       event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
     if (!plainClick) return;
     event.preventDefault();
-    const anchor = activeAnchor;
     const item = routableItemForPreview(preview);
     hide();
-    if (anchor?.isConnected) {
-      anchor.click();
-    } else {
-      onOpenItem?.(item);
-    }
+    onOpenItem?.(item);
   }
 
   const loadedPreview = $derived(card?.kind === "loaded" ? card.preview : null);
@@ -548,42 +591,34 @@
   const visibleLabels = $derived.by(() => {
     const labels = loadedPull?.labels ?? loadedIssue?.labels ?? [];
     return {
-      shown: labels.slice(0, maxVisibleLabels),
-      overflow: Math.max(0, labels.length - maxVisibleLabels),
+      shown: labels.slice(0, MAX_VISIBLE_LABELS),
+      overflow: Math.max(0, labels.length - MAX_VISIBLE_LABELS),
     };
   });
-  const dialogLabel = $derived.by(() => {
-    if (!card) return "Item preview";
-    if (card.kind === "loaded") {
-      const item = card.preview.kind === "pr" ? card.preview.pull : card.preview.issue;
-      return `${repoHeaderLabel(item)} #${item.Number}: ${item.Title}`;
-    }
-    return `${card.ref.repoPath} #${card.ref.number}`;
-  });
 </script>
-
-<svelte:window onkeydown={handleWindowKeydown} />
 
 {#if visible && card}
   <div
     bind:this={popoverEl}
     id={popoverId}
     class="item-ref-popover kit-popover-card"
-    role="dialog"
-    tabindex="-1"
-    aria-label={dialogLabel}
+    role="group"
+    aria-label="Item preview"
     data-testid="item-ref-popover"
-    data-side={placedSide}
     style={popoverStyle}
     onpointerenter={handlePopoverPointerEnter}
     onpointerleave={handlePopoverPointerLeave}
-    onfocusout={handlePopoverFocusOut}
     {@attach portalToBody}
   >
     {#if card.kind === "loading"}
       <div class="item-ref-popover__status-row" role="status">
         <Spinner size={13} label="Loading preview" />
         <span class="item-ref-popover__status-ref">{card.ref.repoPath} #{card.ref.number}</span>
+      </div>
+    {:else if card.kind === "not-synced"}
+      <div class="item-ref-popover__status-row">
+        <span class="item-ref-popover__status-ref">{card.ref.repoPath} #{card.ref.number}</span>
+        <span class="item-ref-popover__status-msg">Not synced in Forge. Click to open on the provider.</span>
       </div>
     {:else if card.kind === "not-found"}
       <div class="item-ref-popover__status-row">
@@ -710,16 +745,7 @@
             {#if loadedIssue.workspace}
               <WorkspaceIndicator status={loadedIssue.workspace.status} />
             {/if}
-            {#if loadedIssue.CommentCount > 0}
-              <span
-                class="item-ref-popover__comments"
-                aria-label={`${loadedIssue.CommentCount} ${loadedIssue.CommentCount === 1 ? "comment" : "comments"}`}
-                title={`${loadedIssue.CommentCount} ${loadedIssue.CommentCount === 1 ? "comment" : "comments"}`}
-              >
-                <MessageSquareIcon size={11} strokeWidth={2.2} aria-hidden="true" />
-                <span aria-hidden="true">{loadedIssue.CommentCount}</span>
-              </span>
-            {/if}
+            <PullStatusTokens bucketed={bucketedCI} commentCount={loadedIssue.CommentCount} />
           {/if}
         </span>
       </div>
@@ -924,16 +950,5 @@
     gap: var(--space-2);
     flex-shrink: 0;
     margin-left: auto;
-  }
-
-  .item-ref-popover__comments {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    color: var(--text-muted);
-    font-size: var(--font-size-2xs);
-    font-weight: 500;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
   }
 </style>

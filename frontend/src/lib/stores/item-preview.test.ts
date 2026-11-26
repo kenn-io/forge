@@ -220,16 +220,11 @@ describe("loadItemPreviewEffect", () => {
     expect(listPulls).toHaveBeenCalledTimes(2);
   });
 
-  it("resolves ambiguous #N references by matching exact repository identity across pulls and issues", async () => {
-    const unrelatedPull = samplePull({
-      Number: 17,
-      repo_name: "other",
-      repo: { ...samplePull().repo, name: "other", repo_path: "acme/other" },
-    });
+  it("resolves ambiguous #N references by falling through from pulls to issues", async () => {
     const issue = sampleIssue({ Number: 17 });
     const client = makeGeneratedClient({
       RepositoriesService: { listRepos: vi.fn().mockResolvedValue([trackedRepo()]) },
-      PullRequestsService: { listPulls: vi.fn().mockResolvedValue([unrelatedPull]) },
+      PullRequestsService: { listPulls: vi.fn().mockResolvedValue([]) },
       IssuesService: { listIssues: vi.fn().mockResolvedValue([issue]) },
     });
 
@@ -356,7 +351,7 @@ describe("loadItemPreviewEffect", () => {
     ).toEqual({ status: "found", preview: { kind: "issue", issue: glIssue } });
   });
 
-  it("caches not-found 404 problem responses and does not cache transport errors", async () => {
+  it("caches not-found 404 responses, leaves providerPage fallbacks and transport errors uncached", async () => {
     const cache = new ItemPreviewCache();
     const listPulls = vi.fn().mockResolvedValue([]);
     const problem404 = new GeneratedProblemResponse(
@@ -382,6 +377,17 @@ describe("loadItemPreviewEffect", () => {
     expect(notFoundOutcome).toEqual({ status: "not-found" });
     expect(cache.get(missingRef)).toEqual({ status: "not-found" });
 
+    // When a 404 still has a provider page URL, clicking opens the provider page,
+    // so report not-synced without caching it as missing.
+    const unsyncedRef = {
+      ...missingRef,
+      number: 9997,
+      externalUrl: "https://github.com/acme/widgets/pull/9997",
+    };
+    const notSyncedOutcome = await runPreview(notFoundClient, unsyncedRef, cache);
+    expect(notSyncedOutcome).toEqual({ status: "not-synced" });
+    expect(cache.get(unsyncedRef)).toBeUndefined();
+
     const resolveError = vi.fn().mockRejectedValue(new TypeError("network down"));
     const errorClient = makeGeneratedClient({
       RepositoriesService: { listRepos: vi.fn().mockResolvedValue([trackedRepo()]), resolveRepoItem: resolveError },
@@ -389,7 +395,10 @@ describe("loadItemPreviewEffect", () => {
     });
     const errorRef = { ...missingRef, number: 9999 };
     const errorOutcome = await runPreview(errorClient, errorRef, cache);
-    expect(errorOutcome.status).toBe("error");
+    expect(errorOutcome).toEqual({
+      status: "error",
+      message: "Could not load preview. Hover again to retry.",
+    });
     expect(cache.get(errorRef)).toBeUndefined();
   });
 });

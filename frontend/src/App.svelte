@@ -1735,6 +1735,20 @@
             platformHost: repo.platform_host,
           })) ?? []
         }
+        getCurrentItem={() => {
+          const current = getRoute();
+          if (current.page === "activity" && drawerItem) return drawerItem;
+          if ((current.page === "pulls" || current.page === "queues") && current.selected) {
+            return { itemType: "pr", ...current.selected };
+          }
+          if (current.page === "issues" && current.selected) {
+            return { itemType: "issue", ...current.selected };
+          }
+          if (current.page === "focus" && (current.itemType === "pr" || current.itemType === "issue")) {
+            return current;
+          }
+          return null;
+        }}
         onOpenItem={handleItemReference}
       />
       <Palette

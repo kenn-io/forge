@@ -13,6 +13,7 @@ export type ItemPreview =
 export type ItemPreviewOutcome =
   | { readonly status: "found"; readonly preview: ItemPreview }
   | { readonly status: "untracked" }
+  | { readonly status: "not-synced" }
   | { readonly status: "not-found" }
   | { readonly status: "error"; readonly message: string };
 
@@ -23,14 +24,13 @@ interface CachedPreviewEntry {
 
 export interface ItemPreviewCacheOptions {
   readonly ttlMs?: number;
-  readonly notFoundTtlMs?: number;
-  readonly maxEntries?: number;
   readonly now?: () => number;
 }
 
 const DEFAULT_TTL_MS = 30_000;
-const DEFAULT_NOT_FOUND_TTL_MS = 10_000;
-const DEFAULT_MAX_ENTRIES = 100;
+const NOT_FOUND_TTL_MS = 10_000;
+const MAX_CACHE_ENTRIES = 100;
+export const PREVIEW_LOAD_ERROR_MESSAGE = "Could not load preview. Hover again to retry.";
 
 function usesSeparateItemNamespaces(provider: string): boolean {
   const canonical = canonicalProvider(provider);
@@ -50,14 +50,10 @@ export function itemPreviewCacheKey(ref: ResolvableItemReference, itemType: Item
 export class ItemPreviewCache {
   readonly #entries = new Map<string, CachedPreviewEntry>();
   readonly #ttlMs: number;
-  readonly #notFoundTtlMs: number;
-  readonly #maxEntries: number;
   readonly #now: () => number;
 
   constructor(options: ItemPreviewCacheOptions = {}) {
     this.#ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
-    this.#notFoundTtlMs = options.notFoundTtlMs ?? DEFAULT_NOT_FOUND_TTL_MS;
-    this.#maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
     this.#now = options.now ?? (() => Date.now());
   }
 
@@ -80,14 +76,14 @@ export class ItemPreviewCache {
   }
 
   set(ref: ResolvableItemReference, outcome: Extract<ItemPreviewOutcome, { status: "found" | "not-found" }>): void {
-    const ttl = outcome.status === "found" ? this.#ttlMs : this.#notFoundTtlMs;
+    const ttl = outcome.status === "found" ? this.#ttlMs : NOT_FOUND_TTL_MS;
     const entry: CachedPreviewEntry = { outcome, expiresAt: this.#now() + ttl };
     const keys = this.#writeKeys(ref, outcome);
     for (const key of keys) {
       this.#entries.delete(key);
       this.#entries.set(key, entry);
     }
-    while (this.#entries.size > this.#maxEntries) {
+    while (this.#entries.size > MAX_CACHE_ENTRIES) {
       const oldest = this.#entries.keys().next().value;
       if (oldest === undefined) break;
       this.#entries.delete(oldest);
@@ -203,9 +199,9 @@ export const loadItemPreviewEffect = Effect.fn("loadItemPreview")(
     // an older closed or merged PR). Ask Forge to resolve and sync it on demand.
     const resolution = yield* resolveItemReferenceEffect(ref);
     if (resolution.kind === "providerPage") {
-      const outcome = { status: "not-found" } as const;
-      cache?.set(ref, outcome);
-      return outcome;
+      // Clicking the link opens the provider page directly; leave this uncached
+      // so a later sync immediately shows the preview on the next hover.
+      return { status: "not-synced" } satisfies ItemPreviewOutcome;
     }
     if (resolution.kind === "unresolved") {
       if (resolution.reason === "not-tracked") {
@@ -216,7 +212,7 @@ export const loadItemPreviewEffect = Effect.fn("loadItemPreview")(
         cache?.set(ref, outcome);
         return outcome;
       }
-      return { status: "error", message: "Could not load preview." } satisfies ItemPreviewOutcome;
+      return { status: "error", message: PREVIEW_LOAD_ERROR_MESSAGE } satisfies ItemPreviewOutcome;
     }
 
     const synced = yield* readLocalPreview(repo, ref, resolution.item.itemType);
@@ -229,13 +225,8 @@ export const loadItemPreviewEffect = Effect.fn("loadItemPreview")(
     cache?.set(ref, notFound);
     return notFound;
   },
-  (effect) =>
-    effect.pipe(
-      Effect.catchTag("ApiProblemError", () =>
-        Effect.succeed<ItemPreviewOutcome>({ status: "error", message: "Could not load preview." }),
-      ),
-      Effect.catchTag("TransientTransportError", () =>
-        Effect.succeed<ItemPreviewOutcome>({ status: "error", message: "Could not load preview." }),
-      ),
-    ),
+  (effect) => {
+    const fail = () => Effect.succeed<ItemPreviewOutcome>({ status: "error", message: PREVIEW_LOAD_ERROR_MESSAGE });
+    return effect.pipe(Effect.catchTags({ ApiProblemError: fail, TransientTransportError: fail }));
+  },
 );

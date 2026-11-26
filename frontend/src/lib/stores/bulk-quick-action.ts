@@ -80,6 +80,15 @@ function resolveDefaultTarget(defaultTarget: string): Effect.Effect<ResolvedTarg
   );
 }
 
+/**
+ * The workspace a quick action on target runs in: the item's own on this
+ * Forge, or one this session made for it on another machine (hostKey set).
+ * None means the action creates one on the default machine.
+ */
+export function itemQuickActionWorkspace(target: ListItemTarget): WorkspaceRefLite | null {
+  return resolveControllerlessWorkspaceRef(itemIdentity(target), target.item.workspace ?? null);
+}
+
 function itemWorkspaceRequest({ kind, item }: ListItemTarget): ItemWorkspaceRequest {
   const { repo } = item;
   return {
@@ -186,10 +195,15 @@ function runOnLinkedRemoteWorkspace(
               return outcome;
             });
           }
-          return Effect.sync(() => {
-            if (outcome.workspaceUnusable === "gone") notifyWorkspaceDeleted(ref.id, hostKey);
-          }).pipe(
-            Effect.andThen(createAndRunOnItem(identity, request, hostKey, ref.hostLabel, action, leaf, onWorkspace)),
+          // The gone workspace stays the item's link until its replacement is
+          // recorded, so an action chosen meanwhile queues behind this one
+          // instead of finding no workspace and a create in flight.
+          return createAndRunOnItem(identity, request, hostKey, ref.hostLabel, action, leaf, onWorkspace).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                if (outcome.workspaceUnusable === "gone") notifyWorkspaceDeleted(ref.id, hostKey);
+              }),
+            ),
           );
         }),
       );
@@ -235,7 +249,7 @@ function runOnItem(
   // conflict, and the server waits for it to be ready before launching. A
   // workspace this session just created counts before the list row catches
   // up, so a repeat run queues there instead of creating another.
-  const existing = resolveControllerlessWorkspaceRef(identity, target.item.workspace ?? null);
+  const existing = itemQuickActionWorkspace(target);
   // A workspace this session created on another machine takes the action the
   // way a local one does. Its recovery may be creating a replacement right
   // now; the action waits for it in the item's queue.

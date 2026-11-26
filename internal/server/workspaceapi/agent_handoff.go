@@ -250,6 +250,8 @@ func handoffWaitError(err error, waitingFor string) error {
 		return httpapi.ServiceUnavailable("agent handoff canceled by shutdown while waiting for " + waitingFor)
 	case errors.Is(err, agenthandoff.ErrWorkspaceSetupFailed):
 		return httpapi.Conflict(httpapi.CodeConflict, strings.ReplaceAll(err.Error(), "\n", ": "), nil)
+	case errors.Is(err, agenthandoff.ErrWorkspaceDeleting):
+		return httpapi.Conflict(httpapi.CodeWorkspaceDeletionInProgress, err.Error(), nil)
 	}
 	return err
 }

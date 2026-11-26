@@ -7,6 +7,10 @@ import { makeGeneratedClient } from "../../testing/generated-client.js";
 import type { ListItemTarget } from "../../stores/item-actions.js";
 import ItemActionsMenu from "./ItemActionsMenuTestHarness.svelte";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
+import {
+  recordWorkspaceCreated,
+  resetWorkspaceCreatePendingForTest,
+} from "../../stores/workspace-create-pending.svelte.js";
 
 const pullOnGitHub = mockPullFixture(42) as unknown as PullRequest;
 pullOnGitHub.repo.capabilities = { ...pullOnGitHub.repo.capabilities, merge_credential_rules: true };
@@ -295,6 +299,8 @@ describe("ItemActionsMenu quick actions with a default machine", () => {
 
   afterEach(() => {
     cleanup();
+    // Quick actions record the workspaces they create for the rest of the session.
+    resetWorkspaceCreatePendingForTest();
   });
 
   function renderWithDefault(items: PullRequest | PullRequest[], hostKind: "self" | "remote") {
@@ -364,6 +370,35 @@ describe("ItemActionsMenu quick actions with a default machine", () => {
       expect.objectContaining({ mr_number: remote.Number }),
       expect.anything(),
     );
+    expect(launchWorkspaceAgentHandoff).not.toHaveBeenCalled();
+  });
+
+  it("runs an agent this machine lacks in an item's workspace on another machine when the default is this one", async () => {
+    createFleetWorkspace.mockReset();
+    launchFleetWorkspaceAgentHandoff.mockReset().mockResolvedValue({ initial_message: { state: "delivered" } });
+    launchWorkspaceAgentHandoff.mockReset();
+    const linked = { ...pullOnGitHub, workspace: undefined } as PullRequest;
+    recordWorkspaceCreated(
+      {
+        provider: linked.repo.provider,
+        platformHost: linked.repo.platform_host,
+        owner: linked.repo.owner,
+        name: linked.repo.name,
+        repoPath: linked.repo.repo_path,
+        number: linked.Number,
+        itemType: "pull",
+      },
+      { id: "ws-remote", status: "ready", hostKey: node, hostLabel: "build-b" },
+    );
+    renderWithDefault([linked, { ...pullOnMirror, workspace: undefined } as PullRequest], "self");
+    await waitFor(() => expect(getSnapshot).toHaveBeenCalled());
+    await waitFor(() => expect(reviewDisabled()).toBe(false));
+    const review = screen.getByRole("menuitem", { name: /^Review/ });
+    expect(review.textContent).toContain("Review on 1 of 2");
+    await fireEvent.click(review);
+    await waitFor(() => expect(launchFleetWorkspaceAgentHandoff).toHaveBeenCalledOnce());
+    expect(launchFleetWorkspaceAgentHandoff.mock.calls[0]?.[0]).toEqual({ hostKey: node, id: "ws-remote" });
+    expect(createFleetWorkspace).not.toHaveBeenCalled();
     expect(launchWorkspaceAgentHandoff).not.toHaveBeenCalled();
   });
 

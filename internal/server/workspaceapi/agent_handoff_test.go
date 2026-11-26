@@ -386,6 +386,22 @@ func TestAgentHandoffReportsWorkspaceSetupFailure(t *testing.T) {
 	assert.Empty(fixture.handler.runtime.ListSessions("ws-runtime-token"))
 }
 
+func TestAgentHandoffRefusesWorkspaceBeingDeleted(t *testing.T) {
+	t.Parallel()
+	for _, status := range []string{"deleting", "deletion_failed"} {
+		t.Run(status, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			fixture := newAgentHandoffFixture(t, status)
+
+			response := fixture.post(t, map[string]any{"target_key": "codex", "message": "hi"})
+			assert.Equal(http.StatusConflict, response.Code, response.Body.String())
+			assert.Contains(response.Body.String(), string(httpapi.CodeWorkspaceDeletionInProgress))
+			assert.Empty(fixture.handler.runtime.ListSessions("ws-runtime-token"))
+		})
+	}
+}
+
 func TestAgentHandoffTimesOutWhileWorkspaceNeverBecomesReady(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

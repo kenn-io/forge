@@ -50,6 +50,23 @@ func TestWaitForWorkspaceReportsSetupFailureWithMessage(t *testing.T) {
 	assert.Equal(t, "workspace setup failed\nclone failed", err.Error())
 }
 
+func TestWaitForWorkspaceStopsOnDeletion(t *testing.T) {
+	for _, status := range []string{"deleting", "deletion_failed"} {
+		t.Run(status, func(t *testing.T) {
+			calls := 0
+			err := Poller{Interval: time.Hour}.WaitForWorkspace(
+				t.Context(), func(context.Context) (WorkspaceState, error) {
+					calls++
+					return WorkspaceState{Status: status}, nil
+				},
+			)
+
+			require.ErrorIs(t, err, ErrWorkspaceDeleting)
+			assert.Equal(t, 1, calls)
+		})
+	}
+}
+
 func TestWaitForWorkspaceStopsOnDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond) //nolint:kennlint // deadlinetest: the deadline is the expected result; the workspace stays creating, so only the context ends the wait
 	defer cancel()

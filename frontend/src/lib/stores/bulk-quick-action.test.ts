@@ -691,3 +691,82 @@ it("runs a row action on an item whose remote workspace is being set up again, a
     vi.unstubAllGlobals();
   }
 });
+
+it("runs a row action chosen while a gone remote workspace is being replaced in the replacement", async () => {
+  const api = createMockApiFetch();
+  const pulls: PullRequest[] = await (await api.fetch("/api/v1/pulls")).json();
+  const pull = pulls[0]!;
+  const identity = {
+    provider: pull.repo.provider,
+    platformHost: pull.repo.platform_host,
+    owner: pull.repo.owner,
+    name: pull.repo.name,
+    repoPath: pull.repo.repo_path,
+    number: pull.Number,
+    itemType: "pull",
+  } as const;
+  const linked = { id: "ws-old", status: "ready", hostKey: "devbox:compute-a", hostLabel: "compute-a (devbox)" };
+  recordWorkspaceCreated(identity, linked);
+  getInlineWorkspaceController("prs").recordCreated(identity, linked);
+  const create = Promise.withResolvers<Response>();
+  const posts: string[] = [];
+  const mixed = createMockApiFetch([
+    ({ method, url }) => {
+      if (method !== "POST") return undefined;
+      posts.push(url.pathname);
+      if (url.pathname === "/api/v1/devboxes/compute-a/workspaces") return create.promise;
+      if (url.pathname === "/api/v1/devboxes/compute-a/workspaces/ws-old/runtime/agent-handoffs") {
+        return Response.json(
+          { code: "workspaceNotFound", title: "Not Found", detail: "workspace not found", status: 404 },
+          { status: 404 },
+        );
+      }
+      if (url.pathname.endsWith("/runtime/agent-handoffs")) {
+        return Response.json({
+          session: { key: "runtime-1", target_key: "helper" },
+          initial_message: { state: "delivered", target_key: "helper", message_bytes: 18 },
+        });
+      }
+      return undefined;
+    },
+  ]);
+  vi.stubGlobal("fetch", mixed.fetch);
+  const runtime = makeAppRuntime();
+  const action = { label: "Review", agent: "helper", prompt: "Review this change" };
+  try {
+    runLinkedRemoteItemQuickAction(
+      runtime,
+      identity,
+      {
+        kind: "pull",
+        repo: {
+          provider: pull.repo.provider,
+          platformHost: pull.repo.platform_host,
+          owner: pull.repo.owner,
+          name: pull.repo.name,
+        },
+        number: pull.Number,
+      },
+      linked,
+      "pull_request",
+      action,
+    );
+    await vi.waitFor(() => expect(posts).toContain("/api/v1/devboxes/compute-a/workspaces"));
+    runQuickActionOnItems(runtime, [{ kind: "pull", item: { ...pull, workspace: undefined } }], action, "");
+    create.resolve(Response.json({ id: "ws-new", status: "ready", created: true }));
+    await vi.waitFor(() => expect(getFlashes()).toEqual([expect.objectContaining({ tone: "success" })]));
+    expect(posts).toEqual([
+      "/api/v1/devboxes/compute-a/workspaces/ws-old/runtime/agent-handoffs",
+      "/api/v1/devboxes/compute-a/workspaces",
+      "/api/v1/devboxes/compute-a/workspaces/ws-new/runtime/agent-handoffs",
+      "/api/v1/devboxes/compute-a/workspaces/ws-new/runtime/agent-handoffs",
+    ]);
+    const replacement = { ...linked, id: "ws-new" };
+    expect(createdWorkspaceRef(identity)).toEqual(replacement);
+    expect(getInlineWorkspaceController("prs").effectiveWorkspaceRef(identity, null)).toEqual(replacement);
+  } finally {
+    await Effect.runPromise(runtime.disposeEffect);
+    for (const flash of getFlashes()) dismissFlash(flash.id);
+    vi.unstubAllGlobals();
+  }
+});

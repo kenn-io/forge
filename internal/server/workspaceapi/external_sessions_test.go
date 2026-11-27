@@ -30,6 +30,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.kenn.io/forge/platform"
 )
 
 type externalSessionFixture struct {
@@ -638,6 +639,36 @@ func TestExitedExternalAgentContinuesInTheChatAgent(t *testing.T) {
 	session, err := f.database.GetExternalAgentSession(t.Context(), "claude", "session-1")
 	require.NoError(t, err)
 	assert.Nil(session.HandedOffAt, "a failed start leaves the session to the next prompt")
+}
+
+// A handoff launches an agent, so it is refused once Forge stops tracking the
+// workspace's repository, and the session stays with the next prompt.
+func TestHandoffRefusedForAnInactiveRepository(t *testing.T) {
+	f := newExternalSessionFixture(t)
+	f.handler.runtime.UpdateTargets([]localruntime.LaunchTarget{{
+		Key: "claude-chat", Label: "Claude chat", Kind: localruntime.LaunchTargetACP, Command: []string{"claude-agent-acp"}, Available: true,
+	}})
+	f.openPull(t, "feature/login", f.head)
+	f.hook(t, "claude", "session-1", "UserPromptSubmit", runningAgentHeaders())
+	f.pass(t)
+	ws, rows := f.adopted(t)
+	f.hook(t, "claude", "session-1", "SessionEnd", nil)
+	spec, err := f.database.GetWorkspaceLaunchSpec(t.Context(), ws.ID)
+	require.NoError(t, err)
+	require.NotNil(t, spec)
+	_, err = f.database.DeactivateRepository(t.Context(), platform.RepositoryIdentity{
+		Provider: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost, Key: spec.Repository.Key,
+	})
+	require.NoError(t, err)
+
+	chat, err := f.handler.openWorkspaceChat(t.Context(), ws.ID, rows[0].SessionKey)
+	require.NoError(t, err)
+	err = chat.Command(localruntime.ACPCommand{Type: "prompt", Text: "continue"})
+
+	require.ErrorIs(t, err, db.ErrRepositoryIdentityChanged)
+	session, err := f.database.GetExternalAgentSession(t.Context(), "claude", "session-1")
+	require.NoError(t, err)
+	assert.Nil(t, session.HandedOffAt)
 }
 
 // A Stop that removed the chat while another view hands the session to Forge

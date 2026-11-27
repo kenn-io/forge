@@ -578,6 +578,13 @@ func (s *Handler) startMirroredChat(
 	if !ok {
 		return nil, fmt.Errorf("To continue this session in Forge, add a chat agent in Settings whose key starts with %q, such as %s-chat.", session.Agent, session.Agent) //nolint:staticcheck // ST1005: the chat shows this text verbatim as a full sentence.
 	}
+	// The handoff launches an agent that never ran here, so it passes the
+	// repository check every launch does.
+	if err := s.workspaces.PrepareAgentLaunchContext(ctx, workspace.PrepareAgentLaunchContextOptions{
+		WorkspaceID: ws.ID, TargetKey: target.Key,
+	}); err != nil {
+		return nil, fmt.Errorf("check the workspace's repository: %w", err)
+	}
 	// The chat's row is re-read under the runtime lock: a Stop that removed it
 	// must not see this write bring it back and the agent start anyway.
 	err := s.withWorkspaceACP(ctx, ws.ID, func(stored []db.WorkspaceRuntimeSession) error {

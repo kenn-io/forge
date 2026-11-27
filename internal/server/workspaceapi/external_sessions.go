@@ -520,8 +520,10 @@ func (s *Handler) mirrorStatus(
 	}
 	for _, report := range s.agentActivity.LiveReportsForWorkspace(ws.WorktreePath, []string{item.SessionKey}) {
 		switch report.State {
-		case agentactivity.StateWorking, agentactivity.StateApproval, agentactivity.StateInput:
+		case agentactivity.StateWorking:
 			status.Busy = true
+		case agentactivity.StateApproval, agentactivity.StateInput:
+			status.Busy, status.AwaitingInput = true, true
 		case agentactivity.StateIdle, agentactivity.StateDone:
 		}
 	}

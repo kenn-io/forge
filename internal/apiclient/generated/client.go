@@ -72995,29 +72995,30 @@ type WorkspaceChat struct {
 	ErrorData1    *string           `json:"errorData,omitempty"`
 
 	// Exited The chat's agent has exited; no other field is present.
-	Exited            bool                   `json:"exited"`
-	ExternalReadOnly  *bool                  `json:"externalReadOnly,omitempty"`
-	LastMessageID     *string                `json:"lastMessageId,omitempty"`
-	MessageCount      *int64                 `json:"messageCount,omitempty"`
-	MessageCursor     *int64                 `json:"messageCursor,omitempty"`
-	MessageOffset     *int64                 `json:"messageOffset,omitempty"`
-	Messages          []WorkspaceChatMessage `json:"messages,omitempty"`
-	Notices           []string               `json:"notices,omitempty"`
-	Permissions       []ACPPermission        `json:"permissions,omitempty"`
-	Plan              []ACPPlanEntry         `json:"plan,omitempty"`
-	Queue             []ACPQueuedPrompt      `json:"queue,omitempty"`
-	QueuePaused       *bool                  `json:"queuePaused,omitempty"`
-	RuntimeGeneration *string                `json:"runtimeGeneration,omitempty"`
-	Sending           *ACPQueuedPrompt       `json:"sending,omitempty"`
-	Starting          *bool                  `json:"starting,omitempty"`
-	Steering          *bool                  `json:"steering,omitempty"`
-	SteeringSupported *bool                  `json:"steeringSupported,omitempty"`
-	Steers            []ACPQueuedPrompt      `json:"steers,omitempty"`
-	Stopping          *bool                  `json:"stopping,omitempty"`
-	Supervision       *ACPSupervision        `json:"supervision,omitempty"`
-	Turns             []ACPTurnRecord        `json:"turns,omitempty"`
-	Uncertain         []string               `json:"uncertain,omitempty"`
-	Withdrawn         []string               `json:"withdrawn,omitempty"`
+	Exited                bool                   `json:"exited"`
+	ExternalAwaitingInput *bool                  `json:"externalAwaitingInput,omitempty"`
+	ExternalReadOnly      *bool                  `json:"externalReadOnly,omitempty"`
+	LastMessageID         *string                `json:"lastMessageId,omitempty"`
+	MessageCount          *int64                 `json:"messageCount,omitempty"`
+	MessageCursor         *int64                 `json:"messageCursor,omitempty"`
+	MessageOffset         *int64                 `json:"messageOffset,omitempty"`
+	Messages              []WorkspaceChatMessage `json:"messages,omitempty"`
+	Notices               []string               `json:"notices,omitempty"`
+	Permissions           []ACPPermission        `json:"permissions,omitempty"`
+	Plan                  []ACPPlanEntry         `json:"plan,omitempty"`
+	Queue                 []ACPQueuedPrompt      `json:"queue,omitempty"`
+	QueuePaused           *bool                  `json:"queuePaused,omitempty"`
+	RuntimeGeneration     *string                `json:"runtimeGeneration,omitempty"`
+	Sending               *ACPQueuedPrompt       `json:"sending,omitempty"`
+	Starting              *bool                  `json:"starting,omitempty"`
+	Steering              *bool                  `json:"steering,omitempty"`
+	SteeringSupported     *bool                  `json:"steeringSupported,omitempty"`
+	Steers                []ACPQueuedPrompt      `json:"steers,omitempty"`
+	Stopping              *bool                  `json:"stopping,omitempty"`
+	Supervision           *ACPSupervision        `json:"supervision,omitempty"`
+	Turns                 []ACPTurnRecord        `json:"turns,omitempty"`
+	Uncertain             []string               `json:"uncertain,omitempty"`
+	Withdrawn             []string               `json:"withdrawn,omitempty"`
 }
 
 type WorkspaceChatCommand struct {

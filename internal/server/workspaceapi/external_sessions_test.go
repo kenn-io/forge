@@ -266,14 +266,17 @@ func TestAgentFirstSeenAtItsExitStillGetsAWorkspace(t *testing.T) {
 // while, so the new chat starts from it. An idle notice that followed an
 // approval request does not hide the request.
 func TestAdoptedChatShowsTheAgentWorkingBeforeItsNextHook(t *testing.T) {
-	for name, events := range map[string][]string{
-		"working":                          {"PostToolUse"},
-		"approval followed by idle notice": {"PermissionRequest", "Notification"},
+	for name, test := range map[string]struct {
+		events   []string
+		awaiting bool
+	}{
+		"working":                          {events: []string{"PostToolUse"}},
+		"approval followed by idle notice": {events: []string{"PermissionRequest", "Notification"}, awaiting: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newExternalSessionFixture(t)
 			f.openPull(t, "feature/login", f.head)
-			for _, event := range events {
+			for _, event := range test.events {
 				f.hookWith(t, "claude", "session-1", event, map[string]any{"notification_type": "idle_prompt"}, runningAgentHeaders())
 			}
 			f.pass(t)
@@ -282,7 +285,9 @@ func TestAdoptedChatShowsTheAgentWorkingBeforeItsNextHook(t *testing.T) {
 			chat, err := f.handler.openWorkspaceChat(t.Context(), ws.ID, rows[0].SessionKey)
 			require.NoError(t, err)
 
-			assert.True(t, chatState(t, chat).Busy)
+			state := chatState(t, chat)
+			assert.True(t, state.Busy)
+			assert.Equal(t, test.awaiting, state.ExternalAwaitingInput, "the chat says the agent waits for an answer where it runs")
 		})
 	}
 }

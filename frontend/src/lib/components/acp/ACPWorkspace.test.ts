@@ -1251,6 +1251,21 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(screen.queryByRole("button", { name: "Stop reply" })).toBeNull();
   });
 
+  it("says when an agent running outside Forge waits for an answer in its terminal", async () => {
+    await openChat(
+      {
+        connected: false,
+        dormant: true,
+        busy: true,
+        externalAwaitingInput: true,
+        messages: [{ role: "assistant", text: "May I run the tests?" }],
+      },
+      { status: "parked" },
+    );
+    expect(screen.getByText("Needs your answer in the terminal")).toBeTruthy();
+    expect(screen.queryByText("Replying…")).toBeNull();
+  });
+
   it("sends input and stops a replying agent mirrored from a Herdr pane", async () => {
     await openChat(
       { connected: false, dormant: true, busy: true, messages: [{ role: "assistant", text: "Working on it" }] },

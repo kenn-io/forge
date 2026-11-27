@@ -35,6 +35,9 @@ type ACPMirrorStatus struct {
 	// Writable means Forge can type into the agent's terminal.
 	Writable bool
 	Busy     bool
+	// AwaitingInput means the agent's turn waits for an approval or an answer
+	// given where the agent runs.
+	AwaitingInput bool
 	// TranscriptPath is the transcript the agent last reported, which a hook
 	// may supply only after the chat opened.
 	TranscriptPath string
@@ -195,11 +198,14 @@ func (d *DormantACP) pollMirror() {
 	d.pollMirrorTranscript(status.TranscriptPath)
 	readOnly := status.Running && !status.Writable
 	busy := status.Running && status.Busy
+	awaiting := busy && status.AwaitingInput
 	d.saved.mu.Lock()
 	defer d.saved.mu.Unlock()
-	if d.saved.state.Busy != busy || d.saved.state.ExternalReadOnly != readOnly {
+	if d.saved.state.Busy != busy || d.saved.state.ExternalReadOnly != readOnly ||
+		d.saved.state.ExternalAwaitingInput != awaiting {
 		d.saved.state.Busy = busy
 		d.saved.state.ExternalReadOnly = readOnly
+		d.saved.state.ExternalAwaitingInput = awaiting
 		d.saved.changedLocked()
 	}
 }

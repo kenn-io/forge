@@ -149,6 +149,7 @@
     if (loading) return { text: connected || status === "parked" ? "Loading chat…" : "Connecting agent…", hidden: true };
     if (!connected && (status === "running" || status === "parked") && !error && !chatState?.error) return { text: "Connecting agent…", spinner: true };
     // A mirrored agent running outside Forge reads as dormant while it replies.
+    if (chatState?.dormant && chatState.externalAwaitingInput) return { text: "Needs your answer in the terminal" };
     if (chatState?.dormant) return running ? { text: "Replying…", spinner: true, hidden: true } : { text: "", hidden: true };
     if (!chatState?.connected) return { text: "Agent disconnected" };
     if (stopping) return { text: "Stopping…" };

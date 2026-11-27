@@ -12622,6 +12622,8 @@ components:
         exited:
           description: The chat's agent has exited; no other field is present.
           type: boolean
+        externalAwaitingInput:
+          type: boolean
         externalReadOnly:
           type: boolean
         lastMessageId:

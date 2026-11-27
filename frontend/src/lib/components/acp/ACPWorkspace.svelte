@@ -128,6 +128,12 @@
   // rest wait behind it in the queue.
   const refusedQueue = $derived(queue.filter((queued) => queued.refused));
   const waitingQueue = $derived(queue.filter((queued) => !queued.refused));
+  // The newest refusal, for screen readers: the note beside a refused prompt is
+  // not announced, and the person may otherwise keep waiting on it.
+  const refusalAnnouncement = $derived.by(() => {
+    const refused = outbox.findLast((prompt) => prompt.refused)?.refused ?? refusedQueue.at(-1)?.refused;
+    return refused ? `Not sent: ${refused}` : "";
+  });
   // A chat that failed before it ever loaded has nothing to send to.
   const composerDead = $derived(!chatState && stopped && (!!error || stalled));
   // Waiting for the chat's first state. The conversation shows it, since it
@@ -637,6 +643,7 @@
       {/each}
     </div>
   </div>
+  <div class="kit-sr-only" role="status" aria-atomic="true">{refusalAnnouncement}</div>
   <div class="kit-sr-only" aria-live="polite" aria-atomic="true">{#if chatState && !chatState.busy}{chatState.messages.at(-1)?.role === "assistant" ? chatState.messages.at(-1)?.text : ""}{/if}</div>
   {#if !follow}<button class="latest" type="button" onclick={() => { follow = true; }}>Latest messages</button>{/if}
   {#if chatState?.error}

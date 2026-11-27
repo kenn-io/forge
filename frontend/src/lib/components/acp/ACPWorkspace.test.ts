@@ -847,6 +847,9 @@ describe("ACPWorkspace busy composer", () => {
     expect(refused.textContent).toContain("Not sent");
     expect(screen.getByText("The agent is not accepting prompts.")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getAllByRole("status").map((status) => status.textContent)).toContain(
+      "Not sent: The agent is not accepting prompts.",
+    );
 
     await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(sentCommands()).toEqual([
@@ -882,6 +885,9 @@ describe("ACPWorkspace busy composer", () => {
       expect(refused.textContent).toContain("Not sent");
       expect(screen.getByText("this agent does not accept image prompts")).toBeTruthy();
       expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getAllByRole("status").map((status) => status.textContent)).toContain(
+        "Not sent: this agent does not accept image prompts",
+      );
       expect(screen.getByRole("button", { name: /1 queued/ })).toBeTruthy();
     });
 

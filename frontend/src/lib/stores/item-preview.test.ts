@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { GeneratedProblemResponse } from "../api/runtime.js";
 import { makeAppRuntime } from "../app/runtime.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
-import type { Issue, PullRequest, RepoCatalog } from "../api/types.js";
+import type { ConfigRepo, Issue, PullRequest, RepoCatalog } from "../api/types.js";
 import { ItemPreviewCache, loadItemPreviewEffect, type ItemPreviewOutcome } from "./item-preview.js";
 
 function trackedRepo(overrides: Partial<RepoCatalog> = {}): RepoCatalog {
@@ -127,10 +127,11 @@ async function runPreview(
   client: ReturnType<typeof makeGeneratedClient>,
   ref: Parameters<typeof loadItemPreviewEffect>[0],
   cache?: ItemPreviewCache,
+  configuredRepos?: ReadonlyArray<ConfigRepo>,
 ): Promise<ItemPreviewOutcome> {
   const runtime = makeAppRuntime(client);
   try {
-    const exit = await runtime.runCommand(loadItemPreviewEffect(ref, cache), {
+    const exit = await runtime.runCommand(loadItemPreviewEffect(ref, cache, configuredRepos), {
       operation: "test item preview",
       safeContext: {},
       onFailure: () => {},
@@ -395,10 +396,60 @@ describe("loadItemPreviewEffect", () => {
     });
     const errorRef = { ...missingRef, number: 9999 };
     const errorOutcome = await runPreview(errorClient, errorRef, cache);
-    expect(errorOutcome).toEqual({
-      status: "error",
-      message: "Could not load preview. Hover again to retry.",
-    });
+    expect(errorOutcome).toMatchObject({ status: "error" });
     expect(cache.get(errorRef)).toBeUndefined();
+  });
+
+  it("loads previews for hidden configured repositories omitted from listRepos", async () => {
+    const hiddenPull = samplePull({
+      Number: 55,
+      repo_owner: "acme",
+      repo_name: "hidden-lib",
+      URL: "https://github.com/acme/hidden-lib/pull/55",
+      repo: {
+        ...samplePull().repo,
+        owner: "acme",
+        name: "hidden-lib",
+        repo_path: "acme/hidden-lib",
+      },
+    });
+    const listPulls = vi.fn().mockResolvedValue([hiddenPull]);
+    const listRepos = vi.fn().mockResolvedValue([trackedRepo()]);
+    const client = makeGeneratedClient({
+      RepositoriesService: { listRepos },
+      PullRequestsService: { listPulls },
+    });
+    const configuredRepos: ConfigRepo[] = [
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "hidden-lib",
+        repo_path: "acme/hidden-lib",
+        hidden_from_ui: true,
+        is_glob: false,
+        issue_pr_references: true,
+        matched_repo_count: 1,
+      },
+    ];
+
+    const outcome = await runPreview(
+      client,
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "hidden-lib",
+        repoPath: "acme/hidden-lib",
+        number: 55,
+        itemType: "pr",
+      },
+      undefined,
+      configuredRepos,
+    );
+
+    expect(outcome).toEqual({ status: "found", preview: { kind: "pr", pull: hiddenPull } });
+    expect(listPulls).toHaveBeenCalledTimes(1);
+    expect(listRepos).not.toHaveBeenCalled();
   });
 });

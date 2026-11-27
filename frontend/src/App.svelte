@@ -1729,12 +1729,7 @@
 
     {#if !onboardingActive}
       <ItemReferencePopover
-        getProviderContexts={() =>
-          stores?.settings.getConfiguredRepos().map((repo) => ({
-            provider: repo.provider,
-            platformHost: repo.platform_host,
-          })) ?? []
-        }
+        getConfiguredRepos={() => stores?.settings.getConfiguredRepos() ?? []}
         getCurrentItem={() => {
           const current = getRoute();
           if (current.page === "activity" && drawerItem) return drawerItem;

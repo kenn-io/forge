@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
-import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
+import { jsonResponse, mockSettings, type MockRouteOverride } from "./test/mockApiFetch.js";
+import { worklistItem, worklistResponse, worklistRoutes, type WorklistServer } from "./test/worklistFixtures.js";
 
 const WAIT = 10_000;
 
@@ -350,11 +351,12 @@ describe("item reference hover popover", () => {
     await vi.waitFor(() => expect(popoverEl()).not.toBeNull(), WAIT);
 
     const cardRect = popoverEl()!.getBoundingClientRect();
-    // Card opens adjacent to the hovered last line (below or above it by ~8px gap),
-    // not anchored to the first line's edge.
-    const gapBelowLastLine = Math.abs(cardRect.top - lastLine.bottom);
-    const gapAboveLastLine = Math.abs(lastLine.top - cardRect.bottom);
-    expect(Math.min(gapBelowLastLine, gapAboveLastLine)).toBeLessThanOrEqual(14);
+    // Card opens adjacent to the hovered last line without overlapping it,
+    // separating it from a regression that falls back to the first line (rects[0]).
+    const placedBelowLast = cardRect.top >= lastLine.bottom - 1 && cardRect.top <= lastLine.bottom + 14;
+    const placedAboveLast = cardRect.bottom <= lastLine.top + 1 && cardRect.bottom >= lastLine.top - 14;
+    expect(placedBelowLast || placedAboveLast).toBe(true);
+    expect(Math.abs(cardRect.top - (firstLine.bottom + 8))).toBeGreaterThan(2);
     expect(cardRect.left).toBeGreaterThanOrEqual(8);
     expect(cardRect.right).toBeLessThanOrEqual(window.innerWidth - 8);
     expect(cardRect.top).toBeGreaterThanOrEqual(8);
@@ -454,5 +456,145 @@ describe("item reference hover popover", () => {
     await vi.waitFor(() => expect(popoverEl()).toBeNull(), WAIT);
     await vi.waitFor(() => expect(window.location.pathname).toBe("/pulls/github/acme/widgets/104"), WAIT);
     await vi.waitFor(() => expect(detailTitle()).toContain("Configure retry backoff pool"), WAIT);
+  });
+
+  it("keeps worklist members inside the worklist when clicking the preview title", async () => {
+    const worklistFirst = makePullRow({
+      ID: 42,
+      GitHubID: 90042,
+      Number: 42,
+      URL: "https://github.com/acme/widgets/pull/42",
+      Title: "First worklist PR",
+      Body: "Depends on https://github.com/acme/widgets/pull/84.",
+      repo: { ...repoRef("acme", "widgets"), platform_repo_id: 1001 },
+    });
+    const worklistSecond = makePullRow({
+      ID: 84,
+      GitHubID: 90084,
+      Number: 84,
+      URL: "https://github.com/acme/widgets/pull/84",
+      Title: "Second worklist PR",
+      Body: "Shared helper used by #42.",
+      repo: { ...repoRef("acme", "widgets"), platform_repo_id: 1001 },
+    });
+    const server: WorklistServer = {
+      lists: [
+        worklistResponse(5, "Review queue", [
+          worklistItem({ position: 0, item_type: "pr", number: 42, title: "First worklist PR" }),
+          worklistItem({ position: 1, item_type: "pr", number: 84, title: "Second worklist PR" }),
+        ]),
+      ],
+      requests: [],
+    };
+    mounted = await mountBrowserApp("/worklists/5", {
+      overrides: [
+        (req) => {
+          if (req.method !== "GET" || req.url.pathname !== "/api/v1/pulls") return null;
+          const numbers = req.url.searchParams.getAll("numbers");
+          if (numbers.includes("84")) return jsonResponse([worklistSecond]);
+          return jsonResponse([worklistFirst, worklistSecond]);
+        },
+        (req) =>
+          /^\/api\/v1\/pulls\/github\/acme\/widgets\/42(\/sync\/async)?$/.test(req.url.pathname)
+            ? jsonResponse(detailEnvelope(worklistFirst))
+            : null,
+        (req) =>
+          /^\/api\/v1\/pulls\/github\/acme\/widgets\/84(\/sync\/async)?$/.test(req.url.pathname)
+            ? jsonResponse(detailEnvelope(worklistSecond))
+            : null,
+        (req) =>
+          req.method === "POST" && req.url.pathname === "/api/v1/repo/github/acme/widgets/resolve/84"
+            ? jsonResponse({ number: 84, item_type: "pr", repo_tracked: true })
+            : null,
+        worklistRoutes(server),
+        ...overrides(),
+      ],
+    });
+    await vi.waitFor(() => expect(detailTitle()).toContain("First worklist PR"), WAIT);
+
+    const link = document.querySelector<HTMLAnchorElement>('.markdown-body a.item-ref[data-number="84"]')!;
+    expect(link).toBeTruthy();
+    dispatchPointer(link, "pointerover");
+    await vi.waitFor(() => expect(popoverEl()).not.toBeNull(), WAIT);
+
+    const titleLink = popoverEl()!.querySelector<HTMLAnchorElement>(".item-ref-popover__title")!;
+    titleLink.click();
+
+    await vi.waitFor(() => expect(popoverEl()).toBeNull(), WAIT);
+    await vi.waitFor(() => expect(window.location.pathname).toBe("/worklists/5"), WAIT);
+    await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A84"), WAIT);
+    await vi.waitFor(() => expect(detailTitle()).toContain("Second worklist PR"), WAIT);
+  });
+
+  it("shows a preview for a hidden tracked repository omitted from /api/v1/repos", async () => {
+    const hiddenPull = makePullRow({
+      ID: 301,
+      GitHubID: 90301,
+      Number: 301,
+      URL: "https://github.com/acme/hidden-lib/pull/301",
+      Title: "Fix hidden repo serialization",
+      repo_owner: "acme",
+      repo_name: "hidden-lib",
+      repo: repoRef("acme", "hidden-lib"),
+    });
+    const hostPull = makePullRow({
+      ...currentPull,
+      Body: "See https://github.com/acme/hidden-lib/pull/301 for the serializer change.",
+    });
+
+    mounted = await mountBrowserApp("/pulls/github/acme/widgets/205", {
+      overrides: [
+        (req) =>
+          req.method === "GET" && req.url.pathname === "/api/v1/settings"
+            ? jsonResponse({
+                ...mockSettings,
+                repos: [
+                  {
+                    provider: "github",
+                    platform_host: "github.com",
+                    owner: "acme",
+                    name: "widgets",
+                    repo_path: "acme/widgets",
+                    hidden_from_ui: false,
+                    is_glob: false,
+                    issue_pr_references: true,
+                    matched_repo_count: 1,
+                  },
+                  {
+                    provider: "github",
+                    platform_host: "github.com",
+                    owner: "acme",
+                    name: "hidden-lib",
+                    repo_path: "acme/hidden-lib",
+                    hidden_from_ui: true,
+                    is_glob: false,
+                    issue_pr_references: true,
+                    matched_repo_count: 1,
+                  },
+                ],
+              })
+            : null,
+        (req) =>
+          /^\/api\/v1\/pulls\/github\/acme\/widgets\/205(\/sync\/async)?$/.test(req.url.pathname)
+            ? jsonResponse(detailEnvelope(hostPull))
+            : null,
+        (req) => {
+          if (req.method !== "GET" || req.url.pathname !== "/api/v1/pulls") return null;
+          if (req.url.searchParams.get("repo") === "github|github.com/acme/hidden-lib") {
+            return jsonResponse([hiddenPull]);
+          }
+          return jsonResponse([hostPull]);
+        },
+        ...overrides(),
+      ],
+    });
+    await vi.waitFor(() => expect(detailTitle()).toContain("Enable shared retry policy"), WAIT);
+
+    const hiddenLink = document.querySelector<HTMLAnchorElement>('.markdown-body a.item-ref[data-name="hidden-lib"]')!;
+    expect(hiddenLink).toBeTruthy();
+
+    dispatchPointer(hiddenLink, "pointerover");
+    await vi.waitFor(() => expect(popoverEl()).not.toBeNull(), WAIT);
+    expect(popoverEl()!.textContent).toContain("Fix hidden repo serialization");
   });
 });

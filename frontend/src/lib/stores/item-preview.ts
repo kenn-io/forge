@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import { canonicalProvider, resolvedPlatformHost } from "../api/provider-routes.js";
 import { RepositoryReads } from "../api/repository-reads.js";
-import type { Issue, PullRequest } from "../api/types.js";
+import type { ConfigRepo, Issue, PullRequest } from "../api/types.js";
 import type { ItemReferenceType, ResolvableItemReference } from "../utils/item-reference.js";
 import { isTrackedItemReference, resolveItemReferenceEffect } from "../utils/itemRefHandler.js";
 
@@ -30,11 +30,29 @@ export interface ItemPreviewCacheOptions {
 const DEFAULT_TTL_MS = 30_000;
 const NOT_FOUND_TTL_MS = 10_000;
 const MAX_CACHE_ENTRIES = 100;
-export const PREVIEW_LOAD_ERROR_MESSAGE = "Could not load preview. Hover again to retry.";
+export const PREVIEW_LOAD_ERROR_MESSAGE = "Could not load preview. Try again.";
 
-function usesSeparateItemNamespaces(provider: string): boolean {
+export function usesSeparateItemNamespaces(provider: string): boolean {
   const canonical = canonicalProvider(provider);
   return canonical === "gitlab" || canonical === "bitbucket";
+}
+
+export function isTrackedConfiguredRepo(
+  ref: ResolvableItemReference,
+  configuredRepos: ReadonlyArray<ConfigRepo>,
+): boolean {
+  const provider = canonicalProvider(ref.provider);
+  const host = resolvedPlatformHost(ref.provider, ref.platformHost).toLowerCase();
+  const repoPath = ref.repoPath.toLowerCase();
+  return configuredRepos.some((repo) => {
+    if (repo.is_glob) return false;
+    const configuredPath = (repo.tracked_repo_path || repo.repo_path || `${repo.owner}/${repo.name}`).toLowerCase();
+    return (
+      canonicalProvider(repo.provider) === provider &&
+      resolvedPlatformHost(repo.provider, repo.platform_host).toLowerCase() === host &&
+      configuredPath === repoPath
+    );
+  });
 }
 
 export function itemPreviewCacheKey(ref: ResolvableItemReference, itemType: ItemReferenceType | "any"): string {
@@ -175,16 +193,18 @@ function readLocalPreview(repo: string, ref: ResolvableItemReference, kind: Item
 }
 
 export const loadItemPreviewEffect = Effect.fn("loadItemPreview")(
-  function* (ref: ResolvableItemReference, cache?: ItemPreviewCache) {
+  function* (ref: ResolvableItemReference, cache?: ItemPreviewCache, configuredRepos: ReadonlyArray<ConfigRepo> = []) {
     const cached = cache?.get(ref);
     if (cached !== undefined) {
       return cached;
     }
 
-    const repoReads = yield* RepositoryReads;
-    const repos = repoReads.snapshot ?? (yield* repoReads.refresh);
-    if (!isTrackedItemReference(ref, repos)) {
-      return { status: "untracked" } satisfies ItemPreviewOutcome;
+    if (!isTrackedConfiguredRepo(ref, configuredRepos)) {
+      const repoReads = yield* RepositoryReads;
+      const repos = repoReads.snapshot ?? (yield* repoReads.refresh);
+      if (!isTrackedItemReference(ref, repos)) {
+        return { status: "untracked" } satisfies ItemPreviewOutcome;
+      }
     }
 
     const repo = repoFilterParam(ref);

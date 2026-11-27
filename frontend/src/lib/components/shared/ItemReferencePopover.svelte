@@ -10,20 +10,19 @@
     formatRelativeTime,
     Spinner,
   } from "@kenn-io/kit-ui";
-  import {
-    canonicalProvider,
-    providerUsesHostRoute,
-    resolvedPlatformHost,
-  } from "../../api/provider-routes.js";
+  import { providerUsesHostRoute } from "../../api/provider-routes.js";
   import { RepositoryReads } from "../../api/repository-reads.js";
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
-  import type { Issue, PullRequest, RepoCatalog } from "../../api/types.js";
+  import type { ConfigRepo, Issue, PullRequest, RepoCatalog } from "../../api/types.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import {
+    isTrackedConfiguredRepo,
     ItemPreviewCache,
+    itemPreviewCacheKey,
     loadItemPreviewEffect,
     PREVIEW_LOAD_ERROR_MESSAGE,
+    usesSeparateItemNamespaces,
     type ItemPreview,
     type ItemPreviewOutcome,
   } from "../../stores/item-preview.js";
@@ -56,13 +55,13 @@
   const MAX_VISIBLE_LABELS = 4;
 
   interface Props {
-    getProviderContexts?: () => ReadonlyArray<ProviderContext>;
+    getConfiguredRepos?: () => ReadonlyArray<ConfigRepo>;
     getCurrentItem?: () => RoutableItemRef | null;
     onOpenItem?: (item: RoutableItemRef) => void;
   }
 
   let {
-    getProviderContexts = () => [],
+    getConfiguredRepos = () => [],
     getCurrentItem = () => null,
     onOpenItem = undefined,
   }: Props = $props();
@@ -134,9 +133,6 @@
   }
 
   function attachDescribedBy(anchor: HTMLAnchorElement): void {
-    if (describedAnchor && describedAnchor !== anchor) {
-      detachDescribedBy();
-    }
     const existing = anchor.getAttribute("aria-describedby")?.trim() ?? "";
     const tokens = existing ? existing.split(/\s+/) : [];
     if (!tokens.includes(popoverId)) {
@@ -172,14 +168,14 @@
   function triggerRectForAnchor(anchor: HTMLAnchorElement, pointer: { x: number; y: number } | null): DOMRect {
     const rects = Array.from(anchor.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0);
     if (rects.length <= 1) return rects[0] ?? anchor.getBoundingClientRect();
-    if (pointer) {
-      const containing = rects.find(
-        (rect) =>
-          pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom,
-      );
-      if (containing) return containing;
-    }
-    return rects[0]!;
+    return (
+      (pointer &&
+        rects.find(
+          (rect) =>
+            pointer.x >= rect.left && pointer.x <= rect.right && pointer.y >= rect.top && pointer.y <= rect.bottom,
+        )) ||
+      rects[0]!
+    );
   }
 
   async function position(): Promise<void> {
@@ -268,9 +264,10 @@
       void position();
     }, LOADING_DELAY_MS);
 
+    const configuredRepos = getConfiguredRepos();
     previewExecution = untrack(() =>
       runtime.runCommand(
-        loadItemPreviewEffect(ref, cache).pipe(
+        loadItemPreviewEffect(ref, cache, configuredRepos).pipe(
           Effect.tap((outcome) => Effect.sync(() => applyOutcome(token, urlCountAtOpen, ref, outcome))),
         ),
         {
@@ -292,18 +289,17 @@
   function isCurrentOpenItem(ref: ResolvableItemReference): boolean {
     const current = getCurrentItem();
     if (!current || current.number !== ref.number) return false;
-    const refProvider = canonicalProvider(ref.provider);
-    if (refProvider !== canonicalProvider(current.provider)) return false;
-    const refHost = resolvedPlatformHost(ref.provider, ref.platformHost).toLowerCase();
-    const currentHost = resolvedPlatformHost(current.provider, current.platformHost).toLowerCase();
-    if (refHost !== currentHost) return false;
-    const currentPath = (current.repoPath || `${current.owner}/${current.name}`).toLowerCase();
-    if (ref.repoPath.toLowerCase() !== currentPath) return false;
-    if (
-      ref.itemType !== undefined &&
-      ref.itemType !== current.itemType &&
-      (refProvider === "gitlab" || refProvider === "bitbucket")
-    ) {
+    const currentRef: ResolvableItemReference = {
+      provider: current.provider,
+      platformHost: current.platformHost,
+      owner: current.owner,
+      name: current.name,
+      repoPath: current.repoPath || `${current.owner}/${current.name}`,
+      number: current.number,
+      itemType: current.itemType,
+    };
+    if (itemPreviewCacheKey(ref, "any") !== itemPreviewCacheKey(currentRef, "any")) return false;
+    if (ref.itemType !== undefined && ref.itemType !== current.itemType && usesSeparateItemNamespaces(ref.provider)) {
       return false;
     }
     return true;
@@ -316,10 +312,17 @@
     const anchor = findItemRefAnchor(eventTarget);
     if (!anchor || anchor.hasAttribute("download")) return null;
     if (popoverEl?.contains(anchor)) return null;
-    const ref = resolveAnchorItemReference(anchor, getProviderContexts());
+    const configuredRepos = getConfiguredRepos();
+    const providerContexts: ProviderContext[] = configuredRepos.map((repo) => ({
+      provider: repo.provider,
+      platformHost: repo.platform_host,
+    }));
+    const ref = resolveAnchorItemReference(anchor, providerContexts);
     if (!ref || isCurrentOpenItem(ref)) return null;
-    const repos = getCachedRepositories();
-    if (repos !== undefined && !isTrackedItemReference(ref, repos)) return null;
+    if (!isTrackedConfiguredRepo(ref, configuredRepos)) {
+      const repos = getCachedRepositories();
+      if (repos !== undefined && !isTrackedItemReference(ref, repos)) return null;
+    }
     return { anchor, ref };
   }
 
@@ -556,9 +559,14 @@
       event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
     if (!plainClick) return;
     event.preventDefault();
+    const anchor = activeAnchor;
     const item = routableItemForPreview(preview);
     hide();
-    onOpenItem?.(item);
+    if (anchor?.isConnected) {
+      anchor.click();
+    } else {
+      onOpenItem?.(item);
+    }
   }
 
   const loadedPreview = $derived(card?.kind === "loaded" ? card.preview : null);
@@ -618,7 +626,7 @@
     {:else if card.kind === "not-synced"}
       <div class="item-ref-popover__status-row">
         <span class="item-ref-popover__status-ref">{card.ref.repoPath} #{card.ref.number}</span>
-        <span class="item-ref-popover__status-msg">Not synced in Forge. Click to open on the provider.</span>
+        <span class="item-ref-popover__status-msg">Not synced in Forge yet. Open the link to view it on the provider.</span>
       </div>
     {:else if card.kind === "not-found"}
       <div class="item-ref-popover__status-row">

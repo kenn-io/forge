@@ -1248,6 +1248,57 @@ func TestResolveItem_UsesItemTypeHintForBitbucketCloud(t *testing.T) {
 	}
 }
 
+// resolveGitealikeTransport wraps ApiTestGitealikeTransport so missing PRs and
+// issues return *gitealike.HTTPError{StatusCode: 404} like the real Forgejo and
+// Gitea transports, driving gitealike.Provider's ErrLookupNotPresent and
+// ErrRepositoryFeatureDisabled classification.
+type resolveGitealikeTransport struct {
+	*serverfake.ApiTestGitealikeTransport
+	pullCommentsErr error
+}
+
+func (t *resolveGitealikeTransport) GetPullRequest(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) (gitealike.PullRequestDTO, error) {
+	if t.Repo.MergeRequestsEnabled != nil && !*t.Repo.MergeRequestsEnabled {
+		return gitealike.PullRequestDTO{}, &gitealike.HTTPError{StatusCode: http.StatusNotFound, Message: "pull requests disabled"}
+	}
+	pr, err := t.ApiTestGitealikeTransport.GetPullRequest(ctx, ref, number)
+	if errors.Is(err, platform.ErrNotFound) {
+		return gitealike.PullRequestDTO{}, &gitealike.HTTPError{StatusCode: http.StatusNotFound, Message: "not found"}
+	}
+	return pr, err
+}
+
+func (t *resolveGitealikeTransport) GetIssue(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+) (gitealike.IssueDTO, error) {
+	if t.Repo.IssuesEnabled != nil && !*t.Repo.IssuesEnabled {
+		return gitealike.IssueDTO{}, &gitealike.HTTPError{StatusCode: http.StatusNotFound, Message: "issues disabled"}
+	}
+	issue, err := t.ApiTestGitealikeTransport.GetIssue(ctx, ref, number)
+	if errors.Is(err, platform.ErrNotFound) {
+		return gitealike.IssueDTO{}, &gitealike.HTTPError{StatusCode: http.StatusNotFound, Message: "not found"}
+	}
+	return issue, err
+}
+
+func (t *resolveGitealikeTransport) ListPullRequestComments(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	opts gitealike.PageOptions,
+) ([]gitealike.CommentDTO, gitealike.Page, error) {
+	if t.pullCommentsErr != nil {
+		return nil, gitealike.Page{}, t.pullCommentsErr
+	}
+	return t.ApiTestGitealikeTransport.ListPullRequestComments(ctx, ref, number, opts)
+}
+
 // TestResolveItem_SyncsUnsyncedItemsAcrossProviders verifies on-demand item
 // resolution for Forgejo, Gitea, and Bitbucket Cloud when the repository is
 // tracked and the item has not been synced into SQLite yet.
@@ -1260,17 +1311,20 @@ func TestResolveItem_SyncsUnsyncedItemsAcrossProviders(t *testing.T) {
 			ctx := t.Context()
 			host := string(kind) + ".test"
 			base := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
-			transport := &serverfake.ApiTestGitealikeTransport{
+			enabled := true
+			baseTransport := &serverfake.ApiTestGitealikeTransport{
 				Repo: gitealike.RepositoryDTO{
-					ID:            101,
-					Owner:         gitealike.UserDTO{UserName: "acme"},
-					Name:          "widgets",
-					FullName:      "acme/widgets",
-					HTMLURL:       "https://" + host + "/acme/widgets",
-					CloneURL:      "https://" + host + "/acme/widgets.git",
-					DefaultBranch: "main",
-					Created:       base,
-					Updated:       base,
+					ID:                   101,
+					Owner:                gitealike.UserDTO{UserName: "acme"},
+					Name:                 "widgets",
+					FullName:             "acme/widgets",
+					HTMLURL:              "https://" + host + "/acme/widgets",
+					CloneURL:             "https://" + host + "/acme/widgets.git",
+					DefaultBranch:        "main",
+					IssuesEnabled:        &enabled,
+					MergeRequestsEnabled: &enabled,
+					Created:              base,
+					Updated:              base,
 				},
 				Pulls: []gitealike.PullRequestDTO{{
 					ID:      201,
@@ -1284,17 +1338,34 @@ func TestResolveItem_SyncsUnsyncedItemsAcrossProviders(t *testing.T) {
 					Created: base,
 					Updated: base.Add(time.Minute),
 				}},
-				Issues: []gitealike.IssueDTO{{
-					ID:      401,
-					Index:   8,
-					HTMLURL: "https://" + host + "/acme/widgets/issues/8",
-					Title:   "Sync unsynced issue",
-					User:    gitealike.UserDTO{UserName: "bob"},
-					State:   "open",
-					Created: base,
-					Updated: base.Add(time.Minute),
-				}},
+				// Mirror real Forgejo/Gitea APIs where GET /issues/{index} also
+				// returns pull requests with IsPullRequest set, so an issue-first
+				// probe would misclassify #7 as an issue.
+				Issues: []gitealike.IssueDTO{
+					{
+						ID:            201,
+						Index:         7,
+						HTMLURL:       "https://" + host + "/acme/widgets/pulls/7",
+						Title:         "Sync unsynced pull",
+						User:          gitealike.UserDTO{UserName: "alice"},
+						State:         "open",
+						IsPullRequest: true,
+						Created:       base,
+						Updated:       base.Add(time.Minute),
+					},
+					{
+						ID:      401,
+						Index:   8,
+						HTMLURL: "https://" + host + "/acme/widgets/issues/8",
+						Title:   "Sync unsynced issue",
+						User:    gitealike.UserDTO{UserName: "bob"},
+						State:   "open",
+						Created: base,
+						Updated: base.Add(time.Minute),
+					},
+				},
 			}
+			transport := &resolveGitealikeTransport{ApiTestGitealikeTransport: baseTransport}
 			provider := gitealike.NewProvider(kind, host, transport)
 			registry, err := platform.NewRegistry(provider)
 			require.NoError(err)
@@ -1375,6 +1446,180 @@ func TestResolveItem_SyncsUnsyncedItemsAcrossProviders(t *testing.T) {
 			require.Equal(http.StatusNotFound, missingResp.StatusCode)
 		})
 	}
+
+	t.Run("forgejo_pulls_disabled_and_child_404", func(t *testing.T) {
+		require := require.New(t)
+		ctx := t.Context()
+		const host = "forgejo-edge.test"
+		base := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+		enabled := true
+		disabled := false
+
+		// Case 1: Pull requests disabled on repository, issues enabled.
+		disabledTransport := &resolveGitealikeTransport{
+			ApiTestGitealikeTransport: &serverfake.ApiTestGitealikeTransport{
+				Repo: gitealike.RepositoryDTO{
+					ID:                   102,
+					Owner:                gitealike.UserDTO{UserName: "acme"},
+					Name:                 "issues-only",
+					FullName:             "acme/issues-only",
+					HTMLURL:              "https://" + host + "/acme/issues-only",
+					CloneURL:             "https://" + host + "/acme/issues-only.git",
+					DefaultBranch:        "main",
+					IssuesEnabled:        &enabled,
+					MergeRequestsEnabled: &disabled,
+					Created:              base,
+					Updated:              base,
+				},
+				Issues: []gitealike.IssueDTO{{
+					ID:      402,
+					Index:   12,
+					HTMLURL: "https://" + host + "/acme/issues-only/issues/12",
+					Title:   "Issue in PR-disabled repo",
+					User:    gitealike.UserDTO{UserName: "bob"},
+					State:   "open",
+					Created: base,
+					Updated: base.Add(time.Minute),
+				}},
+			},
+		}
+		disabledProvider := gitealike.NewProvider(platform.KindForgejo, host, disabledTransport)
+		disabledRegistry, err := platform.NewRegistry(disabledProvider)
+		require.NoError(err)
+		disabledDB := dbtest.Open(t)
+		_, err = reposeed.Seed(ctx, disabledDB, db.RepoIdentity{
+			Platform:     string(platform.KindForgejo),
+			PlatformHost: host,
+			Owner:        "acme",
+			Name:         "issues-only",
+			Key:          platform.RepositoryIDKey(102),
+		})
+		require.NoError(err)
+		disabledSyncer := ghclient.NewSyncerWithRegistry(
+			disabledRegistry,
+			disabledDB,
+			nil,
+			[]ghclient.RepoRef{{
+				Platform:     platform.KindForgejo,
+				PlatformHost: host,
+				Owner:        "acme",
+				Name:         "issues-only",
+				RepoPath:     "acme/issues-only",
+				Key:          platform.RepositoryIDKey(102),
+			}},
+			time.Minute,
+			nil,
+			nil,
+		)
+		t.Cleanup(disabledSyncer.Stop)
+		disabledSrv := server.New(disabledDB, disabledSyncer, nil, "/", nil, server.ServerOptions{})
+		t.Cleanup(func() { serverfake.GracefulShutdown(t, disabledSrv) })
+		disabledClient := servertest.SetupTestClient(t, disabledSrv)
+
+		issueResp, err := disabledClient.HTTP.ResolveRepoItemOnHostWithResponse(ctx, &generated.ResolveRepoItemOnHostRequestOptions{
+			PathParams: &generated.ResolveRepoItemOnHostPath{
+				Provider:     string(platform.KindForgejo),
+				PlatformHost: host,
+				Owner:        "acme",
+				Name:         "issues-only",
+				Number:       12,
+			},
+		})
+		require.NoError(err)
+		require.Equal(http.StatusOK, issueResp.StatusCode)
+		require.NotNil(issueResp.JSON200)
+		require.Equal("issue", issueResp.JSON200.ItemType)
+
+		// Case 2: PR exists and saves its row, then child comment fetch returns 404.
+		// Must not fall back to SyncIssueOnProvider and create a duplicate issue row.
+		child404Transport := &resolveGitealikeTransport{
+			ApiTestGitealikeTransport: &serverfake.ApiTestGitealikeTransport{
+				Repo: gitealike.RepositoryDTO{
+					ID:                   103,
+					Owner:                gitealike.UserDTO{UserName: "acme"},
+					Name:                 "child-404",
+					FullName:             "acme/child-404",
+					HTMLURL:              "https://" + host + "/acme/child-404",
+					CloneURL:             "https://" + host + "/acme/child-404.git",
+					DefaultBranch:        "main",
+					IssuesEnabled:        &enabled,
+					MergeRequestsEnabled: &enabled,
+					Created:              base,
+					Updated:              base,
+				},
+				Pulls: []gitealike.PullRequestDTO{{
+					ID:      203,
+					Index:   9,
+					HTMLURL: "https://" + host + "/acme/child-404/pulls/9",
+					Title:   "PR with failing comments",
+					User:    gitealike.UserDTO{UserName: "alice"},
+					State:   "open",
+					Head:    gitealike.BranchDTO{Ref: "feature", SHA: "abc123"},
+					Base:    gitealike.BranchDTO{Ref: "main", SHA: "def456"},
+					Created: base,
+					Updated: base.Add(time.Minute),
+				}},
+				Issues: []gitealike.IssueDTO{{
+					ID:            203,
+					Index:         9,
+					HTMLURL:       "https://" + host + "/acme/child-404/pulls/9",
+					Title:         "PR with failing comments",
+					User:          gitealike.UserDTO{UserName: "alice"},
+					State:         "open",
+					IsPullRequest: true,
+					Created:       base,
+					Updated:       base.Add(time.Minute),
+				}},
+			},
+			pullCommentsErr: &gitealike.HTTPError{StatusCode: http.StatusNotFound, Message: "comments missing"},
+		}
+		childProvider := gitealike.NewProvider(platform.KindForgejo, host, child404Transport)
+		childRegistry, err := platform.NewRegistry(childProvider)
+		require.NoError(err)
+		childDB := dbtest.Open(t)
+		childRepoID, err := reposeed.Seed(ctx, childDB, db.RepoIdentity{
+			Platform:     string(platform.KindForgejo),
+			PlatformHost: host,
+			Owner:        "acme",
+			Name:         "child-404",
+			Key:          platform.RepositoryIDKey(103),
+		})
+		require.NoError(err)
+		childSyncer := ghclient.NewSyncerWithRegistry(
+			childRegistry,
+			childDB,
+			nil,
+			[]ghclient.RepoRef{{
+				Platform:     platform.KindForgejo,
+				PlatformHost: host,
+				Owner:        "acme",
+				Name:         "child-404",
+				RepoPath:     "acme/child-404",
+				Key:          platform.RepositoryIDKey(103),
+			}},
+			time.Minute,
+			nil,
+			nil,
+		)
+		t.Cleanup(childSyncer.Stop)
+		childSrv := server.New(childDB, childSyncer, nil, "/", nil, server.ServerOptions{})
+		t.Cleanup(func() { serverfake.GracefulShutdown(t, childSrv) })
+		childClient := servertest.SetupTestClient(t, childSrv)
+
+		_, err = childClient.HTTP.ResolveRepoItemOnHostWithResponse(ctx, &generated.ResolveRepoItemOnHostRequestOptions{
+			PathParams: &generated.ResolveRepoItemOnHostPath{
+				Provider:     string(platform.KindForgejo),
+				PlatformHost: host,
+				Owner:        "acme",
+				Name:         "child-404",
+				Number:       9,
+			},
+		})
+		require.Error(err)
+		dupIssue, err := childDB.GetIssueByRepoIDAndNumber(ctx, childRepoID, 9)
+		require.NoError(err)
+		require.Nil(dupIssue, "child 404 during PR sync must not create a duplicate issue row")
+	})
 
 	t.Run("bitbucket", func(t *testing.T) {
 		require := require.New(t)

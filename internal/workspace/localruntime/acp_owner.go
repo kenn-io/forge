@@ -91,13 +91,17 @@ func (m *Manager) loadACPSaved(key string) (*acpSavedSession, error) {
 	return &saved, nil
 }
 
-// saveTakenEffectLocked saves a change that has already taken effect, such
-// as a prompt the agent received or an answer it was sent. A failed save
-// cannot undo the change, so the command still succeeds and the chat reports
-// the error; a refusal would tell the sender that the change never happened.
-func (a *ACP) saveTakenEffectLocked(change string) {
-	if err := a.persistLocked(); err != nil {
+// saveTakenEffect saves a change that has already taken effect, such as a
+// prompt the agent received or an answer it was sent, without holding a.mu
+// during disk I/O. A failed save cannot undo the change, so the command still
+// succeeds and the chat reports the error; a refusal would tell the sender
+// that the change never happened.
+func (a *ACP) saveTakenEffect(change string) {
+	if err := a.persist(); err != nil {
+		a.mu.Lock()
 		a.setErrorLocked(fmt.Errorf("save chat after %s: %w", change, err))
+		a.changedLocked()
+		a.mu.Unlock()
 	}
 }
 

@@ -143,20 +143,22 @@ func (a *ACP) runTurnClock(stop <-chan struct{}) {
 // used up its allowance, in which case it is already stopping.
 func (a *ACP) tickTurnClock(stop <-chan struct{}) bool {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.stopClock != stop {
 		// The turn ended after this tick fired.
+		a.mu.Unlock()
 		return false
 	}
 	a.accrueLocked()
 	record := a.runningTurnRecordLocked()
 	if record == nil {
+		a.mu.Unlock()
 		return false
 	}
 	// A turn someone already stopped needs no second cancel.
 	exhausted := record.Allowance > 0 && !record.Exhausted && !a.cancelling && record.ActiveMillis >= record.Allowance
 	now := time.Now()
 	if !exhausted && now.Sub(a.clockSaved) < acpTurnClockSaveInterval {
+		a.mu.Unlock()
 		return false
 	}
 	if exhausted {
@@ -164,10 +166,14 @@ func (a *ACP) tickTurnClock(stop <-chan struct{}) bool {
 		a.stopTurnLocked()
 	}
 	a.clockSaved = now
-	if err := a.persistLocked(); err != nil {
-		a.setErrorLocked(err)
-	}
 	a.changedLocked()
+	a.mu.Unlock()
+	if err := a.persist(); err != nil {
+		a.mu.Lock()
+		a.setErrorLocked(err)
+		a.changedLocked()
+		a.mu.Unlock()
+	}
 	return exhausted
 }
 

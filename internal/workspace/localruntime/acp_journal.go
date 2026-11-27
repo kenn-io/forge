@@ -153,23 +153,69 @@ func orderACPMessages(messages []ACPMessage) []ACPMessage {
 	return ordered
 }
 
-// persistLocked saves the chat: it appends what changed since the last save
-// to the journal, or writes a new snapshot when this owner has not written
-// one yet or the journal has outgrown it.
-func (a *ACP) persistLocked() error {
+// acpPersistOp is one serialized save ready to be written to disk without
+// holding a.mu.
+type acpPersistOp struct {
+	recordPath  string
+	snapshot    bool
+	base        string
+	data        []byte
+	cursor      uint64
+	metadataSum [32]byte
+}
+
+// persist saves the chat without holding a.mu during disk I/O so readers and
+// incoming permission requests never block behind fsync or compaction.
+func (a *ACP) persist() error {
+	a.persistMu.Lock()
+	defer a.persistMu.Unlock()
+	a.mu.Lock()
+	op, err := a.preparePersistLocked()
+	a.mu.Unlock()
+	if err != nil || op == nil {
+		return err
+	}
+	return a.writePersist(op)
+}
+
+// persistWithLocksHeld saves the chat while the caller already holds persistMu
+// followed by mu, used only when a failed save must roll back state atomically.
+func (a *ACP) persistWithLocksHeld() error {
+	op, err := a.preparePersistLocked()
+	if err != nil || op == nil {
+		return err
+	}
+	return a.writePersist(op)
+}
+
+// preparePersistLocked encodes what changed since the last save into memory.
+// Callers hold persistMu and mu; no disk I/O happens here.
+func (a *ACP) preparePersistLocked() (*acpPersistOp, error) {
 	if a.recordPath == "" {
-		return nil
+		return nil, nil
 	}
 	a.initializeMessagesLocked()
 	metadata := a.state
 	metadata.Messages = nil
 	encoded, err := json.Marshal(acpJournalRecord{SessionID: a.sessionID, LoadSession: a.loadSession, State: &metadata}, json.Deterministic(true))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	metadataSum := sha256.Sum256(encoded)
 	if a.savedBase == "" || a.journalBytes >= max(a.snapshotBytes, acpJournalMinCompactBytes) {
-		return a.writeSnapshotLocked(metadataSum)
+		base := rand.Text()
+		data, err := json.Marshal(acpSavedSession{SessionID: a.sessionID, State: a.state, LoadSession: a.loadSession, Base: base}, json.Deterministic(true))
+		if err != nil {
+			return nil, err
+		}
+		return &acpPersistOp{
+			recordPath:  a.recordPath,
+			snapshot:    true,
+			base:        base,
+			data:        data,
+			cursor:      a.messageCursor,
+			metadataSum: metadataSum,
+		}, nil
 	}
 	record := acpJournalRecord{Base: a.savedBase, SessionID: a.sessionID, LoadSession: a.loadSession}
 	if metadataSum != a.savedMetadata {
@@ -177,40 +223,48 @@ func (a *ACP) persistLocked() error {
 	}
 	record.Messages = a.changedMessagesLocked(a.savedCursor)
 	if record.State == nil && len(record.Messages) == 0 {
-		return nil
+		return nil, nil
 	}
 	line, err := json.Marshal(record, json.Deterministic(true))
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := appendSynced(acpJournalPath(a.recordPath), append(line, '\n'), a.journalBytes == 0); err != nil {
+	return &acpPersistOp{
+		recordPath:  a.recordPath,
+		data:        append(line, '\n'),
+		cursor:      a.messageCursor,
+		metadataSum: metadataSum,
+	}, nil
+}
+
+// writePersist writes and syncs op to disk. Callers hold persistMu and do not
+// need mu.
+func (a *ACP) writePersist(op *acpPersistOp) error {
+	if a.beforePersistWrite != nil {
+		a.beforePersistWrite()
+	}
+	if op.snapshot {
+		err := atomicfile.WriteFile(op.recordPath, op.data, atomicfile.WithPerm(0o600))
+		if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
+			return err
+		}
+		a.savedBase, a.snapshotBytes, a.journalBytes = op.base, len(op.data), 0
+		a.savedCursor, a.savedMetadata = op.cursor, op.metadataSum
+		// The save is complete once the snapshot is published. Removing the old
+		// journal is cleanup: records it keeps name the old Base and are skipped.
+		if err := removeIfExists(acpJournalPath(op.recordPath)); err != nil {
+			slog.Warn("remove replaced ACP chat journal", "path", acpJournalPath(op.recordPath), "err", err)
+		}
+		return nil
+	}
+	if err := appendSynced(acpJournalPath(op.recordPath), op.data, a.journalBytes == 0); err != nil {
 		// A partial record would hide every record after it, so the next
 		// save writes a full snapshot instead of appending.
 		a.savedBase = ""
 		return err
 	}
-	a.journalBytes += len(line) + 1
-	a.savedCursor, a.savedMetadata = a.messageCursor, metadataSum
-	return nil
-}
-
-func (a *ACP) writeSnapshotLocked(metadataSum [32]byte) error {
-	base := rand.Text()
-	data, err := json.Marshal(acpSavedSession{SessionID: a.sessionID, State: a.state, LoadSession: a.loadSession, Base: base}, json.Deterministic(true))
-	if err != nil {
-		return err
-	}
-	err = atomicfile.WriteFile(a.recordPath, data, atomicfile.WithPerm(0o600))
-	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
-		return err
-	}
-	a.savedBase, a.snapshotBytes, a.journalBytes = base, len(data), 0
-	a.savedCursor, a.savedMetadata = a.messageCursor, metadataSum
-	// The save is complete once the snapshot is published. Removing the old
-	// journal is cleanup: records it keeps name the old Base and are skipped.
-	if err := removeIfExists(acpJournalPath(a.recordPath)); err != nil {
-		slog.Warn("remove replaced ACP chat journal", "path", acpJournalPath(a.recordPath), "err", err)
-	}
+	a.journalBytes += len(op.data)
+	a.savedCursor, a.savedMetadata = op.cursor, op.metadataSum
 	return nil
 }
 

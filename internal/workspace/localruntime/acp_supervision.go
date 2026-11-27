@@ -43,6 +43,8 @@ func (a *ACP) supervise(command ACPCommand) error {
 	if strings.TrimSpace(command.Supervisor) == "" {
 		return errors.New("supervisor is required")
 	}
+	a.persistMu.Lock()
+	defer a.persistMu.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	var current uint64
@@ -62,6 +64,8 @@ func (a *ACP) supervise(command ACPCommand) error {
 // a delayed release never ends a later claim. Repeating it, or taking over a
 // chat nobody supervises, changes nothing.
 func (a *ACP) takeover(generation uint64) error {
+	a.persistMu.Lock()
+	defer a.persistMu.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if err := a.supervisionGateLocked(generation); err != nil {
@@ -88,12 +92,12 @@ func (a *ACP) takeover(generation uint64) error {
 // setSupervisionLocked saves a new supervision record. Queued prompts are
 // not touched: a coordinator's prompt accepted into the queue stays an
 // ordinary queued prompt whoever holds the chat later. A record that cannot
-// be saved does not take effect.
+// be saved does not take effect. Callers hold persistMu and mu.
 func (a *ACP) setSupervisionLocked(next ACPSupervision) error {
 	previous := a.state.Supervision
 	next.ChangedAt = time.Now().UTC().Format(time.RFC3339)
 	a.state.Supervision = &next
-	if err := a.persistLocked(); err != nil {
+	if err := a.persistWithLocksHeld(); err != nil {
 		a.state.Supervision = previous
 		return err
 	}

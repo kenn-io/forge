@@ -69,14 +69,19 @@ func (a *ACP) submit(command ACPCommand) error {
 	if command.Mode == "steer" && command.Generation != 0 {
 		prompt.SteerTarget = command.SteerTarget
 		if !a.canDeliverSteerLocked(prompt) {
+			a.mu.Unlock()
+			a.persistMu.Lock()
+			a.mu.Lock()
 			a.state.Withdrawn = append(a.state.Withdrawn, prompt.ID)
-			if err := a.persistLocked(); err != nil {
+			if err := a.persistWithLocksHeld(); err != nil {
 				a.state.Withdrawn = a.state.Withdrawn[:len(a.state.Withdrawn)-1]
 				a.mu.Unlock()
+				a.persistMu.Unlock()
 				return err
 			}
 			a.changedLocked()
 			a.mu.Unlock()
+			a.persistMu.Unlock()
 			return errACPSubmissionWithdrawn
 		}
 	}
@@ -87,14 +92,27 @@ func (a *ACP) submit(command ACPCommand) error {
 		a.state.QueuePaused = false
 	}
 	if command.Mode == "steer" && running && a.state.SteeringSupported {
-		a.acceptSteerLocked(prompt)
+		startSteer := a.acceptSteerLocked(prompt)
 		a.mu.Unlock()
+		a.saveTakenEffect("accepting a steer")
+		if startSteer {
+			a.mu.Lock()
+			if !a.goLocked(a.steer) {
+				a.requeueSteersLocked(false)
+				a.finishSteeredPromptLocked()
+				a.mu.Unlock()
+				a.saveTakenEffect("queueing steers the agent did not take")
+				return nil
+			}
+			a.mu.Unlock()
+		}
 		return nil
 	}
 	if command.Mode == "queue" || running || a.state.Configuring {
 		a.enqueueLocked(prompt, false)
 		a.goLocked(a.drain)
 		a.mu.Unlock()
+		a.saveTakenEffect("queueing a prompt")
 		return nil
 	}
 	a.mu.Unlock()
@@ -135,8 +153,9 @@ func (a *ACP) submittedLocked(id, text string, images []ACPContent) (bool, error
 	return false, nil
 }
 
-// enqueueLocked queues prompt. A queued prompt drains even if saving the
-// queue fails, so the save cannot refuse it.
+// enqueueLocked queues prompt. Callers unlock a.mu and call
+// saveTakenEffect("queueing a prompt"). A queued prompt drains even if saving
+// the queue fails, so the save cannot refuse it.
 func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) {
 	if prompt.ID == "" {
 		prompt.ID = "queued-" + rand.Text()
@@ -146,7 +165,6 @@ func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) {
 	} else {
 		a.state.Queue = append(a.state.Queue, prompt)
 	}
-	a.saveTakenEffectLocked("queueing a prompt")
 	a.changedLocked()
 }
 
@@ -188,13 +206,14 @@ func (a *ACP) sendingLocked(id string) bool {
 
 func (a *ACP) unqueue(id string, generation uint64) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	index, err := a.queuedIndexLocked(id, generation)
 	// A client that resends a removal after a reconnect learns it took effect.
 	if errors.Is(err, errACPNotQueued) && slices.Contains(a.state.Withdrawn, id) {
+		a.mu.Unlock()
 		return nil
 	}
 	if err != nil {
+		a.mu.Unlock()
 		return err
 	}
 	a.state.Queue = slices.Delete(a.state.Queue, index, index+1)
@@ -203,8 +222,9 @@ func (a *ACP) unqueue(id string, generation uint64) error {
 	if len(a.state.Queue) == 0 {
 		a.state.QueuePaused = false
 	}
-	a.saveTakenEffectLocked("unqueueing a prompt")
 	a.changedLocked()
+	a.mu.Unlock()
+	a.saveTakenEffect("unqueueing a prompt")
 	return nil
 }
 
@@ -216,9 +236,9 @@ func (a *ACP) move(id string, index int, generation uint64) error {
 		return err
 	}
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	from, err := a.queuedIndexLocked(id, 0)
 	if err != nil {
+		a.mu.Unlock()
 		return err
 	}
 	prompt := a.state.Queue[from]
@@ -228,8 +248,9 @@ func (a *ACP) move(id string, index int, generation uint64) error {
 		first = 1
 	}
 	a.state.Queue = slices.Insert(a.state.Queue, max(first, min(index, len(a.state.Queue))), prompt)
-	a.saveTakenEffectLocked("reordering the queue")
 	a.changedLocked()
+	a.mu.Unlock()
+	a.saveTakenEffect("reordering the queue")
 	return nil
 }
 
@@ -258,14 +279,25 @@ func (a *ACP) drain() {
 	defer a.turnMu.Unlock()
 	for {
 		a.mu.Lock()
-		a.dropUnrunnableQueueHeadLocked()
-		if !a.state.Connected || a.state.Busy || a.state.Configuring || a.state.Steering ||
-			a.state.QueuePaused || len(a.state.Queue) == 0 {
-			a.mu.Unlock()
+		dropped := a.dropUnrunnableQueueHeadLocked()
+		idle := !a.state.Connected || a.state.Busy || a.state.Configuring || a.state.Steering ||
+			a.state.QueuePaused || len(a.state.Queue) == 0
+		var next ACPQueuedPrompt
+		if !idle {
+			next = a.state.Queue[0]
+		}
+		a.mu.Unlock()
+		if dropped {
+			if err := a.persist(); err != nil {
+				a.mu.Lock()
+				a.setErrorLocked(err)
+				a.changedLocked()
+				a.mu.Unlock()
+			}
+		}
+		if idle {
 			return
 		}
-		next := a.state.Queue[0]
-		a.mu.Unlock()
 		err := a.startPromptLocked(next, true)
 		if errors.Is(err, errACPQueueChanged) {
 			continue
@@ -318,8 +350,9 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 		a.external.promptDone = true
 		a.reconcileExternalTurnLocked(a.threadStatus)
 		a.releaseHeldTextLocked()
-		a.publishProgressLocked()
+		a.changedLocked()
 		a.mu.Unlock()
+		_ = a.persist()
 		return
 	}
 	if a.promptIndex != nil && len(a.state.Steers) > 0 && a.state.Steers[0].SteerTarget != "" {
@@ -329,12 +362,14 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 		a.state.Busy = false
 		a.clearPendingLocked()
 		a.releaseHeldTextLocked()
-		a.publishProgressLocked()
+		a.changedLocked()
 		a.mu.Unlock()
+		_ = a.persist()
 		return
 	}
 	a.endTurnLocked(string(result.stopReason), result.err)
 	a.mu.Unlock()
+	_ = a.persist()
 	a.drain()
 }
 
@@ -348,7 +383,8 @@ func (a *ACP) finishSteeredPromptLocked() {
 }
 
 // endTurnLocked settles what a finished turn leaves behind: its record ends,
-// open questions are cancelled, and held text becomes visible.
+// open questions are cancelled, and held text becomes visible. Callers unlock
+// a.mu and call persist().
 func (a *ACP) endTurnLocked(stopReason string, err error) {
 	a.endTurnRecordLocked(stopReason, err)
 	// An empty stop reason is a Codex turn that ended with its idle thread,
@@ -362,7 +398,7 @@ func (a *ACP) endTurnLocked(stopReason string, err error) {
 	a.turnCompleted = true
 	a.clearPendingLocked()
 	a.releaseHeldTextLocked()
-	a.publishProgressLocked()
+	a.changedLocked()
 }
 
 // clearPendingLocked answers every open permission and elicitation as
@@ -410,20 +446,17 @@ func (a *ACP) canDeliverSteerLocked(prompt ACPQueuedPrompt) bool {
 		turn.SubmissionID == prompt.SteerTarget
 }
 
-// acceptSteerLocked accepts a prompt to steer the running turn.
-// The steer is saved and published at once; the steering loop hands steers
-// to the agent one at a time, in order, and starts with the first.
-func (a *ACP) acceptSteerLocked(prompt ACPQueuedPrompt) {
+// acceptSteerLocked accepts a prompt to steer the running turn and reports
+// whether the caller should start the steering loop. Callers unlock a.mu and
+// call saveTakenEffect("accepting a steer").
+func (a *ACP) acceptSteerLocked(prompt ACPQueuedPrompt) bool {
 	if prompt.ID == "" {
 		prompt.ID = "steer-" + rand.Text()
 	}
 	a.state.Steers = append(a.state.Steers, prompt)
 	a.state.Steering = true
-	a.saveTakenEffectLocked("accepting a steer")
 	a.changedLocked()
-	if len(a.state.Steers) == 1 {
-		a.goLocked(a.steer)
-	}
+	return len(a.state.Steers) == 1
 }
 
 // steer hands the accepted steers to the agent, oldest first, while the turn
@@ -438,12 +471,14 @@ func (a *ACP) steer() {
 			// The turn ended before this steer reached the agent.
 			a.requeueSteersLocked(false)
 			a.mu.Unlock()
+			a.saveTakenEffect("queueing steers the agent did not take")
 			return
 		}
 		prompt := a.state.Steers[0]
 		if prompt.SteerTarget != "" && !a.canDeliverSteerLocked(prompt) {
 			done := a.withdrawSteerLocked(prompt.ID)
 			a.mu.Unlock()
+			a.saveTakenEffect("withdrawing a steer after its target ended")
 			if done {
 				return
 			}
@@ -468,6 +503,7 @@ func (a *ACP) steer() {
 				a.promptIndex = nil
 				done := a.withdrawSteerLocked(prompt.ID)
 				a.mu.Unlock()
+				a.saveTakenEffect("withdrawing a steer after its target ended")
 				if done {
 					return
 				}
@@ -504,6 +540,7 @@ func (a *ACP) steer() {
 			a.requeueSteersLocked(err != nil || result.Outcome != "promptRequired")
 			a.finishSteeredPromptLocked()
 			a.mu.Unlock()
+			a.saveTakenEffect("queueing steers the agent did not take")
 			a.turnMu.Unlock()
 			return
 		}
@@ -556,10 +593,10 @@ func (a *ACP) steer() {
 			a.mu.Lock()
 		}
 		a.finishSteeredPromptLocked()
-		a.saveTakenEffectLocked("steering")
 		a.changedLocked()
 		done := !a.state.Steering
 		a.mu.Unlock()
+		a.saveTakenEffect("steering")
 		a.turnMu.Unlock()
 		if done {
 			return
@@ -568,7 +605,8 @@ func (a *ACP) steer() {
 }
 
 // withdrawSteerLocked removes the head before it reaches the agent. Later
-// steers still get to check their own targets.
+// steers still get to check their own targets. Callers unlock a.mu and call
+// saveTakenEffect("withdrawing a steer after its target ended").
 func (a *ACP) withdrawSteerLocked(id string) bool {
 	a.state.Withdrawn = append(a.state.Withdrawn, id)
 	a.state.Steers = a.state.Steers[1:]
@@ -577,13 +615,13 @@ func (a *ACP) withdrawSteerLocked(id string) bool {
 		a.state.Stopping = false
 	}
 	a.finishSteeredPromptLocked()
-	a.saveTakenEffectLocked("withdrawing a steer after its target ended")
 	a.changedLocked()
 	return !a.state.Steering
 }
 
 // requeueSteersLocked puts people's undelivered steers first in the queue.
-// The supervisor learns the outcome of each steer separately.
+// The supervisor learns the outcome of each steer separately. Callers unlock
+// a.mu and call saveTakenEffect("queueing steers the agent did not take").
 func (a *ACP) requeueSteersLocked(headMayHaveRun bool) {
 	queue, withdrawn, uncertain := partitionSteers(a.state.Steers, headMayHaveRun)
 	a.state.Queue = slices.Insert(a.state.Queue, 0, queue...)
@@ -598,7 +636,6 @@ func (a *ACP) requeueSteersLocked(headMayHaveRun bool) {
 	if !a.state.Connected {
 		a.state.QueuePaused = true
 	}
-	a.saveTakenEffectLocked("queueing steers the agent did not take")
 	a.changedLocked()
 }
 

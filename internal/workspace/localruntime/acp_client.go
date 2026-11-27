@@ -15,8 +15,8 @@ var _ acpsdk.Client = (*ACP)(nil)
 
 func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.sessionID != "" && string(params.SessionId) != a.sessionID {
+		a.mu.Unlock()
 		return nil
 	}
 	u := params.Update
@@ -26,11 +26,13 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 	// that ran elsewhere.
 	if a.replaying && u.ConfigOptionUpdate == nil && u.AvailableCommandsUpdate == nil && u.SessionInfoUpdate == nil &&
 		(!a.importing || u.UsageUpdate != nil) {
+		a.mu.Unlock()
 		return nil
 	}
 	switch {
 	case u.UserMessageChunk != nil && a.importing:
 		if !a.appendContentLocked("user", u.UserMessageChunk.Content, deref(u.UserMessageChunk.MessageId)) {
+			a.mu.Unlock()
 			return nil
 		}
 	case u.ConfigOptionUpdate != nil:
@@ -38,18 +40,25 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 	case u.AvailableCommandsUpdate != nil:
 		a.state.Commands = acpCommands(u.AvailableCommandsUpdate.AvailableCommands)
 	case u.SessionInfoUpdate != nil:
-		a.threadStatusLocked(u.SessionInfoUpdate.Meta)
+		persist := a.threadStatusLocked(u.SessionInfoUpdate.Meta)
+		a.mu.Unlock()
+		if persist {
+			_ = a.persist()
+		}
 		return nil
 	case u.AgentMessageChunk != nil:
 		if !a.appendContentLocked("assistant", u.AgentMessageChunk.Content, deref(u.AgentMessageChunk.MessageId)) {
+			a.mu.Unlock()
 			return nil
 		}
 	case u.AgentThoughtChunk != nil:
 		if !a.appendContentLocked("thought", u.AgentThoughtChunk.Content, deref(u.AgentThoughtChunk.MessageId)) {
+			a.mu.Unlock()
 			return nil
 		}
 	case u.UsageUpdate != nil:
 		if !a.usageLocked(u.UsageUpdate) {
+			a.mu.Unlock()
 			return nil
 		}
 	case u.Plan != nil:
@@ -80,20 +89,24 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 		a.refreshBlockedLocked()
 	default:
 		// User echoes and mode updates are not shown.
+		a.mu.Unlock()
 		return nil
 	}
-	a.publishProgressLocked()
+	a.changedLocked()
+	a.mu.Unlock()
+	_ = a.persist()
 	return nil
 }
 
 // threadStatusLocked follows Codex thread status so a turn the agent started
 // after a steering request keeps the chat busy until the thread goes idle.
-func (a *ACP) threadStatusLocked(meta map[string]any) {
+// It reports whether an external turn ended and should be saved.
+func (a *ACP) threadStatusLocked(meta map[string]any) bool {
 	codex, _ := meta["codex"].(map[string]any)
 	status, _ := codex["threadStatus"].(map[string]any)
 	kind, _ := status["type"].(string)
 	if kind != "active" && kind != "idle" {
-		return
+		return false
 	}
 	a.reportsThreadStatus = true
 	// An idle before the replacement's active transition belongs to the old
@@ -106,9 +119,9 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 		// original prompt has already completed.
 		a.beginExternalTurnLocked(ACPQueuedPrompt{Sender: ACPSender{Kind: ACPSenderUser}}, a.lastTurnLocked())
 		a.changedLocked()
-		return
+		return false
 	}
-	a.reconcileExternalTurnLocked(kind)
+	return a.reconcileExternalTurnLocked(kind)
 }
 
 // beginExternalTurnLocked confirms the takeover's existing start or the newly
@@ -129,9 +142,10 @@ func (a *ACP) beginExternalTurnLocked(prompt ACPQueuedPrompt, first int) {
 
 // reconcileExternalTurnLocked applies observed status when a takeover or its
 // prompt response arrives. Retained idle status has already followed active.
-func (a *ACP) reconcileExternalTurnLocked(kind string) {
+// It reports whether the external turn ended and should be saved.
+func (a *ACP) reconcileExternalTurnLocked(kind string) bool {
 	if a.external == nil {
-		return
+		return false
 	}
 	if kind == "idle" && a.external.promptDone {
 		result := a.external.result
@@ -141,7 +155,9 @@ func (a *ACP) reconcileExternalTurnLocked(kind string) {
 		}
 		a.endTurnLocked(string(result.stopReason), result.err)
 		a.goLocked(a.drain)
+		return true
 	}
+	return false
 }
 
 // Each update replaces the advertised set; it is not a delta.
@@ -181,18 +197,18 @@ func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messag
 		if previous.Role == role && previous.Content == nil && previous.MessageID == messageID &&
 			(a.promptIndex == nil || last >= *a.promptIndex) && turn == nil {
 			a.state.Messages[last].Text += text
-			a.holdTextLocked(false, text)
-			return false
+			return a.holdTextLocked(false, text)
 		}
 	}
+	released := false
 	if a.heldBytes > 0 {
 		// The finished message becomes visible before the next one starts.
 		a.releaseHeldTextLocked()
-		a.publishProgressLocked()
+		released = true
 	}
 	a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, Turn: turn, MessageID: messageID, Text: text, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
-	a.holdTextLocked(true, text)
-	return false
+	delivered := a.holdTextLocked(true, text)
+	return released || delivered
 }
 
 // acpToolLineage is what a tool call says about delegated agents. ACP has no
@@ -382,19 +398,22 @@ func (a *ACP) answerElicitation(command ACPCommand) error {
 		return err
 	}
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if err := a.supervisionGateLocked(command.Generation); err != nil {
+		a.mu.Unlock()
 		return err
 	}
 	response, ok := a.elicitations[command.ID]
 	if !ok {
-		if replay, err := a.answeredLocked(command.ID, key); replay || err != nil {
+		replay, err := a.answeredLocked(command.ID, key)
+		a.mu.Unlock()
+		if replay || err != nil {
 			return err
 		}
 		return errACPNotPending
 	}
 	// A coordinator answers only the requests of its own turn.
 	if err := a.turnGateLocked(command.Generation); err != nil {
+		a.mu.Unlock()
 		return err
 	}
 	delete(a.elicitations, command.ID)
@@ -402,33 +421,38 @@ func (a *ACP) answerElicitation(command ACPCommand) error {
 	response <- answer
 	a.refreshBlockedLocked()
 	a.recordAnswerLocked(command.ID, key)
-	a.saveTakenEffectLocked("answering an elicitation")
 	a.changedLocked()
+	a.mu.Unlock()
+	a.saveTakenEffect("answering an elicitation")
 	return nil
 }
 
 // answerPermission selects one option of a pending permission request.
 func (a *ACP) answerPermission(command ACPCommand) error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if err := a.supervisionGateLocked(command.Generation); err != nil {
+		a.mu.Unlock()
 		return err
 	}
 	response, ok := a.permissions[command.ID]
 	if !ok {
-		if replay, err := a.answeredLocked(command.ID, command.OptionID); replay || err != nil {
+		replay, err := a.answeredLocked(command.ID, command.OptionID)
+		a.mu.Unlock()
+		if replay || err != nil {
 			return err
 		}
 		return errACPNotPending
 	}
 	// A coordinator answers only the requests of its own turn.
 	if err := a.turnGateLocked(command.Generation); err != nil {
+		a.mu.Unlock()
 		return err
 	}
 	index := slices.IndexFunc(a.state.Permissions, func(p ACPPermission) bool {
 		return p.ID == command.ID && slices.ContainsFunc(p.Options, func(o ACPPermissionOption) bool { return o.OptionID == command.OptionID })
 	})
 	if index < 0 {
+		a.mu.Unlock()
 		return fmt.Errorf("permission request has no option %q", command.OptionID)
 	}
 	delete(a.permissions, command.ID)
@@ -436,8 +460,9 @@ func (a *ACP) answerPermission(command ACPCommand) error {
 	response <- acpsdk.NewRequestPermissionOutcomeSelected(acpsdk.PermissionOptionId(command.OptionID))
 	a.refreshBlockedLocked()
 	a.recordAnswerLocked(command.ID, command.OptionID)
-	a.saveTakenEffectLocked("answering a permission")
 	a.changedLocked()
+	a.mu.Unlock()
+	a.saveTakenEffect("answering a permission")
 	return nil
 }
 

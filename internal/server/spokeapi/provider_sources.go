@@ -136,7 +136,7 @@ func (s *HubProviderSource) observeWorkspaceLaunchSpec(
 		RepoPath: spec.Repository.Owner + "/" + spec.Repository.Name,
 	})
 	if err != nil {
-		return InvalidHubDescriptor(err)
+		return localCatalogWriteFailed(err)
 	}
 	if err := s.Db.UpdateRepoProviderObservation(
 		ctx, entry.Repository.ID,
@@ -145,7 +145,7 @@ func (s *HubProviderSource) observeWorkspaceLaunchSpec(
 			DefaultBranch: spec.Repository.DefaultBranch,
 		}, nil, nil,
 	); err != nil {
-		return InvalidHubDescriptor(err)
+		return localCatalogWriteFailed(err)
 	}
 	return nil
 }
@@ -348,7 +348,7 @@ func observeRepositoryDescriptor(
 		RepoPath: descriptor.Owner + "/" + descriptor.Name,
 	})
 	if err != nil {
-		return InvalidHubDescriptor(err)
+		return localCatalogWriteFailed(err)
 	}
 	if err := database.UpdateRepoProviderObservation(
 		ctx, entry.Repository.ID,
@@ -358,16 +358,23 @@ func observeRepositoryDescriptor(
 			Private:       descriptor.Private,
 		}, nil, nil,
 	); err != nil {
-		return InvalidHubDescriptor(err)
+		return localCatalogWriteFailed(err)
 	}
 	return nil
 }
 
-func InvalidHubDescriptor(error) error {
+// localCatalogWriteFailed reports a failure to record an already validated hub
+// repository in this daemon's database, such as a read-only database file.
+// The hub did nothing wrong, so it must not surface as a bad descriptor.
+func localCatalogWriteFailed(err error) error {
+	return httpapi.Internal("record hub repository in the local catalog: " + err.Error())
+}
+
+func InvalidHubDescriptor(err error) error {
 	return httpapi.NewProblem(
 		http.StatusBadGateway,
 		httpapi.CodeUpstreamError,
-		"hub returned an invalid repository descriptor",
+		"hub returned an invalid repository descriptor: "+err.Error(),
 		map[string]any{"reason": "invalidDescriptor"},
 	)
 }

@@ -309,6 +309,9 @@ type ACPState struct {
 	// a terminal Forge cannot type into, so it takes no input until that agent
 	// exits.
 	ExternalReadOnly bool `json:"externalReadOnly,omitempty"`
+	// StopElsewhere marks a chat mirroring an agent whose reply only the app
+	// that runs it can stop, so the chat offers no stop.
+	StopElsewhere bool `json:"stopElsewhere,omitempty"`
 	// Notices explain a degraded but usable session start. They are not
 	// errors: the chat works, and they last for the life of the session.
 	Notices []string `json:"notices,omitempty"`

@@ -1251,6 +1251,23 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(screen.queryByRole("button", { name: "Stop reply" })).toBeNull();
   });
 
+  it("offers no stop for a replying agent whose app must stop it", async () => {
+    await openChat(
+      {
+        connected: false,
+        dormant: true,
+        busy: true,
+        stopElsewhere: true,
+        messages: [{ role: "assistant", text: "Working on it" }],
+      },
+      { status: "parked" },
+    );
+    expect(screen.getByText("Working on it")).toBeTruthy();
+    const composer = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    expect(composer.disabled).toBe(false);
+    expect(screen.queryByRole("button", { name: "Stop reply" })).toBeNull();
+  });
+
   it("sends input and stops a replying agent mirrored from a Herdr pane", async () => {
     await openChat(
       { connected: false, dormant: true, busy: true, messages: [{ role: "assistant", text: "Working on it" }] },

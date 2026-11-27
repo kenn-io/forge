@@ -409,7 +409,11 @@ Resolution is deliberately exact (`internal/server/kata/workspace.go::Handler.re
   prompts go to the thread through `t3 thread send`, and no exit hands it to Forge, since T3 Code ends an
   idle thread's agent and resumes the session on its next turn. T3 Code builds thread history only from
   turns it runs, so a Forge-run agent on the session would leave the thread incomplete (maintainer
-  decision). Stop stays in T3 Code: its CLI has none, and its MCP interrupt needs an OAuth client.
+  decision). Stop stays in T3 Code, and the chat hides its Stop button (`stopElsewhere`; maintainer
+  decision): T3 Code's CLI has no stop, and its MCP interrupt needs an OAuth client. The chat shows the
+  notice T3 Code adds to prompts sent through its tools, since its format is undocumented (maintainer
+  decision). `t3` must be on the daemon's `PATH`; Forge does not search T3 Code's versioned install
+  folders (maintainer decision).
 - A session has one process: a Forge-run agent loads it only after SessionEnd or once the recorded
   process identity is gone, and anything unknown reads as still running.
 - Only Claude and Codex transcripts are read; other agents' chats stay empty until Forge loads the

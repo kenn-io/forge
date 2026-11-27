@@ -12672,6 +12672,8 @@ components:
           items:
             $ref: "#/components/schemas/ACPQueuedPrompt"
           type: array
+        stopElsewhere:
+          type: boolean
         stopping:
           type: boolean
         supervision:

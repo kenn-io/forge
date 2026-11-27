@@ -46,6 +46,7 @@ export interface WorkspaceChat {
   steering?: boolean;
   steeringSupported?: boolean;
   steers?: ACPQueuedPrompt[];
+  stopElsewhere?: boolean;
   stopping?: boolean;
   supervision?: ACPSupervision;
   turns?: ACPTurnRecord[];

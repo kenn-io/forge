@@ -533,7 +533,9 @@ func TestChatPromptGoesToTheAgentsT3CodeThreadEvenAfterItsProcessEnds(t *testing
 
 	chat, err := f.handler.openWorkspaceChat(t.Context(), ws.ID, key)
 	require.NoError(t, err)
-	assert.False(chatState(t, chat).ExternalReadOnly)
+	state := chatState(t, chat)
+	assert.False(state.ExternalReadOnly)
+	assert.True(state.StopElsewhere, "the chat offers no stop for a T3 Code thread")
 	require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "prompt", ID: "p1", Text: "--also check logout"}))
 	require.ErrorIs(t, chat.Command(localruntime.ACPCommand{Type: "cancel"}), errT3CodeStop)
 

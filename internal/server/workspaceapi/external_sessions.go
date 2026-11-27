@@ -519,7 +519,7 @@ func (s *Handler) mirrorStatus(
 		return localruntime.ACPMirrorStatus{TranscriptPath: current.TranscriptPath, Prompted: current.Prompted}
 	}
 	status := localruntime.ACPMirrorStatus{
-		Running: true, Writable: current.HerdrPaneID != "" || t3Code,
+		Running: true, Writable: current.HerdrPaneID != "" || t3Code, StopElsewhere: t3Code,
 		TranscriptPath: current.TranscriptPath, Prompted: current.Prompted,
 	}
 	for _, report := range s.agentActivity.LiveReportsForWorkspace(ws.WorktreePath, []string{item.SessionKey}) {

@@ -73014,6 +73014,7 @@ type WorkspaceChat struct {
 	Steering          *bool                  `json:"steering,omitempty"`
 	SteeringSupported *bool                  `json:"steeringSupported,omitempty"`
 	Steers            []ACPQueuedPrompt      `json:"steers,omitempty"`
+	StopElsewhere     *bool                  `json:"stopElsewhere,omitempty"`
 	Stopping          *bool                  `json:"stopping,omitempty"`
 	Supervision       *ACPSupervision        `json:"supervision,omitempty"`
 	Turns             []ACPTurnRecord        `json:"turns,omitempty"`

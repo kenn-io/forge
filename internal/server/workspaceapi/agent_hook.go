@@ -20,6 +20,7 @@ type receiveAgentHookInput struct {
 	AgentStart        string                  `header:"X-Kenn-Forge-Agent-Start"`
 	HerdrPane         string                  `header:"X-Kenn-Forge-Herdr-Pane"`
 	HerdrSocket       string                  `header:"X-Kenn-Forge-Herdr-Socket"`
+	T3CodeThread      string                  `header:"X-Kenn-Forge-T3code-Thread"`
 	Body              agentactivity.HookEvent `json:"body"`
 }
 

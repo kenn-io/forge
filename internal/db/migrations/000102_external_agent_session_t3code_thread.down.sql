@@ -1,0 +1,1 @@
+ALTER TABLE forge_external_agent_sessions DROP COLUMN t3code_thread_id;

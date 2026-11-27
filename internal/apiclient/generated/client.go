@@ -59128,6 +59128,7 @@ type ReceiveAgentHookHeaders struct {
 	XKennForgeAgentStart        *string `json:"X-Kenn-Forge-Agent-Start,omitempty"`
 	XKennForgeHerdrPane         *string `json:"X-Kenn-Forge-Herdr-Pane,omitempty"`
 	XKennForgeHerdrSocket       *string `json:"X-Kenn-Forge-Herdr-Socket,omitempty"`
+	XKennForgeT3CodeThread      *string `json:"X-Kenn-Forge-T3code-Thread,omitempty"`
 }
 
 type StoreDevboxPasteImageHeaders struct {
@@ -73013,6 +73014,7 @@ type WorkspaceChat struct {
 	Steering          *bool                  `json:"steering,omitempty"`
 	SteeringSupported *bool                  `json:"steeringSupported,omitempty"`
 	Steers            []ACPQueuedPrompt      `json:"steers,omitempty"`
+	StopElsewhere     *bool                  `json:"stopElsewhere,omitempty"`
 	Stopping          *bool                  `json:"stopping,omitempty"`
 	Supervision       *ACPSupervision        `json:"supervision,omitempty"`
 	Turns             []ACPTurnRecord        `json:"turns,omitempty"`

@@ -504,6 +504,80 @@ func TestAResentPromptReachesTheAgentOnce(t *testing.T) {
 	assert.True(t, session.Prompted, "UserPromptSubmit records that the agent was prompted")
 }
 
+func t3CodeHeaders() map[string]string {
+	headers := runningAgentHeaders()
+	headers["X-Kenn-Forge-T3code-Thread"] = "mcp:5f0c1e2a-0b7d-4c1e-9a43-2d6f8e1b7c90"
+	return headers
+}
+
+// A prompt sent from the chat becomes the T3 Code thread's next turn. T3 Code
+// ends an idle thread's agent and resumes the session for its next turn, so the
+// chat keeps sending to the thread after the agent exits and never starts a
+// Forge-run agent on the session.
+func TestChatPromptGoesToTheAgentsT3CodeThreadEvenAfterItsProcessEnds(t *testing.T) {
+	assert := assert.New(t)
+	f := newExternalSessionFixture(t)
+	f.handler.runtime.UpdateTargets([]localruntime.LaunchTarget{{
+		Key: "claude-chat", Label: "Claude chat", Kind: localruntime.LaunchTargetACP, Command: []string{"claude-agent-acp"}, Available: true,
+	}})
+	bin := t.TempDir()
+	record := filepath.Join(bin, "record")
+	script := "#!/bin/sh\n{ for arg; do printf '%s\\n' \"$arg\"; done; printf 'stdin=%s\\n' \"$(cat)\"; } >> " + record + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "t3"), []byte(script), 0o755))
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	f.openPull(t, "feature/login", f.head)
+	f.hook(t, "claude", "session-1", "UserPromptSubmit", t3CodeHeaders())
+	f.pass(t)
+	ws, rows := f.adopted(t)
+	key := rows[0].SessionKey
+
+	chat, err := f.handler.openWorkspaceChat(t.Context(), ws.ID, key)
+	require.NoError(t, err)
+	state := chatState(t, chat)
+	assert.False(state.ExternalReadOnly)
+	assert.True(state.StopElsewhere, "the chat offers no stop for a T3 Code thread")
+	require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "prompt", ID: "p1", Text: "--also check logout"}))
+	require.ErrorIs(t, chat.Command(localruntime.ACPCommand{Type: "cancel"}), errT3CodeStop)
+
+	f.hook(t, "claude", "session-1", "SessionEnd", t3CodeHeaders())
+	chat, err = f.handler.openWorkspaceChat(t.Context(), ws.ID, key)
+	require.NoError(t, err)
+	assert.False(chatState(t, chat).ExternalReadOnly)
+	require.NoError(t, chat.Command(localruntime.ACPCommand{Type: "prompt", ID: "p2", Text: "and signup"}))
+
+	recorded, err := os.ReadFile(record)
+	require.NoError(t, err)
+	assert.Equal(strings.Join([]string{
+		"thread", "send", "--", "mcp:5f0c1e2a-0b7d-4c1e-9a43-2d6f8e1b7c90", "-", "stdin=--also check logout",
+		"thread", "send", "--", "mcp:5f0c1e2a-0b7d-4c1e-9a43-2d6f8e1b7c90", "-", "stdin=and signup", "",
+	}, "\n"), string(recorded))
+	_, err = f.handler.runtime.ACP(ws.ID, key)
+	require.Error(t, err, "no Forge-run agent started on a session T3 Code runs")
+	session, err := f.database.GetExternalAgentSession(t.Context(), "claude", "session-1")
+	require.NoError(t, err)
+	assert.Nil(session.HandedOffAt)
+}
+
+func TestT3CodeDeliveryFailuresSayWhatToFix(t *testing.T) {
+	session := db.ExternalAgentSession{Agent: "claude", SessionID: "session-1", CWD: "/work", T3CodeThreadID: "mcp:5f0c1e2a-0b7d-4c1e-9a43-2d6f8e1b7c90"}
+	prompt := localruntime.ACPCommand{Type: "prompt", Text: "hello"}
+	f := newExternalSessionFixture(t)
+	require.NoError(t, f.database.RecordExternalAgentSession(t.Context(), session))
+
+	t.Run("t3 is not installed", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
+		assert.ErrorContains(t, f.handler.deliverToExternalAgent(t.Context(), session, prompt), "t3 isn't on the Forge daemon's PATH")
+	})
+	t.Run("T3 Code refuses the message", func(t *testing.T) {
+		bin := t.TempDir()
+		script := "#!/bin/sh\necho 'Thread is archived and cannot receive messages.' >&2\nexit 1\n"
+		require.NoError(t, os.WriteFile(filepath.Join(bin, "t3"), []byte(script), 0o755))
+		t.Setenv("PATH", bin)
+		assert.EqualError(t, f.handler.deliverToExternalAgent(t.Context(), session, prompt),
+			"T3 Code: Thread is archived and cannot receive messages.")
+	})
+}
+
 func TestChatStaysReadOnlyWithoutAHerdrPaneAndStartsNothingWhileAgentRuns(t *testing.T) {
 	assert := assert.New(t)
 	f := newExternalSessionFixture(t)

@@ -8,4 +8,5 @@ export type ReceiveAgentHookHeaders = {
   "X-Kenn-Forge-Agent-Start"?: string;
   "X-Kenn-Forge-Herdr-Pane"?: string;
   "X-Kenn-Forge-Herdr-Socket"?: string;
+  "X-Kenn-Forge-T3code-Thread"?: string;
 };

@@ -83,6 +83,7 @@ func TestAgentHookRunRelaysLifecyclePayloadToDaemon(t *testing.T) {
 func TestAgentHookReportsWhatOnlyTheHookCanSeeAboutAnExternalAgent(t *testing.T) {
 	t.Setenv("HERDR_PANE_ID", "w1:p1")
 	t.Setenv("HERDR_SOCKET_PATH", "/run/herdr.sock")
+	t.Setenv("T3CODE_THREAD_ID", "mcp:5f0c1e2a-0b7d-4c1e-9a43-2d6f8e1b7c90")
 	t.Run("an agent Forge launched reports nothing extra", func(t *testing.T) {
 		t.Setenv(agentactivity.RuntimeSessionKeyEnv, "runtime-1")
 		header := http.Header{}
@@ -95,6 +96,12 @@ func TestAgentHookReportsWhatOnlyTheHookCanSeeAboutAnExternalAgent(t *testing.T)
 		setExternalAgentHeaders(header)
 		assert.Equal(t, "w1:p1", header.Get("X-Kenn-Forge-Herdr-Pane"))
 		assert.Equal(t, "/run/herdr.sock", header.Get("X-Kenn-Forge-Herdr-Socket"))
+	})
+	t.Run("an agent in a T3 Code thread names the thread", func(t *testing.T) {
+		t.Setenv(agentactivity.RuntimeSessionKeyEnv, "")
+		header := http.Header{}
+		setExternalAgentHeaders(header)
+		assert.Equal(t, "mcp:5f0c1e2a-0b7d-4c1e-9a43-2d6f8e1b7c90", header.Get("X-Kenn-Forge-T3code-Thread"))
 	})
 }
 

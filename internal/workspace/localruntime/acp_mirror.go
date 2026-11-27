@@ -34,7 +34,9 @@ type ACPMirrorStatus struct {
 	Running bool
 	// Writable means Forge can type into the agent's terminal.
 	Writable bool
-	Busy     bool
+	// StopElsewhere means only the app that runs the agent can stop its reply.
+	StopElsewhere bool
+	Busy          bool
 	// TranscriptPath is the transcript the agent last reported, which a hook
 	// may supply only after the chat opened.
 	TranscriptPath string
@@ -197,9 +199,12 @@ func (d *DormantACP) pollMirror() {
 	busy := status.Running && status.Busy
 	d.saved.mu.Lock()
 	defer d.saved.mu.Unlock()
-	if d.saved.state.Busy != busy || d.saved.state.ExternalReadOnly != readOnly {
+	stopElsewhere := status.Running && status.StopElsewhere
+	if d.saved.state.Busy != busy || d.saved.state.ExternalReadOnly != readOnly ||
+		d.saved.state.StopElsewhere != stopElsewhere {
 		d.saved.state.Busy = busy
 		d.saved.state.ExternalReadOnly = readOnly
+		d.saved.state.StopElsewhere = stopElsewhere
 		d.saved.changedLocked()
 	}
 }

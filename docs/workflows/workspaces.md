@@ -138,6 +138,12 @@ worktree and shows the agent's conversation in its chat as it happens.
 
 - In a Herdr pane, you can type in either
   place and the other shows it. `herdr` must be on the Forge daemon's `PATH`.
+- In a T3 Code thread, a prompt you send from the chat becomes the thread's next
+  turn, and both T3 Code and the chat show the whole conversation. T3 Code keeps
+  running the agent, so Forge never takes the session over. The chat has no
+  Stop button there; stop a reply in T3 Code. `t3` must be on the Forge
+  daemon's `PATH`, and an archived thread
+  takes no prompts until you unarchive it.
 - In any other terminal, the chat is read-only until the agent exits.
 - Claude and Codex conversations show while the agent runs. Other agents' chats
   stay empty until the agent exits and Forge loads the session.

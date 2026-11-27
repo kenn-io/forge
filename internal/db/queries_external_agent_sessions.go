@@ -24,6 +24,9 @@ type ExternalAgentSession struct {
 	// empty when it runs in any other terminal.
 	HerdrPaneID     string
 	HerdrSocketPath string
+	// T3CodeThreadID names the T3 Code thread the agent runs in, empty when it
+	// runs anywhere else. T3 Code runs every turn of such a session.
+	T3CodeThreadID string
 	// Prompted records that a hook showed the agent received a prompt. A report
 	// without one never clears it.
 	Prompted    bool
@@ -39,7 +42,7 @@ type ExternalAgentSession struct {
 }
 
 const externalAgentSessionColumns = `agent, session_id, cwd, transcript_path, process_id, process_start,
-	herdr_pane_id, herdr_socket_path, prompted, first_seen_at, ended_at, workspace_id,
+	herdr_pane_id, herdr_socket_path, t3code_thread_id, prompted, first_seen_at, ended_at, workspace_id,
 	runtime_session_key, handed_off_at`
 
 func scanExternalAgentSession(scanner interface{ Scan(...any) error }) (ExternalAgentSession, error) {
@@ -48,7 +51,7 @@ func scanExternalAgentSession(scanner interface{ Scan(...any) error }) (External
 	err := scanner.Scan(
 		&session.Agent, &session.SessionID, &session.CWD, &session.TranscriptPath,
 		&session.ProcessID, &session.ProcessStart, &session.HerdrPaneID, &session.HerdrSocketPath,
-		&session.Prompted, &session.FirstSeenAt, &ended, &session.WorkspaceID, &session.RuntimeSessionKey, &handedOff,
+		&session.T3CodeThreadID, &session.Prompted, &session.FirstSeenAt, &ended, &session.WorkspaceID, &session.RuntimeSessionKey, &handedOff,
 	)
 	if err != nil {
 		return ExternalAgentSession{}, err
@@ -73,8 +76,8 @@ func (d *DB) RecordExternalAgentSession(ctx context.Context, session ExternalAge
 	_, err := d.rwExecContext(ctx, `
 		INSERT INTO forge_external_agent_sessions
 		    (agent, session_id, cwd, transcript_path, process_id, process_start,
-		     herdr_pane_id, herdr_socket_path, prompted)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		     herdr_pane_id, herdr_socket_path, t3code_thread_id, prompted)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (agent, session_id) DO UPDATE SET
 		    cwd = excluded.cwd,
 		    prompted = prompted OR excluded.prompted,
@@ -83,10 +86,11 @@ func (d *DB) RecordExternalAgentSession(ctx context.Context, session ExternalAge
 		    process_start = COALESCE(NULLIF(excluded.process_start, ''), process_start),
 		    herdr_pane_id = excluded.herdr_pane_id,
 		    herdr_socket_path = excluded.herdr_socket_path,
+		    t3code_thread_id = excluded.t3code_thread_id,
 		    ended_at = NULL
 		WHERE handed_off_at IS NULL`,
 		session.Agent, session.SessionID, session.CWD, session.TranscriptPath,
-		session.ProcessID, session.ProcessStart, session.HerdrPaneID, session.HerdrSocketPath, session.Prompted,
+		session.ProcessID, session.ProcessStart, session.HerdrPaneID, session.HerdrSocketPath, session.T3CodeThreadID, session.Prompted,
 	)
 	if err != nil {
 		return fmt.Errorf("record external agent session: %w", err)

@@ -9,6 +9,8 @@
   const expandedNotes = new SvelteSet<string>();
   // Same lifetime, so Back from an item returns to the filtered rows.
   const filters = $state(emptyWorklistFilters());
+  // The open panel is part of the scrolled content, so the restored offset needs it open too.
+  const filterPanel = $state({ expanded: false });
 </script>
 
 <script lang="ts">
@@ -94,7 +96,6 @@
   const searching = $derived(!isEmptySearchQuery(parseSearchQuery(filters.search)));
   const shownItems = $derived(worklist ? worklistItemsMatching(worklist.items, stateFilter, filters) : []);
 
-  let filtersExpanded = $state(false);
   const filterMenu = $derived(worklistFilterMenu(filters, grouping, labelFilterMenu));
   const labelChoices = $derived(
     labelFilterChoices(
@@ -187,10 +188,14 @@
       );
   });
 
+  // Either direction needs the server to mark the items that involve the viewer.
+  const involvesMe = $derived(filters.items.includes("involves_me") || filters.items.includes("not_involves_me"));
+
   $effect(() => {
     const id = worklistId;
+    const includeViewer = involvesMe;
     untrack(() =>
-      runtime.runCommand(worklists.openEffect(id), {
+      runtime.runCommand(worklists.openEffect(id, includeViewer), {
         operation: "open worklist",
         safeContext: { routed: id !== null },
         onFailure: () => {},
@@ -299,22 +304,23 @@
           tone="info"
           ariaLabel={filterMenu.count > 0 ? `Filters (${filterMenu.count} on)` : "Filters"}
           title="Filters"
-          ariaExpanded={filtersExpanded}
+          ariaExpanded={filterPanel.expanded}
           ariaControls="mobile-worklist-filters"
-          ariaPressed={filtersExpanded || filterMenu.count > 0}
-          onclick={() => (filtersExpanded = !filtersExpanded)}
+          ariaPressed={filterPanel.expanded || filterMenu.count > 0}
+          onclick={() => (filterPanel.expanded = !filterPanel.expanded)}
         >
           <FunnelIcon size={18} strokeWidth={2} aria-hidden="true" />
         </IconButton>
       </div>
-      <div id="mobile-worklist-filters" class="mobile-worklist__filters" aria-label="Worklist filters" hidden={!filtersExpanded}>
-        {#if filtersExpanded}
-          <FilterSectionsPanel sections={filterMenu.sections} resetLabel="Clear filters" onReset={filterMenu.clear} />
-        {/if}
-      </div>
     </div>
 
     <ScrollBox label={`${worklist.title} items`} class="mobile-worklist__scroll">
+      <!-- Inside the scroll area, so a long Labels list and Clear filters stay reachable. -->
+      <div id="mobile-worklist-filters" class="mobile-worklist__filters" aria-label="Worklist filters" hidden={!filterPanel.expanded}>
+        {#if filterPanel.expanded}
+          <FilterSectionsPanel sections={filterMenu.sections} resetLabel="Clear filters" onReset={filterMenu.clear} />
+        {/if}
+      </div>
       {#if worklist.items.length === 0}
         <p class="mobile-worklist__state-message">No items remain on this list.</p>
       {:else if shownItems.length === 0}
@@ -518,7 +524,9 @@
   }
 
   .mobile-worklist__filters {
-    padding-top: var(--mobile-chrome-space-xs);
+    padding: var(--mobile-chrome-space-sm) var(--mobile-chrome-space-md);
+    border-bottom: thin solid var(--border-muted);
+    background: var(--bg-surface);
   }
 
   .mobile-worklist__filters[hidden] {

@@ -109,6 +109,39 @@ test("the phone Filters button opens the worklist filters beside the search", as
   await page.screenshot({ path: testInfo.outputPath("phone-worklist-filters.png"), fullPage: false });
 });
 
+test("the open worklist filters scroll with the rows on a short phone", async ({ page }) => {
+  const list = worklistResponse(5, "Review queue");
+  const pull = list.items[0]!.pull as unknown as { labels: { name: string; color: string }[] };
+  pull.labels = Array.from({ length: 20 }, (_, index) => ({ name: `label-${index + 1}`, color: "0969da" }));
+  await mockApi(page);
+  await routeWorklists(page, { lists: [list], requests: [] });
+  await page.setViewportSize({ width: 393, height: 560 });
+
+  await page.goto("/m/worklists/5");
+  const items = page.getByRole("region", { name: "Review queue items" });
+  await expect(items.getByRole("button", { name: "Theme toggle does not stick" })).toBeVisible();
+  await page.getByRole("button", { name: "Filters", exact: true }).click();
+  await items.getByRole("button", { name: /^Labels/ }).click();
+
+  // Every label, Clear filters, and the rows below them are reached by scrolling the list.
+  const lastLabel = items.getByText("label-20", { exact: true });
+  const clear = items.getByRole("button", { name: "Clear filters" });
+  const row = items.getByRole("button", { name: "Theme toggle does not stick" });
+  await expect(clear).not.toBeInViewport();
+  for (const target of [lastLabel, clear, row]) {
+    for (let step = 0; step < 20 && !(await target.evaluate(inView)); step++) {
+      await items.hover({ position: { x: 20, y: 20 } });
+      await page.mouse.wheel(0, 300);
+    }
+    await expect(target).toBeInViewport();
+  }
+});
+
+function inView(element: Element): boolean {
+  const box = element.getBoundingClientRect();
+  return box.top >= 0 && box.bottom <= window.innerHeight;
+}
+
 test("Back from a phone worklist item lands on the same rows", async ({ page }) => {
   const list = worklistResponse(5, "Review queue");
   const template = list.items[0]!;

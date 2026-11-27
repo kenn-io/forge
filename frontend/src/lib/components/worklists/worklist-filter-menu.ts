@@ -68,7 +68,6 @@ export function worklistFilterMenu(
           detail: labelFilterSummary(filters.labels),
           active: filters.labels.size > 0,
           submenu: labelMenu,
-          reset: () => (filters.labels = new Map()),
           onSelect: () => {},
         },
         ...ITEM_CONDITIONS.map((condition) => {
@@ -82,7 +81,6 @@ export function worklistFilterMenu(
             label: condition.label,
             ...triFilterRow(value),
             tri: { value, set },
-            reset: () => set(undefined),
             onSelect: () =>
               (filters.items = cycleFilterInSections(
                 WORKLIST_FILTER_SECTIONS,

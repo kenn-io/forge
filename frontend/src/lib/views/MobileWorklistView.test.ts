@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { createMockApiFetch } from "../../test/mockApiFetch.js";
+import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../test/mockApiFetch.js";
 import { worklistResponse, worklistRoutes, type WorklistServer } from "../../test/worklistFixtures.js";
 import { readWorklistStateFilter } from "../components/worklists/worklist-items.js";
 import { NAVIGATE_KEY, STORES_KEY } from "../context.js";
@@ -34,8 +34,8 @@ function rowTitles(): string[] {
     .map((id) => document.getElementById(id)?.textContent?.trim() ?? "");
 }
 
-function renderView(path: string, server: WorklistServer) {
-  globalThis.fetch = createMockApiFetch([worklistRoutes(server)]).fetch;
+function renderView(path: string, server: WorklistServer, overrides: MockRouteOverride[] = []) {
+  globalThis.fetch = createMockApiFetch([...overrides, worklistRoutes(server)]).fetch;
   navigate(path);
   render(MobileWorklistView, {
     context: new Map<symbol, unknown>([
@@ -135,11 +135,50 @@ describe("MobileWorklistView", () => {
     cleanup();
     renderView("/m/worklists/5", server);
     await waitFor(() => expect(rowTitles()).toEqual(["Mirror host stub PR"]));
+    expect(screen.getByRole("button", { name: "Filters (1 on)" }).getAttribute("aria-expanded")).toBe("true");
 
-    // The filters live for the page; clear them for later tests.
-    await fireEvent.click(screen.getByRole("button", { name: "Filters (1 on)" }));
+    // The filters live for the page; clear and close them for later tests.
     await fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(rowTitles()).toHaveLength(3);
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+  });
+
+  it("asks the server which items involve the viewer when Involves me is set either way", async () => {
+    const items = server.lists[0]!.items;
+    items.find((item) => item.number === 7)!.involves_viewer = true;
+    const reads: boolean[] = [];
+    renderView("/m/worklists/5", server, [
+      (request) => {
+        if (request.method !== "GET" || request.url.pathname !== "/api/v1/worklists/5") return null;
+        const involvesMe = request.url.searchParams.get("involves_me") === "true";
+        reads.push(involvesMe);
+        return jsonResponse({
+          ...server.lists[0]!,
+          items: items.map((item) => ({ ...item, involves_viewer: involvesMe && item.involves_viewer })),
+        });
+      },
+    ]);
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    const panel = screen.getByLabelText("Worklist filters");
+    const pick = async (from: string, to: string) => {
+      await fireEvent.click(within(panel).getByRole("combobox", { name: `Involves me: ${from}` }));
+      await fireEvent.click(screen.getByRole("option", { name: to }));
+    };
+
+    await pick("Any", "Yes");
+    await waitFor(() => expect(rowTitles()).toEqual(["Theme toggle does not stick"]));
+    expect(reads).toEqual([false, true]);
+
+    await pick("Yes", "No");
+    await waitFor(() => expect(rowTitles()).toEqual(["Add browser regression coverage", "Mirror host stub PR"]));
+    expect(reads.slice(1).every(Boolean)).toBe(true);
+
+    // The filters live for the page; clear them for later tests.
+    await fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    await waitFor(() => expect(reads.at(-1)).toBe(false));
+    expect(rowTitles()).toHaveLength(3);
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
   });
 
   it("opens an item in phone detail that returns to this list", async () => {

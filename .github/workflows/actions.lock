@@ -104,7 +104,7 @@ dependencies:
         repo_id: 300422142
     'eclipse-score/apt-install@main':
         ref: 'main'
-        commit: 'sha1-0bd63f4e8989144233ebccfc2272cfd1c3b659c0'
+        commit: 'sha1-d545215b973c4151236fcb3f75480dffcb914835'
         owner_id: 187654495
         repo_id: 1004312884
         uses:

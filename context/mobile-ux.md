@@ -165,6 +165,9 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
 - Phone Worklists is a card list of the open list's rows with a list picker;
   rows open phone detail whose Back returns to that list
   (`frontend/src/lib/views/MobileWorklistView.svelte`).
+- Phone Worklists offers the desktop rail's Filters menu behind a funnel button
+  beside its search; both build it from one definition
+  (`frontend/src/lib/components/worklists/worklist-filter-menu.ts`).
 
 - Phone Activity (collapsed parents), PR, and issue lists start with 30 items
   and autoload one 30-item chunk per end-of-list scroll; reloads keep the

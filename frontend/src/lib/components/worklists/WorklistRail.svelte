@@ -16,17 +16,12 @@
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import LinkIcon from "@lucide/svelte/icons/link";
   import type { Worklist, WorklistItem, WorklistSummary } from "../../api/worklists.js";
-  import { repositoryKeyFromWire } from "../../api/repository-key.js";
   import { getSidebar, getStores } from "../../context.js";
   import type { ListItemTarget } from "../../stores/item-actions.js";
   import { registerScopedActions } from "../../stores/keyboard/registry.svelte.js";
-  import {
-    cycleLabelFilter,
-    labelFilterChoices,
-    labelFilterSummary,
-  } from "../../utils/label-filter.js";
+  import { cycleLabelFilter, labelFilterChoices } from "../../utils/label-filter.js";
   import { createRangeSelection, isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
-  import { createRepoLabelFormatter, type RepoLabelIdentity } from "../../utils/repo-label.js";
+  import { createRepoLabelFormatter } from "../../utils/repo-label.js";
   import { isEmptySearchQuery, parseSearchQuery } from "../../utils/search-query.js";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
@@ -46,16 +41,15 @@
     worklistItemsMatching,
     worklistItemTarget,
     worklistPickerOptions,
+    worklistRepoIdentity,
     worklistSections,
     writeWorklistOrder,
     writeWorklistStateFilter,
-    WORKLIST_FILTER_SECTIONS,
     type WorklistFilters,
-    type WorklistItemFilter,
     type WorklistOrder,
     type WorklistStateFilter,
   } from "./worklist-items.js";
-  import { cycleFilterInSections, toggleFilterInSections } from "../../utils/pull-attributes.js";
+  import { worklistFilterMenu } from "./worklist-filter-menu.js";
 
   interface Props {
     worklist: Worklist;
@@ -168,114 +162,14 @@
     return stateFilter === "closed" ? "No items are closed." : "No open items remain. Closed items are hidden.";
   });
 
-  // Every selected filter must match. Review, CI, and Conflicts are pick-one pairs of opposites;
-  // an Items row cycles through off, required, and its opposite.
-  const filterGroups: {
-    title: string;
-    options: { value: WorklistItemFilter; opposite?: WorklistItemFilter; label: string }[];
-  }[] = [
-    {
-      title: "Items",
-      options: [
-        { value: "involves_me", opposite: "not_involves_me", label: "Involves me" },
-        { value: "approved", opposite: "not_approved", label: "Approved" },
-        { value: "has_workspace", opposite: "no_workspace", label: "Has workspace" },
-        // Excluded means the head's review found nothing; a head with no review matches neither.
-        { value: "roborev_findings", opposite: "roborev_clean", label: "Roborev findings" },
-      ],
-    },
-    {
-      title: "Review",
-      options: [
-        { value: "draft", label: "Draft" },
-        { value: "ready", label: "Ready for review" },
-      ],
-    },
-    {
-      title: "CI",
-      options: [
-        { value: "passed_ci", label: "Passing CI" },
-        { value: "failed_ci", label: "Failed CI" },
-      ],
-    },
-    {
-      title: "Conflicts",
-      options: [
-        { value: "merge_conflicts", label: "Merge conflicts" },
-        { value: "no_merge_conflicts", label: "No merge conflicts" },
-      ],
-    },
-  ];
-
-  function selectItemFilter(filter: WorklistItemFilter, opposite?: WorklistItemFilter): void {
-    filters.items =
-      opposite === undefined
-        ? toggleFilterInSections(WORKLIST_FILTER_SECTIONS, filters.items, filter)
-        : cycleFilterInSections(WORKLIST_FILTER_SECTIONS, filters.items, filter, opposite);
-  }
-
   const labelChoices = $derived(
     labelFilterChoices(worklist.items.map((item) => ({ labels: worklistItemLabels(item) })), filters.labels),
   );
 
-  const filterSections = $derived([
-    ...filterGroups.map((group, index) => ({
-      title: group.title,
-      items: [
-        ...(index === 0
-          ? [
-              {
-                id: "worklist-labels",
-                label: "Labels",
-                detail: labelFilterSummary(filters.labels),
-                active: filters.labels.size > 0,
-                submenu: labelFilterMenu,
-                onSelect: () => {},
-              },
-            ]
-          : []),
-        ...group.options.map((option) => ({
-          id: `worklist-${option.value}`,
-          label: option.label,
-          active: filters.items.includes(option.value),
-          excluded: option.opposite !== undefined && filters.items.includes(option.opposite),
-          onSelect: () => selectItemFilter(option.value, option.opposite),
-        })),
-      ],
-    })),
-    {
-      title: "View",
-      items: [
-        {
-          id: "hide-org-name",
-          label: "Hide org name",
-          active: grouping.getHideOrgName(),
-          onSelect: () => grouping.setHideOrgName(!grouping.getHideOrgName()),
-        },
-      ],
-    },
-  ]);
-  const filterCount = $derived(filters.items.length + filters.labels.size + Number(grouping.getHideOrgName()));
-
-  function clearFilters(): void {
-    filters.items = [];
-    filters.labels = new Map();
-    grouping.setHideOrgName(false);
-  }
-
-  function repoIdentity(item: WorklistItem): RepoLabelIdentity {
-    return {
-      provider: item.repo.provider,
-      platformHost: item.repo.platform_host,
-      repositoryKey: repositoryKeyFromWire(item.repo),
-      owner: item.repo.owner,
-      name: item.repo.name,
-      repoPath: item.repo.repo_path,
-    };
-  }
+  const filterMenu = $derived(worklistFilterMenu(filters, grouping, labelFilterMenu));
 
   const repoLabels = $derived(
-    createRepoLabelFormatter(worklist.items.map(repoIdentity), { showOrgNames: !grouping.getHideOrgName() }),
+    createRepoLabelFormatter(worklist.items.map(worklistRepoIdentity), { showOrgNames: !grouping.getHideOrgName() }),
   );
 
   const pickerOptions = $derived(worklistPickerOptions(summaries));
@@ -432,11 +326,11 @@
         <FilterDropdown
           label="Filters"
           title="Filters"
-          active={filterCount > 0}
-          badgeCount={filterCount}
-          sections={filterSections}
+          active={filterMenu.count > 0}
+          badgeCount={filterMenu.count}
+          sections={filterMenu.sections}
           resetLabel="Clear filters"
-          onReset={clearFilters}
+          onReset={filterMenu.clear}
           minWidth="190px"
         />
       </span>
@@ -531,7 +425,7 @@
       <li>
         <WorklistRow
           {item}
-          repoLabel={repoLabels.format(repoIdentity(item))}
+          repoLabel={repoLabels.format(worklistRepoIdentity(item))}
           opened={key === selectedKey}
           multiSelected={selection.has(item)}
           onclick={(event) => handleRowClick(event, item)}

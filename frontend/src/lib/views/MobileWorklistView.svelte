@@ -1,5 +1,6 @@
 <script module lang="ts">
   import { SvelteSet } from "svelte/reactivity";
+  import { emptyWorklistFilters } from "../components/worklists/worklist-items.js";
 
   // Live as long as the page, so a section collapsed or a note expanded before
   // opening an item is restored when Back remounts the list, before its scroll
@@ -7,36 +8,52 @@
   const collapsedSections = new SvelteSet<string>();
   const expandedNotes = new SvelteSet<string>();
   // Same lifetime, so Back from an item returns to the filtered rows.
-  const searchState = $state({ value: "" });
+  const filters = $state(emptyWorklistFilters());
 </script>
 
 <script lang="ts">
   import { tick, untrack } from "svelte";
-  import { Button, EmptyState, formatRelativeTime, ScrollBox, SelectDropdown, Spinner, Typeahead } from "@kenn-io/kit-ui";
+  import {
+    Button,
+    EmptyState,
+    formatRelativeTime,
+    IconButton,
+    ScrollBox,
+    SelectDropdown,
+    Spinner,
+    Typeahead,
+  } from "@kenn-io/kit-ui";
+  import FunnelIcon from "@lucide/svelte/icons/funnel";
   import ListChecksIcon from "@lucide/svelte/icons/list-checks";
   import type { WorklistItem } from "../api/worklists.js";
   import { getAppRuntime } from "../app/runtime-context.js";
   import MobileNavMenu from "../components/mobile/MobileNavMenu.svelte";
+  import FilterSectionsPanel from "../components/shared/FilterSectionsPanel.svelte";
+  import LabelFilterMenu from "../components/shared/LabelFilterMenu.svelte";
   import QuerySearchInput from "../components/shared/QuerySearchInput.svelte";
   import GroupedSidebarSection from "../components/shared/GroupedSidebarSection.svelte";
   import WorklistCaveatIcon from "../components/worklists/WorklistCaveatIcon.svelte";
   import WorklistRow from "../components/worklists/WorklistRow.svelte";
+  import { worklistFilterMenu } from "../components/worklists/worklist-filter-menu.js";
   import { lastWorklistId, rememberWorklist } from "../components/worklists/worklist-memory.js";
   import {
     readWorklistOrder,
     readWorklistStateFilter,
     worklistItemDone,
     worklistItemKey,
-    worklistItemMatchesSearch,
+    worklistItemLabels,
     worklistItemsByScore,
     worklistItemSelection,
-    worklistItemsInState,
+    worklistItemsMatching,
     worklistPickerOptions,
+    worklistRepoIdentity,
     worklistSections,
     writeWorklistStateFilter,
     type WorklistStateFilter,
   } from "../components/worklists/worklist-items.js";
   import { getNavigate, getStores } from "../context.js";
+  import { cycleLabelFilter, labelFilterChoices } from "../utils/label-filter.js";
+  import { createRepoLabelFormatter } from "../utils/repo-label.js";
   import { isEmptySearchQuery, parseSearchQuery } from "../utils/search-query.js";
   import { buildMobileWorklistRoute, buildRoutedItemRoute } from "../routes.js";
   import {
@@ -55,7 +72,7 @@
 
   const runtime = getAppRuntime();
   const navigate = getNavigate();
-  const { worklists } = getStores();
+  const { worklists, grouping } = getStores();
 
   const summaries = $derived(worklists.getSummaries());
   const loadedWorklist = $derived(worklists.getDetail());
@@ -74,14 +91,22 @@
   let stateFilter = $state<WorklistStateFilter>(readWorklistStateFilter());
   const order = readWorklistOrder();
 
-  const searchQuery = $derived(parseSearchQuery(searchState.value));
-  const searching = $derived(!isEmptySearchQuery(searchQuery));
-  const shownItems = $derived(
-    worklist
-      ? worklistItemsInState(worklist.items, stateFilter).filter(
-          (item) => !searching || worklistItemMatchesSearch(item, searchQuery),
-        )
-      : [],
+  const searching = $derived(!isEmptySearchQuery(parseSearchQuery(filters.search)));
+  let filtersExpanded = $state(false);
+  let filterPanel = $state<HTMLElement | null>(null);
+  const shownItems = $derived(worklist ? worklistItemsMatching(worklist.items, stateFilter, filters) : []);
+
+  const filterMenu = $derived(worklistFilterMenu(filters, grouping, labelFilterMenu));
+  const labelChoices = $derived(
+    labelFilterChoices(
+      (worklist?.items ?? []).map((item) => ({ labels: worklistItemLabels(item) })),
+      filters.labels,
+    ),
+  );
+  const repoLabels = $derived(
+    createRepoLabelFormatter((worklist?.items ?? []).map(worklistRepoIdentity), {
+      showOrgNames: !grouping.getHideOrgName(),
+    }),
   );
   const sections = $derived(
     order === "score" ? [{ section: "", items: worklistItemsByScore(shownItems) }] : worklistSections(shownItems),
@@ -163,10 +188,14 @@
       );
   });
 
+  // Either direction needs the server to mark the items that involve the viewer.
+  const involvesMe = $derived(filters.items.includes("involves_me") || filters.items.includes("not_involves_me"));
+
   $effect(() => {
     const id = worklistId;
+    const includeViewer = involvesMe;
     untrack(() =>
-      runtime.runCommand(worklists.openEffect(id), {
+      runtime.runCommand(worklists.openEffect(id, includeViewer), {
         operation: "open worklist",
         safeContext: { routed: id !== null },
         onFailure: () => {},
@@ -193,13 +222,25 @@
     return worklists.summariesLoaded() ? summaries.map((summary) => summary.id) : null;
   }
 
+  // The panel opens at the top of the scrolled rows, so bring it into view.
+  function toggleFilters(): void {
+    filtersExpanded = !filtersExpanded;
+    if (!filtersExpanded) return;
+    void tick().then(() => {
+      const viewport = scrollViewportOf(root);
+      if (viewport) viewport.scrollTop = 0;
+    });
+  }
+
   function openItem(item: WorklistItem): void {
     const list = worklist;
     if (!list) return;
     rememberWorklist(list.id, worklistItemKey(item), liveListIds());
     // The whole list is loaded at once, so only the offset matters.
+    // Back remounts the list with the panel closed, so leave its height out of the offset.
+    const panelHeight = filtersExpanded ? (filterPanel?.offsetHeight ?? 0) : 0;
     rememberMobileListPosition(positionKey(list.id), {
-      scrollTop: scrollViewportOf(root)?.scrollTop ?? 0,
+      scrollTop: Math.max(0, (scrollViewportOf(root)?.scrollTop ?? 0) - panelHeight),
       pageLimit: 0,
     });
     navigate(buildRoutedItemRoute(worklistItemSelection(item), { focus: true }), {
@@ -214,6 +255,7 @@
 
   const emptyFilterMessage = $derived.by(() => {
     if (searching) return "No items match this search.";
+    if (filters.items.length > 0 || filters.labels.size > 0) return "No items match these filters.";
     return stateFilter === "closed" ? "No items are closed." : "No open items remain. Closed items are hidden.";
   });
 </script>
@@ -260,15 +302,38 @@
           onchange={setStateFilter}
         />
       </div>
-      <QuerySearchInput
-        bind:value={searchState.value}
-        block
-        placeholder="Filter items..."
-        ariaLabel="Filter worklist items"
-      />
+      <div class="mobile-worklist__search">
+        <div class="mobile-worklist__search-field">
+          <QuerySearchInput
+            bind:value={filters.search}
+            block
+            placeholder="Filter items..."
+            ariaLabel="Filter worklist items"
+          />
+        </div>
+        <IconButton
+          size="md"
+          tone="info"
+          ariaLabel={filterMenu.count > 0 ? `Filters (${filterMenu.count} on)` : "Filters"}
+          title="Filters"
+          ariaExpanded={filtersExpanded}
+          ariaControls="mobile-worklist-filters"
+          ariaPressed={filtersExpanded || filterMenu.count > 0}
+          onclick={() => (toggleFilters())}
+        >
+          <FunnelIcon size={18} strokeWidth={2} aria-hidden="true" />
+        </IconButton>
+      </div>
     </div>
 
     <ScrollBox label={`${worklist.title} items`} class="mobile-worklist__scroll">
+      <!-- Inside the scroll area, so a long Labels list and Clear filters stay reachable. -->
+      <div id="mobile-worklist-filters" class="mobile-worklist__filters"
+        bind:this={filterPanel} aria-label="Worklist filters" hidden={!filtersExpanded}>
+        {#if filtersExpanded}
+          <FilterSectionsPanel sections={filterMenu.sections} resetLabel="Clear filters" onReset={filterMenu.clear} />
+        {/if}
+      </div>
       {#if worklist.items.length === 0}
         <p class="mobile-worklist__state-message">No items remain on this list.</p>
       {:else if shownItems.length === 0}
@@ -306,6 +371,14 @@
   {/if}
 </section>
 
+{#snippet labelFilterMenu()}
+  <LabelFilterMenu
+    choices={labelChoices}
+    oncycle={(name) => (filters.labels = cycleLabelFilter(filters.labels, name))}
+    emptyText="No labels on this worklist"
+  />
+{/snippet}
+
 {#snippet rows(listId: number, items: readonly WorklistItem[], label: string)}
   <ul class="mobile-worklist__rows" aria-label={label}>
     {#each items as item (worklistItemKey(item))}
@@ -314,6 +387,7 @@
       <li>
         <WorklistRow
           {item}
+          repoLabel={repoLabels.format(worklistRepoIdentity(item))}
           opened={false}
           multiSelected={false}
           showAgentContext={false}
@@ -439,6 +513,37 @@
   .mobile-worklist__meta :global(.mobile-worklist__state .kit-select-dropdown__trigger) {
     min-height: var(--mobile-chrome-hit-target);
     font-size: var(--font-size-sm);
+  }
+
+  .mobile-worklist__search {
+    display: flex;
+    align-items: stretch;
+    gap: var(--mobile-chrome-space-sm);
+  }
+
+  .mobile-worklist__search-field {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .mobile-worklist__search :global(.kit-icon-button) {
+    flex: 0 0 auto;
+    width: var(--mobile-chrome-hit-target);
+    height: auto;
+    min-height: var(--mobile-chrome-hit-target);
+    border: thin solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-inset);
+  }
+
+  .mobile-worklist__filters {
+    padding: var(--mobile-chrome-space-sm) var(--mobile-chrome-space-md);
+    border-bottom: thin solid var(--border-muted);
+    background: var(--bg-surface);
+  }
+
+  .mobile-worklist__filters[hidden] {
+    display: none;
   }
 
   .mobile-worklist__summary :global(.kit-search-input) {

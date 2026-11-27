@@ -4,6 +4,7 @@ import type { WorklistItem, WorklistItemMark, WorklistSummary } from "../../api/
 import type { ListItemTarget } from "../../stores/item-actions.js";
 import type { RoutedItemRef, WorklistItemSelection } from "../../routes.js";
 import { matchesLabelFilters, type LabelFilters } from "../../utils/label-filter.js";
+import type { RepoLabelIdentity } from "../../utils/repo-label.js";
 import { matchesFilterSections, pullMatchesAttribute, type PullAttributeFilter } from "../../utils/pull-attributes.js";
 import {
   isEmptySearchQuery,
@@ -304,6 +305,18 @@ export interface WorklistFilters {
 
 export function emptyWorklistFilters(): WorklistFilters {
   return { search: "", items: [], labels: new Map(), changedOnly: false };
+}
+
+/** The item's repository, for the list's shared repository labels. */
+export function worklistRepoIdentity(item: WorklistItem): RepoLabelIdentity {
+  return {
+    provider: item.repo.provider,
+    platformHost: item.repo.platform_host,
+    repositoryKey: repositoryKeyFromWire(item.repo),
+    owner: item.repo.owner,
+    name: item.repo.name,
+    repoPath: item.repo.repo_path,
+  };
 }
 
 export function worklistItemLabels(item: WorklistItem) {

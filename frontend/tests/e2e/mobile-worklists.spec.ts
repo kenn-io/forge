@@ -190,6 +190,48 @@ test("Back from a phone worklist item lands on the same rows", async ({ page }) 
   await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(0);
 });
 
+test("Filters opens into view far down a list, and Back from an item keeps its rows", async ({ page }) => {
+  const list = worklistResponse(5, "Review queue");
+  const template = list.items[0]!;
+  const pull = template.pull as unknown as { labels: { name: string; color: string }[] };
+  pull.labels = Array.from({ length: 20 }, (_, index) => ({ name: `label-${index + 1}`, color: "0969da" }));
+  list.items = Array.from({ length: 40 }, (_, index) => ({
+    ...template,
+    position: index,
+    // Item 30 is the PR the mock API serves; the rest only need distinct keys.
+    number: index === 29 ? 42 : 1000 + index,
+    title: `Queued change ${index + 1}`,
+    note: `Change ${index + 1} needs a second look.`,
+    section: "Ready to merge",
+  }));
+  await mockApi(page);
+  await routeWorklists(page, { lists: [list], requests: [] });
+
+  await page.goto("/m/worklists/5");
+  const viewport = page.locator(".mobile-worklist .kit-scrollbox__viewport");
+  const target = page.getByRole("button", { name: "Queued change 30" });
+  await target.scrollIntoViewIfNeeded();
+  expect(await viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: "Filters", exact: true }).click();
+  const panel = page.getByLabel("Worklist filters");
+  await expect(panel.getByRole("button", { name: /^Labels/ })).toBeInViewport();
+
+  // With the panel and its long Labels list open, Back must still land on the opened row.
+  await panel.getByRole("button", { name: /^Labels/ }).click();
+  await target.scrollIntoViewIfNeeded();
+  const rowTop = async () => (await target.boundingBox())!.y;
+  const parkedTop = await rowTop();
+  await target.click();
+  await expect(page.locator(".mobile-detail-header__badge")).toHaveText("PR #42");
+  await page.locator(".mobile-detail-header__back").click();
+
+  await expect(page).toHaveURL(/\/m\/worklists\/5$/);
+  await expect(target).toBeInViewport();
+  // Scroll offsets are whole pixels, so allow subpixel rounding.
+  await expect.poll(async () => Math.abs((await rowTop()) - parkedTop)).toBeLessThan(2);
+});
+
 test("a long agent note and caveat start truncated and expand in place on tap", async ({ page }) => {
   const list = worklistResponse(5, "Review queue");
   const sentences = (lead: string, count: number) =>

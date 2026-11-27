@@ -135,12 +135,11 @@ describe("MobileWorklistView", () => {
     cleanup();
     renderView("/m/worklists/5", server);
     await waitFor(() => expect(rowTitles()).toEqual(["Mirror host stub PR"]));
-    expect(screen.getByRole("button", { name: "Filters (1 on)" }).getAttribute("aria-expanded")).toBe("true");
 
-    // The filters live for the page; clear and close them for later tests.
+    // The filters live for the page; clear them for later tests.
+    await fireEvent.click(screen.getByRole("button", { name: "Filters (1 on)" }));
     await fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(rowTitles()).toHaveLength(3);
-    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
   });
 
   it("asks the server which items involve the viewer when Involves me is set either way", async () => {
@@ -178,7 +177,6 @@ describe("MobileWorklistView", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     await waitFor(() => expect(reads.at(-1)).toBe(false));
     expect(rowTitles()).toHaveLength(3);
-    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
   });
 
   it("opens an item in phone detail that returns to this list", async () => {

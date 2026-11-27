@@ -9,8 +9,6 @@
   const expandedNotes = new SvelteSet<string>();
   // Same lifetime, so Back from an item returns to the filtered rows.
   const filters = $state(emptyWorklistFilters());
-  // The open panel is part of the scrolled content, so the restored offset needs it open too.
-  const filterPanel = $state({ expanded: false });
 </script>
 
 <script lang="ts">
@@ -94,6 +92,8 @@
   const order = readWorklistOrder();
 
   const searching = $derived(!isEmptySearchQuery(parseSearchQuery(filters.search)));
+  let filtersExpanded = $state(false);
+  let filterPanel = $state<HTMLElement | null>(null);
   const shownItems = $derived(worklist ? worklistItemsMatching(worklist.items, stateFilter, filters) : []);
 
   const filterMenu = $derived(worklistFilterMenu(filters, grouping, labelFilterMenu));
@@ -222,13 +222,25 @@
     return worklists.summariesLoaded() ? summaries.map((summary) => summary.id) : null;
   }
 
+  // The panel opens at the top of the scrolled rows, so bring it into view.
+  function toggleFilters(): void {
+    filtersExpanded = !filtersExpanded;
+    if (!filtersExpanded) return;
+    void tick().then(() => {
+      const viewport = scrollViewportOf(root);
+      if (viewport) viewport.scrollTop = 0;
+    });
+  }
+
   function openItem(item: WorklistItem): void {
     const list = worklist;
     if (!list) return;
     rememberWorklist(list.id, worklistItemKey(item), liveListIds());
     // The whole list is loaded at once, so only the offset matters.
+    // Back remounts the list with the panel closed, so leave its height out of the offset.
+    const panelHeight = filtersExpanded ? (filterPanel?.offsetHeight ?? 0) : 0;
     rememberMobileListPosition(positionKey(list.id), {
-      scrollTop: scrollViewportOf(root)?.scrollTop ?? 0,
+      scrollTop: Math.max(0, (scrollViewportOf(root)?.scrollTop ?? 0) - panelHeight),
       pageLimit: 0,
     });
     navigate(buildRoutedItemRoute(worklistItemSelection(item), { focus: true }), {
@@ -304,10 +316,10 @@
           tone="info"
           ariaLabel={filterMenu.count > 0 ? `Filters (${filterMenu.count} on)` : "Filters"}
           title="Filters"
-          ariaExpanded={filterPanel.expanded}
+          ariaExpanded={filtersExpanded}
           ariaControls="mobile-worklist-filters"
-          ariaPressed={filterPanel.expanded || filterMenu.count > 0}
-          onclick={() => (filterPanel.expanded = !filterPanel.expanded)}
+          ariaPressed={filtersExpanded || filterMenu.count > 0}
+          onclick={() => (toggleFilters())}
         >
           <FunnelIcon size={18} strokeWidth={2} aria-hidden="true" />
         </IconButton>
@@ -316,8 +328,9 @@
 
     <ScrollBox label={`${worklist.title} items`} class="mobile-worklist__scroll">
       <!-- Inside the scroll area, so a long Labels list and Clear filters stay reachable. -->
-      <div id="mobile-worklist-filters" class="mobile-worklist__filters" aria-label="Worklist filters" hidden={!filterPanel.expanded}>
-        {#if filterPanel.expanded}
+      <div id="mobile-worklist-filters" class="mobile-worklist__filters"
+        bind:this={filterPanel} aria-label="Worklist filters" hidden={!filtersExpanded}>
+        {#if filtersExpanded}
           <FilterSectionsPanel sections={filterMenu.sections} resetLabel="Clear filters" onReset={filterMenu.clear} />
         {/if}
       </div>

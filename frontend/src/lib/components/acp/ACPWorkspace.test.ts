@@ -925,6 +925,29 @@ describe("ACPWorkspace busy composer", () => {
       expect(screen.getByRole("button", { name: /1 queued/ })).toBeTruthy();
     });
 
+    it("tells screen readers again when a retry is refused for the same reason", async () => {
+      await openChat(state);
+      const announcement = await waitFor(() => {
+        const found = screen
+          .getAllByRole("status")
+          .find((status) => status.textContent === "Not sent: this agent does not accept image prompts");
+        expect(found).toBeTruthy();
+        return found;
+      });
+      const texts: string[] = [];
+      const observer = new MutationObserver(() => texts.push(announcement!.textContent ?? ""));
+      observer.observe(announcement!, { childList: true, characterData: true, subtree: true });
+
+      await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      // The host refused it again before this chat saw the refusal cleared.
+      await push({ ...state, messages: [{ role: "assistant", text: "Ready" }] });
+      await waitFor(() => expect(texts).toContain(""));
+      await waitFor(() => expect(announcement!.textContent).toBe("Not sent: this agent does not accept image prompts"));
+      observer.disconnect();
+
+      expect(sentCommands()).toContainEqual({ type: "resume" });
+    });
+
     it("reorders waiting prompts behind it by their place in the whole queue", async () => {
       await openChat({ ...state, queue: [...state.queue, { id: "q3", text: "Update the changelog" }] });
       await fireEvent.click(screen.getByRole("button", { name: /2 queued/ }));

@@ -139,6 +139,12 @@
     refusalAnnouncement = `Not sent: ${reason}`;
   }
   const announcedQueueRefusals = new Set<string>();
+  // The host clears a retried prompt's refusal and may refuse it again before
+  // this chat sees it cleared, so a retry forgets what was read out at once.
+  function resumeQueue() {
+    announcedQueueRefusals.clear();
+    connection?.send({ type: "resume" });
+  }
   $effect(() => {
     // A prompt that leaves the refused list and is refused again is read again.
     for (const id of announcedQueueRefusals) if (!refusedQueue.some((queued) => queued.id === id)) announcedQueueRefusals.delete(id);
@@ -624,7 +630,7 @@
           <ChatMessageView message={pendingMessage(prompt)} thoughtOpen={false} onThoughtToggle={() => {}} delivery="refused" />
           <div class="outgoing__refused">
             <p>{prompt.refused}</p>
-            <Button size="sm" surface="soft" disabled={!connected || stopped || disabled} onclick={() => connection?.send({ type: "resume" })}>Retry</Button>
+            <Button size="sm" surface="soft" disabled={!connected || stopped || disabled} onclick={resumeQueue}>Retry</Button>
             <Button size="sm" surface="soft" disabled={!connected || stopped || disabled || editing.some((entry) => entry.id === prompt.id)} onclick={() => editQueued(prompt)}>Edit</Button>
           </div>
         </div>
@@ -691,7 +697,7 @@
         {queuePaused}
         disabled={!connected || disabled}
         suppressed={commandMatches.length > 0}
-        onresume={() => connection?.send({ type: "resume" })}
+        onresume={resumeQueue}
         onunqueue={(id) => connection?.send({ type: "unqueue", id })}
         onmove={(id, index) => connection?.send({ type: "move", id, index: queue.findIndex((queued) => queued.id === waitingQueue[index]?.id) })}
       />

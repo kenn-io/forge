@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/platform"
 )
 
 func widgetIdentity(remote string) *db.PlatformIdentity {
@@ -113,13 +114,35 @@ func TestFindExternalWorktreePR(t *testing.T) {
 
 func externalWorkspaceFixture(t *testing.T) (*Manager, *db.DB, *Workspace, string) {
 	t.Helper()
-	database := openTestDB(t)
 	worktree := setupMonitorRepo(t)
 	runWorkspaceTestGit(t, worktree, "checkout", "-b", "feature/seven")
+	return externalWorkspaceOn(t, worktree, nil)
+}
+
+// linkedExternalWorkspaceFixture adopts a checkout linked to the local
+// repository Forge makes its own worktrees from. Deleting a Forge workspace
+// removes such a checkout, so only the external-checkout guard keeps it.
+func linkedExternalWorkspaceFixture(t *testing.T) (*Manager, *db.DB, *Workspace, string) {
+	t.Helper()
+	base := setupMonitorRepo(t)
+	runWorkspaceTestGit(t, base, "remote", "set-url", "origin", "https://github.com/acme/widget.git")
+	linked := filepath.Join(t.TempDir(), "linked")
+	runWorkspaceTestGit(t, base, "worktree", "add", "-b", "feature/seven", linked)
+	return externalWorkspaceOn(t, linked, staticBaseResolver(base))
+}
+
+func externalWorkspaceOn(
+	t *testing.T, worktree string, localRepo WorktreeBasePathResolver,
+) (*Manager, *db.DB, *Workspace, string) {
+	t.Helper()
+	database := openTestDB(t)
 	commitInWorktree(t, worktree, "seven.txt")
 	root, err := filepath.EvalSymlinks(worktree)
 	require.NoError(t, err)
 	manager := newTestManager(t, database, t.TempDir())
+	if localRepo != nil {
+		manager.SetWorktreeBasePathResolver(localRepo)
+	}
 	tmuxScript, _ := writeRecorderScript(t)
 	manager.SetTmuxCommand([]string{tmuxScript})
 	spec := launchSpecForTest()
@@ -168,7 +191,7 @@ func TestDeleteLeavesAnExternalWorktreeAndBranch(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
-			manager, database, ws, root := externalWorkspaceFixture(t)
+			manager, database, ws, root := linkedExternalWorkspaceFixture(t)
 			require.NoError(manager.Setup(t.Context(), ws))
 			require.NoError(os.WriteFile(filepath.Join(root, "unsaved.txt"), []byte("wip\n"), 0o644))
 
@@ -205,4 +228,24 @@ func TestPrepareAgentLaunchContextLeavesAnExternalWorktreeAlone(t *testing.T) {
 	after, err := os.ReadFile(exclude)
 	require.NoError(err)
 	assert.Equal(string(before), string(after))
+}
+
+// Forge refuses an agent launch in a workspace whose repository it no longer
+// tracks, and an adopted workspace is no exception.
+func TestPrepareAgentLaunchContextRefusesAnExternalWorktreeOfAnInactiveRepository(t *testing.T) {
+	manager, database, ws, _ := externalWorkspaceFixture(t)
+	require.NoError(t, manager.Setup(t.Context(), ws))
+	spec, err := database.GetWorkspaceLaunchSpec(t.Context(), ws.ID)
+	require.NoError(t, err)
+	require.NotNil(t, spec)
+	_, err = database.DeactivateRepository(t.Context(), platform.RepositoryIdentity{
+		Provider: spec.Repository.Provider, PlatformHost: spec.Repository.PlatformHost, Key: spec.Repository.Key,
+	})
+	require.NoError(t, err)
+
+	err = manager.PrepareAgentLaunchContext(t.Context(), PrepareAgentLaunchContextOptions{
+		WorkspaceID: ws.ID, TargetKey: "codex",
+	})
+
+	require.ErrorIs(t, err, db.ErrRepositoryIdentityChanged)
 }

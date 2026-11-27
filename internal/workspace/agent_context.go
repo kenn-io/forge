@@ -329,16 +329,16 @@ func (m *Manager) PrepareAgentLaunchContext(
 	if workspace == nil {
 		return ErrWorkspaceNotFound
 	}
-	// Forge writes nothing into a checkout it did not create.
-	if workspace.ExternalWorktree {
-		return nil
-	}
 	summary, err := m.lifecycleSummary(ctx, workspace)
 	if err != nil {
 		return fmt.Errorf("validate workspace launch specification: %w", err)
 	}
 	if summary == nil {
 		return ErrWorkspaceNotFound
+	}
+	// Forge writes nothing into a checkout it did not create.
+	if workspace.ExternalWorktree {
+		return nil
 	}
 	// Pick up exclusion rules the user added since the workspace was set up.
 	// A stale exclude file is cosmetic, so it must not block the launch.

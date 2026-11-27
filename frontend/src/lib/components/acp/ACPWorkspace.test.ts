@@ -847,8 +847,10 @@ describe("ACPWorkspace busy composer", () => {
     expect(refused.textContent).toContain("Not sent");
     expect(screen.getByText("The agent is not accepting prompts.")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.getAllByRole("status").map((status) => status.textContent)).toContain(
-      "Not sent: The agent is not accepting prompts.",
+    await waitFor(() =>
+      expect(screen.getAllByRole("status").map((status) => status.textContent)).toContain(
+        "Not sent: The agent is not accepting prompts.",
+      ),
     );
 
     await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -868,6 +870,36 @@ describe("ACPWorkspace busy composer", () => {
     expect(screen.queryByRole("article", { name: "You" })).toBeNull();
   });
 
+  it("tells screen readers about each refused prompt, even for the same reason", async () => {
+    await openChat({ busy: true });
+    const refuse = async (text: string) => {
+      await fireEvent.input(composer(), { target: { value: text } });
+      await fireEvent.keyDown(composer(), { key: "Enter" });
+      const { id } = sentCommands().at(-1) as { id: string };
+      socket.options!.onMessage(
+        JSON.stringify({ commandError: "The agent is not accepting prompts.", command: "prompt", id }),
+      );
+      await tick();
+    };
+    await refuse("First");
+    const announcement = await waitFor(() => {
+      const found = screen
+        .getAllByRole("status")
+        .find((status) => status.textContent === "Not sent: The agent is not accepting prompts.");
+      expect(found).toBeTruthy();
+      return found;
+    });
+    const texts: string[] = [];
+    const observer = new MutationObserver(() => texts.push(announcement!.textContent ?? ""));
+    observer.observe(announcement!, { childList: true, characterData: true, subtree: true });
+
+    await refuse("Second");
+    await waitFor(() => expect(announcement!.textContent).toBe("Not sent: The agent is not accepting prompts."));
+    observer.disconnect();
+
+    expect(texts).toContain("");
+  });
+
   describe("a queued prompt the host could not send", () => {
     const state = {
       queuePaused: true,
@@ -885,8 +917,10 @@ describe("ACPWorkspace busy composer", () => {
       expect(refused.textContent).toContain("Not sent");
       expect(screen.getByText("this agent does not accept image prompts")).toBeTruthy();
       expect(screen.queryByRole("alert")).toBeNull();
-      expect(screen.getAllByRole("status").map((status) => status.textContent)).toContain(
-        "Not sent: this agent does not accept image prompts",
+      await waitFor(() =>
+        expect(screen.getAllByRole("status").map((status) => status.textContent)).toContain(
+          "Not sent: this agent does not accept image prompts",
+        ),
       );
       expect(screen.getByRole("button", { name: /1 queued/ })).toBeTruthy();
     });

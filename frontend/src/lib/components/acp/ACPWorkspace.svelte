@@ -129,10 +129,24 @@
   const refusedQueue = $derived(queue.filter((queued) => queued.refused));
   const waitingQueue = $derived(queue.filter((queued) => !queued.refused));
   // The newest refusal, for screen readers: the note beside a refused prompt is
-  // not announced, and the person may otherwise keep waiting on it.
-  const refusalAnnouncement = $derived.by(() => {
-    const refused = outbox.findLast((prompt) => prompt.refused)?.refused ?? refusedQueue.at(-1)?.refused;
-    return refused ? `Not sent: ${refused}` : "";
+  // not announced, and the person may otherwise keep waiting on it. Each
+  // refusal empties the region first, so one that repeats the last reason is
+  // read again.
+  let refusalAnnouncement = $state("");
+  async function announceRefusal(reason: string) {
+    refusalAnnouncement = "";
+    await tick();
+    refusalAnnouncement = `Not sent: ${reason}`;
+  }
+  const announcedQueueRefusals = new Set<string>();
+  $effect(() => {
+    // A prompt that leaves the refused list and is refused again is read again.
+    for (const id of announcedQueueRefusals) if (!refusedQueue.some((queued) => queued.id === id)) announcedQueueRefusals.delete(id);
+    for (const queued of refusedQueue) {
+      if (announcedQueueRefusals.has(queued.id) || !queued.refused) continue;
+      announcedQueueRefusals.add(queued.id);
+      void announceRefusal(queued.refused);
+    }
   });
   // A chat that failed before it ever loaded has nothing to send to.
   const composerDead = $derived(!chatState && stopped && (!!error || stalled));
@@ -225,6 +239,7 @@
           }
           if (failed?.command === "prompt" && outbox.some((prompt) => prompt.id === failed.id)) {
             outbox = outbox.map((prompt) => prompt.id === failed.id ? { ...prompt, refused: message } : prompt);
+            void announceRefusal(message);
             return;
           }
           error = message;
@@ -241,7 +256,9 @@
         },
         onStopped: () => {
           stopped = true;
-          outbox = outbox.map((prompt) => prompt.refused ? prompt : { ...prompt, refused: "The chat connection stopped before the agent got this." });
+          const lost = "The chat connection stopped before the agent got this.";
+          if (outbox.some((prompt) => !prompt.refused)) void announceRefusal(lost);
+          outbox = outbox.map((prompt) => prompt.refused ? prompt : { ...prompt, refused: lost });
         },
         onHistoryLoading: (value) => { historyLoading = value; },
         onStalled: () => { stalled = true; },

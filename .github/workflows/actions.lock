@@ -19,6 +19,8 @@ workflows:
         - 'step-security/paths-filter@v4.0.3'
         - 'step-security/setup-buildx-action@v4.4.1'
         - 'voidzero-dev/setup-vp@v1.22.0'
+    '.github/workflows/delete-waiting-runs.yml':
+        - 'kenn-io/actions@main'
     '.github/workflows/deploy-docs.yml':
         - 'actions/checkout@v7.0.1'
         - 'step-security/setup-bun@v2.1.3'
@@ -129,7 +131,7 @@ dependencies:
         repo_id: 738284564
     'kenn-io/actions@main':
         ref: 'main'
-        commit: 'sha1-b523fb403607f01de5eec5f4556c7668544c70fe'
+        commit: 'sha1-5fd6669b1a32f9a82763de1964d1a3b9bbbb16e0'
         owner_id: 259885253
         repo_id: 1427332808
         uses:

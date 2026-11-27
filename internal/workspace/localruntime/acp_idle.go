@@ -66,12 +66,14 @@ func (a *ACP) Parked() bool {
 func (a *ACP) parkIfIdle(now time.Time, timeout time.Duration) bool {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
+	a.persistMu.Lock()
+	defer a.persistMu.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.idleLocked() || a.viewers > 0 || now.Sub(a.usedAt) < timeout || now.Sub(a.viewedAt) < timeout {
 		return false
 	}
-	if err := a.persistLocked(); err != nil {
+	if err := a.persistWithLocksHeld(); err != nil {
 		slog.Warn("save idle ACP chat before parking", "err", err)
 		return false
 	}

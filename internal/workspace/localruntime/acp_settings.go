@@ -157,8 +157,8 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 	a.saveConfig = func(values map[string]string) error { _, err := m.acpConfigValues(info.TargetKey, values); return err }
 	a.mu.Lock()
 	a.recordPath = m.acpSessionPath(info.Key)
-	err = a.persistLocked()
 	a.mu.Unlock()
+	err = a.persist()
 	if err != nil {
 		_ = a.Stop(context.WithoutCancel(ctx))
 		return nil, err

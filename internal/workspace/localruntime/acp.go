@@ -1,6 +1,7 @@
 package localruntime
 
 import (
+	"bytes"
 	"container/list"
 	"context"
 	"crypto/rand"
@@ -46,7 +47,11 @@ type ACPChat interface {
 
 // ACP owns the SDK connection inside the durable ACP owner process.
 type ACP struct {
-	turnMu     sync.Mutex
+	turnMu sync.Mutex
+	// persistMu serializes disk saves and guards the savedBase..journalBytes
+	// fields below. Lock order is always turnMu -> persistMu -> mu so disk
+	// fsyncs never block concurrent readers or permission requests on mu.
+	persistMu  sync.Mutex
 	cancelling bool
 	mu         sync.Mutex
 	// bg tracks background goroutines and active prompt submissions so Stop
@@ -146,6 +151,9 @@ type ACP struct {
 	// beforeAllowanceCancel lets tests run between a turn using up its
 	// allowance and the cancel that ends it.
 	beforeAllowanceCancel func()
+	// beforePersistWrite lets tests observe or pause disk writes in
+	// writePersist without holding mu. It is nil in production.
+	beforePersistWrite func()
 	// The running turn's clock: stopClock stops its ticker, activeSince is
 	// when it last started counting (zero while blocked), clockSaved is when
 	// it last saved the session, and turnStart indexes the turn's first
@@ -832,8 +840,10 @@ func (a *ACP) Write(data []byte) (int, error) {
 	if err == nil && n != len(data) {
 		err = io.ErrShortWrite
 	}
-	var request acpsdk.ClientRequest
-	if json.Unmarshal(data, &request) == nil && request.Method == acpsdk.AgentMethodSessionPrompt {
+	a.mu.Lock()
+	waiting := a.promptWritten != nil
+	a.mu.Unlock()
+	if waiting && acpRequestMethod(data) == acpsdk.AgentMethodSessionPrompt {
 		a.mu.Lock()
 		if a.promptWritten != nil {
 			a.promptWritten <- err
@@ -842,6 +852,33 @@ func (a *ACP) Write(data []byte) (int, error) {
 		a.mu.Unlock()
 	}
 	return n, err
+}
+
+// acpRequestMethod reads the top-level "method" field of an outgoing JSON-RPC
+// request without decoding a potentially large "params" payload.
+func acpRequestMethod(data []byte) string {
+	dec := jsontext.NewDecoder(bytes.NewReader(data))
+	tok, err := dec.ReadToken()
+	if err != nil || tok.Kind() != '{' {
+		return ""
+	}
+	for dec.PeekKind() != '}' {
+		key, err := dec.ReadToken()
+		if err != nil || key.Kind() != '"' {
+			return ""
+		}
+		if key.String() == "method" {
+			val, err := dec.ReadToken()
+			if err != nil || val.Kind() != '"' {
+				return ""
+			}
+			return val.String()
+		}
+		if err := dec.SkipValue(); err != nil {
+			return ""
+		}
+	}
+	return ""
 }
 
 func (a *ACP) wait() {
@@ -871,14 +908,19 @@ func (a *ACP) wait() {
 	a.agentTurn = false
 	a.state.QueuePaused = len(a.state.Queue) > 0
 	a.releaseHeldTextLocked()
-	a.publishProgressLocked()
-	if a.cmd == nil && !a.closing && a.loadSession && a.recordPath != "" {
+	a.changedLocked()
+	saveHostLoss := a.cmd == nil && !a.closing && a.loadSession && a.recordPath != ""
+	if saveHostLoss {
 		// The shared host went away with its agent. The chat parks so that
 		// reopening it loads the session on a new host, as after an idle park.
 		a.parked = true
-		a.saveTakenEffectLocked("losing the agent host")
 	}
 	a.mu.Unlock()
+	if saveHostLoss {
+		a.saveTakenEffect("losing the agent host")
+	} else {
+		_ = a.persist()
+	}
 	close(a.done)
 }
 
@@ -929,11 +971,10 @@ func (a *ACP) Command(command ACPCommand) error {
 		return a.resumeQueue(command.Generation)
 	case "dismiss_error":
 		a.mu.Lock()
-		defer a.mu.Unlock()
 		a.setErrorLocked(nil)
-		err := a.persistLocked()
 		a.changedLocked()
-		return err
+		a.mu.Unlock()
+		return a.persist()
 	case "cancel":
 		return a.cancel(command.Generation)
 	case "permission":
@@ -968,6 +1009,7 @@ var errACPQueueChanged = errors.New("the queue changed")
 // prompt sent at once that finds the chat busy queues instead.
 func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 	text, submissionID, images, generation := prompt.Text, prompt.ID, prompt.Images, prompt.Generation
+	a.persistMu.Lock()
 	a.mu.Lock()
 	// A queued prompt was checked when it was queued and runs whoever holds
 	// the chat now; it only needs to still be the head of a queue nobody
@@ -975,20 +1017,24 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 	if queued && (a.state.QueuePaused || len(a.state.Queue) == 0 || a.state.Queue[0].ID != submissionID ||
 		slices.Contains(a.state.Withdrawn, submissionID)) {
 		a.mu.Unlock()
+		a.persistMu.Unlock()
 		return errACPQueueChanged
 	}
 	if err := a.supervisionGateLocked(generation); !queued && err != nil {
 		a.mu.Unlock()
+		a.persistMu.Unlock()
 		return err
 	}
 	if !queued && generation == 0 && prompt.Sender.coordinator() && a.supervisedLocked() {
 		// An agent using a Forge tool was admitted while nobody supervised the chat; a
 		// claim needs only a.mu, so a coordinator may hold it now.
 		a.mu.Unlock()
+		a.persistMu.Unlock()
 		return ErrACPSupervised
 	}
 	if !a.state.Connected {
 		a.mu.Unlock()
+		a.persistMu.Unlock()
 		return ErrACPAgentUnavailable
 	}
 	if a.state.Busy || a.state.Configuring || a.state.Steering {
@@ -999,33 +1045,42 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 			a.enqueueLocked(prompt, false)
 			a.goLocked(a.drain)
 			a.mu.Unlock()
+			a.persistMu.Unlock()
+			a.saveTakenEffect("queueing a prompt")
 			return nil
 		}
 		a.mu.Unlock()
+		a.persistMu.Unlock()
 		return errACPNotIdle
 	}
 	if len(images) > 0 && !a.imagesSupported {
 		a.mu.Unlock()
+		a.persistMu.Unlock()
 		return errACPImagesUnsupported
 	}
+	prevError, prevErrorCode, prevErrorData := a.state.Error, a.state.ErrorCode, a.state.ErrorData
+	a.state.Busy = true
+	a.setErrorLocked(nil)
 	if submissionID != "" {
 		a.state.Sending = &prompt
-		if err := a.persistLocked(); err != nil {
+		if err := a.persistWithLocksHeld(); err != nil {
 			a.state.Sending = nil
+			a.state.Busy = false
+			a.state.Error, a.state.ErrorCode, a.state.ErrorData = prevError, prevErrorCode, prevErrorData
 			a.mu.Unlock()
+			a.persistMu.Unlock()
 			return err
 		}
 	}
-	a.state.Busy = true
 	a.cancelling = false
 	// Status from here on describes this prompt, not an earlier takeover.
 	a.takeoverPending = false
-	a.setErrorLocked(nil)
 	a.releaseHeldTextLocked()
 	a.promptIndex = new(len(a.state.Messages))
 	written := make(chan error, 1)
 	a.promptWritten = written
 	a.mu.Unlock()
+	a.persistMu.Unlock()
 	if a.beforePromptWrite != nil {
 		a.beforePromptWrite()
 	}
@@ -1064,12 +1119,12 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 		a.state.Sending = nil
 		if queued {
 			// The prompt is still the head of the queue; drain pauses it.
-			var persistErr error
-			if submissionID != "" {
-				persistErr = a.persistLocked()
-			}
 			a.changedLocked()
 			a.mu.Unlock()
+			var persistErr error
+			if submissionID != "" {
+				persistErr = a.persist()
+			}
 			return errors.Join(err, persistErr)
 		}
 		// The prompt was accepted, so it waits at the head of the queue for a
@@ -1077,6 +1132,7 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 		a.state.QueuePaused = true
 		a.enqueueLocked(prompt, true)
 		a.mu.Unlock()
+		a.saveTakenEffect("queueing a prompt")
 		return nil
 	}
 	a.mu.Lock()
@@ -1106,9 +1162,9 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 	if !a.goLocked(func() { a.finishTurn(completed) }) {
 		a.endTurnRecordLocked("", errors.New(acpExitedDuringTurn))
 	}
-	a.saveTakenEffectLocked("sending a prompt")
 	a.changedLocked()
 	a.mu.Unlock()
+	a.saveTakenEffect("sending a prompt")
 	return nil
 }
 

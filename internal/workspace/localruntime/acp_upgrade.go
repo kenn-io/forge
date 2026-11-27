@@ -198,6 +198,8 @@ func (a *ACP) applyOwnerUpgrade(dir string) error {
 	if err != nil {
 		return fmt.Errorf("apply the Forge upgrade to this chat: %w", err)
 	}
+	a.persistMu.Lock()
+	defer a.persistMu.Unlock()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	// The live owner knows which steers were in flight; the saved order may be stale.
@@ -232,7 +234,7 @@ func (a *ACP) applyOwnerUpgrade(dir string) error {
 		a.state.Notices = append(a.state.Notices, notice)
 	}
 	a.state.QueuePaused = false
-	if err := a.persistLocked(); err != nil {
+	if err := a.persistWithLocksHeld(); err != nil {
 		return fmt.Errorf("save this chat after the Forge upgrade: %w", err)
 	}
 	if err := os.Remove(path); err != nil {

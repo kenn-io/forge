@@ -109,21 +109,20 @@ func (a *ACP) restoreSubmissionsLocked(saved ACPState) {
 }
 
 // dropUnrunnableQueueHeadLocked removes withdrawn submissions at the head of
-// the queue, so drain cannot send them.
-func (a *ACP) dropUnrunnableQueueHeadLocked() {
+// the queue, so drain cannot send them. It reports whether anything was dropped
+// so callers can persist after unlocking a.mu.
+func (a *ACP) dropUnrunnableQueueHeadLocked() bool {
 	dropped := 0
 	for dropped < len(a.state.Queue) && slices.Contains(a.state.Withdrawn, a.state.Queue[dropped].ID) {
 		dropped++
 	}
 	if dropped == 0 {
-		return
+		return false
 	}
 	a.state.Queue = slices.Delete(a.state.Queue, 0, dropped)
 	if len(a.state.Queue) == 0 {
 		a.state.QueuePaused = false
 	}
-	if err := a.persistLocked(); err != nil {
-		a.setErrorLocked(err)
-	}
 	a.changedLocked()
+	return true
 }

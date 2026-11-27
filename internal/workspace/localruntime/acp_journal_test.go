@@ -5,8 +5,11 @@ import (
 	"encoding/json/v2"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/stretchr/testify/assert"
@@ -149,9 +152,7 @@ func TestACPSnapshotSaveSucceedsWhenTheOldJournalStays(t *testing.T) {
 		require.NoError(t, os.Mkdir(journal, 0o700))
 		require.NoError(t, os.WriteFile(filepath.Join(journal, "keep"), nil, 0o600))
 
-		agent.mu.Lock()
-		err := agent.persistLocked()
-		agent.mu.Unlock()
+		err := agent.persist()
 		require.NoError(t, err)
 		data, err := os.ReadFile(agent.recordPath)
 		require.NoError(t, err)
@@ -223,4 +224,118 @@ func TestACPJournalSkipsWhatACrashLeftBehind(t *testing.T) {
 		texts = append(texts, message.Text)
 	}
 	assert.Equal(t, []string{"current", "kept"}, texts)
+}
+
+// Disk persistence must not hold a.mu: a slow journal write or snapshot
+// compaction during streaming must never block RequestPermission or Updates.
+func TestACPRequestPermissionAndUpdatesDoNotWaitOnPersistWrite(t *testing.T) {
+	agent, peer := newScriptedACP(t)
+	agent.recordPath = filepath.Join(t.TempDir(), "session.json")
+	require.NoError(t, agent.Prompt("work", ACPSender{Kind: ACPSenderUser}))
+
+	initial, err := agent.Updates(0)
+	require.NoError(t, err)
+	cursor := initial.MessageCursor
+
+	writeStarted := make(chan struct{})
+	releaseWrite := make(chan struct{})
+	var blocked atomic.Bool
+	agent.beforePersistWrite = func() {
+		if blocked.CompareAndSwap(false, true) {
+			close(writeStarted)
+			<-releaseWrite
+		}
+	}
+
+	updateDone := make(chan error, 1)
+	go func() {
+		updateDone <- agent.SessionUpdate(t.Context(), acpsdk.SessionNotification{
+			SessionId: acpsdk.SessionId(agent.sessionID),
+			Update: acpsdk.SessionUpdate{ToolCall: &acpsdk.SessionUpdateToolCall{
+				ToolCallId: "edit", Title: "Update workspace file", Status: acpsdk.ToolCallStatusPending,
+			}},
+		})
+	}()
+	select {
+	case <-writeStarted:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "timed out waiting for SessionUpdate to enter disk write")
+	}
+
+	title := "Update workspace file"
+	permDone := make(chan acpsdk.RequestPermissionResponse, 1)
+	go func() {
+		resp, reqErr := agent.RequestPermission(t.Context(), acpsdk.RequestPermissionRequest{
+			SessionId: acpsdk.SessionId(agent.sessionID),
+			ToolCall:  acpsdk.ToolCallUpdate{ToolCallId: "edit", Title: &title},
+			Options:   []acpsdk.PermissionOption{{OptionId: "allow", Name: "Allow once", Kind: acpsdk.PermissionOptionKindAllowOnce}},
+		})
+		assert.NoError(t, reqErr)
+		permDone <- resp
+	}()
+
+	var permID string
+	require.Eventually(t, func() bool {
+		batch, batchErr := agent.Updates(cursor)
+		if batchErr != nil {
+			return false
+		}
+		var frame struct {
+			Updates ACPChanges `json:"updates"`
+		}
+		if json.Unmarshal(batch.Data, &frame) != nil {
+			return false
+		}
+		if len(frame.Updates.Permissions) == 1 && frame.Updates.Permissions[0].Options[0].Name == "Allow once" {
+			permID = frame.Updates.Permissions[0].ID
+			return true
+		}
+		return false
+	}, 2*time.Second, 5*time.Millisecond, "RequestPermission and Updates must not block on a slow disk persist")
+
+	answerDone := make(chan error, 1)
+	go func() {
+		answerDone <- agent.Command(ACPCommand{Type: "permission", ID: permID, OptionID: "allow"})
+	}()
+	select {
+	case resp := <-permDone:
+		require.NotNil(t, resp.Outcome.Selected)
+		assert.Equal(t, acpsdk.PermissionOptionId("allow"), resp.Outcome.Selected.OptionId)
+	case <-time.After(2 * time.Second):
+		require.FailNow(t, "permission response blocked on in-flight disk persist")
+	}
+
+	close(releaseWrite)
+	require.NoError(t, <-updateDone)
+	require.NoError(t, <-answerDone)
+	peer.endTurn(acpsdk.StopReasonEndTurn)
+	require.Eventually(t, func() bool { return !publishedACPState(t, agent).Busy }, 2*time.Second, 5*time.Millisecond)
+	assert.Equal(t, "pending", savedToolStatuses(t, agent.recordPath)["edit"])
+}
+
+// Saving Sending with Busy already set keeps metadata stable until Sending is
+// cleared, so an early SessionUpdate appends only its own entry instead of
+// rewriting a large Sending prompt into the journal.
+func TestACPSessionUpdateDuringSendingDoesNotRewriteSendingPayload(t *testing.T) {
+	agent, peer := newScriptedACP(t)
+	agent.recordPath = filepath.Join(t.TempDir(), "session.json")
+	require.NoError(t, agent.Prompt("seed", ACPSender{Kind: ACPSenderUser}))
+	peer.endTurn(acpsdk.StopReasonEndTurn)
+	require.Eventually(t, func() bool { return !publishedACPState(t, agent).Busy }, 2*time.Second, 5*time.Millisecond)
+
+	var beforeUpdate, afterUpdate int64
+	agent.beforePromptWrite = func() {
+		agent.beforePromptWrite = nil
+		beforeUpdate = savedBytes(t, agent.recordPath)
+		acpText(t, agent, "Working now.\n\n")
+		afterUpdate = savedBytes(t, agent.recordPath)
+	}
+
+	large := strings.Repeat(`"`, 256<<10)
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", ID: "large-sub", Text: large}))
+	assert.Less(t, afterUpdate-beforeUpdate, int64(16<<10),
+		"SessionUpdate while Sending is set must not re-journal the 512 KiB Sending payload")
+
+	peer.endTurn(acpsdk.StopReasonEndTurn)
+	require.Eventually(t, func() bool { return !publishedACPState(t, agent).Busy }, 2*time.Second, 5*time.Millisecond)
 }

@@ -19,6 +19,10 @@ import (
 // content. Resolve them on the execution host, including saved transcripts,
 // without changing the references stored by the ACP owner.
 func acpMediaPreviews(data []byte) []byte {
+	// Skip JSON decoding frames that carry no resolvable media references.
+	if !bytes.Contains(data, []byte("resource_link")) && !bytes.Contains(data, []byte("kenn-forge:")) {
+		return data
+	}
 	var frame map[string]jsontext.Value
 	if json.Unmarshal(data, &frame) != nil {
 		return data

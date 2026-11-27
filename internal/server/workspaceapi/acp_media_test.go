@@ -68,3 +68,31 @@ func TestACPMediaPreviewInlinesLocalVideoAndAudio(t *testing.T) {
 		assert.Equal(text, content.Text)
 	}
 }
+
+func TestACPMediaPreviewsResolvesEscapedDescriptor(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	root := t.TempDir()
+	mp4 := append([]byte{0, 0, 0, 0x18}, []byte("ftypmp42\x00\x00\x00\x00mp42isom")...)
+	demo := filepath.Join(root, "clip.mp4")
+	require.NoError(os.WriteFile(demo, mp4, 0o600))
+
+	// Media descriptors inside tool text may contain JSON-escaped slashes.
+	escapedDescriptor := `{"kind":"kenn-forge:\/\/media\/local","path":` + `"` + filepath.ToSlash(demo) + `","title":"Clip"}`
+	frame, err := json.Marshal(map[string]any{
+		"updates": map[string]any{
+			"messages": []localruntime.ACPMessage{{
+				ID:   "m2",
+				Role: "tool",
+				ToolContent: []localruntime.ACPToolContent{{
+					Type:    "content",
+					Content: &localruntime.ACPContent{Type: "text", Text: escapedDescriptor},
+				}},
+			}},
+		},
+	})
+	require.NoError(err)
+	resolved := acpMediaPreviews(frame)
+	assert.Contains(string(resolved), base64.StdEncoding.EncodeToString(mp4))
+}

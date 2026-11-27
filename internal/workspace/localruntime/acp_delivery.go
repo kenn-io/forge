@@ -67,27 +67,27 @@ func deliverableTextPrefix(text string) int {
 }
 
 // holdTextLocked records streamed text appended to the last assistant
-// message. It is published only when deliverTextLocked releases it.
-func (a *ACP) holdTextLocked(startedMessage bool, text string) {
+// message and reports whether new text became visible and should be saved.
+func (a *ACP) holdTextLocked(startedMessage bool, text string) bool {
 	if startedMessage {
 		a.releaseHeldTextLocked()
 		a.heldSeq++
 	}
 	a.heldBytes += len(text)
-	a.deliverTextLocked()
+	return a.deliverTextLocked()
 }
 
 // deliverTextLocked publishes held text up to its last block boundary once the
-// pacing window has passed, or everything when the hold exceeds the cap.
-func (a *ACP) deliverTextLocked() {
+// pacing window has passed, or everything when the hold exceeds the cap. It
+// reports whether new text became visible and should be saved.
+func (a *ACP) deliverTextLocked() bool {
 	pending := a.heldTextLocked()
 	if pending == "" {
-		return
+		return false
 	}
 	if len(pending) > maxHeldTextBytes {
 		a.releaseHeldTextLocked()
-		a.publishProgressLocked()
-		return
+		return true
 	}
 	ready := pending[:deliverableTextPrefix(pending)]
 	wait := time.Until(a.lastTextDelivery.Add(minTextDeliveryInterval))
@@ -96,15 +96,15 @@ func (a *ACP) deliverTextLocked() {
 			wait = minTextDeliveryInterval
 		}
 		a.scheduleTextDeliveryLocked(wait)
-		return
+		return false
 	}
 	a.heldBytes -= len(ready)
 	a.publishMessageLocked(len(a.state.Messages) - 1)
 	a.lastTextDelivery = time.Now()
-	a.publishProgressLocked()
 	if a.heldBytes > 0 {
 		a.scheduleTextDeliveryLocked(minTextDeliveryInterval)
 	}
+	return true
 }
 
 // scheduleTextDeliveryLocked looks again once the pacing window closes. An
@@ -117,17 +117,25 @@ func (a *ACP) scheduleTextDeliveryLocked(wait time.Duration) {
 	seq, received := a.heldSeq, a.lastMessageBytesLocked()
 	a.textDelivery = time.AfterFunc(wait, func() {
 		a.mu.Lock()
-		defer a.mu.Unlock()
 		a.textDelivery = nil
-		if a.heldBytes == 0 {
-			return
+		publish := false
+		if !a.stopped && a.heldBytes > 0 {
+			if a.heldSeq == seq && a.lastMessageBytesLocked() == received {
+				a.releaseHeldTextLocked()
+				publish = true
+			} else {
+				publish = a.deliverTextLocked()
+			}
 		}
-		if a.heldSeq == seq && a.lastMessageBytesLocked() == received {
-			a.releaseHeldTextLocked()
-			a.publishProgressLocked()
-			return
+		if publish {
+			a.changedLocked()
+			a.bg.Add(1)
 		}
-		a.deliverTextLocked()
+		a.mu.Unlock()
+		if publish {
+			defer a.bg.Done()
+			_ = a.persist()
+		}
 	})
 }
 
@@ -144,11 +152,6 @@ func (a *ACP) releaseHeldTextLocked() {
 	a.heldBytes = 0
 	a.publishMessageLocked(len(a.state.Messages) - 1)
 	a.lastTextDelivery = time.Now()
-}
-
-func (a *ACP) publishProgressLocked() {
-	_ = a.persistLocked()
-	a.changedLocked()
 }
 
 func (a *ACP) lastMessageBytesLocked() int {

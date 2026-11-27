@@ -99,6 +99,7 @@ type Manager struct {
 	repoBrowserBarriers  map[string]*repoBrowserBarrier
 	transportPolicyMu    sync.RWMutex
 	allowInsecureHTTP    map[string]struct{}
+	blockRemoteNetwork   bool
 
 	// Deterministic synchronization and failure-injection hooks for
 	// repository-browser concurrency tests and clone cleanup tests. Tests set
@@ -225,6 +226,22 @@ func (m *Manager) AllowsInsecureHTTP(platform, host string) bool {
 	defer m.transportPolicyMu.RUnlock()
 	_, ok := m.allowInsecureHTTP[key]
 	return ok
+}
+
+// SetBlockRemoteNetwork rejects non-local Git clone and fetch URLs before
+// spawning git. Offline fixtures enable this so synthetic repository URLs
+// never dial external hosts while local paths, file:// remotes, loopback
+// endpoints, and explicitly permitted insecure HTTP proxies keep working.
+func (m *Manager) SetBlockRemoteNetwork(blocked bool) {
+	m.transportPolicyMu.Lock()
+	defer m.transportPolicyMu.Unlock()
+	m.blockRemoteNetwork = blocked
+}
+
+func (m *Manager) blocksRemoteNetwork() bool {
+	m.transportPolicyMu.RLock()
+	defer m.transportPolicyMu.RUnlock()
+	return m.blockRemoteNetwork
 }
 
 func insecureHTTPPolicyKey(platform, host string) string {
@@ -735,17 +752,13 @@ func (m *Manager) restoreExistingClone(
 }
 
 func (m *Manager) validateRemoteTransport(platform, host, remoteURL string) error {
-	u, err := url.Parse(strings.TrimSpace(remoteURL))
+	trimmed := strings.TrimSpace(remoteURL)
+	u, err := url.Parse(trimmed)
 	if err == nil && strings.EqualFold(u.Scheme, "http") {
 		if m.AllowsInsecureHTTP(platform, host) {
 			return nil
 		}
-		hostname := strings.Trim(strings.ToLower(u.Hostname()), "[]")
-		if !strings.EqualFold(strings.TrimSpace(platform), "gitea") && hostname == "localhost" {
-			return nil
-		}
-		if ip := net.ParseIP(hostname); !strings.EqualFold(strings.TrimSpace(platform), "gitea") &&
-			ip != nil && ip.IsLoopback() {
+		if !strings.EqualFold(strings.TrimSpace(platform), "gitea") && isLoopbackHostname(u.Hostname()) {
 			return nil
 		}
 		return fmt.Errorf(
@@ -753,7 +766,71 @@ func (m *Manager) validateRemoteTransport(platform, host, remoteURL string) erro
 			strings.ToLower(strings.TrimSpace(platform)), host,
 		)
 	}
+	if m.blocksRemoteNetwork() && isNonLocalRemoteURL(trimmed, u, err) {
+		return fmt.Errorf("remote git transport disabled for %s", trimmed)
+	}
 	return nil
+}
+
+// validateConfiguredRemoteNetwork applies the remote-network block to the
+// fetch and push URLs Git resolves for a named remote of an existing
+// repository, which validateRemoteTransport alone never sees because those
+// commands name the remote instead of passing its URL.
+func (m *Manager) validateConfiguredRemoteNetwork(
+	ctx context.Context, platform, host, dir, remote string,
+) error {
+	if !m.blocksRemoteNetwork() {
+		return nil
+	}
+	for _, args := range [][]string{
+		{"remote", "get-url", "--all", "--", remote},
+		{"remote", "get-url", "--push", "--all", "--", remote},
+	} {
+		out, err := m.git(ctx, dir, args...)
+		if err != nil {
+			return fmt.Errorf("read remote %q URL before networked git: %w", remote, err)
+		}
+		for remoteURL := range strings.FieldsSeq(string(out)) {
+			if err := m.validateRemoteTransport(platform, host, remoteURL); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func isLoopbackHostname(raw string) bool {
+	hostname := strings.Trim(strings.ToLower(raw), "[]")
+	if hostname == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(hostname)
+	return ip != nil && ip.IsLoopback()
+}
+
+func isNonLocalRemoteURL(trimmed string, u *url.URL, parseErr error) bool {
+	if parseErr == nil && u != nil && u.Scheme != "" {
+		if strings.EqualFold(u.Scheme, "file") {
+			return false
+		}
+		// Single-letter scheme with no host is a Windows drive path (e.g. C:\repo).
+		if len(u.Scheme) == 1 && u.Host == "" {
+			return false
+		}
+		if u.Host != "" && isLoopbackHostname(u.Hostname()) {
+			return false
+		}
+		return true
+	}
+	if !strings.Contains(trimmed, "://") {
+		if colon := strings.IndexByte(trimmed, ':'); colon > 1 {
+			prefix := trimmed[:colon]
+			if !strings.ContainsAny(prefix, `/\`) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validateEnsureCloneCaller(
@@ -1063,6 +1140,9 @@ func (m *Manager) cloneBare(
 func (m *Manager) fetch(
 	ctx context.Context, platform, host, owner, name, clonePath string,
 ) error {
+	if err := m.validateConfiguredRemoteNetwork(ctx, platform, host, clonePath, "origin"); err != nil {
+		return fmt.Errorf("git fetch: %w", err)
+	}
 	// GitHub's smart-HTTP endpoint sporadically returns 5xx on /info/refs.
 	// Retry inline so a transient blip does not drop the entire sync cycle.
 	_, err := retryTransient(ctx, "git fetch", func() ([]byte, error) {
@@ -1206,6 +1286,9 @@ func (m *Manager) runGitForCloneStore(
 			return nil, err
 		}
 	}
+	if err := m.validateConfiguredRemoteNetwork(ctx, platform, host, dir, "origin"); err != nil {
+		return nil, err
+	}
 	return withCloneWorktreeLock(ctx, dir, func() ([]byte, error) {
 		return m.gitNetworked(ctx, source, platform, host, dir, nil, args...)
 	})
@@ -1233,6 +1316,9 @@ func (m *Manager) RunGitForRepoRemote(
 		if err := m.validateRemoteIdentity(ctx, dir, remote, platform, host, owner, name); err != nil {
 			return nil, err
 		}
+	}
+	if err := m.validateConfiguredRemoteNetwork(ctx, platform, host, dir, remote); err != nil {
+		return nil, err
 	}
 	return m.gitNetworked(ctx, source, platform, host, dir, nil, args...)
 }

@@ -170,19 +170,24 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 			srv.bg.Wait()
 			require.EqualValues(t, 2, timelineCalls.Load())
 			var change syncevents.Event
+			var detailRefresh syncevents.Event
 		drain:
 			for {
 				select {
 				case event := <-events:
-					if event.Event.Type == "data_changed" {
+					switch event.Event.Type {
+					case "data_changed":
 						require.Empty(t, change.Type, "extra data_changed event")
 						change = event.Event
+					case "pr_detail_refreshed":
+						detailRefresh = event.Event
 					}
 				default:
 					break drain
 				}
 			}
 			require.Equal(t, tc.queue, change.Type == "data_changed", "unexpected refresh event")
+			require.Equal(t, tc.queue, detailRefresh.Type == "pr_detail_refreshed", "unexpected pr_detail_refreshed event")
 			if !tc.queue {
 				return
 			}
@@ -210,4 +215,64 @@ func TestEnqueuePRSyncBroadcastsSnapshotChanges(t *testing.T) {
 			}, syncevents.DataChangedInterval+200*time.Millisecond, 10*time.Millisecond, "extra data_changed event")
 		})
 	}
+}
+
+func TestEnqueuePRSyncBroadcastsPRDetailRefreshedOnInitialHydration(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	when := gh.Timestamp{Time: time.Now().UTC().Add(time.Minute).Truncate(time.Second)}
+	state := "open"
+	mock := &serverfake.MockGH{
+		GetPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			return &gh.PullRequest{
+				ID:        new(int64(1000)),
+				Number:    &number,
+				State:     &state,
+				Title:     new("Example pull"),
+				Body:      new("body"),
+				CreatedAt: &when,
+				UpdatedAt: &when,
+				Head:      &gh.PullRequestBranch{SHA: new("abc123"), Ref: new("feature")},
+				Base:      &gh.PullRequestBranch{Ref: new("main")},
+			}, nil
+		},
+	}
+	srv, database, _ := setupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 1)
+
+	events, _ := srv.hub.Subscribe(t.Context(), false)
+	input := &itemapi.RepoNumberInput{Provider: "github", Owner: "acme", Name: "widget", Number: 1}
+	_, err := srv.activityapi.EnqueuePRSync(t.Context(), input)
+	require.NoError(t, err)
+	srv.bg.Wait()
+
+	var refreshPayload struct {
+		Provider     string `json:"provider"`
+		PlatformHost string `json:"platform_host"`
+		RepoPath     string `json:"repo_path"`
+		Owner        string `json:"owner"`
+		Name         string `json:"name"`
+		Number       int    `json:"number"`
+	}
+	foundRefresh := false
+drain:
+	for {
+		select {
+		case event := <-events:
+			if event.Event.Type == "pr_detail_refreshed" {
+				raw, marshalErr := json.Marshal(event.Event.Data)
+				require.NoError(t, marshalErr)
+				require.NoError(t, json.Unmarshal(raw, &refreshPayload))
+				foundRefresh = true
+			}
+		default:
+			break drain
+		}
+	}
+	require.True(t, foundRefresh, "initial detail hydration must broadcast pr_detail_refreshed")
+	assert.Equal(t, "github", refreshPayload.Provider)
+	assert.Equal(t, "github.com", refreshPayload.PlatformHost)
+	assert.Equal(t, "acme/widget", refreshPayload.RepoPath)
+	assert.Equal(t, "acme", refreshPayload.Owner)
+	assert.Equal(t, "widget", refreshPayload.Name)
+	assert.Equal(t, 1, refreshPayload.Number)
 }

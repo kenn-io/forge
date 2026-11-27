@@ -222,3 +222,99 @@ func TestValidateRemoteTransportAllowsLoopbackHTTPWithoutPlatformPolicy(t *testi
 		"http://127.0.0.1:3000/acme/widget.git",
 	))
 }
+
+func TestSetBlockRemoteNetworkRejectsNonLocalRemotes(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	mgr := New(t.TempDir(), nil)
+	mgr.SetBlockRemoteNetwork(true)
+
+	for _, blocked := range []struct {
+		platform, host, owner, name, remote string
+	}{
+		{"github", "github.com", "acme", "tools", "https://github.com/acme/tools.git"},
+		{"github", "github.com", "acme", "tools", "ssh://git@github.com/acme/tools.git"},
+		{"github", "github.com", "acme", "tools", "git@github.com:acme/tools.git"},
+	} {
+		err := mgr.EnsureClone(
+			t.Context(), blocked.platform, blocked.host, blocked.owner, blocked.name, blocked.remote,
+		)
+		require.Error(err, "expected remote %q to be blocked", blocked.remote)
+		assert.Contains(err.Error(), "remote git transport disabled")
+	}
+
+	// Local paths, file URLs, loopback URLs, and explicitly allowed insecure
+	// HTTP proxies remain permitted.
+	require.NoError(mgr.validateRemoteTransport("github", "github.com", "/tmp/acme/widgets.git"))
+	require.NoError(mgr.validateRemoteTransport("github", "github.com", "file:///tmp/acme/widgets.git"))
+	require.NoError(mgr.validateRemoteTransport("github", "127.0.0.1:3000", "https://127.0.0.1:3000/acme/tools.git"))
+	require.NoError(mgr.validateRemoteTransport("github", "127.0.0.1:3000", "http://127.0.0.1:3000/acme/tools.git"))
+
+	mgr.SetAllowInsecureHTTP("github", "github.com", true)
+	require.NoError(mgr.validateRemoteTransport("github", "github.com", "http://github.com/forker/widgets.git"))
+}
+
+func TestSetBlockRemoteNetworkRejectsFetchesFromExternalOrigins(t *testing.T) {
+	t.Parallel()
+	mgr := New(t.TempDir(), nil)
+	mgr.SetBlockRemoteNetwork(true)
+	clonePath, err := mgr.ClonePath("github", "github.com", "acme", "tools")
+	require.NoError(t, err)
+	commitTestRun(t, t.TempDir(), "git", "init", "--bare", clonePath)
+	commitTestRun(t, clonePath, "git", "remote", "add", "origin", "https://github.com/acme/tools.git")
+
+	fetches := map[string]func() error{
+		"clone refresh": func() error {
+			return mgr.fetch(t.Context(), "github", "github.com", "acme", "tools", clonePath)
+		},
+		"merge request head": func() error {
+			return mgr.FetchMergeRequestHead(t.Context(), "github", "github.com", "acme", "tools", 2)
+		},
+		"named remote": func() error {
+			_, err := mgr.RunGitForRepo(
+				t.Context(), "github", "github.com", "acme", "tools", clonePath, "fetch", "origin",
+			)
+			return err
+		},
+	}
+	for name, fetch := range fetches {
+		err := fetch()
+		require.Error(t, err, name)
+		assert.Contains(t, err.Error(), "remote git transport disabled for https://github.com/acme/tools.git", name)
+	}
+}
+
+func TestSetBlockRemoteNetworkRejectsExternalPushURL(t *testing.T) {
+	t.Parallel()
+	mgr := New(t.TempDir(), nil)
+	mgr.SetBlockRemoteNetwork(true)
+	dir := filepath.Join(t.TempDir(), "repo.git")
+	commitTestRun(t, t.TempDir(), "git", "init", "--bare", dir)
+	commitTestRun(t, dir, "git", "remote", "add", "origin", filepath.Join(t.TempDir(), "remote.git"))
+	commitTestRun(t, dir, "git", "remote", "set-url", "--push", "origin", "git@github.com:acme/tools.git")
+
+	_, err := mgr.RunGitForRepo(
+		t.Context(), "github", "github.com", "acme", "tools", dir, "push", "origin", "main",
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "remote git transport disabled for git@github.com:acme/tools.git")
+}
+
+func TestSetBlockRemoteNetworkAllowsFetchesFromLocalOrigins(t *testing.T) {
+	t.Parallel()
+	remote, mergeBase, _ := setupCommitTestRepo(t)
+	mgr := New(t.TempDir(), nil)
+	mgr.SetBlockRemoteNetwork(true)
+	dir := filepath.Join(t.TempDir(), "repo.git")
+	commitTestRun(t, t.TempDir(), "git", "clone", "--bare", remote, dir)
+
+	_, err := mgr.RunGitForRepo(
+		t.Context(), "github", "github.com", "acme", "tools", dir,
+		"fetch", "origin", "+refs/heads/main:refs/heads/fetched",
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, mergeBase, gitSHA(t, dir, "refs/heads/fetched"))
+}

@@ -1304,3 +1304,41 @@ func TestE2EServerMainIgnoresCallerGitSettings(t *testing.T) {
 	_, err = os.Stat(marker)
 	require.ErrorIs(err, os.ErrNotExist)
 }
+
+func TestE2EServerBlocksRemoteGitClonesAndHydratesToolsPR2(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	assets, err := web.Assets()
+	require.NoError(err)
+	state, err := buildAppState(t.Context(), assets, appOptions{roborevEndpoint: defaultRoborevEndpoint})
+	require.NoError(err)
+	t.Cleanup(state.close)
+
+	cloneErr := state.clones.EnsureClone(
+		t.Context(), "github", "github.com", "acme", "tools", "https://github.com/acme/tools.git",
+	)
+	require.Error(cloneErr)
+	assert.Contains(cloneErr.Error(), "remote git transport disabled")
+
+	syncReq := httptest.NewRequestWithContext(
+		t.Context(), http.MethodPost, "http://127.0.0.1/api/v1/pulls/github/acme/tools/2/sync/async", nil,
+	)
+	syncRec := httptest.NewRecorder()
+	state.handler.ServeHTTP(syncRec, syncReq)
+	require.Equal(http.StatusAccepted, syncRec.Code, syncRec.Body.String())
+
+	require.Eventually(func() bool {
+		getReq := httptest.NewRequestWithContext(
+			t.Context(), http.MethodGet, "http://127.0.0.1/api/v1/pulls/github/acme/tools/2", nil,
+		)
+		getRec := httptest.NewRecorder()
+		state.handler.ServeHTTP(getRec, getReq)
+		if getRec.Code != http.StatusOK {
+			return false
+		}
+		var detail struct {
+			DetailLoaded bool `json:"detail_loaded"`
+		}
+		return json.Unmarshal(getRec.Body.Bytes(), &detail) == nil && detail.DetailLoaded
+	}, 5*time.Second, 20*time.Millisecond, "acme/tools#2 should hydrate locally without remote git network access")
+}

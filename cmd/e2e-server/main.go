@@ -1715,6 +1715,10 @@ func buildAppState(
 	if err != nil {
 		return nil, fmt.Errorf("setup diff repo: %w", err)
 	}
+	// Block remote Git fetches so synthetic repository clone URLs (such as
+	// https://github.com/acme/tools.git) fail immediately without dialing
+	// external hosts during E2E runs.
+	diffRepo.Manager.SetBlockRemoteNetwork(true)
 	e2eWorktreeDir := filepath.Join(tmpDir, "worktrees")
 
 	repos := []config.Repo{

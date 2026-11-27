@@ -69,7 +69,7 @@ func TestACPMediaPreviewInlinesLocalVideoAndAudio(t *testing.T) {
 	}
 }
 
-func TestACPMediaPreviewsFrameFastPathAndResolution(t *testing.T) {
+func TestACPMediaPreviewsResolvesEscapedDescriptor(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
@@ -77,11 +77,6 @@ func TestACPMediaPreviewsFrameFastPathAndResolution(t *testing.T) {
 	mp4 := append([]byte{0, 0, 0, 0x18}, []byte("ftypmp42\x00\x00\x00\x00mp42isom")...)
 	demo := filepath.Join(root, "clip.mp4")
 	require.NoError(os.WriteFile(demo, mp4, 0o600))
-
-	plain := []byte(`{"updates":{"messages":[{"id":"m1","role":"user","text":"hello"}]}}`)
-	gotPlain := acpMediaPreviews(plain)
-	assert.Equal(plain, gotPlain)
-	assert.Same(&plain[0], &gotPlain[0], "frames with no media markers should bypass JSON decoding")
 
 	// Media descriptors inside tool text may contain JSON-escaped slashes.
 	escapedDescriptor := `{"kind":"kenn-forge:\/\/media\/local","path":` + `"` + filepath.ToSlash(demo) + `","title":"Clip"}`

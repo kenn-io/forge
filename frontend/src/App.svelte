@@ -73,6 +73,7 @@
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { isSafeExternalHTTPURL } from "./lib/utils/safe-external-url.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
+  import ItemReferencePopover from "./lib/components/shared/ItemReferencePopover.svelte";
   import { initMarkdownVideoFallback } from "./lib/utils/markdown-video-fallback.js";
   import { initMarkdownVideoToggle } from "./lib/utils/markdown-video-toggle.js";
   import { isPhoneLikeViewport as isPhoneLikePresentation } from "./lib/utils/phone-presentation.js";
@@ -1727,6 +1728,24 @@
   {/if}
 
     {#if !onboardingActive}
+      <ItemReferencePopover
+        getConfiguredRepos={() => stores?.settings.getConfiguredRepos() ?? []}
+        getCurrentItem={() => {
+          const current = getRoute();
+          if (current.page === "activity" && drawerItem) return drawerItem;
+          if ((current.page === "pulls" || current.page === "queues") && current.selected) {
+            return { itemType: "pr", ...current.selected };
+          }
+          if (current.page === "issues" && current.selected) {
+            return { itemType: "issue", ...current.selected };
+          }
+          if (current.page === "focus" && (current.itemType === "pr" || current.itemType === "issue")) {
+            return current;
+          }
+          return null;
+        }}
+        onOpenItem={handleItemReference}
+      />
       <Palette
         docsSearch={docsAPI.searchAll}
         onOpenDoc={openDoc}

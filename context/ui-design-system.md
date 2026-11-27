@@ -392,6 +392,10 @@ activity"), checked when active; no default-state row, radio pair, or opaque lab
   verify in both workspace and PR panes and keep markers visible on uncovered edges.
 - Popover chrome comes from `kit-popover-card`; never re-declare it in scoped styles.
   A `var()` of an undefined token (there is no `--bg-elevated`) silently computes to transparent.
+- `ItemReferencePopover` mounts once in the app shell and previews tracked pull request and issue
+  links on hover dwell (450ms) or keyboard focus without leaving the current page, reusing
+  `ItemStateChip`, `PullStatusTokens`, `DiffStats`, and `ColorLabel`. It never opens for untracked
+  repositories or touch taps.
 - A popover that lowers its min-content width (`overflow-wrap: anywhere`) leaks it to
   nested surfaces; reset `overflow-wrap`/`word-break` at the nested popover's root.
 - Narrow workspace headers keep identity and Launch visible; secondary controls go in

@@ -7,6 +7,7 @@ import { NAVIGATE_KEY, STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
 import { readMobileListOrigin } from "../stores/mobile-list-return.js";
 import { navigate, replaceUrl } from "../stores/router.svelte.js";
+import { createGroupingStore } from "../stores/grouping.svelte.js";
 import { createSettingsStore } from "../stores/settings.svelte.js";
 import { createWorklistsStore } from "../stores/worklists.svelte.js";
 import type { NavigateCallback } from "../types.js";
@@ -38,7 +39,10 @@ function renderView(path: string, server: WorklistServer) {
   navigate(path);
   render(MobileWorklistView, {
     context: new Map<symbol, unknown>([
-      [STORES_KEY, { worklists: createWorklistsStore(), settings: createSettingsStore() }],
+      [
+        STORES_KEY,
+        { worklists: createWorklistsStore(), settings: createSettingsStore(), grouping: createGroupingStore() },
+      ],
       [NAVIGATE_KEY, appNavigate],
     ]),
   });
@@ -111,6 +115,30 @@ describe("MobileWorklistView", () => {
 
     // The search lives for the page; clear it for later tests.
     await fireEvent.input(screen.getByRole("searchbox", { name: "Filter worklist items" }), { target: { value: "" } });
+    expect(rowTitles()).toHaveLength(3);
+  });
+
+  it("filters rows from the Filters panel and keeps the filters after Back remounts the list", async () => {
+    renderView("/m/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+
+    const toggle = screen.getByRole("button", { name: "Filters" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    await fireEvent.click(toggle);
+    const panel = screen.getByLabelText("Worklist filters");
+    await fireEvent.click(within(panel).getByRole("combobox", { name: "Conflicts: Any" }));
+    await fireEvent.click(screen.getByRole("option", { name: "Merge conflicts" }));
+
+    expect(rowTitles()).toEqual(["Mirror host stub PR"]);
+    expect(screen.getByRole("button", { name: "Filters (1 on)" }).getAttribute("aria-pressed")).toBe("true");
+
+    cleanup();
+    renderView("/m/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toEqual(["Mirror host stub PR"]));
+
+    // The filters live for the page; clear them for later tests.
+    await fireEvent.click(screen.getByRole("button", { name: "Filters (1 on)" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(rowTitles()).toHaveLength(3);
   });
 

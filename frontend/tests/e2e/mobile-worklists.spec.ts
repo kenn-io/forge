@@ -75,6 +75,40 @@ test("phone menu opens a worklist whose items round-trip through phone detail", 
   await expect(row).toBeVisible();
 });
 
+test("the phone Filters button opens the worklist filters beside the search", async ({ page }, testInfo) => {
+  const server: WorklistServer = { lists: [worklistResponse(5, "Review queue")], requests: [] };
+  await mockApi(page);
+  await routeWorklists(page, server);
+
+  await page.goto("/m/worklists/5");
+  const items = page.getByRole("region", { name: "Review queue items" });
+  await expect(items.getByRole("button", { name: "Theme toggle does not stick" })).toBeVisible();
+
+  const width = page.viewportSize()!.width;
+  const search = page.getByRole("searchbox", { name: "Filter worklist items" });
+  const toggle = page.getByRole("button", { name: "Filters", exact: true });
+  const searchBox = (await search.boundingBox())!;
+  const toggleBox = (await toggle.boundingBox())!;
+  // One row: the button sits right of the search, inside the phone width.
+  expect(toggleBox.x).toBeGreaterThan(searchBox.x + searchBox.width - 1);
+  expect(Math.abs(toggleBox.y + toggleBox.height / 2 - (searchBox.y + searchBox.height / 2))).toBeLessThan(2);
+  expect(toggleBox.x + toggleBox.width).toBeLessThanOrEqual(width);
+
+  await toggle.click();
+  const panel = page.getByLabel("Worklist filters");
+  await expect(panel).toBeVisible();
+  await panel.getByRole("combobox", { name: "Conflicts: Any" }).click();
+  await page.getByRole("option", { name: "Merge conflicts", exact: true }).click();
+
+  await expect(items.getByRole("button", { name: "Theme toggle does not stick" })).toHaveCount(0);
+  await expect(items.getByRole("button", { name: "Mirror host stub PR" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Filters (1 on)" })).toHaveAttribute("aria-pressed", "true");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  const panelBox = (await panel.boundingBox())!;
+  expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(width);
+  await page.screenshot({ path: testInfo.outputPath("phone-worklist-filters.png"), fullPage: false });
+});
+
 test("Back from a phone worklist item lands on the same rows", async ({ page }) => {
   const list = worklistResponse(5, "Review queue");
   const template = list.items[0]!;

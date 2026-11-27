@@ -387,7 +387,7 @@ test("Forgejo setup returns from repository settings and syncs the complete prov
     await dialog.getByRole("button", { name: "Add selected repositories" }).click();
     await page.getByRole("button", { name: "Back to app" }).click();
 
-    await expect(page.getByRole("heading", { name: "First sync is underway" })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: "Open a pull request" })).toBeVisible({ timeout: 30_000 });
     const settingsResponse = await page.request.get(`${server.info.base_url}/api/v1/settings`);
     expect(settingsResponse.ok()).toBe(true);
     const settings = (await settingsResponse.json()) as { repos: ConfiguredRepo[] };

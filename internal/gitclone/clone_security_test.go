@@ -254,3 +254,67 @@ func TestSetBlockRemoteNetworkRejectsNonLocalRemotes(t *testing.T) {
 	mgr.SetAllowInsecureHTTP("github", "github.com", true)
 	require.NoError(mgr.validateRemoteTransport("github", "github.com", "http://github.com/forker/widgets.git"))
 }
+
+func TestSetBlockRemoteNetworkRejectsFetchesFromExternalOrigins(t *testing.T) {
+	t.Parallel()
+	mgr := New(t.TempDir(), nil)
+	mgr.SetBlockRemoteNetwork(true)
+	clonePath, err := mgr.ClonePath("github", "github.com", "acme", "tools")
+	require.NoError(t, err)
+	commitTestRun(t, t.TempDir(), "git", "init", "--bare", clonePath)
+	commitTestRun(t, clonePath, "git", "remote", "add", "origin", "https://github.com/acme/tools.git")
+
+	fetches := map[string]func() error{
+		"clone refresh": func() error {
+			return mgr.fetch(t.Context(), "github", "github.com", "acme", "tools", clonePath)
+		},
+		"merge request head": func() error {
+			return mgr.FetchMergeRequestHead(t.Context(), "github", "github.com", "acme", "tools", 2)
+		},
+		"named remote": func() error {
+			_, err := mgr.RunGitForRepo(
+				t.Context(), "github", "github.com", "acme", "tools", clonePath, "fetch", "origin",
+			)
+			return err
+		},
+	}
+	for name, fetch := range fetches {
+		err := fetch()
+		require.Error(t, err, name)
+		assert.Contains(t, err.Error(), "remote git transport disabled for https://github.com/acme/tools.git", name)
+	}
+}
+
+func TestSetBlockRemoteNetworkRejectsExternalPushURL(t *testing.T) {
+	t.Parallel()
+	mgr := New(t.TempDir(), nil)
+	mgr.SetBlockRemoteNetwork(true)
+	dir := filepath.Join(t.TempDir(), "repo.git")
+	commitTestRun(t, t.TempDir(), "git", "init", "--bare", dir)
+	commitTestRun(t, dir, "git", "remote", "add", "origin", filepath.Join(t.TempDir(), "remote.git"))
+	commitTestRun(t, dir, "git", "remote", "set-url", "--push", "origin", "git@github.com:acme/tools.git")
+
+	_, err := mgr.RunGitForRepo(
+		t.Context(), "github", "github.com", "acme", "tools", dir, "push", "origin", "main",
+	)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "remote git transport disabled for git@github.com:acme/tools.git")
+}
+
+func TestSetBlockRemoteNetworkAllowsFetchesFromLocalOrigins(t *testing.T) {
+	t.Parallel()
+	remote, mergeBase, _ := setupCommitTestRepo(t)
+	mgr := New(t.TempDir(), nil)
+	mgr.SetBlockRemoteNetwork(true)
+	dir := filepath.Join(t.TempDir(), "repo.git")
+	commitTestRun(t, t.TempDir(), "git", "clone", "--bare", remote, dir)
+
+	_, err := mgr.RunGitForRepo(
+		t.Context(), "github", "github.com", "acme", "tools", dir,
+		"fetch", "origin", "+refs/heads/main:refs/heads/fetched",
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, mergeBase, gitSHA(t, dir, "refs/heads/fetched"))
+}

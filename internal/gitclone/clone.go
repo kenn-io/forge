@@ -772,6 +772,33 @@ func (m *Manager) validateRemoteTransport(platform, host, remoteURL string) erro
 	return nil
 }
 
+// validateConfiguredRemoteNetwork applies the remote-network block to the
+// fetch and push URLs Git resolves for a named remote of an existing
+// repository, which validateRemoteTransport alone never sees because those
+// commands name the remote instead of passing its URL.
+func (m *Manager) validateConfiguredRemoteNetwork(
+	ctx context.Context, platform, host, dir, remote string,
+) error {
+	if !m.blocksRemoteNetwork() {
+		return nil
+	}
+	for _, args := range [][]string{
+		{"remote", "get-url", "--all", "--", remote},
+		{"remote", "get-url", "--push", "--all", "--", remote},
+	} {
+		out, err := m.git(ctx, dir, args...)
+		if err != nil {
+			return fmt.Errorf("read remote %q URL before networked git: %w", remote, err)
+		}
+		for remoteURL := range strings.FieldsSeq(string(out)) {
+			if err := m.validateRemoteTransport(platform, host, remoteURL); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func isLoopbackHostname(raw string) bool {
 	hostname := strings.Trim(strings.ToLower(raw), "[]")
 	if hostname == "localhost" {
@@ -1113,6 +1140,9 @@ func (m *Manager) cloneBare(
 func (m *Manager) fetch(
 	ctx context.Context, platform, host, owner, name, clonePath string,
 ) error {
+	if err := m.validateConfiguredRemoteNetwork(ctx, platform, host, clonePath, "origin"); err != nil {
+		return fmt.Errorf("git fetch: %w", err)
+	}
 	// GitHub's smart-HTTP endpoint sporadically returns 5xx on /info/refs.
 	// Retry inline so a transient blip does not drop the entire sync cycle.
 	_, err := retryTransient(ctx, "git fetch", func() ([]byte, error) {
@@ -1256,6 +1286,9 @@ func (m *Manager) runGitForCloneStore(
 			return nil, err
 		}
 	}
+	if err := m.validateConfiguredRemoteNetwork(ctx, platform, host, dir, "origin"); err != nil {
+		return nil, err
+	}
 	return withCloneWorktreeLock(ctx, dir, func() ([]byte, error) {
 		return m.gitNetworked(ctx, source, platform, host, dir, nil, args...)
 	})
@@ -1283,6 +1316,9 @@ func (m *Manager) RunGitForRepoRemote(
 		if err := m.validateRemoteIdentity(ctx, dir, remote, platform, host, owner, name); err != nil {
 			return nil, err
 		}
+	}
+	if err := m.validateConfiguredRemoteNetwork(ctx, platform, host, dir, remote); err != nil {
+		return nil, err
 	}
 	return m.gitNetworked(ctx, source, platform, host, dir, nil, args...)
 }

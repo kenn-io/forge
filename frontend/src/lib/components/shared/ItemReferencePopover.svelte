@@ -554,15 +554,22 @@
     };
   }
 
-  function handleTitleClick(event: MouseEvent, preview: ItemPreview): void {
+  function handleTitleClick(event: MouseEvent, ref: ResolvableItemReference, preview: ItemPreview): void {
     const plainClick =
       event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
     if (!plainClick) return;
     event.preventDefault();
     const anchor = activeAnchor;
     const item = routableItemForPreview(preview);
+    const repos = getCachedRepositories();
+    const replayAnchorClick =
+      anchor !== null &&
+      anchor.isConnected &&
+      (!anchor.target || anchor.target.toLowerCase() === "_self") &&
+      repos !== undefined &&
+      isTrackedItemReference(ref, repos);
     hide();
-    if (anchor?.isConnected) {
+    if (replayAnchorClick) {
       anchor.click();
     } else {
       onOpenItem?.(item);
@@ -626,7 +633,7 @@
     {:else if card.kind === "not-synced"}
       <div class="item-ref-popover__status-row">
         <span class="item-ref-popover__status-ref">{card.ref.repoPath} #{card.ref.number}</span>
-        <span class="item-ref-popover__status-msg">Not synced in Forge yet. Open the link to view it on the provider.</span>
+        <span class="item-ref-popover__status-msg">Not synced yet. Open the link to see it on the provider.</span>
       </div>
     {:else if card.kind === "not-found"}
       <div class="item-ref-popover__status-row">
@@ -640,9 +647,10 @@
       </div>
     {:else if loadedPreview}
       {@const item = loadedPreview.kind === "pr" ? loadedPreview.pull : loadedPreview.issue}
+      {@const cardRef = card.ref}
       {@const timestamp = itemTimestamp(loadedPreview)}
       {@const itemHref = buildItemReferenceHref({
-        ...card.ref,
+        ...cardRef,
         itemType: loadedPreview.kind,
       })}
 
@@ -662,7 +670,7 @@
       <a
         class="item-ref-popover__title"
         href={itemHref}
-        onclick={(event) => handleTitleClick(event, loadedPreview)}
+        onclick={(event) => handleTitleClick(event, cardRef, loadedPreview)}
       >
         {item.Title}
       </a>
@@ -794,8 +802,9 @@
 
   .item-ref-popover__status-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-1) var(--space-2);
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
   }
@@ -806,12 +815,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    max-width: 100%;
   }
 
   .item-ref-popover__status-msg {
     color: var(--text-muted);
     margin-left: auto;
-    flex-shrink: 0;
+    min-width: 0;
   }
 
   .item-ref-popover__eyebrow {

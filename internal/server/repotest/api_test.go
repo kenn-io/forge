@@ -22,6 +22,7 @@ import (
 	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/apiclient"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
@@ -1248,9 +1249,9 @@ func TestResolveItem_UsesItemTypeHintForBitbucketCloud(t *testing.T) {
 	}
 }
 
-// resolveGitealikeTransport wraps ApiTestGitealikeTransport so missing PRs and
-// issues return *gitealike.HTTPError{StatusCode: 404} like the real Forgejo and
-// Gitea transports, driving gitealike.Provider's ErrLookupNotPresent and
+// resolveGitealikeTransport wraps ApiTestGitealikeTransport so missing PRs
+// return *gitealike.HTTPError{StatusCode: 404} like the real Forgejo and Gitea
+// transports, driving gitealike.Provider's ErrLookupNotPresent and
 // ErrRepositoryFeatureDisabled classification.
 type resolveGitealikeTransport struct {
 	*serverfake.ApiTestGitealikeTransport
@@ -1262,29 +1263,11 @@ func (t *resolveGitealikeTransport) GetPullRequest(
 	ref platform.RepoRef,
 	number int,
 ) (gitealike.PullRequestDTO, error) {
-	if t.Repo.MergeRequestsEnabled != nil && !*t.Repo.MergeRequestsEnabled {
-		return gitealike.PullRequestDTO{}, &gitealike.HTTPError{StatusCode: http.StatusNotFound, Message: "pull requests disabled"}
-	}
 	pr, err := t.ApiTestGitealikeTransport.GetPullRequest(ctx, ref, number)
 	if errors.Is(err, platform.ErrNotFound) {
 		return gitealike.PullRequestDTO{}, &gitealike.HTTPError{StatusCode: http.StatusNotFound, Message: "not found"}
 	}
 	return pr, err
-}
-
-func (t *resolveGitealikeTransport) GetIssue(
-	ctx context.Context,
-	ref platform.RepoRef,
-	number int,
-) (gitealike.IssueDTO, error) {
-	if t.Repo.IssuesEnabled != nil && !*t.Repo.IssuesEnabled {
-		return gitealike.IssueDTO{}, &gitealike.HTTPError{StatusCode: http.StatusNotFound, Message: "issues disabled"}
-	}
-	issue, err := t.ApiTestGitealikeTransport.GetIssue(ctx, ref, number)
-	if errors.Is(err, platform.ErrNotFound) {
-		return gitealike.IssueDTO{}, &gitealike.HTTPError{StatusCode: http.StatusNotFound, Message: "not found"}
-	}
-	return issue, err
 }
 
 func (t *resolveGitealikeTransport) ListPullRequestComments(
@@ -1297,6 +1280,49 @@ func (t *resolveGitealikeTransport) ListPullRequestComments(
 		return nil, gitealike.Page{}, t.pullCommentsErr
 	}
 	return t.ApiTestGitealikeTransport.ListPullRequestComments(ctx, ref, number, opts)
+}
+
+func newGitealikeResolveServer(
+	t *testing.T,
+	kind platform.Kind,
+	host, name string,
+	platformRepoID int64,
+	transport gitealike.Transport,
+) (*db.DB, int64, *apiclient.Client) {
+	t.Helper()
+	require := require.New(t)
+	provider := gitealike.NewProvider(kind, host, transport)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
+		Platform:     string(kind),
+		PlatformHost: host,
+		Owner:        "acme",
+		Name:         name,
+		Key:          platform.RepositoryIDKey(platformRepoID),
+	})
+	require.NoError(err)
+	syncer := ghclient.NewSyncerWithRegistry(
+		registry,
+		database,
+		nil,
+		[]ghclient.RepoRef{{
+			Platform:     kind,
+			PlatformHost: host,
+			Owner:        "acme",
+			Name:         name,
+			RepoPath:     "acme/" + name,
+			Key:          platform.RepositoryIDKey(platformRepoID),
+		}},
+		time.Minute,
+		nil,
+		nil,
+	)
+	t.Cleanup(syncer.Stop)
+	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	return database, repoID, servertest.SetupTestClient(t, srv)
 }
 
 // TestResolveItem_SyncsUnsyncedItemsAcrossProviders verifies on-demand item
@@ -1366,38 +1392,7 @@ func TestResolveItem_SyncsUnsyncedItemsAcrossProviders(t *testing.T) {
 				},
 			}
 			transport := &resolveGitealikeTransport{ApiTestGitealikeTransport: baseTransport}
-			provider := gitealike.NewProvider(kind, host, transport)
-			registry, err := platform.NewRegistry(provider)
-			require.NoError(err)
-			database := dbtest.Open(t)
-			_, err = reposeed.Seed(ctx, database, db.RepoIdentity{
-				Platform:     string(kind),
-				PlatformHost: host,
-				Owner:        "acme",
-				Name:         "widgets",
-				Key:          platform.RepositoryIDKey(101),
-			})
-			require.NoError(err)
-			syncer := ghclient.NewSyncerWithRegistry(
-				registry,
-				database,
-				nil,
-				[]ghclient.RepoRef{{
-					Platform:     kind,
-					PlatformHost: host,
-					Owner:        "acme",
-					Name:         "widgets",
-					RepoPath:     "acme/widgets",
-					Key:          platform.RepositoryIDKey(101),
-				}},
-				time.Minute,
-				nil,
-				nil,
-			)
-			t.Cleanup(syncer.Stop)
-			srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-			t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
-			client := servertest.SetupTestClient(t, srv)
+			_, _, client := newGitealikeResolveServer(t, kind, host, "widgets", 101, transport)
 
 			// Unsynced PR resolves as "pr" even without an item_type hint.
 			prResp, err := client.HTTP.ResolveRepoItemOnHostWithResponse(ctx, &generated.ResolveRepoItemOnHostRequestOptions{
@@ -1483,38 +1478,7 @@ func TestResolveItem_SyncsUnsyncedItemsAcrossProviders(t *testing.T) {
 				}},
 			},
 		}
-		disabledProvider := gitealike.NewProvider(platform.KindForgejo, host, disabledTransport)
-		disabledRegistry, err := platform.NewRegistry(disabledProvider)
-		require.NoError(err)
-		disabledDB := dbtest.Open(t)
-		_, err = reposeed.Seed(ctx, disabledDB, db.RepoIdentity{
-			Platform:     string(platform.KindForgejo),
-			PlatformHost: host,
-			Owner:        "acme",
-			Name:         "issues-only",
-			Key:          platform.RepositoryIDKey(102),
-		})
-		require.NoError(err)
-		disabledSyncer := ghclient.NewSyncerWithRegistry(
-			disabledRegistry,
-			disabledDB,
-			nil,
-			[]ghclient.RepoRef{{
-				Platform:     platform.KindForgejo,
-				PlatformHost: host,
-				Owner:        "acme",
-				Name:         "issues-only",
-				RepoPath:     "acme/issues-only",
-				Key:          platform.RepositoryIDKey(102),
-			}},
-			time.Minute,
-			nil,
-			nil,
-		)
-		t.Cleanup(disabledSyncer.Stop)
-		disabledSrv := server.New(disabledDB, disabledSyncer, nil, "/", nil, server.ServerOptions{})
-		t.Cleanup(func() { serverfake.GracefulShutdown(t, disabledSrv) })
-		disabledClient := servertest.SetupTestClient(t, disabledSrv)
+		_, _, disabledClient := newGitealikeResolveServer(t, platform.KindForgejo, host, "issues-only", 102, disabledTransport)
 
 		issueResp, err := disabledClient.HTTP.ResolveRepoItemOnHostWithResponse(ctx, &generated.ResolveRepoItemOnHostRequestOptions{
 			PathParams: &generated.ResolveRepoItemOnHostPath{
@@ -1573,38 +1537,7 @@ func TestResolveItem_SyncsUnsyncedItemsAcrossProviders(t *testing.T) {
 			},
 			pullCommentsErr: &gitealike.HTTPError{StatusCode: http.StatusNotFound, Message: "comments missing"},
 		}
-		childProvider := gitealike.NewProvider(platform.KindForgejo, host, child404Transport)
-		childRegistry, err := platform.NewRegistry(childProvider)
-		require.NoError(err)
-		childDB := dbtest.Open(t)
-		childRepoID, err := reposeed.Seed(ctx, childDB, db.RepoIdentity{
-			Platform:     string(platform.KindForgejo),
-			PlatformHost: host,
-			Owner:        "acme",
-			Name:         "child-404",
-			Key:          platform.RepositoryIDKey(103),
-		})
-		require.NoError(err)
-		childSyncer := ghclient.NewSyncerWithRegistry(
-			childRegistry,
-			childDB,
-			nil,
-			[]ghclient.RepoRef{{
-				Platform:     platform.KindForgejo,
-				PlatformHost: host,
-				Owner:        "acme",
-				Name:         "child-404",
-				RepoPath:     "acme/child-404",
-				Key:          platform.RepositoryIDKey(103),
-			}},
-			time.Minute,
-			nil,
-			nil,
-		)
-		t.Cleanup(childSyncer.Stop)
-		childSrv := server.New(childDB, childSyncer, nil, "/", nil, server.ServerOptions{})
-		t.Cleanup(func() { serverfake.GracefulShutdown(t, childSrv) })
-		childClient := servertest.SetupTestClient(t, childSrv)
+		childDB, childRepoID, childClient := newGitealikeResolveServer(t, platform.KindForgejo, host, "child-404", 103, child404Transport)
 
 		_, err = childClient.HTTP.ResolveRepoItemOnHostWithResponse(ctx, &generated.ResolveRepoItemOnHostRequestOptions{
 			PathParams: &generated.ResolveRepoItemOnHostPath{

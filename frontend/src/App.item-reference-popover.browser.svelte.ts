@@ -211,8 +211,11 @@ describe("item reference hover popover", () => {
     expect(card.textContent).toContain("reliability");
     expect(card.textContent).toContain("alice");
 
-    // Hover bridge: leaving the link into the popover keeps it open, and leaving the popover closes it.
-    dispatchPointer(link, "pointerout", { relatedTarget: card });
+    // Hover bridge: leaving the link across the gap starts the 200ms close timer,
+    // entering the popover before it fires keeps the card open past 200ms, and
+    // leaving the popover closes it.
+    dispatchPointer(link, "pointerout", { relatedTarget: document.body });
+    await new Promise((resolve) => setTimeout(resolve, 60));
     dispatchPointer(card, "pointerenter");
     await new Promise((resolve) => setTimeout(resolve, 260));
     expect(popoverEl()).not.toBeNull();
@@ -578,6 +581,10 @@ describe("item reference hover popover", () => {
           /^\/api\/v1\/pulls\/github\/acme\/widgets\/205(\/sync\/async)?$/.test(req.url.pathname)
             ? jsonResponse(detailEnvelope(hostPull))
             : null,
+        (req) =>
+          /^\/api\/v1\/pulls\/github\/acme\/hidden-lib\/301(\/sync\/async)?$/.test(req.url.pathname)
+            ? jsonResponse(detailEnvelope(hiddenPull))
+            : null,
         (req) => {
           if (req.method !== "GET" || req.url.pathname !== "/api/v1/pulls") return null;
           if (req.url.searchParams.get("repo") === "github|github.com/acme/hidden-lib") {
@@ -596,5 +603,20 @@ describe("item reference hover popover", () => {
     dispatchPointer(hiddenLink, "pointerover");
     await vi.waitFor(() => expect(popoverEl()).not.toBeNull(), WAIT);
     expect(popoverEl()!.textContent).toContain("Fix hidden repo serialization");
+
+    // Clicking the preview title opens the hidden tracked PR in Forge instead
+    // of replaying anchor.click() through the untracked external fallback.
+    const anchorClickSpy = vi.fn();
+    hiddenLink.addEventListener("click", anchorClickSpy);
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+    const titleLink = popoverEl()!.querySelector<HTMLAnchorElement>(".item-ref-popover__title")!;
+    titleLink.click();
+
+    await vi.waitFor(() => expect(popoverEl()).toBeNull(), WAIT);
+    await vi.waitFor(() => expect(window.location.pathname).toBe("/pulls/github/acme/hidden-lib/301"), WAIT);
+    await vi.waitFor(() => expect(detailTitle()).toContain("Fix hidden repo serialization"), WAIT);
+    expect(anchorClickSpy).not.toHaveBeenCalled();
+    expect(hiddenLink.target).toBe("");
+    expect(openSpy).not.toHaveBeenCalled();
   });
 });

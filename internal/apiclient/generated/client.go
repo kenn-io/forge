@@ -59128,6 +59128,7 @@ type ReceiveAgentHookHeaders struct {
 	XKennForgeAgentStart        *string `json:"X-Kenn-Forge-Agent-Start,omitempty"`
 	XKennForgeHerdrPane         *string `json:"X-Kenn-Forge-Herdr-Pane,omitempty"`
 	XKennForgeHerdrSocket       *string `json:"X-Kenn-Forge-Herdr-Socket,omitempty"`
+	XKennForgeT3CodeThread      *string `json:"X-Kenn-Forge-T3code-Thread,omitempty"`
 }
 
 type StoreDevboxPasteImageHeaders struct {

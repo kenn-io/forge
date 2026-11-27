@@ -14445,6 +14445,10 @@ paths:
           name: X-Kenn-Forge-Herdr-Socket
           schema:
             type: string
+        - in: header
+          name: X-Kenn-Forge-T3code-Thread
+          schema:
+            type: string
       requestBody:
         content:
           application/json:

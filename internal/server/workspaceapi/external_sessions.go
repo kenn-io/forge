@@ -31,8 +31,8 @@ const (
 	// pull request to be noticed; a hook event makes it due at once. It keeps a
 	// session from costing Git processes on every pass.
 	externalSessionRecheckInterval = 30 * time.Second
-	// herdrDeliverTimeout bounds one Herdr CLI call.
-	herdrDeliverTimeout = 30 * time.Second
+	// externalDeliverTimeout bounds one Herdr or T3 Code CLI call.
+	externalDeliverTimeout = 30 * time.Second
 	// externalSessionAdoptionAfterExit is how long a session that ended without a
 	// workspace stays adoptable, since its pull request may sync after the agent
 	// exits.
@@ -190,7 +190,7 @@ func (s *Handler) recordExternalAgentHook(ctx context.Context, agent string, inp
 	if err := s.db.RecordExternalAgentSession(ctx, db.ExternalAgentSession{
 		Agent: agent, SessionID: sessionID, CWD: hook.CWD, TranscriptPath: hook.TranscriptPath,
 		ProcessID: processID, ProcessStart: input.AgentStart,
-		HerdrPaneID: input.HerdrPane, HerdrSocketPath: input.HerdrSocket,
+		HerdrPaneID: input.HerdrPane, HerdrSocketPath: input.HerdrSocket, T3CodeThreadID: input.T3CodeThread,
 		Prompted: hookShowsPrompt(hook),
 	}); err != nil {
 		slog.Warn("record external agent session", "agent", agent, "err", err)
@@ -512,11 +512,15 @@ func (s *Handler) mirrorStatus(
 	if err != nil || current == nil {
 		return localruntime.ACPMirrorStatus{Running: true}
 	}
-	if current.EndedAt != nil || externalProcessGone(*current) {
+	// T3 Code ends an idle thread's agent process and resumes the session for
+	// the thread's next turn, so an exit there never hands the session to Forge.
+	t3Code := current.T3CodeThreadID != ""
+	if !t3Code && (current.EndedAt != nil || externalProcessGone(*current)) {
 		return localruntime.ACPMirrorStatus{TranscriptPath: current.TranscriptPath, Prompted: current.Prompted}
 	}
 	status := localruntime.ACPMirrorStatus{
-		Running: true, Writable: current.HerdrPaneID != "", TranscriptPath: current.TranscriptPath, Prompted: current.Prompted,
+		Running: true, Writable: current.HerdrPaneID != "" || t3Code,
+		TranscriptPath: current.TranscriptPath, Prompted: current.Prompted,
 	}
 	for _, report := range s.agentActivity.LiveReportsForWorkspace(ws.WorktreePath, []string{item.SessionKey}) {
 		switch report.State {
@@ -528,15 +532,20 @@ func (s *Handler) mirrorStatus(
 	return status
 }
 
-// deliverToExternalAgent types a person's prompt or stop into the Herdr pane the
-// agent runs in. The agent's transcript then shows it, the same as if it had
-// been typed there.
+// deliverToExternalAgent sends a person's prompt to the T3 Code thread the agent
+// runs in, or types a prompt or stop into its Herdr pane. The agent's transcript
+// then shows it, the same as if it had been typed there.
 func (s *Handler) deliverToExternalAgent(
 	ctx context.Context, session db.ExternalAgentSession, command localruntime.ACPCommand,
 ) error {
 	current, err := s.db.GetExternalAgentSession(ctx, session.Agent, session.SessionID)
 	if err != nil {
 		return err
+	}
+	// A T3 Code server started in a Herdr pane passes that pane to its agents,
+	// so the thread goes first.
+	if current != nil && current.T3CodeThreadID != "" {
+		return sendToT3CodeThread(ctx, current.T3CodeThreadID, command)
 	}
 	if current == nil || current.HerdrPaneID == "" {
 		return localruntime.ErrACPMirrorReadOnly
@@ -545,7 +554,7 @@ func (s *Handler) deliverToExternalAgent(
 	if command.Type == "prompt" {
 		args = []string{"agent", "prompt", current.HerdrPaneID, command.Text}
 	}
-	ctx, cancel := context.WithTimeout(ctx, herdrDeliverTimeout)
+	ctx, cancel := context.WithTimeout(ctx, externalDeliverTimeout)
 	defer cancel()
 	cmd := procutil.CommandContext(ctx, "herdr", args...)
 	cmd.Env = append(localruntime.SessionEnvironment(os.Environ(), nil), "HERDR_SOCKET_PATH="+current.HerdrSocketPath)
@@ -565,6 +574,37 @@ func (s *Handler) deliverToExternalAgent(
 		return fmt.Errorf("herdr: %s", failure.Error.Message)
 	}
 	return fmt.Errorf("herdr: %w: %s", err, strings.TrimSpace(string(output)))
+}
+
+// errT3CodeStop refuses a stop for an agent T3 Code runs: its CLI only queues
+// messages.
+const errT3CodeStop = localruntime.ACPMirrorRefusalError("this agent runs in a T3 Code thread; stop its reply in T3 Code")
+
+// sendToT3CodeThread gives a prompt to a T3 Code thread through T3 Code's CLI,
+// which signs in on its own. T3 Code runs it as the thread's next turn, so the
+// thread and the agent's transcript both record it.
+func sendToT3CodeThread(ctx context.Context, thread string, command localruntime.ACPCommand) error {
+	if command.Type != "prompt" {
+		return errT3CodeStop
+	}
+	ctx, cancel := context.WithTimeout(ctx, externalDeliverTimeout)
+	defer cancel()
+	// The prompt goes on stdin, so text that starts with a dash is never read
+	// as a flag.
+	cmd := procutil.CommandContext(ctx, "t3", "thread", "send", "--", thread, "-")
+	cmd.Stdin = strings.NewReader(command.Text)
+	cmd.Env = localruntime.SessionEnvironment(os.Environ(), nil)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, exec.ErrNotFound) {
+		return errors.New("t3 isn't on the Forge daemon's PATH, so Forge can't send this prompt to the agent's T3 Code thread")
+	}
+	if message := strings.TrimSpace(string(output)); message != "" {
+		return fmt.Errorf("T3 Code: %s", message)
+	}
+	return fmt.Errorf("T3 Code: %w", err)
 }
 
 // startMirroredChat starts a Forge-run agent on the session once its external

@@ -194,8 +194,9 @@ func (h agentHookRelay) relay(ctx context.Context, input agenthook.CommonInput) 
 }
 
 // setExternalAgentHeaders tells the daemon what only this process can see about
-// an agent Forge did not start: which process it is, and the Herdr pane it runs
-// in. An agent Forge launched has a runtime key and needs neither.
+// an agent Forge did not start: which process it is, and the Herdr pane or
+// T3 Code thread it runs in. An agent Forge launched has a runtime key and needs
+// none of them.
 func setExternalAgentHeaders(header http.Header) {
 	if os.Getenv(agentactivity.RuntimeSessionKeyEnv) != "" {
 		return
@@ -207,6 +208,9 @@ func setExternalAgentHeaders(header http.Header) {
 	if pane := os.Getenv("HERDR_PANE_ID"); pane != "" {
 		header.Set("X-Kenn-Forge-Herdr-Pane", pane)
 		header.Set("X-Kenn-Forge-Herdr-Socket", os.Getenv("HERDR_SOCKET_PATH"))
+	}
+	if thread := os.Getenv("T3CODE_THREAD_ID"); thread != "" {
+		header.Set("X-Kenn-Forge-T3code-Thread", thread)
 	}
 }
 

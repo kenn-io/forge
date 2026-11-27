@@ -16,12 +16,14 @@ func TestExternalAgentSessionLifecycle(t *testing.T) {
 
 	require.NoError(database.RecordExternalAgentSession(ctx, ExternalAgentSession{
 		Agent: "claude", SessionID: "s1", CWD: "/work/one", TranscriptPath: "/t/s1.jsonl",
-		ProcessID: 7, ProcessStart: "100", HerdrPaneID: "w1:p1", HerdrSocketPath: "/run/herdr.sock", Prompted: true,
+		ProcessID: 7, ProcessStart: "100", HerdrPaneID: "w1:p1", HerdrSocketPath: "/run/herdr.sock",
+		T3CodeThreadID: "mcp:5f0c1e2a-0b7d-4c1e-9a43-2d6f8e1b7c90", Prompted: true,
 	}))
 	saved, err := database.GetExternalAgentSession(ctx, "claude", "s1")
 	require.NoError(err)
 	require.NotNil(saved)
 	assert.Equal("/t/s1.jsonl", saved.TranscriptPath)
+	assert.Equal("mcp:5f0c1e2a-0b7d-4c1e-9a43-2d6f8e1b7c90", saved.T3CodeThreadID)
 	assert.False(saved.FirstSeenAt.IsZero())
 
 	// A later event that omits fields keeps them, and moving panes follows the agent.
@@ -35,6 +37,7 @@ func TestExternalAgentSessionLifecycle(t *testing.T) {
 	assert.Equal(7, saved.ProcessID)
 	assert.Equal("100", saved.ProcessStart)
 	assert.Equal("w2:p3", saved.HerdrPaneID)
+	assert.Empty(saved.T3CodeThreadID, "a report from outside T3 Code means T3 Code no longer runs the session")
 	assert.True(saved.Prompted, "an event without a prompt does not undo an earlier one")
 
 	// An exit seen for a process the session no longer runs in, as after a

@@ -286,6 +286,10 @@ describe("item reference hover popover", () => {
 
     const link = document.querySelector<HTMLAnchorElement>('.markdown-body a.item-ref[data-number="104"]')!;
     const existingHintId = "existing-link-hint";
+    const existingHint = document.createElement("span");
+    existingHint.id = existingHintId;
+    existingHint.textContent = "Existing link hint";
+    link.parentElement!.appendChild(existingHint);
     link.setAttribute("aria-describedby", existingHintId);
 
     // Move focus onto the link via real keyboard navigation so :focus-visible matches.
@@ -318,10 +322,12 @@ describe("item reference hover popover", () => {
 
     const card = popoverEl()!;
     expect(card.getAttribute("role")).toBe("group");
+    expect(card.getAttribute("aria-label")).toBeNull();
     expect(card.id).toBeTruthy();
     const describedByTokens = (link.getAttribute("aria-describedby") ?? "").split(/\s+/);
     expect(describedByTokens).toContain(existingHintId);
     expect(describedByTokens).toContain(card.id);
+    await expect.element(link).toHaveAccessibleDescription(/Existing link hint.*Configure retry backoff pool.*Open/s);
 
     // Escape dismisses the preview, keeps focus on the link, and restores the original aria-describedby.
     await userEvent.keyboard("{Escape}");
@@ -461,7 +467,7 @@ describe("item reference hover popover", () => {
     await vi.waitFor(() => expect(detailTitle()).toContain("Configure retry backoff pool"), WAIT);
   });
 
-  it("keeps worklist members inside the worklist when clicking the preview title", async () => {
+  it("keeps worklist members inside the worklist when clicking the preview title, including hidden repositories", async () => {
     const worklistFirst = makePullRow({
       ID: 42,
       GitHubID: 90042,
@@ -477,22 +483,76 @@ describe("item reference hover popover", () => {
       Number: 84,
       URL: "https://github.com/acme/widgets/pull/84",
       Title: "Second worklist PR",
-      Body: "Shared helper used by #42.",
+      Body: "Follows https://github.com/acme/hidden-lib/pull/301.",
       repo: { ...repoRef("acme", "widgets"), platform_repo_id: 1001 },
+    });
+    const worklistHidden = makePullRow({
+      ID: 301,
+      GitHubID: 90301,
+      Number: 301,
+      URL: "https://github.com/acme/hidden-lib/pull/301",
+      Title: "Fix hidden repo serialization",
+      Body: "Hidden repository worklist item.",
+      repo_owner: "acme",
+      repo_name: "hidden-lib",
+      repo: { ...repoRef("acme", "hidden-lib"), platform_repo_id: 1002 },
     });
     const server: WorklistServer = {
       lists: [
         worklistResponse(5, "Review queue", [
           worklistItem({ position: 0, item_type: "pr", number: 42, title: "First worklist PR" }),
           worklistItem({ position: 1, item_type: "pr", number: 84, title: "Second worklist PR" }),
+          worklistItem({
+            position: 2,
+            item_type: "pr",
+            number: 301,
+            title: "Fix hidden repo serialization",
+            url: "https://github.com/acme/hidden-lib/pull/301",
+            repo: { ...repoRef("acme", "hidden-lib"), platform_repo_id: 1002 } as ReturnType<
+              typeof worklistItem
+            >["repo"],
+          }),
         ]),
       ],
       requests: [],
     };
     mounted = await mountBrowserApp("/worklists/5", {
       overrides: [
+        (req) =>
+          req.method === "GET" && req.url.pathname === "/api/v1/settings"
+            ? jsonResponse({
+                ...mockSettings,
+                repos: [
+                  {
+                    provider: "github",
+                    platform_host: "github.com",
+                    owner: "acme",
+                    name: "widgets",
+                    repo_path: "acme/widgets",
+                    hidden_from_ui: false,
+                    is_glob: false,
+                    issue_pr_references: true,
+                    matched_repo_count: 1,
+                  },
+                  {
+                    provider: "github",
+                    platform_host: "github.com",
+                    owner: "acme",
+                    name: "hidden-lib",
+                    repo_path: "acme/hidden-lib",
+                    hidden_from_ui: true,
+                    is_glob: false,
+                    issue_pr_references: true,
+                    matched_repo_count: 1,
+                  },
+                ],
+              })
+            : null,
         (req) => {
           if (req.method !== "GET" || req.url.pathname !== "/api/v1/pulls") return null;
+          if (req.url.searchParams.get("repo") === "github|github.com/acme/hidden-lib") {
+            return jsonResponse([worklistHidden]);
+          }
           const numbers = req.url.searchParams.getAll("numbers");
           if (numbers.includes("84")) return jsonResponse([worklistSecond]);
           return jsonResponse([worklistFirst, worklistSecond]);
@@ -506,8 +566,8 @@ describe("item reference hover popover", () => {
             ? jsonResponse(detailEnvelope(worklistSecond))
             : null,
         (req) =>
-          req.method === "POST" && req.url.pathname === "/api/v1/repo/github/acme/widgets/resolve/84"
-            ? jsonResponse({ number: 84, item_type: "pr", repo_tracked: true })
+          /^\/api\/v1\/pulls\/github\/acme\/hidden-lib\/301(\/sync\/async)?$/.test(req.url.pathname)
+            ? jsonResponse(detailEnvelope(worklistHidden))
             : null,
         worklistRoutes(server),
         ...overrides(),
@@ -527,6 +587,20 @@ describe("item reference hover popover", () => {
     await vi.waitFor(() => expect(window.location.pathname).toBe("/worklists/5"), WAIT);
     await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A84"), WAIT);
     await vi.waitFor(() => expect(detailTitle()).toContain("Second worklist PR"), WAIT);
+
+    // Hidden-repo worklist members also stay selected inside the worklist.
+    const hiddenLink = document.querySelector<HTMLAnchorElement>('.markdown-body a.item-ref[data-name="hidden-lib"]')!;
+    expect(hiddenLink).toBeTruthy();
+    dispatchPointer(hiddenLink, "pointerover");
+    await vi.waitFor(() => expect(popoverEl()).not.toBeNull(), WAIT);
+    expect(popoverEl()!.textContent).toContain("Fix hidden repo serialization");
+
+    popoverEl()!.querySelector<HTMLAnchorElement>(".item-ref-popover__title")!.click();
+
+    await vi.waitFor(() => expect(popoverEl()).toBeNull(), WAIT);
+    await vi.waitFor(() => expect(window.location.pathname).toBe("/worklists/5"), WAIT);
+    await vi.waitFor(() => expect(window.location.search).toContain("301"), WAIT);
+    await vi.waitFor(() => expect(detailTitle()).toContain("Fix hidden repo serialization"), WAIT);
   });
 
   it("shows a preview for a hidden tracked repository omitted from /api/v1/repos", async () => {
@@ -608,7 +682,6 @@ describe("item reference hover popover", () => {
     // of replaying anchor.click() through the untracked external fallback.
     const anchorClickSpy = vi.fn();
     hiddenLink.addEventListener("click", anchorClickSpy);
-    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
     const titleLink = popoverEl()!.querySelector<HTMLAnchorElement>(".item-ref-popover__title")!;
     titleLink.click();
 
@@ -617,6 +690,114 @@ describe("item reference hover popover", () => {
     await vi.waitFor(() => expect(detailTitle()).toContain("Fix hidden repo serialization"), WAIT);
     expect(anchorClickSpy).not.toHaveBeenCalled();
     expect(hiddenLink.target).toBe("");
-    expect(openSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps the loading spinner and a long repository reference on one line while wrapping status messages", async () => {
+    const longPath = "org/platform-engineering/distributed-systems/core-infrastructure-services";
+    let releaseLoad!: () => void;
+    const loadGate = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+
+    const hostPull = makePullRow({
+      ...currentPull,
+      Body: `Loading https://gitlab.example.com/${longPath}/-/merge_requests/404.`,
+    });
+
+    mounted = await mountBrowserApp("/pulls/github/acme/widgets/205", {
+      overrides: [
+        (req) =>
+          req.method === "GET" && req.url.pathname === "/api/v1/settings"
+            ? jsonResponse({
+                ...mockSettings,
+                repos: [
+                  {
+                    provider: "github",
+                    platform_host: "github.com",
+                    owner: "acme",
+                    name: "widgets",
+                    repo_path: "acme/widgets",
+                    hidden_from_ui: false,
+                    is_glob: false,
+                    issue_pr_references: true,
+                    matched_repo_count: 1,
+                  },
+                  {
+                    provider: "gitlab",
+                    platform_host: "gitlab.example.com",
+                    owner: "org/platform-engineering/distributed-systems",
+                    name: "core-infrastructure-services",
+                    repo_path: longPath,
+                    hidden_from_ui: false,
+                    is_glob: false,
+                    issue_pr_references: true,
+                    matched_repo_count: 1,
+                  },
+                ],
+              })
+            : null,
+        (req) =>
+          /^\/api\/v1\/pulls\/github\/acme\/widgets\/205(\/sync\/async)?$/.test(req.url.pathname)
+            ? jsonResponse(detailEnvelope(hostPull))
+            : null,
+        (req) => {
+          if (req.method === "POST" && req.url.pathname.endsWith("/resolve/404")) {
+            return new Response(
+              JSON.stringify({ code: "notFound", title: "Not Found", status: 404, detail: "item not found" }),
+              {
+                status: 404,
+                headers: { "content-type": "application/problem+json" },
+              },
+            );
+          }
+          if (req.method !== "GET" || req.url.pathname !== "/api/v1/pulls") return null;
+          if (req.url.searchParams.get("repo") === `gitlab|gitlab.example.com/${longPath}`) {
+            return new Response(
+              new ReadableStream({
+                async start(controller) {
+                  await loadGate;
+                  controller.enqueue(new TextEncoder().encode("[]"));
+                  controller.close();
+                },
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            );
+          }
+          return jsonResponse([hostPull]);
+        },
+        ...overrides(),
+      ],
+    });
+    await vi.waitFor(() => expect(detailTitle()).toContain("Enable shared retry policy"), WAIT);
+
+    const longLink = document.querySelector<HTMLAnchorElement>('.markdown-body a[href*="404"]')!;
+    expect(longLink).toBeTruthy();
+
+    try {
+      dispatchPointer(longLink, "pointerover");
+      await vi.waitFor(() => expect(popoverEl()?.querySelector('[role="status"]')).toBeTruthy(), WAIT);
+
+      const loadingRow = popoverEl()!.querySelector<HTMLElement>(".item-ref-popover__status-row")!;
+      const spinner = loadingRow.querySelector<HTMLElement>('[role="img"], svg, .kit-spinner')!;
+      const refSpan = loadingRow.querySelector<HTMLElement>(".item-ref-popover__status-ref")!;
+      expect(spinner).toBeTruthy();
+      expect(getComputedStyle(loadingRow).flexWrap).toBe("nowrap");
+
+      const spinnerRect = spinner.getBoundingClientRect();
+      const refRect = refSpan.getBoundingClientRect();
+      const spinnerMidY = spinnerRect.top + spinnerRect.height / 2;
+      const refMidY = refRect.top + refRect.height / 2;
+      expect(Math.abs(spinnerMidY - refMidY)).toBeLessThanOrEqual(4);
+      expect(refRect.left).toBeGreaterThanOrEqual(spinnerRect.right - 1);
+      expect(refSpan.scrollWidth).toBeGreaterThan(refSpan.clientWidth);
+
+      // Once the empty response settles as not-synced, the message row wraps cleanly.
+      releaseLoad();
+      await vi.waitFor(() => expect(popoverEl()?.textContent).toContain("Not synced yet"), WAIT);
+      const notSyncedRow = popoverEl()!.querySelector<HTMLElement>(".item-ref-popover__status-row")!;
+      expect(getComputedStyle(notSyncedRow).flexWrap).toBe("wrap");
+    } finally {
+      releaseLoad();
+    }
   });
 });

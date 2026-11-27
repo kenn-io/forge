@@ -194,6 +194,25 @@ export function resolveItemReference(
 }
 
 const recordedOpenEvents = new WeakSet<Event>();
+const navigateHandlers = new WeakMap<EventTarget, Array<(ref: RoutableItemRef) => void>>();
+
+// Invokes the nearest initItemRefHandler navigation callback enclosing anchor
+// so resolved previews preserve scoped routing (such as worklist selection)
+// for both visible and hidden tracked repositories.
+export function openItemReferenceFromAnchor(anchor: HTMLAnchorElement | null, item: RoutableItemRef): boolean {
+  if (!anchor?.isConnected) return false;
+  let node: Node | null = anchor;
+  while (node) {
+    const handlers = navigateHandlers.get(node);
+    const handler = handlers?.[handlers.length - 1];
+    if (handler) {
+      handler(item);
+      return true;
+    }
+    node = node.parentNode;
+  }
+  return false;
+}
 
 export function recordUntrackedRepoOpen(runtime: AppRuntime, body: UntrackedOpenInputBody): void {
   runtime.runCommand(
@@ -268,9 +287,23 @@ export function initItemRefHandler(
     execution = resolveReference(ref) ?? null;
   }
 
+  if (onNavigate) {
+    const existing = navigateHandlers.get(target);
+    if (existing) existing.push(onNavigate);
+    else navigateHandlers.set(target, [onNavigate]);
+  }
+
   const openEvents = ["click", "auxclick", "contextmenu"] as const;
   for (const type of openEvents) target.addEventListener(type, handleClick);
   return () => {
+    if (onNavigate) {
+      const existing = navigateHandlers.get(target);
+      if (existing) {
+        const idx = existing.lastIndexOf(onNavigate);
+        if (idx !== -1) existing.splice(idx, 1);
+        if (existing.length === 0) navigateHandlers.delete(target);
+      }
+    }
     catalogExecution.interrupt();
     execution?.interrupt();
     for (const type of openEvents) target.removeEventListener(type, handleClick);

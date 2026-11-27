@@ -37,6 +37,7 @@
   import {
     findItemRefAnchor,
     isTrackedItemReference,
+    openItemReferenceFromAnchor,
     resolveAnchorItemReference,
   } from "../../utils/itemRefHandler.js";
   import { summarizeMarkdownBody } from "../../utils/markdown-excerpt.js";
@@ -554,24 +555,15 @@
     };
   }
 
-  function handleTitleClick(event: MouseEvent, ref: ResolvableItemReference, preview: ItemPreview): void {
+  function handleTitleClick(event: MouseEvent, preview: ItemPreview): void {
     const plainClick =
       event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
     if (!plainClick) return;
     event.preventDefault();
     const anchor = activeAnchor;
     const item = routableItemForPreview(preview);
-    const repos = getCachedRepositories();
-    const replayAnchorClick =
-      anchor !== null &&
-      anchor.isConnected &&
-      (!anchor.target || anchor.target.toLowerCase() === "_self") &&
-      repos !== undefined &&
-      isTrackedItemReference(ref, repos);
     hide();
-    if (replayAnchorClick) {
-      anchor.click();
-    } else {
+    if (!openItemReferenceFromAnchor(anchor, item)) {
       onOpenItem?.(item);
     }
   }
@@ -618,7 +610,6 @@
     id={popoverId}
     class="item-ref-popover kit-popover-card"
     role="group"
-    aria-label="Item preview"
     data-testid="item-ref-popover"
     style={popoverStyle}
     onpointerenter={handlePopoverPointerEnter}
@@ -631,17 +622,17 @@
         <span class="item-ref-popover__status-ref">{card.ref.repoPath} #{card.ref.number}</span>
       </div>
     {:else if card.kind === "not-synced"}
-      <div class="item-ref-popover__status-row">
+      <div class="item-ref-popover__status-row item-ref-popover__status-row--wrap">
         <span class="item-ref-popover__status-ref">{card.ref.repoPath} #{card.ref.number}</span>
         <span class="item-ref-popover__status-msg">Not synced yet. Open the link to see it on the provider.</span>
       </div>
     {:else if card.kind === "not-found"}
-      <div class="item-ref-popover__status-row">
+      <div class="item-ref-popover__status-row item-ref-popover__status-row--wrap">
         <span class="item-ref-popover__status-ref">{card.ref.repoPath} #{card.ref.number}</span>
         <span class="item-ref-popover__status-msg">Not found</span>
       </div>
     {:else if card.kind === "error"}
-      <div class="item-ref-popover__status-row">
+      <div class="item-ref-popover__status-row item-ref-popover__status-row--wrap">
         <span class="item-ref-popover__status-ref">{card.ref.repoPath} #{card.ref.number}</span>
         <span class="item-ref-popover__status-msg">{card.message}</span>
       </div>
@@ -670,7 +661,7 @@
       <a
         class="item-ref-popover__title"
         href={itemHref}
-        onclick={(event) => handleTitleClick(event, cardRef, loadedPreview)}
+        onclick={(event) => handleTitleClick(event, loadedPreview)}
       >
         {item.Title}
       </a>
@@ -776,6 +767,7 @@
     width: min(372px, calc(100vw - 16px));
     padding: var(--space-4) var(--space-5);
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-2);
     font-size: var(--font-size-sm);
     line-height: 1.4;
@@ -802,11 +794,16 @@
 
   .item-ref-popover__status-row {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: var(--space-1) var(--space-2);
+    min-width: 0;
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
+  }
+
+  .item-ref-popover__status-row--wrap {
+    flex-wrap: wrap;
   }
 
   .item-ref-popover__status-ref {
@@ -815,6 +812,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    min-width: 0;
     max-width: 100%;
   }
 

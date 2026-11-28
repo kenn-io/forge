@@ -192,48 +192,30 @@ kenn-forge agent-hook install
 kenn-forge agent-hook install --agent codex
 kenn-forge agent-hook uninstall
 kenn-forge agent-hook uninstall --agent codex
+kenn-forge agent-hook install --dry-run
+kenn-forge agent-hook uninstall --dry-run
 kenn-forge agent-hook status
 ```
 
-When you omit `--agent`, `install`, `uninstall`, and `status` act on every
-supported integration. The installed hooks report lifecycle activity to the
-running daemon. Codex prompts you once through `/hooks` to review the installed
+When you omit `--agent`, each command acts on every supported
+integration. The installed hooks report lifecycle activity to the running
+daemon. Codex prompts you once through `/hooks` to review the installed
 commands. On Windows, Claude hooks need Claude Code 2.1.139 or later. After
 upgrading Forge, rerun `kenn-forge agent-hook install` so it rewrites existing
 Claude hooks.
 
-Add `--dry-run` to `install` or `uninstall` to preview the change without
-writing any file:
+`--dry-run` reports the files `install` or `uninstall` would change without
+writing them.
 
-```console
-$ kenn-forge agent-hook install --dry-run --agent codex
-Would install kenn-forge Codex hooks in /home/you/.codex/hooks.json
-$ kenn-forge agent-hook uninstall --dry-run --agent codex
-Would remove kenn-forge Codex hooks from /home/you/.codex/hooks.json
-```
+`status` reports whether each agent's hook registration is current or needs
+install. If you installed with `--config` or `--binary`, pass the same values
+to `status`. Readiness stays `unknown` because `status` works offline and reads
+only config files. To check hook and MCP readiness, run
+`kenn-forge agent setup --check`.
 
-`status` compares each agent's hook config with what `install` would write. It
-doesn't start an agent or change any file:
-
-```console
-$ kenn-forge agent-hook status --agent codex
-Codex: registration needs install (/home/you/.codex/hooks.json)
-  readiness: unknown (hook loading, trust and execution are not inspected)
-```
-
-After you install, the same command reports `registration current`. If you
-installed with `--config` or `--binary`, pass the same values to `status`.
-
-`status` exits with `0` whether registration is current or needs install. It
-exits with `1` when `--agent` names an unknown integration, when the Forge
-config can't be loaded or sets a relative `data_dir`, or when it fails to
-inspect an agent's hook config. In the last case, that agent's row shows
-`unknown` with the error, and the other agents are still listed.
-
-Readiness is always `unknown` because `status` reads only config files. A
-current registration doesn't prove that the agent loads, trusts, or runs the
-hooks; for example, a pending Codex `/hooks` review doesn't appear. To verify
-the full connection, run `kenn-forge agent setup --check`.
+`status` exits with `1` when it can't inspect an agent's hook config. That
+agent's row shows `unknown` with the error, and the other agents are still
+listed.
 
 ## Stand in for the GitHub CLI
 

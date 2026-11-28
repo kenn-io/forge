@@ -3,14 +3,17 @@ package repoapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
-	"path"
 	"strings"
 
 	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/settingsapi"
+	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 type githubTeamInput struct {
@@ -67,7 +70,16 @@ func (s *Handlers) teamReader(input githubTeamInput) (ghclient.TeamReader, []con
 
 func teamProblem(err error, host string) error {
 	if errors.Is(err, ghclient.ErrMissingWriteIdentity) {
-		return httpapi.BadRequest(httpapi.CodeBadRequest, "Team lookup needs your own GitHub credential (a personal token or gh login). The Forge App alone can't read teams.", nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, "Forge team lookup uses your GitHub user credential. Configure a personal token or gh login; Forge does not use its App credential for this lookup.", nil)
+	}
+	if errors.Is(err, platform.ErrPermissionDenied) || errors.Is(err, platform.ErrNotFound) || platformgithub.StatusCode(err) == http.StatusNotFound {
+		const hint = "GitHub could not access the organization or team. Check that it exists and is available to your credential, and that the credential has classic read:org scope or fine-grained organization Members read permission"
+		if pe, ok := errors.AsType[*platform.Error](err); ok {
+			mapped := *pe
+			mapped.Err = fmt.Errorf("%s: %w", hint, err)
+			return httpapi.ProviderCallProblem(&mapped, "github", host)
+		}
+		return httpapi.ProviderCallProblem(&platform.Error{Code: platform.ErrCodeNotFound, Provider: platform.KindGitHub, PlatformHost: host, Err: fmt.Errorf("%s: %w", hint, err)}, "github", host)
 	}
 	return httpapi.ProviderCallProblem(err, "github", host)
 }
@@ -108,33 +120,31 @@ func (s *Handlers) ListGitHubTeamRepositories(ctx context.Context, input *github
 	if err != nil {
 		return nil, httpapi.Internal(err.Error())
 	}
-	tracked := (*s.Syncer).TrackedRepos()
+	configuredKeys := make(map[platform.RepositoryKey]struct{})
+	for _, ref := range (*s.Syncer).TrackedRepos() {
+		if ref.Key.IsZero() || !strings.EqualFold(spokeapi.RepoProvider(ref), "github") || !spokeapi.SamePlatformHost(ref.PlatformHost, input.PlatformHost) {
+			continue
+		}
+		for _, cfg := range configured {
+			if pinned := cfg.RepositoryKey(); !pinned.IsZero() {
+				if pinned == ref.Key && strings.EqualFold(cfg.PlatformOrDefault(), spokeapi.RepoProvider(ref)) && spokeapi.SamePlatformHost(cfg.PlatformHostOrDefault(), ref.PlatformHost) {
+					configuredKeys[ref.Key] = struct{}{}
+					break
+				}
+			} else if settingsapi.RepoMatchesConfig(ref, cfg) {
+				configuredKeys[ref.Key] = struct{}{}
+				break
+			}
+		}
+	}
 	allowed := make(map[int64]struct{})
 	for _, repo := range repos {
 		if httpapi.ProviderKind(repo) != platform.KindGitHub || !strings.EqualFold(httpapi.ProviderHost(repo), input.PlatformHost) {
 			continue
 		}
-		// Tracked repositories can include peer workspace entries; require a matching
-		// configured exact route or pattern as well as the catalog visibility filters.
-		for _, cfg := range configured {
-			if !strings.EqualFold(cfg.PlatformOrDefault(), "github") || !strings.EqualFold(cfg.PlatformHostOrDefault(), input.PlatformHost) || !strings.EqualFold(cfg.Owner, input.Org) {
-				continue
-			}
-			matched, _ := path.Match(strings.ToLower(cfg.Name), strings.ToLower(repo.Name))
-			matched = matched && strings.EqualFold(repo.Owner, cfg.Owner)
-			pinned := cfg.RepositoryKey()
-			provenance := false
-			for _, ref := range tracked {
-				if !repo.Key.IsZero() && (ref.Platform == "" || ref.Platform == platform.KindGitHub) && ref.Key == repo.Key && strings.EqualFold(ref.PlatformHost, input.PlatformHost) && strings.EqualFold(ref.ConfiguredRepoPath, cfg.Owner+"/"+cfg.Name) && ref.ConfiguredRepoPath != "" {
-					provenance = true
-					break
-				}
-			}
-			if (!pinned.IsZero() && pinned == repo.Key) || (pinned.IsZero() && (matched || provenance)) {
-				if id, ok := repo.Key.ID(); ok {
-					allowed[id] = struct{}{}
-				}
-				break
+		if _, ok := configuredKeys[repo.Key]; ok {
+			if id, ok := repo.Key.ID(); ok {
+				allowed[id] = struct{}{}
 			}
 		}
 	}

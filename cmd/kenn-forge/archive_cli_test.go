@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -452,4 +453,69 @@ func archiveCLITestConfig(t *testing.T, rawURL, basePath, token string) string {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(cfgPath, []byte("data_dir = "+string(configBody)+"\n"), 0o600))
 	return cfgPath
+}
+
+func TestArchiveReportJSONAlias(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"schema":"kenn-forge-archive-report/1","start":"2026-07-12T15:30:00Z","end":"2026-07-13T15:30:00Z","repositories":[],"totals":{"issues_opened":1},"contributors":[]}`))
+	}))
+	t.Cleanup(api.Close)
+	cfgPath := archiveCLITestConfig(t, api.URL, "/", "")
+	now := func() time.Time { return time.Date(2026, 7, 13, 15, 30, 0, 0, time.UTC) }
+	run := func(root bool, selectors ...string) (string, error) {
+		t.Helper()
+		args := append([]string{"report", "--config", cfgPath, "--days", "1"}, selectors...)
+		var stdout bytes.Buffer
+		var err error
+		if root {
+			err = runCLI(append([]string{"archive"}, args...), &stdout)
+		} else {
+			err = runArchiveCLIAt(args, &stdout, now)
+		}
+		return stdout.String(), err
+	}
+	for _, root := range []bool{false, true} {
+		t.Run(fmt.Sprintf("root=%t", root), func(t *testing.T) {
+			baseline, err := run(root, "--format", "json")
+			require.NoError(t, err)
+			require.True(t, json.Valid([]byte(baseline)))
+			for _, selectors := range [][]string{
+				{"--json"},
+				{"--json", "--format", "json"},
+				{"--format", "json", "--json"},
+				{"--json=false", "--format", "json"},
+			} {
+				got, runErr := run(root, selectors...)
+				assert.NoError(t, runErr, "%v", selectors)
+				assert.Equal(t, baseline, got, "%v", selectors)
+			}
+			markdown, err := run(root)
+			require.NoError(t, err)
+			assert.Contains(t, markdown, "# Activity archive")
+			for _, selectors := range [][]string{{"--format", "markdown"}, {"--json=false"}, {"--json=false", "--format", "markdown"}} {
+				got, runErr := run(root, selectors...)
+				assert.NoError(t, runErr, "%v", selectors)
+				assert.Equal(t, markdown, got, "%v", selectors)
+			}
+		})
+	}
+	output := filepath.Join(t.TempDir(), "report.json")
+	var stdout bytes.Buffer
+	err := runCLI([]string{"archive", "report", "--config", cfgPath, "--days", "1", "--json", "--output", output}, &stdout)
+	require.NoError(t, err)
+	assert.Empty(t, stdout.String())
+	fileJSON, err := os.ReadFile(output)
+	require.NoError(t, err)
+	baseline, err := run(true, "--format", "json")
+	require.NoError(t, err)
+	assert.Equal(t, baseline, string(fileJSON))
+	for _, selectors := range [][]string{{"--json", "--format", "markdown"}, {"--format", "markdown", "--json"}, {"--json", "--format", "invalid"}} {
+		var stdout bytes.Buffer
+		args := append([]string{"archive", "report", "--config", filepath.Join(t.TempDir(), "missing.toml"), "--days", "1"}, selectors...)
+		err := runCLI(args, &stdout)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "--json and --format")
+		assert.Empty(t, stdout.String())
+	}
 }

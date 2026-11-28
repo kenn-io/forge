@@ -529,7 +529,7 @@ func TestAgentHookPreviewAndStatus(t *testing.T) {
 	require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
 	configPath := filepath.Join(home, "forge.toml")
 	require.NoError(t, os.WriteFile(configPath, fmt.Appendf(nil, "data_dir = %q\n", filepath.Join(home, "data")), 0o600))
-	binary := filepath.Join(home, "forge-bin")
+	binary := filepath.Join(home, "forge-bin.exe")
 	require.NoError(t, os.WriteFile(binary, []byte("fixture"), 0o700))
 	args := []string{"--config", configPath, "--binary", binary}
 	var out bytes.Buffer
@@ -559,7 +559,7 @@ func TestAgentHookPreviewAndStatus(t *testing.T) {
 	after, err := os.ReadFile(settings)
 	require.NoError(t, err)
 	assert.Equal(t, before, after)
-	other := filepath.Join(home, "other-bin")
+	other := filepath.Join(home, "other-bin.exe")
 	require.NoError(t, os.WriteFile(other, []byte("fixture"), 0o700))
 	require.NoError(t, run("status", "--agent", "claude", "--binary", other))
 	assert.Contains(t, out.String(), "Claude Code: registration current")

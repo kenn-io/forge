@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/kit/agenthook"
+	"go.kenn.io/kit/agentsetup"
 )
 
 const (
@@ -214,21 +215,32 @@ func selectedAgentHookProfiles(raw string) ([]agenthook.Agent, error) {
 	return agents, nil
 }
 
-func installAgentHooks(action, configPath, rawAgent, binary string, stdout io.Writer) error {
+func installAgentHooks(action, configPath, rawAgent, binary string, dryRun bool, stdout io.Writer) error {
 	agents, err := selectedAgentHookProfiles(rawAgent)
 	if err != nil {
 		return err
 	}
 	if action == "uninstall" {
 		for _, agent := range agents {
-			result, err := agenthook.Uninstall(agent, "", agentHookMarker)
+			operation := agenthook.Uninstall
+			if dryRun {
+				operation = agenthook.PlanUninstall
+			}
+			result, err := operation(agent, "", agentHookMarker)
 			if err != nil {
 				return err
 			}
 			profile, _ := agenthook.LookupProfile(agent)
+			message := "Removed kenn-forge %s hooks from %s\n"
+			if dryRun {
+				message = "Would remove kenn-forge %s hooks from %s\n"
+				if !result.Changed {
+					message = "No kenn-forge %s hooks in %s\n"
+				}
+			}
 			if _, err := fmt.Fprintf(
 				stdout,
-				"Removed kenn-forge %s hooks from %s\n",
+				message,
 				profile.DisplayName,
 				result.ConfigPath,
 			); err != nil {
@@ -244,19 +256,30 @@ func installAgentHooks(action, configPath, rawAgent, binary string, stdout io.Wr
 	}
 	for _, agent := range agents {
 		profile, _ := agenthook.LookupProfile(agent)
-		result, err := agenthook.Install(agent, target.options(agent))
+		operation := agenthook.Install
+		if dryRun {
+			operation = agenthook.PlanInstall
+		}
+		result, err := operation(agent, target.options(agent))
 		if err != nil {
 			return err
 		}
+		message := "Installed kenn-forge %s hooks in %s\n"
+		if dryRun {
+			message = "Would install kenn-forge %s hooks in %s\n"
+			if !result.Changed {
+				message = "kenn-forge %s hooks in %s are already current\n"
+			}
+		}
 		if _, err := fmt.Fprintf(
 			stdout,
-			"Installed kenn-forge %s hooks in %s\n",
+			message,
 			profile.DisplayName,
 			result.ConfigPath,
 		); err != nil {
 			return err
 		}
-		if agent == agenthook.AgentCodex {
+		if !dryRun && agent == agenthook.AgentCodex {
 			if _, err := fmt.Fprintln(
 				stdout,
 				"Open /hooks in Codex once to review and trust the new hook commands.",
@@ -264,6 +287,38 @@ func installAgentHooks(action, configPath, rawAgent, binary string, stdout io.Wr
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+func agentHookStatus(configPath, rawAgent, binary string, stdout io.Writer) error {
+	agents, err := selectedAgentHookProfiles(rawAgent)
+	if err != nil {
+		return err
+	}
+	target, err := resolveAgentHookTarget(configPath, binary)
+	if err != nil {
+		return err
+	}
+	failed := false
+	for _, agent := range agents {
+		profile, _ := agenthook.LookupProfile(agent)
+		result, err := agenthook.PlanInstall(agent, target.options(agent))
+		var line string
+		if err != nil {
+			line = fmt.Sprintf("%s: unknown: %v", profile.DisplayName, err)
+			failed = true
+		} else if result.Changed {
+			line = fmt.Sprintf("%s: registration needs install (%s)", profile.DisplayName, result.ConfigPath)
+		} else {
+			line = fmt.Sprintf("%s: registration current (%s)", profile.DisplayName, result.ConfigPath)
+		}
+		if _, err := fmt.Fprintf(stdout, "%s\n  readiness: unknown (hook loading, trust and execution are not inspected)\n", line); err != nil {
+			return err
+		}
+	}
+	if failed {
+		return agentsetup.ErrNotReady
 	}
 	return nil
 }

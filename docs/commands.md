@@ -192,14 +192,30 @@ kenn-forge agent-hook install
 kenn-forge agent-hook install --agent codex
 kenn-forge agent-hook uninstall
 kenn-forge agent-hook uninstall --agent codex
+kenn-forge agent-hook install --dry-run
+kenn-forge agent-hook uninstall --dry-run
+kenn-forge agent-hook status
 ```
 
-When you omit `--agent`, `install` and `uninstall` act on every supported
+When you omit `--agent`, each command acts on every supported
 integration. The installed hooks report lifecycle activity to the running
 daemon. Codex prompts you once through `/hooks` to review the installed
 commands. On Windows, Claude hooks need Claude Code 2.1.139 or later. After
 upgrading Forge, rerun `kenn-forge agent-hook install` so it rewrites existing
 Claude hooks.
+
+`--dry-run` reports the files `install` or `uninstall` would change without
+writing them.
+
+`status` reports whether each agent's hook registration is current or needs
+install. If you installed with `--config` or `--binary`, pass the same values
+to `status`. Readiness stays `unknown` because `status` works offline and reads
+only config files. To check hook and MCP readiness, run
+`kenn-forge agent setup --check`.
+
+`status` exits with `1` when it can't inspect an agent's hook config. That
+agent's row shows `unknown` with the error, and the other agents are still
+listed.
 
 ## Stand in for the GitHub CLI
 

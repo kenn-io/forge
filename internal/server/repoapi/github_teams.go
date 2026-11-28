@@ -71,7 +71,7 @@ func teamProblem(err error, host string) error {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, "Team lookup uses the GitHub user credential configured for the organization, or the host's default. Configure one in Settings; a token set for a single repository is not used.", nil)
 	}
 	if errors.Is(err, ghclient.ErrMissingWriteIdentity) {
-		return httpapi.BadRequest(httpapi.CodeBadRequest, "Forge uses your GitHub user credential to look up teams. Configure a personal token or run gh auth login.", nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, "Forge uses your GitHub user credential to look up teams. Configure a personal token or run gh auth login, then restart Forge and reopen this picker.", nil)
 	}
 	if errors.Is(err, platform.ErrPermissionDenied) || errors.Is(err, platform.ErrNotFound) || platformgithub.StatusCode(err) == http.StatusNotFound {
 		const hint = "GitHub could not access the organization or team. Check that the owner is an organization rather than a personal account, that the organization and team exist and are available to your credential, and that the credential has classic read:org scope or fine-grained organization Members read permission"

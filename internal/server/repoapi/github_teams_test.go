@@ -117,7 +117,7 @@ func TestGitHubTeamHandlerErrors(t *testing.T) {
 		status       int
 		code, detail string
 	}{
-		{"missing user", ghclient.ErrMissingWriteIdentity, 400, "badRequest", "run gh auth login"},
+		{"missing user", ghclient.ErrMissingWriteIdentity, 400, "badRequest", "run gh auth login, then restart Forge and reopen this picker"},
 		{"missing route", &ghclient.MissingRouteError{Host: "github.com", Owner: "acme"}, 400, "badRequest", "a token set for a single repository is not used"},
 		{"denied", &platform.Error{Code: platform.ErrCodePermissionDenied, Provider: platform.KindGitHub}, 403, "forbidden", "read:org"},
 		{"not found", &gh.ErrorResponse{Response: &http.Response{StatusCode: 404}, Message: "not found"}, 404, "notFound", "personal account"},

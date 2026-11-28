@@ -1556,6 +1556,65 @@ describe("RepoTypeahead", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
+  it("offers a complete team selection on workspaces while the workspace catalog is still pending", async () => {
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "*",
+        repo_path: "acme/*",
+        is_glob: true,
+        matched_repo_count: 2,
+        hidden_from_ui: false,
+      },
+    ]);
+    getRepos.mockImplementation(async (path: string) => {
+      if (path === "/repos/github-teams") {
+        return { data: [{ slug: "payments", name: "Payments" }], error: undefined } as never;
+      }
+      if (path === "/repos/github-teams/{slug}/repositories") {
+        return {
+          data: [
+            { platform_repo_id: 1101, repo_path: "acme/api" },
+            { platform_repo_id: 1106, repo_path: "acme/web" },
+          ],
+          error: undefined,
+        } as never;
+      }
+      return {
+        data: [
+          { Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "api", PlatformRepoID: 1101 },
+          { Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "web", PlatformRepoID: 1106 },
+        ],
+        error: undefined,
+      } as never;
+    });
+    const previousPath = window.location.pathname;
+    window.history.replaceState(null, "", "/workspaces");
+    try {
+      // The workspace list never settles: its catalog stays not ready.
+      setWorkspaceRepoCatalog(undefined, false);
+      const onchange = vi.fn();
+      render(RepoTypeahead, { props: { selected: "github.com/acme/legacy", onchange } });
+
+      await fireEvent.click(screen.getByRole("button", { name: /Select repository/i }));
+      await fireEvent.click(screen.getByRole("button", { name: "Select from GitHub team…" }));
+      await fireEvent.click(await screen.findByRole("combobox", { name: /^Team/ }));
+      await fireEvent.click(await screen.findByRole("option", { name: "Payments" }));
+
+      await waitFor(() => expect(screen.getByRole("status").textContent).toContain("2 configured repositories"));
+      // Pruning still waits for the workspace catalog.
+      expect(onchange).not.toHaveBeenCalled();
+      const use = screen.getByRole("button", { name: "Use selection" }) as HTMLButtonElement;
+      expect(use.disabled).toBe(false);
+      await fireEvent.click(use);
+      expect(onchange).toHaveBeenCalledWith(expect.stringContaining("acme/web"));
+    } finally {
+      window.history.replaceState(null, "", previousPath);
+    }
+  });
+
   it("applies a team's repositories as an unsaved selection that saves as a new preset", async () => {
     const api = "github|github.com/acme/api";
     const web = "github|github.com/acme/web";

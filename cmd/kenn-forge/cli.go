@@ -188,19 +188,29 @@ func newAgentHookCommand(stdin io.Reader, stdout io.Writer) *cobra.Command {
 
 	for _, action := range []string{"install", "uninstall"} {
 		var actionConfigPath, actionAgent, binary string
+		var dryRun bool
 		leaf := &cobra.Command{
 			Use:   action,
 			Short: action + " kenn-forge agent lifecycle hooks",
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return installAgentHooks(action, actionConfigPath, actionAgent, binary, stdout)
+				return installAgentHooks(action, actionConfigPath, actionAgent, binary, dryRun, stdout)
 			},
 		}
 		leaf.Flags().StringVar(&actionConfigPath, "config", config.DefaultConfigPath(), "kenn-forge config path")
 		leaf.Flags().StringVar(&actionAgent, "agent", "", "agent hook integration (empty selects all)")
 		leaf.Flags().StringVar(&binary, "binary", "", "kenn-forge binary path used by installed hooks")
+		leaf.Flags().BoolVar(&dryRun, "dry-run", false, "preview changes without writing")
 		cmd.AddCommand(leaf)
 	}
+	var statusConfig, statusAgent, statusBinary string
+	status := &cobra.Command{Use: "status", Short: "Inspect agent hook registration", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		return agentHookStatus(statusConfig, statusAgent, statusBinary, stdout)
+	}}
+	status.Flags().StringVar(&statusConfig, "config", config.DefaultConfigPath(), "kenn-forge config path")
+	status.Flags().StringVar(&statusAgent, "agent", "", "agent hook integration (empty selects all)")
+	status.Flags().StringVar(&statusBinary, "binary", "", "kenn-forge binary path used by installed hooks")
+	cmd.AddCommand(status)
 	return cmd
 }
 

@@ -204,6 +204,13 @@ func TestAgentHookInstallRejectsInvalidConfig(t *testing.T) {
 			} else {
 				require.ErrorContains(t, err, "absolute data_dir")
 			}
+			for _, action := range []string{"install", "status"} {
+				args := []string{"--config", configPath, "--agent", "codex", "--binary", "/opt/kenn-forge"}
+				if action == "install" {
+					args = append(args, "--dry-run")
+				}
+				require.Error(t, runAgentHookInstall(action, args, io.Discard))
+			}
 			assert.NoFileExists(t, filepath.Join(dir, "codex", "hooks.json"))
 		})
 	}
@@ -362,7 +369,7 @@ func TestSetupHookKeepsSelectedHome(t *testing.T) {
 			require.NoError(t, err)
 			wrapper := filepath.Join(home, "hook-wrapper")
 			require.NoError(t, os.WriteFile(wrapper, fmt.Appendf(nil, "#!/bin/sh\nGO_WANT_HELPER_PROCESS=1 exec %q -test.run=^TestSetupHookHelper$ -- \"$@\"\n", exe), 0o700))
-			require.NoError(t, installAgentHooks("install", configPath, "claude", wrapper, io.Discard))
+			require.NoError(t, installAgentHooks("install", configPath, "claude", wrapper, false, io.Discard))
 			if tc.missingConfig {
 				require.NoError(t, os.WriteFile(configPath, []byte(""), 0o600))
 			}
@@ -400,12 +407,12 @@ func TestSetupHookStableAfterConfigCreation(t *testing.T) {
 	t.Setenv("KENN_FORGE_HOME", alias)
 	require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
 	configPath := config.DefaultConfigPath()
-	require.NoError(t, installAgentHooks("install", configPath, "codex", "/usr/bin/kenn-forge", io.Discard))
+	require.NoError(t, installAgentHooks("install", configPath, "codex", "/usr/bin/kenn-forge", false, io.Discard))
 	hooksPath := filepath.Join(home, "codex", "hooks.json")
 	before, err := os.ReadFile(hooksPath)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(configPath, []byte(""), 0o600))
-	require.NoError(t, installAgentHooks("install", configPath, "codex", "/usr/bin/kenn-forge", io.Discard))
+	require.NoError(t, installAgentHooks("install", configPath, "codex", "/usr/bin/kenn-forge", false, io.Discard))
 	after, err := os.ReadFile(hooksPath)
 	require.NoError(t, err)
 	assert.Equal(t, before, after)
@@ -507,4 +514,63 @@ func TestSetupHookHelper(t *testing.T) {
 			os.Exit(0)
 		}
 	}
+}
+
+func TestAgentHookPreviewAndStatus(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LOCALAPPDATA", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	for _, key := range []string{"CLAUDE_CONFIG_DIR", "CODEX_HOME", "COPILOT_HOME", "GEMINI_CLI_HOME", "HERMES_HOME", "QWEN_HOME", "PI_CODING_AGENT_DIR", "KENN_FORGE_DATA_DIR"} {
+		t.Setenv(key, "")
+	}
+	require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
+	configPath := filepath.Join(home, "forge.toml")
+	require.NoError(t, os.WriteFile(configPath, fmt.Appendf(nil, "data_dir = %q\n", filepath.Join(home, "data")), 0o600))
+	binary := filepath.Join(home, "forge-bin")
+	require.NoError(t, os.WriteFile(binary, []byte("fixture"), 0o700))
+	args := []string{"--config", configPath, "--binary", binary}
+	var out bytes.Buffer
+	run := func(action string, extra ...string) error {
+		out.Reset()
+		return runAgentHookInstall(action, append(append([]string{}, args...), extra...), &out)
+	}
+	require.NoError(t, run("install", "--dry-run"))
+	assert.Contains(t, out.String(), "Would install")
+	assert.NotContains(t, out.String(), "Open /hooks")
+	entries, err := os.ReadDir(home)
+	require.NoError(t, err)
+	assert.Len(t, entries, 2)
+	require.NoError(t, run("uninstall", "--agent", "claude", "--dry-run"))
+	assert.Contains(t, out.String(), "No kenn-forge Claude")
+	require.NoError(t, run("status", "--agent", "claude"))
+	assert.Contains(t, out.String(), "Claude Code: registration needs install")
+	assert.Contains(t, out.String(), "readiness: unknown")
+	require.NoError(t, run("install", "--agent", "claude"))
+	settings := filepath.Join(home, ".claude", "settings.json")
+	before, err := os.ReadFile(settings)
+	require.NoError(t, err)
+	require.NoError(t, run("install", "--agent", "claude", "--dry-run"))
+	assert.Contains(t, out.String(), "already current")
+	require.NoError(t, run("uninstall", "--agent", "claude", "--dry-run"))
+	assert.Contains(t, out.String(), "Would remove")
+	after, err := os.ReadFile(settings)
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+	other := filepath.Join(home, "other-bin")
+	require.NoError(t, os.WriteFile(other, []byte("fixture"), 0o700))
+	require.NoError(t, run("status", "--agent", "claude", "--binary", other))
+	assert.Contains(t, out.String(), "Claude Code: registration current")
+	require.NoError(t, os.Remove(binary))
+	require.NoError(t, run("status", "--agent", "claude", "--binary", other))
+	assert.Contains(t, out.String(), "Claude Code: registration needs install")
+	require.NoError(t, os.WriteFile(settings, []byte("invalid"), 0o600))
+	require.Error(t, run("status"))
+	assert.Contains(t, out.String(), "Claude Code: unknown ("+settings+")")
+	assert.Contains(t, out.String(), "Codex:")
+	after, err = os.ReadFile(settings)
+	require.NoError(t, err)
+	assert.Equal(t, "invalid", string(after))
 }

@@ -38,7 +38,7 @@ type (
 )
 
 func (s *Handlers) teamReader(input githubTeamInput) (ghclient.TeamReader, []config.Repo, error) {
-	host := strings.ToLower(strings.TrimSpace(input.PlatformHost))
+	host := input.PlatformHost
 	s.CfgMu.Lock()
 	var repos []config.Repo
 	if *s.Cfg != nil {
@@ -85,8 +85,12 @@ func teamProblem(err error, host string) error {
 	return httpapi.ProviderCallProblem(err, "github", host)
 }
 
+func normalizeTeamInput(host, org string) (string, string) {
+	return strings.ToLower(strings.TrimSpace(host)), strings.TrimSpace(org)
+}
+
 func (s *Handlers) ListGitHubTeams(ctx context.Context, input *githubTeamInput) (*githubTeamsOutput, error) {
-	input.Org = strings.TrimSpace(input.Org)
+	input.PlatformHost, input.Org = normalizeTeamInput(input.PlatformHost, input.Org)
 	reader, _, err := s.teamReader(*input)
 	if err != nil {
 		return nil, err
@@ -105,7 +109,7 @@ func (s *Handlers) ListGitHubTeams(ctx context.Context, input *githubTeamInput) 
 }
 
 func (s *Handlers) ListGitHubTeamRepositories(ctx context.Context, input *githubTeamReposInput) (*githubTeamReposOutput, error) {
-	input.Org = strings.TrimSpace(input.Org)
+	input.PlatformHost, input.Org = normalizeTeamInput(input.PlatformHost, input.Org)
 	slug := strings.TrimSpace(input.Slug)
 	if slug == "" || slug == "." || slug == ".." || url.PathEscape(slug) != slug {
 		return nil, httpapi.Validation("path.slug", "slug must be a single valid path segment")

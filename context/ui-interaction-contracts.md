@@ -297,8 +297,8 @@ and back.
   loads all succeed; failures preserve it (`frontend/src/lib/stores/workspace-repo-catalog.svelte.ts`).
 - A GitHub team selection replaces the current selection and is offered only once settings and the
   fetched repository catalog have settled and the options hold every distinct repository ID the server
-  returned; unlike pruning, it does not wait for Workspaces loads. A shortfall, as after a failed
-  refresh, offers Retry instead (`frontend/src/lib/components/RepoTeamPicker.svelte`).
+  returned. A shortfall, as after a failed refresh, offers Retry instead
+  (`frontend/src/lib/components/RepoTeamPicker.svelte`).
 - Pulls, Issues, Activity, and Workspaces search share one grammar; the Go and TypeScript parsers must
   stay in step; the TypeScript twin is `frontend/src/lib/utils/search-query.ts`
   (`internal/db/search_query.go::ParseSearchQuery`).

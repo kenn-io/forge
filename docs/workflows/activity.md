@@ -107,8 +107,6 @@ Team lookup uses the GitHub user credential configured for the organization,
 or the host's default: a personal access token or a login from
 `gh auth login`. A token set for a single repository is not used. Forge does not read teams through a
 GitHub App installation, so an App-only configuration cannot use the picker.
-After adding a personal token or signing in with `gh auth login` to an
-App-only configuration, restart Forge and reopen the picker.
 GitHub returns only the teams and repositories that credential can see, so a
 repository synced through another credential may be missing from the result.
 A classic token needs the `read:org` scope; a fine-grained token needs

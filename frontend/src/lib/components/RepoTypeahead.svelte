@@ -345,9 +345,7 @@
   }
 
   // The fetched catalog expands globs; on workspace routes the workspace
-  // catalog also contributes options. Until both settle, options are partial,
-  // so pruning waits for both. The team picker needs only the fetched catalog:
-  // it offers a selection only when every returned repository is present.
+  // catalog also contributes options. Until both settle, options are partial.
   // A function, not $derived: the route is read fresh on each call.
   function catalogLoaded(): boolean {
     if (reposLoading) return false;

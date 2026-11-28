@@ -4,7 +4,7 @@ import type { GeneratedClient } from "../api/generated-api.js";
 import type { ProblemBody } from "../api/problems.js";
 import { getFlash } from "./flash.svelte.js";
 import type { MutationCallbacks } from "./ordered-mutations.js";
-import type { CommentReactionContent } from "../components/detail/comment-reactions.js";
+import type { CommentReactionRequestContent as CommentReactionContent } from "../api/generated/models/commentReactionRequestContent.js";
 
 export interface ContractCommentEvent {
   readonly EventType?: unknown;

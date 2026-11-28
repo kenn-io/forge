@@ -1968,13 +1968,23 @@ func TestCreateIssueCommentReactionUsesWriteAPI(t *testing.T) {
 }
 
 func TestCreateIssueCommentReactionMapsProviderRejection(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-	}))
-	defer server.Close()
-	client, err := newEnterpriseGHClient(server.Client(), server.URL+"/api/v3/", server.URL+"/api/uploads/")
-	require.NoError(t, err)
-	c := &Client{now: time.Now, ghWrite: client, platformHost: "github.com"}
-	err = c.CreateIssueCommentReaction(t.Context(), "acme", "widgets", 44, "heart")
-	require.ErrorIs(t, err, platform.ErrPermissionDenied)
+	for _, tc := range []struct {
+		status int
+		want   error
+	}{
+		{http.StatusNotFound, platform.ErrNotFound},
+		{http.StatusUnprocessableEntity, platform.ErrInvalidArgument},
+	} {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, http.StatusText(tc.status), tc.status)
+			}))
+			defer server.Close()
+			client, err := newEnterpriseGHClient(server.Client(), server.URL+"/api/v3/", server.URL+"/api/uploads/")
+			require.NoError(t, err)
+			c := &Client{now: time.Now, ghWrite: client, platformHost: "github.com"}
+			err = c.CreateIssueCommentReaction(t.Context(), "acme", "widgets", 44, "heart")
+			require.ErrorIs(t, err, tc.want)
+		})
+	}
 }

@@ -1840,17 +1840,18 @@ func TestAPIReactIssueCommentTargetsParentAndPreservesTimeline(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	calls := 0
+	var providerErr error
 	mock := &serverfake.MockGH{CreateIssueCommentReactionFn: func(_ context.Context, owner, repo string, id int64, content string) error {
 		calls++
 		require.Equal("acme", owner)
 		require.Equal("widget", repo)
 		require.Equal(int64(1234), id)
 		require.Equal("heart", content)
-		return nil
+		return providerErr
 	}}
 	srv, database := servertest.SetupTestServerWithMock(t, mock)
 	issueID := serverfake.SeedIssue(t, database, "acme", "widget", 5, "open")
-	otherID := serverfake.SeedIssue(t, database, "acme", "widget", 6, "open")
+	serverfake.SeedIssue(t, database, "acme", "widget", 6, "open")
 	commentID := int64(1234)
 	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{IssueID: issueID, PlatformID: &commentID, EventType: "issue_comment", Body: "original", CreatedAt: time.Now().UTC(), DedupeKey: "reaction-comment"}}))
 	before, err := database.ListIssueEvents(t.Context(), issueID)
@@ -1869,29 +1870,15 @@ func TestAPIReactIssueCommentTargetsParentAndPreservesTimeline(t *testing.T) {
 		srv.ServeHTTP(rec, req)
 		require.Equal(tc.status, rec.Code, rec.Body.String())
 	}
-	require.NotEqual(issueID, otherID)
 	require.Equal(1, calls)
-	after, err := database.ListIssueEvents(t.Context(), issueID)
-	require.NoError(err)
-	require.Equal(before, after)
-}
-
-func TestAPIReactIssueCommentProviderFailureHasUnknownOutcome(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	require := require.New(t)
-	mock := &serverfake.MockGH{CreateIssueCommentReactionFn: func(context.Context, string, string, int64, string) error { return errors.New("connection lost") }}
-	srv, database := servertest.SetupTestServerWithMock(t, mock)
-	issueID := serverfake.SeedIssue(t, database, "acme", "widget", 5, "open")
-	id := int64(1234)
-	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{IssueID: issueID, PlatformID: &id, EventType: "issue_comment", Body: "original", CreatedAt: time.Now().UTC(), DedupeKey: "reaction-comment"}}))
+	providerErr = errors.New("connection lost")
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/issues/gh/acme/widget/5/comments/1234/reactions", strings.NewReader(`{"content":"heart"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 	require.Equal(http.StatusBadGateway, rec.Code)
 	require.Contains(rec.Body.String(), "mutationOutcomeUnknown")
-	events, err := database.ListIssueEvents(t.Context(), issueID)
+	after, err := database.ListIssueEvents(t.Context(), issueID)
 	require.NoError(err)
-	require.Len(events, 1)
-	require.Equal("original", events[0].Body)
+	require.Equal(before, after)
 }

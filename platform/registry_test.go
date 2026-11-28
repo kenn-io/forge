@@ -479,6 +479,7 @@ func TestRegistryMarkdownMediaReaderRequiresCapability(t *testing.T) {
 }
 
 var (
+	_ CommentReactor        = (*testCommentReactionProvider)(nil)
 	_ MarkdownMediaReader   = (*testMarkdownMediaProvider)(nil)
 	_ NotificationMutator   = (*testNotificationProvider)(nil)
 	_ NotificationReader    = (*testNotificationProvider)(nil)
@@ -488,13 +489,26 @@ var (
 	_ WorkflowRunReader     = (*testWorkflowProvider)(nil)
 )
 
-func TestRegistryCommentReactorUnsupportedProviders(t *testing.T) {
-	for _, kind := range []Kind{KindGitLab, KindForgejo, KindGitea, KindBitbucket} {
-		t.Run(string(kind), func(t *testing.T) {
-			registry, err := NewRegistry(testProvider{kind: kind, host: "example.test"})
-			require.NoError(t, err)
-			_, err = registry.CommentReactor(kind, "example.test")
-			require.ErrorIs(t, err, ErrUnsupportedCapability)
-		})
+type testCommentReactionProvider struct{ testProvider }
+
+func (testCommentReactionProvider) ReactToComment(context.Context, RepoRef, int64, string) error {
+	return nil
+}
+
+func TestRegistryCommentReactorRequiresCapability(t *testing.T) {
+	for _, provider := range []Provider{
+		testCommentReactionProvider{testProvider{kind: KindGitHub, host: "github.com"}},
+		testProvider{kind: KindGitHub, host: "github.com", caps: Capabilities{CommentReaction: true}},
+	} {
+		registry, err := NewRegistry(provider)
+		require.NoError(t, err)
+		_, err = registry.CommentReactor(KindGitHub, "github.com")
+		require.ErrorIs(t, err, ErrUnsupportedCapability)
 	}
+	provider := testCommentReactionProvider{testProvider{kind: KindGitHub, host: "github.com", caps: Capabilities{CommentReaction: true}}}
+	registry, err := NewRegistry(provider)
+	require.NoError(t, err)
+	reactor, err := registry.CommentReactor(KindGitHub, "github.com")
+	require.NoError(t, err)
+	assert.Equal(t, provider, reactor)
 }

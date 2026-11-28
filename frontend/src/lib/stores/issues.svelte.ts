@@ -29,7 +29,7 @@ import {
   providerUsesHostRoute,
 } from "../api/provider-routes.js";
 import { showFlash } from "./flash.svelte.js";
-import type { CommentReactionContent } from "../components/detail/comment-reactions.js";
+import type { CommentReactionRequestContent as CommentReactionContent } from "../api/generated/models/commentReactionRequestContent.js";
 import { IssuesWorkflow, type IssueDetailSyncMode } from "./issues-workflow.js";
 import {
   invokeMutationCallback,

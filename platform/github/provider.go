@@ -103,7 +103,7 @@ type markdownMediaClient interface {
 	) (platform.MarkdownMedia, error)
 }
 
-type commentReactionAPI interface {
+type CommentReactionAPI interface {
 	CreateIssueCommentReaction(ctx context.Context, owner, repo string, commentID int64, content string) error
 }
 
@@ -157,7 +157,7 @@ func (p *Provider) Host() string {
 }
 
 func (p *Provider) Capabilities() platform.Capabilities {
-	_, reactions := p.client.(commentReactionAPI)
+	_, reactions := p.client.(CommentReactionAPI)
 	_, workflows := p.client.(WorkflowCatalogAPI)
 	_, workflowRuns := p.client.(WorkflowRunAPI)
 	_, workflowDispatch := p.client.(WorkflowDispatchAPI)
@@ -960,7 +960,7 @@ func (p *Provider) ListIssueEvents(
 }
 
 func (p *Provider) ReactToComment(ctx context.Context, ref platform.RepoRef, commentID int64, content string) error {
-	client, ok := p.client.(commentReactionAPI)
+	client, ok := p.client.(CommentReactionAPI)
 	if !ok {
 		return platform.UnsupportedCapability(platform.KindGitHub, p.host, "comment_reaction")
 	}

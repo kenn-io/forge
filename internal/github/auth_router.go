@@ -1083,9 +1083,7 @@ func (c *RoutedClient) CreateIssueCommentReaction(ctx context.Context, owner, re
 	if err != nil {
 		return err
 	}
-	reactor, ok := client.(interface {
-		CreateIssueCommentReaction(context.Context, string, string, int64, string) error
-	})
+	reactor, ok := client.(platformgithub.CommentReactionAPI)
 	if !ok {
 		return platform.UnsupportedCapability(platform.KindGitHub, c.routes.host, "comment_reaction")
 	}

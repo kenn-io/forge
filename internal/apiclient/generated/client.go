@@ -59132,6 +59132,19 @@ const (
 	AttributionStatusUnverified      AttributionStatus = "unverified"
 )
 
+type CommentReactionRequestContent string
+
+const (
+	CommentReactionRequestContentConfused CommentReactionRequestContent = "confused"
+	CommentReactionRequestContentEyes     CommentReactionRequestContent = "eyes"
+	CommentReactionRequestContentHeart    CommentReactionRequestContent = "heart"
+	CommentReactionRequestContentHooray   CommentReactionRequestContent = "hooray"
+	CommentReactionRequestContentLaugh    CommentReactionRequestContent = "laugh"
+	CommentReactionRequestContentMinus1   CommentReactionRequestContent = "-1"
+	CommentReactionRequestContentPlus1    CommentReactionRequestContent = "+1"
+	CommentReactionRequestContentRocket   CommentReactionRequestContent = "rocket"
+)
+
 type ExternalContextCardStatus string
 
 const (
@@ -59273,32 +59286,6 @@ const (
 	ProblemErrorCodeWorkspaceNotFound             ProblemErrorCode = "workspaceNotFound"
 	ProblemErrorCodeWorkspaceSetupInProgress      ProblemErrorCode = "workspaceSetupInProgress"
 	ProblemErrorCodeWorktreeDirty                 ProblemErrorCode = "worktreeDirty"
-)
-
-type ReactCommentHostInputBodyContent string
-
-const (
-	ReactCommentHostInputBodyContentConfused ReactCommentHostInputBodyContent = "confused"
-	ReactCommentHostInputBodyContentEyes     ReactCommentHostInputBodyContent = "eyes"
-	ReactCommentHostInputBodyContentHeart    ReactCommentHostInputBodyContent = "heart"
-	ReactCommentHostInputBodyContentHooray   ReactCommentHostInputBodyContent = "hooray"
-	ReactCommentHostInputBodyContentLaugh    ReactCommentHostInputBodyContent = "laugh"
-	ReactCommentHostInputBodyContentMinus1   ReactCommentHostInputBodyContent = "-1"
-	ReactCommentHostInputBodyContentPlus1    ReactCommentHostInputBodyContent = "+1"
-	ReactCommentHostInputBodyContentRocket   ReactCommentHostInputBodyContent = "rocket"
-)
-
-type ReactCommentInputBodyContent string
-
-const (
-	ReactCommentInputBodyContentConfused ReactCommentInputBodyContent = "confused"
-	ReactCommentInputBodyContentEyes     ReactCommentInputBodyContent = "eyes"
-	ReactCommentInputBodyContentHeart    ReactCommentInputBodyContent = "heart"
-	ReactCommentInputBodyContentHooray   ReactCommentInputBodyContent = "hooray"
-	ReactCommentInputBodyContentLaugh    ReactCommentInputBodyContent = "laugh"
-	ReactCommentInputBodyContentMinus1   ReactCommentInputBodyContent = "-1"
-	ReactCommentInputBodyContentPlus1    ReactCommentInputBodyContent = "+1"
-	ReactCommentInputBodyContentRocket   ReactCommentInputBodyContent = "rocket"
 )
 
 type RelayActivityTarget string
@@ -61946,7 +61933,7 @@ type PostIssueCommentOnHostBody = PostIssueCommentHostInputBody
 
 type EditIssueCommentOnHostBody = EditIssueCommentHostInputBody
 
-type ReactIssueCommentOnHostBody = ReactCommentHostInputBody
+type ReactIssueCommentOnHostBody = CommentReactionRequest
 
 type SetIssueGithubStateOnHostBody = GithubStateHostInputBody
 
@@ -61970,7 +61957,7 @@ type PostPrCommentOnHostBody = PostCommentHostInputBody
 
 type EditPrCommentOnHostBody = EditCommentHostInputBody
 
-type ReactPrCommentOnHostBody = ReactCommentHostInputBody
+type ReactPrCommentOnHostBody = CommentReactionRequest
 
 type ReplyToDiscussionOnHostBody = ReplyToDiscussionHostInputBody
 
@@ -62022,7 +62009,7 @@ type PostIssueCommentBody = PostIssueCommentInputBody
 
 type EditIssueCommentBody = EditIssueCommentInputBody
 
-type ReactIssueCommentBody = ReactCommentInputBody
+type ReactIssueCommentBody = CommentReactionRequest
 
 type SetIssueGithubStateBody = GithubStateInputBody
 
@@ -62076,7 +62063,7 @@ type PostPrCommentBody = PostCommentInputBody
 
 type EditPrCommentBody = EditCommentInputBody
 
-type ReactPrCommentBody = ReactCommentInputBody
+type ReactPrCommentBody = CommentReactionRequest
 
 type ReplyToDiscussionBody = ReplyToDiscussionInputBody
 
@@ -69333,6 +69320,12 @@ type CommentAutocompleteResponse struct {
 	Users      []string                       `json:"users,omitempty"`
 }
 
+type CommentReactionRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string                       `json:"$schema,omitempty"`
+	Content CommentReactionRequestContent `json:"content"`
+}
+
 type CommitResponse struct {
 	AuthorEmail *string `json:"author_email,omitempty"`
 
@@ -71953,18 +71946,6 @@ type RawWorktree struct {
 	SessionBackend     *string       `json:"sessionBackend,omitempty"`
 	SyncAhead          *int64        `json:"syncAhead,omitempty"`
 	SyncBehind         *int64        `json:"syncBehind,omitempty"`
-}
-
-type ReactCommentHostInputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema  *string                          `json:"$schema,omitempty"`
-	Content ReactCommentHostInputBodyContent `json:"content"`
-}
-
-type ReactCommentInputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema  *string                      `json:"$schema,omitempty"`
-	Content ReactCommentInputBodyContent `json:"content"`
 }
 
 type RefreshFleetStatsOutputBody struct {

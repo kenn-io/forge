@@ -3323,7 +3323,7 @@ describe("EventTimeline", () => {
     await waitFor(() => expect(trigger.getAttribute("aria-disabled")).not.toBe("true"));
   });
 
-  it("offers reactions in compact rows but not for review comments or unsupported providers", () => {
+  it("offers reactions in compact rows but not for review comments or without a handler", () => {
     const { unmount } = renderTimeline({
       props: {
         activityViewMode: "compact",

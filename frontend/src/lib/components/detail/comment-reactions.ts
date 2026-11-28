@@ -1,3 +1,7 @@
+import type { CommentReactionRequestContent } from "../../api/generated/models/commentReactionRequestContent.js";
+
+export type CommentReactionContent = CommentReactionRequestContent;
+
 // GitHub's reaction choices, in the order its picker shows them. Glyphs are
 // escapes so the source carries no emoji literals.
 export const commentReactions = [
@@ -9,6 +13,4 @@ export const commentReactions = [
   { content: "heart", name: "Heart", glyph: "\u{2764}\u{FE0F}" },
   { content: "rocket", name: "Rocket", glyph: "\u{1F680}" },
   { content: "eyes", name: "Eyes", glyph: "\u{1F440}" },
-] as const;
-
-export type CommentReactionContent = (typeof commentReactions)[number]["content"];
+] as const satisfies readonly { content: CommentReactionContent; name: string; glyph: string }[];

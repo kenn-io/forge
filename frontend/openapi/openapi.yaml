@@ -1818,6 +1818,30 @@ components:
             type: string
           type: array
       type: object
+    CommentReactionRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/CommentReactionRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        content:
+          enum:
+            - "+1"
+            - "-1"
+            - laugh
+            - hooray
+            - confused
+            - heart
+            - rocket
+            - eyes
+          type: string
+      required:
+        - content
+      type: object
     CommitResponse:
       additionalProperties: false
       properties:
@@ -8254,54 +8278,6 @@ components:
         - projectKey
         - name
         - path
-      type: object
-    ReactCommentHostInputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/ReactCommentHostInputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        content:
-          enum:
-            - "+1"
-            - "-1"
-            - laugh
-            - hooray
-            - confused
-            - heart
-            - rocket
-            - eyes
-          type: string
-      required:
-        - content
-      type: object
-    ReactCommentInputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/ReactCommentInputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        content:
-          enum:
-            - "+1"
-            - "-1"
-            - laugh
-            - hooray
-            - confused
-            - heart
-            - rocket
-            - eyes
-          type: string
-      required:
-        - content
       type: object
     RefreshFleetStatsOutputBody:
       additionalProperties: false
@@ -19754,7 +19730,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ReactCommentHostInputBody"
+              $ref: "#/components/schemas/CommentReactionRequest"
         required: true
       responses:
         "204":
@@ -20760,7 +20736,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ReactCommentHostInputBody"
+              $ref: "#/components/schemas/CommentReactionRequest"
         required: true
       responses:
         "204":
@@ -24341,7 +24317,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ReactCommentInputBody"
+              $ref: "#/components/schemas/CommentReactionRequest"
         required: true
       responses:
         "204":
@@ -26497,7 +26473,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ReactCommentInputBody"
+              $ref: "#/components/schemas/CommentReactionRequest"
         required: true
       responses:
         "204":

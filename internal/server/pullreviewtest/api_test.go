@@ -4194,7 +4194,7 @@ func TestAPIReactPRCommentTargetsParentAndPreservesTimeline(t *testing.T) {
 	}}
 	srv, database := servertest.SetupTestServerWithMock(t, mock)
 	mrID := serverfake.SeedPR(t, database, "acme", "widget", 7)
-	otherID := serverfake.SeedPR(t, database, "acme", "widget", 8)
+	serverfake.SeedPR(t, database, "acme", "widget", 8)
 	commentID := int64(9876)
 	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: mrID, PlatformID: &commentID, EventType: "issue_comment", Body: "original", CreatedAt: time.Now().UTC(), DedupeKey: "reaction-comment"}}))
 	before, err := database.ListMREvents(t.Context(), mrID)
@@ -4213,7 +4213,6 @@ func TestAPIReactPRCommentTargetsParentAndPreservesTimeline(t *testing.T) {
 		srv.ServeHTTP(rec, req)
 		require.Equal(tc.status, rec.Code, rec.Body.String())
 	}
-	require.NotEqual(mrID, otherID)
 	require.Equal(1, calls)
 	after, err := database.ListMREvents(t.Context(), mrID)
 	require.NoError(err)

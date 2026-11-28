@@ -109,9 +109,7 @@ type reactCommentInput struct {
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
 	CommentID    int64  `path:"comment_id"`
-	Body         struct {
-		Content string `json:"content" enum:"+1,-1,laugh,hooray,confused,heart,rocket,eyes"`
-	}
+	Body         httpapi.CommentReactionRequest
 }
 type reactCommentHostInput struct {
 	Provider     string `path:"provider"`
@@ -120,9 +118,7 @@ type reactCommentHostInput struct {
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
 	CommentID    int64  `path:"comment_id"`
-	Body         struct {
-		Content string `json:"content" enum:"+1,-1,laugh,hooray,confused,heart,rocket,eyes"`
-	}
+	Body         httpapi.CommentReactionRequest
 }
 type reactCommentOutput struct {
 	Status int `status:"204"`

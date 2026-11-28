@@ -6,6 +6,10 @@ import (
 	"go.kenn.io/forge/internal/db"
 )
 
+type CommentReactionRequest struct {
+	Content string `json:"content" enum:"+1,-1,laugh,hooray,confused,heart,rocket,eyes"`
+}
+
 type SetLabelsRequest struct {
 	Labels *[]string `json:"labels" required:"true"`
 }

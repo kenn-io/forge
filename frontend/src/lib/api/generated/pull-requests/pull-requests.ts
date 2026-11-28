@@ -16,6 +16,7 @@ import type {
   ApprovePullWorkflowsPathParameters,
   CancelDeferredMergePullOnHostPathParameters,
   CancelDeferredMergePullPathParameters,
+  CommentReactionRequest,
   CommitsResponse,
   CreateDiffReviewDraftCommentHostInputBody,
   CreateDiffReviewDraftCommentInputBody,
@@ -100,8 +101,6 @@ import type {
   PublishPrReviewDraftOnHostPathParameters,
   PublishPrReviewDraftPathParameters,
   Query,
-  ReactCommentHostInputBody,
-  ReactCommentInputBody,
   ReactPrCommentOnHostPathParameters,
   ReactPrCommentPathParameters,
   RefreshPullCiOnHostPathParameters,
@@ -565,7 +564,7 @@ export const getReactPrCommentOnHostUrl = ({
  */
 export const reactPrCommentOnHost = async (
   { platformHost, provider, owner, name, number, commentId }: ReactPrCommentOnHostPathParameters,
-  reactCommentHostInputBody: NonReadonly<ReactCommentHostInputBody>,
+  commentReactionRequest: NonReadonly<CommentReactionRequest>,
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<void> => {
   const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
@@ -586,7 +585,7 @@ export const reactPrCommentOnHost = async (
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
-    body: JSON.stringify(reactCommentHostInputBody),
+    body: JSON.stringify(commentReactionRequest),
   });
 };
 
@@ -1963,7 +1962,7 @@ export const getReactPrCommentUrl = ({ provider, owner, name, number, commentId 
  */
 export const reactPrComment = async (
   { provider, owner, name, number, commentId }: ReactPrCommentPathParameters,
-  reactCommentInputBody: NonReadonly<ReactCommentInputBody>,
+  commentReactionRequest: NonReadonly<CommentReactionRequest>,
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<void> => {
   const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
@@ -1984,7 +1983,7 @@ export const reactPrComment = async (
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
-    body: JSON.stringify(reactCommentInputBody),
+    body: JSON.stringify(commentReactionRequest),
   });
 };
 

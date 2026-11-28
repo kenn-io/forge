@@ -12,6 +12,7 @@
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import XIcon from "@lucide/svelte/icons/x";
   import { onDestroy, tick, untrack } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import { Effect } from "effect";
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import { getCommentNavigation } from "../../stores/router.svelte.js";
@@ -1187,7 +1188,7 @@
   let deleteTarget = $state<PREvent | IssueEvent | null>(null);
   let deletingId = $state<number | null>(null);
   let deleteError = $state<string | null>(null);
-  let reactingId = $state<number | null>(null);
+  const reactingIds = new SvelteSet<number>();
   let collapsedThreads = $state<string[]>([]);
   let expandedProviderHiddenComments = $state<number[]>([]);
   let expandedCompactRows = $state<string[]>([]);
@@ -1240,12 +1241,10 @@
   }
 
   function reactToComment(event: PREvent | IssueEvent, content: CommentReactionContent): void {
-    if (!onReactToComment || reactingId !== null) return;
-    reactingId = event.ID;
+    if (!onReactToComment || reactingIds.has(event.ID)) return;
+    reactingIds.add(event.ID);
     onReactToComment(event, content, {
-      onSettled: () => {
-        if (reactingId === event.ID) reactingId = null;
-      },
+      onSettled: () => reactingIds.delete(event.ID),
     });
   }
 
@@ -1677,7 +1676,7 @@
       <MenuTrigger ariaLabel="Add reaction">
         {#snippet child({ attachment })}
           <!-- ariaDisabled keeps focus on the trigger the menu returns it to while the reaction is pending. -->
-          <IconButton size="sm" ariaLabel="Add reaction" ariaDisabled={reactingId !== null} {@attach attachment}>
+          <IconButton size="sm" ariaLabel="Add reaction" ariaDisabled={reactingIds.has(event.ID)} {@attach attachment}>
             <FaceSlightlySmilingPlusIcon size={14} />
           </IconButton>
         {/snippet}

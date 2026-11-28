@@ -3295,12 +3295,15 @@ describe("EventTimeline", () => {
     const onReactToComment = vi.fn();
     renderTimeline({
       props: {
-        events: [makeEvent({ Body: "Looks good", EventType: "issue_comment", PlatformID: 44 })],
+        events: [
+          makeEvent({ ID: 1, Body: "Looks good", EventType: "issue_comment", PlatformID: 44 }),
+          makeEvent({ ID: 2, Body: "Another comment", EventType: "issue_comment", PlatformID: 45 }),
+        ],
         onReactToComment,
       },
     });
 
-    const trigger = screen.getByRole("button", { name: "Add reaction" });
+    const [trigger, otherTrigger] = screen.getAllByRole("button", { name: "Add reaction" });
     await fireEvent.click(trigger);
     const menu = screen.getByRole("menu", { name: "Reactions" });
     const names = ["Thumbs up", "Thumbs down", "Laugh", "Hooray", "Confused", "Heart", "Rocket", "Eyes"];
@@ -3318,9 +3321,24 @@ describe("EventTimeline", () => {
     expect(trigger.getAttribute("aria-disabled")).toBe("true");
     await fireEvent.click(trigger);
     expect(screen.queryByRole("menu", { name: "Reactions" })).toBeNull();
+    expect(onReactToComment).toHaveBeenCalledTimes(1);
+
+    expect(otherTrigger!.getAttribute("aria-disabled")).not.toBe("true");
+    await fireEvent.click(otherTrigger!);
+    await fireEvent.click(
+      within(screen.getByRole("menu", { name: "Reactions" })).getByRole("menuitem", { name: "Eyes" }),
+    );
+    expect(onReactToComment).toHaveBeenCalledTimes(2);
+    const [otherEvent, otherContent, otherCallbacks] = onReactToComment.mock.calls[1]!;
+    expect(otherEvent).toMatchObject({ PlatformID: 45 });
+    expect(otherContent).toBe("eyes");
+    expect(otherTrigger!.getAttribute("aria-disabled")).toBe("true");
 
     callbacks.onSettled();
     await waitFor(() => expect(trigger.getAttribute("aria-disabled")).not.toBe("true"));
+    expect(otherTrigger!.getAttribute("aria-disabled")).toBe("true");
+    otherCallbacks.onSettled();
+    await waitFor(() => expect(otherTrigger!.getAttribute("aria-disabled")).not.toBe("true"));
   });
 
   it("offers reactions in compact rows but not for review comments or without a handler", () => {

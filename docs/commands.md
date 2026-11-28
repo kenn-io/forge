@@ -125,8 +125,8 @@ kenn-forge archive report --start 2026-07-01 --end 2026-07-07 --verbose
 ```
 
 To target more than one repository, repeat the `--repo` flag. Reports default
-to Markdown, and you can add `--format json` or `--output PATH` when you need
-JSON or file output.
+to Markdown, and you can add `--json` (or `--format json`) or `--output PATH`
+when you need JSON or file output.
 
 For coverage and status rules, see [Historical activity archive](archive.md).
 

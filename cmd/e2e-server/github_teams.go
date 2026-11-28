@@ -21,10 +21,7 @@ func (c *e2eWorkflowClient) ListTeamRepositories(_ context.Context, org, slug st
 	}
 	repos := make([]*gh.Repository, 0, 2)
 	for _, name := range []string{"widgets", "tools"} {
-		repos = append(repos, &gh.Repository{
-			ID: new(testutil.FixtureRepoID("acme", name)), FullName: new("acme/" + name),
-			Permissions: &gh.RepositoryPermissions{Pull: new(true), Push: new(false)},
-		})
+		repos = append(repos, &gh.Repository{ID: new(testutil.FixtureRepoID("acme", name)), FullName: new("acme/" + name)})
 	}
 	return repos, nil
 }

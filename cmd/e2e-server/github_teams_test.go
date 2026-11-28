@@ -43,12 +43,6 @@ func TestGitHubTeamFixture(t *testing.T) {
 	assert.Equal(t, testutil.FixtureRepoID("acme", "tools"), repos[1].ID)
 
 	client := newE2EWorkflowClient(&testutil.FixtureClient{})
-	providerRepos, err := client.ListTeamRepositories(t.Context(), "acme", "platform")
-	require.NoError(t, err)
-	for _, repo := range providerRepos {
-		assert.True(t, repo.Permissions.GetPull())
-		assert.False(t, repo.Permissions.GetPush())
-	}
 	unknown, err := client.ListOrgTeams(t.Context(), "other")
 	require.NoError(t, err)
 	assert.Empty(t, unknown)

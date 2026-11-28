@@ -446,11 +446,6 @@ func repoMatchesConfig(
 		strings.EqualFold(repo.Name, raw.Name)
 }
 
-// RepoMatchesConfig uses the settings reconciliation rules for a tracked ref.
-func RepoMatchesConfig(repo ghclient.RepoRef, raw config.Repo) bool {
-	return repoMatchesConfig(repo, raw)
-}
-
 // repoMatchesConfigProvenance reports whether raw is the exact entry the
 // tracked repo's provenance names — provider- and host-scoped, since the
 // same path can be configured on multiple providers or hosts.

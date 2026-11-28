@@ -108,8 +108,9 @@ func TestGitHubTeamHandlerErrors(t *testing.T) {
 		code, detail string
 	}{
 		{"missing user", ghclient.ErrMissingWriteIdentity, 400, "badRequest", "run gh auth login"},
+		{"missing route", &ghclient.MissingRouteError{Host: "github.com", Owner: "acme"}, 400, "badRequest", "a token set for a single repository is not used"},
 		{"denied", &platform.Error{Code: platform.ErrCodePermissionDenied, Provider: platform.KindGitHub}, 403, "forbidden", "read:org"},
-		{"not found", &gh.ErrorResponse{Response: &http.Response{StatusCode: 404}, Message: "not found"}, 404, "notFound", "Members read"},
+		{"not found", &gh.ErrorResponse{Response: &http.Response{StatusCode: 404}, Message: "not found"}, 404, "notFound", "personal account"},
 		{"rate limited", &platform.Error{Code: platform.ErrCodeRateLimited, Provider: platform.KindGitHub}, 429, "rateLimited", ""},
 		{"other", errors.New("broken upstream"), 502, "upstreamError", "broken upstream"},
 	} {

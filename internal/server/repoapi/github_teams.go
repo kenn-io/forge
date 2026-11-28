@@ -11,8 +11,6 @@ import (
 	"go.kenn.io/forge/internal/config"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
-	"go.kenn.io/forge/internal/server/settingsapi"
-	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -70,11 +68,14 @@ func (s *Handlers) teamReader(input githubTeamInput) (ghclient.TeamReader, []con
 }
 
 func teamProblem(err error, host string) error {
+	if _, ok := errors.AsType[*ghclient.MissingRouteError](err); ok {
+		return httpapi.BadRequest(httpapi.CodeBadRequest, "Team lookup uses the GitHub user credential configured for the organization, or the host's default. Configure one in Settings; a token set for a single repository is not used.", nil)
+	}
 	if errors.Is(err, ghclient.ErrMissingWriteIdentity) {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, "Forge uses your GitHub user credential to look up teams. Configure a personal token or run gh auth login.", nil)
 	}
 	if errors.Is(err, platform.ErrPermissionDenied) || errors.Is(err, platform.ErrNotFound) || platformgithub.StatusCode(err) == http.StatusNotFound {
-		const hint = "GitHub could not access the organization or team. Check that it exists and is available to your credential, and that the credential has classic read:org scope or fine-grained organization Members read permission"
+		const hint = "GitHub could not access the organization or team. Check that the owner is an organization rather than a personal account, that the organization and team exist and are available to your credential, and that the credential has classic read:org scope or fine-grained organization Members read permission"
 		if pe, ok := errors.AsType[*platform.Error](err); ok {
 			mapped := *pe
 			mapped.Err = fmt.Errorf("%s: %w", hint, err)
@@ -126,19 +127,14 @@ func (s *Handlers) ListGitHubTeamRepositories(ctx context.Context, input *github
 		return nil, httpapi.Internal(err.Error())
 	}
 	configuredKeys := make(map[platform.RepositoryKey]struct{})
-	for _, ref := range (*s.Syncer).TrackedRepos() {
-		if ref.Key.IsZero() || !strings.EqualFold(spokeapi.RepoProvider(ref), "github") || !spokeapi.SamePlatformHost(ref.PlatformHost, input.PlatformHost) {
+	tracked := (*s.Syncer).TrackedRepos()
+	for _, cfg := range configured {
+		if !strings.EqualFold(cfg.PlatformOrDefault(), "github") || !strings.EqualFold(cfg.PlatformHostOrDefault(), input.PlatformHost) {
 			continue
 		}
-		for _, cfg := range configured {
-			if pinned := cfg.RepositoryKey(); !pinned.IsZero() {
-				if pinned == ref.Key && strings.EqualFold(cfg.PlatformOrDefault(), spokeapi.RepoProvider(ref)) && spokeapi.SamePlatformHost(cfg.PlatformHostOrDefault(), ref.PlatformHost) {
-					configuredKeys[ref.Key] = struct{}{}
-					break
-				}
-			} else if settingsapi.RepoMatchesConfig(ref, cfg) {
+		for _, ref := range ghclient.FallbackConfiguredRepoRefs(tracked, cfg) {
+			if !ref.Key.IsZero() {
 				configuredKeys[ref.Key] = struct{}{}
-				break
 			}
 		}
 	}

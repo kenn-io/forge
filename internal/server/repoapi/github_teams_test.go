@@ -118,7 +118,7 @@ func TestGitHubTeamHandlerErrors(t *testing.T) {
 		code, detail string
 	}{
 		{"missing user", ghclient.ErrMissingWriteIdentity, 400, "badRequest", "run gh auth login, then restart Forge and reopen this picker"},
-		{"missing route", &ghclient.MissingRouteError{Host: "github.com", Owner: "acme"}, 400, "badRequest", "under [[github_owner_tokens]] in config.toml, then restart Forge and reopen this picker. Repository-only tokens are not used."},
+		{"missing route", &ghclient.MissingRouteError{Host: "github.com", Owner: "acme"}, 400, "badRequest", "In config.toml, add a [[github_owner_tokens]] entry with this organization as owner, its GitHub hostname as host, and token_env or token_file. Restart Forge and reopen this picker. Repository-only tokens are not used."},
 		{"denied", &platform.Error{Code: platform.ErrCodePermissionDenied, Provider: platform.KindGitHub}, 403, "forbidden", "read:org"},
 		{"not found", &gh.ErrorResponse{Response: &http.Response{StatusCode: 404}, Message: "not found"}, 404, "notFound", "personal account"},
 		{"rate limited", &platform.Error{Code: platform.ErrCodeRateLimited, Provider: platform.KindGitHub}, 429, "rateLimited", ""},

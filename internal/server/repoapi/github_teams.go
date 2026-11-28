@@ -68,7 +68,7 @@ func (s *Handlers) teamReader(input githubTeamInput) (ghclient.TeamReader, []con
 
 func teamProblem(err error, host string) error {
 	if _, ok := errors.AsType[*ghclient.MissingRouteError](err); ok {
-		return httpapi.BadRequest(httpapi.CodeBadRequest, "Team lookup needs a GitHub user credential for this organization. Add an entry for it under [[github_owner_tokens]] in config.toml, then restart Forge and reopen this picker. Repository-only tokens are not used.", nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, "Team lookup needs a GitHub user credential for this organization. In config.toml, add a [[github_owner_tokens]] entry with this organization as owner, its GitHub hostname as host, and token_env or token_file. Restart Forge and reopen this picker. Repository-only tokens are not used.", nil)
 	}
 	if errors.Is(err, ghclient.ErrMissingWriteIdentity) {
 		return httpapi.BadRequest(httpapi.CodeBadRequest, "Forge uses your GitHub user credential to look up teams. Configure a personal token or run gh auth login, then restart Forge and reopen this picker.", nil)

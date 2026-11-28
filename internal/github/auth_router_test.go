@@ -1686,3 +1686,30 @@ func TestPublishResolvedRepositoryClearsDisplacedCredentialAlias(t *testing.T) {
 	require.Error(err,
 		"a replacement repository must not inherit the displaced repository's credential alias")
 }
+
+type teamRouteFixture struct{ *routeRecordingClient }
+
+func (c *teamRouteFixture) ListOrgTeams(_ context.Context, org string) ([]*gh.Team, error) {
+	c.calls = append(c.calls, "teams:"+org)
+	return nil, nil
+}
+
+func (c *teamRouteFixture) ListTeamRepositories(_ context.Context, org, slug string) ([]*gh.Repository, error) {
+	c.calls = append(c.calls, "team-repos:"+org+"/"+slug)
+	return nil, nil
+}
+
+func TestRoutedTeamReadsUseOwnerCredential(t *testing.T) {
+	owner := &teamRouteFixture{&routeRecordingClient{}}
+	fallback := &teamRouteFixture{&routeRecordingClient{}}
+	router, err := NewHostRouter("github.com", &Route{Key: RouteKey{Host: "github.com"}, Client: fallback}, &Route{Key: RouteKey{Host: "github.com", Owner: "acme"}, Client: owner})
+	require.NoError(t, err)
+	client, err := NewRoutedClient(router)
+	require.NoError(t, err)
+	_, err = client.ListOrgTeams(t.Context(), "Acme")
+	require.NoError(t, err)
+	_, err = client.ListTeamRepositories(t.Context(), "Acme", "payments")
+	require.NoError(t, err)
+	require.Equal(t, []string{"teams:Acme", "team-repos:Acme/payments"}, owner.calls)
+	require.Empty(t, fallback.calls)
+}

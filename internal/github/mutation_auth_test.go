@@ -111,6 +111,14 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) { //nolint:paral
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":77,"state":"DISMISSED"}`))
 		})
+	mux.HandleFunc("GET /api/v3/orgs/acme/teams", func(w http.ResponseWriter, r *http.Request) {
+		record("read:teams", r)
+		_, _ = w.Write([]byte(`[]`))
+	})
+	mux.HandleFunc("GET /api/v3/orgs/acme/teams/payments/repos", func(w http.ResponseWriter, r *http.Request) {
+		record("read:team-repos", r)
+		_, _ = w.Write([]byte(`[]`))
+	})
 	mux.HandleFunc("POST /api/graphql",
 		func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -162,7 +170,11 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) { //nolint:paral
 	writeGQLRT := NewRateTracker(openTestDB(t), "github.example.com", "user:1", "graphql_write")
 	c.SetWriteGraphQLRateTracker(writeGQLRT)
 
-	_, err := c.ListReleases(t.Context(), "acme", "widgets", 10)
+	_, err := c.ListOrgTeams(t.Context(), "acme")
+	require.NoError(err)
+	_, err = c.ListTeamRepositories(t.Context(), "acme", "payments")
+	require.NoError(err)
+	_, err = c.ListReleases(t.Context(), "acme", "widgets", 10)
 	require.NoError(err)
 	_, err = c.CreateIssueComment(t.Context(), "acme", "widgets", 5, "lgtm")
 	require.NoError(err)
@@ -183,6 +195,8 @@ func TestMutationsUseUserPATWhileReadsUseAppToken(t *testing.T) { //nolint:paral
 
 	mu.Lock()
 	defer mu.Unlock()
+	assert.Equal("Bearer user-pat", authByCall["read:teams"])
+	assert.Equal("Bearer user-pat", authByCall["read:team-repos"])
 	assert.Equal("Bearer ghs_app_token", authByCall["read:releases"])
 	assert.Equal("Bearer user-pat", authByCall["write:comment"])
 	assert.Equal("Bearer user-pat", authByCall["write:merge"])
@@ -448,6 +462,11 @@ func TestNewClientRejectsMutationsWithoutStartupWriteIdentity(t *testing.T) {
 	_, _, err = client.ListNotifications(t.Context(), NotificationListOptions{
 		RepoOwner: "acme", RepoName: "widget",
 	})
+	require.ErrorIs(err, ErrMissingWriteIdentity)
+	teams := client.(TeamReader)
+	_, err = teams.ListOrgTeams(t.Context(), "acme")
+	require.ErrorIs(err, ErrMissingWriteIdentity)
+	_, err = teams.ListTeamRepositories(t.Context(), "acme", "payments")
 	require.ErrorIs(err, ErrMissingWriteIdentity)
 }
 

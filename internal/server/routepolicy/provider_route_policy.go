@@ -362,6 +362,8 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "post-pr-comment", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "post-pr-comment-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "prepare-federation-spoke", Owner: NodeLocal},
+	{OperationID: "list-github-teams", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
+	{OperationID: "list-github-team-repositories", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "preview-repos", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "publish-docs-git", Owner: NodeLocal},
 	{OperationID: "publish-pr-review-draft", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},

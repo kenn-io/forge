@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/kit/agenthook"
+	"go.kenn.io/kit/agentsetup"
 )
 
 const (
@@ -299,15 +300,14 @@ func agentHookStatus(configPath, rawAgent, binary string, stdout io.Writer) erro
 	if err != nil {
 		return err
 	}
-	var inspectErr error
+	failed := false
 	for _, agent := range agents {
 		profile, _ := agenthook.LookupProfile(agent)
 		result, err := agenthook.PlanInstall(agent, target.options(agent))
 		var line string
 		if err != nil {
-			path, _ := agenthook.ConfigPath(agent)
-			line = fmt.Sprintf("%s: unknown (%s): %v", profile.DisplayName, path, err)
-			inspectErr = errors.Join(inspectErr, err)
+			line = fmt.Sprintf("%s: unknown: %v", profile.DisplayName, err)
+			failed = true
 		} else if result.Changed {
 			line = fmt.Sprintf("%s: registration needs install (%s)", profile.DisplayName, result.ConfigPath)
 		} else {
@@ -317,7 +317,10 @@ func agentHookStatus(configPath, rawAgent, binary string, stdout io.Writer) erro
 			return err
 		}
 	}
-	return inspectErr
+	if failed {
+		return agentsetup.ErrNotReady
+	}
+	return nil
 }
 
 type agentHookTarget struct {

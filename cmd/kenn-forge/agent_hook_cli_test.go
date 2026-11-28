@@ -20,7 +20,17 @@ import (
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/kit/agenthook"
+	"go.kenn.io/kit/agentsetup"
 )
+
+func isolateAgentHookConfigEnvironment(t *testing.T) {
+	t.Helper()
+	for _, profile := range agenthook.Profiles() {
+		if profile.ConfigEnvironment != "" {
+			t.Setenv(profile.ConfigEnvironment, "")
+		}
+	}
+}
 
 func TestAgentHookRunRelaysLifecyclePayloadToDaemon(t *testing.T) {
 	assert := assert.New(t)
@@ -140,16 +150,7 @@ func TestAgentHookInstallDefaultsToEveryKitProfile(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("LOCALAPPDATA", home)
 	t.Setenv("USERPROFILE", home)
-	for _, env := range []string{
-		"CLAUDE_CONFIG_DIR",
-		"CODEX_HOME",
-		"COPILOT_HOME",
-		"GEMINI_CLI_HOME",
-		"HERMES_HOME",
-		"QWEN_HOME",
-	} {
-		t.Setenv(env, "")
-	}
+	isolateAgentHookConfigEnvironment(t)
 	configPath := filepath.Join(home, "forge.toml")
 	require.NoError(os.WriteFile(
 		configPath,
@@ -522,10 +523,9 @@ func TestAgentHookPreviewAndStatus(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("PATH", t.TempDir())
+	isolateAgentHookConfigEnvironment(t)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
-	for _, key := range []string{"CLAUDE_CONFIG_DIR", "CODEX_HOME", "COPILOT_HOME", "GEMINI_CLI_HOME", "HERMES_HOME", "QWEN_HOME", "PI_CODING_AGENT_DIR", "KENN_FORGE_DATA_DIR"} {
-		t.Setenv(key, "")
-	}
+	t.Setenv("KENN_FORGE_DATA_DIR", "")
 	require.NoError(t, os.Unsetenv("KENN_FORGE_DATA_DIR"))
 	configPath := filepath.Join(home, "forge.toml")
 	require.NoError(t, os.WriteFile(configPath, fmt.Appendf(nil, "data_dir = %q\n", filepath.Join(home, "data")), 0o600))
@@ -567,10 +567,12 @@ func TestAgentHookPreviewAndStatus(t *testing.T) {
 	require.NoError(t, run("status", "--agent", "claude", "--binary", other))
 	assert.Contains(t, out.String(), "Claude Code: registration needs install")
 	require.NoError(t, os.WriteFile(settings, []byte("invalid"), 0o600))
-	require.Error(t, run("status"))
-	assert.Contains(t, out.String(), "Claude Code: unknown ("+settings+")")
+	require.ErrorIs(t, run("status"), agentsetup.ErrNotReady)
+	assert.Contains(t, out.String(), "Claude Code: unknown: decode agent hook config "+settings)
+	assert.Equal(t, 1, strings.Count(out.String(), settings))
 	assert.Contains(t, out.String(), "Codex:")
 	after, err = os.ReadFile(settings)
 	require.NoError(t, err)
 	assert.Equal(t, "invalid", string(after))
+	require.ErrorContains(t, run("status", "--dry-run"), "unknown flag: --dry-run")
 }

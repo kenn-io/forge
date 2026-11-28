@@ -41,6 +41,12 @@ vi.mock("../api/generated/index.js", async (importOriginal) => {
       ...actual.RepositoriesService,
       listRepos: async (options?: { signal?: AbortSignal }) =>
         unwrapMockResult(await apiMocks.client.GET("/repos", options)),
+      listGithubTeams: async (query: unknown, options?: { signal?: AbortSignal }) =>
+        unwrapMockResult(await apiMocks.client.GET("/repos/github-teams", { query, ...options })),
+      listGithubTeamRepositories: async (path: unknown, query: unknown, options?: { signal?: AbortSignal }) =>
+        unwrapMockResult(
+          await apiMocks.client.GET("/repos/github-teams/{slug}/repositories", { path, query, ...options }),
+        ),
     },
     SettingsService: {
       ...actual.SettingsService,
@@ -1394,5 +1400,87 @@ describe("RepoTypeahead", () => {
     });
     expect(screen.getByRole("dialog", { name: "Delete repository preset?" })).toBeTruthy();
     expect(settingsStore.getRepoPresets()).toHaveLength(1);
+  });
+
+  it("disables team selection when no GitHub repository is configured", async () => {
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "gitlab",
+        platform_host: "gitlab.com",
+        owner: "group",
+        name: "project",
+        repo_path: "group/project",
+        platform_repo_id: 42,
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    render(RepoTypeahead, { props: { selected: undefined, onchange: vi.fn() } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /Select repository/i }));
+    const button = screen.getByRole("button", { name: "Select from GitHub team…" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("GitHub only");
+  });
+
+  it("applies a team's repositories as an unsaved selection that saves as a new preset", async () => {
+    const api = "github|github.com/acme/api";
+    const web = "github|github.com/acme/web";
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: 1101,
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "web",
+        repo_path: "acme/web",
+        platform_repo_id: 1106,
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", 1101)] }]);
+    setGlobalRepoPresetSelection("Backend", api);
+    getRepos.mockImplementation(async (path: string) => {
+      if (path === "/repos/github-teams") {
+        return { data: [{ slug: "payments", name: "Payments" }], error: undefined } as never;
+      }
+      if (path === "/repos/github-teams/{slug}/repositories") {
+        return {
+          data: [
+            { platform_repo_id: 1101, repo_path: "acme/api" },
+            { platform_repo_id: 1106, repo_path: "acme/web" },
+          ],
+          error: undefined,
+        } as never;
+      }
+      return { data: [], error: undefined };
+    });
+    const onchange = vi.fn();
+    const view = render(RepoTypeahead, { props: { selected: api, onchange } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /Select repository/i }));
+    await fireEvent.click(screen.getByRole("button", { name: "Select from GitHub team…" }));
+    await fireEvent.click(await screen.findByRole("combobox", { name: /^Team/ }));
+    await fireEvent.click(await screen.findByRole("option", { name: "Payments" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Use selection" }));
+
+    expect(onchange).toHaveBeenLastCalledWith(`${api},${web}`);
+    expect(screen.queryByRole("dialog", { name: "Select repositories from a GitHub team" })).toBeNull();
+    await view.rerender({ selected: `${api},${web}`, onchange });
+    await fireEvent.click(screen.getByRole("button", { name: "Save preset" }));
+    expect((screen.getByRole("radio", { name: "Create new preset" }) as HTMLInputElement).checked).toBe(true);
   });
 });

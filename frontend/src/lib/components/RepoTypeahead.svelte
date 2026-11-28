@@ -17,6 +17,7 @@
   import RepoPresetSaveDialog, {
     type RepoPresetSaveTarget,
   } from "./RepoPresetSaveDialog.svelte";
+  import RepoTeamPicker from "./RepoTeamPicker.svelte";
   import TreeCheckbox from "./TreeCheckbox.svelte";
   import ConfirmDialog from "./shared/ConfirmDialog.svelte";
   import {
@@ -37,6 +38,7 @@
   } from "../stores/filter.svelte.js";
   import {
     findMatchingRepoPreset,
+    githubTeamOrgs,
     preferredRepoPreset,
     projectRepoPresetSelection,
     repoPresetRepositoriesForSelection,
@@ -118,6 +120,7 @@
   let mutationExecution: AppExecution<void, never> | null = null;
   let reopenLoadExecution: AppExecution<void, never> | null = null;
   let saveDialogOpen = $state(false);
+  let teamPickerOpen = $state(false);
   let deletePreset = $state<RepoPreset>();
   let mutationBusy = $state(false);
   let mutationError = $state<string>();
@@ -295,6 +298,9 @@
   const preferredPreset = $derived(
     preferredRepoPreset(repoPresets, selected, getGlobalRepoPresetAffinity(), options),
   );
+  const teamOrgs = $derived(githubTeamOrgs(
+    configuredRepos.map((repo) => ({ ...repo, provider: canonicalProvider(repo.provider) })),
+  ));
   const selectedPresetRepos = $derived(repoPresetRepositoriesForSelection(selected, options));
   const displayLabel = $derived.by((): RepoSelectorLabel => {
     if (selectedValues.length === 0) return { primary: "Global", full: "Global" };
@@ -394,6 +400,14 @@
   function clearSelection() {
     setGlobalRepoPresetSelection(undefined, undefined);
     onchange(undefined);
+  }
+
+  // A team's repositories become an unsaved selection the user can edit and
+  // then save through the ordinary preset dialog.
+  function applyTeamSelection(next: string): void {
+    teamPickerOpen = false;
+    setGlobalRepoPresetSelection(undefined, next);
+    onchange(next);
   }
 
   function openSaveDialog(): void {
@@ -549,7 +563,7 @@
   }
 
   function handleBlur(e: FocusEvent) {
-    if (saveDialogOpen || deletePreset) return;
+    if (saveDialogOpen || teamPickerOpen || deletePreset) return;
     const related = e.relatedTarget as Node | null;
     if (containerEl && related && containerEl.contains(related)) {
       return;
@@ -730,6 +744,15 @@
             <p class="typeahead-error" role="alert">{mutationError}</p>
           {/if}
           <Button
+            class="team-select-button"
+            size="sm"
+            disabled={teamOrgs.length === 0 || mutationBusy}
+            title={teamOrgs.length === 0 ? "GitHub only" : undefined}
+            onclick={() => (teamPickerOpen = true)}
+          >
+            Select from GitHub team…
+          </Button>
+          <Button
             class="save-preset-button"
             size="sm"
             disabled={selectedValues.length === 0 || selectedPresetRepos === undefined || mutationBusy}
@@ -757,6 +780,15 @@
       mutationError = undefined;
     }}
     onSave={savePreset}
+  />
+{/if}
+
+{#if allowPresetManagement && teamPickerOpen}
+  <RepoTeamPicker
+    orgs={teamOrgs}
+    catalog={options}
+    onClose={() => (teamPickerOpen = false)}
+    onApply={applyTeamSelection}
   />
 {/if}
 
@@ -982,6 +1014,7 @@
     background: var(--bg-surface);
   }
 
+  :global(.team-select-button.kit-button),
   :global(.save-preset-button.kit-button) {
     width: 100%;
     justify-content: center;

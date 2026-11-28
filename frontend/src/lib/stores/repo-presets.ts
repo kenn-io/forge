@@ -1,6 +1,7 @@
 import type { RepoPreset } from "../api/types.js";
 import type { RepoPresetRepository as GeneratedRepoPresetRepository } from "../api/generated/models/index.js";
 import {
+  repositoryIdKey,
   repositoryKeyFromWire,
   repositoryKeyToRequiredWire,
   sameRepositoryKey,
@@ -87,4 +88,46 @@ export function preferredRepoPreset(
   if (!affinity) return undefined;
   const affinityKey = affinity.toLowerCase();
   return presets.find((preset) => preset.name.toLowerCase() === affinityKey);
+}
+
+export interface RepoTeamOrg {
+  platform_host: string;
+  owner: string;
+}
+
+// The GitHub organizations a team lookup may target: the distinct host and
+// owner pairs of configured GitHub repositories, globs included. The server
+// rejects any pair outside its configuration before calling GitHub.
+export function githubTeamOrgs(
+  configured: readonly { provider: string; platform_host: string; owner: string }[],
+): RepoTeamOrg[] {
+  const orgs = new Map<string, RepoTeamOrg>();
+  for (const repo of configured) {
+    if (repo.provider !== "github" || !repo.platform_host || !repo.owner) continue;
+    const key = `${repo.platform_host.toLowerCase()}/${repo.owner.toLowerCase()}`;
+    if (!orgs.has(key)) orgs.set(key, { platform_host: repo.platform_host, owner: repo.owner });
+  }
+  return [...orgs.values()];
+}
+
+// Maps a team's repositories to selector values by stable GitHub ID on the
+// same host, so a renamed repository still matches; owner/name is not compared.
+export function selectionForTeamRepositories(
+  teamRepos: readonly { platform_repo_id: number }[],
+  platformHost: string,
+  availableRepos: readonly RepoPresetCatalogEntry[],
+): string | undefined {
+  const values = teamRepos.flatMap((repo) => {
+    const key = repositoryIdKey(repo.platform_repo_id);
+    if (!key) return [];
+    const match = availableRepos.find(
+      (candidate) =>
+        candidate.provider === "github" &&
+        candidate.platform_host === platformHost &&
+        sameRepositoryKey(candidate.repositoryKey, key),
+    );
+    return match ? [match.value] : [];
+  });
+  if (values.length === 0) return undefined;
+  return serializeRepoFilterValue([...new Set(values)]);
 }

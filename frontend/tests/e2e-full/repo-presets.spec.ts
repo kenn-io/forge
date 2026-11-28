@@ -84,3 +84,56 @@ test("repository presets persist, overwrite atomically, and delete without clear
     await server.stop();
   }
 });
+
+test("a GitHub team's configured repositories become an editable selection that saves as a preset", async ({
+  browser,
+}) => {
+  const server = await startIsolatedE2EServer();
+  const page = await browser.newPage();
+  try {
+    await page.goto(`${server.info.base_url}/issues`);
+    await page.locator(".issue-item").first().waitFor({ state: "visible", timeout: 10_000 });
+    await page.getByRole("button", { name: /^Select repository:/ }).click();
+    await page.getByRole("button", { name: "Select from GitHub team…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Select repositories from a GitHub team" });
+    const organization = dialog.getByRole("combobox", { name: /^Organization/ });
+    if (!(await organization.textContent())?.includes("acme")) {
+      await organization.click();
+      await page.getByRole("option", { name: /^acme/ }).first().click();
+    }
+    await dialog.getByRole("combobox", { name: /^Team/ }).click();
+    await page.getByRole("option", { name: "Platform" }).click();
+    await expect(dialog.getByText("2 configured repositories will be selected.")).toBeVisible();
+    await dialog.getByRole("button", { name: "Use selection" }).click();
+    await expect(dialog).toBeHidden();
+
+    const repoList = page.getByRole("listbox", { name: "Repositories" });
+    const widgets = repoList.getByRole("option", { name: "github/github.com/acme/widgets", exact: true });
+    const tools = repoList.getByRole("option", { name: "github/github.com/acme/tools", exact: true });
+    await expect(widgets).toHaveAttribute("aria-selected", "true");
+    await expect(tools).toHaveAttribute("aria-selected", "true");
+    await tools.click();
+    await expect(tools).toHaveAttribute("aria-selected", "false");
+    await page.getByRole("button", { name: "Save preset" }).click();
+    await page.getByRole("textbox", { name: "Preset name" }).fill("Platform team");
+    const created = page.waitForResponse(
+      (response) => response.request().method() === "POST" && response.url().endsWith("/api/v1/settings/repo-presets"),
+    );
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    expect((await created).ok()).toBe(true);
+    await page.keyboard.press("Escape");
+
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Select repository: Platform team" })).toBeVisible();
+    const saved = await page.request.get(`${server.info.base_url}/api/v1/settings`);
+    expect((await saved.json()).repo_presets).toEqual([
+      expect.objectContaining({
+        name: "Platform team",
+        repos: [expect.objectContaining({ repo_path: "acme/widgets", platform_repo_id: expect.any(Number) })],
+      }),
+    ]);
+  } finally {
+    await page.close();
+    await server.stop();
+  }
+});

@@ -89,3 +89,14 @@ it without scheduling a full sync of every configured repository.
 
 The global repository selector also controls Activity scope. A named repository
 set is handy for keeping a team, service group, or release train together.
+
+To start a set from a GitHub team, open the selector, choose **Select from
+GitHub team…**, then pick one of your configured GitHub organizations and a
+team. Forge selects every configured repository the team can access,
+read-only access included. Adjust the selection if you like, then choose
+**Save preset**. The preset is a snapshot: it does not change when the team
+gains or loses repositories later.
+
+Team lookup uses your own GitHub credential, such as a personal access token
+or a `gh` login; the Forge GitHub App alone cannot read teams. A classic token
+needs the `read:org` scope.

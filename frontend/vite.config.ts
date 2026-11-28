@@ -481,6 +481,7 @@ const config = {
       "@lucide/svelte/icons/eraser",
       "@lucide/svelte/icons/eye-off",
       "@lucide/svelte/icons/external-link",
+      "@lucide/svelte/icons/face-slightly-smiling-plus",
       "@lucide/svelte/icons/file-pen",
       "@lucide/svelte/icons/file-search",
       "@lucide/svelte/icons/file-text",

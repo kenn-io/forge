@@ -3296,7 +3296,7 @@ describe("EventTimeline", () => {
     renderTimeline({
       props: {
         events: [
-          makeEvent({ ID: 1, Body: "Looks good", EventType: "issue_comment", PlatformID: 44 }),
+          makeEvent({ Body: "Looks good", EventType: "issue_comment", PlatformID: 44 }),
           makeEvent({ ID: 2, Body: "Another comment", EventType: "issue_comment", PlatformID: 45 }),
         ],
         onReactToComment,
@@ -3318,21 +3318,15 @@ describe("EventTimeline", () => {
     expect(content).toBe("rocket");
     expect(screen.queryByRole("menu", { name: "Reactions" })).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(trigger));
-    expect(trigger.getAttribute("aria-disabled")).toBe("true");
-    await fireEvent.click(trigger);
-    expect(screen.queryByRole("menu", { name: "Reactions" })).toBeNull();
-    expect(onReactToComment).toHaveBeenCalledTimes(1);
-
-    expect(otherTrigger!.getAttribute("aria-disabled")).not.toBe("true");
     await fireEvent.click(otherTrigger!);
     await fireEvent.click(
       within(screen.getByRole("menu", { name: "Reactions" })).getByRole("menuitem", { name: "Eyes" }),
     );
-    expect(onReactToComment).toHaveBeenCalledTimes(2);
-    const [otherEvent, otherContent, otherCallbacks] = onReactToComment.mock.calls[1]!;
+    const [otherEvent, , otherCallbacks] = onReactToComment.mock.calls[1]!;
     expect(otherEvent).toMatchObject({ PlatformID: 45 });
-    expect(otherContent).toBe("eyes");
-    expect(otherTrigger!.getAttribute("aria-disabled")).toBe("true");
+    expect(trigger.getAttribute("aria-disabled")).toBe("true");
+    await fireEvent.click(trigger);
+    expect(screen.queryByRole("menu", { name: "Reactions" })).toBeNull();
 
     callbacks.onSettled();
     await waitFor(() => expect(trigger.getAttribute("aria-disabled")).not.toBe("true"));

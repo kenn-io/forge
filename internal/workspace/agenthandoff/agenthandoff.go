@@ -20,6 +20,11 @@ const DefaultPollInterval = 250 * time.Millisecond
 // error status. The wrapped message carries the workspace's own error text.
 var ErrWorkspaceSetupFailed = errors.New("workspace setup failed")
 
+// ErrWorkspaceDeleting reports a workspace being deleted or whose deletion
+// failed. Neither becomes ready, so waiting for it would only run out the
+// caller's deadline.
+var ErrWorkspaceDeleting = errors.New("workspace is being deleted")
+
 // Poller paces retry loops. The zero value uses DefaultPollInterval.
 type Poller struct {
 	Interval time.Duration
@@ -63,8 +68,9 @@ func (p Poller) Until(ctx context.Context, step func(context.Context) (bool, err
 }
 
 // WaitForWorkspace polls get until the workspace reports the ready status.
-// The error status ends the wait with ErrWorkspaceSetupFailed; every other
-// status keeps polling.
+// The error status ends the wait with ErrWorkspaceSetupFailed, and the
+// deleting and deletion_failed statuses end it with ErrWorkspaceDeleting;
+// every other status keeps polling.
 func (p Poller) WaitForWorkspace(
 	ctx context.Context, get func(context.Context) (WorkspaceState, error),
 ) error {
@@ -81,6 +87,8 @@ func (p Poller) WaitForWorkspace(
 				return false, errors.Join(ErrWorkspaceSetupFailed, errors.New(message))
 			}
 			return false, ErrWorkspaceSetupFailed
+		case "deleting", "deletion_failed":
+			return false, ErrWorkspaceDeleting
 		}
 		return false, nil
 	})

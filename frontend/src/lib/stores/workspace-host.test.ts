@@ -14,6 +14,7 @@ import {
 import {
   createdWorkspaceRef,
   markWorkspaceIdDeleted,
+  recordDiscoveredWorkspace,
   nextWorkspaceLifecycleTick,
   recordWorkspaceCreated,
   resetWorkspaceCreatePendingForTest,
@@ -25,6 +26,7 @@ import {
   desiredSlot,
   getInlineWorkspaceController,
   publishHostedSessions,
+  publishHostedLaunchTargets,
   hostedWorkspaceLauncher,
   registerWorkspaceLauncher,
   hostedSessionRegistryKey,
@@ -176,6 +178,111 @@ describe("workspace host store", () => {
     prs.reconcile(identityA, null, nextWorkspaceLifecycleTick());
     expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
   });
+  it("hosts a workspace on another machine beside the item, named in its pane label", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const remote = { id: "ws-r", status: "ready", hostKey: "devbox:compute-a", hostLabel: "compute-a (devbox)" };
+    prs.recordCreated(identityA, remote);
+    prs.claim(identityA, prs.effectiveWorkspaceRef(identityA, null)!);
+    expect(desiredSlot()).toBe("prs");
+    expect(desiredKey()).toEqual({ workspaceId: "ws-r", hostKey: "devbox:compute-a" });
+    expect(prs.workspacePaneLabel()).toBe("Workspace on compute-a (devbox)");
+  });
+
+  it("keeps the remote workspace this tab created over one found on another machine", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.recordCreated(identityA, { id: "ws-b", status: "ready", hostKey: "b".repeat(32) });
+    recordDiscoveredWorkspace(identityA, { id: "ws-c", status: "ready", hostKey: "c".repeat(32) });
+    expect(prs.effectiveWorkspaceRef(identityA, null)?.id).toBe("ws-b");
+  });
+
+  it("uses a workspace found on another machine only when this Forge has none", () => {
+    const prs = getInlineWorkspaceController("prs");
+    recordDiscoveredWorkspace(identityA, { id: "ws-c", status: "ready", hostKey: "c".repeat(32) });
+    expect(prs.effectiveWorkspaceRef(identityA, null)?.id).toBe("ws-c");
+    expect(prs.effectiveWorkspaceRef(identityA, refA)?.id).toBe("ws-a");
+  });
+
+  it("stops showing a found workspace once its machine reports it gone", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const found = { id: "ws-c", status: "ready", hostKey: "c".repeat(32) };
+    recordDiscoveredWorkspace(identityA, found);
+    prs.claim(identityA, prs.effectiveWorkspaceRef(identityA, null)!);
+    notifyWorkspaceDeleted("ws-c", found.hostKey);
+    // The fleet snapshot can still list it for a while.
+    recordDiscoveredWorkspace(identityA, found);
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
+    recordDiscoveredWorkspace(identityA, { ...found, id: "ws-d" });
+    expect(prs.effectiveWorkspaceRef(identityA, null)?.id).toBe("ws-d");
+  });
+
+  it("names a fleet member without a known name as another machine, not by its node ID", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, { id: "ws-r", status: "ready", hostKey: "b".repeat(32) });
+    expect(prs.workspacePaneLabel()).toBe("Workspace on another machine");
+  });
+
+  it("offers the launch targets the hosted view loaded for the workspace this surface shows", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const remote = { id: "ws-r", status: "ready", hostKey: "devbox:compute-a" };
+    const targets = [{ key: "devbox-agent", label: "Devbox Agent", kind: "agent" as const, available: true }];
+    prs.claim(identityA, remote);
+    expect(prs.launchTargets()).toBeNull();
+    // Another machine's workspace with the same ID is not this one.
+    publishHostedLaunchTargets({ workspaceId: "ws-r", hostKey: "devbox:other" }, targets);
+    expect(prs.launchTargets()).toBeNull();
+    publishHostedLaunchTargets({ workspaceId: "ws-r", hostKey: "devbox:compute-a" }, targets);
+    expect(prs.launchTargets()).toEqual(targets);
+    prs.release();
+    expect(prs.launchTargets()).toBeNull();
+  });
+
+  it("keeps a remote workspace link when this Forge's detail reports no workspace", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const remote = { id: "ws-r", status: "ready", hostKey: "devbox:compute-a" };
+    prs.recordCreated(identityA, remote);
+    // This Forge never lists another machine's workspace, so its absence
+    // from a post-creation fetch is not a deletion.
+    prs.reconcile(identityA, null, nextWorkspaceLifecycleTick());
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(remote);
+    // A local workspace for the item replaces the remote link.
+    prs.reconcile(identityA, refA, nextWorkspaceLifecycleTick());
+    expect(prs.effectiveWorkspaceRef(identityA, refA)).toEqual(refA);
+  });
+
+  it("deleting a remote workspace releases the item's claim on it", () => {
+    const prs = getInlineWorkspaceController("prs");
+    const remote = { id: "ws-r", status: "ready", hostKey: "devbox:compute-a" };
+    prs.recordCreated(identityA, remote);
+    prs.claim(identityA, remote);
+    notifyWorkspaceDeleted("ws-r", "devbox:other");
+    expect(desiredSlot()).toBe("prs");
+    notifyWorkspaceDeleted("ws-r", "devbox:compute-a");
+    expect(desiredSlot()).toBeNull();
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
+  });
+
+  it("names a remote machine from its key until the fleet snapshot names it", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.claim(identityA, { id: "ws-r", status: "ready", hostKey: "devbox:compute-a" });
+    expect(prs.workspacePaneLabel()).toBe("Workspace on compute-a (devbox)");
+  });
+
+  it("keeps a remote link when a stale detail still names a deleted local workspace", () => {
+    const prs = getInlineWorkspaceController("prs");
+    notifyWorkspaceDeleted("ws-a");
+    const remote = { id: "ws-r", status: "ready", hostKey: "devbox:compute-a" };
+    prs.recordCreated(identityA, remote);
+    prs.reconcile(identityA, refA, nextWorkspaceLifecycleTick());
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toEqual(remote);
+  });
+
+  it("forgets a remote link when its workspace is deleted while the item's pane is closed", () => {
+    const prs = getInlineWorkspaceController("prs");
+    prs.recordCreated(identityA, { id: "ws-r", status: "ready", hostKey: "devbox:compute-a" });
+    notifyWorkspaceDeleted("ws-r", "devbox:compute-a");
+    expect(prs.effectiveWorkspaceRef(identityA, null)).toBeNull();
+  });
+
   it("a controller-less recreation under a fresh ID supersedes the tombstone", () => {
     const prs = getInlineWorkspaceController("prs");
     prs.claim(identityA, refA);

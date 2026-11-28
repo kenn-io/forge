@@ -20,6 +20,7 @@ import {
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
 import { createTestController } from "../workspace/inlineWorkspaceTestController.svelte.js";
+import { getInlineWorkspaceController, resetWorkspaceHostForTest } from "../../stores/workspace-host.svelte.js";
 
 const launchTargets = [
   {
@@ -37,6 +38,16 @@ const launchTargets = [
 // remounts; tests that leave a deferred create unresolved must not leak
 // that pending identity into later tests.
 afterEach(resetWorkspaceCreatePendingForTest);
+
+// Create Workspace waits until the page has looked for the item's workspace on
+// other machines.
+async function waitForWorkspaceLookup(): Promise<void> {
+  await waitFor(() =>
+    expect(
+      (screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
+}
 
 const clipboardMockState = vi.hoisted(() => ({
   resolvers: [] as Array<(ok: boolean) => void>,
@@ -485,7 +496,11 @@ describe("IssueDetail activity view", () => {
     const fresh = issueDetail();
     fresh.issue.Title = "Fresh issue detail";
     const syncResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
-    const get = vi.fn(async () => ({ data: cached, error: undefined }));
+    const get = vi.fn(async (path: string) =>
+      path === "/snapshot" ? { data: {}, error: undefined } : { data: cached, error: undefined },
+    );
+    // The page also looks for the issue's workspace on other machines.
+    const detailReads = () => get.mock.calls.filter(([path]) => path !== "/snapshot");
     const post = vi.fn(() => syncResponse.promise);
     issueRuntime = makeTestAppRuntime({ GET: get, POST: post } as unknown as GeneratedClient);
     const issuesStore = createIssuesStore({ runtime: issueRuntime });
@@ -519,7 +534,7 @@ describe("IssueDetail activity view", () => {
         [NAVIGATE_KEY, vi.fn()],
       ]),
     });
-    await waitFor(() => expect(get).toHaveBeenCalledOnce());
+    await waitFor(() => expect(detailReads()).toHaveLength(1));
     await waitFor(() => expect(issuesStore.isIssueDetailLoading()).toBe(false));
 
     await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));
@@ -529,12 +544,13 @@ describe("IssueDetail activity view", () => {
     syncResponse.resolve({ data: fresh, error: undefined });
 
     await waitFor(() => expect(screen.queryByLabelText("Refreshing detail")).toBeNull());
-    expect(get).toHaveBeenCalledOnce();
+    expect(detailReads()).toHaveLength(1);
     expect(issuesStore.getIssueDetail()?.issue.Title).toBe("Fresh issue detail");
   });
 
-  it("explains that creating a workspace enables agent sessions", () => {
+  it("explains that creating a workspace enables agent sessions", async () => {
     renderIssueDetail(issueDetail());
+    await waitForWorkspaceLookup();
 
     const button = screen.getByRole("button", { name: "Create Workspace" });
     expect(button.getAttribute("aria-describedby")).toBe("issue-create-workspace-description");
@@ -692,6 +708,21 @@ describe("IssueDetail inline workspace handoff", () => {
       await fireEvent.click(create);
       expect(apiClient.POST).not.toHaveBeenCalled();
     } else {
+      // A devbox create also waits until the page has looked for a workspace
+      // on other machines.
+      expect((create as HTMLButtonElement).disabled).toBe(true);
+      snapshot.resolve({
+        data: {
+          hosts: [
+            {
+              configKey: "devbox:compute-a",
+              kind: "devbox",
+              operationAvailability: { workspaceWrite: { available: true } },
+            },
+          ],
+          workspaces: [],
+        },
+      });
       await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
       await fireEvent.click(create);
       await waitFor(() =>
@@ -705,6 +736,113 @@ describe("IssueDetail inline workspace handoff", () => {
       );
     }
     snapshot.resolve({ data: { hosts: [] } });
+  });
+
+  it("opens a quick action's workspace on the saved devbox beside the issue", async () => {
+    const controller = createTestController("split");
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: {
+          hosts: [
+            {
+              configKey: "devbox:compute-a",
+              kind: "devbox",
+              name: "compute-a",
+              operationAvailability: { workspaceWrite: { available: true } },
+            },
+          ],
+        },
+      }),
+      POST: vi.fn(async (path: string) =>
+        path === "/devboxes/{connection_id}/workspaces"
+          ? { data: { id: "ws-devbox", status: "provisioning" } }
+          : { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } },
+      ),
+    };
+    const { navigate } = renderIssueDetail(
+      issueDetail(),
+      undefined,
+      {
+        defaultExecutionTarget: "devbox:compute-a",
+        inlineWorkspace: controller,
+        quickActions: [{ label: "Triage", agent: "codex", prompt: "Triage this issue" }],
+      },
+      apiClient,
+    );
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Triage/ }));
+
+    await waitFor(() =>
+      expect(apiClient.POST).toHaveBeenCalledWith(
+        "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+        expect.objectContaining({
+          params: { path: { connection_id: "compute-a", id: "ws-devbox" } },
+          body: expect.objectContaining({ target_key: "codex", message: "Triage this issue" }),
+        }),
+      ),
+    );
+    expect(controller.recordCreated).toHaveBeenCalledWith(identity, {
+      id: "ws-devbox",
+      status: "provisioning",
+      hostKey: "devbox:compute-a",
+      hostLabel: "compute-a (devbox)",
+    });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("launches in a linked remote workspace, and asks its machine again when its setup failed since", async () => {
+    // The link still says ready; only the devbox knows its setup failed since.
+    const controller = {
+      ...createTestController("split"),
+      effectiveWorkspaceRef: () => ({ id: "ws-devbox", status: "ready", hostKey: "devbox:compute-a" }),
+    };
+    const posts: string[] = [];
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: [] } }),
+      POST: vi.fn(async (path: string) => {
+        posts.push(path);
+        if (path === "/devboxes/{connection_id}/workspaces") {
+          return { data: { id: "ws-devbox", status: "error", reused: true } };
+        }
+        if (path === "/devboxes/{connection_id}/workspaces/{id}/retry") return { data: { id: "ws-devbox" } };
+        // The first handoff finds the setup failure; the one after the retry runs.
+        if (posts.filter((posted) => posted === path).length === 1) {
+          return {
+            error: { status: 409, code: "conflict", title: "Conflict", detail: "workspace setup failed: clone failed" },
+            response: new Response(null, { status: 409 }),
+          };
+        }
+        return { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } };
+      }),
+    };
+    const { navigate } = renderIssueDetail(
+      issueDetail(),
+      undefined,
+      {
+        inlineWorkspace: controller,
+        quickActions: [{ label: "Triage", agent: "codex", prompt: "Triage this issue" }],
+      },
+      apiClient,
+    );
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Triage/ }));
+
+    await waitFor(() =>
+      expect(posts).toEqual([
+        "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+        "/devboxes/{connection_id}/workspaces",
+        "/devboxes/{connection_id}/workspaces/{id}/retry",
+        "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+      ]),
+    );
+    // The recovered action reports no failure.
+    expect(getFlashes()).toEqual([]);
+    expect(controller.revealWorkspace).toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it("shows a quiet status hint after directory failure and still creates on the saved devbox", async () => {
@@ -857,6 +995,7 @@ describe("IssueDetail inline workspace handoff", () => {
         }),
     };
     renderIssueDetail(issueDetail(), undefined, {}, apiClient);
+    await waitForWorkspaceLookup();
     await startTestTelemetry(issueRuntime!, (event) => telemetry(event)).ready;
 
     if (launch) {
@@ -885,6 +1024,7 @@ describe("IssueDetail inline workspace handoff", () => {
       POST: vi.fn().mockResolvedValueOnce({ error: conflict }).mockResolvedValueOnce({ error: conflict }),
     };
     renderIssueDetail(issueDetail(), undefined, {}, apiClient);
+    await waitForWorkspaceLookup();
     await startTestTelemetry(issueRuntime!, (event) => telemetry(event)).ready;
 
     if (launch) {
@@ -1003,6 +1143,7 @@ describe("IssueDetail inline workspace handoff", () => {
       { quickActions: [{ label: "Rebase", agent: "codex", prompt: "Rebase this change" }] },
       apiClient,
     );
+    await waitForWorkspaceLookup();
     const telemetry = vi.fn();
     await startTestTelemetry(issueRuntime!, (event) => telemetry(event)).ready;
     if (intent === "agent") {
@@ -1042,6 +1183,7 @@ describe("IssueDetail inline workspace handoff", () => {
     const controller = createTestController("split");
     const { apiClient, resolvePost } = deferredWorkspaceApiClient();
     renderIssueDetail(issueDetail(), undefined, { inlineWorkspace: controller }, apiClient);
+    await waitForWorkspaceLookup();
 
     await fireEvent.click(
       screen.getByRole("button", {
@@ -1080,6 +1222,7 @@ describe("IssueDetail inline workspace handoff", () => {
       }),
     };
     renderIssueDetail(issueDetail(), undefined, { inlineWorkspace: controller, quickActions: [triage] }, apiClient);
+    await waitForWorkspaceLookup();
     startTestTelemetry(issueRuntime!, (event) => telemetry(event));
 
     await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
@@ -1093,6 +1236,8 @@ describe("IssueDetail inline workspace handoff", () => {
       body: { target_key: "codex", message: "/triage-pr\nquestion all assumptions" },
     });
     await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
+    // The retry succeeded, so the conflict dialog no longer covers the pane.
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Use Existing Branch" })).toBeNull());
     await waitFor(() =>
       expect(telemetry).toHaveBeenCalledExactlyOnceWith({
         event: "workspace_opened",
@@ -1112,6 +1257,7 @@ describe("IssueDetail inline workspace handoff", () => {
         .mockResolvedValueOnce({ data: { id: "ws-existing", status: "ready" } }),
     };
     renderIssueDetail(issueDetail(), undefined, { inlineWorkspace: controller }, apiClient);
+    await waitForWorkspaceLookup();
 
     await fireEvent.click(
       screen.getByRole("button", {
@@ -1288,6 +1434,92 @@ describe("IssueDetail inline workspace handoff", () => {
 
     await vi.waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledWith("ws-remote", buildBNode));
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("opens the workspace another fleet member runs for the issue", async () => {
+    const buildBNode = "b".repeat(32);
+    const fleetWorkspace = (id: string, number: number) => ({
+      id,
+      status: "ready",
+      fleet_host_key: buildBNode,
+      item_type: "issue",
+      item_number: number,
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widget",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: 1001,
+        owner: "acme",
+        name: "widget",
+        repo_path: "acme/widget",
+      },
+    });
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: { hosts: [], workspaces: [fleetWorkspace("ws-other-issue", 8), fleetWorkspace("ws-remote", 7)] },
+      })),
+      POST: vi.fn(),
+    };
+    const onOpenWorkspace = vi.fn();
+    renderIssueDetail(issueDetail(), undefined, { onOpenWorkspace }, apiClient);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Open Workspace", exact: true }));
+    expect(onOpenWorkspace).toHaveBeenCalledWith("ws-remote", buildBNode);
+    expect(apiClient.POST).not.toHaveBeenCalled();
+  });
+
+  it("lets the surface beside the issue claim the workspace another fleet member runs", async () => {
+    resetWorkspaceHostForTest();
+    onTestFinished(resetWorkspaceHostForTest);
+    const buildBNode = "b".repeat(32);
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: {
+          hosts: [],
+          workspaces: [
+            {
+              id: "ws-remote",
+              status: "ready",
+              fleet_host_key: buildBNode,
+              item_type: "issue",
+              item_number: 7,
+              platform_host: "github.com",
+              repo_owner: "acme",
+              repo_name: "widget",
+              repo: {
+                provider: "github",
+                platform_host: "github.com",
+                platform_repo_id: 1001,
+                owner: "acme",
+                name: "widget",
+                repo_path: "acme/widget",
+              },
+            },
+          ],
+        },
+      })),
+      POST: vi.fn(),
+    };
+    const controller = getInlineWorkspaceController("issues");
+    const identity: WorkspaceItemIdentity = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number: 7,
+      itemType: "issue",
+    };
+    // A fresh page: this machine has no workspace for the issue and nothing
+    // was created in this tab.
+    renderIssueDetail(issueDetail(), undefined, { inlineWorkspace: controller }, apiClient);
+
+    await screen.findByRole("button", { name: "Focus Terminal", exact: true });
+    // The surface claims from the controller with the detail's own workspace,
+    // which names none here.
+    expect(controller.effectiveWorkspaceRef(identity, null)).toMatchObject({ id: "ws-remote", hostKey: buildBNode });
   });
 
   it("discards a create failure that lands after the component unmounted (no flash)", async () => {
@@ -1584,7 +1816,9 @@ describe("IssueDetail inline workspace handoff", () => {
     detail.repo.capabilities = { ...capabilities, read_labels: true, label_mutation: true };
     const oldCatalog = Promise.withResolvers<{ data: { labels: Label[] } }>();
     const freshCatalog = Promise.withResolvers<{ data: { labels: Label[] } }>();
-    const get = vi.fn().mockReturnValueOnce(oldCatalog.promise).mockReturnValueOnce(freshCatalog.promise);
+    const catalogs = [oldCatalog.promise, freshCatalog.promise];
+    // The page also looks for the issue's workspace on other machines.
+    const get = vi.fn((path: string) => (path === "/snapshot" ? Promise.resolve({ data: {} }) : catalogs.shift()));
     renderIssueDetail(detail, undefined, {}, { GET: get, POST: vi.fn() });
     const command = {
       itemType: "issue" as const,

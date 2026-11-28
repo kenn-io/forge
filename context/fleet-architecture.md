@@ -38,6 +38,16 @@ or remote workspace and session operations.
   workspace's starting choice share one create path (`frontend/src/lib/api/item-workspace.ts`). An
   unavailable default never falls back to local; the page names it and offers available machines
   (`frontend/src/lib/stores/workspace-target.svelte.ts::createDefaultWorkspaceTarget`).
+- The workspace pane beside a PR or issue hosts a workspace on any machine, and its tab names the
+  machine when the workspace is remote. The item's detail lists only this Forge's workspaces, so
+  the pane keeps a remote link until a local workspace replaces it or the remote one is deleted
+  (`frontend/src/lib/stores/workspace-host.svelte.ts::reconcile`).
+- A quick action on an item linked to another machine's workspace launches there directly, as in a
+  local workspace. Only when the launch answers 404 `workspaceNotFound` or 409 `conflict` is that
+  machine asked for the item's workspace again. A 409 covers failed setup and, on a devbox, a failed
+  workspace context refresh; the devbox proxy passes a worker's 404 through so a deleted workspace's
+  link is dropped. Actions for one item on one machine run in order, each in the item's latest
+  workspace (`frontend/src/lib/stores/bulk-quick-action.ts::runOnLinkedRemoteWorkspace`).
 - Devbox REST and terminal traffic must bypass environment proxies; worker bearer credentials
   belong only on the direct tailnet connection (`internal/server/devboxes.go::registerDevboxTerminalAPI`).
 - Devbox repository admission and launch context use GitHub's integer repository ID, the same ID

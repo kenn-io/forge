@@ -15,6 +15,7 @@ import { createSettingsStore } from "../../stores/settings.svelte.js";
 import { createWorkflowActionsStore } from "../../stores/workflow-actions.svelte.js";
 import { dismissFlash, getFlashes, showFlash } from "../../stores/flash.svelte.js";
 import {
+  createdWorkspaceRef,
   discardWorkspaceLaunch,
   nextWorkspaceLifecycleTick,
   pendingWorkspaceLaunch,
@@ -49,6 +50,16 @@ afterEach(() => {
   quickActionLaunches.clear();
   quickActionWorkspaces.clear();
 });
+
+// Create Workspace waits until the page has looked for the item's workspace on
+// other machines.
+async function waitForWorkspaceLookup(): Promise<void> {
+  await waitFor(() =>
+    expect(
+      (screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
+}
 
 let detailRuntime: OwnedAppRuntime | null = null;
 
@@ -1893,8 +1904,9 @@ describe("PullDetail approvals", () => {
     expect(checkbox?.dataset.taskIndex).toBe("0");
   });
 
-  it("explains that creating a workspace enables agent sessions", () => {
+  it("explains that creating a workspace enables agent sessions", async () => {
     renderPullDetail(pullDetail(), undefined, undefined, { hideWorkspaceAction: false });
+    await waitForWorkspaceLookup();
 
     const buttons = screen.getAllByRole("button", { name: "Create Workspace" });
     expect(buttons.length).toBeGreaterThan(0);
@@ -4427,6 +4439,21 @@ describe("PullDetail inline workspace handoff", () => {
       await fireEvent.click(create);
       expect(apiClient.POST).not.toHaveBeenCalled();
     } else {
+      // A devbox create also waits until the page has looked for a workspace
+      // on other machines.
+      expect((create as HTMLButtonElement).disabled).toBe(true);
+      snapshot.resolve({
+        data: {
+          hosts: [
+            {
+              configKey: "devbox:compute-a",
+              kind: "devbox",
+              operationAvailability: { workspaceWrite: { available: true } },
+            },
+          ],
+          workspaces: [],
+        },
+      });
       await waitFor(() => expect((create as HTMLButtonElement).disabled).toBe(false));
       await fireEvent.click(create);
       await waitFor(() =>
@@ -4470,71 +4497,65 @@ describe("PullDetail inline workspace handoff", () => {
     );
   });
 
-  it.each(["pending", "failed"])(
-    "creates on the saved devbox when cached availability is unavailable and directory refresh is %s",
-    async (refresh) => {
-      const snapshot = Promise.withResolvers<unknown>();
-      const apiClient = {
-        GET: vi
-          .fn()
-          .mockResolvedValueOnce({
-            data: {
-              hosts: [
-                {
-                  configKey: "devbox:compute-a",
-                  kind: "devbox",
-                  operationAvailability: {
-                    workspaceWrite: { available: false, unavailableReason: "Devbox is in maintenance" },
-                  },
+  it("creates on the saved devbox when cached availability is unavailable and directory refresh fails", async () => {
+    const snapshot = Promise.withResolvers<unknown>();
+    const apiClient = {
+      GET: vi
+        .fn()
+        .mockResolvedValueOnce({
+          data: {
+            hosts: [
+              {
+                configKey: "devbox:compute-a",
+                kind: "devbox",
+                operationAvailability: {
+                  workspaceWrite: { available: false, unavailableReason: "Devbox is in maintenance" },
                 },
-              ],
-            },
-          })
-          .mockImplementation((path: string) =>
-            path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: {} }),
-          ),
-        POST: vi.fn().mockResolvedValue({ data: { id: "ws-devbox", status: "provisioning" } }),
-      };
-      detailRuntime = makeTestAppRuntime(apiClient);
-      const warm = detailRuntime.runCommand(loadFleetSnapshot(), {
-        operation: "warm workspace directory",
-        safeContext: {},
-        onFailure: () => {},
-      });
-      expect((await warm.exit)._tag).toBe("Success");
-
-      renderPullDetail(pullDetail(), undefined, apiClient, {
-        hideWorkspaceAction: false,
-        defaultExecutionTarget: "devbox:compute-a",
-      });
-      const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
-      await waitFor(() => expect(apiClient.GET.mock.calls.filter(([path]) => path === "/snapshot")).toHaveLength(2));
-      if (refresh === "failed") {
-        snapshot.reject(new Error("directory unavailable"));
-        await waitFor(() => expect(create.title).toContain("Preferred devbox status unavailable."));
-      }
-      expect(create.disabled).toBe(false);
-      await fireEvent.click(create);
-      await waitFor(() =>
-        expect(apiClient.POST).toHaveBeenCalledWith(
-          "/devboxes/{connection_id}/workspaces",
-          expect.objectContaining({
-            params: { path: { connection_id: "compute-a" } },
-            body: {
-              provider: "github",
-              platform_host: "github.com",
-              platform_repo_id: 1001,
-              owner: "acme",
-              name: "widget",
-              mr_number: 1,
-            },
-          }),
+              },
+            ],
+          },
+        })
+        .mockImplementation((path: string) =>
+          path === "/snapshot" ? snapshot.promise : Promise.resolve({ data: {} }),
         ),
-      );
-      expect(apiClient.POST).toHaveBeenCalledTimes(1);
-      snapshot.resolve({ data: { hosts: [] } });
-    },
-  );
+      POST: vi.fn().mockResolvedValue({ data: { id: "ws-devbox", status: "provisioning" } }),
+    };
+    detailRuntime = makeTestAppRuntime(apiClient);
+    const warm = detailRuntime.runCommand(loadFleetSnapshot(), {
+      operation: "warm workspace directory",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    expect((await warm.exit)._tag).toBe("Success");
+
+    renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "devbox:compute-a",
+    });
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(apiClient.GET.mock.calls.filter(([path]) => path === "/snapshot")).toHaveLength(2));
+    snapshot.reject(new Error("directory unavailable"));
+    await waitFor(() => expect(create.title).toContain("Preferred devbox status unavailable."));
+    expect(create.disabled).toBe(false);
+    await fireEvent.click(create);
+    await waitFor(() =>
+      expect(apiClient.POST).toHaveBeenCalledWith(
+        "/devboxes/{connection_id}/workspaces",
+        expect.objectContaining({
+          params: { path: { connection_id: "compute-a" } },
+          body: {
+            provider: "github",
+            platform_host: "github.com",
+            platform_repo_id: 1001,
+            owner: "acme",
+            name: "widget",
+            mr_number: 1,
+          },
+        }),
+      ),
+    );
+    expect(apiClient.POST).toHaveBeenCalledTimes(1);
+  });
 
   const hubNode = "a".repeat(32);
   const buildBNode = "b".repeat(32);
@@ -4590,6 +4611,116 @@ describe("PullDetail inline workspace handoff", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith(`/terminal/fleet/${buildBNode}/ws-remote`));
   });
 
+  it("opens a quick action's workspace on the default fleet member beside the pull request", async () => {
+    const controller = createTestController("split");
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),
+      POST: vi.fn(async (path: string) =>
+        path === "/fleet/hosts/{host_key}/workspaces"
+          ? { data: { id: "ws-remote", status: "provisioning" } }
+          : { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } },
+      ),
+    };
+    const { navigate, settings } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+      defaultExecutionTarget: "https://build-b.example.test",
+    });
+    settings.setQuickActions([{ label: "Review", agent: "claude", prompt: "Review this change" }]);
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Review/ }));
+
+    await waitFor(() =>
+      expect(apiClient.POST).toHaveBeenCalledWith(
+        "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs",
+        expect.objectContaining({
+          params: { path: { host_key: buildBNode, id: "ws-remote" } },
+          body: expect.objectContaining({ target_key: "claude", message: "Review this change" }),
+        }),
+      ),
+    );
+    expect(controller.recordCreated).toHaveBeenCalledWith(identity, {
+      id: "ws-remote",
+      status: "provisioning",
+      hostKey: buildBNode,
+      hostLabel: "build-b",
+    });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("launches in a linked remote workspace, and asks its machine again when its setup failed since", async () => {
+    // The link still says ready; only the devbox knows its setup failed since.
+    const controller = {
+      ...createTestController("split"),
+      effectiveWorkspaceRef: () => ({ id: "ws-remote", status: "ready", hostKey: "devbox:compute-a" }),
+    };
+    const posts: string[] = [];
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: [] } }),
+      POST: vi.fn(async (path: string) => {
+        posts.push(path);
+        if (path === "/devboxes/{connection_id}/workspaces") {
+          return { data: { id: "ws-remote", status: "error", reused: true } };
+        }
+        if (path === "/devboxes/{connection_id}/workspaces/{id}/retry") return { data: { id: "ws-remote" } };
+        // The first handoff finds the setup failure; the one after the retry runs.
+        if (posts.filter((posted) => posted === path).length === 1) {
+          return {
+            error: { status: 409, code: "conflict", title: "Conflict", detail: "workspace setup failed: clone failed" },
+            response: new Response(null, { status: 409 }),
+          };
+        }
+        return { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } };
+      }),
+    };
+    const { settings, navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+    });
+    // This machine lacks the agent; the devbox validates its own.
+    settings.setLaunchTargets([]);
+    settings.setQuickActions([{ label: "Review", agent: "claude", prompt: "Review this change" }]);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
+    const review = screen.getByRole("menuitem", { name: /Review/ });
+    expect(review.hasAttribute("disabled")).toBe(false);
+    await fireEvent.click(review);
+
+    await waitFor(() =>
+      expect(posts).toEqual([
+        "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+        "/devboxes/{connection_id}/workspaces",
+        "/devboxes/{connection_id}/workspaces/{id}/retry",
+        "/devboxes/{connection_id}/workspaces/{id}/runtime/agent-handoffs",
+      ]),
+    );
+    // The recovered action reports no failure.
+    expect(getFlashes()).toEqual([]);
+    expect(controller.revealWorkspace).toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("offers a linked remote workspace's own agents in the header launch menu", async () => {
+    const controller = {
+      ...createTestController("split"),
+      effectiveWorkspaceRef: () => ({ id: "ws-remote", status: "ready", hostKey: "devbox:compute-a" }),
+      launchTargets: () => [{ key: "devbox-agent", label: "Devbox Agent", kind: "agent" as const, available: true }],
+    };
+    const { settings } = renderPullDetail(pullDetail(), undefined, undefined, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+    });
+    settings.setLaunchTargets([{ key: "codex", label: "Codex", kind: "agent", available: true }]);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Launch an agent" }));
+    expect(screen.queryByRole("menuitem", { name: "Codex" })).toBeNull();
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Devbox Agent" }));
+    expect(controller.launchSession).toHaveBeenCalledWith("devbox-agent");
+  });
+
   it("names an unavailable default and creates on a machine the user picks instead", async () => {
     const apiClient = {
       GET: vi.fn().mockResolvedValue({
@@ -4637,6 +4768,91 @@ describe("PullDetail inline workspace handoff", () => {
     await fireEvent.click(create);
     await waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledWith("ws-remote", buildBNode));
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("opens the replacement once a remote workspace's machine reports it gone, with no pane beside the item", async () => {
+    const posts: string[] = [];
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),
+      POST: vi.fn(async (path: string, init: { params?: { path?: { id?: string } } }) => {
+        const id = init.params?.path?.id;
+        posts.push(id ? `${path} ${id}` : path);
+        if (path === "/fleet/hosts/{host_key}/workspaces") {
+          return { data: { id: posts.length === 1 ? "ws-remote" : "ws-new", status: "ready" } };
+        }
+        if (id === "ws-remote") {
+          return {
+            error: { status: 404, code: "workspaceNotFound", title: "Not Found", detail: "workspace not found" },
+            response: new Response(null, { status: 404 }),
+          };
+        }
+        return { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } };
+      }),
+    };
+    const onOpenWorkspace = vi.fn();
+    const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "https://build-b.example.test",
+      onOpenWorkspace,
+    });
+    settings.setQuickActions([{ label: "Review", agent: "claude", prompt: "Review this change" }]);
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    await fireEvent.click(create);
+    await waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledWith("ws-remote", buildBNode));
+    onOpenWorkspace.mockClear();
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Review/ }));
+
+    await waitFor(() => expect(onOpenWorkspace).toHaveBeenCalledExactlyOnceWith("ws-new", buildBNode));
+    await waitFor(() =>
+      expect(posts).toEqual([
+        "/fleet/hosts/{host_key}/workspaces",
+        "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs ws-remote",
+        "/fleet/hosts/{host_key}/workspaces",
+        "/fleet/hosts/{host_key}/workspaces/{id}/runtime/agent-handoffs ws-new",
+      ]),
+    );
+    expect(getFlashes()).toEqual([]);
+  });
+
+  it("does not link a workspace another machine returns while it is being deleted", async () => {
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({ data: { hosts: fleetHosts({ available: true }) } }),
+      POST: vi.fn().mockResolvedValue({ data: { id: "ws-going", status: "deletion_failed" } }),
+    };
+    const onOpenWorkspace = vi.fn();
+    renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      defaultExecutionTarget: "https://build-b.example.test",
+      onOpenWorkspace,
+    });
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    await waitFor(() => expect(create.disabled).toBe(false));
+    await fireEvent.click(create);
+    await waitFor(() =>
+      expect(getFlashes()).toEqual([
+        expect.objectContaining({
+          tone: "warning",
+          message: "This pull request's workspace on build-b is being deleted. Try again once it is gone.",
+        }),
+      ]),
+    );
+    expect(onOpenWorkspace).not.toHaveBeenCalled();
+    const detail = pullDetail();
+    expect(
+      createdWorkspaceRef({
+        provider: detail.repo.provider,
+        platformHost: detail.platform_host,
+        owner: detail.repo_owner,
+        name: detail.repo_name,
+        repoPath: detail.repo.repo_path,
+        number: detail.merge_request.Number,
+        itemType: "pull",
+      }),
+    ).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0]).toBeTruthy();
   });
 
   it("enables creation when an unavailable default machine comes back", async () => {
@@ -4694,7 +4910,7 @@ describe("PullDetail inline workspace handoff", () => {
     ]);
   });
 
-  it("opens the existing workspace on the default fleet member instead of failing a repeat create", async () => {
+  it("opens the workspace another fleet member runs for the pull request", async () => {
     const fleetWorkspace = (id: string, number: number) => ({
       id,
       status: "ready",
@@ -4717,18 +4933,135 @@ describe("PullDetail inline workspace handoff", () => {
       GET: vi.fn().mockResolvedValue({
         data: {
           hosts: fleetHosts({ available: true }),
-          workspaces: [fleetWorkspace("ws-other-pr", 2), fleetWorkspace("ws-existing", 1)],
+          workspaces: [fleetWorkspace("ws-other-pr", 2), fleetWorkspace("ws-remote", 1)],
         },
       }),
-      POST: vi.fn().mockResolvedValue({
-        error: {
-          type: "about:blank",
-          title: "Conflict",
-          status: 409,
-          code: "workspaceAlreadyExists",
-          detail: "workspace already exists for this MR",
+      POST: vi.fn(),
+    };
+    const onOpenWorkspace = vi.fn();
+    // This machine has no workspace for the pull request and no default machine.
+    renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false, onOpenWorkspace });
+
+    const open = (await screen.findAllByRole("button", { name: "Open Workspace", exact: true }))[0]!;
+    expect(screen.queryByRole("button", { name: "Create Workspace", exact: true })).toBeNull();
+    await fireEvent.click(open);
+    expect(onOpenWorkspace).toHaveBeenCalledWith("ws-remote", buildBNode);
+    expect(apiClient.POST).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["this machine", undefined],
+    // A node ID is sent before the snapshot names its machine, so this default
+    // is ready while the lookup is still running.
+    ["another fleet member", buildBNode],
+  ])("holds Create Workspace on %s until it has looked for one on other machines", async (_label, target) => {
+    const snapshot = Promise.withResolvers<unknown>();
+    const apiClient = { GET: vi.fn(() => snapshot.promise), POST: vi.fn() };
+    renderPullDetail(pullDetail(), undefined, apiClient, {
+      hideWorkspaceAction: false,
+      ...(target ? { defaultExecutionTarget: target } : {}),
+    });
+
+    const create = screen.getAllByRole("button", { name: "Create Workspace", exact: true })[0] as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    expect(create.getAttribute("title")).toBe("Checking other machines for a workspace.");
+    snapshot.resolve({ data: { hosts: fleetHosts({ available: true }), workspaces: [] } });
+    await waitFor(() => expect(create.disabled).toBe(false));
+  });
+
+  it("lets the surface beside the pull request claim the workspace another fleet member runs", async () => {
+    workspaceHost.resetWorkspaceHostForTest();
+    onTestFinished(workspaceHost.resetWorkspaceHostForTest);
+    const apiClient = {
+      GET: vi.fn().mockResolvedValue({
+        data: {
+          hosts: fleetHosts({ available: true }),
+          workspaces: [
+            {
+              id: "ws-remote",
+              status: "ready",
+              fleet_host_key: buildBNode,
+              item_type: "pull_request",
+              item_number: 1,
+              platform_host: "github.com",
+              repo_owner: "acme",
+              repo_name: "widget",
+              repo: {
+                provider: "github",
+                platform_host: "github.com",
+                platform_repo_id: 1001,
+                owner: "acme",
+                name: "widget",
+                repo_path: "acme/widget",
+              },
+            },
+          ],
         },
-        response: new Response(null, { status: 409 }),
+      }),
+      POST: vi.fn(),
+    };
+    const controller = workspaceHost.getInlineWorkspaceController("prs");
+    const identity = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number: 1,
+      itemType: "pull",
+    };
+    // A fresh page: this machine has no workspace for the pull request and
+    // nothing was created in this tab.
+    renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false, inlineWorkspace: controller });
+
+    expect((await screen.findAllByRole("button", { name: "Focus Terminal", exact: true })).length).toBeGreaterThan(0);
+    // The surface claims from the controller with the detail's own workspace,
+    // which names none here.
+    expect(controller.effectiveWorkspaceRef(identity, null)).toMatchObject({ id: "ws-remote", hostKey: buildBNode });
+  });
+
+  it("opens the existing workspace on the default fleet member instead of failing a repeat create", async () => {
+    const fleetWorkspace = (id: string, number: number) => ({
+      id,
+      status: "ready",
+      fleet_host_key: buildBNode,
+      item_type: "pull_request",
+      item_number: number,
+      platform_host: "github.com",
+      repo_owner: "acme",
+      repo_name: "widget",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: 1001,
+        owner: "acme",
+        name: "widget",
+        repo_path: "acme/widget",
+      },
+    });
+    // Another tab created the workspace after this page looked for one.
+    let posted = false;
+    const apiClient = {
+      GET: vi.fn(async () => ({
+        data: {
+          hosts: fleetHosts({ available: true }),
+          workspaces: posted
+            ? [fleetWorkspace("ws-other-pr", 2), fleetWorkspace("ws-existing", 1)]
+            : [fleetWorkspace("ws-other-pr", 2)],
+        },
+      })),
+      POST: vi.fn(async () => {
+        posted = true;
+        return {
+          error: {
+            type: "about:blank",
+            title: "Conflict",
+            status: 409,
+            code: "workspaceAlreadyExists",
+            detail: "workspace already exists for this MR",
+          },
+          response: new Response(null, { status: 409 }),
+        };
       }),
     };
     const { navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
@@ -4748,40 +5081,45 @@ describe("PullDetail inline workspace handoff", () => {
   ] as const)(
     "asks for the agent chosen at create in %s on the default fleet member",
     async (_label, exists, origin) => {
+      // The existing workspace was created elsewhere after this page loaded.
+      let posted = false;
       const apiClient = {
-        GET: vi.fn().mockResolvedValue({
+        GET: vi.fn(async () => ({
           data: {
             hosts: fleetHosts({ available: true }),
-            workspaces: [
-              {
-                id: "ws-existing",
-                status: "ready",
-                fleet_host_key: buildBNode,
-                item_type: "pull_request",
-                item_number: 1,
-                platform_host: "github.com",
-                repo_owner: "acme",
-                repo_name: "widget",
-                repo: {
-                  provider: "github",
-                  platform_host: "github.com",
-                  platform_repo_id: 1001,
-                  owner: "acme",
-                  name: "widget",
-                  repo_path: "acme/widget",
-                },
-              },
-            ],
+            workspaces: !(exists && posted)
+              ? []
+              : [
+                  {
+                    id: "ws-existing",
+                    status: "ready",
+                    fleet_host_key: buildBNode,
+                    item_type: "pull_request",
+                    item_number: 1,
+                    platform_host: "github.com",
+                    repo_owner: "acme",
+                    repo_name: "widget",
+                    repo: {
+                      provider: "github",
+                      platform_host: "github.com",
+                      platform_repo_id: 1001,
+                      owner: "acme",
+                      name: "widget",
+                      repo_path: "acme/widget",
+                    },
+                  },
+                ],
           },
-        }),
-        POST: vi.fn().mockResolvedValue(
-          exists
+        })),
+        POST: vi.fn(async () => {
+          posted = true;
+          return exists
             ? {
                 error: { type: "about:blank", title: "Conflict", status: 409, code: "workspaceAlreadyExists" },
                 response: new Response(null, { status: 409 }),
               }
-            : { data: { id: "ws-new", status: "creating" } },
-        ),
+            : { data: { id: "ws-new", status: "creating" } };
+        }),
       };
       renderPullDetail(pullDetail(), undefined, apiClient, {
         hideWorkspaceAction: false,
@@ -5018,6 +5356,7 @@ describe("PullDetail inline workspace handoff", () => {
       POST: vi.fn().mockResolvedValue({ error: { status: 403, title: "Create denied" } }),
     };
     const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false });
+    await waitForWorkspaceLookup();
     settings.setQuickActions([{ label: "Review", agent: "codex", prompt: "Review this change" }]);
     const telemetry = vi.fn();
     await startTestTelemetry(detailRuntime!, (event) => telemetry(event)).ready;
@@ -5076,6 +5415,7 @@ describe("PullDetail inline workspace handoff", () => {
     const { navigate } = renderPullDetail(pullDetail(), undefined, apiClient, {
       hideWorkspaceAction: false,
     });
+    await waitForWorkspaceLookup();
 
     await fireEvent.click(
       screen.getAllByRole("button", {
@@ -5118,6 +5458,7 @@ describe("PullDetail inline workspace handoff", () => {
       hideWorkspaceAction: false,
       inlineWorkspace: controller,
     });
+    await waitForWorkspaceLookup();
     settings.setLaunchTargets([{ key: "chat", label: "Chat agent", kind: "acp", available: true }]);
     startTestTelemetry(detailRuntime!, (event) => telemetry(event));
     settings.setQuickActions([rebase]);
@@ -5167,6 +5508,7 @@ describe("PullDetail inline workspace handoff", () => {
       }),
     };
     const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false });
+    await waitForWorkspaceLookup();
     settings.setQuickActions([{ label: "Rebase", agent: "codex", prompt: "rebase this" }]);
 
     await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
@@ -5200,6 +5542,7 @@ describe("PullDetail inline workspace handoff", () => {
       }),
     };
     const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false });
+    await waitForWorkspaceLookup();
     settings.setQuickActions([{ label: "Rebase", agent: "codex", prompt: "rebase this" }]);
 
     await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));

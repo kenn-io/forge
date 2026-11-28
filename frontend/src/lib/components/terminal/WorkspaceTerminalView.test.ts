@@ -5123,6 +5123,70 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.queryByText("Launching Codex...")).toBeNull();
   });
 
+  it("reads a workspace that failed setup again once a quick action launch in it ends, until setup finishes", async () => {
+    const polls: Array<{ callback: () => void; delay: number | undefined }> = [];
+    capturePollingIntervals(polls);
+    const statuses = ["error", "creating", "ready"];
+    let details = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: Request | URL | string) => {
+        const url = input instanceof Request ? input.url : String(input);
+        const path = new URL(url, "http://localhost").pathname;
+        if (path.endsWith("/workspaces/ws-1")) {
+          details += 1;
+          return Response.json({ ...workspaceResponse, status: statuses[details - 1] ?? "ready" });
+        }
+        return Response.json({ workspaces: [] });
+      }),
+    );
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByRole("button", { name: "Retry" });
+    expect(details).toBe(1);
+
+    // The launch's agent started but its prompt was not delivered, so the
+    // launch ends without a session.
+    quickActionLaunches.set("ws-1", { targetKey: "helper" });
+    await tick();
+    expect(details).toBe(1);
+    quickActionLaunches.delete("ws-1");
+    await waitFor(() => expect(details).toBe(2));
+    expect(await screen.findByText("Setting up workspace...")).toBeTruthy();
+    await waitFor(() => expect(polls).toHaveLength(1));
+    polls[0]?.callback();
+    await waitFor(() => expect(details).toBe(3));
+    await waitFor(() => expect(screen.queryByText("Setting up workspace...")).toBeNull());
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("reads the workspace again after its first read when a quick action launch ended before that read", async () => {
+    capturePollingIntervals([]);
+    const firstRead = deferred<Response>();
+    let details = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: Request | URL | string) => {
+        const url = input instanceof Request ? input.url : String(input);
+        const path = new URL(url, "http://localhost").pathname;
+        if (path.endsWith("/workspaces/ws-1")) {
+          details += 1;
+          return details === 1 ? firstRead.promise : Response.json({ ...workspaceResponse, status: "ready" });
+        }
+        return Response.json({ workspaces: [] });
+      }),
+    );
+    quickActionLaunches.set("ws-1", { targetKey: "helper" });
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() => expect(details).toBe(1));
+    quickActionLaunches.delete("ws-1");
+    await tick();
+    expect(details).toBe(1);
+
+    firstRead.resolve(Response.json({ ...workspaceResponse, status: "error" }));
+    await waitFor(() => expect(details).toBe(2));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Retry" })).toBeNull());
+  });
+
   it.each(["creating", "deleting"])("handles delayed %s details after retry reaches ready", async (status) => {
     const events = installEventSourceRecorder();
     const oldDetail = deferred<Response>();

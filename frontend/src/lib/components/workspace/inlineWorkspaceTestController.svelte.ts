@@ -37,6 +37,7 @@ export function createTestController(
     revealWorkspace: vi.fn(),
     launchSession: vi.fn(),
     sessionLaunching: () => false,
+    launchTargets: () => null,
     focusTerminal: vi.fn(),
     openInWorkspaces: vi.fn(),
     onIdentityInvalidated: () => () => {},

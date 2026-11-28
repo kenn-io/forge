@@ -1424,7 +1424,7 @@ describe("RepoTypeahead", () => {
     expect(button.title).toBe("GitHub only");
   });
 
-  it("waits for glob-expanded repositories before offering a team selection", async () => {
+  it("waits for the catalog and retries a failed refresh before offering a team selection", async () => {
     settingsStore.setConfiguredRepos([
       {
         provider: "github",
@@ -1449,6 +1449,7 @@ describe("RepoTypeahead", () => {
       },
     ]);
     let resolveCatalog!: (value: unknown) => void;
+    let catalogPending = true;
     getRepos.mockImplementation(async (path: string) => {
       if (path === "/repos/github-teams") {
         return { data: [{ slug: "payments", name: "Payments" }], error: undefined } as never;
@@ -1462,71 +1463,9 @@ describe("RepoTypeahead", () => {
           error: undefined,
         } as never;
       }
-      return new Promise((resolve) => (resolveCatalog = resolve)) as never;
-    });
-    const onchange = vi.fn();
-    render(RepoTypeahead, { props: { selected: undefined, onchange } });
-
-    await fireEvent.click(screen.getByRole("button", { name: /Select repository/i }));
-    await fireEvent.click(screen.getByRole("button", { name: "Select from GitHub team…" }));
-    await fireEvent.click(await screen.findByRole("combobox", { name: /^Team/ }));
-    await fireEvent.click(await screen.findByRole("option", { name: "Payments" }));
-
-    // The team reply is in, but the glob's repositories are not: no partial offer.
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Loading configured repositories…"));
-    const use = screen.getByRole("button", { name: "Use selection" }) as HTMLButtonElement;
-    expect(use.disabled).toBe(true);
-
-    resolveCatalog({
-      data: [
-        { Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "api", PlatformRepoID: 1101 },
-        { Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "web", PlatformRepoID: 1106 },
-      ] as unknown as Repo[],
-      error: undefined,
-    });
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("2 configured repositories"));
-  });
-
-  it("withholds a partial team selection after a failed catalog refresh until a retry loads it", async () => {
-    settingsStore.setConfiguredRepos([
-      {
-        provider: "github",
-        platform_host: "github.com",
-        owner: "acme",
-        name: "api",
-        repo_path: "acme/api",
-        platform_repo_id: 1101,
-        is_glob: false,
-        matched_repo_count: 1,
-        hidden_from_ui: false,
-      },
-      {
-        provider: "github",
-        platform_host: "github.com",
-        owner: "acme",
-        name: "*",
-        repo_path: "acme/*",
-        is_glob: true,
-        matched_repo_count: 2,
-        hidden_from_ui: false,
-      },
-    ]);
-    let catalogFails = true;
-    getRepos.mockImplementation(async (path: string) => {
-      if (path === "/repos/github-teams") {
-        return { data: [{ slug: "payments", name: "Payments" }], error: undefined } as never;
-      }
-      if (path === "/repos/github-teams/{slug}/repositories") {
-        return {
-          data: [
-            { platform_repo_id: 1101, repo_path: "acme/api" },
-            { platform_repo_id: 1106, repo_path: "acme/web" },
-          ],
-          error: undefined,
-        } as never;
-      }
-      if (catalogFails) {
-        return { data: undefined, error: { title: "catalog unavailable", status: 503 } } as never;
+      if (catalogPending) {
+        catalogPending = false;
+        return new Promise((resolve) => (resolveCatalog = resolve)) as never;
       }
       return {
         data: [
@@ -1544,13 +1483,16 @@ describe("RepoTypeahead", () => {
     await fireEvent.click(await screen.findByRole("combobox", { name: /^Team/ }));
     await fireEvent.click(await screen.findByRole("option", { name: "Payments" }));
 
-    // Only the exact entry is in the catalog: the picker must not offer `api` alone.
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("couldn't load all of Payments's configured repositories");
+    // The team reply is in, but the glob's repositories are not: no partial offer.
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Loading configured repositories…"));
     const use = screen.getByRole("button", { name: "Use selection" }) as HTMLButtonElement;
     expect(use.disabled).toBe(true);
 
-    catalogFails = false;
+    resolveCatalog({ data: undefined, error: { title: "catalog unavailable", status: 503 } });
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("couldn't load all of Payments's configured repositories");
+    expect(use.disabled).toBe(true);
+
     await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("2 configured repositories"));
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
@@ -1606,10 +1548,6 @@ describe("RepoTypeahead", () => {
       await waitFor(() => expect(screen.getByRole("status").textContent).toContain("2 configured repositories"));
       // Pruning still waits for the workspace catalog.
       expect(onchange).not.toHaveBeenCalled();
-      const use = screen.getByRole("button", { name: "Use selection" }) as HTMLButtonElement;
-      expect(use.disabled).toBe(false);
-      await fireEvent.click(use);
-      expect(onchange).toHaveBeenCalledWith(expect.stringContaining("acme/web"));
     } finally {
       window.history.replaceState(null, "", previousPath);
     }

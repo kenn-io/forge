@@ -226,7 +226,7 @@ export function runCommentMutationContract(adapter: CommentMutationContractAdapt
           body: { content: "heart" },
         }),
       );
-      expect(getFlash()).toMatchObject({ message: "Reaction added.", tone: "success" });
+      expect(getFlash()).toMatchObject({ message: "Reaction saved.", tone: "success" });
       expect(get).not.toHaveBeenCalled();
       expect(store.snapshot()?.events).toEqual([original]);
     });

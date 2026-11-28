@@ -1,3 +1,4 @@
+import { runCommentReaction } from "./comment-reaction-command.js";
 import { createAcknowledgedProjections } from "./acknowledged-projections.js";
 import { Effect, Result } from "effect";
 import { SvelteMap } from "svelte/reactivity";
@@ -2792,8 +2793,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     content: CommentReactionContent,
     callbacks: MutationCallbacks = {},
   ): void {
-    let mutationSettled = false;
-    const program = Effect.gen(function* () {
+    const action = Effect.gen(function* () {
       const ref = yield* Effect.try({
         try: () => currentDetailRef(owner, name, number),
         catch: (cause) => TransientTransportError.make({ operation: "react to pull request comment", cause }),
@@ -2820,29 +2820,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
         commit,
         refreshOnStale: Effect.void,
       });
-      yield* Effect.sync(() => {
-        mutationSettled = true;
-        showFlash("Reaction added.", { tone: "success" });
-      });
-      yield* invokeMutationCallback(callbacks.onSuccess);
-      yield* invokeMutationCallback(callbacks.onSettled);
-    }).pipe(
-      Effect.ensuring(
-        Effect.gen(function* () {
-          if (!mutationSettled) yield* invokeMutationCallback(callbacks.onSettled);
-        }),
-      ),
-    );
-
-    runtime.runCommand(program, {
-      operation: "react to pull request comment",
-      safeContext: { owner, name, number, commentID },
-      onFailure: (failure) => {
-        const message = providerMutationFailureMessage(failure, "failed to add reaction");
-        showFlash(message, { tone: "danger" });
-        invokeMutationFailure(callbacks.onFailure, message);
-      },
     });
+    runCommentReaction(runtime, action, "react to pull request comment", { owner, name, number, commentID }, callbacks);
   }
 
   function applyReviewSuggestions(

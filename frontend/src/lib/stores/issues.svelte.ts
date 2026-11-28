@@ -1,3 +1,4 @@
+import { runCommentReaction } from "./comment-reaction-command.js";
 import { createListPaging } from "./list-paging.svelte.js";
 import { createAcknowledgedProjections } from "./acknowledged-projections.js";
 import { Effect } from "effect";
@@ -1663,8 +1664,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     content: CommentReactionContent,
     callbacks: MutationCallbacks = {},
   ): void {
-    let mutationSettled = false;
-    const program = Effect.gen(function* () {
+    const action = Effect.gen(function* () {
       const ref = yield* Effect.try({
         try: () => currentIssueDetailRef(owner, name, number),
         catch: (cause) => TransientTransportError.make({ operation: "react to issue comment", cause }),
@@ -1691,29 +1691,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         commit,
         refreshOnStale: Effect.void,
       });
-      yield* Effect.sync(() => {
-        mutationSettled = true;
-        showFlash("Reaction added.", { tone: "success" });
-      });
-      yield* invokeMutationCallback(callbacks.onSuccess);
-      yield* invokeMutationCallback(callbacks.onSettled);
-    }).pipe(
-      Effect.ensuring(
-        Effect.gen(function* () {
-          if (!mutationSettled) yield* invokeMutationCallback(callbacks.onSettled);
-        }),
-      ),
-    );
-
-    runtime.runCommand(program, {
-      operation: "react to issue comment",
-      safeContext: { owner, name, number, commentID },
-      onFailure: (failure) => {
-        const message = providerMutationFailureMessage(failure, "failed to add reaction");
-        showFlash(message, { tone: "danger" });
-        invokeMutationFailure(callbacks.onFailure, message);
-      },
     });
+    runCommentReaction(runtime, action, "react to issue comment", { owner, name, number, commentID }, callbacks);
   }
 
   function deleteIssueComment(

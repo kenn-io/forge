@@ -247,7 +247,7 @@ test("adds a reaction to a pull request timeline comment from the keyboard", asy
 
   await expect(menu).toBeHidden();
   await expect(trigger).toBeFocused();
-  await expect(page.getByText("Reaction added.")).toBeVisible();
+  await expect(page.getByText("Reaction saved.")).toBeVisible();
   expect(reactions).toEqual([
     { path: "/api/v1/pulls/github/acme/widgets/42/comments/9101/reactions", body: { content: "hooray" } },
   ]);
@@ -295,7 +295,7 @@ test("reports a provider rejection of an issue comment reaction", async ({ page 
   await page.getByRole("menu", { name: "Reactions" }).getByRole("menuitem", { name: "Eyes" }).click();
 
   await expect(page.getByText("Resource not accessible by integration")).toBeVisible();
-  await expect(page.getByText("Reaction added.")).toHaveCount(0);
+  await expect(page.getByText("Reaction saved.")).toHaveCount(0);
   await expect(card.getByRole("button", { name: "Add reaction" })).toBeEnabled();
 });
 

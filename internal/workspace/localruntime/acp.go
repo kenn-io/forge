@@ -305,6 +305,13 @@ type ACPState struct {
 	// true while that start runs. Only the daemon sets them.
 	Dormant  bool `json:"dormant,omitempty"`
 	Starting bool `json:"starting,omitempty"`
+	// ExternalReadOnly marks a chat mirroring an agent that runs outside Forge in
+	// a terminal Forge cannot type into, so it takes no input until that agent
+	// exits.
+	ExternalReadOnly bool `json:"externalReadOnly,omitempty"`
+	// ExternalAwaitingInput marks a chat mirroring an agent whose turn waits
+	// for an approval or an answer given where that agent runs.
+	ExternalAwaitingInput bool `json:"externalAwaitingInput,omitempty"`
 	// Notices explain a degraded but usable session start. They are not
 	// errors: the chat works, and they last for the life of the session.
 	Notices []string `json:"notices,omitempty"`
@@ -590,9 +597,10 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 			// An agent may store a session only at its first prompt, as
 			// Claude Code does, so a session that never received one cannot
 			// be loaded. It holds no agent context, so a new session loses
-			// nothing. A session chosen to resume must not quietly become a
-			// new one.
-			if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok && requestErr.Code == acpResourceNotFound && !imported && !saved.State.prompted() {
+			// nothing. A session chosen to resume, or a mirrored agent's that
+			// was prompted, must not quietly become a new one.
+			if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok && requestErr.Code == acpResourceNotFound &&
+				!saved.State.prompted() && !saved.AgentPrompted && (!imported || saved.Mirrored) {
 				load, err = false, nil
 				// The new session's updates may arrive before its ID does.
 				a.mu.Lock()

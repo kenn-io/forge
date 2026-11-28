@@ -59124,6 +59124,10 @@ const (
 
 type ReceiveAgentHookHeaders struct {
 	XKennForgeRuntimeSessionKey *string `json:"X-Kenn-Forge-Runtime-Session-Key,omitempty"`
+	XKennForgeAgentPid          *string `json:"X-Kenn-Forge-Agent-Pid,omitempty"`
+	XKennForgeAgentStart        *string `json:"X-Kenn-Forge-Agent-Start,omitempty"`
+	XKennForgeHerdrPane         *string `json:"X-Kenn-Forge-Herdr-Pane,omitempty"`
+	XKennForgeHerdrSocket       *string `json:"X-Kenn-Forge-Herdr-Socket,omitempty"`
 }
 
 type StoreDevboxPasteImageHeaders struct {
@@ -69663,6 +69667,7 @@ type HookEvent struct {
 	SessionID            string         `json:"session_id"`
 	Source               *string        `json:"source,omitempty"`
 	ToolName             *string        `json:"tool_name,omitempty"`
+	TranscriptPath       *string        `json:"transcript_path,omitempty"`
 	AdditionalProperties map[string]any `json:"-"`
 }
 
@@ -69756,6 +69761,12 @@ func (h *HookEvent) UnmarshalJSON(data []byte) error {
 		}
 		delete(object, "tool_name")
 	}
+	if raw, found := object["transcript_path"]; found {
+		if err := json.Unmarshal(raw, &h.TranscriptPath); err != nil {
+			return fmt.Errorf("error reading 'transcript_path': %w", err)
+		}
+		delete(object, "transcript_path")
+	}
 	if len(object) != 0 {
 		h.AdditionalProperties = make(map[string]any)
 		for fieldName, fieldBuf := range object {
@@ -69837,6 +69848,12 @@ func (h HookEvent) MarshalJSON() ([]byte, error) {
 		object["tool_name"], err = json.Marshal(h.ToolName)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'tool_name': %w", err)
+		}
+	}
+	if h.TranscriptPath != nil {
+		object["transcript_path"], err = json.Marshal(h.TranscriptPath)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'transcript_path': %w", err)
 		}
 	}
 	for fieldName, field := range h.AdditionalProperties {
@@ -72978,28 +72995,30 @@ type WorkspaceChat struct {
 	ErrorData1    *string           `json:"errorData,omitempty"`
 
 	// Exited The chat's agent has exited; no other field is present.
-	Exited            bool                   `json:"exited"`
-	LastMessageID     *string                `json:"lastMessageId,omitempty"`
-	MessageCount      *int64                 `json:"messageCount,omitempty"`
-	MessageCursor     *int64                 `json:"messageCursor,omitempty"`
-	MessageOffset     *int64                 `json:"messageOffset,omitempty"`
-	Messages          []WorkspaceChatMessage `json:"messages,omitempty"`
-	Notices           []string               `json:"notices,omitempty"`
-	Permissions       []ACPPermission        `json:"permissions,omitempty"`
-	Plan              []ACPPlanEntry         `json:"plan,omitempty"`
-	Queue             []ACPQueuedPrompt      `json:"queue,omitempty"`
-	QueuePaused       *bool                  `json:"queuePaused,omitempty"`
-	RuntimeGeneration *string                `json:"runtimeGeneration,omitempty"`
-	Sending           *ACPQueuedPrompt       `json:"sending,omitempty"`
-	Starting          *bool                  `json:"starting,omitempty"`
-	Steering          *bool                  `json:"steering,omitempty"`
-	SteeringSupported *bool                  `json:"steeringSupported,omitempty"`
-	Steers            []ACPQueuedPrompt      `json:"steers,omitempty"`
-	Stopping          *bool                  `json:"stopping,omitempty"`
-	Supervision       *ACPSupervision        `json:"supervision,omitempty"`
-	Turns             []ACPTurnRecord        `json:"turns,omitempty"`
-	Uncertain         []string               `json:"uncertain,omitempty"`
-	Withdrawn         []string               `json:"withdrawn,omitempty"`
+	Exited                bool                   `json:"exited"`
+	ExternalAwaitingInput *bool                  `json:"externalAwaitingInput,omitempty"`
+	ExternalReadOnly      *bool                  `json:"externalReadOnly,omitempty"`
+	LastMessageID         *string                `json:"lastMessageId,omitempty"`
+	MessageCount          *int64                 `json:"messageCount,omitempty"`
+	MessageCursor         *int64                 `json:"messageCursor,omitempty"`
+	MessageOffset         *int64                 `json:"messageOffset,omitempty"`
+	Messages              []WorkspaceChatMessage `json:"messages,omitempty"`
+	Notices               []string               `json:"notices,omitempty"`
+	Permissions           []ACPPermission        `json:"permissions,omitempty"`
+	Plan                  []ACPPlanEntry         `json:"plan,omitempty"`
+	Queue                 []ACPQueuedPrompt      `json:"queue,omitempty"`
+	QueuePaused           *bool                  `json:"queuePaused,omitempty"`
+	RuntimeGeneration     *string                `json:"runtimeGeneration,omitempty"`
+	Sending               *ACPQueuedPrompt       `json:"sending,omitempty"`
+	Starting              *bool                  `json:"starting,omitempty"`
+	Steering              *bool                  `json:"steering,omitempty"`
+	SteeringSupported     *bool                  `json:"steeringSupported,omitempty"`
+	Steers                []ACPQueuedPrompt      `json:"steers,omitempty"`
+	Stopping              *bool                  `json:"stopping,omitempty"`
+	Supervision           *ACPSupervision        `json:"supervision,omitempty"`
+	Turns                 []ACPTurnRecord        `json:"turns,omitempty"`
+	Uncertain             []string               `json:"uncertain,omitempty"`
+	Withdrawn             []string               `json:"withdrawn,omitempty"`
 }
 
 type WorkspaceChatCommand struct {

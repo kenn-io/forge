@@ -168,6 +168,12 @@ export const ChatStateSchema = Schema.Struct({
   // message starts it. Starting is true while that start runs.
   dormant: Schema.optional(Schema.NullOr(Schema.Boolean)),
   starting: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  // The chat mirrors an agent running outside Forge in a terminal Forge cannot
+  // type into, so it takes no input until that agent exits.
+  externalReadOnly: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  // The mirrored agent's turn waits for an approval or an answer given where
+  // that agent runs.
+  externalAwaitingInput: Schema.optional(Schema.NullOr(Schema.Boolean)),
   // Degraded but usable session start, such as Forge tools being unavailable.
   notices: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
   error: Schema.String,

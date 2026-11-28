@@ -16,6 +16,9 @@ import (
 type DormantACP struct {
 	saved *ACP
 	start func() (ACPChat, error)
+	// mirror follows an agent running outside Forge, which holds the session
+	// until it exits. Nil for an ordinary stored chat.
+	mirror *acpMirrorFollower
 
 	startMu sync.Mutex // one start at a time
 	mu      sync.Mutex
@@ -91,6 +94,19 @@ func (d *DormantACP) Command(command ACPCommand) error {
 	if live := d.Live(); live != nil {
 		return live.Command(command)
 	}
+	if d.mirror != nil {
+		// The agent already has it, even when it exited since, so running it in
+		// the agent that continues the session would run it twice.
+		if d.mirror.delivered(command) {
+			return nil
+		}
+		if running := d.attachRunning(); running != nil {
+			return running.Command(command)
+		}
+		if status := d.mirror.source.Status(); status.Running {
+			return d.mirror.command(command, status)
+		}
+	}
 	switch command.Type {
 	case "cancel":
 		return nil
@@ -117,10 +133,9 @@ func (d *DormantACP) ensureStarted() (ACPChat, error) {
 	})
 	live, err := d.start()
 	if err != nil {
-		d.update(func(state *ACP) {
-			state.state.Starting = false
-			state.setErrorLocked(err)
-		})
+		// The command that needed the agent reports the failure to its sender,
+		// beside the refused prompt.
+		d.update(func(state *ACP) { state.state.Starting = false })
 		return nil, err
 	}
 	d.mu.Lock()

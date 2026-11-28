@@ -4,4 +4,8 @@
 
 export type ReceiveAgentHookHeaders = {
   "X-Kenn-Forge-Runtime-Session-Key"?: string;
+  "X-Kenn-Forge-Agent-Pid"?: string;
+  "X-Kenn-Forge-Agent-Start"?: string;
+  "X-Kenn-Forge-Herdr-Pane"?: string;
+  "X-Kenn-Forge-Herdr-Socket"?: string;
 };

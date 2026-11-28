@@ -62,6 +62,14 @@ type acpSavedSession struct {
 	// started, so its load builds the transcript from the agent's history.
 	// The chat's first save drops it. See Manager.ResumeACPSession.
 	Import bool `json:",omitempty"`
+	// Mirrored marks a record a chat wrote when it took over an agent that ran
+	// outside Forge. Unlike another import, a load of it that finds nothing
+	// starts a new session when the agent was never prompted.
+	Mirrored bool `json:",omitempty"`
+	// AgentPrompted records that the agent received a prompt the saved state
+	// may not show, as for a mirrored agent whose transcript Forge did not read.
+	// A load that finds no session then fails, instead of starting a new one.
+	AgentPrompted bool `json:",omitempty"`
 }
 
 func (m *Manager) acpSessionPath(key string) string {
@@ -147,15 +155,34 @@ func (a *ACP) restoreTranscriptLocked(saved ACPState) {
 }
 
 func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, workspaceID, key, cwd string, options map[string]string) (launchCommand, error) {
-	if m.acpSessionsDir == "" {
-		return launchCommand{}, errors.New("ACP owner state directory is required")
-	}
-	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, key)
+	configPath, err := m.writeACPOwnerConfig(ctx, target, workspaceID, key, cwd, options)
 	if err != nil {
 		return launchCommand{}, err
 	}
+	command := slices.Clone(m.acpOwnerCommand)
+	if len(command) == 0 {
+		executable, err := os.Executable()
+		if err != nil {
+			return launchCommand{}, err
+		}
+		command = []string{executable, "acp-owner"}
+	}
+	command = append(command, configPath)
+	return m.shellLaunchCommand(ctx, command, workspaceID, key, cwd)
+}
+
+// writeACPOwnerConfig writes what an owner, and any later restore of the chat,
+// starts its agent from.
+func (m *Manager) writeACPOwnerConfig(ctx context.Context, target LaunchTarget, workspaceID, key, cwd string, options map[string]string) (string, error) {
+	if m.acpSessionsDir == "" {
+		return "", errors.New("ACP owner state directory is required")
+	}
+	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, key)
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(paths.Dir, 0o700); err != nil {
-		return launchCommand{}, err
+		return "", err
 	}
 	cfg := acpOwnerConfig{Root: m.acpSessionsDir, Info: SessionInfo{Key: key, WorkspaceID: workspaceID, TargetKey: target.Key, Kind: LaunchTargetACP}, Command: target.Command, CWD: cwd, Strip: m.currentStripEnvVars(), Preferences: m.acpPreferencesPath, Activity: m.agentActivityDir, MCP: ACPMCPBinding{URL: m.agentMCPURL, Token: m.agentMCPToken}}
 	cfg.DisableForgeTools = target.DisableForgeTools
@@ -171,26 +198,17 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
-		return launchCommand{}, err
+		return "", err
 	}
 	configPath := filepath.Join(paths.Dir, "config.json")
 	if err := atomicfile.WriteFile(configPath, data, atomicfile.WithPerm(0o600)); err != nil && !errors.Is(err, atomicfile.ErrPublished) {
-		return launchCommand{}, err
+		return "", err
 	}
 	// A start failure recorded by an earlier owner must not fail this one.
 	if err := os.Remove(filepath.Join(paths.Dir, acpStartErrorFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return launchCommand{}, err
+		return "", err
 	}
-	command := slices.Clone(m.acpOwnerCommand)
-	if len(command) == 0 {
-		executable, err := os.Executable()
-		if err != nil {
-			return launchCommand{}, err
-		}
-		command = []string{executable, "acp-owner"}
-	}
-	command = append(command, configPath)
-	return m.shellLaunchCommand(ctx, command, workspaceID, key, cwd)
+	return configPath, nil
 }
 
 // acpStartErrorFile records why an owner failed to start. No owner listens

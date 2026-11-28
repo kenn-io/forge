@@ -91,7 +91,7 @@
   const slash = $derived(slashToken(draft, caret));
   // A chat whose agent is not running takes input too: the host starts the
   // agent for the first command that needs it.
-  const accepting = $derived(!!chatState?.connected || !!chatState?.dormant);
+  const accepting = $derived((!!chatState?.connected || !!chatState?.dormant) && !chatState?.externalReadOnly);
   const commandMatches = $derived(slash && !commandMenuDismissed && !disabled && accepting ? matchCommands(commands, slash.query) : []);
   const activeCommand = $derived(Math.min(commandHighlight, commandMatches.length - 1));
   const inputHint = $derived(pendingInputHint(commands, draft));
@@ -128,6 +128,32 @@
   // rest wait behind it in the queue.
   const refusedQueue = $derived(queue.filter((queued) => queued.refused));
   const waitingQueue = $derived(queue.filter((queued) => !queued.refused));
+  // The newest refusal, for screen readers: the note beside a refused prompt is
+  // not announced, and the person may otherwise keep waiting on it. Each
+  // refusal empties the region first, so one that repeats the last reason is
+  // read again.
+  let refusalAnnouncement = $state("");
+  async function announceRefusal(reason: string) {
+    refusalAnnouncement = "";
+    await tick();
+    refusalAnnouncement = `Not sent: ${reason}`;
+  }
+  const announcedQueueRefusals = new Set<string>();
+  // The host clears a retried prompt's refusal and may refuse it again before
+  // this chat sees it cleared, so a retry forgets what was read out at once.
+  function resumeQueue() {
+    announcedQueueRefusals.clear();
+    connection?.send({ type: "resume" });
+  }
+  $effect(() => {
+    // A prompt that leaves the refused list and is refused again is read again.
+    for (const id of announcedQueueRefusals) if (!refusedQueue.some((queued) => queued.id === id)) announcedQueueRefusals.delete(id);
+    for (const queued of refusedQueue) {
+      if (announcedQueueRefusals.has(queued.id) || !queued.refused) continue;
+      announcedQueueRefusals.add(queued.id);
+      void announceRefusal(queued.refused);
+    }
+  });
   // A chat that failed before it ever loaded has nothing to send to.
   const composerDead = $derived(!chatState && stopped && (!!error || stalled));
   // Waiting for the chat's first state. The conversation shows it, since it
@@ -138,7 +164,7 @@
   const queuePaused = $derived(!!chatState?.queuePaused);
   const childCounts = $derived(subagentChildCounts(chatState?.messages ?? []));
   const subagents = $derived(runningSubagents(chatState?.messages ?? [], childCounts));
-  const composerPlaceholder = $derived(!running ? `Ask ${label}…` : steeringSupported ? "Steer the reply, or queue a follow-up…" : "Queue a follow-up…");
+  const composerPlaceholder = $derived(chatState?.externalReadOnly ? "Running in another terminal" : !running ? `Ask ${label}…` : steeringSupported ? "Steer the reply, or queue a follow-up…" : "Queue a follow-up…");
   const queueShortcutLabel = kbdGlyph({ key: "Enter", alt: true });
   // An idle chat reports nothing. Replying and background work are announced
   // but not shown: their spinner is the only thing on screen.
@@ -148,7 +174,9 @@
     // whose agent is not running opens from its saved transcript.
     if (loading) return { text: connected || status === "parked" ? "Loading chat…" : "Connecting agent…", hidden: true };
     if (!connected && (status === "running" || status === "parked") && !error && !chatState?.error) return { text: "Connecting agent…", spinner: true };
-    if (chatState?.dormant) return { text: "", hidden: true };
+    // A mirrored agent running outside Forge reads as dormant while it replies.
+    if (chatState?.dormant && chatState.externalAwaitingInput) return { text: "Needs your answer in the terminal" };
+    if (chatState?.dormant) return running ? { text: "Replying…", spinner: true, hidden: true } : { text: "", hidden: true };
     if (!chatState?.connected) return { text: "Agent disconnected" };
     if (stopping) return { text: "Stopping…" };
     if (chatState.permissions.length || elicitations.length) return { text: "Needs your answer" };
@@ -217,6 +245,7 @@
           }
           if (failed?.command === "prompt" && outbox.some((prompt) => prompt.id === failed.id)) {
             outbox = outbox.map((prompt) => prompt.id === failed.id ? { ...prompt, refused: message } : prompt);
+            void announceRefusal(message);
             return;
           }
           error = message;
@@ -233,7 +262,9 @@
         },
         onStopped: () => {
           stopped = true;
-          outbox = outbox.map((prompt) => prompt.refused ? prompt : { ...prompt, refused: "The chat connection stopped before the agent got this." });
+          const lost = "The chat connection stopped before the agent got this.";
+          if (outbox.some((prompt) => !prompt.refused)) void announceRefusal(lost);
+          outbox = outbox.map((prompt) => prompt.refused ? prompt : { ...prompt, refused: lost });
         },
         onHistoryLoading: (value) => { historyLoading = value; },
         onStalled: () => { stalled = true; },
@@ -599,7 +630,7 @@
           <ChatMessageView message={pendingMessage(prompt)} thoughtOpen={false} onThoughtToggle={() => {}} delivery="refused" />
           <div class="outgoing__refused">
             <p>{prompt.refused}</p>
-            <Button size="sm" surface="soft" disabled={!connected || stopped || disabled} onclick={() => connection?.send({ type: "resume" })}>Retry</Button>
+            <Button size="sm" surface="soft" disabled={!connected || stopped || disabled} onclick={resumeQueue}>Retry</Button>
             <Button size="sm" surface="soft" disabled={!connected || stopped || disabled || editing.some((entry) => entry.id === prompt.id)} onclick={() => editQueued(prompt)}>Edit</Button>
           </div>
         </div>
@@ -635,6 +666,7 @@
       {/each}
     </div>
   </div>
+  <div class="kit-sr-only" role="status" aria-atomic="true">{refusalAnnouncement}</div>
   <div class="kit-sr-only" aria-live="polite" aria-atomic="true">{#if chatState && !chatState.busy}{chatState.messages.at(-1)?.role === "assistant" ? chatState.messages.at(-1)?.text : ""}{/if}</div>
   {#if !follow}<button class="latest" type="button" onclick={() => { follow = true; }}>Latest messages</button>{/if}
   {#if chatState?.error}
@@ -665,7 +697,7 @@
         {queuePaused}
         disabled={!connected || disabled}
         suppressed={commandMatches.length > 0}
-        onresume={() => connection?.send({ type: "resume" })}
+        onresume={resumeQueue}
         onunqueue={(id) => connection?.send({ type: "unqueue", id })}
         onmove={(id, index) => connection?.send({ type: "move", id, index: queue.findIndex((queued) => queued.id === waitingQueue[index]?.id) })}
       />
@@ -751,7 +783,7 @@
           <!-- The slot keeps its width while empty, so the spinner appearing
                never takes room from the chips and wraps the row. -->
           <span class="turn-spinner" aria-hidden="true">{#if turnStatus.spinner}<Spinner size={14} label="" />{/if}</span>
-          {#if running || stopping}<button type="button" class="round stop" aria-label="Stop reply" title={stopping ? "Stopping…" : "Stop reply"} disabled={stopping || !connected || disabled} onclick={() => connection?.send({type: "cancel"})}><Square size={13} fill="currentColor" strokeWidth={0} /></button>{/if}
+          {#if (running || stopping) && !chatState?.externalReadOnly}<button type="button" class="round stop" aria-label="Stop reply" title={stopping ? "Stopping…" : "Stop reply"} disabled={stopping || !connected || disabled} onclick={() => connection?.send({type: "cancel"})}><Square size={13} fill="currentColor" strokeWidth={0} /></button>{/if}
           {#if !running}
             <button type="submit" class="round send" aria-label="Send" title="Send (Enter) · new line (Shift+Enter)" disabled={!canSend}><ArrowUp size={16} /></button>
           {:else if steeringSupported}

@@ -24,6 +24,15 @@ type ACPAgentSession struct {
 	UpdatedAt time.Time
 }
 
+// ACPWorkspaceChats names the chats a workspace still has, which hold agent
+// sessions a new chat must not resume. Keys are its stored chats. Mirrored are
+// the sessions its chats follow while the agent runs outside Forge: such a
+// chat keeps no saved record of its session until Forge takes over the agent.
+type ACPWorkspaceChats struct {
+	Keys     []string
+	Mirrored []string
+}
+
 // ErrACPCannotListSessions reports an agent that offers no session list.
 var ErrACPCannotListSessions = errors.New("this agent cannot list its sessions")
 
@@ -52,14 +61,13 @@ func (m *Manager) acpTarget(targetKey string) (LaunchTarget, error) {
 
 // ListACPSessions starts a configured ACP target in cwd, without Forge tools,
 // and returns the sessions it keeps for cwd, newest first, leaving out any a
-// chat of workspaceID holds. chatKeys are the workspace's stored chats; see
-// heldACPSessions. It retains no process.
-func (m *Manager) ListACPSessions(ctx context.Context, workspaceID, cwd, targetKey string, chatKeys []string) ([]ACPAgentSession, error) {
+// chat of workspaceID holds; see heldACPSessions. It retains no process.
+func (m *Manager) ListACPSessions(ctx context.Context, workspaceID, cwd, targetKey string, chats ACPWorkspaceChats) ([]ACPAgentSession, error) {
 	target, err := m.acpTarget(targetKey)
 	if err != nil {
 		return nil, err
 	}
-	held, err := m.heldACPSessions(workspaceID, chatKeys)
+	held, err := m.heldACPSessions(workspaceID, chats)
 	if err != nil {
 		return nil, err
 	}
@@ -122,17 +130,17 @@ func (m *Manager) ListACPSessions(ctx context.Context, workspaceID, cwd, targetK
 
 // ResumeACPSession opens a new chat on a session the agent keeps for cwd, such
 // as one another client started, with the agent's history of it as the
-// transcript. It never falls back to a new session. chatKeys are the
-// workspace's stored chats; see heldACPSessions.
-func (m *Manager) ResumeACPSession(ctx context.Context, workspaceID, cwd, targetKey, sessionID string, chatKeys []string, acpOptions map[string]string) (SessionInfo, error) {
-	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", "", "", acpOptions, &acpImport{sessionID: sessionID, chatKeys: chatKeys})
+// transcript. It never falls back to a new session, and refuses a session a
+// chat of the workspace holds; see heldACPSessions.
+func (m *Manager) ResumeACPSession(ctx context.Context, workspaceID, cwd, targetKey, sessionID string, chats ACPWorkspaceChats, acpOptions map[string]string) (SessionInfo, error) {
+	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", "", "", acpOptions, &acpImport{sessionID: sessionID, chats: chats})
 }
 
-// acpImport is an agent session a new chat resumes, with the stored chats of
-// its workspace that may already hold it.
+// acpImport is an agent session a new chat resumes, with the chats of its
+// workspace that may already hold it.
 type acpImport struct {
 	sessionID string
-	chatKeys  []string
+	chats     ACPWorkspaceChats
 }
 
 // pendingACPImport is a resumed session whose chat is starting: it is neither
@@ -150,7 +158,7 @@ type pendingACPImport struct {
 func (m *Manager) importACPLaunchCommand(ctx context.Context, target LaunchTarget, workspaceID, key, cwd string, resume acpImport, options map[string]string) (launchCommand, error) {
 	m.acpImportMu.Lock()
 	defer m.acpImportMu.Unlock()
-	held, err := m.heldACPSessions(workspaceID, resume.chatKeys)
+	held, err := m.heldACPSessions(workspaceID, resume.chats)
 	if err != nil {
 		return launchCommand{}, err
 	}
@@ -184,6 +192,13 @@ func (m *Manager) importACPLaunchCommand(ctx context.Context, target LaunchTarge
 	return launch, nil
 }
 
+// ACPSessionHeld reports whether a chat of workspaceID holds the agent session
+// sessionID; see heldACPSessions.
+func (m *Manager) ACPSessionHeld(workspaceID, sessionID string, chats ACPWorkspaceChats) (bool, error) {
+	held, err := m.heldACPSessions(workspaceID, chats)
+	return held[sessionID], err
+}
+
 // endACPImport ends a resumed chat's pending mark. By then the chat runs, so
 // it holds its session as a live chat, or it failed and holds nothing.
 func (m *Manager) endACPImport(key string) {
@@ -193,13 +208,17 @@ func (m *Manager) endACPImport(key string) {
 }
 
 // heldACPSessions returns the agent sessions the chats of workspaceID hold.
-// Only chats the workspace still has count: chatKeys, its stored chats, which
-// include parked, dormant, and recovery-pending ones; its running chats, which
-// may not be stored yet; and resumed chats still starting. A chat forgotten
-// after its agent exited holds nothing, though its saved record remains.
-func (m *Manager) heldACPSessions(workspaceID string, chatKeys []string) (map[string]bool, error) {
+// Only chats the workspace still has count: its stored chats, which include
+// parked, dormant, and recovery-pending ones; the sessions its mirrored chats
+// follow; its running chats, which may not be stored yet; and resumed chats
+// still starting. A chat forgotten after its agent exited holds nothing,
+// though its saved record remains.
+func (m *Manager) heldACPSessions(workspaceID string, chats ACPWorkspaceChats) (map[string]bool, error) {
 	held := make(map[string]bool)
-	keys := slices.Clone(chatKeys)
+	for _, sessionID := range chats.Mirrored {
+		held[sessionID] = true
+	}
+	keys := slices.Clone(chats.Keys)
 	m.mu.Lock()
 	for key, s := range m.sessions {
 		if info := s.snapshot(); info.WorkspaceID == workspaceID && info.Kind == LaunchTargetACP {

@@ -847,6 +847,11 @@ describe("ACPWorkspace busy composer", () => {
     expect(refused.textContent).toContain("Not sent");
     expect(screen.getByText("The agent is not accepting prompts.")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getAllByRole("status").map((status) => status.textContent)).toContain(
+        "Not sent: The agent is not accepting prompts.",
+      ),
+    );
 
     await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(sentCommands()).toEqual([
@@ -863,6 +868,36 @@ describe("ACPWorkspace busy composer", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(composer().value).toBe("Keep this text\n\nTyped since");
     expect(screen.queryByRole("article", { name: "You" })).toBeNull();
+  });
+
+  it("tells screen readers about each refused prompt, even for the same reason", async () => {
+    await openChat({ busy: true });
+    const refuse = async (text: string) => {
+      await fireEvent.input(composer(), { target: { value: text } });
+      await fireEvent.keyDown(composer(), { key: "Enter" });
+      const { id } = sentCommands().at(-1) as { id: string };
+      socket.options!.onMessage(
+        JSON.stringify({ commandError: "The agent is not accepting prompts.", command: "prompt", id }),
+      );
+      await tick();
+    };
+    await refuse("First");
+    const announcement = await waitFor(() => {
+      const found = screen
+        .getAllByRole("status")
+        .find((status) => status.textContent === "Not sent: The agent is not accepting prompts.");
+      expect(found).toBeTruthy();
+      return found;
+    });
+    const texts: string[] = [];
+    const observer = new MutationObserver(() => texts.push(announcement!.textContent ?? ""));
+    observer.observe(announcement!, { childList: true, characterData: true, subtree: true });
+
+    await refuse("Second");
+    await waitFor(() => expect(announcement!.textContent).toBe("Not sent: The agent is not accepting prompts."));
+    observer.disconnect();
+
+    expect(texts).toContain("");
   });
 
   describe("a queued prompt the host could not send", () => {
@@ -882,7 +917,35 @@ describe("ACPWorkspace busy composer", () => {
       expect(refused.textContent).toContain("Not sent");
       expect(screen.getByText("this agent does not accept image prompts")).toBeTruthy();
       expect(screen.queryByRole("alert")).toBeNull();
+      await waitFor(() =>
+        expect(screen.getAllByRole("status").map((status) => status.textContent)).toContain(
+          "Not sent: this agent does not accept image prompts",
+        ),
+      );
       expect(screen.getByRole("button", { name: /1 queued/ })).toBeTruthy();
+    });
+
+    it("tells screen readers again when a retry is refused for the same reason", async () => {
+      await openChat(state);
+      const announcement = await waitFor(() => {
+        const found = screen
+          .getAllByRole("status")
+          .find((status) => status.textContent === "Not sent: this agent does not accept image prompts");
+        expect(found).toBeTruthy();
+        return found;
+      });
+      const texts: string[] = [];
+      const observer = new MutationObserver(() => texts.push(announcement!.textContent ?? ""));
+      observer.observe(announcement!, { childList: true, characterData: true, subtree: true });
+
+      await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      // The host refused it again before this chat saw the refusal cleared.
+      await push({ ...state, messages: [{ role: "assistant", text: "Ready" }] });
+      await waitFor(() => expect(texts).toContain(""));
+      await waitFor(() => expect(announcement!.textContent).toBe("Not sent: this agent does not accept image prompts"));
+      observer.disconnect();
+
+      expect(sentCommands()).toContainEqual({ type: "resume" });
     });
 
     it("reorders waiting prompts behind it by their place in the whole queue", async () => {
@@ -1231,6 +1294,56 @@ describe("ACPWorkspace chat status and transcript", () => {
 
     await push({});
     expect(screen.getByText("Send a message to start working in this workspace.")).toBeTruthy();
+  });
+
+  it("takes no input for an agent running in a terminal Forge cannot type into", async () => {
+    await openChat(
+      {
+        connected: false,
+        dormant: true,
+        externalReadOnly: true,
+        busy: true,
+        messages: [{ role: "assistant", text: "Working on it" }],
+      },
+      { status: "parked" },
+    );
+    expect(screen.getByText("Working on it")).toBeTruthy();
+    const composer = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    expect(composer.disabled).toBe(true);
+    expect(composer.placeholder).toBe("Running in another terminal");
+    expect(screen.queryByRole("button", { name: "Stop reply" })).toBeNull();
+  });
+
+  it("says when an agent running outside Forge waits for an answer in its terminal", async () => {
+    await openChat(
+      {
+        connected: false,
+        dormant: true,
+        busy: true,
+        externalAwaitingInput: true,
+        messages: [{ role: "assistant", text: "May I run the tests?" }],
+      },
+      { status: "parked" },
+    );
+    expect(screen.getByText("Needs your answer in the terminal")).toBeTruthy();
+    expect(screen.queryByText("Replying…")).toBeNull();
+  });
+
+  it("sends input and stops a replying agent mirrored from a Herdr pane", async () => {
+    await openChat(
+      { connected: false, dormant: true, busy: true, messages: [{ role: "assistant", text: "Working on it" }] },
+      { status: "parked" },
+    );
+    expect(document.querySelector(".turn-spinner svg, .turn-spinner [role=status]")).toBeTruthy();
+    const composer = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    expect(composer.disabled).toBe(false);
+    await fireEvent.click(screen.getByRole("button", { name: "Stop reply" }));
+    await fireEvent.input(composer, { target: { value: "Also check logout" } });
+    await fireEvent.keyDown(composer, { key: "Enter" });
+    expect(sentCommands()).toEqual([
+      { type: "cancel" },
+      { type: "prompt", mode: "queue", id: expect.any(String), text: "Also check logout" },
+    ]);
   });
 
   it("opens a chat whose agent is not running and starts it with the next message", async () => {

@@ -112,7 +112,9 @@ describe("RepoTeamPicker", () => {
 
   it("shows the server's credential failure instead of an empty team list", async () => {
     listTeams.mockRejectedValue(
-      new Error("Forge uses your GitHub user credential to look up teams. Configure a personal token or run gh auth login."),
+      new Error(
+        "Forge uses your GitHub user credential to look up teams. Configure a personal token or run gh auth login.",
+      ),
     );
     renderPicker();
 

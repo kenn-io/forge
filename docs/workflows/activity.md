@@ -95,10 +95,17 @@ GitHub team…**, then pick one of your configured GitHub organizations and a
 team. Forge replaces the current selection with every configured repository
 the team can access, read-only access included. Adjust the selection if you
 like, then choose **Save preset**. The preset is a snapshot: it does not change
-when the team gains or loses repositories later.
+when the team gains or loses repositories later. If Forge can't load every
+configured repository the team returned, it applies nothing and offers
+**Retry** instead of a partial selection.
 
-Team lookup uses your GitHub user credential: a personal access token or a
-login from `gh auth login`. Forge does not read teams through a
+The organizations are the owners of your configured repositories. A
+repository transferred to another organization stays under its configured
+owner until you update its entry in Settings.
+
+Team lookup uses the GitHub user credential configured for the organization,
+or the host's default: a personal access token or a login from
+`gh auth login`. A token set for a single repository is not used. Forge does not read teams through a
 GitHub App installation, so an App-only configuration cannot use the picker.
 GitHub returns only the teams and repositories that credential can see, so a
 repository synced through another credential may be missing from the result.

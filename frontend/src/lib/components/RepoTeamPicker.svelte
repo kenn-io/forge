@@ -27,9 +27,11 @@
     catalogReady: boolean;
     onClose: () => void;
     onApply: (selection: string) => void;
+    // Reloads the catalog when it is missing some of the team's repositories.
+    onRetry?: () => void;
   }
 
-  let { orgs, catalog, catalogReady, onClose, onApply }: Props = $props();
+  let { orgs, catalog, catalogReady, onClose, onApply, onRetry }: Props = $props();
 
   const runtime = getAppRuntime();
 
@@ -77,12 +79,20 @@
     const team = teams.value.find((candidate) => candidate.slug === teamSlug);
     return team?.name || teamSlug;
   });
-  const selection = $derived(
+  const matched = $derived(
     teamRepos.status === "loaded" && selectedOrg && catalogReady
       ? selectionForTeamRepositories(teamRepos.value, selectedOrg.platform_host, catalog)
       : undefined,
   );
-  const matchCount = $derived(parseRepoFilterValue(selection).length);
+  const matchCount = $derived(parseRepoFilterValue(matched).length);
+  // Every repository the server returned is configured and visible, so each
+  // has a catalog entry once the catalog loads; a shortfall means it did not.
+  const complete = $derived(
+    teamRepos.status === "loaded" &&
+      catalogReady &&
+      matchCount === new Set(teamRepos.value.map((repo) => repo.platform_repo_id)).size,
+  );
+  const selection = $derived(complete ? matched : undefined);
 
   // Each read replaces the one before it; a reply from a replaced read is dropped.
   function loadTeams(org: RepoTeamOrg): void {
@@ -177,7 +187,8 @@
 >
   <div class="team-picker-content">
     <p class="team-picker-note">
-      Shows teams and repositories your GitHub user credential can see.
+      Shows teams and repositories your GitHub user credential can see. Organizations are the owners of your
+      configured repositories.
     </p>
     <div class="team-picker-field">
       <span class="team-picker-label" aria-hidden="true">Organization</span>
@@ -214,6 +225,10 @@
       <p class="team-picker-note" role="status">Loading team repositories…</p>
     {:else if teamRepos.status === "loaded" && !catalogReady}
       <p class="team-picker-note" role="status">Loading configured repositories…</p>
+    {:else if teamRepos.status === "loaded" && !complete}
+      <p class="team-picker-error" role="alert">
+        Forge couldn't load all of {teamName}'s configured repositories, so it won't apply a partial selection.
+      </p>
     {:else if teamRepos.status === "loaded"}
       <p class="team-picker-note" role="status">
         {#if matchCount === 0}
@@ -229,6 +244,9 @@
 
   {#snippet footer()}
     <DialogButton onclick={onClose}>Cancel</DialogButton>
+    {#if onRetry && teamRepos.status === "loaded" && catalogReady && !complete}
+      <DialogButton onclick={onRetry}>Retry</DialogButton>
+    {/if}
     <DialogButton tone="primary" disabled={selection === undefined} onclick={apply}>
       Use selection
     </DialogButton>

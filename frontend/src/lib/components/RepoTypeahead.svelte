@@ -797,6 +797,10 @@
     catalogReady={settingsLoaded && catalogLoaded()}
     onClose={() => (teamPickerOpen = false)}
     onApply={applyTeamSelection}
+    onRetry={() => {
+      reopenLoadExecution?.interrupt();
+      reopenLoadExecution = loadRepos();
+    }}
   />
 {/if}
 

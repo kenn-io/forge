@@ -1489,6 +1489,79 @@ describe("RepoTypeahead", () => {
     expect(onchange).toHaveBeenLastCalledWith("github|github.com/acme/api,github|github.com/acme/web");
   });
 
+  it("withholds a partial team selection after a failed catalog refresh until a retry loads it", async () => {
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: 1101,
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "*",
+        repo_path: "acme/*",
+        is_glob: true,
+        matched_repo_count: 2,
+        hidden_from_ui: false,
+      },
+    ]);
+    let catalogFails = true;
+    getRepos.mockImplementation(async (path: string) => {
+      if (path === "/repos/github-teams") {
+        return { data: [{ slug: "payments", name: "Payments" }], error: undefined } as never;
+      }
+      if (path === "/repos/github-teams/{slug}/repositories") {
+        // A duplicate ID must not read as a repository missing from the catalog.
+        return {
+          data: [
+            { platform_repo_id: 1101, repo_path: "acme/api" },
+            { platform_repo_id: 1106, repo_path: "acme/web" },
+            { platform_repo_id: 1106, repo_path: "acme/web" },
+          ],
+          error: undefined,
+        } as never;
+      }
+      if (catalogFails) {
+        return { data: undefined, error: { title: "catalog unavailable", status: 503 } } as never;
+      }
+      return {
+        data: [
+          { Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "api", PlatformRepoID: 1101 },
+          { Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "web", PlatformRepoID: 1106 },
+        ],
+        error: undefined,
+      } as never;
+    });
+    const onchange = vi.fn();
+    render(RepoTypeahead, { props: { selected: undefined, onchange } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /Select repository/i }));
+    await fireEvent.click(screen.getByRole("button", { name: "Select from GitHub team…" }));
+    await fireEvent.click(await screen.findByRole("combobox", { name: /^Team/ }));
+    await fireEvent.click(await screen.findByRole("option", { name: "Payments" }));
+
+    // Only the exact entry is in the catalog: the picker must not offer `api` alone.
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("couldn't load all of Payments's configured repositories");
+    const use = screen.getByRole("button", { name: "Use selection" }) as HTMLButtonElement;
+    expect(use.disabled).toBe(true);
+
+    catalogFails = false;
+    await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("2 configured repositories"));
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    await fireEvent.click(use);
+    expect(onchange).toHaveBeenLastCalledWith("github|github.com/acme/api,github|github.com/acme/web");
+  });
+
   it("applies a team's repositories as an unsaved selection that saves as a new preset", async () => {
     const api = "github|github.com/acme/api";
     const web = "github|github.com/acme/web";

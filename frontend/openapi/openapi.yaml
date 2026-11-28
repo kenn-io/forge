@@ -7240,6 +7240,8 @@ components:
           type: boolean
         comment_mutation:
           type: boolean
+        comment_reaction:
+          type: boolean
         draft_mutation:
           type: boolean
         issue_mutation:
@@ -7326,6 +7328,7 @@ components:
         - read_markdown_images
         - read_markdown_media
         - read_authenticated_user
+        - comment_reaction
         - comment_mutation
         - state_mutation
         - merge_mutation
@@ -8252,6 +8255,54 @@ components:
         - name
         - path
       type: object
+    ReactCommentHostInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ReactCommentHostInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        content:
+          enum:
+            - "+1"
+            - "-1"
+            - laugh
+            - hooray
+            - confused
+            - heart
+            - rocket
+            - eyes
+          type: string
+      required:
+        - content
+      type: object
+    ReactCommentInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ReactCommentInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        content:
+          enum:
+            - "+1"
+            - "-1"
+            - laugh
+            - hooray
+            - confused
+            - heart
+            - rocket
+            - eyes
+          type: string
+      required:
+        - content
+      type: object
     RefreshFleetStatsOutputBody:
       additionalProperties: false
       properties:
@@ -8846,6 +8897,8 @@ components:
           $ref: "#/components/schemas/OperationAvailability"
         merge_pr:
           $ref: "#/components/schemas/OperationAvailability"
+        react_comment:
+          $ref: "#/components/schemas/OperationAvailability"
         remove_label:
           $ref: "#/components/schemas/OperationAvailability"
         reopen_issue:
@@ -8877,6 +8930,7 @@ components:
         - mark_draft
         - submit_review
         - review_draft
+        - react_comment
         - add_comment
         - edit_comment
         - delete_comment
@@ -19660,6 +19714,60 @@ paths:
       summary: Edit issue comment
       tags:
         - Issues
+  /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions:
+    post:
+      operationId: react-issue-comment-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReactCommentHostInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: React to issue comment
+      tags:
+        - Issues
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/github-state:
     post:
       operationId: set-issue-github-state-on-host
@@ -20610,6 +20718,60 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Edit pull request comment
+      tags:
+        - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions:
+    post:
+      operationId: react-pr-comment-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReactCommentHostInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: React to pull request comment
       tags:
         - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/commits:
@@ -24144,6 +24306,55 @@ paths:
       summary: Edit issue comment
       tags:
         - Issues
+  /issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions:
+    post:
+      operationId: react-issue-comment
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReactCommentInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: React to issue comment
+      tags:
+        - Issues
   /issues/{provider}/{owner}/{name}/{number}/github-state:
     post:
       operationId: set-issue-github-state
@@ -26249,6 +26460,55 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Edit pull request comment
+      tags:
+        - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions:
+    post:
+      operationId: react-pr-comment
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+        - in: path
+          name: comment_id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReactCommentInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: React to pull request comment
       tags:
         - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/commits:

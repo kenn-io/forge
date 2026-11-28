@@ -174,6 +174,32 @@ type (
 	editIssueCommentOutput = httpapi.BodyOutput[db.IssueEvent]
 )
 
+type reactCommentInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	CommentID    int64  `path:"comment_id"`
+	Body         struct {
+		Content string `json:"content" enum:"+1,-1,laugh,hooray,confused,heart,rocket,eyes"`
+	}
+}
+type reactCommentHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	CommentID    int64  `path:"comment_id"`
+	Body         struct {
+		Content string `json:"content" enum:"+1,-1,laugh,hooray,confused,heart,rocket,eyes"`
+	}
+}
+type reactCommentOutput struct {
+	Status int `status:"204"`
+}
+
 type deleteIssueCommentInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string

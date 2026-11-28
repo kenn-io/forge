@@ -17,6 +17,7 @@ export interface RepoOperations {
   mark_draft: OperationAvailability;
   mark_ready_for_review: OperationAvailability;
   merge_pr: OperationAvailability;
+  react_comment: OperationAvailability;
   remove_label: OperationAvailability;
   reopen_issue: OperationAvailability;
   reopen_pr: OperationAvailability;

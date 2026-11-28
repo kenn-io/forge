@@ -1933,3 +1933,48 @@ func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) 
 	require.Equal([]string{http.MethodPost, http.MethodPost}, methods)
 	require.Equal([]string{"application/json", "application/json"}, contentTypes)
 }
+
+func TestCreateIssueCommentReactionUsesWriteAPI(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusCreated} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			readServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				assert.Fail("reaction used read client")
+				w.WriteHeader(http.StatusForbidden)
+			}))
+			defer readServer.Close()
+			calls := 0
+			writeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				assert.Equal(http.MethodPost, r.Method)
+				assert.Equal("/api/v3/repos/acme/widgets/issues/comments/44/reactions", r.URL.Path)
+				var body map[string]any
+				assert.NoError(json.NewDecoder(r.Body).Decode(&body))
+				assert.Equal("heart", body["content"])
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"content":"heart"}`))
+			}))
+			defer writeServer.Close()
+			read, err := newEnterpriseGHClient(readServer.Client(), readServer.URL+"/api/v3/", readServer.URL+"/api/uploads/")
+			require.NoError(err)
+			write, err := newEnterpriseGHClient(writeServer.Client(), writeServer.URL+"/api/v3/", writeServer.URL+"/api/uploads/")
+			require.NoError(err)
+			client := &Client{now: time.Now, gh: read, ghWrite: write}
+			require.NoError(client.CreateIssueCommentReaction(t.Context(), "acme", "widgets", 44, "heart"))
+			assert.Equal(1, calls)
+		})
+	}
+}
+
+func TestCreateIssueCommentReactionMapsProviderRejection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer server.Close()
+	client, err := newEnterpriseGHClient(server.Client(), server.URL+"/api/v3/", server.URL+"/api/uploads/")
+	require.NoError(t, err)
+	c := &Client{now: time.Now, ghWrite: client, platformHost: "github.com"}
+	err = c.CreateIssueCommentReaction(t.Context(), "acme", "widgets", 44, "heart")
+	require.ErrorIs(t, err, platform.ErrPermissionDenied)
+}

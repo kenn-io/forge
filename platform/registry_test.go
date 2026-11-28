@@ -487,3 +487,14 @@ var (
 	_ WorkflowDispatcher    = (*testWorkflowProvider)(nil)
 	_ WorkflowRunReader     = (*testWorkflowProvider)(nil)
 )
+
+func TestRegistryCommentReactorUnsupportedProviders(t *testing.T) {
+	for _, kind := range []Kind{KindGitLab, KindForgejo, KindGitea, KindBitbucket} {
+		t.Run(string(kind), func(t *testing.T) {
+			registry, err := NewRegistry(testProvider{kind: kind, host: "example.test"})
+			require.NoError(t, err)
+			_, err = registry.CommentReactor(kind, "example.test")
+			require.ErrorIs(t, err, ErrUnsupportedCapability)
+		})
+	}
+}

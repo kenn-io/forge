@@ -116,6 +116,8 @@ func (s *Handler) Register(api huma.API) {
 	register(api, "post-issue-comment-on-host", http.MethodPost, hostIssue+"/comments", http.StatusCreated, "Post issue comment", s.postIssueCommentOnHost)
 	register(api, "edit-issue-content", http.MethodPatch, issue, http.StatusOK, "Edit issue content", s.editIssueContent)
 	register(api, "edit-issue-content-on-host", http.MethodPatch, hostIssue, http.StatusOK, "Edit issue content", s.editIssueContentOnHost)
+	register(api, "react-issue-comment", http.MethodPost, issue+"/comments/{comment_id}/reactions", http.StatusNoContent, "React to issue comment", s.reactComment)
+	register(api, "react-issue-comment-on-host", http.MethodPost, hostIssue+"/comments/{comment_id}/reactions", http.StatusNoContent, "React to issue comment", s.reactCommentOnHost)
 	register(api, "edit-issue-comment", http.MethodPatch, issue+"/comments/{comment_id}", http.StatusOK, "Edit issue comment", s.editIssueComment)
 	register(api, "edit-issue-comment-on-host", http.MethodPatch, hostIssue+"/comments/{comment_id}", http.StatusOK, "Edit issue comment", s.editIssueCommentOnHost)
 	register(api, "delete-issue-comment", http.MethodDelete, issue+"/comments/{comment_id}", http.StatusNoContent, "Delete issue comment", s.deleteIssueComment)

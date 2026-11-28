@@ -160,6 +160,10 @@ type WorkflowDispatcher interface {
 	DispatchWorkflow(context.Context, RepoRef, WorkflowDispatchRequest) (WorkflowDispatchResult, error)
 }
 
+type CommentReactor interface {
+	ReactToComment(ctx context.Context, ref RepoRef, commentID int64, content string) error
+}
+
 type CommentMutator interface {
 	CreateMergeRequestComment(
 		ctx context.Context,

@@ -645,6 +645,7 @@ type Capabilities struct {
 	ReadNotifications     bool
 	ReadWorkflows         bool
 	ReadWorkflowRuns      bool
+	CommentReaction       bool
 	CommentMutation       bool
 	// StateMutation means the provider can PATCH the item itself:
 	// open/close state transitions AND title/body/content updates.

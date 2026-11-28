@@ -37,6 +37,10 @@ import type {
   PostIssueCommentInputBody,
   PostIssueCommentOnHostPathParameters,
   PostIssueCommentPathParameters,
+  ReactCommentHostInputBody,
+  ReactCommentInputBody,
+  ReactIssueCommentOnHostPathParameters,
+  ReactIssueCommentPathParameters,
   SetAssigneesRequest,
   SetIssueAssigneesOnHostPathParameters,
   SetIssueAssigneesPathParameters,
@@ -362,6 +366,47 @@ export const editIssueCommentOnHost = async (
       body: JSON.stringify(editIssueCommentHostInputBody),
     },
   );
+};
+
+export const getReactIssueCommentOnHostUrl = ({
+  platformHost,
+  provider,
+  owner,
+  name,
+  number,
+  commentId,
+}: ReactIssueCommentOnHostPathParameters) => {
+  return `/host/${encodeURIComponent(String(platformHost))}/issues/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/comments/${encodeURIComponent(String(commentId))}/reactions`;
+};
+
+/**
+ * @summary React to issue comment
+ */
+export const reactIssueCommentOnHost = async (
+  { platformHost, provider, owner, name, number, commentId }: ReactIssueCommentOnHostPathParameters,
+  reactCommentHostInputBody: NonReadonly<ReactCommentHostInputBody>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<void> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return orvalFetch<void>(getReactIssueCommentOnHostUrl({ platformHost, provider, owner, name, number, commentId }), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(reactCommentHostInputBody),
+  });
 };
 
 export const getSetIssueGithubStateOnHostUrl = ({
@@ -875,6 +920,46 @@ export const editIssueComment = async (
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(editIssueCommentInputBody),
+  });
+};
+
+export const getReactIssueCommentUrl = ({
+  provider,
+  owner,
+  name,
+  number,
+  commentId,
+}: ReactIssueCommentPathParameters) => {
+  return `/issues/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/comments/${encodeURIComponent(String(commentId))}/reactions`;
+};
+
+/**
+ * @summary React to issue comment
+ */
+export const reactIssueComment = async (
+  { provider, owner, name, number, commentId }: ReactIssueCommentPathParameters,
+  reactCommentInputBody: NonReadonly<ReactCommentInputBody>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<void> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return orvalFetch<void>(getReactIssueCommentUrl({ provider, owner, name, number, commentId }), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(reactCommentInputBody),
   });
 };
 

@@ -100,6 +100,10 @@ import type {
   PublishPrReviewDraftOnHostPathParameters,
   PublishPrReviewDraftPathParameters,
   Query,
+  ReactCommentHostInputBody,
+  ReactCommentInputBody,
+  ReactPrCommentOnHostPathParameters,
+  ReactPrCommentPathParameters,
   RefreshPullCiOnHostPathParameters,
   RefreshPullCiPathParameters,
   RefreshVisiblePullsInputBody,
@@ -543,6 +547,47 @@ export const editPrCommentOnHost = async (
       body: JSON.stringify(editCommentHostInputBody),
     },
   );
+};
+
+export const getReactPrCommentOnHostUrl = ({
+  platformHost,
+  provider,
+  owner,
+  name,
+  number,
+  commentId,
+}: ReactPrCommentOnHostPathParameters) => {
+  return `/host/${encodeURIComponent(String(platformHost))}/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/comments/${encodeURIComponent(String(commentId))}/reactions`;
+};
+
+/**
+ * @summary React to pull request comment
+ */
+export const reactPrCommentOnHost = async (
+  { platformHost, provider, owner, name, number, commentId }: ReactPrCommentOnHostPathParameters,
+  reactCommentHostInputBody: NonReadonly<ReactCommentHostInputBody>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<void> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return orvalFetch<void>(getReactPrCommentOnHostUrl({ platformHost, provider, owner, name, number, commentId }), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(reactCommentHostInputBody),
+  });
 };
 
 export const getGetPullCommitsOnHostUrl = ({
@@ -1906,6 +1951,40 @@ export const editPrComment = async (
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(editCommentInputBody),
+  });
+};
+
+export const getReactPrCommentUrl = ({ provider, owner, name, number, commentId }: ReactPrCommentPathParameters) => {
+  return `/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/comments/${encodeURIComponent(String(commentId))}/reactions`;
+};
+
+/**
+ * @summary React to pull request comment
+ */
+export const reactPrComment = async (
+  { provider, owner, name, number, commentId }: ReactPrCommentPathParameters,
+  reactCommentInputBody: NonReadonly<ReactCommentInputBody>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<void> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return orvalFetch<void>(getReactPrCommentUrl({ provider, owner, name, number, commentId }), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(reactCommentInputBody),
   });
 };
 

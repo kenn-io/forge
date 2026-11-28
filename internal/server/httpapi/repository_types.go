@@ -20,6 +20,7 @@ type ProviderCapabilitiesResponse struct {
 	ReadMarkdownImages          bool     `json:"read_markdown_images"`
 	ReadMarkdownMedia           bool     `json:"read_markdown_media"`
 	ReadAuthenticatedUser       bool     `json:"read_authenticated_user"`
+	CommentReaction             bool     `json:"comment_reaction"`
 	CommentMutation             bool     `json:"comment_mutation"`
 	StateMutation               bool     `json:"state_mutation"`
 	MergeMutation               bool     `json:"merge_mutation"`
@@ -63,6 +64,7 @@ type RepoOperations struct {
 	MarkDraft             OperationAvailability `json:"mark_draft"`
 	SubmitReview          OperationAvailability `json:"submit_review"`
 	ReviewDraft           OperationAvailability `json:"review_draft"`
+	ReactComment          OperationAvailability `json:"react_comment"`
 	AddComment            OperationAvailability `json:"add_comment"`
 	EditComment           OperationAvailability `json:"edit_comment"`
 	DeleteComment         OperationAvailability `json:"delete_comment"`

@@ -31,6 +31,10 @@ func (s *Handler) editIssueCommentOnHost(ctx context.Context, input *editIssueCo
 	return s.editIssueComment(ctx, &next)
 }
 
+func (s *Handler) reactCommentOnHost(ctx context.Context, input *reactCommentHostInput) (*reactCommentOutput, error) {
+	return s.reactComment(ctx, &reactCommentInput{Provider: input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner, Name: input.Name, Number: input.Number, CommentID: input.CommentID, Body: input.Body})
+}
+
 func (s *Handler) deleteIssueCommentOnHost(ctx context.Context, input *deleteIssueCommentHostInput) (*deleteIssueCommentOutput, error) {
 	return s.deleteIssueComment(ctx, &deleteIssueCommentInput{
 		Provider: input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner,

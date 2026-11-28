@@ -103,6 +103,10 @@ type markdownMediaClient interface {
 	) (platform.MarkdownMedia, error)
 }
 
+type commentReactionAPI interface {
+	CreateIssueCommentReaction(ctx context.Context, owner, repo string, commentID int64, content string) error
+}
+
 type Provider struct {
 	host           string
 	client         API
@@ -153,6 +157,7 @@ func (p *Provider) Host() string {
 }
 
 func (p *Provider) Capabilities() platform.Capabilities {
+	_, reactions := p.client.(commentReactionAPI)
 	_, workflows := p.client.(WorkflowCatalogAPI)
 	_, workflowRuns := p.client.(WorkflowRunAPI)
 	_, workflowDispatch := p.client.(WorkflowDispatchAPI)
@@ -184,6 +189,7 @@ func (p *Provider) Capabilities() platform.Capabilities {
 		ReadWorkflows:         workflows,
 		ReadWorkflowRuns:      workflowRuns,
 		WorkflowDispatch:      workflowDispatch,
+		CommentReaction:       reactions,
 		CommentMutation:       true,
 		StateMutation:         true,
 		MergeMutation:         true,
@@ -951,6 +957,14 @@ func (p *Provider) ListIssueEvents(
 		}
 	}
 	return out, nil
+}
+
+func (p *Provider) ReactToComment(ctx context.Context, ref platform.RepoRef, commentID int64, content string) error {
+	client, ok := p.client.(commentReactionAPI)
+	if !ok {
+		return platform.UnsupportedCapability(platform.KindGitHub, p.host, "comment_reaction")
+	}
+	return client.CreateIssueCommentReaction(ctx, ref.Owner, ref.Name, commentID, content)
 }
 
 func (p *Provider) CreateMergeRequestComment(
@@ -2004,6 +2018,7 @@ var (
 	_ platform.AuthenticatedUserResolver         = (*Provider)(nil)
 	_ platform.BranchUpdateMutator               = (*Provider)(nil)
 	_ platform.CommentMutator                    = (*Provider)(nil)
+	_ platform.CommentReactor                    = (*Provider)(nil)
 	_ platform.DiffReviewDraftMutator            = (*Provider)(nil)
 	_ platform.DraftMutator                      = (*Provider)(nil)
 	_ platform.IssueContentMutator               = (*Provider)(nil)

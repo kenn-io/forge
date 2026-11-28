@@ -5,6 +5,7 @@
 export interface ProviderCapabilitiesResponse {
   assignee_mutation: boolean;
   comment_mutation: boolean;
+  comment_reaction: boolean;
   draft_mutation: boolean;
   issue_mutation: boolean;
   label_mutation: boolean;

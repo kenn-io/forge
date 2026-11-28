@@ -301,6 +301,8 @@ func registerPullMutationRoutes(api huma.API, pullPath, hostPullPath string, s *
 	register(api, "edit-pr-content-on-host", http.MethodPatch, hostPullPath, "Edit pull request content", s.editPRContentOnHost)
 	register(api, "post-pr-comment", http.MethodPost, pullPath+"/comments", "Post pull request comment", s.postComment)
 	register(api, "post-pr-comment-on-host", http.MethodPost, hostPullPath+"/comments", "Post pull request comment", s.postCommentOnHost)
+	register(api, "react-pr-comment", http.MethodPost, pullPath+"/comments/{comment_id}/reactions", "React to pull request comment", s.reactComment)
+	register(api, "react-pr-comment-on-host", http.MethodPost, hostPullPath+"/comments/{comment_id}/reactions", "React to pull request comment", s.reactCommentOnHost)
 	register(api, "edit-pr-comment", http.MethodPatch, pullPath+"/comments/{comment_id}", "Edit pull request comment", s.editComment)
 	register(api, "edit-pr-comment-on-host", http.MethodPatch, hostPullPath+"/comments/{comment_id}", "Edit pull request comment", s.editCommentOnHost)
 	register(api, "delete-pr-comment", http.MethodDelete, pullPath+"/comments/{comment_id}", "Delete pull request comment", s.deleteComment)
@@ -379,7 +381,7 @@ func register[I, O any](
 		operationID == "create-pr-review-draft-comment-on-host" {
 		status = http.StatusCreated
 	}
-	if operationID == "delete-pr-comment" ||
+	if operationID == "react-pr-comment" || operationID == "react-pr-comment-on-host" || operationID == "delete-pr-comment" ||
 		operationID == "delete-pr-comment-on-host" {
 		status = http.StatusNoContent
 	}

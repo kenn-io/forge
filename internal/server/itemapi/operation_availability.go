@@ -1,6 +1,7 @@
 package itemapi
 
 const (
+	CapabilityCommentReaction             = "comment_reaction"
 	CapabilityCommentMutation             = "comment_mutation"
 	CapabilityStateMutation               = "state_mutation"
 	CapabilityMergeMutation               = "merge_mutation"

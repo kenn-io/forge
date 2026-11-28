@@ -4812,6 +4812,39 @@ func (o *EditIssueCommentOnHostRequestOptions) GetHeader() (map[string]string, e
 	return nil, nil
 }
 
+// ReactIssueCommentOnHostRequestOptions is the options needed to make a request to ReactIssueCommentOnHost.
+type ReactIssueCommentOnHostRequestOptions struct {
+	PathParams *ReactIssueCommentOnHostPath
+	Body       *ReactIssueCommentOnHostBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ReactIssueCommentOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ReactIssueCommentOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ReactIssueCommentOnHostRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *ReactIssueCommentOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // SetIssueGithubStateOnHostRequestOptions is the options needed to make a request to SetIssueGithubStateOnHost.
 type SetIssueGithubStateOnHostRequestOptions struct {
 	PathParams *SetIssueGithubStateOnHostPath
@@ -5429,6 +5462,39 @@ func (o *EditPrCommentOnHostRequestOptions) GetBody() any {
 
 // GetHeader returns the headers as a map.
 func (o *EditPrCommentOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// ReactPrCommentOnHostRequestOptions is the options needed to make a request to ReactPrCommentOnHost.
+type ReactPrCommentOnHostRequestOptions struct {
+	PathParams *ReactPrCommentOnHostPath
+	Body       *ReactPrCommentOnHostBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ReactPrCommentOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ReactPrCommentOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ReactPrCommentOnHostRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *ReactPrCommentOnHostRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
@@ -7547,6 +7613,39 @@ func (o *EditIssueCommentRequestOptions) GetHeader() (map[string]string, error) 
 	return nil, nil
 }
 
+// ReactIssueCommentRequestOptions is the options needed to make a request to ReactIssueComment.
+type ReactIssueCommentRequestOptions struct {
+	PathParams *ReactIssueCommentPath
+	Body       *ReactIssueCommentBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ReactIssueCommentRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ReactIssueCommentRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ReactIssueCommentRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *ReactIssueCommentRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // SetIssueGithubStateRequestOptions is the options needed to make a request to SetIssueGithubState.
 type SetIssueGithubStateRequestOptions struct {
 	PathParams *SetIssueGithubStatePath
@@ -9209,6 +9308,39 @@ func (o *EditPrCommentRequestOptions) GetBody() any {
 
 // GetHeader returns the headers as a map.
 func (o *EditPrCommentRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// ReactPrCommentRequestOptions is the options needed to make a request to ReactPrComment.
+type ReactPrCommentRequestOptions struct {
+	PathParams *ReactPrCommentPath
+	Body       *ReactPrCommentBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ReactPrCommentRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ReactPrCommentRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ReactPrCommentRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *ReactPrCommentRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
@@ -13435,6 +13567,7 @@ type ClientInterface interface {
 	PostIssueCommentOnHostWithResponse(ctx context.Context, options *PostIssueCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PostIssueCommentOnHostResp, error)
 	DeleteIssueCommentOnHostWithResponse(ctx context.Context, options *DeleteIssueCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteIssueCommentOnHostResp, error)
 	EditIssueCommentOnHostWithResponse(ctx context.Context, options *EditIssueCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditIssueCommentOnHostResp, error)
+	ReactIssueCommentOnHostWithResponse(ctx context.Context, options *ReactIssueCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReactIssueCommentOnHostResp, error)
 	SetIssueGithubStateOnHostWithResponse(ctx context.Context, options *SetIssueGithubStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueGithubStateOnHostResp, error)
 	ListIssueKataLinksOnHostWithResponse(ctx context.Context, options *ListIssueKataLinksOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListIssueKataLinksOnHostResp, error)
 	CreateIssueKataLinkOnHostWithResponse(ctx context.Context, options *CreateIssueKataLinkOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateIssueKataLinkOnHostResp, error)
@@ -13454,6 +13587,7 @@ type ClientInterface interface {
 	PostPrCommentOnHostWithResponse(ctx context.Context, options *PostPrCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PostPrCommentOnHostResp, error)
 	DeletePrCommentOnHostWithResponse(ctx context.Context, options *DeletePrCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeletePrCommentOnHostResp, error)
 	EditPrCommentOnHostWithResponse(ctx context.Context, options *EditPrCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditPrCommentOnHostResp, error)
+	ReactPrCommentOnHostWithResponse(ctx context.Context, options *ReactPrCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReactPrCommentOnHostResp, error)
 	GetPullCommitsOnHostWithResponse(ctx context.Context, options *GetPullCommitsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullCommitsOnHostResp, error)
 	GetPullDiffOnHostWithResponse(ctx context.Context, options *GetPullDiffOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullDiffOnHostResp, error)
 	ReplyToDiscussionOnHostWithResponse(ctx context.Context, options *ReplyToDiscussionOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReplyToDiscussionOnHostResp, error)
@@ -13519,6 +13653,7 @@ type ClientInterface interface {
 	PostIssueCommentWithResponse(ctx context.Context, options *PostIssueCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PostIssueCommentResp, error)
 	DeleteIssueCommentWithResponse(ctx context.Context, options *DeleteIssueCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteIssueCommentResp, error)
 	EditIssueCommentWithResponse(ctx context.Context, options *EditIssueCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditIssueCommentResp, error)
+	ReactIssueCommentWithResponse(ctx context.Context, options *ReactIssueCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReactIssueCommentResp, error)
 	SetIssueGithubStateWithResponse(ctx context.Context, options *SetIssueGithubStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueGithubStateResp, error)
 	ListIssueKataLinksWithResponse(ctx context.Context, options *ListIssueKataLinksRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListIssueKataLinksResp, error)
 	CreateIssueKataLinkWithResponse(ctx context.Context, options *CreateIssueKataLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateIssueKataLinkResp, error)
@@ -13577,6 +13712,7 @@ type ClientInterface interface {
 	PostPrCommentWithResponse(ctx context.Context, options *PostPrCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PostPrCommentResp, error)
 	DeletePrCommentWithResponse(ctx context.Context, options *DeletePrCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeletePrCommentResp, error)
 	EditPrCommentWithResponse(ctx context.Context, options *EditPrCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditPrCommentResp, error)
+	ReactPrCommentWithResponse(ctx context.Context, options *ReactPrCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReactPrCommentResp, error)
 	GetPullCommitsWithResponse(ctx context.Context, options *GetPullCommitsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullCommitsResp, error)
 	GetPullDiffWithResponse(ctx context.Context, options *GetPullDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullDiffResp, error)
 	ReplyToDiscussionWithResponse(ctx context.Context, options *ReplyToDiscussionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReplyToDiscussionResp, error)
@@ -23899,6 +24035,61 @@ func (c *Client) EditIssueCommentOnHostWithResponse(ctx context.Context, options
 	}
 }
 
+// ReactIssueCommentOnHost React to issue comment
+func (c *Client) ReactIssueCommentOnHostWithResponse(ctx context.Context, options *ReactIssueCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReactIssueCommentOnHostResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ReactIssueCommentOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ReactIssueCommentOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(ReactIssueCommentOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ReactIssueCommentOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // SetIssueGithubStateOnHost Set issue GitHub state
 func (c *Client) SetIssueGithubStateOnHostWithResponse(ctx context.Context, options *SetIssueGithubStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueGithubStateOnHostResp, error) {
 	var err error
@@ -25155,6 +25346,61 @@ func (c *Client) EditPrCommentOnHostWithResponse(ctx context.Context, options *E
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "EditPrCommentOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// ReactPrCommentOnHost React to pull request comment
+func (c *Client) ReactPrCommentOnHostWithResponse(ctx context.Context, options *ReactPrCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReactPrCommentOnHostResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ReactPrCommentOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ReactPrCommentOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(ReactPrCommentOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ReactPrCommentOnHostErrorResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -29553,6 +29799,61 @@ func (c *Client) EditIssueCommentWithResponse(ctx context.Context, options *Edit
 	}
 }
 
+// ReactIssueComment React to issue comment
+func (c *Client) ReactIssueCommentWithResponse(ctx context.Context, options *ReactIssueCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReactIssueCommentResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ReactIssueCommentResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ReactIssueCommentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(ReactIssueCommentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ReactIssueCommentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // SetIssueGithubState Set issue GitHub state
 func (c *Client) SetIssueGithubStateWithResponse(ctx context.Context, options *SetIssueGithubStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueGithubStateResp, error) {
 	var err error
@@ -33436,6 +33737,61 @@ func (c *Client) EditPrCommentWithResponse(ctx context.Context, options *EditPrC
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "EditPrCommentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// ReactPrComment React to pull request comment
+func (c *Client) ReactPrCommentWithResponse(ctx context.Context, options *ReactPrCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ReactPrCommentResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ReactPrCommentResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ReactPrCommentErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(ReactPrCommentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ReactPrCommentErrorResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -45797,6 +46153,22 @@ func (c *Client) EditIssueCommentOnHostRaw(ctx context.Context, httpClient *http
 	return httpClient.Do(req)
 }
 
+// ReactIssueCommentOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) ReactIssueCommentOnHostRaw(ctx context.Context, httpClient *http.Client, options *ReactIssueCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // SetIssueGithubStateOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) SetIssueGithubStateOnHostRaw(ctx context.Context, httpClient *http.Client, options *SetIssueGithubStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -46087,6 +46459,22 @@ func (c *Client) EditPrCommentOnHostRaw(ctx context.Context, httpClient *http.Cl
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}",
 		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// ReactPrCommentOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) ReactPrCommentOnHostRaw(ctx context.Context, httpClient *http.Client, options *ReactPrCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions",
+		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
 	}
@@ -47215,6 +47603,22 @@ func (c *Client) EditIssueCommentRaw(ctx context.Context, httpClient *http.Clien
 	return httpClient.Do(req)
 }
 
+// ReactIssueCommentRaw returns an unread response. The caller must close its body.
+func (c *Client) ReactIssueCommentRaw(ctx context.Context, httpClient *http.Client, options *ReactIssueCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // SetIssueGithubStateRaw returns an unread response. The caller must close its body.
 func (c *Client) SetIssueGithubStateRaw(ctx context.Context, httpClient *http.Client, options *SetIssueGithubStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -48146,6 +48550,22 @@ func (c *Client) EditPrCommentRaw(ctx context.Context, httpClient *http.Client, 
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}",
 		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// ReactPrCommentRaw returns an unread response. The caller must close its body.
+func (c *Client) ReactPrCommentRaw(ctx context.Context, httpClient *http.Client, options *ReactPrCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions",
+		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
 	}
@@ -53394,6 +53814,23 @@ func NewEditIssueCommentOnHostRequest(ctx context.Context, baseURL string, optio
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewReactIssueCommentOnHostRequest constructs a typed request for a caller-owned transport.
+func NewReactIssueCommentOnHostRequest(ctx context.Context, baseURL string, options *ReactIssueCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewSetIssueGithubStateOnHostRequest constructs a typed request for a caller-owned transport.
 func NewSetIssueGithubStateOnHostRequest(ctx context.Context, baseURL string, options *SetIssueGithubStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -53707,6 +54144,23 @@ func NewEditPrCommentOnHostRequest(ctx context.Context, baseURL string, options 
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}",
 		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewReactPrCommentOnHostRequest constructs a typed request for a caller-owned transport.
+func NewReactPrCommentOnHostRequest(ctx context.Context, baseURL string, options *ReactPrCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions",
+		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
 	}
@@ -54896,6 +55350,23 @@ func NewEditIssueCommentRequest(ctx context.Context, baseURL string, options *Ed
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewReactIssueCommentRequest constructs a typed request for a caller-owned transport.
+func NewReactIssueCommentRequest(ctx context.Context, baseURL string, options *ReactIssueCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewSetIssueGithubStateRequest constructs a typed request for a caller-owned transport.
 func NewSetIssueGithubStateRequest(ctx context.Context, baseURL string, options *SetIssueGithubStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -55889,6 +56360,23 @@ func NewEditPrCommentRequest(ctx context.Context, baseURL string, options *EditP
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}",
 		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewReactPrCommentRequest constructs a typed request for a caller-owned transport.
+func NewReactPrCommentRequest(ctx context.Context, baseURL string, options *ReactPrCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}/reactions",
+		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
 	}
@@ -58787,6 +59275,32 @@ const (
 	ProblemErrorCodeWorktreeDirty                 ProblemErrorCode = "worktreeDirty"
 )
 
+type ReactCommentHostInputBodyContent string
+
+const (
+	ReactCommentHostInputBodyContentConfused ReactCommentHostInputBodyContent = "confused"
+	ReactCommentHostInputBodyContentEyes     ReactCommentHostInputBodyContent = "eyes"
+	ReactCommentHostInputBodyContentHeart    ReactCommentHostInputBodyContent = "heart"
+	ReactCommentHostInputBodyContentHooray   ReactCommentHostInputBodyContent = "hooray"
+	ReactCommentHostInputBodyContentLaugh    ReactCommentHostInputBodyContent = "laugh"
+	ReactCommentHostInputBodyContentMinus1   ReactCommentHostInputBodyContent = "-1"
+	ReactCommentHostInputBodyContentPlus1    ReactCommentHostInputBodyContent = "+1"
+	ReactCommentHostInputBodyContentRocket   ReactCommentHostInputBodyContent = "rocket"
+)
+
+type ReactCommentInputBodyContent string
+
+const (
+	ReactCommentInputBodyContentConfused ReactCommentInputBodyContent = "confused"
+	ReactCommentInputBodyContentEyes     ReactCommentInputBodyContent = "eyes"
+	ReactCommentInputBodyContentHeart    ReactCommentInputBodyContent = "heart"
+	ReactCommentInputBodyContentHooray   ReactCommentInputBodyContent = "hooray"
+	ReactCommentInputBodyContentLaugh    ReactCommentInputBodyContent = "laugh"
+	ReactCommentInputBodyContentMinus1   ReactCommentInputBodyContent = "-1"
+	ReactCommentInputBodyContentPlus1    ReactCommentInputBodyContent = "+1"
+	ReactCommentInputBodyContentRocket   ReactCommentInputBodyContent = "rocket"
+)
+
 type RelayActivityTarget string
 
 const (
@@ -59801,6 +60315,15 @@ type EditIssueCommentOnHostPath struct {
 	CommentID    int64  `json:"comment_id"`
 }
 
+type ReactIssueCommentOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int64  `json:"number"`
+	CommentID    int64  `json:"comment_id"`
+}
+
 type SetIssueGithubStateOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -59948,6 +60471,15 @@ type DeletePrCommentOnHostPath struct {
 }
 
 type EditPrCommentOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int64  `json:"number"`
+	CommentID    int64  `json:"comment_id"`
+}
+
+type ReactPrCommentOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
 	Owner        string `json:"owner"`
@@ -60453,6 +60985,14 @@ type EditIssueCommentPath struct {
 	CommentID int64  `json:"comment_id"`
 }
 
+type ReactIssueCommentPath struct {
+	Provider  string `json:"provider"`
+	Owner     string `json:"owner"`
+	Name      string `json:"name"`
+	Number    int64  `json:"number"`
+	CommentID int64  `json:"comment_id"`
+}
+
 type SetIssueGithubStatePath struct {
 	Provider string `json:"provider"`
 	Owner    string `json:"owner"`
@@ -60690,6 +61230,14 @@ type DeletePrCommentPath struct {
 }
 
 type EditPrCommentPath struct {
+	Provider  string `json:"provider"`
+	Owner     string `json:"owner"`
+	Name      string `json:"name"`
+	Number    int64  `json:"number"`
+	CommentID int64  `json:"comment_id"`
+}
+
+type ReactPrCommentPath struct {
 	Provider  string `json:"provider"`
 	Owner     string `json:"owner"`
 	Name      string `json:"name"`
@@ -61398,6 +61946,8 @@ type PostIssueCommentOnHostBody = PostIssueCommentHostInputBody
 
 type EditIssueCommentOnHostBody = EditIssueCommentHostInputBody
 
+type ReactIssueCommentOnHostBody = ReactCommentHostInputBody
+
 type SetIssueGithubStateOnHostBody = GithubStateHostInputBody
 
 type CreateIssueKataLinkOnHostBody = KataCreateLinkRequest
@@ -61419,6 +61969,8 @@ type SetPrAssigneesOnHostBody = SetAssigneesRequest
 type PostPrCommentOnHostBody = PostCommentHostInputBody
 
 type EditPrCommentOnHostBody = EditCommentHostInputBody
+
+type ReactPrCommentOnHostBody = ReactCommentHostInputBody
 
 type ReplyToDiscussionOnHostBody = ReplyToDiscussionHostInputBody
 
@@ -61469,6 +62021,8 @@ type SetIssueAssigneesBody = SetAssigneesRequest
 type PostIssueCommentBody = PostIssueCommentInputBody
 
 type EditIssueCommentBody = EditIssueCommentInputBody
+
+type ReactIssueCommentBody = ReactCommentInputBody
 
 type SetIssueGithubStateBody = GithubStateInputBody
 
@@ -61521,6 +62075,8 @@ type SetPrAssigneesBody = SetAssigneesRequest
 type PostPrCommentBody = PostCommentInputBody
 
 type EditPrCommentBody = EditCommentInputBody
+
+type ReactPrCommentBody = ReactCommentInputBody
 
 type ReplyToDiscussionBody = ReplyToDiscussionInputBody
 
@@ -63086,6 +63642,8 @@ type EditIssueCommentOnHostResponse = IssueEvent
 
 type EditIssueCommentOnHostErrorResponse = ProblemError
 
+type ReactIssueCommentOnHostErrorResponse = ProblemError
+
 type SetIssueGithubStateOnHostResponse = GithubStateOutputBody
 
 type SetIssueGithubStateOnHostErrorResponse = ProblemError
@@ -63155,6 +63713,8 @@ type DeletePrCommentOnHostErrorResponse = ProblemError
 type EditPrCommentOnHostResponse = MergeRequestEventResponse
 
 type EditPrCommentOnHostErrorResponse = ProblemError
+
+type ReactPrCommentOnHostErrorResponse = ProblemError
 
 type GetPullCommitsOnHostResponse = CommitsResponse
 
@@ -63398,6 +63958,8 @@ type EditIssueCommentResponse = IssueEvent
 
 type EditIssueCommentErrorResponse = ProblemError
 
+type ReactIssueCommentErrorResponse = ProblemError
+
 type SetIssueGithubStateResponse = GithubStateOutputBody
 
 type SetIssueGithubStateErrorResponse = ProblemError
@@ -63611,6 +64173,8 @@ type DeletePrCommentErrorResponse = ProblemError
 type EditPrCommentResponse = MergeRequestEventResponse
 
 type EditPrCommentErrorResponse = ProblemError
+
+type ReactPrCommentErrorResponse = ProblemError
 
 type GetPullCommitsResponse = CommitsResponse
 
@@ -65510,6 +66074,14 @@ type EditIssueCommentOnHostResp struct {
 	ApplicationProblemPlusJSONDefault *EditIssueCommentOnHostErrorResponse
 }
 
+type ReactIssueCommentOnHostResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ReactIssueCommentOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *ReactIssueCommentOnHostErrorResponse
+}
+
 type SetIssueGithubStateOnHostResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -65676,6 +66248,14 @@ type EditPrCommentOnHostResp struct {
 	Error                             *EditPrCommentOnHostErrorResponse
 	JSON200                           *EditPrCommentOnHostResponse
 	ApplicationProblemPlusJSONDefault *EditPrCommentOnHostErrorResponse
+}
+
+type ReactPrCommentOnHostResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ReactPrCommentOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *ReactPrCommentOnHostErrorResponse
 }
 
 type GetPullCommitsOnHostResp struct {
@@ -66266,6 +66846,14 @@ type EditIssueCommentResp struct {
 	ApplicationProblemPlusJSONDefault *EditIssueCommentErrorResponse
 }
 
+type ReactIssueCommentResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ReactIssueCommentErrorResponse
+	ApplicationProblemPlusJSONDefault *ReactIssueCommentErrorResponse
+}
+
 type SetIssueGithubStateResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -66782,6 +67370,14 @@ type EditPrCommentResp struct {
 	Error                             *EditPrCommentErrorResponse
 	JSON200                           *EditPrCommentResponse
 	ApplicationProblemPlusJSONDefault *EditPrCommentErrorResponse
+}
+
+type ReactPrCommentResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ReactPrCommentErrorResponse
+	ApplicationProblemPlusJSONDefault *ReactPrCommentErrorResponse
 }
 
 type GetPullCommitsResp struct {
@@ -70971,6 +71567,7 @@ type ProjectWorktreeRuntimeSession struct {
 type ProviderCapabilitiesResponse struct {
 	AssigneeMutation            bool     `json:"assignee_mutation"`
 	CommentMutation             bool     `json:"comment_mutation"`
+	CommentReaction             bool     `json:"comment_reaction"`
 	DraftMutation               bool     `json:"draft_mutation"`
 	IssueMutation               bool     `json:"issue_mutation"`
 	LabelMutation               bool     `json:"label_mutation"`
@@ -71358,6 +71955,18 @@ type RawWorktree struct {
 	SyncBehind         *int64        `json:"syncBehind,omitempty"`
 }
 
+type ReactCommentHostInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string                          `json:"$schema,omitempty"`
+	Content ReactCommentHostInputBodyContent `json:"content"`
+}
+
+type ReactCommentInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string                      `json:"$schema,omitempty"`
+	Content ReactCommentInputBodyContent `json:"content"`
+}
+
 type RefreshFleetStatsOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
@@ -71592,6 +72201,7 @@ type RepoOperations struct {
 	MarkDraft             OperationAvailability `json:"mark_draft"`
 	MarkReadyForReview    OperationAvailability `json:"mark_ready_for_review"`
 	MergePr               OperationAvailability `json:"merge_pr"`
+	ReactComment          OperationAvailability `json:"react_comment"`
 	RemoveLabel           OperationAvailability `json:"remove_label"`
 	ReopenIssue           OperationAvailability `json:"reopen_issue"`
 	ReopenPr              OperationAvailability `json:"reopen_pr"`

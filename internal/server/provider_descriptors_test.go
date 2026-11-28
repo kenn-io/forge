@@ -151,6 +151,43 @@ func TestRepositorySelectionRejectsDifferentHubIdentity(t *testing.T) {
 	assert.Empty(repositories, "reject the mismatched identity before observing it locally")
 }
 
+func TestRepositorySelectionReportsLocalCatalogFailureAsInternal(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert, require := assert.New(t), require.New(t)
+	descriptor, err := providerplane.BuildRepositoryDescriptor(providerplane.RepositorySnapshot{
+		Provider: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(1001),
+		Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
+		ObservedAt: time.Now().UTC(),
+	})
+	require.NoError(err)
+	raw, err := json.Marshal(descriptor)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	// A GitHub row still awaiting integer-ID conversion makes every local
+	// GitHub observation fail, standing in for any local write failure.
+	pendingID, err := reposeed.Seed(t.Context(), database, db.GitHubRepoIdentity("github.com", "acme", "legacy"))
+	require.NoError(err)
+	_, err = database.WriteDB().ExecContext(t.Context(), `
+		UPDATE forge_repos
+		SET platform_repo_id = 0, github_node_id = 'R_legacy', lifecycle_state = 'inactive'
+		WHERE id = ?`, pendingID)
+	require.NoError(err)
+	source := &spokeapi.HubProviderSource{Db: database, Client: providerPlaneClientFunc(func(
+		context.Context, federationauth.Scope, *http.Request,
+	) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(raw))}, nil
+	})}
+
+	_, err = source.ResolveRepositoryRoute(t.Context(), providerplane.RepositoryRoute{
+		Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget",
+	}, platform.RepositoryIDKey(1001))
+
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
+	require.True(ok, "error: %v", err)
+	assert.Equal(http.StatusInternalServerError, problem.Status)
+	assert.Equal(httpapi.CodeInternalError, problem.Code)
+}
+
 func TestWorkspaceLaunchRefreshFollowsStableRepositoryRename(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

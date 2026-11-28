@@ -62,6 +62,15 @@
     },
     {
       "description": [
+        "Mobile runtime dependencies use tilde ranges for Expo compatibility. Bump ranges so Renovate delivers aged patch updates along with minor updates."
+      ],
+      "matchManagers": ["bun"],
+      "matchFileNames": ["mobile/package.json"],
+      "matchDepTypes": ["dependencies"],
+      "rangeStrategy": "bump"
+    },
+    {
+      "description": [
         "Expo selects the mobile React version. Update React and its test renderer together with Expo compatibility checks."
       ],
       "matchManagers": ["bun"],

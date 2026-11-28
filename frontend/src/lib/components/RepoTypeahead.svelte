@@ -344,9 +344,16 @@
     if (row.hasChildren) expansion.toggle(row.node.id);
   }
 
+  // The fetched catalog expands globs; on workspace routes the workspace
+  // catalog also contributes options. Until both settle, options are partial.
+  // A function, not $derived: the route is read fresh on each call.
+  function catalogLoaded(): boolean {
+    if (reposLoading) return false;
+    return !globalThis.location?.pathname.startsWith("/workspaces") || isWorkspaceRepoCatalogReady();
+  }
+
   $effect(() => {
-    if (selectedValues.length === 0 || reposLoading) return;
-    if (globalThis.location?.pathname.startsWith("/workspaces") && !isWorkspaceRepoCatalogReady()) return;
+    if (selectedValues.length === 0 || !catalogLoaded()) return;
     const normalized = normalizeRepoFilterSelection(
       selected,
       options.map((option) => ({
@@ -402,8 +409,8 @@
     onchange(undefined);
   }
 
-  // A team's repositories become an unsaved selection the user can edit and
-  // then save through the ordinary preset dialog.
+  // A team's repositories replace the current selection as one unsaved
+  // selection the user can edit and then save through the ordinary preset dialog.
   function applyTeamSelection(next: string): void {
     teamPickerOpen = false;
     setGlobalRepoPresetSelection(undefined, next);
@@ -787,6 +794,7 @@
   <RepoTeamPicker
     orgs={teamOrgs}
     catalog={options}
+    catalogReady={settingsLoaded && catalogLoaded()}
     onClose={() => (teamPickerOpen = false)}
     onApply={applyTeamSelection}
   />

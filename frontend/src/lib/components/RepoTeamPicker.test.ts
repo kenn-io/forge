@@ -58,10 +58,10 @@ const catalog: RepoPresetCatalogEntry[] = [
 
 const acme = { platform_host: "github.com", owner: "acme" };
 
-function renderPicker(orgs = [acme]) {
+function renderPicker(orgs = [acme], catalogReady = true) {
   const onApply = vi.fn();
   const onClose = vi.fn();
-  render(RepoTeamPicker, { props: { orgs, catalog, onApply, onClose } });
+  render(RepoTeamPicker, { props: { orgs, catalog, catalogReady, onApply, onClose } });
   return { onApply, onClose };
 }
 
@@ -92,7 +92,9 @@ describe("RepoTeamPicker", () => {
     await chooseTeam("Payments");
 
     expect(listTeamRepos).toHaveBeenCalledWith("github.com", "acme", "payments");
-    expect(await screen.findByText("2 configured repositories will be selected.")).toBeTruthy();
+    expect((await screen.findByRole("status")).textContent?.replace(/\s+/g, " ")).toContain(
+      "2 configured repositories from Payments will replace the current selection.",
+    );
     await fireEvent.click(screen.getByRole("button", { name: "Use selection" }));
     expect(onApply).toHaveBeenCalledWith("github|github.com/acme/widgets,github|github.com/acme/tools");
   });
@@ -104,7 +106,7 @@ describe("RepoTeamPicker", () => {
 
     await chooseTeam("Payments");
 
-    expect(await screen.findByText("This team has no repositories configured here.")).toBeTruthy();
+    expect((await screen.findByRole("status")).textContent).toContain("in Payments are configured in Forge");
     expect((screen.getByRole("button", { name: "Use selection" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -115,7 +117,7 @@ describe("RepoTeamPicker", () => {
     renderPicker();
 
     expect((await screen.findByRole("alert")).textContent).toContain("needs your own GitHub credential");
-    expect(screen.queryByText("No teams are visible to this credential.")).toBeNull();
+    expect(screen.queryByText(/No teams in acme/)).toBeNull();
     expect((screen.getByRole("button", { name: "Use selection" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -123,7 +125,9 @@ describe("RepoTeamPicker", () => {
     listTeams.mockResolvedValue([]);
     renderPicker();
 
-    expect(await screen.findByText("No teams are visible to this credential.")).toBeTruthy();
+    expect((await screen.findByRole("status")).textContent).toContain(
+      "No teams in acme are visible to this credential.",
+    );
   });
 
   it("waits for an organization choice when several are configured and drops a replaced team reply", async () => {

@@ -22,11 +22,14 @@
   interface Props {
     orgs: readonly RepoTeamOrg[];
     catalog: readonly RepoPresetCatalogEntry[];
+    // False while configured repository options are still loading; a team
+    // matched against a partial catalog would yield a partial selection.
+    catalogReady: boolean;
     onClose: () => void;
     onApply: (selection: string) => void;
   }
 
-  let { orgs, catalog, onClose, onApply }: Props = $props();
+  let { orgs, catalog, catalogReady, onClose, onApply }: Props = $props();
 
   const runtime = getAppRuntime();
 
@@ -69,8 +72,13 @@
       ...teams.value.map((team) => ({ value: team.slug, label: team.name || team.slug })),
     ];
   });
+  const teamName = $derived.by(() => {
+    if (teams.status !== "loaded") return teamSlug;
+    const team = teams.value.find((candidate) => candidate.slug === teamSlug);
+    return team?.name || teamSlug;
+  });
   const selection = $derived(
-    teamRepos.status === "loaded" && selectedOrg
+    teamRepos.status === "loaded" && selectedOrg && catalogReady
       ? selectionForTeamRepositories(teamRepos.value, selectedOrg.platform_host, catalog)
       : undefined,
   );
@@ -168,36 +176,52 @@
   {onClose}
 >
   <div class="team-picker-content">
-    <SelectDropdown
-      class="team-picker-select"
-      title="Organization"
-      value={orgValue}
-      options={orgOptions}
-      onchange={chooseOrg}
-    />
-    <SelectDropdown
-      class="team-picker-select"
-      title="Team"
-      value={teamSlug}
-      options={teamOptions}
-      onchange={chooseTeam}
-      disabled={teams.status !== "loaded" || teams.value.length === 0}
-    />
+    <p class="team-picker-note">
+      Shows only the teams and repositories that this organization's configured GitHub credential can see.
+    </p>
+    <div class="team-picker-field">
+      <span class="team-picker-label" aria-hidden="true">Organization</span>
+      <SelectDropdown
+        class="team-picker-select"
+        title="Organization"
+        value={orgValue}
+        options={orgOptions}
+        onchange={chooseOrg}
+      />
+    </div>
+    <div class="team-picker-field">
+      <span class="team-picker-label" aria-hidden="true">Team</span>
+      <SelectDropdown
+        class="team-picker-select"
+        title="Team"
+        value={teamSlug}
+        options={teamOptions}
+        onchange={chooseTeam}
+        disabled={teams.status !== "loaded" || teams.value.length === 0}
+      />
+    </div>
 
     {#if teams.status === "failed"}
       <p class="team-picker-error" role="alert">{teams.message}</p>
     {:else if teams.status === "loaded" && teams.value.length === 0}
-      <p class="team-picker-note">No teams are visible to this credential.</p>
+      <p class="team-picker-note" role="status">
+        No teams in {selectedOrg?.owner} are visible to this credential. If teams exist, check that it can read
+        organization members: read:org for a classic token, Members read for a fine-grained one.
+      </p>
     {:else if teamRepos.status === "failed"}
       <p class="team-picker-error" role="alert">{teamRepos.message}</p>
     {:else if teamRepos.status === "loading"}
-      <p class="team-picker-note">Loading repositories…</p>
+      <p class="team-picker-note" role="status">Loading team repositories…</p>
+    {:else if teamRepos.status === "loaded" && !catalogReady}
+      <p class="team-picker-note" role="status">Loading configured repositories…</p>
     {:else if teamRepos.status === "loaded"}
       <p class="team-picker-note" role="status">
         {#if matchCount === 0}
-          This team has no repositories configured here.
+          None of the repositories this credential can see in {teamName} are configured in Forge. Add them in
+          Settings, or choose another team.
         {:else}
-          {matchCount} configured {matchCount === 1 ? "repository" : "repositories"} will be selected.
+          {matchCount} configured {matchCount === 1 ? "repository" : "repositories"} from {teamName} will replace the
+          current selection. You can edit it before saving.
         {/if}
       </p>
     {/if}
@@ -215,6 +239,17 @@
   .team-picker-content {
     display: grid;
     gap: var(--space-3);
+  }
+
+  .team-picker-field {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .team-picker-label {
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
   }
 
   :global(.team-picker-select) {

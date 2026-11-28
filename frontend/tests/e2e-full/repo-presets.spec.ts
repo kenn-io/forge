@@ -103,7 +103,9 @@ test("a GitHub team's configured repositories become an editable selection that 
     }
     await dialog.getByRole("combobox", { name: /^Team/ }).click();
     await page.getByRole("option", { name: "Platform" }).click();
-    await expect(dialog.getByText("2 configured repositories will be selected.")).toBeVisible();
+    await expect(dialog.getByRole("status")).toContainText(
+      "2 configured repositories from Platform will replace the current selection.",
+    );
     await dialog.getByRole("button", { name: "Use selection" }).click();
     await expect(dialog).toBeHidden();
 

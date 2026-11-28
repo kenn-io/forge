@@ -1,7 +1,6 @@
 import type { RepoPreset } from "../api/types.js";
 import type { RepoPresetRepository as GeneratedRepoPresetRepository } from "../api/generated/models/index.js";
 import {
-  repositoryIdKey,
   repositoryKeyFromWire,
   repositoryKeyToRequiredWire,
   sameRepositoryKey,
@@ -41,7 +40,7 @@ export function findMatchingRepoPreset(
 }
 
 export function projectRepoPresetSelection(
-  preset: RepoPreset,
+  preset: Pick<RepoPreset, "repos">,
   availableRepos: readonly RepoPresetCatalogEntry[],
 ): string | undefined {
   const values = preset.repos.flatMap((repo) => {
@@ -110,24 +109,22 @@ export function githubTeamOrgs(
   return [...orgs.values()];
 }
 
-// Maps a team's repositories to selector values by stable GitHub ID on the
-// same host, so a renamed repository still matches; owner/name is not compared.
+// Maps a team's repositories to selector values through the preset projection,
+// so they match by stable GitHub ID on the same host and survive a rename.
 export function selectionForTeamRepositories(
-  teamRepos: readonly { platform_repo_id: number }[],
+  teamRepos: readonly { platform_repo_id: number; repo_path: string }[],
   platformHost: string,
   availableRepos: readonly RepoPresetCatalogEntry[],
 ): string | undefined {
-  const values = teamRepos.flatMap((repo) => {
-    const key = repositoryIdKey(repo.platform_repo_id);
-    if (!key) return [];
-    const match = availableRepos.find(
-      (candidate) =>
-        candidate.provider === "github" &&
-        candidate.platform_host === platformHost &&
-        sameRepositoryKey(candidate.repositoryKey, key),
-    );
-    return match ? [match.value] : [];
-  });
-  if (values.length === 0) return undefined;
-  return serializeRepoFilterValue([...new Set(values)]);
+  return projectRepoPresetSelection(
+    {
+      repos: teamRepos.map((repo) => ({
+        provider: "github",
+        platform_host: platformHost,
+        platform_repo_id: repo.platform_repo_id,
+        repo_path: repo.repo_path,
+      })),
+    },
+    availableRepos,
+  );
 }

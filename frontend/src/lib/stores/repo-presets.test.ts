@@ -132,9 +132,9 @@ describe("selectionForTeamRepositories", () => {
         : entry,
     );
 
-    expect(selectionForTeamRepositories([{ platform_repo_id: 1102 }], "github.com", renamed)).toBe(
-      "github|github.com/acme/gadgets",
-    );
+    expect(
+      selectionForTeamRepositories([{ platform_repo_id: 1102, repo_path: "acme/r1102" }], "github.com", renamed),
+    ).toBe("github|github.com/acme/gadgets");
   });
 
   it("ignores repositories on another host or provider and IDs not in the catalog", () => {
@@ -148,12 +148,18 @@ describe("selectionForTeamRepositories", () => {
 
     expect(
       selectionForTeamRepositories(
-        [{ platform_repo_id: 1102 }, { platform_repo_id: 42 }, { platform_repo_id: 9999 }],
+        [
+          { platform_repo_id: 1102, repo_path: "acme/r1102" },
+          { platform_repo_id: 42, repo_path: "acme/r42" },
+          { platform_repo_id: 9999, repo_path: "acme/r9999" },
+        ],
         "github.com",
         [...catalog, enterprise],
       ),
     ).toBe("github|github.com/acme/widgets");
-    expect(selectionForTeamRepositories([{ platform_repo_id: 9999 }], "github.com", catalog)).toBeUndefined();
+    expect(
+      selectionForTeamRepositories([{ platform_repo_id: 9999, repo_path: "acme/r9999" }], "github.com", catalog),
+    ).toBeUndefined();
   });
 });
 

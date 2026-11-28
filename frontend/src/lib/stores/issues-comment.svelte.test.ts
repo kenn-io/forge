@@ -111,6 +111,8 @@ runCommentMutationContract({
       edit: (number, commentID, body, callbacks) =>
         store.editIssueComment("octo", "repo", number, commentID, body, callbacks),
       delete: (number, commentID, callbacks) => store.deleteIssueComment("octo", "repo", number, commentID, callbacks),
+      react: (number, commentID, content, callbacks) =>
+        store.reactToIssueComment("octo", "repo", number, commentID, content, callbacks),
     };
   },
 });

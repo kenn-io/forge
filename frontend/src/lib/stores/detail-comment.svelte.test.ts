@@ -124,6 +124,8 @@ runCommentMutationContract({
       edit: (number, commentID, body, callbacks) =>
         store.editComment("octo", "repo", number, commentID, body, callbacks),
       delete: (number, commentID, callbacks) => store.deleteComment("octo", "repo", number, commentID, callbacks),
+      react: (number, commentID, content, callbacks) =>
+        store.reactToComment("octo", "repo", number, commentID, content, callbacks),
     };
   },
 });

@@ -3291,6 +3291,61 @@ describe("EventTimeline", () => {
     expect(screen.getByRole("button", { name: "Copy comment" })).toBeTruthy();
   });
 
+  it("adds a reaction from a conversation comment's action menu and stays busy until it settles", async () => {
+    const onReactToComment = vi.fn();
+    renderTimeline({
+      props: {
+        events: [makeEvent({ Body: "Looks good", EventType: "issue_comment", PlatformID: 44 })],
+        onReactToComment,
+      },
+    });
+
+    const trigger = screen.getByRole("button", { name: "Add reaction" });
+    await fireEvent.click(trigger);
+    const menu = screen.getByRole("menu", { name: "Reactions" });
+    const names = ["Thumbs up", "Thumbs down", "Laugh", "Hooray", "Confused", "Heart", "Rocket", "Eyes"];
+    expect(within(menu).getAllByRole("menuitem")).toHaveLength(names.length);
+    for (const name of names) expect(within(menu).getByRole("menuitem", { name })).toBeTruthy();
+
+    await fireEvent.click(within(menu).getByRole("menuitem", { name: "Rocket" }));
+
+    expect(onReactToComment).toHaveBeenCalledTimes(1);
+    const [event, content, callbacks] = onReactToComment.mock.calls[0]!;
+    expect(event).toMatchObject({ PlatformID: 44 });
+    expect(content).toBe("rocket");
+    expect(screen.queryByRole("menu", { name: "Reactions" })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    expect(trigger.getAttribute("aria-disabled")).toBe("true");
+    await fireEvent.click(trigger);
+    expect(screen.queryByRole("menu", { name: "Reactions" })).toBeNull();
+
+    callbacks.onSettled();
+    await waitFor(() => expect(trigger.getAttribute("aria-disabled")).not.toBe("true"));
+  });
+
+  it("offers reactions in compact rows but not for review comments or unsupported providers", () => {
+    const { unmount } = renderTimeline({
+      props: {
+        activityViewMode: "compact",
+        events: [
+          makeEvent({ ID: 1, Body: "Compact comment", EventType: "issue_comment", PlatformID: 44 }),
+          makeEvent({ ID: 2, Body: "Inline note", EventType: "review_comment", PlatformID: 45 }),
+        ],
+        onReactToComment: vi.fn(),
+      },
+    });
+    expect(screen.getAllByRole("button", { name: "Add reaction" })).toHaveLength(1);
+    unmount();
+
+    renderTimeline({
+      props: {
+        events: [makeEvent({ Body: "No reactions here", EventType: "issue_comment", PlatformID: 44 })],
+        onReactToComment: undefined,
+      },
+    });
+    expect(screen.queryByRole("button", { name: "Add reaction" })).toBeNull();
+  });
+
   it("reveals detail-card actions on hover, focus, and touch without hiding commit SHAs", () => {
     const hiddenActions = findCompiledStyleRule(
       ".event-timeline .kit-comment-card:not(.event-card--commit) .kit-card__actions",

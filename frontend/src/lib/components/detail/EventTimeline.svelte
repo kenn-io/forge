@@ -4,6 +4,7 @@
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import CopyIcon from "@lucide/svelte/icons/copy";
   import EyeOffIcon from "@lucide/svelte/icons/eye-off";
+  import FaceSlightlySmilingPlusIcon from "@lucide/svelte/icons/face-slightly-smiling-plus";
   import LinkIcon from "@lucide/svelte/icons/link";
   import MessageSquarePlusIcon from "@lucide/svelte/icons/message-square-plus";
   import MessageSquareReplyIcon from "@lucide/svelte/icons/message-square-reply";
@@ -33,6 +34,10 @@
     CommentCard,
     HarnessIcon,
     IconButton,
+    Menu,
+    MenuContent,
+    MenuItem,
+    MenuTrigger,
     Modal,
     Timeline,
     TimelineItem,
@@ -55,6 +60,7 @@
     type ItemReferenceDataAttributes,
   } from "../../utils/item-reference.js";
   import { commitAttribution } from "./commit-attribution.js";
+  import { commentReactions, type CommentReactionContent } from "./comment-reactions.js";
   import CommentEditor from "./CommentEditor.svelte";
   import DiffReviewThreadSnippet from "../diff/DiffReviewThreadSnippet.svelte";
   import ReviewSuggestionBlock from "./ReviewSuggestionBlock.svelte";
@@ -92,6 +98,9 @@
       | undefined;
     onDeleteComment?:
       | ((event: PREvent | IssueEvent, callbacks: DeleteCommentCallbacks) => void)
+      | undefined;
+    onReactToComment?:
+      | ((event: PREvent | IssueEvent, content: CommentReactionContent, callbacks: MutationCallbacks) => void)
       | undefined;
     onApplySuggestion?:
       | ((
@@ -140,6 +149,7 @@
     itemIdentity = "",
     onEditComment,
     onDeleteComment,
+    onReactToComment,
     onApplySuggestion,
     jumpToReviewThread,
   }: Props = $props();
@@ -1177,6 +1187,7 @@
   let deleteTarget = $state<PREvent | IssueEvent | null>(null);
   let deletingId = $state<number | null>(null);
   let deleteError = $state<string | null>(null);
+  let reactingId = $state<number | null>(null);
   let collapsedThreads = $state<string[]>([]);
   let expandedProviderHiddenComments = $state<number[]>([]);
   let expandedCompactRows = $state<string[]>([]);
@@ -1222,6 +1233,20 @@
 
   function canDeleteComment(event: PREvent | IssueEvent): boolean {
     return event.EventType === "issue_comment" && event.PlatformID != null && onDeleteComment !== undefined;
+  }
+
+  function canReactToComment(event: PREvent | IssueEvent): boolean {
+    return event.EventType === "issue_comment" && event.PlatformID != null && onReactToComment !== undefined;
+  }
+
+  function reactToComment(event: PREvent | IssueEvent, content: CommentReactionContent): void {
+    if (!onReactToComment || reactingId !== null) return;
+    reactingId = event.ID;
+    onReactToComment(event, content, {
+      onSettled: () => {
+        if (reactingId === event.ID) reactingId = null;
+      },
+    });
   }
 
   function startDelete(event: PREvent | IssueEvent): void {
@@ -1647,6 +1672,26 @@
     </IconButton>
   {/if}
   {@render deleteAction(event)}
+  {#if canReactToComment(event)}
+    <Menu align="end">
+      <MenuTrigger ariaLabel="Add reaction">
+        {#snippet child({ attachment })}
+          <!-- ariaDisabled keeps focus on the trigger the menu returns it to while the reaction is pending. -->
+          <IconButton size="sm" ariaLabel="Add reaction" ariaDisabled={reactingId !== null} {@attach attachment}>
+            <FaceSlightlySmilingPlusIcon size={14} />
+          </IconButton>
+        {/snippet}
+      </MenuTrigger>
+      <MenuContent ariaLabel="Reactions">
+        {#each commentReactions as reaction (reaction.content)}
+          <MenuItem textValue={reaction.name} onselect={() => reactToComment(event, reaction.content)}>
+            {#snippet icon()}{reaction.glyph}{/snippet}
+            {reaction.name}
+          </MenuItem>
+        {/each}
+      </MenuContent>
+    </Menu>
+  {/if}
   {#if event.DirectURL}
     {@const directCopyID = directLinkCopyID(event)}
     <IconButton

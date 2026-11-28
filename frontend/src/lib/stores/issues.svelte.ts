@@ -28,6 +28,7 @@ import {
   providerUsesHostRoute,
 } from "../api/provider-routes.js";
 import { showFlash } from "./flash.svelte.js";
+import type { CommentReactionContent } from "../components/detail/comment-reactions.js";
 import { IssuesWorkflow, type IssueDetailSyncMode } from "./issues-workflow.js";
 import {
   invokeMutationCallback,
@@ -1652,6 +1653,69 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     });
   }
 
+  // Reaction counts are not synced, so an acknowledged reaction changes no
+  // local state: the flash is its only confirmation.
+  function reactToIssueComment(
+    owner: string,
+    name: string,
+    number: number,
+    commentID: number,
+    content: CommentReactionContent,
+    callbacks: MutationCallbacks = {},
+  ): void {
+    let mutationSettled = false;
+    const program = Effect.gen(function* () {
+      const ref = yield* Effect.try({
+        try: () => currentIssueDetailRef(owner, name, number),
+        catch: (cause) => TransientTransportError.make({ operation: "react to issue comment", cause }),
+      });
+      const mutations = yield* ProviderMutations;
+      const commit = executeGeneratedApiRequest("POST issue comment reaction", (client, signal) =>
+        providerUsesHostRoute(ref)
+          ? client.IssuesService.reactIssueCommentOnHost(
+              { ...providerHostRouteParams(ref), number: number, commentId: commentID },
+              { content },
+              { signal },
+            )
+          : client.IssuesService.reactIssueComment(
+              { ...providerRouteParams(ref), number: number, commentId: commentID },
+              { content },
+              { signal },
+            ),
+      ).pipe(Effect.asVoid);
+      yield* submitDetailMutation(mutations, ref, {
+        key: issueMutationKey(ref, `comment\u0000${commentID}\u0000reaction`),
+        baseline: undefined,
+        optimistic: undefined,
+        apply: () => Effect.void,
+        commit,
+        refreshOnStale: Effect.void,
+      });
+      yield* Effect.sync(() => {
+        mutationSettled = true;
+        showFlash("Reaction added.", { tone: "success" });
+      });
+      yield* invokeMutationCallback(callbacks.onSuccess);
+      yield* invokeMutationCallback(callbacks.onSettled);
+    }).pipe(
+      Effect.ensuring(
+        Effect.gen(function* () {
+          if (!mutationSettled) yield* invokeMutationCallback(callbacks.onSettled);
+        }),
+      ),
+    );
+
+    runtime.runCommand(program, {
+      operation: "react to issue comment",
+      safeContext: { owner, name, number, commentID },
+      onFailure: (failure) => {
+        const message = providerMutationFailureMessage(failure, "failed to add reaction");
+        showFlash(message, { tone: "danger" });
+        invokeMutationFailure(callbacks.onFailure, message);
+      },
+    });
+  }
+
   function deleteIssueComment(
     owner: string,
     name: string,
@@ -2254,6 +2318,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     submitIssueComment,
     editIssueComment,
     deleteIssueComment,
+    reactToIssueComment,
     setLocalIssueBody,
     saveIssueBodyInBackground,
     hasUnsavedLocalBody,

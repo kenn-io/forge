@@ -85,9 +85,7 @@ test("repository presets persist, overwrite atomically, and delete without clear
   }
 });
 
-test("a GitHub team's configured repositories become a selection", async ({
-  browser,
-}) => {
+test("a GitHub team's configured repositories become a selection", async ({ browser }) => {
   const server = await startIsolatedE2EServer();
   const page = await browser.newPage();
   try {

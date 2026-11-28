@@ -26,18 +26,21 @@ type teamFixture struct {
 	ghclient.Client
 	calls int
 	err   error
+	org   string
 }
 
-func (f *teamFixture) ListOrgTeams(context.Context, string) ([]*gh.Team, error) {
+func (f *teamFixture) ListOrgTeams(_ context.Context, org string) ([]*gh.Team, error) {
 	f.calls++
+	f.org = org
 	if f.err != nil {
 		return nil, f.err
 	}
 	return []*gh.Team{{Slug: new("payments"), Name: new("Payments")}}, nil
 }
 
-func (f *teamFixture) ListTeamRepositories(context.Context, string, string) ([]*gh.Repository, error) {
+func (f *teamFixture) ListTeamRepositories(_ context.Context, org, _ string) ([]*gh.Repository, error) {
 	f.calls++
+	f.org = org
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -93,11 +96,18 @@ func TestGitHubTeamRepositoriesConfiguredVisibleIdentity(t *testing.T) {
 	require.Equal(t, 1, fake.calls)
 	mux := http.NewServeMux()
 	api := humago.New(mux, huma.DefaultConfig("test", "1"))
+	huma.Get(api, "/repos/github-teams", h.ListGitHubTeams)
 	huma.Get(api, "/repos/github-teams/{slug}/repositories", h.ListGitHubTeamRepositories)
 	response := httptest.NewRecorder()
-	mux.ServeHTTP(response, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/repos/github-teams/payments/repositories?platform_host=github.com&org=acme", nil))
+	mux.ServeHTTP(response, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/repos/github-teams/payments/repositories?platform_host=github.com&org=+acme+", nil))
 	require.Equal(t, http.StatusOK, response.Code)
 	require.JSONEq(t, `[{"platform_repo_id":1,"repo_path":"acme/new"},{"platform_repo_id":4,"repo_path":"acme/team-api"},{"platform_repo_id":6,"repo_path":"forks/project"}]`, response.Body.String())
+	require.Equal(t, "acme", fake.org)
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/repos/github-teams?platform_host=github.com&org=+acme+", nil))
+	require.Equal(t, http.StatusOK, response.Code)
+	require.JSONEq(t, `[{"slug":"payments","name":"Payments"}]`, response.Body.String())
+	require.Equal(t, "acme", fake.org)
 }
 
 func TestGitHubTeamHandlerErrors(t *testing.T) {

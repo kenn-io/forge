@@ -188,18 +188,7 @@ func newFederatedForgesFixture(t *testing.T) *federatedForgesFixture {
 	hub.Switch.Set(hub.Server)
 
 	for _, spoke := range []*federatedDaemonFixture{nodeA, nodeB} {
-		nodeConfig := &config.Config{
-			BasePath: "/",
-			Tmux:     config.Tmux{Command: []string{"kenn-forge-no-such-tmux"}},
-			Fleet: config.Fleet{
-				Enabled: true, Role: config.FleetRoleSpoke, PeerTimeout: "5s",
-				Hub: &config.FleetHub{
-					NodeID: hub.NodeID, Name: hub.Name,
-					BaseURL: hub.HTTP.URL,
-				},
-			},
-		}
-		spoke.Server = newFederatedDaemonServer(t, spoke, nodeConfig, client, true)
+		spoke.Server = newFederatedDaemonServer(t, spoke, federatedSpokeConfig(hub), client, true)
 		spoke.Switch.Set(spoke.Server)
 	}
 
@@ -207,6 +196,20 @@ func newFederatedForgesFixture(t *testing.T) *federatedForgesFixture {
 		Hub: hub, NodeA: nodeA, NodeB: nodeB,
 		Provider: provider, HTTPClient: client,
 		nodeAToken: nodeAToken, nodeBToken: nodeBToken,
+	}
+}
+
+func federatedSpokeConfig(hub *federatedDaemonFixture) *config.Config {
+	return &config.Config{
+		BasePath: "/",
+		Tmux:     config.Tmux{Command: []string{"kenn-forge-no-such-tmux"}},
+		Fleet: config.Fleet{
+			Enabled: true, Role: config.FleetRoleSpoke, PeerTimeout: "5s",
+			Hub: &config.FleetHub{
+				NodeID: hub.NodeID, Name: hub.Name,
+				BaseURL: hub.HTTP.URL,
+			},
+		},
 	}
 }
 

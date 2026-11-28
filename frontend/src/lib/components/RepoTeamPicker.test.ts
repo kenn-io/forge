@@ -112,11 +112,11 @@ describe("RepoTeamPicker", () => {
 
   it("shows the server's credential failure instead of an empty team list", async () => {
     listTeams.mockRejectedValue(
-      new Error("Team lookup needs your own GitHub credential (a personal token or gh login)."),
+      new Error("Forge uses your GitHub user credential to look up teams. Configure a personal token or run gh auth login."),
     );
     renderPicker();
 
-    expect((await screen.findByRole("alert")).textContent).toContain("needs your own GitHub credential");
+    expect((await screen.findByRole("alert")).textContent).toContain("run gh auth login");
     expect(screen.queryByText(/No teams in acme/)).toBeNull();
     expect((screen.getByRole("button", { name: "Use selection" }) as HTMLButtonElement).disabled).toBe(true);
   });

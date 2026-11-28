@@ -78,6 +78,11 @@ func TestGitHubTeamRepositoriesConfiguredVisibleIdentity(t *testing.T) {
 	cfg := &config.Config{Repos: []config.Repo{{Owner: "acme", Name: "old"}, {Owner: "acme", Name: "hidden"}, {Owner: "acme", Name: "team-*"}, {Owner: "other", Name: "alias", RepoPath: "other/old"}, pinned}}
 	mu := &sync.Mutex{}
 	h := &Handlers{Cfg: &cfg, CfgMu: mu, Db: database, Syncer: &syncer}
+	for _, slug := range []string{"", ".", "..", "team/other", "team?other", "team%2Fother"} {
+		_, err := h.ListGitHubTeamRepositories(t.Context(), &githubTeamReposInput{PlatformHost: "github.com", Org: "acme", Slug: slug})
+		require.Error(t, err, "slug %q", slug)
+		require.Zero(t, fake.calls, "slug %q must not reach the provider", slug)
+	}
 	out, err := h.ListGitHubTeamRepositories(t.Context(), &githubTeamReposInput{PlatformHost: "github.com", Org: "acme", Slug: "payments"})
 	require.NoError(t, err)
 	require.Equal(t, []githubTeamRepo{{PlatformRepoID: 1, RepoPath: "acme/new"}, {PlatformRepoID: 4, RepoPath: "acme/team-api"}, {PlatformRepoID: 6, RepoPath: "forks/project"}}, out.Body)
@@ -102,7 +107,7 @@ func TestGitHubTeamHandlerErrors(t *testing.T) {
 		status       int
 		code, detail string
 	}{
-		{"missing user", ghclient.ErrMissingWriteIdentity, 400, "badRequest", "does not use its App credential"},
+		{"missing user", ghclient.ErrMissingWriteIdentity, 400, "badRequest", "run gh auth login"},
 		{"denied", &platform.Error{Code: platform.ErrCodePermissionDenied, Provider: platform.KindGitHub}, 403, "forbidden", "read:org"},
 		{"not found", &gh.ErrorResponse{Response: &http.Response{StatusCode: 404}, Message: "not found"}, 404, "notFound", "Members read"},
 		{"rate limited", &platform.Error{Code: platform.ErrCodeRateLimited, Provider: platform.KindGitHub}, 429, "rateLimited", ""},

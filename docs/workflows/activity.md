@@ -97,8 +97,8 @@ the team can access, read-only access included. Adjust the selection if you
 like, then choose **Save preset**. The preset is a snapshot: it does not change
 when the team gains or loses repositories later.
 
-Team lookup uses the organization's configured user credential, such as a
-personal access token or a `gh` login. Forge does not read teams through a
+Team lookup uses your GitHub user credential: a personal access token or a
+login from `gh auth login`. Forge does not read teams through a
 GitHub App installation, so an App-only configuration cannot use the picker.
 GitHub returns only the teams and repositories that credential can see, so a
 repository synced through another credential may be missing from the result.

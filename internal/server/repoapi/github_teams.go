@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"go.kenn.io/forge/internal/config"
@@ -70,7 +71,7 @@ func (s *Handlers) teamReader(input githubTeamInput) (ghclient.TeamReader, []con
 
 func teamProblem(err error, host string) error {
 	if errors.Is(err, ghclient.ErrMissingWriteIdentity) {
-		return httpapi.BadRequest(httpapi.CodeBadRequest, "Forge team lookup uses your GitHub user credential. Configure a personal token or gh login; Forge does not use its App credential for this lookup.", nil)
+		return httpapi.BadRequest(httpapi.CodeBadRequest, "Forge uses your GitHub user credential to look up teams. Configure a personal token or run gh auth login.", nil)
 	}
 	if errors.Is(err, platform.ErrPermissionDenied) || errors.Is(err, platform.ErrNotFound) || platformgithub.StatusCode(err) == http.StatusNotFound {
 		const hint = "GitHub could not access the organization or team. Check that it exists and is available to your credential, and that the credential has classic read:org scope or fine-grained organization Members read permission"
@@ -103,11 +104,15 @@ func (s *Handlers) ListGitHubTeams(ctx context.Context, input *githubTeamInput) 
 }
 
 func (s *Handlers) ListGitHubTeamRepositories(ctx context.Context, input *githubTeamReposInput) (*githubTeamReposOutput, error) {
+	slug := strings.TrimSpace(input.Slug)
+	if slug == "" || slug == "." || slug == ".." || url.PathEscape(slug) != slug {
+		return nil, httpapi.Validation("path.slug", "slug must be a single valid path segment")
+	}
 	reader, configured, err := s.teamReader(githubTeamInput{PlatformHost: input.PlatformHost, Org: input.Org})
 	if err != nil {
 		return nil, err
 	}
-	teams, err := reader.ListTeamRepositories(ctx, input.Org, input.Slug)
+	teams, err := reader.ListTeamRepositories(ctx, input.Org, slug)
 	if err != nil {
 		return nil, teamProblem(err, input.PlatformHost)
 	}

@@ -177,7 +177,7 @@
 >
   <div class="team-picker-content">
     <p class="team-picker-note">
-      Shows only the teams and repositories that this organization's configured GitHub credential can see.
+      Shows teams and repositories your GitHub user credential can see.
     </p>
     <div class="team-picker-field">
       <span class="team-picker-label" aria-hidden="true">Organization</span>

@@ -1835,3 +1835,50 @@ func TestAPIEditIssueMissing404(t *testing.T) {
 
 	require.Equal(http.StatusNotFound, rr.Code)
 }
+
+func TestAPIReactIssueCommentTargetsParentAndPreservesTimeline(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	calls := 0
+	var providerErr error
+	mock := &serverfake.MockGH{CreateIssueCommentReactionFn: func(_ context.Context, owner, repo string, id int64, content string) error {
+		calls++
+		require.Equal("acme", owner)
+		require.Equal("widget", repo)
+		require.Equal(int64(1234), id)
+		require.Equal("heart", content)
+		return providerErr
+	}}
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	issueID := serverfake.SeedIssue(t, database, "acme", "widget", 5, "open")
+	serverfake.SeedIssue(t, database, "acme", "widget", 6, "open")
+	commentID := int64(1234)
+	require.NoError(database.UpsertIssueEvents(t.Context(), []db.IssueEvent{{IssueID: issueID, PlatformID: &commentID, EventType: "issue_comment", Body: "original", CreatedAt: time.Now().UTC(), DedupeKey: "reaction-comment"}}))
+	before, err := database.ListIssueEvents(t.Context(), issueID)
+	require.NoError(err)
+	for _, tc := range []struct {
+		path, body string
+		status     int
+	}{
+		{"/api/v1/issues/gh/acme/widget/6/comments/1234/reactions", `{"content":"heart"}`, http.StatusNotFound},
+		{"/api/v1/issues/gh/acme/widget/5/comments/1234/reactions", `{"content":"bad"}`, http.StatusUnprocessableEntity},
+		{"/api/v1/issues/gh/acme/widget/5/comments/1234/reactions", `{"content":"heart"}`, http.StatusNoContent},
+	} {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		require.Equal(tc.status, rec.Code, rec.Body.String())
+	}
+	require.Equal(1, calls)
+	providerErr = errors.New("connection lost")
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/issues/gh/acme/widget/5/comments/1234/reactions", strings.NewReader(`{"content":"heart"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	require.Equal(http.StatusBadGateway, rec.Code)
+	require.Contains(rec.Body.String(), "mutationOutcomeUnknown")
+	after, err := database.ListIssueEvents(t.Context(), issueID)
+	require.NoError(err)
+	require.Equal(before, after)
+}

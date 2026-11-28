@@ -116,6 +116,8 @@ func PlatformRepoRef(repo db.Repo) platform.RepoRef {
 
 func CapabilityEnabled(caps ProviderCapabilitiesResponse, capability string) bool {
 	switch capability {
+	case "comment_reaction":
+		return caps.CommentReaction
 	case "comment_mutation":
 		return caps.CommentMutation
 	case "state_mutation":
@@ -321,6 +323,7 @@ func ProviderCapabilitiesFromPlatform(caps platform.Capabilities) ProviderCapabi
 		ReadMarkdownImages:          caps.ReadMarkdownImages,
 		ReadMarkdownMedia:           caps.ReadMarkdownMedia,
 		ReadAuthenticatedUser:       caps.ReadAuthenticatedUser,
+		CommentReaction:             caps.CommentReaction,
 		CommentMutation:             caps.CommentMutation,
 		StateMutation:               caps.StateMutation,
 		MergeMutation:               caps.MergeMutation,

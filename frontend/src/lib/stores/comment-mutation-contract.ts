@@ -4,6 +4,7 @@ import type { GeneratedClient } from "../api/generated-api.js";
 import type { ProblemBody } from "../api/problems.js";
 import { getFlash } from "./flash.svelte.js";
 import type { MutationCallbacks } from "./ordered-mutations.js";
+import type { CommentReactionRequestContent as CommentReactionContent } from "../api/generated/models/commentReactionRequestContent.js";
 
 export interface ContractCommentEvent {
   readonly EventType?: unknown;
@@ -26,6 +27,7 @@ export interface CommentMutationStoreAdapter {
   submit(number: number, body: string, callbacks?: MutationCallbacks): void;
   edit(number: number, commentID: number, body: string, callbacks?: MutationCallbacks): void;
   delete(number: number, commentID: number, callbacks?: MutationCallbacks): void;
+  react(number: number, commentID: number, content: CommentReactionContent, callbacks?: MutationCallbacks): void;
 }
 
 export interface CommentMutationContractAdapter {
@@ -199,6 +201,52 @@ export function runCommentMutationContract(adapter: CommentMutationContractAdapt
       expect(get).not.toHaveBeenCalled();
       expect(store.error()).toBe("provider denied deletion");
       expect(store.snapshot()?.events).toEqual([original]);
+    });
+
+    it("confirms an acknowledged reaction without changing or refreshing the discussion", async () => {
+      const original = { EventType: "issue_comment", PlatformID: 44, Body: "ship it" };
+      const get = vi.fn(async () => ({ data: adapter.makeDetail([original]) }));
+      const post = vi.fn(async () => deletionSucceeded());
+      const store = adapter.create({
+        GET: get,
+        POST: post,
+        PUT: vi.fn(),
+        DELETE: vi.fn(),
+      } as unknown as GeneratedClient);
+      await store.load(1, false);
+      get.mockClear();
+
+      expect(await mutationResult((callbacks) => store.react(1, 44, "heart", callbacks))).toBe(true);
+
+      expect(post).toHaveBeenCalledOnce();
+      expect(post).toHaveBeenCalledWith(
+        `${adapter.commentMemberPath}/reactions`,
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "octo", name: "repo", number: 1, comment_id: 44 } },
+          body: { content: "heart" },
+        }),
+      );
+      expect(getFlash()).toMatchObject({ message: "Reaction saved.", tone: "success" });
+      expect(get).not.toHaveBeenCalled();
+      expect(store.snapshot()?.events).toEqual([original]);
+    });
+
+    it("reports a rejected reaction through the mutation error flash", async () => {
+      const store = adapter.create({
+        GET: vi.fn(async () => ({ data: adapter.makeDetail([{ EventType: "issue_comment", PlatformID: 44 }]) })),
+        POST: vi.fn(async () => deletionFailed("provider denied reaction")),
+        PUT: vi.fn(),
+        DELETE: vi.fn(),
+      } as unknown as GeneratedClient);
+      await store.load(1, false);
+
+      const onSettled = vi.fn();
+      expect(await mutationResult((callbacks) => store.react(1, 44, "rocket", { ...callbacks, onSettled }))).toBe(
+        false,
+      );
+      await vi.waitFor(() => expect(onSettled).toHaveBeenCalledOnce());
+
+      expect(getFlash()).toMatchObject({ message: "provider denied reaction", tone: "danger" });
     });
 
     it("keeps an acknowledged deletion hidden while ordinary sync converges", async () => {

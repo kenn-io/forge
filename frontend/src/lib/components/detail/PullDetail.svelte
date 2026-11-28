@@ -30,6 +30,7 @@
   } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
+  import type { CommentReactionContent } from "./comment-reactions.js";
   import {
     isProblem,
     problemConflictContext,
@@ -264,6 +265,7 @@
     read_markdown_images: false,
     read_markdown_media: false,
     read_authenticated_user: false,
+    comment_reaction: false,
     comment_mutation: true,
     state_mutation: true,
     merge_mutation: true,
@@ -469,6 +471,18 @@
       return;
     }
     detailStore.deleteComment(owner, name, number, event.PlatformID, callbacks);
+  }
+
+  function reactToTimelineComment(
+    event: { PlatformID: number | null },
+    content: CommentReactionContent,
+    callbacks: MutationCallbacks,
+  ): void {
+    if (event.PlatformID === null) {
+      callbacks.onSettled?.();
+      return;
+    }
+    detailStore.reactToComment(owner, name, number, event.PlatformID, content, callbacks);
   }
 
   function applyTimelineSuggestion(
@@ -1286,6 +1300,7 @@
   const addCommentGate = $derived(operationGate(repoOperations?.add_comment));
   const editCommentGate = $derived(operationGate(repoOperations?.edit_comment));
   const deleteCommentGate = $derived(operationGate(repoOperations?.delete_comment));
+  const reactCommentGate = $derived(operationGate(repoOperations?.react_comment));
   const labelGate = $derived(firstUnavailableGate(
     repoOperations?.add_label, repoOperations?.remove_label,
   ));
@@ -3919,6 +3934,9 @@
               : undefined}
             onDeleteComment={capabilities.comment_mutation && !stalePR && !deleteCommentGate.unavailable
               ? deleteTimelineComment
+              : undefined}
+            onReactToComment={capabilities.comment_reaction && !stalePR && !reactCommentGate.unavailable
+              ? reactToTimelineComment
               : undefined}
             onApplySuggestion={capabilities.review_suggestion_application
               && !stalePR

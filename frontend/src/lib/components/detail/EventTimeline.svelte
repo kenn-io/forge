@@ -4,6 +4,7 @@
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import CopyIcon from "@lucide/svelte/icons/copy";
   import EyeOffIcon from "@lucide/svelte/icons/eye-off";
+  import FaceSlightlySmilingPlusIcon from "@lucide/svelte/icons/face-slightly-smiling-plus";
   import LinkIcon from "@lucide/svelte/icons/link";
   import MessageSquarePlusIcon from "@lucide/svelte/icons/message-square-plus";
   import MessageSquareReplyIcon from "@lucide/svelte/icons/message-square-reply";
@@ -11,6 +12,7 @@
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import XIcon from "@lucide/svelte/icons/x";
   import { onDestroy, tick, untrack } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import { Effect } from "effect";
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import { getCommentNavigation } from "../../stores/router.svelte.js";
@@ -33,6 +35,10 @@
     CommentCard,
     HarnessIcon,
     IconButton,
+    Menu,
+    MenuContent,
+    MenuItem,
+    MenuTrigger,
     Modal,
     Timeline,
     TimelineItem,
@@ -55,6 +61,7 @@
     type ItemReferenceDataAttributes,
   } from "../../utils/item-reference.js";
   import { commitAttribution } from "./commit-attribution.js";
+  import { commentReactions, type CommentReactionContent } from "./comment-reactions.js";
   import CommentEditor from "./CommentEditor.svelte";
   import DiffReviewThreadSnippet from "../diff/DiffReviewThreadSnippet.svelte";
   import ReviewSuggestionBlock from "./ReviewSuggestionBlock.svelte";
@@ -92,6 +99,9 @@
       | undefined;
     onDeleteComment?:
       | ((event: PREvent | IssueEvent, callbacks: DeleteCommentCallbacks) => void)
+      | undefined;
+    onReactToComment?:
+      | ((event: PREvent | IssueEvent, content: CommentReactionContent, callbacks: MutationCallbacks) => void)
       | undefined;
     onApplySuggestion?:
       | ((
@@ -140,6 +150,7 @@
     itemIdentity = "",
     onEditComment,
     onDeleteComment,
+    onReactToComment,
     onApplySuggestion,
     jumpToReviewThread,
   }: Props = $props();
@@ -1177,6 +1188,7 @@
   let deleteTarget = $state<PREvent | IssueEvent | null>(null);
   let deletingId = $state<number | null>(null);
   let deleteError = $state<string | null>(null);
+  const reactingIds = new SvelteSet<number>();
   let collapsedThreads = $state<string[]>([]);
   let expandedProviderHiddenComments = $state<number[]>([]);
   let expandedCompactRows = $state<string[]>([]);
@@ -1222,6 +1234,18 @@
 
   function canDeleteComment(event: PREvent | IssueEvent): boolean {
     return event.EventType === "issue_comment" && event.PlatformID != null && onDeleteComment !== undefined;
+  }
+
+  function canReactToComment(event: PREvent | IssueEvent): boolean {
+    return event.EventType === "issue_comment" && event.PlatformID != null && onReactToComment !== undefined;
+  }
+
+  function reactToComment(event: PREvent | IssueEvent, content: CommentReactionContent): void {
+    if (!onReactToComment || reactingIds.has(event.ID)) return;
+    reactingIds.add(event.ID);
+    onReactToComment(event, content, {
+      onSettled: () => reactingIds.delete(event.ID),
+    });
   }
 
   function startDelete(event: PREvent | IssueEvent): void {
@@ -1647,6 +1671,26 @@
     </IconButton>
   {/if}
   {@render deleteAction(event)}
+  {#if canReactToComment(event)}
+    <Menu align="end">
+      <MenuTrigger ariaLabel="Add reaction">
+        {#snippet child({ attachment })}
+          <!-- ariaDisabled keeps focus on the trigger the menu returns it to while the reaction is pending. -->
+          <IconButton size="sm" ariaLabel="Add reaction" ariaDisabled={reactingIds.has(event.ID)} {@attach attachment}>
+            <FaceSlightlySmilingPlusIcon size={14} />
+          </IconButton>
+        {/snippet}
+      </MenuTrigger>
+      <MenuContent ariaLabel="Reactions">
+        {#each commentReactions as reaction (reaction.content)}
+          <MenuItem textValue={reaction.name} onselect={() => reactToComment(event, reaction.content)}>
+            {#snippet icon()}{reaction.glyph}{/snippet}
+            {reaction.name}
+          </MenuItem>
+        {/each}
+      </MenuContent>
+    </Menu>
+  {/if}
   {#if event.DirectURL}
     {@const directCopyID = directLinkCopyID(event)}
     <IconButton

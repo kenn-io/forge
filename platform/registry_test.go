@@ -479,6 +479,7 @@ func TestRegistryMarkdownMediaReaderRequiresCapability(t *testing.T) {
 }
 
 var (
+	_ CommentReactor        = (*testCommentReactionProvider)(nil)
 	_ MarkdownMediaReader   = (*testMarkdownMediaProvider)(nil)
 	_ NotificationMutator   = (*testNotificationProvider)(nil)
 	_ NotificationReader    = (*testNotificationProvider)(nil)
@@ -487,3 +488,25 @@ var (
 	_ WorkflowDispatcher    = (*testWorkflowProvider)(nil)
 	_ WorkflowRunReader     = (*testWorkflowProvider)(nil)
 )
+
+type testCommentReactionProvider struct{ testProvider }
+
+func (testCommentReactionProvider) ReactToComment(context.Context, RepoRef, int64, string) error {
+	return nil
+}
+
+func TestRegistryCommentReactorRequiresCapability(t *testing.T) {
+	registry, err := NewRegistry(testCommentReactionProvider{testProvider{kind: KindGitHub, host: "github.com"}})
+	require.NoError(t, err)
+	_, err = registry.CommentReactor(KindGitHub, "github.com")
+	var platformErr *Error
+	require.ErrorAs(t, err, &platformErr)
+	assert.Equal(t, "comment_reaction", platformErr.Capability)
+	require.ErrorIs(t, err, ErrUnsupportedCapability)
+	provider := testCommentReactionProvider{testProvider{kind: KindGitHub, host: "github.com", caps: Capabilities{CommentReaction: true}}}
+	registry, err = NewRegistry(provider)
+	require.NoError(t, err)
+	reactor, err := registry.CommentReactor(KindGitHub, "github.com")
+	require.NoError(t, err)
+	assert.Equal(t, provider, reactor)
+}

@@ -24,6 +24,7 @@
   import type { WorkspaceRuntimeLaunchLeaf } from "../terminal/workspace-runtime-workflow.js";
   import type { IssueDetailSyncMode } from "../../stores/issues.svelte.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
+  import type { CommentReactionContent } from "./comment-reactions.js";
   import MarkdownHtml from "../shared/MarkdownHtml.svelte";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import { displayedCapabilities, firstUnavailableGate, operationGate } from "./operation-gates.js";
@@ -141,6 +142,7 @@
     read_markdown_images: false,
     read_markdown_media: false,
     read_authenticated_user: false,
+    comment_reaction: false,
     comment_mutation: true,
     state_mutation: true,
     merge_mutation: true,
@@ -297,6 +299,18 @@
       return;
     }
     issues.editIssueComment(owner, name, number, event.PlatformID, body, callbacks);
+  }
+
+  function reactToTimelineComment(
+    event: { PlatformID: number | null },
+    content: CommentReactionContent,
+    callbacks: MutationCallbacks,
+  ): void {
+    if (event.PlatformID === null) {
+      callbacks.onSettled?.();
+      return;
+    }
+    issues.reactToIssueComment(owner, name, number, event.PlatformID, content, callbacks);
   }
 
   function deleteTimelineComment(event: { PlatformID: number | null }, callbacks: MutationCallbacks): void {
@@ -644,6 +658,7 @@
   const addCommentGate = $derived(operationGate(repoOperations?.add_comment));
   const editCommentGate = $derived(operationGate(repoOperations?.edit_comment));
   const deleteCommentGate = $derived(operationGate(repoOperations?.delete_comment));
+  const reactCommentGate = $derived(operationGate(repoOperations?.react_comment));
   const labelGate = $derived(firstUnavailableGate(
     repoOperations?.add_label, repoOperations?.remove_label,
   ));
@@ -1705,6 +1720,9 @@
               : undefined}
             onDeleteComment={capabilities.comment_mutation && !staleIssue && !deleteCommentGate.unavailable
               ? deleteTimelineComment
+              : undefined}
+            onReactToComment={capabilities.comment_reaction && !staleIssue && !reactCommentGate.unavailable
+              ? reactToTimelineComment
               : undefined}
           />
         {:else if issues.isIssueDetailSyncing()}

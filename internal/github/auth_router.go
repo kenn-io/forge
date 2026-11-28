@@ -1078,6 +1078,18 @@ func (c *RoutedClient) ApproveWorkflowRun(ctx context.Context, owner, repo strin
 	return client.ApproveWorkflowRun(ctx, owner, repo, runID)
 }
 
+func (c *RoutedClient) CreateIssueCommentReaction(ctx context.Context, owner, repo string, commentID int64, content string) error {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return err
+	}
+	reactor, ok := client.(platformgithub.CommentReactionAPI)
+	if !ok {
+		return platform.UnsupportedCapability(platform.KindGitHub, c.routes.host, "comment_reaction")
+	}
+	return reactor.CreateIssueCommentReaction(ctx, owner, repo, commentID, content)
+}
+
 func (c *RoutedClient) CreateIssueComment(ctx context.Context, owner, repo string, number int, body string) (*gh.IssueComment, error) {
 	client, err := c.routeForRepoContext(ctx, owner, repo)
 	if err != nil {

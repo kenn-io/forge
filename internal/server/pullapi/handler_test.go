@@ -55,6 +55,7 @@ func TestHandlerRegistersPullRoutes(t *testing.T) {
 	addPair("get-pull-stack", http.MethodGet, "/stack", http.StatusOK)
 	addPair("edit-pr-content", http.MethodPatch, "", http.StatusOK)
 	addPair("post-pr-comment", http.MethodPost, "/comments", http.StatusCreated)
+	addPair("react-pr-comment", http.MethodPost, "/comments/{comment_id}/reactions", http.StatusNoContent)
 	addPair("edit-pr-comment", http.MethodPatch, "/comments/{comment_id}", http.StatusOK)
 	addPair("delete-pr-comment", http.MethodDelete, "/comments/{comment_id}", http.StatusNoContent)
 	addPair("reply-to-discussion", http.MethodPost, "/discussions/{discussion_id}/reply", http.StatusCreated)

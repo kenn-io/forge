@@ -102,6 +102,28 @@ type editCommentInput struct {
 
 type editCommentOutput = httpapi.BodyOutput[mergeRequestEventResponse]
 
+type reactCommentInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	CommentID    int64  `path:"comment_id"`
+	Body         httpapi.CommentReactionRequest
+}
+type reactCommentHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	CommentID    int64  `path:"comment_id"`
+	Body         httpapi.CommentReactionRequest
+}
+type reactCommentOutput struct {
+	Status int `status:"204"`
+}
+
 type deleteCommentInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string
@@ -1087,6 +1109,36 @@ func (s *Handler) postComment(ctx context.Context, input *postCommentInput) (*po
 	}
 
 	return &postCommentOutput{Status: http.StatusCreated, Body: mergeRequestEventResponseFromDB(event)}, nil
+}
+
+func (s *Handler) reactComment(ctx context.Context, input *reactCommentInput) (*reactCommentOutput, error) {
+	repo, err := s.requireRepoRouteCapability(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, "comment_reaction")
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireSyncerCapability(repo.Repo, "comment_reaction"); err != nil {
+		return nil, err
+	}
+	reactor, err := s.syncer.CommentReactor(repoProviderKind(repo.Repo), repoProviderHost(repo.Repo))
+	if err != nil {
+		return nil, unsupportedCapabilityProblem(repo.Repo, "comment_reaction")
+	}
+	ref := repoNumberPathRef{repoID: repo.ID, owner: repo.Owner, name: repo.Name, number: input.Number, platformHost: repo.PlatformHost}
+	mrID, err := s.lookupMRID(ctx, ref)
+	if err != nil {
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, err.Error(), nil)
+	}
+	exists, err := s.db.MRCommentEventExists(ctx, mrID, input.CommentID)
+	if err != nil {
+		return nil, httpapi.Internal("validate comment target failed")
+	}
+	if !exists {
+		return nil, httpapi.NotFound(httpapi.CodeCommentNotFound, "comment not found for pull request", nil)
+	}
+	if err := reactor.ReactToComment(ctx, platformRepoRefFromDB(repo.Repo), input.CommentID, input.Body.Content); err != nil {
+		return nil, httpapi.ProviderMutationProblem(err, string(repoProviderKind(repo.Repo)), repoProviderHost(repo.Repo))
+	}
+	return &reactCommentOutput{Status: http.StatusNoContent}, nil
 }
 
 func (s *Handler) editComment(ctx context.Context, input *editCommentInput) (*editCommentOutput, error) {

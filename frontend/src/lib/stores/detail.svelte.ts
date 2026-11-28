@@ -1,3 +1,4 @@
+import { runCommentReaction } from "./comment-reaction-command.js";
 import { createAcknowledgedProjections } from "./acknowledged-projections.js";
 import { Effect, Result } from "effect";
 import { SvelteMap } from "svelte/reactivity";
@@ -39,6 +40,7 @@ import {
 } from "../api/provider-routes.js";
 import { DetailWorkflow, type DetailReadError } from "./detail-workflow.js";
 import { showFlash } from "./flash.svelte.js";
+import type { CommentReactionRequestContent as CommentReactionContent } from "../api/generated/models/commentReactionRequestContent.js";
 import { nextWorkspaceLifecycleTick } from "./workspace-create-pending.svelte.js";
 import { providerItemKey, providerMutationKey } from "./provider-key.js";
 import {
@@ -2781,6 +2783,47 @@ export function createDetailStore(opts: DetailStoreOptions) {
     });
   }
 
+  // Reaction counts are not synced, so an acknowledged reaction changes no
+  // local state: the flash is its only confirmation.
+  function reactToComment(
+    owner: string,
+    name: string,
+    number: number,
+    commentID: number,
+    content: CommentReactionContent,
+    callbacks: MutationCallbacks = {},
+  ): void {
+    const action = Effect.gen(function* () {
+      const ref = yield* Effect.try({
+        try: () => currentDetailRef(owner, name, number),
+        catch: (cause) => TransientTransportError.make({ operation: "react to pull request comment", cause }),
+      });
+      const mutations = yield* ProviderMutations;
+      const commit = executeGeneratedApiRequest("POST pull request comment reaction", (client, signal) =>
+        providerUsesHostRoute(ref)
+          ? client.PullRequestsService.reactPrCommentOnHost(
+              { ...providerHostRouteParams(ref), number: number, commentId: commentID },
+              { content },
+              { signal },
+            )
+          : client.PullRequestsService.reactPrComment(
+              { ...providerRouteParams(ref), number: number, commentId: commentID },
+              { content },
+              { signal },
+            ),
+      ).pipe(Effect.asVoid);
+      yield* submitDetailMutation(mutations, ref, {
+        key: pullMutationKey(ref, `comment\u0000${commentID}\u0000reaction`),
+        baseline: undefined,
+        optimistic: undefined,
+        apply: () => Effect.void,
+        commit,
+        refreshOnStale: Effect.void,
+      });
+    });
+    runCommentReaction(runtime, action, "react to pull request comment", { owner, name, number, commentID }, callbacks);
+  }
+
   function applyReviewSuggestions(
     routeRef: ProviderRouteRef,
     number: number,
@@ -2956,6 +2999,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     editComment,
     deleteComment,
     replyToDiscussion,
+    reactToComment,
     applyReviewSuggestions,
   };
 }

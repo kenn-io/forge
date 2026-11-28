@@ -32,6 +32,7 @@ func TestRepoOperationsWireShape(t *testing.T) {
 		"mark_draft",
 		"submit_review",
 		"review_draft",
+		"react_comment",
 		"add_comment",
 		"edit_comment",
 		"delete_comment",

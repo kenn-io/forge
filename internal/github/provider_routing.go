@@ -457,6 +457,10 @@ func (s *Syncer) LabelReader(
 	return s.directClients.LabelReader(kind, canonicalRepoHost(host))
 }
 
+func (s *Syncer) CommentReactor(kind platform.Kind, host string) (platform.CommentReactor, error) {
+	return s.directClients.CommentReactor(kind, canonicalRepoHost(host))
+}
+
 func (s *Syncer) CommentMutator(
 	kind platform.Kind,
 	host string,

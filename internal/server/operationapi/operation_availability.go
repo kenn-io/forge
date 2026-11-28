@@ -25,6 +25,7 @@ const (
 	operationMarkDraft             = "mark_draft"
 	OperationSubmitReview          = "submit_review"
 	operationReviewDraft           = "review_draft"
+	operationReactComment          = "react_comment"
 	operationAddComment            = "add_comment"
 	operationEditComment           = "edit_comment"
 	operationDeleteComment         = "delete_comment"
@@ -112,6 +113,7 @@ var (
 	descMarkDraft          = OperationDescriptor{Name: operationMarkDraft, RequiredCapabilities: []string{itemapi.CapabilityDraftMutation}, Bucket: ApiBucketGraphQL}
 	descSubmitReview       = OperationDescriptor{Name: OperationSubmitReview, RequiredCapabilities: []string{itemapi.CapabilityReviewMutation}, Bucket: ApiBucketREST}
 	DescReviewDraft        = OperationDescriptor{Name: operationReviewDraft, RequiredCapabilities: []string{itemapi.CapabilityReviewDraftMutation}, Bucket: ApiBucketREST}
+	descReactComment       = OperationDescriptor{Name: operationReactComment, RequiredCapabilities: []string{itemapi.CapabilityCommentReaction}, Bucket: ApiBucketREST}
 	descAddComment         = OperationDescriptor{Name: operationAddComment, RequiredCapabilities: []string{itemapi.CapabilityCommentMutation}, Bucket: ApiBucketREST}
 	descEditComment        = OperationDescriptor{Name: operationEditComment, RequiredCapabilities: []string{itemapi.CapabilityCommentMutation}, Bucket: ApiBucketREST}
 	descDeleteComment      = OperationDescriptor{Name: operationDeleteComment, RequiredCapabilities: []string{itemapi.CapabilityCommentMutation}, Bucket: ApiBucketREST}
@@ -181,6 +183,7 @@ func (s *Handlers) repoOperationsWithContext(
 		MarkDraft:             derive(descMarkDraft),
 		SubmitReview:          derive(descSubmitReview),
 		ReviewDraft:           derive(DescReviewDraft),
+		ReactComment:          derive(descReactComment),
 		AddComment:            derive(descAddComment),
 		EditComment:           derive(descEditComment),
 		DeleteComment:         derive(descDeleteComment),

@@ -31,6 +31,7 @@ const mockRepo = {
     read_releases: true,
     read_ci: true,
     read_labels: true,
+    comment_reaction: true,
     comment_mutation: true,
     state_mutation: true,
     merge_mutation: true,
@@ -191,6 +192,98 @@ test("edits a pull request timeline comment", async ({ page }) => {
 
   await expect.poll(() => patchedBody).toBe("Edited PR comment");
   await expect(page.getByText("Edited PR comment")).toBeVisible();
+});
+
+test("adds a reaction to a pull request timeline comment", async ({ page }) => {
+  const reactions: Array<{ path: string; body: unknown }> = [];
+  const event: TimelineEvent = {
+    ID: 11,
+    MergeRequestID: 1,
+    PlatformID: 9101,
+    EventType: "issue_comment",
+    Author: "marius",
+    Summary: "",
+    Body: "Ready for another look",
+    MetadataJSON: "",
+    CreatedAt: "2026-03-30T14:00:00Z",
+    DedupeKey: "comment-9101",
+  };
+
+  await page.route(/\/api\/v1\/pulls\/github\/acme\/widgets\/42(?:[/?]|$)/, async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    await fulfillJson(route, prDetail(event.Body, event));
+  });
+  await page.route("**/api/v1/pulls/github/acme/widgets/42/comments/9101/reactions", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    reactions.push({ path: new URL(route.request().url()).pathname, body: route.request().postDataJSON() });
+    await route.fulfill({ status: 204 });
+  });
+
+  await page.goto("/pulls/github/acme/widgets/42");
+  const card = page.locator(".event-timeline .kit-comment-card", { hasText: event.Body });
+  await card.hover();
+  const trigger = card.getByRole("button", { name: "Add reaction" });
+  await trigger.click();
+  await page.getByRole("menu", { name: "Reactions" }).getByRole("menuitem", { name: "Hooray" }).click();
+
+  await expect
+    .poll(() => reactions)
+    .toEqual([{ path: "/api/v1/pulls/github/acme/widgets/42/comments/9101/reactions", body: { content: "hooray" } }]);
+});
+
+test("re-enables the issue comment reaction trigger after a provider rejection", async ({ page }) => {
+  const reactions: Array<{ path: string; body: unknown }> = [];
+  const event: TimelineEvent = {
+    ID: 21,
+    IssueID: 2,
+    PlatformID: 9202,
+    EventType: "issue_comment",
+    Author: "marius",
+    Summary: "",
+    Body: "Same here on the nightly build",
+    MetadataJSON: "",
+    CreatedAt: "2026-03-30T14:00:00Z",
+    DedupeKey: "issue-comment-9202",
+  };
+
+  await page.route(/\/api\/v1\/issues\/github\/acme\/widgets\/7(?:[/?]|$)/, async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    await fulfillJson(route, issueDetail(event.Body, event));
+  });
+  await page.route("**/api/v1/issues/github/acme/widgets/7/comments/9202/reactions", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    reactions.push({ path: new URL(route.request().url()).pathname, body: route.request().postDataJSON() });
+    await route.fulfill({
+      status: 403,
+      contentType: "application/problem+json",
+      body: JSON.stringify({
+        type: "about:blank",
+        title: "Forbidden",
+        status: 403,
+        detail: "Resource not accessible by integration",
+        code: "forbidden",
+      }),
+    });
+  });
+
+  await page.goto("/focus/issues/github/acme/widgets/7");
+  const card = page.locator(".event-timeline .kit-comment-card", { hasText: event.Body });
+  await card.hover();
+  await card.getByRole("button", { name: "Add reaction" }).click();
+  const response = page.waitForResponse("**/api/v1/issues/github/acme/widgets/7/comments/9202/reactions");
+  await page.getByRole("menu", { name: "Reactions" }).getByRole("menuitem", { name: "Eyes" }).click();
+  await response;
+
+  await expect
+    .poll(() => reactions)
+    .toEqual([{ path: "/api/v1/issues/github/acme/widgets/7/comments/9202/reactions", body: { content: "eyes" } }]);
+  await expect(card.getByRole("button", { name: "Add reaction" })).toBeEnabled();
 });
 
 test("copies a direct provider link from a pull request timeline comment", async ({ page, context, browserName }) => {

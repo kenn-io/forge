@@ -1112,6 +1112,13 @@ func (m *MockGH) EditIssue(
 	return &gh.Issue{State: &state}, nil
 }
 
+func (m *MockGH) CreateIssueCommentReaction(ctx context.Context, owner, repo string, commentID int64, content string) error {
+	if m.CreateIssueCommentReactionFn != nil {
+		return m.CreateIssueCommentReactionFn(ctx, owner, repo, commentID, content)
+	}
+	return nil
+}
+
 func (m *MockGH) EditIssueComment(
 	ctx context.Context, owner, repo string, commentID int64, body string,
 ) (*gh.IssueComment, error) {
@@ -1534,56 +1541,57 @@ func (m *MockGH) MergePullRequest(
 }
 
 type MockGH struct {
-	GetRepositoryFn            func(context.Context, string, string) (*gh.Repository, error)
-	GetPullRequestFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
-	GetPullRequestIfChangedFn  func(context.Context, string, string, int, string) (*gh.PullRequest, string, bool, error)
-	GetIssueFn                 func(context.Context, string, string, int) (*gh.Issue, error)
-	GetIssueIfChangedFn        func(context.Context, string, string, int, string) (*gh.Issue, string, bool, error)
-	CreateIssueFn              func(context.Context, string, string, string, string) (*gh.Issue, error)
-	GetUserFn                  func(context.Context, string) (*gh.User, error)
-	AuthenticatedViewerLoginFn func(context.Context) (string, error)
-	AuthenticatedViewerCalls   int
-	UpdatePullRequestBranchFn  func(context.Context, string, string, int, string) error
-	MarkReadyForReviewFn       func(context.Context, string, string, int) (*gh.PullRequest, error)
-	ConvertToDraftFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
-	DismissReviewFn            func(context.Context, string, string, int, int64, string) (*gh.PullRequestReview, error)
-	EditPullRequestFn          func(context.Context, string, string, int, platformgithub.EditPullRequestOpts) (*gh.PullRequest, error)
-	EditIssueFn                func(context.Context, string, string, int, string) (*gh.Issue, error)
-	EditIssueContentFn         func(context.Context, string, string, int, *string, *string) (*gh.Issue, error)
-	CreateIssueCommentFn       func(context.Context, string, string, int, string) (*gh.IssueComment, error)
-	EditIssueCommentFn         func(context.Context, string, string, int64, string) (*gh.IssueComment, error)
-	DeleteIssueCommentFn       func(context.Context, string, string, int64) error
-	CreateReviewCommentReplyFn func(context.Context, string, string, int, string, int64) (*gh.PullRequestComment, error)
-	CreateReviewFn             func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error)
-	CreateReviewWithCommentsFn func(context.Context, string, string, int, string, string, string, []*gh.DraftReviewComment) (*gh.PullRequestReview, error)
-	ApplyReviewSuggestionsFn   func(context.Context, string, string, int, platform.ApplyReviewSuggestionsInput) (*platform.AppliedReviewSuggestions, error)
-	MergePullRequestFn         func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
-	ListWorkflowRunsForHeadFn  func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
-	ApproveWorkflowRunFn       func(context.Context, string, string, int64) error
-	ListReposByOwnerFn         func(context.Context, string) ([]*gh.Repository, error)
-	ListReleasesFn             func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
-	ListTagsFn                 func(context.Context, string, string, int) ([]*gh.RepositoryTag, error)
-	ListOpenPullRequestsFn     func(context.Context, string, string) ([]*gh.PullRequest, error)
-	NativeStackAPI             *MockGHNativeStackAPI
-	ListPullRequestsPageFn     func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
-	ListIssuesPageFn           func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
-	ListCheckRunsForRefFn      func(context.Context, string, string, string) ([]*gh.CheckRun, error)
-	GetCombinedStatusFn        func(context.Context, string, string, string) (*gh.CombinedStatus, error)
-	ListPRTimelineEventsFn     func(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error)
-	ListOpenPRsErr             error
-	ListOpenIssuesFn           func(context.Context, string, string) ([]*gh.Issue, error)
-	ListIssueCommentsFn        func(context.Context, string, string, int) ([]*gh.IssueComment, error)
-	ListReviewThreadsFn        func(context.Context, string, string, int) ([]platformgithub.PullRequestReviewThread, error)
-	RateLimitSnapshotFn        func(context.Context) (*platformgithub.RateLimitSnapshot, error)
-	RateLimitSnapshotCalls     int
-	ListIssueCommentsErr       error
-	ListNotificationsFn        func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error)
-	MarkNotificationReadFn     func(context.Context, string) error
-	GetMarkdownImageFn         func(context.Context, string, string, string) (platform.MarkdownImage, error)
-	OpenMarkdownMediaFn        func(context.Context, string, string, string, string) (platform.MarkdownMedia, error)
-	GetRepositoryByIDFn        func(context.Context, string, int64) (*gh.Repository, error)
-	servedRoutesMu             sync.Mutex
-	servedRoutes               map[int64]mockGHRoute
+	GetRepositoryFn              func(context.Context, string, string) (*gh.Repository, error)
+	GetPullRequestFn             func(context.Context, string, string, int) (*gh.PullRequest, error)
+	GetPullRequestIfChangedFn    func(context.Context, string, string, int, string) (*gh.PullRequest, string, bool, error)
+	GetIssueFn                   func(context.Context, string, string, int) (*gh.Issue, error)
+	GetIssueIfChangedFn          func(context.Context, string, string, int, string) (*gh.Issue, string, bool, error)
+	CreateIssueFn                func(context.Context, string, string, string, string) (*gh.Issue, error)
+	GetUserFn                    func(context.Context, string) (*gh.User, error)
+	AuthenticatedViewerLoginFn   func(context.Context) (string, error)
+	AuthenticatedViewerCalls     int
+	UpdatePullRequestBranchFn    func(context.Context, string, string, int, string) error
+	MarkReadyForReviewFn         func(context.Context, string, string, int) (*gh.PullRequest, error)
+	ConvertToDraftFn             func(context.Context, string, string, int) (*gh.PullRequest, error)
+	DismissReviewFn              func(context.Context, string, string, int, int64, string) (*gh.PullRequestReview, error)
+	EditPullRequestFn            func(context.Context, string, string, int, platformgithub.EditPullRequestOpts) (*gh.PullRequest, error)
+	EditIssueFn                  func(context.Context, string, string, int, string) (*gh.Issue, error)
+	EditIssueContentFn           func(context.Context, string, string, int, *string, *string) (*gh.Issue, error)
+	CreateIssueCommentFn         func(context.Context, string, string, int, string) (*gh.IssueComment, error)
+	CreateIssueCommentReactionFn func(context.Context, string, string, int64, string) error
+	EditIssueCommentFn           func(context.Context, string, string, int64, string) (*gh.IssueComment, error)
+	DeleteIssueCommentFn         func(context.Context, string, string, int64) error
+	CreateReviewCommentReplyFn   func(context.Context, string, string, int, string, int64) (*gh.PullRequestComment, error)
+	CreateReviewFn               func(context.Context, string, string, int, string, string) (*gh.PullRequestReview, error)
+	CreateReviewWithCommentsFn   func(context.Context, string, string, int, string, string, string, []*gh.DraftReviewComment) (*gh.PullRequestReview, error)
+	ApplyReviewSuggestionsFn     func(context.Context, string, string, int, platform.ApplyReviewSuggestionsInput) (*platform.AppliedReviewSuggestions, error)
+	MergePullRequestFn           func(context.Context, string, string, int, string, string, string) (*gh.PullRequestMergeResult, error)
+	ListWorkflowRunsForHeadFn    func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
+	ApproveWorkflowRunFn         func(context.Context, string, string, int64) error
+	ListReposByOwnerFn           func(context.Context, string) ([]*gh.Repository, error)
+	ListReleasesFn               func(context.Context, string, string, int) ([]*gh.RepositoryRelease, error)
+	ListTagsFn                   func(context.Context, string, string, int) ([]*gh.RepositoryTag, error)
+	ListOpenPullRequestsFn       func(context.Context, string, string) ([]*gh.PullRequest, error)
+	NativeStackAPI               *MockGHNativeStackAPI
+	ListPullRequestsPageFn       func(context.Context, string, string, string, int) ([]*gh.PullRequest, bool, error)
+	ListIssuesPageFn             func(context.Context, string, string, string, int) ([]*gh.Issue, bool, error)
+	ListCheckRunsForRefFn        func(context.Context, string, string, string) ([]*gh.CheckRun, error)
+	GetCombinedStatusFn          func(context.Context, string, string, string) (*gh.CombinedStatus, error)
+	ListPRTimelineEventsFn       func(context.Context, string, string, int) ([]platformgithub.PullRequestTimelineEvent, error)
+	ListOpenPRsErr               error
+	ListOpenIssuesFn             func(context.Context, string, string) ([]*gh.Issue, error)
+	ListIssueCommentsFn          func(context.Context, string, string, int) ([]*gh.IssueComment, error)
+	ListReviewThreadsFn          func(context.Context, string, string, int) ([]platformgithub.PullRequestReviewThread, error)
+	RateLimitSnapshotFn          func(context.Context) (*platformgithub.RateLimitSnapshot, error)
+	RateLimitSnapshotCalls       int
+	ListIssueCommentsErr         error
+	ListNotificationsFn          func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error)
+	MarkNotificationReadFn       func(context.Context, string) error
+	GetMarkdownImageFn           func(context.Context, string, string, string) (platform.MarkdownImage, error)
+	OpenMarkdownMediaFn          func(context.Context, string, string, string, string) (platform.MarkdownMedia, error)
+	GetRepositoryByIDFn          func(context.Context, string, int64) (*gh.Repository, error)
+	servedRoutesMu               sync.Mutex
+	servedRoutes                 map[int64]mockGHRoute
 }
 
 // mockGH implements ghclient.Client for testing.

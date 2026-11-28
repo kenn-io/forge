@@ -4179,3 +4179,42 @@ func TestMergeBlocksPredecessorPreservedByNativeStackOverlapFallback(t *testing.
 	assert.Contains(string(resp.Body), `"blocking_number":100`)
 	assert.False(merged, "the provider must not be asked to merge past an open predecessor")
 }
+
+func TestAPIReactPRCommentTargetsParentAndPreservesTimeline(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	calls := 0
+	mock := &serverfake.MockGH{CreateIssueCommentReactionFn: func(_ context.Context, owner, repo string, id int64, content string) error {
+		calls++
+		require.Equal("acme", owner)
+		require.Equal("widget", repo)
+		require.Equal(int64(9876), id)
+		require.Equal("heart", content)
+		return nil
+	}}
+	srv, database := servertest.SetupTestServerWithMock(t, mock)
+	mrID := serverfake.SeedPR(t, database, "acme", "widget", 7)
+	serverfake.SeedPR(t, database, "acme", "widget", 8)
+	commentID := int64(9876)
+	require.NoError(database.UpsertMREvents(t.Context(), []db.MREvent{{MergeRequestID: mrID, PlatformID: &commentID, EventType: "issue_comment", Body: "original", CreatedAt: time.Now().UTC(), DedupeKey: "reaction-comment"}}))
+	before, err := database.ListMREvents(t.Context(), mrID)
+	require.NoError(err)
+	for _, tc := range []struct {
+		path, body string
+		status     int
+	}{
+		{"/api/v1/pulls/gh/acme/widget/8/comments/9876/reactions", `{"content":"heart"}`, http.StatusNotFound},
+		{"/api/v1/pulls/gh/acme/widget/7/comments/9876/reactions", `{"content":"bad"}`, http.StatusUnprocessableEntity},
+		{"/api/v1/pulls/gh/acme/widget/7/comments/9876/reactions", `{"content":"heart"}`, http.StatusNoContent},
+	} {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		require.Equal(tc.status, rec.Code, rec.Body.String())
+	}
+	require.Equal(1, calls)
+	after, err := database.ListMREvents(t.Context(), mrID)
+	require.NoError(err)
+	require.Equal(before, after)
+}

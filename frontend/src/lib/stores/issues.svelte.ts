@@ -1,3 +1,4 @@
+import { runCommentReaction } from "./comment-reaction-command.js";
 import { createListPaging } from "./list-paging.svelte.js";
 import { createAcknowledgedProjections } from "./acknowledged-projections.js";
 import { Effect } from "effect";
@@ -28,6 +29,7 @@ import {
   providerUsesHostRoute,
 } from "../api/provider-routes.js";
 import { showFlash } from "./flash.svelte.js";
+import type { CommentReactionRequestContent as CommentReactionContent } from "../api/generated/models/commentReactionRequestContent.js";
 import { IssuesWorkflow, type IssueDetailSyncMode } from "./issues-workflow.js";
 import {
   invokeMutationCallback,
@@ -1652,6 +1654,47 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     });
   }
 
+  // Reaction counts are not synced, so an acknowledged reaction changes no
+  // local state: the flash is its only confirmation.
+  function reactToIssueComment(
+    owner: string,
+    name: string,
+    number: number,
+    commentID: number,
+    content: CommentReactionContent,
+    callbacks: MutationCallbacks = {},
+  ): void {
+    const action = Effect.gen(function* () {
+      const ref = yield* Effect.try({
+        try: () => currentIssueDetailRef(owner, name, number),
+        catch: (cause) => TransientTransportError.make({ operation: "react to issue comment", cause }),
+      });
+      const mutations = yield* ProviderMutations;
+      const commit = executeGeneratedApiRequest("POST issue comment reaction", (client, signal) =>
+        providerUsesHostRoute(ref)
+          ? client.IssuesService.reactIssueCommentOnHost(
+              { ...providerHostRouteParams(ref), number: number, commentId: commentID },
+              { content },
+              { signal },
+            )
+          : client.IssuesService.reactIssueComment(
+              { ...providerRouteParams(ref), number: number, commentId: commentID },
+              { content },
+              { signal },
+            ),
+      ).pipe(Effect.asVoid);
+      yield* submitDetailMutation(mutations, ref, {
+        key: issueMutationKey(ref, `comment\u0000${commentID}\u0000reaction`),
+        baseline: undefined,
+        optimistic: undefined,
+        apply: () => Effect.void,
+        commit,
+        refreshOnStale: Effect.void,
+      });
+    });
+    runCommentReaction(runtime, action, "react to issue comment", { owner, name, number, commentID }, callbacks);
+  }
+
   function deleteIssueComment(
     owner: string,
     name: string,
@@ -2254,6 +2297,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     submitIssueComment,
     editIssueComment,
     deleteIssueComment,
+    reactToIssueComment,
     setLocalIssueBody,
     saveIssueBodyInBackground,
     hasUnsavedLocalBody,

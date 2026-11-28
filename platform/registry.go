@@ -373,6 +373,18 @@ func (r *Registry) WorkflowDispatcher(kind Kind, host string) (WorkflowDispatche
 	return dispatcher, nil
 }
 
+func (r *Registry) CommentReactor(kind Kind, host string) (CommentReactor, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	reactor, ok := provider.(CommentReactor)
+	if !ok || !provider.Capabilities().CommentReaction {
+		return nil, UnsupportedCapability(kind, host, "comment_reaction")
+	}
+	return reactor, nil
+}
+
 func (r *Registry) CommentMutator(kind Kind, host string) (CommentMutator, error) {
 	provider, err := r.Provider(kind, host)
 	if err != nil {

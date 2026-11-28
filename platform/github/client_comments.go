@@ -10,6 +10,23 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
+func (c *Client) CreateIssueCommentReaction(ctx context.Context, owner, repo string, commentID int64, content string) error {
+	_, resp, err := c.writeGH().Reactions.CreateIssueCommentReaction(ctx, owner, repo, commentID, content)
+	c.trackWriteRate(resp)
+	if err != nil {
+		if resp != nil {
+			switch resp.StatusCode {
+			case http.StatusNotFound:
+				return &platform.Error{Code: platform.ErrCodeNotFound, Provider: platform.KindGitHub, PlatformHost: c.platformHost, Err: err}
+			case http.StatusUnprocessableEntity:
+				return &platform.Error{Code: platform.ErrCodeInvalidArgument, Provider: platform.KindGitHub, PlatformHost: c.platformHost, Err: err}
+			}
+		}
+		return mapGitHubReadError(c.platformHost, c.now, "", err)
+	}
+	return nil
+}
+
 func (c *Client) CreateIssueComment(
 	ctx context.Context, owner, repo string, number int, body string,
 ) (*gh.IssueComment, error) {

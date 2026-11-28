@@ -51,6 +51,35 @@ func (s *Handler) postIssueComment(ctx context.Context, input *postIssueCommentI
 	return &postIssueCommentOutput{Status: http.StatusCreated, Body: event}, nil
 }
 
+func (s *Handler) reactComment(ctx context.Context, input *reactCommentInput) (*reactCommentOutput, error) {
+	repo, err := s.resolver.RequireRouteCapability(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, "comment_reaction")
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireSyncerCapability(repo.Repo, "comment_reaction"); err != nil {
+		return nil, err
+	}
+	issueID, err := s.lookupIssueID(ctx, repo.Row(), input.Number)
+	if err != nil {
+		return nil, err
+	}
+	reactor, err := s.syncer.CommentReactor(httpapi.ProviderKind(repo.Repo), httpapi.ProviderHost(repo.Repo))
+	if err != nil {
+		return nil, httpapi.UnsupportedCapability(repo.Repo, "comment_reaction")
+	}
+	exists, err := s.db.IssueCommentEventExists(ctx, issueID, input.CommentID)
+	if err != nil {
+		return nil, httpapi.Internal("validate comment target failed")
+	}
+	if !exists {
+		return nil, httpapi.NotFound(httpapi.CodeCommentNotFound, "comment not found for issue", nil)
+	}
+	if err := reactor.ReactToComment(ctx, httpapi.PlatformRepoRef(repo.Repo), input.CommentID, input.Body.Content); err != nil {
+		return nil, httpapi.ProviderMutationProblem(err, string(httpapi.ProviderKind(repo.Repo)), httpapi.ProviderHost(repo.Repo))
+	}
+	return &reactCommentOutput{Status: http.StatusNoContent}, nil
+}
+
 func (s *Handler) editIssueComment(ctx context.Context, input *editIssueCommentInput) (*editIssueCommentOutput, error) {
 	if strings.TrimSpace(input.Body.Body) == "" {
 		return nil, httpapi.Validation("body.body", "comment body must not be empty")

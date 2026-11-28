@@ -1933,3 +1933,47 @@ func TestMarkPullRequestReadyForReviewReturnsTypedStaleStateError(t *testing.T) 
 	require.Equal([]string{http.MethodPost, http.MethodPost}, methods)
 	require.Equal([]string{"application/json", "application/json"}, contentTypes)
 }
+
+func TestCreateIssueCommentReaction(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		want   error
+	}{
+		{http.StatusOK, nil},      // Existing reaction.
+		{http.StatusCreated, nil}, // Newly created reaction.
+		{http.StatusNotFound, platform.ErrNotFound},
+		{http.StatusUnprocessableEntity, platform.ErrInvalidArgument},
+	} {
+		t.Run(fmt.Sprint(tc.status), func(t *testing.T) {
+			readServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				assert.Fail(t, "reaction used read client")
+				w.WriteHeader(http.StatusForbidden)
+			}))
+			defer readServer.Close()
+			calls := 0
+			writeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				assert.Equal(t, http.MethodPost, r.Method)
+				assert.Equal(t, "/api/v3/repos/acme/widgets/issues/comments/44/reactions", r.URL.Path)
+				var body map[string]any
+				assert.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+				assert.Equal(t, "heart", body["content"])
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(`{"content":"heart"}`))
+			}))
+			defer writeServer.Close()
+			read, err := newEnterpriseGHClient(readServer.Client(), readServer.URL+"/api/v3/", readServer.URL+"/api/uploads/")
+			require.NoError(t, err)
+			write, err := newEnterpriseGHClient(writeServer.Client(), writeServer.URL+"/api/v3/", writeServer.URL+"/api/uploads/")
+			require.NoError(t, err)
+			client := &Client{now: time.Now, gh: read, ghWrite: write, platformHost: "github.com"}
+			err = client.CreateIssueCommentReaction(t.Context(), "acme", "widgets", 44, "heart")
+			if tc.want != nil {
+				require.ErrorIs(t, err, tc.want)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, 1, calls)
+		})
+	}
+}

@@ -47,6 +47,7 @@ func TestHandlerRegistersOnlyIssueRoutes(t *testing.T) {
 	addPair("get-issue", http.MethodGet, "", http.StatusOK)
 	addPair("post-issue-comment", http.MethodPost, "/comments", http.StatusCreated)
 	addPair("edit-issue-content", http.MethodPatch, "", http.StatusOK)
+	addPair("react-issue-comment", http.MethodPost, "/comments/{comment_id}/reactions", http.StatusNoContent)
 	addPair("edit-issue-comment", http.MethodPatch, "/comments/{comment_id}", http.StatusOK)
 	addPair("delete-issue-comment", http.MethodDelete, "/comments/{comment_id}", http.StatusNoContent)
 	addPair("set-issue-labels", http.MethodPut, "/labels", http.StatusOK)

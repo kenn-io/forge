@@ -89,6 +89,7 @@
     read_workflows: false,
     read_workflow_runs: false,
     workflow_dispatch: false,
+    comment_reaction: false,
     comment_mutation: true,
     thread_reply: false,
     thread_resolve: false,

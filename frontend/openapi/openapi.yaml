@@ -4099,6 +4099,29 @@ components:
       required:
         - state
       type: object
+    GithubTeam:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+      required:
+        - slug
+        - name
+      type: object
+    GithubTeamRepo:
+      additionalProperties: false
+      properties:
+        platform_repo_id:
+          format: int64
+          type: integer
+        repo_path:
+          type: string
+      required:
+        - platform_repo_id
+        - repo_path
+      type: object
     Hit:
       additionalProperties: false
       properties:
@@ -29100,6 +29123,79 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Bulk add repositories
+      tags:
+        - Repositories
+  /repos/github-teams:
+    get:
+      operationId: list-github-teams
+      parameters:
+        - explode: false
+          in: query
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: org
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/GithubTeam"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List GitHub teams
+      tags:
+        - Repositories
+  /repos/github-teams/{slug}/repositories:
+    get:
+      operationId: list-github-team-repositories
+      parameters:
+        - explode: false
+          in: query
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: org
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/GithubTeamRepo"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List configured GitHub team repositories
       tags:
         - Repositories
   /repos/preview:

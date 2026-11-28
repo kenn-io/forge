@@ -1560,3 +1560,28 @@ func (c *RoutedClient) DispatchManualWorkflow(ctx context.Context, owner, repo s
 	}
 	return workflowClient.DispatchManualWorkflow(ctx, owner, repo, workflowID, request)
 }
+
+// ListOrgTeams selects the configured owner's credential, without App discovery.
+func (c *RoutedClient) ListOrgTeams(ctx context.Context, org string) ([]*gh.Team, error) {
+	client, err := c.routeForOwnerContext(ctx, org)
+	if err != nil {
+		return nil, err
+	}
+	api, ok := client.(TeamReader)
+	if !ok {
+		return nil, fmt.Errorf("GitHub team reads unavailable")
+	}
+	return api.ListOrgTeams(ctx, org)
+}
+
+func (c *RoutedClient) ListTeamRepositories(ctx context.Context, org, slug string) ([]*gh.Repository, error) {
+	client, err := c.routeForOwnerContext(ctx, org)
+	if err != nil {
+		return nil, err
+	}
+	api, ok := client.(TeamReader)
+	if !ok {
+		return nil, fmt.Errorf("GitHub team reads unavailable")
+	}
+	return api.ListTeamRepositories(ctx, org, slug)
+}

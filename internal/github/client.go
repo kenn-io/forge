@@ -446,3 +446,9 @@ func restAPIOriginForHost(platformHost string) string {
 	}
 	return "https://" + platformHost
 }
+
+// TeamReader reads GitHub teams using the routed user identity.
+type TeamReader interface {
+	ListOrgTeams(ctx context.Context, org string) ([]*gh.Team, error)
+	ListTeamRepositories(ctx context.Context, org, slug string) ([]*gh.Repository, error)
+}

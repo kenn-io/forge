@@ -4,6 +4,8 @@ import type {
   Agent,
   BulkAddRepoRequest,
   FleetSettingsResponse,
+  GithubTeam as GeneratedGithubTeam,
+  GithubTeamRepo as GeneratedGithubTeamRepo,
   ProbeACPOptionsResult,
   RepoPreset as GeneratedRepoPreset,
   RepoPresetRepository as GeneratedRepoPresetRepository,
@@ -36,6 +38,8 @@ export type RepoInput = BulkAddRepoRequest;
 export type RepoPromotionInput = RepoInput & Required<Pick<RepoInput, "owner" | "name">>;
 export type RepoPreviewResponse = GeneratedRepoPreviewResponse;
 export type RepoPreviewRow = GeneratedRepoPreviewRow;
+export type GitHubTeam = GeneratedGithubTeam;
+export type GitHubTeamRepository = GeneratedGithubTeamRepo;
 export type RepoPreset = GeneratedRepoPreset;
 export type RepoPresetRepository = GeneratedRepoPresetRepository;
 type SettingsCommand =
@@ -178,6 +182,15 @@ export class SettingsWorkflow extends Context.Service<
       pattern: string,
       options: RepoRequestOptions,
     ) => Effect.Effect<RepoPreviewResponse, SettingsReadError>;
+    readonly listGitHubTeams: (
+      platformHost: string,
+      org: string,
+    ) => Effect.Effect<readonly GitHubTeam[], SettingsReadError>;
+    readonly listGitHubTeamRepositories: (
+      platformHost: string,
+      org: string,
+      slug: string,
+    ) => Effect.Effect<readonly GitHubTeamRepository[], SettingsReadError>;
     readonly bulkAddRepos: (repos: readonly RepoInput[]) => Effect.Effect<SettingsSnapshot, SettingsError>;
     readonly promoteRepo: (
       repo: RepoPromotionInput,
@@ -771,6 +784,18 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
       previewRepos: (owner, pattern, options) =>
         api.execute("POST /repos/preview", (signal) =>
           api.client.RepositoriesService.previewRepos({ ...options, owner, pattern }, { signal }),
+        ),
+      listGitHubTeams: (platformHost, org) =>
+        api.execute("GET /repos/github-teams", (signal) =>
+          api.client.RepositoriesService.listGithubTeams({ platform_host: platformHost, org }, { signal }),
+        ),
+      listGitHubTeamRepositories: (platformHost, org, slug) =>
+        api.execute("GET /repos/github-teams/{slug}/repositories", (signal) =>
+          api.client.RepositoriesService.listGithubTeamRepositories(
+            { slug },
+            { platform_host: platformHost, org },
+            { signal },
+          ),
         ),
       bulkAddRepos: (repos) => submitSettings({ _tag: "BulkAddRepos", repos }),
       promoteRepo: (repo, worktreeBasePath, exactRepoAlreadyAdded) =>

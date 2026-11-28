@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   findMatchingRepoPreset,
+  githubTeamOrgs,
   preferredRepoPreset,
   projectRepoPresetSelection,
   repoPresetRepositoriesForSelection,
+  selectionForTeamRepositories,
   type RepoPresetCatalogEntry,
 } from "./repo-presets.js";
 import { repositoryKeyToRequiredWire } from "../api/repository-key.js";
@@ -119,5 +121,60 @@ describe("repository presets", () => {
         { ...catalog[0]!, repositoryKey: undefined },
       ]),
     ).toBeUndefined();
+  });
+});
+
+describe("selectionForTeamRepositories", () => {
+  it("matches team repositories by stable ID, so a renamed repository still matches", () => {
+    const renamed = catalog.map((entry) =>
+      entry.repo_path === "acme/widgets"
+        ? { ...entry, value: "github|github.com/acme/gadgets", repo_path: "acme/gadgets" }
+        : entry,
+    );
+
+    expect(
+      selectionForTeamRepositories([{ platform_repo_id: 1102, repo_path: "acme/r1102" }], "github.com", renamed),
+    ).toBe("github|github.com/acme/gadgets");
+  });
+
+  it("ignores repositories on another host or provider and IDs not in the catalog", () => {
+    const enterprise: RepoPresetCatalogEntry = {
+      value: "github|ghe.example.com/acme/widgets",
+      provider: "github",
+      platform_host: "ghe.example.com",
+      repositoryKey: { kind: "id", id: 1102 },
+      repo_path: "acme/widgets",
+    };
+
+    expect(
+      selectionForTeamRepositories(
+        [
+          { platform_repo_id: 1102, repo_path: "acme/r1102" },
+          { platform_repo_id: 42, repo_path: "acme/r42" },
+          { platform_repo_id: 9999, repo_path: "acme/r9999" },
+        ],
+        "github.com",
+        [...catalog, enterprise],
+      ),
+    ).toBe("github|github.com/acme/widgets");
+    expect(
+      selectionForTeamRepositories([{ platform_repo_id: 9999, repo_path: "acme/r9999" }], "github.com", catalog),
+    ).toBeUndefined();
+  });
+});
+
+describe("githubTeamOrgs", () => {
+  it("lists each configured GitHub host and owner once, case-insensitively", () => {
+    expect(
+      githubTeamOrgs([
+        { provider: "github", platform_host: "github.com", owner: "acme" },
+        { provider: "github", platform_host: "github.com", owner: "ACME" },
+        { provider: "github", platform_host: "ghe.example.com", owner: "acme" },
+        { provider: "gitlab", platform_host: "gitlab.com", owner: "group" },
+      ]),
+    ).toEqual([
+      { platform_host: "github.com", owner: "acme" },
+      { platform_host: "ghe.example.com", owner: "acme" },
+    ]);
   });
 });

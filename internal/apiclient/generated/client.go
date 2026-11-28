@@ -11090,6 +11090,64 @@ func (o *BulkAddReposRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// ListGithubTeamsRequestOptions is the options needed to make a request to ListGithubTeams.
+type ListGithubTeamsRequestOptions struct {
+	Query *ListGithubTeamsQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ListGithubTeamsRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ListGithubTeamsRequestOptions) GetQuery() (map[string]any, error) {
+	return paramcodec.Map(o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ListGithubTeamsRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *ListGithubTeamsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// ListGithubTeamRepositoriesRequestOptions is the options needed to make a request to ListGithubTeamRepositories.
+type ListGithubTeamRepositoriesRequestOptions struct {
+	PathParams *ListGithubTeamRepositoriesPath
+	Query      *ListGithubTeamRepositoriesQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ListGithubTeamRepositoriesRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ListGithubTeamRepositoriesRequestOptions) GetQuery() (map[string]any, error) {
+	return paramcodec.Map(o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ListGithubTeamRepositoriesRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *ListGithubTeamRepositoriesRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // PreviewReposRequestOptions is the options needed to make a request to PreviewRepos.
 type PreviewReposRequestOptions struct {
 	Body *PreviewReposBody
@@ -13637,6 +13695,8 @@ type ClientInterface interface {
 	ListReposWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListReposResp, error)
 	AddRepoWithResponse(ctx context.Context, options *AddRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*AddRepoResp, error)
 	BulkAddReposWithResponse(ctx context.Context, options *BulkAddReposRequestOptions, reqEditors ...runtime.RequestEditorFn) (*BulkAddReposResp, error)
+	ListGithubTeamsWithResponse(ctx context.Context, options *ListGithubTeamsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListGithubTeamsResp, error)
+	ListGithubTeamRepositoriesWithResponse(ctx context.Context, options *ListGithubTeamRepositoriesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListGithubTeamRepositoriesResp, error)
 	PreviewReposWithResponse(ctx context.Context, options *PreviewReposRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PreviewReposResp, error)
 	ListRepoSummariesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListRepoSummariesResp, error)
 	ListUntrackedRepoOpensWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListUntrackedRepoOpensResp, error)
@@ -37485,6 +37545,152 @@ func (c *Client) BulkAddReposWithResponse(ctx context.Context, options *BulkAddR
 	}
 }
 
+// ListGithubTeams List GitHub teams
+func (c *Client) ListGithubTeamsWithResponse(ctx context.Context, options *ListGithubTeamsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListGithubTeamsResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"org":           {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_host": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repos/github-teams",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/repos/github-teams")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ListGithubTeamsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ListGithubTeamsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ListGithubTeamsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListGithubTeamsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(ListGithubTeamsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListGithubTeamsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// ListGithubTeamRepositories List configured GitHub team repositories
+func (c *Client) ListGithubTeamRepositoriesWithResponse(ctx context.Context, options *ListGithubTeamRepositoriesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListGithubTeamRepositoriesResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"org":           {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_host": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repos/github-teams/{slug}/repositories",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/repos/github-teams/{slug}/repositories")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ListGithubTeamRepositoriesResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ListGithubTeamRepositoriesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ListGithubTeamRepositoriesResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListGithubTeamRepositoriesResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(ListGithubTeamRepositoriesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListGithubTeamRepositoriesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // PreviewRepos Preview repositories
 func (c *Client) PreviewReposWithResponse(ctx context.Context, options *PreviewReposRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PreviewReposResp, error) {
 	var err error
@@ -49176,6 +49382,46 @@ func (c *Client) BulkAddReposRaw(ctx context.Context, httpClient *http.Client, o
 	return httpClient.Do(req)
 }
 
+// ListGithubTeamsRaw returns an unread response. The caller must close its body.
+func (c *Client) ListGithubTeamsRaw(ctx context.Context, httpClient *http.Client, options *ListGithubTeamsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"org":           {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_host": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repos/github-teams",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// ListGithubTeamRepositoriesRaw returns an unread response. The caller must close its body.
+func (c *Client) ListGithubTeamRepositoriesRaw(ctx context.Context, httpClient *http.Client, options *ListGithubTeamRepositoriesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"org":           {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_host": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repos/github-teams/{slug}/repositories",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // PreviewReposRaw returns an unread response. The caller must close its body.
 func (c *Client) PreviewReposRaw(ctx context.Context, httpClient *http.Client, options *PreviewReposRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -56975,6 +57221,48 @@ func NewBulkAddReposRequest(ctx context.Context, baseURL string, options *BulkAd
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewListGithubTeamsRequest constructs a typed request for a caller-owned transport.
+func NewListGithubTeamsRequest(ctx context.Context, baseURL string, options *ListGithubTeamsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"org":           {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_host": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repos/github-teams",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewListGithubTeamRepositoriesRequest constructs a typed request for a caller-owned transport.
+func NewListGithubTeamRepositoriesRequest(ctx context.Context, baseURL string, options *ListGithubTeamRepositoriesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"org":           {Style: "form", Explode: &[]bool{false}[0]},
+		"platform_host": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repos/github-teams/{slug}/repositories",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewPreviewReposRequest constructs a typed request for a caller-owned transport.
 func NewPreviewReposRequest(ctx context.Context, baseURL string, options *PreviewReposRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -61081,6 +61369,10 @@ type UpdateRepoWorktreeBasePath struct {
 	Name     string `json:"name"`
 }
 
+type ListGithubTeamRepositoriesPath struct {
+	Slug string `json:"slug"`
+}
+
 type StopHostRuntimeSessionPath struct {
 	SessionKey string `json:"session_key"`
 }
@@ -62398,6 +62690,16 @@ type ResolveRepoItemQuery struct {
 type GetRepoWebURLQuery struct {
 	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
 	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+}
+
+type ListGithubTeamsQuery struct {
+	PlatformHost string `json:"platform_host"`
+	Org          string `json:"org"`
+}
+
+type ListGithubTeamRepositoriesQuery struct {
+	PlatformHost string `json:"platform_host"`
+	Org          string `json:"org"`
 }
 
 type GetSnapshotQuery struct {
@@ -63835,6 +64137,14 @@ type AddRepoErrorResponse = ProblemError
 type BulkAddReposResponse = SettingsResponse
 
 type BulkAddReposErrorResponse = ProblemError
+
+type ListGithubTeamsResponse []GithubTeam
+
+type ListGithubTeamsErrorResponse = ProblemError
+
+type ListGithubTeamRepositoriesResponse []GithubTeamRepo
+
+type ListGithubTeamRepositoriesErrorResponse = ProblemError
 
 type PreviewReposResponse = RepoPreviewResponse
 
@@ -67328,6 +67638,24 @@ type BulkAddReposResp struct {
 	ApplicationProblemPlusJSONDefault *BulkAddReposErrorResponse
 }
 
+type ListGithubTeamsResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListGithubTeamsErrorResponse
+	JSON200                           *ListGithubTeamsResponse
+	ApplicationProblemPlusJSONDefault *ListGithubTeamsErrorResponse
+}
+
+type ListGithubTeamRepositoriesResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListGithubTeamRepositoriesErrorResponse
+	JSON200                           *ListGithubTeamRepositoriesResponse
+	ApplicationProblemPlusJSONDefault *ListGithubTeamRepositoriesErrorResponse
+}
+
 type PreviewReposResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -69642,6 +69970,16 @@ type GithubStateOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	State  string  `json:"state"`
+}
+
+type GithubTeam struct {
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+type GithubTeamRepo struct {
+	PlatformRepoID int64  `json:"platform_repo_id"`
+	RepoPath       string `json:"repo_path"`
 }
 
 type Hit struct {

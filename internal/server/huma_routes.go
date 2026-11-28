@@ -124,6 +124,10 @@ func (s *Server) registerAPI(api huma.API) {
 		httpapi.DocumentOperation("record-untracked-repo-open", "Record an untracked repository open", "Repositories"))
 	huma.Get(api, "/repos", s.activityapi.ListRepos,
 		httpapi.DocumentOperation("list-repos", "List repositories", "Repositories"))
+	huma.Get(api, "/repos/github-teams", s.repoapi.ListGitHubTeams,
+		httpapi.DocumentOperation("list-github-teams", "List GitHub teams", "Repositories"))
+	huma.Get(api, "/repos/github-teams/{slug}/repositories", s.repoapi.ListGitHubTeamRepositories,
+		httpapi.DocumentOperation("list-github-team-repositories", "List configured GitHub team repositories", "Repositories"))
 	huma.Register(api, huma.Operation{
 		OperationID:   "preview-repos",
 		Method:        http.MethodPost,

@@ -41,6 +41,12 @@ vi.mock("../api/generated/index.js", async (importOriginal) => {
       ...actual.RepositoriesService,
       listRepos: async (options?: { signal?: AbortSignal }) =>
         unwrapMockResult(await apiMocks.client.GET("/repos", options)),
+      listGithubTeams: async (query: unknown, options?: { signal?: AbortSignal }) =>
+        unwrapMockResult(await apiMocks.client.GET("/repos/github-teams", { query, ...options })),
+      listGithubTeamRepositories: async (path: unknown, query: unknown, options?: { signal?: AbortSignal }) =>
+        unwrapMockResult(
+          await apiMocks.client.GET("/repos/github-teams/{slug}/repositories", { path, query, ...options }),
+        ),
     },
     SettingsService: {
       ...actual.SettingsService,
@@ -1394,5 +1400,216 @@ describe("RepoTypeahead", () => {
     });
     expect(screen.getByRole("dialog", { name: "Delete repository preset?" })).toBeTruthy();
     expect(settingsStore.getRepoPresets()).toHaveLength(1);
+  });
+
+  it("disables team selection when no GitHub repository is configured", async () => {
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "gitlab",
+        platform_host: "gitlab.com",
+        owner: "group",
+        name: "project",
+        repo_path: "group/project",
+        platform_repo_id: 42,
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    render(RepoTypeahead, { props: { selected: undefined, onchange: vi.fn() } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /Select repository/i }));
+    const button = screen.getByRole("button", { name: "Select from GitHub team…" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("GitHub only");
+  });
+
+  it("waits for the catalog and retries a failed refresh before offering a team selection", async () => {
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: 1101,
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "*",
+        repo_path: "acme/*",
+        is_glob: true,
+        matched_repo_count: 2,
+        hidden_from_ui: false,
+      },
+    ]);
+    let resolveCatalog!: (value: unknown) => void;
+    let catalogPending = true;
+    getRepos.mockImplementation(async (path: string) => {
+      if (path === "/repos/github-teams") {
+        return { data: [{ slug: "payments", name: "Payments" }], error: undefined } as never;
+      }
+      if (path === "/repos/github-teams/{slug}/repositories") {
+        return {
+          data: [
+            { platform_repo_id: 1101, repo_path: "acme/api" },
+            { platform_repo_id: 1106, repo_path: "acme/web" },
+          ],
+          error: undefined,
+        } as never;
+      }
+      if (catalogPending) {
+        catalogPending = false;
+        return new Promise((resolve) => (resolveCatalog = resolve)) as never;
+      }
+      return {
+        data: [
+          { Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "api", PlatformRepoID: 1101 },
+          { Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "web", PlatformRepoID: 1106 },
+        ],
+        error: undefined,
+      } as never;
+    });
+    const onchange = vi.fn();
+    render(RepoTypeahead, { props: { selected: undefined, onchange } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /Select repository/i }));
+    await fireEvent.click(screen.getByRole("button", { name: "Select from GitHub team…" }));
+    await fireEvent.click(await screen.findByRole("combobox", { name: /^Team/ }));
+    await fireEvent.click(await screen.findByRole("option", { name: "Payments" }));
+
+    // The team reply is in, but the glob's repositories are not: no partial offer.
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Loading configured repositories…"));
+    const use = screen.getByRole("button", { name: "Use selection" }) as HTMLButtonElement;
+    expect(use.disabled).toBe(true);
+
+    resolveCatalog({ data: undefined, error: { title: "catalog unavailable", status: 503 } });
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("couldn't load all of Payments's configured repositories");
+    expect(use.disabled).toBe(true);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("2 configured repositories"));
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("offers a complete team selection on workspaces while the workspace catalog is still pending", async () => {
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "*",
+        repo_path: "acme/*",
+        is_glob: true,
+        matched_repo_count: 2,
+        hidden_from_ui: false,
+      },
+    ]);
+    getRepos.mockImplementation(async (path: string) => {
+      if (path === "/repos/github-teams") {
+        return { data: [{ slug: "payments", name: "Payments" }], error: undefined } as never;
+      }
+      if (path === "/repos/github-teams/{slug}/repositories") {
+        return {
+          data: [
+            { platform_repo_id: 1101, repo_path: "acme/api" },
+            { platform_repo_id: 1106, repo_path: "acme/web" },
+          ],
+          error: undefined,
+        } as never;
+      }
+      return {
+        data: [
+          { Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "api", PlatformRepoID: 1101 },
+          { Platform: "github", PlatformHost: "github.com", Owner: "acme", Name: "web", PlatformRepoID: 1106 },
+        ],
+        error: undefined,
+      } as never;
+    });
+    const previousPath = window.location.pathname;
+    window.history.replaceState(null, "", "/workspaces");
+    try {
+      // The workspace list never settles: its catalog stays not ready.
+      setWorkspaceRepoCatalog(undefined, false);
+      const onchange = vi.fn();
+      render(RepoTypeahead, { props: { selected: "github.com/acme/legacy", onchange } });
+
+      await fireEvent.click(screen.getByRole("button", { name: /Select repository/i }));
+      await fireEvent.click(screen.getByRole("button", { name: "Select from GitHub team…" }));
+      await fireEvent.click(await screen.findByRole("combobox", { name: /^Team/ }));
+      await fireEvent.click(await screen.findByRole("option", { name: "Payments" }));
+
+      await waitFor(() => expect(screen.getByRole("status").textContent).toContain("2 configured repositories"));
+      // Pruning still waits for the workspace catalog.
+      expect(onchange).not.toHaveBeenCalled();
+    } finally {
+      window.history.replaceState(null, "", previousPath);
+    }
+  });
+
+  it("applies a team's repositories as an unsaved selection that saves as a new preset", async () => {
+    const api = "github|github.com/acme/api";
+    const web = "github|github.com/acme/web";
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "api",
+        repo_path: "acme/api",
+        platform_repo_id: 1101,
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+      {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "web",
+        repo_path: "acme/web",
+        platform_repo_id: 1106,
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    settingsStore.setRepoPresets([{ name: "Backend", repos: [presetRepo("acme/api", 1101)] }]);
+    setGlobalRepoPresetSelection("Backend", api);
+    getRepos.mockImplementation(async (path: string) => {
+      if (path === "/repos/github-teams") {
+        return { data: [{ slug: "payments", name: "Payments" }], error: undefined } as never;
+      }
+      if (path === "/repos/github-teams/{slug}/repositories") {
+        return {
+          data: [
+            { platform_repo_id: 1101, repo_path: "acme/api" },
+            { platform_repo_id: 1106, repo_path: "acme/web" },
+          ],
+          error: undefined,
+        } as never;
+      }
+      return { data: [], error: undefined };
+    });
+    const onchange = vi.fn();
+    const view = render(RepoTypeahead, { props: { selected: api, onchange } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /Select repository/i }));
+    await fireEvent.click(screen.getByRole("button", { name: "Select from GitHub team…" }));
+    await fireEvent.click(await screen.findByRole("combobox", { name: /^Team/ }));
+    await fireEvent.click(await screen.findByRole("option", { name: "Payments" }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Use selection" }));
+
+    expect(onchange).toHaveBeenLastCalledWith(`${api},${web}`);
+    expect(screen.queryByRole("dialog", { name: "Select repositories from a GitHub team" })).toBeNull();
+    await view.rerender({ selected: `${api},${web}`, onchange });
+    await fireEvent.click(screen.getByRole("button", { name: "Save preset" }));
+    expect((screen.getByRole("radio", { name: "Create new preset" }) as HTMLInputElement).checked).toBe(true);
   });
 });

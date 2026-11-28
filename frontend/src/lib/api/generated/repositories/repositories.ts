@@ -49,6 +49,11 @@ import type {
   GetRepoWebUrlOnHostPathParameters,
   GetRepoWebUrlParams,
   GetRepoWebUrlPathParameters,
+  GithubTeam,
+  GithubTeamRepo,
+  ListGithubTeamRepositoriesParams,
+  ListGithubTeamRepositoriesPathParameters,
+  ListGithubTeamsParams,
   ListRepoBrowserRefsOnHostParams,
   ListRepoBrowserRefsOnHostPathParameters,
   ListRepoBrowserRefsParams,
@@ -1158,6 +1163,66 @@ export const bulkAddRepos = async (
     method: "POST",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(bulkAddReposRequest),
+  });
+};
+
+export const getListGithubTeamsUrl = (params: ListGithubTeamsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/repos/github-teams?${stringifiedParams}` : `/repos/github-teams`;
+};
+
+/**
+ * @summary List GitHub teams
+ */
+export const listGithubTeams = async (
+  params: ListGithubTeamsParams,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<GithubTeam[]> => {
+  return orvalFetch<GithubTeam[]>(getListGithubTeamsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListGithubTeamRepositoriesUrl = (
+  { slug }: ListGithubTeamRepositoriesPathParameters,
+  params: ListGithubTeamRepositoriesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/repos/github-teams/${encodeURIComponent(String(slug))}/repositories?${stringifiedParams}`
+    : `/repos/github-teams/${encodeURIComponent(String(slug))}/repositories`;
+};
+
+/**
+ * @summary List configured GitHub team repositories
+ */
+export const listGithubTeamRepositories = async (
+  { slug }: ListGithubTeamRepositoriesPathParameters,
+  params: ListGithubTeamRepositoriesParams,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<GithubTeamRepo[]> => {
+  return orvalFetch<GithubTeamRepo[]>(getListGithubTeamRepositoriesUrl({ slug }, params), {
+    ...options,
+    method: "GET",
   });
 };
 

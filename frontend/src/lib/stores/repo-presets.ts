@@ -40,7 +40,7 @@ export function findMatchingRepoPreset(
 }
 
 export function projectRepoPresetSelection(
-  preset: RepoPreset,
+  preset: Pick<RepoPreset, "repos">,
   availableRepos: readonly RepoPresetCatalogEntry[],
 ): string | undefined {
   const values = preset.repos.flatMap((repo) => {
@@ -87,4 +87,44 @@ export function preferredRepoPreset(
   if (!affinity) return undefined;
   const affinityKey = affinity.toLowerCase();
   return presets.find((preset) => preset.name.toLowerCase() === affinityKey);
+}
+
+export interface RepoTeamOrg {
+  platform_host: string;
+  owner: string;
+}
+
+// The GitHub organizations a team lookup may target: the distinct host and
+// owner pairs of configured GitHub repositories, globs included. The server
+// rejects any pair outside its configuration before calling GitHub.
+export function githubTeamOrgs(
+  configured: readonly { provider: string; platform_host: string; owner: string }[],
+): RepoTeamOrg[] {
+  const orgs = new Map<string, RepoTeamOrg>();
+  for (const repo of configured) {
+    if (repo.provider !== "github" || !repo.platform_host || !repo.owner) continue;
+    const key = `${repo.platform_host.toLowerCase()}/${repo.owner.toLowerCase()}`;
+    if (!orgs.has(key)) orgs.set(key, { platform_host: repo.platform_host, owner: repo.owner });
+  }
+  return [...orgs.values()];
+}
+
+// Maps a team's repositories to selector values through the preset projection,
+// so they match by stable GitHub ID on the same host and survive a rename.
+export function selectionForTeamRepositories(
+  teamRepos: readonly { platform_repo_id: number; repo_path: string }[],
+  platformHost: string,
+  availableRepos: readonly RepoPresetCatalogEntry[],
+): string | undefined {
+  return projectRepoPresetSelection(
+    {
+      repos: teamRepos.map((repo) => ({
+        provider: "github",
+        platform_host: platformHost,
+        platform_repo_id: repo.platform_repo_id,
+        repo_path: repo.repo_path,
+      })),
+    },
+    availableRepos,
+  );
 }

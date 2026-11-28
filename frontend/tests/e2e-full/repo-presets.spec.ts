@@ -84,3 +84,33 @@ test("repository presets persist, overwrite atomically, and delete without clear
     await server.stop();
   }
 });
+
+test("a GitHub team's configured repositories become a selection", async ({ browser }) => {
+  const server = await startIsolatedE2EServer();
+  const page = await browser.newPage();
+  try {
+    await page.goto(`${server.info.base_url}/issues`);
+    await page.locator(".issue-item").first().waitFor({ state: "visible", timeout: 10_000 });
+    await page.getByRole("button", { name: /^Select repository:/ }).click();
+    await page.getByRole("button", { name: "Select from GitHub team…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Select repositories from a GitHub team" });
+    await dialog.getByRole("combobox", { name: /^Organization/ }).click();
+    await page.getByRole("option", { name: "acme", exact: true }).click();
+    await dialog.getByRole("combobox", { name: /^Team/ }).click();
+    await page.getByRole("option", { name: "Platform" }).click();
+    await expect(dialog.getByRole("status")).toContainText(
+      "2 configured repositories from Platform will replace the current selection.",
+    );
+    await dialog.getByRole("button", { name: "Use selection" }).click();
+    await expect(dialog).toBeHidden();
+
+    const repoList = page.getByRole("listbox", { name: "Repositories" });
+    const widgets = repoList.getByRole("option", { name: "github/github.com/acme/widgets", exact: true });
+    const tools = repoList.getByRole("option", { name: "github/github.com/acme/tools", exact: true });
+    await expect(widgets).toHaveAttribute("aria-selected", "true");
+    await expect(tools).toHaveAttribute("aria-selected", "true");
+  } finally {
+    await page.close();
+    await server.stop();
+  }
+});

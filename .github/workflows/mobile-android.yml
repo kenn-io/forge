@@ -64,8 +64,13 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
+      # Validate companion packages against the locked Expo package's bundledNativeModules.json.
+      # Live lookups against api.expo.dev fail CI whenever Expo publishes a new release
+      # that is still inside the 7-day minimumReleaseAge window in mobile/bunfig.toml.
       - name: Check Expo dependency compatibility
         working-directory: mobile
+        env:
+          EXPO_OFFLINE: "1"
         run: node node_modules/expo/bin/cli install --check
 
       - name: Type check

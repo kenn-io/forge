@@ -234,7 +234,7 @@ test("adds a reaction to a pull request timeline comment", async ({ page }) => {
     .toEqual([{ path: "/api/v1/pulls/github/acme/widgets/42/comments/9101/reactions", body: { content: "hooray" } }]);
 });
 
-test("adds a reaction to an issue timeline comment", async ({ page }) => {
+test("re-enables the issue comment reaction trigger after a provider rejection", async ({ page }) => {
   const reactions: Array<{ path: string; body: unknown }> = [];
   const event: TimelineEvent = {
     ID: 21,
@@ -259,18 +259,31 @@ test("adds a reaction to an issue timeline comment", async ({ page }) => {
   await page.route("**/api/v1/issues/github/acme/widgets/7/comments/9202/reactions", async (route) => {
     expect(route.request().method()).toBe("POST");
     reactions.push({ path: new URL(route.request().url()).pathname, body: route.request().postDataJSON() });
-    await route.fulfill({ status: 204 });
+    await route.fulfill({
+      status: 403,
+      contentType: "application/problem+json",
+      body: JSON.stringify({
+        type: "about:blank",
+        title: "Forbidden",
+        status: 403,
+        detail: "Resource not accessible by integration",
+        code: "forbidden",
+      }),
+    });
   });
 
   await page.goto("/focus/issues/github/acme/widgets/7");
   const card = page.locator(".event-timeline .kit-comment-card", { hasText: event.Body });
   await card.hover();
   await card.getByRole("button", { name: "Add reaction" }).click();
+  const response = page.waitForResponse("**/api/v1/issues/github/acme/widgets/7/comments/9202/reactions");
   await page.getByRole("menu", { name: "Reactions" }).getByRole("menuitem", { name: "Eyes" }).click();
+  await response;
 
   await expect
     .poll(() => reactions)
     .toEqual([{ path: "/api/v1/issues/github/acme/widgets/7/comments/9202/reactions", body: { content: "eyes" } }]);
+  await expect(card.getByRole("button", { name: "Add reaction" })).toBeEnabled();
 });
 
 test("copies a direct provider link from a pull request timeline comment", async ({ page, context, browserName }) => {

@@ -1485,8 +1485,6 @@ describe("RepoTypeahead", () => {
       error: undefined,
     });
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("2 configured repositories"));
-    await fireEvent.click(use);
-    expect(onchange).toHaveBeenLastCalledWith("github|github.com/acme/api,github|github.com/acme/web");
   });
 
   it("withholds a partial team selection after a failed catalog refresh until a retry loads it", async () => {
@@ -1519,11 +1517,9 @@ describe("RepoTypeahead", () => {
         return { data: [{ slug: "payments", name: "Payments" }], error: undefined } as never;
       }
       if (path === "/repos/github-teams/{slug}/repositories") {
-        // A duplicate ID must not read as a repository missing from the catalog.
         return {
           data: [
             { platform_repo_id: 1101, repo_path: "acme/api" },
-            { platform_repo_id: 1106, repo_path: "acme/web" },
             { platform_repo_id: 1106, repo_path: "acme/web" },
           ],
           error: undefined,
@@ -1558,8 +1554,6 @@ describe("RepoTypeahead", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("2 configured repositories"));
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
-    await fireEvent.click(use);
-    expect(onchange).toHaveBeenLastCalledWith("github|github.com/acme/api,github|github.com/acme/web");
   });
 
   it("applies a team's repositories as an unsaved selection that saves as a new preset", async () => {

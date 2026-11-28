@@ -31,7 +31,7 @@ func TestTeamReadsPaginateAndUseUserCredential(t *testing.T) {
 			return
 		}
 		if r.URL.Query().Get("page") == "2" {
-			fmt.Fprint(w, `[{"id":2,"full_name":"acme/two","permissions":{"pull":true,"push":false}}]`)
+			fmt.Fprint(w, `[{"id":2,"full_name":"acme/two"}]`)
 		} else {
 			fmt.Fprint(w, `[{"id":1,"full_name":"acme/one"}]`)
 		}
@@ -51,40 +51,46 @@ func TestTeamReadsPaginateAndUseUserCredential(t *testing.T) {
 	require.Equal(t, []string{"Bearer user-token", "Bearer user-token", "Bearer user-token", "Bearer user-token"}, auth)
 }
 
-func TestTeamReadsFailOnLaterPage(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("page") == "2" {
-			http.Error(w, `{"message":"denied"}`, http.StatusForbidden)
-			return
-		}
-		w.Header().Set("Link", fmt.Sprintf("<http://%s%s?page=2>; rel=\"next\"", r.Host, r.URL.Path))
-		fmt.Fprint(w, `[{"slug":"one"}]`)
-	}))
-	defer server.Close()
-	client, err := newEnterpriseGHClient(server.Client(), server.URL+"/api/v3/", server.URL+"/api/uploads/")
-	require.NoError(t, err)
-	c := &Client{ghWrite: client, now: time.Now}
-	rows, err := c.ListOrgTeams(t.Context(), "acme")
-	require.Error(t, err)
-	require.Nil(t, rows)
-	var providerErr *platform.Error
-	require.ErrorAs(t, err, &providerErr)
-	require.Equal(t, platform.ErrCodePermissionDenied, providerErr.Code)
-}
-
-func TestTeamReadsPreserveRateLimit(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("X-RateLimit-Remaining", "0")
-		w.Header().Set("X-RateLimit-Reset", "2000000000")
-		http.Error(w, `{"message":"rate limit"}`, http.StatusTooManyRequests)
-	}))
-	defer server.Close()
-	client, err := newEnterpriseGHClient(server.Client(), server.URL+"/api/v3/", server.URL+"/api/uploads/")
-	require.NoError(t, err)
-	c := &Client{ghWrite: client, now: time.Now}
-	_, err = c.ListTeamRepositories(t.Context(), "acme", "payments")
-	var providerErr *platform.Error
-	require.ErrorAs(t, err, &providerErr)
-	require.Equal(t, platform.ErrCodeRateLimited, providerErr.Code)
-	require.NotNil(t, providerErr.ResetAt)
+func TestTeamReadsMapErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		handler   http.HandlerFunc
+		listRepos bool
+		code      platform.PlatformErrorCode
+	}{
+		{"later page", func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Query().Get("page") == "2" {
+				http.Error(w, `{"message":"denied"}`, http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Link", fmt.Sprintf("<http://%s%s?page=2>; rel=\"next\"", r.Host, r.URL.Path))
+			fmt.Fprint(w, `[{"slug":"one"}]`)
+		}, false, platform.ErrCodePermissionDenied},
+		{"rate limit", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.Header().Set("X-RateLimit-Reset", "2000000000")
+			http.Error(w, `{"message":"rate limit"}`, http.StatusTooManyRequests)
+		}, true, platform.ErrCodeRateLimited},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(tc.handler)
+			defer server.Close()
+			client, err := newEnterpriseGHClient(server.Client(), server.URL+"/api/v3/", server.URL+"/api/uploads/")
+			require.NoError(t, err)
+			c := &Client{ghWrite: client, now: time.Now}
+			if tc.listRepos {
+				_, err = c.ListTeamRepositories(t.Context(), "acme", "payments")
+			} else {
+				var rows []*gh.Team
+				rows, err = c.ListOrgTeams(t.Context(), "acme")
+				require.Nil(t, rows)
+			}
+			var providerErr *platform.Error
+			require.ErrorAs(t, err, &providerErr)
+			require.Equal(t, tc.code, providerErr.Code)
+			if tc.listRepos {
+				require.NotNil(t, providerErr.ResetAt)
+			}
+		})
+	}
 }

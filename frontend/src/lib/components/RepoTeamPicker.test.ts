@@ -85,6 +85,7 @@ describe("RepoTeamPicker", () => {
     listTeamRepos.mockResolvedValue([
       { platform_repo_id: 1102, repo_path: "acme/widgets" },
       { platform_repo_id: 1103, repo_path: "acme/tools" },
+      { platform_repo_id: 1103, repo_path: "acme/tools" },
     ]);
     const { onApply } = renderPicker();
 
@@ -97,6 +98,32 @@ describe("RepoTeamPicker", () => {
     );
     await fireEvent.click(screen.getByRole("button", { name: "Use selection" }));
     expect(onApply).toHaveBeenCalledWith("github|github.com/acme/widgets,github|github.com/acme/tools");
+  });
+
+  it("waits for the catalog before offering a team selection", async () => {
+    listTeams.mockResolvedValue([{ slug: "payments", name: "Payments" }]);
+    listTeamRepos.mockResolvedValue([{ platform_repo_id: 1102, repo_path: "acme/widgets" }]);
+    renderPicker([acme], false);
+
+    await chooseTeam("Payments");
+    expect((await screen.findByRole("status")).textContent).toContain("Loading configured repositories…");
+    expect((screen.getByRole("button", { name: "Use selection" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("withholds a partial team selection when the catalog is incomplete", async () => {
+    listTeams.mockResolvedValue([{ slug: "payments", name: "Payments" }]);
+    listTeamRepos.mockResolvedValue([
+      { platform_repo_id: 1102, repo_path: "acme/widgets" },
+      { platform_repo_id: 1106, repo_path: "acme/web" },
+    ]);
+    const { onApply } = renderPicker();
+
+    await chooseTeam("Payments");
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "couldn't load all of Payments's configured repositories",
+    );
+    expect((screen.getByRole("button", { name: "Use selection" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(onApply).not.toHaveBeenCalled();
   });
 
   it("keeps Use selection disabled when none of the team's repositories are configured", async () => {

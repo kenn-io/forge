@@ -2703,43 +2703,6 @@ describe("PullDetail approvals", () => {
     expect(button.title).toBe("No user credential for writes on github.com");
   });
 
-  it("opens a state menu from the open chip and marks a pull request as draft", async () => {
-    const detail = pullDetail();
-    detail.repo.capabilities = {
-      ...capabilities,
-      draft_mutation: true,
-    } as PullDetail["repo"]["capabilities"];
-    const apiClient = {
-      GET: vi.fn(async () => ({
-        data: {
-          AllowSquashMerge: false,
-          AllowMergeCommit: false,
-          AllowRebaseMerge: false,
-          ViewerCanMerge: true,
-        },
-      })),
-      POST: vi.fn(async () => ({ data: { state: "draft" } })),
-    };
-
-    const { detailStore } = renderPullDetail(detail, undefined, apiClient);
-
-    await fireEvent.click(screen.getByRole("button", { name: "State: Open" }));
-    await fireEvent.click(screen.getByRole("menuitem", { name: "Draft" }));
-
-    expect(detailStore.setPullState).toHaveBeenCalledWith(
-      {
-        provider: "github",
-        platformHost: "github.com",
-        owner: "acme",
-        name: "widget",
-        repoPath: "acme/widget",
-      },
-      1,
-      "draft",
-      expect.objectContaining({ onSuccess: expect.any(Function), onSettled: expect.any(Function) }),
-    );
-  });
-
   describe("Convert to draft action", () => {
     function draftableDetail(): PullDetail {
       const detail = pullDetail();

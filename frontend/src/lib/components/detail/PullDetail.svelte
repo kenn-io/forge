@@ -7,7 +7,7 @@
   import { getCommentNavigation } from "../../stores/router.svelte.js";
   import { Effect } from "effect";
   import { pollWhileVisible } from "../../effect/poll-while-visible.js";
-  import { onDestroy, tick, untrack, type ComponentProps } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
@@ -185,8 +185,6 @@
     sameRepositoryKey,
     type RepositoryKey,
   } from "../../api/repository-key.js";
-
-  type ChipTrailing = ComponentProps<typeof Chip>["trailing"];
 
   const CLEAR_LABELS_PENDING = "__clear-label-selection__";
 
@@ -1602,8 +1600,6 @@
   let primaryActionStage = $state(0);
   let actionMenuWrapEl = $state<HTMLDivElement>();
   let workflowActionControlEl = $state<HTMLDivElement>();
-  let stateMenuOpen = $state(false);
-  let stateMenuWrapEl = $state<HTMLSpanElement>();
 
   function closeActionMenu(): void {
     actionMenuOpen = false;
@@ -1733,10 +1729,6 @@
     };
   });
 
-  function closeStateMenu(): void {
-    stateMenuOpen = false;
-  }
-
   // An open pull request in the merge queue reads Queued, as the provider's
   // header shows it, so the two headers agree for the same state.
   function visiblePRState(
@@ -1753,16 +1745,6 @@
   function visiblePRStateLabel(pr: Pick<PullRequest, "State" | "IsDraft">, queued: boolean): string {
     const state = visiblePRState(pr, queued);
     return state.charAt(0).toUpperCase() + state.slice(1);
-  }
-
-  function toggleStateMenu(): void {
-    if (stalePR) return;
-    stateMenuOpen = !stateMenuOpen;
-  }
-
-  function chooseState(newState: "open" | "closed" | "draft"): void {
-    closeStateMenu();
-    handleStateChange(newState);
   }
 
   function closeLabelPicker(): void {
@@ -2005,9 +1987,6 @@
     if (actionMenuOpen && e.key === "Escape") {
       actionMenuOpen = false;
     }
-    if (stateMenuOpen && e.key === "Escape") {
-      stateMenuOpen = false;
-    }
   }
 
   function isLabelPickerControlTarget(target: Node): boolean {
@@ -2025,9 +2004,6 @@
       && !actionMenuWrapEl?.contains(target)
       && !workflowActionControlEl?.contains(target)) {
       closeActionMenu();
-    }
-    if (stateMenuOpen && !stateMenuWrapEl?.contains(target)) {
-      closeStateMenu();
     }
     if (labelPickerOpen) {
       if (
@@ -2700,45 +2676,18 @@
         {#if !(pr.IsLocked && lockedSupported)}
           {@const stateLabel = visiblePRStateLabel(pr, mergeQueueEntry !== undefined)}
           {@const visibleState = visiblePRState(pr, mergeQueueEntry !== undefined)}
-          {@const markDraftGate = operationGate(repoOperations?.mark_draft)}
-          {@const canOpenStateMenu = canDraftAction}
-          <span class="state-menu-wrap" bind:this={stateMenuWrapEl}>
-            {#snippet stateChevron()}
-              <ChevronDownIcon size="12" strokeWidth="2.2" aria-hidden="true" />
-            {/snippet}
-            <Chip size="sm"
-              tone={visibleState === "merged"
-                ? "merged"
-                : visibleState === "closed"
-                  ? "danger"
-                  : visibleState === "draft" || visibleState === "queued"
-                    ? "warning"
-                    : "success"}
-              interactive={canOpenStateMenu}
-              disabled={stateSubmitting !== null || stalePR || markDraftGate.unavailable}
-              expanded={canOpenStateMenu ? stateMenuOpen : undefined}
-              title={markDraftGate.unavailable ? markDraftGate.reason : undefined}
-              ariaLabel={canOpenStateMenu ? `State: ${stateLabel}` : undefined}
-              onclick={canOpenStateMenu ? toggleStateMenu : undefined}
-              trailing={canOpenStateMenu ? (stateChevron as ChipTrailing) : undefined}
-            >
-              {stateLabel}
-            </Chip>
-            {#if canOpenStateMenu && stateMenuOpen}
-              <div class="state-menu" role="menu" aria-label="Pull request state">
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="state-menu-item"
-                  disabled={stateSubmitting !== null || markDraftGate.unavailable}
-                  title={markDraftGate.unavailable ? markDraftGate.reason : undefined}
-                  onclick={() => chooseState("draft")}
-                >
-                  Draft
-                </button>
-              </div>
-            {/if}
-          </span>
+          <Chip
+            size="sm"
+            tone={visibleState === "merged"
+              ? "merged"
+              : visibleState === "closed"
+                ? "danger"
+                : visibleState === "draft" || visibleState === "queued"
+                  ? "warning"
+                  : "success"}
+          >
+            {stateLabel}
+          </Chip>
         {/if}
         {#if pr.IsLocked && lockedSupported}
           <Chip size="sm" tone="warning" title="This pull request is locked">Locked</Chip>
@@ -3140,7 +3089,7 @@
         {#if canWorkflowsAction}{@render workflowsAction(compactLabels)}{/if}
         {#if canMergeAction}{@render mergeAction(compactLabels)}{/if}
         <!-- Draft leaves the compact row first so Create Workspace keeps its
-             place in narrow drawers; the state chip menu still converts. -->
+             place in narrow drawers; the command palette still converts. -->
         {#if canDraftAction && !compactLabels}{@render draftAction()}{/if}
         {#if canCloseAction}{@render closeAction(compactLabels)}{/if}
         {#if canReopenAction}{@render reopenAction(compactLabels)}{/if}
@@ -4322,49 +4271,6 @@
     flex-wrap: wrap;
     gap: 6px;
     min-width: 0;
-  }
-
-  .state-menu-wrap {
-    position: relative;
-    display: inline-flex;
-    z-index: 70;
-  }
-
-  .state-menu {
-    position: absolute;
-    z-index: 25;
-    top: calc(100% + 6px);
-    left: 0;
-    min-width: 120px;
-    padding: 4px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-md, 8px);
-    background: var(--bg-surface);
-    box-shadow: var(--shadow-lg);
-  }
-
-  .state-menu-item {
-    width: 100%;
-    min-height: 30px;
-    padding: 0 10px;
-    border: 0;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-primary);
-    font: inherit;
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .state-menu-item:hover:not(:disabled) {
-    background: var(--bg-surface-hover);
-  }
-
-  .state-menu-item:disabled {
-    color: var(--text-muted);
-    cursor: not-allowed;
   }
 
   .chips-row :global(.btn--labels) {

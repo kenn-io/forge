@@ -1201,7 +1201,7 @@ test.describe("detail action buttons", () => {
 
       await page.reload();
       await expect(page.locator(".pull-detail")).toBeVisible();
-      await expect(page.getByRole("button", { name: "State: Open" })).toBeVisible();
+      await expect(page.locator(".pull-detail .chips-row .kit-chip").first()).toHaveText("Open");
     } finally {
       await server.stop();
     }

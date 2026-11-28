@@ -496,17 +496,15 @@ func (testCommentReactionProvider) ReactToComment(context.Context, RepoRef, int6
 }
 
 func TestRegistryCommentReactorRequiresCapability(t *testing.T) {
-	for _, provider := range []Provider{
-		testCommentReactionProvider{testProvider{kind: KindGitHub, host: "github.com"}},
-		testProvider{kind: KindGitHub, host: "github.com", caps: Capabilities{CommentReaction: true}},
-	} {
-		registry, err := NewRegistry(provider)
-		require.NoError(t, err)
-		_, err = registry.CommentReactor(KindGitHub, "github.com")
-		require.ErrorIs(t, err, ErrUnsupportedCapability)
-	}
+	registry, err := NewRegistry(testCommentReactionProvider{testProvider{kind: KindGitHub, host: "github.com"}})
+	require.NoError(t, err)
+	_, err = registry.CommentReactor(KindGitHub, "github.com")
+	var platformErr *Error
+	require.ErrorAs(t, err, &platformErr)
+	assert.Equal(t, "comment_reaction", platformErr.Capability)
+	require.ErrorIs(t, err, ErrUnsupportedCapability)
 	provider := testCommentReactionProvider{testProvider{kind: KindGitHub, host: "github.com", caps: Capabilities{CommentReaction: true}}}
-	registry, err := NewRegistry(provider)
+	registry, err = NewRegistry(provider)
 	require.NoError(t, err)
 	reactor, err := registry.CommentReactor(KindGitHub, "github.com")
 	require.NoError(t, err)

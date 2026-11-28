@@ -240,7 +240,11 @@ export function runCommentMutationContract(adapter: CommentMutationContractAdapt
       } as unknown as GeneratedClient);
       await store.load(1, false);
 
-      expect(await mutationResult((callbacks) => store.react(1, 44, "rocket", callbacks))).toBe(false);
+      const onSettled = vi.fn();
+      expect(await mutationResult((callbacks) => store.react(1, 44, "rocket", { ...callbacks, onSettled }))).toBe(
+        false,
+      );
+      await vi.waitFor(() => expect(onSettled).toHaveBeenCalledOnce());
 
       expect(getFlash()).toMatchObject({ message: "provider denied reaction", tone: "danger" });
     });

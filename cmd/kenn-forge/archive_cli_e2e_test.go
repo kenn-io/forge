@@ -186,34 +186,10 @@ token_env = "KENN_FORGE_ARCHIVE_E2E_TOKEN"
 	require.Equal(0, baselineCode)
 	require.Empty(baselineErr)
 	require.Contains(baseline, `"issues_opened": 1`)
-	for _, selectors := range [][]string{
-		{"--json"},
-		{"--json", "--format", "json"},
-		{"--format", "json", "--json"},
-		{"--json=false", "--format", "json"},
-	} {
-		got, gotErr, gotCode := run(append(window, selectors...)...)
-		assert.Equal(baselineCode, gotCode, "%v", selectors)
-		assert.Equal(baselineErr, gotErr, "%v", selectors)
-		assert.Equal(baseline, got, "%v", selectors)
-	}
-	markdown, markdownErr, markdownCode := run(window...)
-	require.Equal(0, markdownCode)
-	require.Empty(markdownErr)
-	require.Contains(markdown, "# Activity archive")
-	for _, selectors := range [][]string{{"--format", "markdown"}, {"--json=false"}, {"--json=false", "--format", "markdown"}} {
-		got, gotErr, gotCode := run(append(window, selectors...)...)
-		assert.Equal(markdownCode, gotCode, "%v", selectors)
-		assert.Equal(markdownErr, gotErr, "%v", selectors)
-		assert.Equal(markdown, got, "%v", selectors)
-	}
-	for _, selectors := range [][]string{{"--json", "--format", "markdown"}, {"--format", "markdown", "--json"}} {
-		args := append([]string{"report", "--config", filepath.Join(root, "missing.toml")}, selectors...)
-		got, gotErr, gotCode := run(args...)
-		assert.Equal(1, gotCode, "%v", selectors)
-		assert.Empty(got, "%v", selectors)
-		assert.Contains(gotErr, "--json and --format must select the same format", "%v", selectors)
-	}
+	stdout, stderr, code = run(append(window, "--json")...)
+	assert.Equal(baselineCode, code)
+	assert.Equal(baselineErr, stderr)
+	assert.Equal(baseline, stdout)
 
 	output := filepath.Join(root, "archive.md")
 	stdout, stderr, code = run(

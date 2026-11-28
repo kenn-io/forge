@@ -313,6 +313,18 @@ func TestArchiveCLISubcommandsUseGeneratedDaemonContract(t *testing.T) {
 			},
 			wantOut: `"merge_commit_sha": "abc123"`,
 		},
+		{
+			name: "report compatible json selectors", args: []string{"report", "--config", cfgPath, "--days", "2", "--json", "--format", "json"},
+			wantMethod: http.MethodGet, wantPath: "/base/api/v1/archive/report", wantOut: `"merge_requests_merged": 1`,
+		},
+		{
+			name: "report false with json", args: []string{"report", "--config", cfgPath, "--days", "2", "--json=false", "--format", "json"},
+			wantMethod: http.MethodGet, wantPath: "/base/api/v1/archive/report", wantOut: `"merge_requests_merged": 1`,
+		},
+		{
+			name: "report false with markdown", args: []string{"report", "--config", cfgPath, "--days", "2", "--json=false", "--format", "markdown"},
+			wantMethod: http.MethodGet, wantPath: "/base/api/v1/archive/report", wantOut: "# Activity archive",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -379,6 +391,14 @@ func TestArchiveCLIValidationAndAtomicOutput(t *testing.T) {
 	assert.Zero(calls)
 	assert.Empty(stdout.String())
 
+	for _, selectors := range [][]string{{"--json", "--format", "markdown"}, {"--format", "markdown", "--json"}} {
+		err = runArchiveCLIAt(append([]string{"report", "--config", filepath.Join(t.TempDir(), "missing.toml")}, selectors...), &stdout, func() time.Time { return now })
+		require.Error(err)
+		assert.Contains(err.Error(), "--json and --format must select the same format")
+		assert.Empty(stdout.String())
+		assert.Zero(calls)
+	}
+
 	output := filepath.Join(t.TempDir(), "report.md")
 	require.NoError(os.WriteFile(output, []byte("keep me\n"), 0o600))
 	err = runArchiveCLIAt([]string{
@@ -407,18 +427,17 @@ func TestArchiveCLIAtomicOutputSuccess(t *testing.T) {
 	}))
 	t.Cleanup(api.Close)
 	cfgPath := archiveCLITestConfig(t, api.URL, "/", "")
-	output := filepath.Join(t.TempDir(), "report.md")
+	output := filepath.Join(t.TempDir(), "report.json")
 	require.NoError(os.WriteFile(output, []byte("old\n"), 0o600))
 	var stdout bytes.Buffer
 	err := runArchiveCLIAt([]string{
-		"report", "--config", cfgPath, "--days", "1", "--output", output,
+		"report", "--config", cfgPath, "--days", "1", "--json", "--output", output,
 	}, &stdout, func() time.Time { return time.Date(2026, 7, 13, 15, 30, 0, 0, time.UTC) })
 	require.NoError(err)
 	assert.Empty(stdout.String())
 	contents, err := os.ReadFile(output)
 	require.NoError(err)
-	assert.Contains(string(contents), "# Activity archive")
-	assert.Contains(string(contents), "Issues opened: 1")
+	assert.Contains(string(contents), `"issues_opened": 1`)
 }
 
 func archiveGeneratedCLIRef(provider, host, owner, name string) generated.ArchiveRepositoryRef {

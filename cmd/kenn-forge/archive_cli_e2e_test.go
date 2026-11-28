@@ -181,6 +181,16 @@ token_env = "KENN_FORGE_ARCHIVE_E2E_TOKEN"
 	assert.Empty(stderr)
 	assert.Contains(stdout, `"operator_state": "paused"`)
 
+	window := []string{"report", "--config", cfgPath, "--start", now.Add(-24 * time.Hour).Format(time.RFC3339), "--end", now.Add(time.Hour).Format(time.RFC3339)}
+	baseline, baselineErr, baselineCode := run(append(window, "--format", "json")...)
+	require.Equal(0, baselineCode)
+	require.Empty(baselineErr)
+	require.Contains(baseline, `"issues_opened": 1`)
+	stdout, stderr, code = run(append(window, "--json")...)
+	assert.Equal(baselineCode, code)
+	assert.Equal(baselineErr, stderr)
+	assert.Equal(baseline, stdout)
+
 	output := filepath.Join(root, "archive.md")
 	stdout, stderr, code = run(
 		"report", "--config", cfgPath, "--days", "1", "--output", output,

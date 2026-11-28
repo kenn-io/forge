@@ -183,11 +183,18 @@ type archiveReportOptions struct {
 
 func newArchiveReportCommand(stdout io.Writer, now func() time.Time) *cobra.Command {
 	opts := archiveReportOptions{}
+	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "report",
 		Short: "Render repository archive activity",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if asJSON {
+				if cmd.Flags().Changed("format") && opts.format != "json" {
+					return errors.New("--json and --format must select the same format")
+				}
+				opts.format = "json"
+			}
 			return runArchiveReport(cmd.Context(), opts, cmd.Flags().Changed("days"), stdout, now)
 		},
 	}
@@ -196,6 +203,7 @@ func newArchiveReportCommand(stdout io.Writer, now func() time.Time) *cobra.Comm
 	cmd.Flags().StringVar(&opts.startValue, "start", "", "inclusive UTC date or RFC3339 boundary")
 	cmd.Flags().StringVar(&opts.endValue, "end", "", "inclusive UTC date or exclusive RFC3339 boundary")
 	cmd.Flags().StringVar(&opts.format, "format", "markdown", "output format: markdown or json")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "shorthand for --format json")
 	cmd.Flags().BoolVar(&opts.verbose, "verbose", false, "include bounded activity details")
 	cmd.Flags().StringVar(&opts.output, "output", "", "write output atomically to this file")
 	cmd.Flags().Var(&opts.repositories, "repo", "provider|host/repo_path; repeat for multiple repositories")

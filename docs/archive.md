@@ -78,6 +78,6 @@ kenn-forge archive report --start 2026-07-01 --end 2026-07-07 --verbose
 
 All report ranges use UTC. The `--days` flag selects rolling 24-hour periods, date-only ranges include both dates, and RFC3339 ranges use an inclusive start and an exclusive end.
 
-Reports output Markdown by default. For automation, pass `--format json`, `--output PATH`, and repeated `--repo` filters. Check archive status before treating a report as complete.
+Reports output Markdown by default. For automation, pass `--json` (or `--format json`), `--output PATH`, and repeated `--repo` filters. Check archive status before treating a report as complete.
 
 For a short syntax reference, see [Commands](commands.md#manage-historical-archives).
